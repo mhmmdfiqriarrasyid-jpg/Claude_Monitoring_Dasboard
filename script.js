@@ -22,8 +22,8 @@ const CHART_COLORS = [
     '#319795', '#dd6b20', '#e53e3e', '#2d3748', '#ed64a6'
 ];
 
-// ---- Chart.js Global Config (fix blurry rendering on high-DPI screens) ----
-Chart.defaults.devicePixelRatio = window.devicePixelRatio || 2;
+// ---- Chart.js Global Config (HD rendering on all screens) ----
+Chart.defaults.devicePixelRatio = Math.max(window.devicePixelRatio || 1, 2);
 
 // ---- Initialization ----
 document.addEventListener('DOMContentLoaded', () => {
@@ -551,5 +551,12 @@ function destroyChart(id) {
     if (charts[id]) {
         charts[id].destroy();
         delete charts[id];
+    }
+    // Replace canvas element to ensure clean HD rendering
+    const oldCanvas = document.getElementById(id);
+    if (oldCanvas) {
+        const newCanvas = document.createElement('canvas');
+        newCanvas.id = id;
+        oldCanvas.parentNode.replaceChild(newCanvas, oldCanvas);
     }
 }
