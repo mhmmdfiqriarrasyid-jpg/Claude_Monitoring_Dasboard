@@ -32,6 +32,14 @@
         <i class="fas fa-tractor"></i>
         <span>Tractor Unit Monitoring</span>
     </div>
+    <nav class="header__nav">
+        <a class="nav__link active" data-view="dashboard" onclick="navigateTo('dashboard')">
+            <i class="fas fa-chart-line"></i> Dashboard
+        </a>
+        <a class="nav__link" data-view="editUnits" onclick="navigateTo('editUnits')">
+            <i class="fas fa-pen-to-square"></i> Edit Units
+        </a>
+    </nav>
     <div class="header__meta">
         <div class="header__status">
             <span class="status-dot" id="connectionDot"></span>
@@ -44,236 +52,322 @@
 <!-- ===== MAIN ===== -->
 <main class="main">
 
-    <!-- Empty State (shown when no data loaded) -->
-    <div id="emptyState" class="empty-state">
-        <i class="fas fa-file-csv"></i>
-        <h3>No Data Loaded</h3>
-        <p>Upload a CSV file to get started with monitoring your tractor units.</p>
-        <br>
-        <button class="btn btn-primary" onclick="toggleDatasource(true)">
-            <i class="fas fa-cloud-upload-alt"></i> Upload CSV
-        </button>
-    </div>
+    <!-- ==================== DASHBOARD VIEW ==================== -->
+    <div id="viewDashboard" class="view">
 
-    <!-- Data Source Panel -->
-    <div class="datasource-panel" id="datasourcePanel">
-        <button class="datasource-toggle" onclick="toggleDatasource()">
-            <span><i class="fas fa-file-csv"></i>&nbsp; Upload Data</span>
-            <i class="fas fa-chevron-down chevron" id="dsChevron"></i>
-        </button>
-        <div class="datasource-body" id="dsBody">
-            <div class="file-upload-area" id="dropZone" onclick="document.getElementById('csvInput').click()">
-                <i class="fas fa-cloud-upload-alt"></i>
-                <p>Click to upload or drag & drop your CSV file</p>
-                <span class="hint">Supports .csv files exported from Excel or spreadsheet tools</span>
-                <input type="file" id="csvInput" accept=".csv" hidden>
+        <!-- Change Alert Banner -->
+        <div class="change-banner" id="changeBanner">
+            <div class="change-banner__content">
+                <i class="fas fa-info-circle"></i>
+                <span id="changeBannerText"></span>
             </div>
-        </div>
-    </div>
-
-    <!-- ===== DASHBOARD CONTENT (hidden until data loaded) ===== -->
-    <div id="dashboardContent" style="display:none;">
-
-        <!-- KPI Cards -->
-        <div class="kpi-grid">
-            <div class="kpi-card total">
-                <div class="kpi-card__header">
-                    <span class="kpi-card__label">Total Units</span>
-                    <div class="kpi-card__icon"><i class="fas fa-boxes-stacked"></i></div>
-                </div>
-                <div class="kpi-card__value" id="kpiTotal">0</div>
-                <div class="kpi-card__sub">All registered units</div>
-            </div>
-            <div class="kpi-card good">
-                <div class="kpi-card__header">
-                    <span class="kpi-card__label">Good</span>
-                    <div class="kpi-card__icon"><i class="fas fa-check-circle"></i></div>
-                </div>
-                <div class="kpi-card__value" id="kpiGood">0</div>
-                <div class="kpi-card__sub" id="kpiGoodPct">0% of total</div>
-                <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiGoodBar" style="width:0%"></div></div>
-            </div>
-            <div class="kpi-card breakdown">
-                <div class="kpi-card__header">
-                    <span class="kpi-card__label">Breakdown</span>
-                    <div class="kpi-card__icon"><i class="fas fa-exclamation-triangle"></i></div>
-                </div>
-                <div class="kpi-card__value" id="kpiBreakdown">0</div>
-                <div class="kpi-card__sub" id="kpiBreakdownPct">0% of total</div>
-                <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiBreakdownBar" style="width:0%"></div></div>
-            </div>
-            <div class="kpi-card issue">
-                <div class="kpi-card__header">
-                    <span class="kpi-card__label">Units with Issues</span>
-                    <div class="kpi-card__icon"><i class="fas fa-wrench"></i></div>
-                </div>
-                <div class="kpi-card__value" id="kpiIssue">0</div>
-                <div class="kpi-card__sub" id="kpiIssuePct">0% of total</div>
-                <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiIssueBar" style="width:0%"></div></div>
-            </div>
-            <div class="kpi-card health">
-                <div class="kpi-card__header">
-                    <span class="kpi-card__label">Health Rate</span>
-                    <div class="kpi-card__icon"><i class="fas fa-heart-pulse"></i></div>
-                </div>
-                <div class="kpi-card__value" id="kpiHealth">0%</div>
-                <div class="kpi-card__sub">Overall fleet health</div>
-                <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiHealthBar" style="width:0%"></div></div>
-            </div>
+            <button class="btn-icon" onclick="dismissBanner()"><i class="fas fa-xmark"></i></button>
         </div>
 
-        <!-- Charts Row -->
-        <div class="charts-grid">
-            <div class="chart-card">
-                <div class="chart-card__title">
-                    <i class="fas fa-chart-pie"></i> Unit Status Overview
-                </div>
-                <div class="chart-container">
-                    <canvas id="statusChart"></canvas>
-                </div>
-            </div>
-            <div class="chart-card">
-                <div class="chart-card__title">
-                    <i class="fas fa-chart-bar"></i> Distribution by Site
-                </div>
-                <div class="chart-container">
-                    <canvas id="siteChart"></canvas>
-                </div>
-            </div>
-        </div>
-
-        <!-- Component Health -->
-        <div class="component-health">
-            <div class="section-header">
-                <div class="section-title">
-                    <i class="fas fa-microchip"></i> Component Health Overview
-                </div>
-            </div>
-            <div class="component-grid" id="componentGrid">
-                <!-- Filled by JS -->
-            </div>
-        </div>
-
-        <!-- Filter Bar -->
-        <div class="filter-bar">
-            <div class="filter-bar__search">
-                <i class="fas fa-search"></i>
-                <input type="text" id="searchInput" placeholder="Search by nickname, model, or serial...">
-            </div>
-            <select id="statusFilter">
-                <option value="">All Status</option>
-            </select>
-            <select id="siteFilter">
-                <option value="">All Sites</option>
-            </select>
-            <select id="componentFilter">
-                <option value="">All Components</option>
-                <option value="Display">Display Issues</option>
-                <option value="GPS">GPS Issues</option>
-                <option value="Steering">Steering Issues</option>
-                <option value="JDLink">JDLink Issues</option>
-            </select>
-            <button class="btn btn-secondary btn-sm" onclick="clearFilter()">
-                <i class="fas fa-rotate-left"></i> Reset
+        <!-- Empty State (shown when no data) -->
+        <div id="emptyState" class="empty-state">
+            <i class="fas fa-database"></i>
+            <h3>No Units in Database</h3>
+            <p>Go to Edit Units to add tractor units manually or import from a CSV file.</p>
+            <br>
+            <button class="btn btn-primary" onclick="navigateTo('editUnits')">
+                <i class="fas fa-pen-to-square"></i> Manage Units
             </button>
-            <span class="filter-count" id="filterCount"></span>
         </div>
 
-        <!-- Detail Table -->
+        <!-- Dashboard Content (hidden until data exists) -->
+        <div id="dashboardContent" style="display:none;">
+
+            <!-- KPI Cards -->
+            <div class="kpi-grid">
+                <div class="kpi-card total">
+                    <div class="kpi-card__header">
+                        <span class="kpi-card__label">Total Units</span>
+                        <div class="kpi-card__icon"><i class="fas fa-boxes-stacked"></i></div>
+                    </div>
+                    <div class="kpi-card__value" id="kpiTotal">0</div>
+                    <div class="kpi-card__sub">All registered units</div>
+                </div>
+                <div class="kpi-card good">
+                    <div class="kpi-card__header">
+                        <span class="kpi-card__label">Good</span>
+                        <div class="kpi-card__icon"><i class="fas fa-check-circle"></i></div>
+                    </div>
+                    <div class="kpi-card__value" id="kpiGood">0</div>
+                    <div class="kpi-card__sub" id="kpiGoodPct">0% of total</div>
+                    <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiGoodBar" style="width:0%"></div></div>
+                </div>
+                <div class="kpi-card breakdown">
+                    <div class="kpi-card__header">
+                        <span class="kpi-card__label">Breakdown</span>
+                        <div class="kpi-card__icon"><i class="fas fa-exclamation-triangle"></i></div>
+                    </div>
+                    <div class="kpi-card__value" id="kpiBreakdown">0</div>
+                    <div class="kpi-card__sub" id="kpiBreakdownPct">0% of total</div>
+                    <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiBreakdownBar" style="width:0%"></div></div>
+                </div>
+                <div class="kpi-card issue">
+                    <div class="kpi-card__header">
+                        <span class="kpi-card__label">Units with Issues</span>
+                        <div class="kpi-card__icon"><i class="fas fa-wrench"></i></div>
+                    </div>
+                    <div class="kpi-card__value" id="kpiIssue">0</div>
+                    <div class="kpi-card__sub" id="kpiIssuePct">0% of total</div>
+                    <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiIssueBar" style="width:0%"></div></div>
+                </div>
+                <div class="kpi-card health">
+                    <div class="kpi-card__header">
+                        <span class="kpi-card__label">Health Rate</span>
+                        <div class="kpi-card__icon"><i class="fas fa-heart-pulse"></i></div>
+                    </div>
+                    <div class="kpi-card__value" id="kpiHealth">0%</div>
+                    <div class="kpi-card__sub">Overall fleet health</div>
+                    <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiHealthBar" style="width:0%"></div></div>
+                </div>
+            </div>
+
+            <!-- Charts Row -->
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <div class="chart-card__title"><i class="fas fa-chart-pie"></i> Unit Status Overview</div>
+                    <div class="chart-container"><canvas id="statusChart"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-card__title"><i class="fas fa-chart-bar"></i> Distribution by Site</div>
+                    <div class="chart-container"><canvas id="siteChart"></canvas></div>
+                </div>
+            </div>
+
+            <!-- Component Health -->
+            <div class="component-health">
+                <div class="section-header">
+                    <div class="section-title"><i class="fas fa-microchip"></i> Component Health Overview</div>
+                </div>
+                <div class="component-grid" id="componentGrid"></div>
+            </div>
+
+            <!-- Filter Bar -->
+            <div class="filter-bar">
+                <div class="filter-bar__search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="searchInput" placeholder="Search by nickname, model, or serial...">
+                </div>
+                <select id="statusFilter"><option value="">All Status</option></select>
+                <select id="siteFilter"><option value="">All Sites</option></select>
+                <select id="componentFilter">
+                    <option value="">All Components</option>
+                    <option value="Display">Display Issues</option>
+                    <option value="GPS">GPS Issues</option>
+                    <option value="Steering">Steering Issues</option>
+                    <option value="JDLink">JDLink Issues</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" onclick="clearFilter()"><i class="fas fa-rotate-left"></i> Reset</button>
+                <span class="filter-count" id="filterCount"></span>
+            </div>
+
+            <!-- Detail Table -->
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-table-list"></i> Unit Detail</div>
+                    <div class="table-card__actions">
+                        <button class="btn btn-secondary btn-sm" onclick="exportCSV()"><i class="fas fa-download"></i> Export CSV</button>
+                        <button class="btn btn-secondary btn-sm" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table" id="detailTable">
+                        <thead>
+                            <tr>
+                                <th onclick="sortTable('no')">No <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('name')">Nickname <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('model')">Model <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('sn')">Serial Number <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('status')">Status <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('display')">Display <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('gps')">GPS <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('steering')">Steering <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('jdlink')">JDLink <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('site')">Site <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="detailBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Repair & Maintenance Section -->
+            <div class="repair-section">
+                <div class="repair-header">
+                    <div class="table-card__title"><i class="fas fa-tools"></i> Repair &amp; Maintenance</div>
+                    <div class="table-card__actions">
+                        <select id="issueFilter" class="btn btn-secondary btn-sm" onchange="renderRepair()">
+                            <option value="">All Issues</option>
+                            <option value="Unit">Unit</option>
+                            <option value="Display">Display</option>
+                            <option value="GPS">GPS</option>
+                            <option value="Steering">Steering</option>
+                            <option value="JDLink">JDLink</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="repair-body">
+                    <div class="issue-summary" id="issueSummary"></div>
+                    <div class="repair-grid">
+                        <div>
+                            <div class="chart-card__title"><i class="fas fa-ranking-star"></i> Top Issues</div>
+                            <div class="chart-container-sm"><canvas id="topIssueChart"></canvas></div>
+                        </div>
+                        <div>
+                            <div class="chart-card__title"><i class="fas fa-location-dot"></i> Issues by Site</div>
+                            <div class="chart-container-sm"><canvas id="issueBySiteChart"></canvas></div>
+                        </div>
+                    </div>
+                    <div class="table-wrapper" style="max-height:320px;">
+                        <table class="data-table">
+                            <thead><tr><th>No</th><th>Nickname</th><th>Model</th><th>Serial Number</th><th>Issues</th><th>Site</th></tr></thead>
+                            <tbody id="repairBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /dashboardContent -->
+    </div><!-- /viewDashboard -->
+
+    <!-- ==================== EDIT UNITS VIEW ==================== -->
+    <div id="viewEditUnits" class="view" style="display:none;">
+
+        <!-- Edit Toolbar -->
+        <div class="edit-toolbar">
+            <div class="edit-toolbar__left">
+                <button class="btn btn-primary" onclick="toggleImportPanel()">
+                    <i class="fas fa-file-import"></i> Import CSV
+                </button>
+                <button class="btn btn-success" onclick="showAddForm()">
+                    <i class="fas fa-plus"></i> Add Unit
+                </button>
+                <button class="btn btn-danger" id="btnDeleteSelected" style="display:none" onclick="deleteSelected()">
+                    <i class="fas fa-trash"></i> Delete Selected (<span id="selectedCount">0</span>)
+                </button>
+            </div>
+            <div class="edit-toolbar__right">
+                <span id="editUnitCount">0 units in database</span>
+            </div>
+        </div>
+
+        <!-- Import Panel (collapsible) -->
+        <div class="import-panel" id="importPanel">
+            <div class="file-upload-area" id="editDropZone" onclick="document.getElementById('editCsvInput').click()">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <p>Click to upload or drag & drop a CSV file</p>
+                <span class="hint">New units will be added. Duplicate serial numbers are skipped.</span>
+                <input type="file" id="editCsvInput" accept=".csv" hidden>
+            </div>
+        </div>
+
+        <!-- Edit Table -->
         <div class="table-card">
             <div class="table-card__header">
-                <div class="table-card__title">
-                    <i class="fas fa-table-list"></i> Unit Detail
-                </div>
-                <div class="table-card__actions">
-                    <button class="btn btn-secondary btn-sm" onclick="exportCSV()">
-                        <i class="fas fa-download"></i> Export CSV
-                    </button>
-                    <button class="btn btn-secondary btn-sm" onclick="window.print()">
-                        <i class="fas fa-print"></i> Print
-                    </button>
-                </div>
+                <div class="table-card__title"><i class="fas fa-pen-to-square"></i> Unit Database</div>
             </div>
-            <div class="table-wrapper">
-                <table class="data-table" id="detailTable">
+            <div class="table-wrapper" style="max-height:600px;">
+                <table class="data-table" id="editTable">
                     <thead>
                         <tr>
-                            <th onclick="sortTable('no')">No <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
-                            <th onclick="sortTable('name')">Nickname <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
-                            <th onclick="sortTable('model')">Model <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
-                            <th onclick="sortTable('sn')">Serial Number <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
-                            <th onclick="sortTable('status')">Status <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
-                            <th onclick="sortTable('display')">Display <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
-                            <th onclick="sortTable('gps')">GPS <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
-                            <th onclick="sortTable('steering')">Steering <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
-                            <th onclick="sortTable('jdlink')">JDLink <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
-                            <th onclick="sortTable('site')">Site <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th class="col-check"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
+                            <th>No</th>
+                            <th>Nickname</th>
+                            <th>Model</th>
+                            <th>Serial Number</th>
+                            <th>Status</th>
+                            <th>Display</th>
+                            <th>GPS</th>
+                            <th>Steering</th>
+                            <th>JDLink</th>
+                            <th>Site</th>
+                            <th class="col-actions">Actions</th>
                         </tr>
                     </thead>
-                    <tbody id="detailBody"></tbody>
+                    <tbody id="editBody"></tbody>
                 </table>
             </div>
         </div>
 
-        <!-- Repair & Maintenance Section -->
-        <div class="repair-section">
-            <div class="repair-header">
-                <div class="table-card__title">
-                    <i class="fas fa-tools"></i> Repair &amp; Maintenance
-                </div>
-                <div class="table-card__actions">
-                    <select id="issueFilter" class="btn btn-secondary btn-sm" onchange="renderRepair()">
-                        <option value="">All Issues</option>
-                        <option value="Unit">Unit</option>
-                        <option value="Display">Display</option>
-                        <option value="GPS">GPS</option>
-                        <option value="Steering">Steering</option>
-                        <option value="JDLink">JDLink</option>
-                    </select>
-                </div>
-            </div>
-            <div class="repair-body">
-                <!-- Issue Summary Chips -->
-                <div class="issue-summary" id="issueSummary"></div>
-
-                <!-- Charts Row -->
-                <div class="repair-grid">
-                    <div>
-                        <div class="chart-card__title"><i class="fas fa-ranking-star"></i> Top Issues</div>
-                        <div class="chart-container-sm">
-                            <canvas id="topIssueChart"></canvas>
-                        </div>
-                    </div>
-                    <div>
-                        <div class="chart-card__title"><i class="fas fa-location-dot"></i> Issues by Site</div>
-                        <div class="chart-container-sm">
-                            <canvas id="issueBySiteChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Repair Table -->
-                <div class="table-wrapper" style="max-height:320px;">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>No</th>
-                                <th>Nickname</th>
-                                <th>Model</th>
-                                <th>Serial Number</th>
-                                <th>Issues</th>
-                                <th>Site</th>
-                            </tr>
-                        </thead>
-                        <tbody id="repairBody"></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-    </div><!-- /dashboardContent -->
+    </div><!-- /viewEditUnits -->
 
 </main>
+
+<!-- ===== UNIT MODAL (outside views, overlays everything) ===== -->
+<div class="modal-overlay" id="unitModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="modalTitle">Add Unit</h3>
+            <button class="btn-icon" onclick="closeModal()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <form id="unitForm" onsubmit="saveUnit(event)">
+                <input type="hidden" id="editUnitId">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">Nickname</label>
+                        <input class="form-input" id="formName" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Model</label>
+                        <input class="form-input" id="formModel">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Serial Number</label>
+                        <input class="form-input" id="formSN" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Site</label>
+                        <input class="form-input" id="formSite">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Status Unit</label>
+                        <select class="form-select" id="formStatus">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Display</label>
+                        <select class="form-select" id="formDisplay">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">GPS</label>
+                        <select class="form-select" id="formGPS">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Steering</label>
+                        <select class="form-select" id="formSteering">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">JDLink</label>
+                        <select class="form-select" id="formJDLink">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" form="unitForm"><i class="fas fa-check"></i> Save Unit</button>
+        </div>
+    </div>
+</div>
 
 <!-- Footer -->
 <footer class="footer">
