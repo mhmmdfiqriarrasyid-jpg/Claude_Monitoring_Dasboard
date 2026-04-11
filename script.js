@@ -22,6 +22,9 @@ const CHART_COLORS = [
     '#319795', '#dd6b20', '#e53e3e', '#2d3748', '#ed64a6'
 ];
 
+// ---- Chart.js Global Config (fix blurry rendering on high-DPI screens) ----
+Chart.defaults.devicePixelRatio = window.devicePixelRatio || 2;
+
 // ---- Initialization ----
 document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
