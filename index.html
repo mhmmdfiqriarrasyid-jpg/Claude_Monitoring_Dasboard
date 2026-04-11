@@ -46,82 +46,27 @@
 
     <!-- Empty State (shown when no data loaded) -->
     <div id="emptyState" class="empty-state">
-        <i class="fas fa-database"></i>
+        <i class="fas fa-file-csv"></i>
         <h3>No Data Loaded</h3>
-        <p>Connect to your Larksheet or upload a CSV file to get started with monitoring your tractor units.</p>
+        <p>Upload a CSV file to get started with monitoring your tractor units.</p>
         <br>
         <button class="btn btn-primary" onclick="toggleDatasource(true)">
-            <i class="fas fa-plug"></i> Connect Data Source
+            <i class="fas fa-cloud-upload-alt"></i> Upload CSV
         </button>
     </div>
 
     <!-- Data Source Panel -->
     <div class="datasource-panel" id="datasourcePanel">
         <button class="datasource-toggle" onclick="toggleDatasource()">
-            <span><i class="fas fa-database"></i>&nbsp; Data Source Configuration</span>
+            <span><i class="fas fa-file-csv"></i>&nbsp; Upload Data</span>
             <i class="fas fa-chevron-down chevron" id="dsChevron"></i>
         </button>
         <div class="datasource-body" id="dsBody">
-            <!-- Tabs -->
-            <div class="datasource-tabs">
-                <button class="datasource-tab active" onclick="switchDsTab('lark')">
-                    <i class="fas fa-cloud"></i>&nbsp; Larksheet
-                </button>
-                <button class="datasource-tab" onclick="switchDsTab('csv')">
-                    <i class="fas fa-file-csv"></i>&nbsp; CSV Upload
-                </button>
-            </div>
-
-            <!-- Lark Tab -->
-            <div class="tab-content active" id="tab-lark">
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label>App ID</label>
-                        <input type="text" id="larkAppId" placeholder="cli_xxxxxxxx">
-                    </div>
-                    <div class="form-group">
-                        <label>App Secret</label>
-                        <input type="password" id="larkAppSecret" placeholder="Enter app secret">
-                    </div>
-                    <div class="form-group">
-                        <label>Spreadsheet Token</label>
-                        <input type="text" id="larkSpreadsheetToken" placeholder="From spreadsheet URL">
-                    </div>
-                    <div class="form-group">
-                        <label>Sheet ID</label>
-                        <input type="text" id="larkSheetId" placeholder="e.g. Sheet1 or sheet ID">
-                    </div>
-                </div>
-                <div class="form-actions">
-                    <button class="btn btn-primary" onclick="connectLarksheet()">
-                        <i class="fas fa-plug"></i> Connect
-                    </button>
-                    <button class="btn btn-secondary" onclick="disconnectLarksheet()">
-                        <i class="fas fa-unlink"></i> Disconnect
-                    </button>
-                    <div class="auto-refresh-control">
-                        <label>
-                            <input type="checkbox" id="autoRefreshToggle" onchange="toggleAutoRefresh()">
-                            Auto-refresh
-                        </label>
-                        <select id="refreshInterval" onchange="toggleAutoRefresh()">
-                            <option value="60000">1 min</option>
-                            <option value="300000" selected>5 min</option>
-                            <option value="600000">10 min</option>
-                            <option value="1800000">30 min</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-
-            <!-- CSV Tab -->
-            <div class="tab-content" id="tab-csv">
-                <div class="file-upload-area" id="dropZone" onclick="document.getElementById('csvInput').click()">
-                    <i class="fas fa-cloud-upload-alt"></i>
-                    <p>Click to upload or drag & drop your CSV file</p>
-                    <span class="hint">Supports .csv files exported from Excel or Larksheet</span>
-                    <input type="file" id="csvInput" accept=".csv" hidden>
-                </div>
+            <div class="file-upload-area" id="dropZone" onclick="document.getElementById('csvInput').click()">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <p>Click to upload or drag & drop your CSV file</p>
+                <span class="hint">Supports .csv files exported from Excel or spreadsheet tools</span>
+                <input type="file" id="csvInput" accept=".csv" hidden>
             </div>
         </div>
     </div>

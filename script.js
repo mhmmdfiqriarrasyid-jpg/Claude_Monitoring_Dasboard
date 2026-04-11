@@ -7,7 +7,6 @@ let globalData = [];
 let filteredData = [];
 let charts = {};
 let sortState = { key: null, asc: true };
-let autoRefreshTimer = null;
 
 // ---- Constants ----
 const COMPONENT_KEYS = ['display', 'gps', 'steering', 'jdlink'];
@@ -22,12 +21,10 @@ const CHART_COLORS = [
     '#3182ce', '#38a169', '#e53e3e', '#d69e2e', '#805ad5',
     '#319795', '#dd6b20', '#e53e3e', '#2d3748', '#ed64a6'
 ];
-const LARK_STORAGE_KEY = 'tractor_dashboard_lark_config';
 
 // ---- Initialization ----
 document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
-    loadLarkConfig();
 });
 
 function setupEventListeners() {
@@ -93,18 +90,6 @@ function toggleDatasource(forceOpen) {
     chevron.classList.toggle('open', forceOpen || !isOpen);
 }
 
-function switchDsTab(tab) {
-    document.querySelectorAll('.datasource-tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-
-    const tabEl = document.getElementById(`tab-${tab}`);
-    if (tabEl) {
-        tabEl.classList.add('active');
-        const idx = tab === 'lark' ? 0 : 1;
-        document.querySelectorAll('.datasource-tab')[idx].classList.add('active');
-    }
-}
-
 // ---- CSV Upload ----
 function handleCSVUpload(e) {
     const file = e.target.files[0];
@@ -126,132 +111,6 @@ function parseCSVFile(file) {
             showLoading(false);
         }
     });
-}
-
-// ---- Larksheet Integration ----
-function loadLarkConfig() {
-    try {
-        const saved = localStorage.getItem(LARK_STORAGE_KEY);
-        if (saved) {
-            const config = JSON.parse(saved);
-            document.getElementById('larkAppId').value = config.appId || '';
-            document.getElementById('larkAppSecret').value = config.appSecret || '';
-            document.getElementById('larkSpreadsheetToken').value = config.spreadsheetToken || '';
-            document.getElementById('larkSheetId').value = config.sheetId || '';
-        }
-    } catch (e) { /* ignore */ }
-}
-
-function saveLarkConfig() {
-    const config = {
-        appId: document.getElementById('larkAppId').value.trim(),
-        appSecret: document.getElementById('larkAppSecret').value.trim(),
-        spreadsheetToken: document.getElementById('larkSpreadsheetToken').value.trim(),
-        sheetId: document.getElementById('larkSheetId').value.trim()
-    };
-    localStorage.setItem(LARK_STORAGE_KEY, JSON.stringify(config));
-    return config;
-}
-
-async function connectLarksheet() {
-    const config = saveLarkConfig();
-
-    if (!config.appId || !config.appSecret || !config.spreadsheetToken) {
-        showToast('Please fill in App ID, App Secret, and Spreadsheet Token', 'warning');
-        return;
-    }
-
-    showLoading(true);
-
-    try {
-        // Step 1: Get tenant access token
-        const tokenRes = await fetch('https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ app_id: config.appId, app_secret: config.appSecret })
-        });
-
-        const tokenData = await tokenRes.json();
-
-        if (tokenData.code !== 0) {
-            throw new Error(tokenData.msg || 'Failed to authenticate with Lark');
-        }
-
-        const token = tokenData.tenant_access_token;
-
-        // Step 2: Read spreadsheet data
-        const sheetId = config.sheetId || 'Sheet1';
-        const range = `${sheetId}!A:Z`;
-        const dataRes = await fetch(
-            `https://open.larksuite.com/open-apis/sheets/v2/spreadsheets/${config.spreadsheetToken}/values/${encodeURIComponent(range)}`,
-            { headers: { 'Authorization': `Bearer ${token}` } }
-        );
-
-        const sheetData = await dataRes.json();
-
-        if (sheetData.code !== 0) {
-            throw new Error(sheetData.msg || 'Failed to read spreadsheet');
-        }
-
-        // Step 3: Convert to array of objects (like PapaParse output)
-        const values = sheetData.data.valueRange.values;
-        if (!values || values.length < 2) {
-            throw new Error('Spreadsheet is empty or has no data rows');
-        }
-
-        const headers = values[0].map(h => clean(String(h)));
-        const rows = values.slice(1).map(row => {
-            const obj = {};
-            headers.forEach((h, i) => { obj[h] = row[i] !== undefined ? String(row[i]) : ''; });
-            return obj;
-        });
-
-        globalData = processData(rows);
-        onDataLoaded('Larksheet');
-        setConnectionStatus(true);
-
-    } catch (err) {
-        let msg = err.message;
-        if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
-            msg = 'Network error. If using from browser, a CORS proxy may be needed. See documentation.';
-        }
-        showToast('Lark connection failed: ' + msg, 'error');
-        setConnectionStatus(false);
-    }
-
-    showLoading(false);
-}
-
-function disconnectLarksheet() {
-    clearAutoRefresh();
-    setConnectionStatus(false);
-    showToast('Disconnected from Larksheet', 'info');
-}
-
-function setConnectionStatus(connected) {
-    const dot = document.getElementById('connectionDot');
-    const label = document.getElementById('connectionLabel');
-    dot.classList.toggle('connected', connected);
-    label.textContent = connected ? 'Connected' : 'Disconnected';
-}
-
-function toggleAutoRefresh() {
-    const enabled = document.getElementById('autoRefreshToggle').checked;
-    if (enabled) {
-        const interval = parseInt(document.getElementById('refreshInterval').value);
-        clearAutoRefresh();
-        autoRefreshTimer = setInterval(() => connectLarksheet(), interval);
-        showToast('Auto-refresh enabled', 'success');
-    } else {
-        clearAutoRefresh();
-    }
-}
-
-function clearAutoRefresh() {
-    if (autoRefreshTimer) {
-        clearInterval(autoRefreshTimer);
-        autoRefreshTimer = null;
-    }
 }
 
 // ---- Data Processing ----
@@ -304,12 +163,11 @@ function onDataLoaded(source) {
     const now = new Date().toLocaleString();
     document.getElementById('lastUpdated').textContent = `Updated: ${now}`;
 
-    if (source === 'CSV') {
-        setConnectionStatus(false);
-        document.getElementById('connectionLabel').textContent = 'CSV Loaded';
-    }
+    // Update header status indicator
+    document.getElementById('connectionDot').classList.add('connected');
+    document.getElementById('connectionLabel').textContent = 'CSV Loaded';
 
-    showToast(`${globalData.length} units loaded from ${source}`, 'success');
+    showToast(`${globalData.length} units loaded successfully`, 'success');
 }
 
 function updateDashboard(data) {
