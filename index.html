@@ -13,6 +13,10 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#2b6cb0">
+
     <!-- Dashboard Styles -->
     <link rel="stylesheet" href="style.css">
 </head>
@@ -39,8 +43,14 @@
         <a class="nav__link" data-view="editUnits" onclick="navigateTo('editUnits')">
             <i class="fas fa-pen-to-square"></i> Edit Units
         </a>
+        <a class="nav__link" onclick="showHistory()" title="Change History">
+            <i class="fas fa-clock-rotate-left"></i> History
+        </a>
     </nav>
     <div class="header__meta">
+        <button class="btn-icon header__dark-toggle" onclick="toggleDarkMode()" title="Toggle dark mode (Shift+D)">
+            <i class="fas fa-moon"></i>
+        </button>
         <div class="header__status">
             <span class="status-dot" id="connectionDot"></span>
             <span id="connectionLabel">No Data</span>
@@ -146,6 +156,46 @@
                 <div class="component-grid" id="componentGrid"></div>
             </div>
 
+            <!-- Downtime & Reliability Section -->
+            <div class="downtime-section">
+                <div class="section-header">
+                    <div class="section-title"><i class="fas fa-stopwatch"></i> Reliability &amp; Downtime</div>
+                    <span style="font-size:11px;color:var(--text-light)">Tracked automatically from status changes</span>
+                </div>
+                <div class="downtime-kpis">
+                    <div class="downtime-kpi">
+                        <div class="downtime-kpi__label">MTBF</div>
+                        <div class="downtime-kpi__value" id="kpiMTBF">-</div>
+                        <div class="downtime-kpi__sub">Mean time between failures</div>
+                    </div>
+                    <div class="downtime-kpi">
+                        <div class="downtime-kpi__label">MTTR</div>
+                        <div class="downtime-kpi__value" id="kpiMTTR">-</div>
+                        <div class="downtime-kpi__sub">Mean time to repair</div>
+                    </div>
+                    <div class="downtime-kpi">
+                        <div class="downtime-kpi__label">This Month</div>
+                        <div class="downtime-kpi__value" id="kpiMonthDowntime">-</div>
+                        <div class="downtime-kpi__sub">Total downtime</div>
+                    </div>
+                    <div class="downtime-kpi">
+                        <div class="downtime-kpi__label">Failures</div>
+                        <div class="downtime-kpi__value" id="kpiFailures">0</div>
+                        <div class="downtime-kpi__sub">Breakdowns recorded</div>
+                    </div>
+                </div>
+                <div class="downtime-grid">
+                    <div>
+                        <div class="chart-card__title"><i class="fas fa-ranking-star"></i> Top 5 Worst Offenders</div>
+                        <div class="top-offenders" id="topOffendersList"></div>
+                    </div>
+                    <div>
+                        <div class="chart-card__title"><i class="fas fa-chart-bar"></i> Downtime by Unit (Top 10)</div>
+                        <div class="chart-container-sm"><canvas id="downtimeChart"></canvas></div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Filter Bar -->
             <div class="filter-bar">
                 <div class="filter-bar__search">
@@ -246,14 +296,25 @@
                 <button class="btn btn-success" onclick="showAddForm()">
                     <i class="fas fa-plus"></i> Add Unit
                 </button>
+                <button class="btn btn-secondary" onclick="exportBackup()" title="Download full JSON backup (Ctrl+S)">
+                    <i class="fas fa-download"></i> Backup
+                </button>
+                <button class="btn btn-secondary" onclick="triggerRestore()" title="Restore from JSON backup">
+                    <i class="fas fa-upload"></i> Restore
+                </button>
                 <button class="btn btn-danger" id="btnDeleteSelected" style="display:none" onclick="deleteSelected()">
                     <i class="fas fa-trash"></i> Delete Selected (<span id="selectedCount">0</span>)
                 </button>
             </div>
             <div class="edit-toolbar__right">
+                <div class="edit-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="editSearch" placeholder="Search units... (press /)">
+                </div>
                 <span id="editUnitCount">0 units in database</span>
             </div>
         </div>
+        <input type="file" id="restoreFileInput" accept=".json" hidden>
 
         <!-- Import Panel (collapsible) -->
         <div class="import-panel" id="importPanel">
@@ -365,6 +426,56 @@
         <div class="form-actions">
             <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
             <button type="submit" class="btn btn-primary" form="unitForm"><i class="fas fa-check"></i> Save Unit</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== HISTORY MODAL ===== -->
+<div class="modal-overlay" id="historyModal">
+    <div class="modal-card modal-card--wide">
+        <div class="modal-header">
+            <h3 id="historyTitle">Change History</h3>
+            <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-secondary btn-sm" onclick="exportHistory()"><i class="fas fa-download"></i> Export</button>
+                <button class="btn btn-secondary btn-sm" onclick="clearHistory()"><i class="fas fa-eraser"></i> Clear</button>
+                <button class="btn-icon" onclick="closeHistory()"><i class="fas fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="modal-body" style="padding:0">
+            <div class="table-wrapper" style="max-height:60vh">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>When</th><th>Action</th><th>Unit</th><th>Field</th><th>Before</th><th>After</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== IMPORT REPORT MODAL ===== -->
+<div class="modal-overlay" id="importReportModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>Import Report</h3>
+            <button class="btn-icon" onclick="closeImportReport()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+                <strong id="importReportSummary"></strong>
+            </p>
+            <div class="table-wrapper" style="max-height:50vh">
+                <table class="data-table">
+                    <thead><tr><th>Unit / Row</th><th>Serial / Ref</th><th>Reason</th></tr></thead>
+                    <tbody id="importReportBody"></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-primary" onclick="closeImportReport()">OK</button>
         </div>
     </div>
 </div>

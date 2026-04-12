@@ -9,10 +9,17 @@ let charts = {};
 let sortState = { key: null, asc: true };
 let currentView = 'dashboard';
 let selectedUnitIds = new Set();
+let lastDeletedUnits = null;
+let undoTimer = null;
 
 // ---- Constants ----
 const STORAGE_KEY = 'tractorUnits';
 const PENDING_CHANGES_KEY = 'tractorPendingChanges';
+const AUDIT_LOG_KEY = 'tractorAuditLog';
+const AUDIT_LOG_MAX = 500;
+const BACKUP_RING_KEY = 'tractorUnits_autobackup';
+const BACKUP_RING_SIZE = 3;
+const DARK_MODE_KEY = 'tractorDarkMode';
 const COMPONENT_KEYS = ['display', 'gps', 'steering', 'jdlink'];
 const COMPONENT_LABELS = { display: 'Display', gps: 'GPS', steering: 'Steering', jdlink: 'JDLink' };
 const COMPONENT_COLORS = {
@@ -27,7 +34,15 @@ Chart.defaults.devicePixelRatio = Math.max(window.devicePixelRatio || 1, 2);
 
 // ---- Initialization ----
 document.addEventListener('DOMContentLoaded', () => {
+    // Dark mode: apply saved preference before render
+    if (localStorage.getItem(DARK_MODE_KEY) === '1') {
+        document.body.classList.add('dark');
+    }
+
     setupEventListeners();
+    setupKeyboardShortcuts();
+    registerServiceWorker();
+
     if (loadFromStorage()) {
         onDataLoaded();
     }
@@ -39,6 +54,10 @@ function setupEventListeners() {
     document.getElementById('statusFilter').addEventListener('change', applyFilter);
     document.getElementById('siteFilter').addEventListener('change', applyFilter);
     document.getElementById('componentFilter').addEventListener('change', applyFilter);
+
+    // Edit page search box
+    const editSearch = document.getElementById('editSearch');
+    if (editSearch) editSearch.addEventListener('input', renderEditTable);
 
     // Edit page CSV upload
     const editInput = document.getElementById('editCsvInput');
@@ -62,6 +81,65 @@ function setupEventListeners() {
             showToast('Please upload a .csv file', 'error');
         }
     });
+
+    // Restore backup file input
+    const restoreInput = document.getElementById('restoreFileInput');
+    if (restoreInput) {
+        restoreInput.addEventListener('change', e => {
+            const file = e.target.files[0];
+            if (file) importBackup(file);
+            restoreInput.value = '';
+        });
+    }
+}
+
+function setupKeyboardShortcuts() {
+    document.addEventListener('keydown', e => {
+        const tag = e.target.tagName;
+        const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable;
+
+        if (e.key === 'Escape') {
+            closeModal();
+            closeHistory();
+            closeImportReport();
+            if (isTyping) e.target.blur();
+            return;
+        }
+
+        if (isTyping) return;
+
+        if (e.key === '/') {
+            e.preventDefault();
+            const id = currentView === 'editUnits' ? 'editSearch' : 'searchInput';
+            document.getElementById(id)?.focus();
+        } else if (e.key === 'n' && currentView === 'editUnits') {
+            e.preventDefault();
+            showAddForm();
+        } else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            exportBackup();
+        } else if (e.key === 'd' && e.shiftKey) {
+            e.preventDefault();
+            toggleDarkMode();
+        }
+    });
+}
+
+function toggleDarkMode() {
+    const dark = document.body.classList.toggle('dark');
+    localStorage.setItem(DARK_MODE_KEY, dark ? '1' : '0');
+    // Re-render charts so colors pick up (Chart.js doesn't reactively recolor)
+    if (currentView === 'dashboard' && globalData.length > 0) {
+        updateDashboard(filteredData);
+    }
+}
+
+function registerServiceWorker() {
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./service-worker.js').catch(() => { /* offline support is best-effort */ });
+        });
+    }
 }
 
 // ---- Utilities ----
@@ -90,6 +168,24 @@ function showToast(message, type = 'info') {
 
 function showLoading(show) {
     document.getElementById('loadingOverlay').classList.toggle('active', show);
+}
+
+function escapeHtml(v) {
+    return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function formatDuration(ms) {
+    if (!ms || ms < 0) return '0h';
+    const h = ms / 3600000;
+    if (h < 1) return Math.round(ms / 60000) + 'm';
+    if (h < 24) return h.toFixed(1) + 'h';
+    const d = h / 24;
+    return d.toFixed(1) + 'd';
 }
 
 // ============================================================
@@ -133,9 +229,19 @@ function navigateTo(view) {
 function saveToStorage(data) {
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        writeAutoBackup(data);
     } catch (e) {
         showToast('Storage full. Could not save data.', 'error');
     }
+}
+
+function writeAutoBackup(data) {
+    try {
+        const ring = JSON.parse(localStorage.getItem(BACKUP_RING_KEY) || '[]');
+        ring.push({ at: Date.now(), count: data.length, units: data });
+        while (ring.length > BACKUP_RING_SIZE) ring.shift();
+        localStorage.setItem(BACKUP_RING_KEY, JSON.stringify(ring));
+    } catch (e) { /* ignore quota issues on backup */ }
 }
 
 function loadFromStorage() {
@@ -151,16 +257,20 @@ function loadFromStorage() {
 }
 
 function addUnits(newUnits) {
-    const existingSNs = new Set(globalData.map(d => d.sn.toLowerCase()));
+    const existingSNs = new Set(globalData.map(d => (d.sn || '').toLowerCase()));
     const toAdd = [];
+    const skippedDetails = [];
     let skipped = 0;
 
     newUnits.forEach(u => {
         if (!u.id) u.id = generateId();
-        const snLower = u.sn.toLowerCase();
+        const snLower = (u.sn || '').toLowerCase();
         if (snLower && existingSNs.has(snLower)) {
             skipped++;
+            skippedDetails.push({ name: u.name, sn: u.sn, reason: 'Duplicate serial number' });
         } else {
+            if (!u.downtimeHistory) u.downtimeHistory = [];
+            if (!isGood(u.status)) u.breakdownStartedAt = Date.now();
             toAdd.push(u);
             if (snLower) existingSNs.add(snLower);
         }
@@ -170,30 +280,188 @@ function addUnits(newUnits) {
         globalData = [...globalData, ...toAdd];
         saveToStorage(globalData);
         recordChange({ type: 'added', detail: `${toAdd.length} unit(s) added` });
+        toAdd.forEach(u => logEvent({ action: 'add', unitId: u.id, unitName: u.name, after: u.sn }));
     }
 
-    return { added: toAdd.length, skipped };
+    return { added: toAdd.length, skipped, skippedDetails };
 }
 
 function updateUnit(id, fields) {
     const idx = globalData.findIndex(d => d.id === id);
     if (idx === -1) return false;
 
-    globalData[idx] = { ...globalData[idx], ...fields };
+    const before = { ...globalData[idx] };
+    const unit = { ...before, ...fields };
+
+    // Downtime tracking when status changes
+    if (fields.status !== undefined && fields.status !== before.status) {
+        trackStatusChange(unit, before.status, fields.status);
+    }
+
+    globalData[idx] = unit;
     saveToStorage(globalData);
-    recordChange({ type: 'updated', detail: `Unit "${globalData[idx].name}" updated` });
+    recordChange({ type: 'updated', detail: `Unit "${unit.name}" updated` });
+
+    // Log each field change
+    Object.keys(fields).forEach(field => {
+        if (field === 'id' || field === 'downtimeHistory' || field === 'breakdownStartedAt') return;
+        if (before[field] !== fields[field]) {
+            logEvent({
+                action: 'update',
+                unitId: id,
+                unitName: unit.name,
+                field,
+                before: before[field],
+                after: fields[field]
+            });
+        }
+    });
     return true;
 }
 
 function deleteUnits(ids) {
     const idSet = new Set(ids);
-    const count = globalData.filter(d => idSet.has(d.id)).length;
+    const removed = globalData.filter(d => idSet.has(d.id));
+    const count = removed.length;
     globalData = globalData.filter(d => !idSet.has(d.id));
     saveToStorage(globalData);
     if (count > 0) {
         recordChange({ type: 'deleted', detail: `${count} unit(s) deleted` });
+        removed.forEach(u => logEvent({ action: 'delete', unitId: u.id, unitName: u.name, before: u.sn }));
     }
-    return count;
+    return { count, removed };
+}
+
+// ============================================================
+// AUDIT LOG
+// ============================================================
+
+function logEvent(entry) {
+    try {
+        const log = JSON.parse(localStorage.getItem(AUDIT_LOG_KEY) || '[]');
+        log.unshift({ ...entry, timestamp: Date.now() });
+        while (log.length > AUDIT_LOG_MAX) log.pop();
+        localStorage.setItem(AUDIT_LOG_KEY, JSON.stringify(log));
+    } catch (e) { /* ignore */ }
+}
+
+function getAuditLog() {
+    try { return JSON.parse(localStorage.getItem(AUDIT_LOG_KEY) || '[]'); }
+    catch (e) { return []; }
+}
+
+function showHistory(unitId) {
+    const log = getAuditLog();
+    const filtered = unitId ? log.filter(e => e.unitId === unitId) : log;
+    const title = unitId
+        ? `History: ${escapeHtml((globalData.find(u => u.id === unitId) || {}).name || 'Unit')}`
+        : 'Change History';
+    document.getElementById('historyTitle').innerHTML = title;
+
+    const tbody = document.getElementById('historyBody');
+    if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#718096">No history recorded</td></tr>';
+    } else {
+        tbody.innerHTML = filtered.map(e => `
+            <tr>
+                <td style="white-space:nowrap">${new Date(e.timestamp).toLocaleString()}</td>
+                <td><span class="audit-badge audit-${escapeHtml(e.action)}">${escapeHtml(e.action)}</span></td>
+                <td>${escapeHtml(e.unitName || '-')}</td>
+                <td>${escapeHtml(e.field || '-')}</td>
+                <td>${escapeHtml(e.before != null ? e.before : '-')}</td>
+                <td>${escapeHtml(e.after != null ? e.after : '-')}</td>
+            </tr>`).join('');
+    }
+    document.getElementById('historyModal').classList.add('open');
+}
+
+function closeHistory() {
+    document.getElementById('historyModal').classList.remove('open');
+}
+
+function clearHistory() {
+    if (!confirm('Clear ALL change history? This cannot be undone.')) return;
+    localStorage.removeItem(AUDIT_LOG_KEY);
+    showHistory();
+    showToast('History cleared', 'success');
+}
+
+function exportHistory() {
+    const log = getAuditLog();
+    if (log.length === 0) { showToast('No history to export', 'warning'); return; }
+    const headers = ['Timestamp', 'Action', 'Unit', 'Field', 'Before', 'After'];
+    const rows = log.map(e => [
+        new Date(e.timestamp).toISOString(),
+        e.action, e.unitName || '', e.field || '',
+        e.before != null ? e.before : '', e.after != null ? e.after : ''
+    ]);
+    const csv = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tractor_history_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('History exported', 'success');
+}
+
+// ============================================================
+// BACKUP & RESTORE
+// ============================================================
+
+function exportBackup() {
+    const payload = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        count: globalData.length,
+        units: globalData
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tractor_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Backup exported (${globalData.length} units)`, 'success');
+}
+
+function triggerRestore() {
+    document.getElementById('restoreFileInput').click();
+}
+
+function importBackup(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+        try {
+            const data = JSON.parse(e.target.result);
+            if (!data || !Array.isArray(data.units)) {
+                showToast('Invalid backup file', 'error');
+                return;
+            }
+            const merge = confirm(
+                `Backup contains ${data.units.length} units.\n\n` +
+                `OK  = MERGE (add new, keep existing)\n` +
+                `Cancel = REPLACE (wipe current, load backup)`
+            );
+            if (merge) {
+                const result = addUnits(data.units);
+                showToast(`Merged backup: ${result.added} added, ${result.skipped} duplicate(s) skipped`, 'success');
+            } else {
+                if (!confirm(`This will DELETE all ${globalData.length} current units and replace them with the backup. Continue?`)) return;
+                globalData = data.units.map(u => ({ ...u, id: u.id || generateId() }));
+                saveToStorage(globalData);
+                logEvent({ action: 'restore', unitName: '-', after: `Restored ${data.units.length} units from backup` });
+                recordChange({ type: 'restored', detail: `${data.units.length} units restored from backup` });
+                showToast(`Restored ${data.units.length} units from backup`, 'success');
+            }
+            renderEditTable();
+        } catch (err) {
+            showToast('Failed to read backup: ' + err.message, 'error');
+        }
+    };
+    reader.readAsText(file);
 }
 
 // ============================================================
@@ -221,12 +489,117 @@ function dismissBanner() {
 }
 
 // ============================================================
+// DOWNTIME TRACKING
+// ============================================================
+
+function trackStatusChange(unit, oldStatus, newStatus) {
+    const wasGood = isGood(oldStatus);
+    const willBeGood = isGood(newStatus);
+    if (wasGood && !willBeGood) {
+        unit.breakdownStartedAt = Date.now();
+    } else if (!wasGood && willBeGood && unit.breakdownStartedAt) {
+        const start = unit.breakdownStartedAt;
+        const end = Date.now();
+        if (!unit.downtimeHistory) unit.downtimeHistory = [];
+        unit.downtimeHistory.push({ start, end, durationMs: end - start });
+        unit.breakdownStartedAt = null;
+    }
+}
+
+function computeDowntimeStats() {
+    const now = Date.now();
+    const monthStart = new Date();
+    monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+    const monthStartMs = monthStart.getTime();
+
+    let totalDowntimeMs = 0;
+    let totalFailures = 0;
+    let totalMonthDowntime = 0;
+    const perUnit = [];
+
+    globalData.forEach(u => {
+        const history = u.downtimeHistory || [];
+        let unitDowntime = 0;
+        history.forEach(iv => {
+            totalDowntimeMs += iv.durationMs;
+            unitDowntime += iv.durationMs;
+            totalFailures++;
+            if (iv.end >= monthStartMs) {
+                totalMonthDowntime += Math.min(iv.durationMs, iv.end - Math.max(iv.start, monthStartMs));
+            }
+        });
+        if (u.breakdownStartedAt) {
+            const ongoing = now - u.breakdownStartedAt;
+            unitDowntime += ongoing;
+            totalDowntimeMs += ongoing;
+            totalFailures++;
+            const effStart = Math.max(u.breakdownStartedAt, monthStartMs);
+            if (now > effStart) totalMonthDowntime += (now - effStart);
+        }
+        if (unitDowntime > 0) perUnit.push({ id: u.id, name: u.name, downtime: unitDowntime });
+    });
+
+    const mttr = totalFailures > 0 ? totalDowntimeMs / totalFailures : 0;
+    const fleetOperatingMs = Math.max(1, globalData.length) * 30 * 24 * 3600 * 1000;
+    const uptimeMs = Math.max(0, fleetOperatingMs - totalDowntimeMs);
+    const mtbf = totalFailures > 0 ? uptimeMs / totalFailures : 0;
+
+    perUnit.sort((a, b) => b.downtime - a.downtime);
+    return { mtbf, mttr, totalMonthDowntime, totalFailures, topOffenders: perUnit.slice(0, 5), topTen: perUnit.slice(0, 10) };
+}
+
+function renderDowntimeKPIs() {
+    const s = computeDowntimeStats();
+    document.getElementById('kpiMTBF').textContent = formatDuration(s.mtbf);
+    document.getElementById('kpiMTTR').textContent = formatDuration(s.mttr);
+    document.getElementById('kpiMonthDowntime').textContent = formatDuration(s.totalMonthDowntime);
+    document.getElementById('kpiFailures').textContent = s.totalFailures;
+
+    const listEl = document.getElementById('topOffendersList');
+    if (!listEl) return;
+    if (s.topOffenders.length === 0) {
+        listEl.innerHTML = '<div class="top-offender top-offender--empty">No downtime recorded yet</div>';
+    } else {
+        listEl.innerHTML = s.topOffenders.map((u, i) => `
+            <div class="top-offender">
+                <span class="top-offender__rank">#${i + 1}</span>
+                <span class="top-offender__name">${escapeHtml(u.name || 'Unnamed')}</span>
+                <span class="top-offender__time">${formatDuration(u.downtime)}</span>
+            </div>`).join('');
+    }
+
+    destroyChart('downtimeChart');
+    if (s.topTen.length > 0) {
+        charts.downtimeChart = new Chart(document.getElementById('downtimeChart'), {
+            type: 'bar',
+            data: {
+                labels: s.topTen.map(u => u.name || 'Unnamed'),
+                datasets: [{
+                    data: s.topTen.map(u => +(u.downtime / 3600000).toFixed(2)),
+                    backgroundColor: '#e53e3e', borderRadius: 4, barPercentage: 0.6
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+                scales: {
+                    x: { beginAtZero: true, title: { display: true, text: 'Downtime (hours)', font: { size: 11, family: 'Inter' } }, ticks: { font: { size: 11 } }, grid: { color: '#edf2f7' } },
+                    y: { ticks: { font: { size: 11, family: 'Inter' } }, grid: { display: false } }
+                },
+                plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.x}h` } } }
+            }
+        });
+    }
+}
+
+// ============================================================
 // DATA PROCESSING
 // ============================================================
 
 function processData(rows) {
-    return rows
-        .map(r => ({
+    const valid = [];
+    const rejected = [];
+    rows.forEach((r, idx) => {
+        const unit = {
             id: generateId(),
             name: clean(getVal(r, 'Nickname')),
             model: clean(getVal(r, 'Model')),
@@ -236,9 +609,19 @@ function processData(rows) {
             gps: clean(getVal(r, 'Status Unit GPS')),
             steering: clean(getVal(r, 'Status Unit Steering')),
             jdlink: clean(getVal(r, 'Status Unit JDLink')),
-            site: clean(getVal(r, 'Site'))
-        }))
-        .filter(r => r.name || r.sn);
+            site: clean(getVal(r, 'Site')),
+            downtimeHistory: [],
+            breakdownStartedAt: null
+        };
+        if (!unit.sn && !unit.name) {
+            rejected.push({ row: idx + 2, reason: 'Missing both nickname and serial number' });
+        } else if (!unit.sn) {
+            rejected.push({ row: idx + 2, reason: 'Missing serial number', name: unit.name });
+        } else {
+            valid.push(unit);
+        }
+    });
+    return { valid, rejected };
 }
 
 function detectIssues(d) {
@@ -288,6 +671,7 @@ function updateDashboard(data) {
     renderStatusChart(data);
     renderSiteChart(data);
     renderComponentHealth(data);
+    renderDowntimeKPIs();
     renderTable(data);
     renderRepair();
     updateFilterCount(data);
@@ -409,17 +793,17 @@ function renderTable(data) {
         return `
         <tr class="${isBD ? 'row-breakdown' : ''}">
             <td>${i + 1}</td>
-            <td><strong>${d.name}</strong></td>
-            <td>${d.model}</td>
-            <td style="font-family:monospace;font-size:12px">${d.sn}</td>
+            <td><strong>${escapeHtml(d.name)}</strong></td>
+            <td>${escapeHtml(d.model)}</td>
+            <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
             <td><span class="badge ${isGood(d.status) ? 'badge-good' : 'badge-breakdown'}">
-                <i class="fas fa-${isGood(d.status) ? 'check' : 'xmark'}"></i> ${d.status}
+                <i class="fas fa-${isGood(d.status) ? 'check' : 'xmark'}"></i> ${escapeHtml(d.status)}
             </span></td>
-            <td class="${isGood(d.display) ? 'cell-good' : 'cell-bad'}">${d.display}</td>
-            <td class="${isGood(d.gps) ? 'cell-good' : 'cell-bad'}">${d.gps}</td>
-            <td class="${isGood(d.steering) ? 'cell-good' : 'cell-bad'}">${d.steering}</td>
-            <td class="${isGood(d.jdlink) ? 'cell-good' : 'cell-bad'}">${d.jdlink}</td>
-            <td>${d.site}</td>
+            <td class="${isGood(d.display) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.display)}</td>
+            <td class="${isGood(d.gps) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.gps)}</td>
+            <td class="${isGood(d.steering) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.steering)}</td>
+            <td class="${isGood(d.jdlink) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.jdlink)}</td>
+            <td>${escapeHtml(d.site)}</td>
         </tr>`;
     }).join('');
 }
@@ -483,11 +867,11 @@ function renderRepair() {
     document.getElementById('repairBody').innerHTML = repairRows.map((d, i) => `
         <tr>
             <td>${i + 1}</td>
-            <td><strong>${d.name}</strong></td>
-            <td>${d.model}</td>
-            <td style="font-family:monospace;font-size:12px">${d.sn}</td>
-            <td>${detectIssues(d).map(x => `<span class="badge-component badge-${x.toLowerCase()}">${x}</span>`).join(' ')}</td>
-            <td>${d.site}</td>
+            <td><strong>${escapeHtml(d.name)}</strong></td>
+            <td>${escapeHtml(d.model)}</td>
+            <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
+            <td>${detectIssues(d).map(x => `<span class="badge-component badge-${x.toLowerCase()}">${escapeHtml(x)}</span>`).join(' ')}</td>
+            <td>${escapeHtml(d.site)}</td>
         </tr>`).join('');
 }
 
@@ -498,8 +882,8 @@ function renderRepair() {
 function populateFilters() {
     const statuses = [...new Set(globalData.map(d => d.status))].filter(Boolean).sort();
     const sites = [...new Set(globalData.map(d => d.site))].filter(Boolean).sort();
-    document.getElementById('statusFilter').innerHTML = `<option value="">All Status</option>` + statuses.map(s => `<option value="${s}">${s}</option>`).join('');
-    document.getElementById('siteFilter').innerHTML = `<option value="">All Sites</option>` + sites.map(s => `<option value="${s}">${s}</option>`).join('');
+    document.getElementById('statusFilter').innerHTML = `<option value="">All Status</option>` + statuses.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+    document.getElementById('siteFilter').innerHTML = `<option value="">All Sites</option>` + sites.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
 }
 
 function applyFilterLogic() {
@@ -591,13 +975,9 @@ function handleEditCSVImport(file) {
         header: true,
         skipEmptyLines: true,
         complete: result => {
-            const parsed = processData(result.data);
-            const { added, skipped } = addUnits(parsed);
-
-            let msg = `${added} unit(s) added`;
-            if (skipped > 0) msg += `, ${skipped} duplicate(s) skipped`;
-            showToast(msg, added > 0 ? 'success' : 'warning');
-
+            const { valid, rejected } = processData(result.data);
+            const { added, skipped, skippedDetails } = addUnits(valid);
+            showImportReport({ total: result.data.length, added, skipped, skippedDetails, rejected });
             renderEditTable();
             showLoading(false);
             document.getElementById('importPanel').classList.remove('open');
@@ -609,6 +989,29 @@ function handleEditCSVImport(file) {
     });
 }
 
+function showImportReport({ total, added, skipped, skippedDetails, rejected }) {
+    const hasIssues = skipped > 0 || rejected.length > 0;
+    const type = added > 0 ? (hasIssues ? 'warning' : 'success') : 'warning';
+    const shortMsg = `Imported ${added} of ${total}. ${skipped} duplicate(s), ${rejected.length} rejected.`;
+    showToast(shortMsg, type);
+
+    if (!hasIssues) return;
+
+    const rows = [
+        ...skippedDetails.map(d => `<tr><td>${escapeHtml(d.name || '-')}</td><td style="font-family:monospace">${escapeHtml(d.sn || '-')}</td><td>${escapeHtml(d.reason)}</td></tr>`),
+        ...rejected.map(r => `<tr><td>${escapeHtml(r.name || '-')}</td><td>Row ${r.row}</td><td>${escapeHtml(r.reason)}</td></tr>`)
+    ].join('');
+
+    document.getElementById('importReportBody').innerHTML = rows;
+    document.getElementById('importReportSummary').textContent =
+        `${added} added · ${skipped} duplicate(s) · ${rejected.length} rejected`;
+    document.getElementById('importReportModal').classList.add('open');
+}
+
+function closeImportReport() {
+    document.getElementById('importReportModal').classList.remove('open');
+}
+
 // ---- Edit Table ----
 function renderEditTable() {
     updateEditCount();
@@ -618,24 +1021,35 @@ function renderEditTable() {
     const selectAllBox = document.getElementById('selectAll');
     if (selectAllBox) selectAllBox.checked = false;
 
+    const query = (document.getElementById('editSearch')?.value || '').toLowerCase().trim();
+    const rows = query
+        ? globalData.filter(d => `${d.name} ${d.model} ${d.sn} ${d.site}`.toLowerCase().includes(query))
+        : globalData;
+
     const tbody = document.getElementById('editBody');
-    tbody.innerHTML = globalData.map((d, i) => `
+    if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:24px;color:#718096">${query ? 'No units match your search' : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.'}</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = rows.map((d, i) => `
         <tr>
-            <td class="col-check"><input type="checkbox" class="unit-check" data-id="${d.id}" onchange="updateSelectedCount()"></td>
+            <td class="col-check"><input type="checkbox" class="unit-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedCount()"></td>
             <td>${i + 1}</td>
-            <td><span class="inline-edit" contenteditable="true" data-id="${d.id}" data-field="name" onblur="saveInlineEdit(this)">${d.name}</span></td>
-            <td><span class="inline-edit" contenteditable="true" data-id="${d.id}" data-field="model" onblur="saveInlineEdit(this)">${d.model}</span></td>
-            <td style="font-family:monospace;font-size:12px">${d.sn}</td>
-            <td><span class="inline-edit" contenteditable="true" data-id="${d.id}" data-field="status" onblur="saveInlineEdit(this)">${d.status}</span></td>
-            <td><span class="inline-edit" contenteditable="true" data-id="${d.id}" data-field="display" onblur="saveInlineEdit(this)">${d.display}</span></td>
-            <td><span class="inline-edit" contenteditable="true" data-id="${d.id}" data-field="gps" onblur="saveInlineEdit(this)">${d.gps}</span></td>
-            <td><span class="inline-edit" contenteditable="true" data-id="${d.id}" data-field="steering" onblur="saveInlineEdit(this)">${d.steering}</span></td>
-            <td><span class="inline-edit" contenteditable="true" data-id="${d.id}" data-field="jdlink" onblur="saveInlineEdit(this)">${d.jdlink}</span></td>
-            <td><span class="inline-edit" contenteditable="true" data-id="${d.id}" data-field="site" onblur="saveInlineEdit(this)">${d.site}</span></td>
+            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="name" onblur="saveInlineEdit(this)">${escapeHtml(d.name)}</span></td>
+            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="model" onblur="saveInlineEdit(this)">${escapeHtml(d.model)}</span></td>
+            <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
+            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="status" onblur="saveInlineEdit(this)">${escapeHtml(d.status)}</span></td>
+            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="display" onblur="saveInlineEdit(this)">${escapeHtml(d.display)}</span></td>
+            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="gps" onblur="saveInlineEdit(this)">${escapeHtml(d.gps)}</span></td>
+            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="steering" onblur="saveInlineEdit(this)">${escapeHtml(d.steering)}</span></td>
+            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="jdlink" onblur="saveInlineEdit(this)">${escapeHtml(d.jdlink)}</span></td>
+            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="site" onblur="saveInlineEdit(this)">${escapeHtml(d.site)}</span></td>
             <td class="col-actions">
                 <div class="row-actions">
-                    <button class="btn btn-secondary" title="Edit" onclick="editUnit('${d.id}')"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Delete" onclick="deleteUnit('${d.id}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                    <button class="btn btn-secondary" title="History" onclick="showHistory('${escapeHtml(d.id)}')"><i class="fas fa-clock-rotate-left"></i></button>
+                    <button class="btn btn-secondary" title="Edit" onclick="editUnit('${escapeHtml(d.id)}')"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Delete" onclick="deleteUnit('${escapeHtml(d.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
                 </div>
             </td>
         </tr>`).join('');
@@ -672,19 +1086,52 @@ function updateSelectedCount() {
 function deleteUnit(id) {
     const unit = globalData.find(d => d.id === id);
     if (!unit) return;
-    if (!confirm(`Delete unit "${unit.name || unit.sn}"?`)) return;
-    deleteUnits([id]);
+    const { removed } = deleteUnits([id]);
     renderEditTable();
-    showToast(`Unit "${unit.name || unit.sn}" deleted`, 'success');
+    showUndoToast(`Unit "${unit.name || unit.sn}" deleted`, removed);
 }
 
 function deleteSelected() {
     const count = selectedUnitIds.size;
     if (count === 0) return;
-    if (!confirm(`Delete ${count} selected unit(s)?`)) return;
-    deleteUnits([...selectedUnitIds]);
+    const { removed } = deleteUnits([...selectedUnitIds]);
     renderEditTable();
-    showToast(`${count} unit(s) deleted`, 'success');
+    showUndoToast(`${count} unit(s) deleted`, removed);
+}
+
+// ---- Undo Toast ----
+function showUndoToast(message, units) {
+    if (!units || units.length === 0) return;
+    lastDeletedUnits = units;
+    if (undoTimer) clearTimeout(undoTimer);
+    document.querySelectorAll('.undo-toast').forEach(t => t.remove());
+
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = 'toast info undo-toast';
+    toast.innerHTML = `<i class="fas fa-trash"></i> <span>${escapeHtml(message)}</span> <button class="toast-undo-btn" onclick="undoDelete()">UNDO</button>`;
+    container.appendChild(toast);
+
+    undoTimer = setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+        lastDeletedUnits = null;
+        undoTimer = null;
+    }, 10000);
+}
+
+function undoDelete() {
+    if (!lastDeletedUnits || lastDeletedUnits.length === 0) return;
+    const restored = lastDeletedUnits;
+    globalData = [...globalData, ...restored];
+    saveToStorage(globalData);
+    restored.forEach(u => logEvent({ action: 'restore', unitId: u.id, unitName: u.name, after: 'undelete' }));
+    recordChange({ type: 'restored', detail: `${restored.length} unit(s) restored` });
+    renderEditTable();
+    showToast(`Restored ${restored.length} unit(s)`, 'success');
+    lastDeletedUnits = null;
+    if (undoTimer) { clearTimeout(undoTimer); undoTimer = null; }
+    document.querySelectorAll('.undo-toast').forEach(t => t.remove());
 }
 
 // ---- Modal: Add / Edit ----
@@ -736,8 +1183,8 @@ function saveUnit(event) {
         showToast(`Unit "${fields.name}" updated`, 'success');
     } else {
         // Add new
-        const newUnit = { id: generateId(), ...fields };
-        const { added, skipped } = addUnits([newUnit]);
+        const newUnit = { id: generateId(), ...fields, downtimeHistory: [], breakdownStartedAt: null };
+        const { added } = addUnits([newUnit]);
         if (added > 0) {
             showToast(`Unit "${fields.name}" added`, 'success');
         } else {
