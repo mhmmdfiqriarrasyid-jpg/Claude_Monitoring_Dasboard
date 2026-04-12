@@ -11,9 +11,12 @@ let currentView = 'dashboard';
 let selectedUnitIds = new Set();
 let lastDeletedUnits = null;
 let undoTimer = null;
+let globalImplements = [];
+let selectedImplementIds = new Set();
 
 // ---- Constants ----
 const STORAGE_KEY = 'tractorUnits';
+const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
 const PENDING_CHANGES_KEY = 'tractorPendingChanges';
 const AUDIT_LOG_KEY = 'tractorAuditLog';
 const AUDIT_LOG_MAX = 500;
@@ -43,6 +46,8 @@ document.addEventListener('DOMContentLoaded', () => {
     setupKeyboardShortcuts();
     registerServiceWorker();
 
+    loadImplements();
+
     if (loadFromStorage()) {
         onDataLoaded();
     }
@@ -58,6 +63,10 @@ function setupEventListeners() {
     // Edit page search box
     const editSearch = document.getElementById('editSearch');
     if (editSearch) editSearch.addEventListener('input', renderEditTable);
+
+    // Implements page search box
+    const implementSearch = document.getElementById('implementSearch');
+    if (implementSearch) implementSearch.addEventListener('input', renderImplementsTable);
 
     // Edit page CSV upload
     const editInput = document.getElementById('editCsvInput');
@@ -195,6 +204,8 @@ function formatDuration(ms) {
 function navigateTo(view) {
     document.getElementById('viewDashboard').style.display = (view === 'dashboard') ? 'block' : 'none';
     document.getElementById('viewEditUnits').style.display = (view === 'editUnits') ? 'block' : 'none';
+    const implView = document.getElementById('viewImplements');
+    if (implView) implView.style.display = (view === 'implements') ? 'block' : 'none';
 
     document.querySelectorAll('.nav__link').forEach(el => el.classList.remove('active'));
     const activeLink = document.querySelector(`[data-view="${view}"]`);
@@ -219,6 +230,11 @@ function navigateTo(view) {
     if (view === 'editUnits') {
         loadFromStorage();
         renderEditTable();
+    }
+
+    if (view === 'implements') {
+        loadImplements();
+        renderImplementsTable();
     }
 }
 
@@ -1198,4 +1214,230 @@ function saveUnit(event) {
 
 function closeModal() {
     document.getElementById('unitModal').classList.remove('open');
+}
+
+// ============================================================
+// IMPLEMENTS — CRUD, storage, render, modal
+// ============================================================
+
+const IMPLEMENT_FIELDS = [
+    { key: 'profileName',        inputId: 'implProfileName',        label: 'Profile Name' },
+    { key: 'equipmentType',      inputId: 'implEquipmentType',      label: 'Type of Equipment' },
+    { key: 'lateralOffset',      inputId: 'implLateralOffset',      label: 'Lateral Offset' },
+    { key: 'centerOfRotation',   inputId: 'implCenterOfRotation',   label: 'Center of Rotation' },
+    { key: 'rearConnection',     inputId: 'implRearConnection',     label: 'Rear Connection' },
+    { key: 'operation',          inputId: 'implOperation',          label: 'Operation' },
+    { key: 'workingWidth',       inputId: 'implWorkingWidth',       label: 'Working Width' },
+    { key: 'workPoint',          inputId: 'implWorkPoint',          label: 'Work Point' },
+    { key: 'workRecording',      inputId: 'implWorkRecording',      label: 'Work Recording' },
+    { key: 'connectingType',     inputId: 'implConnectingType',     label: 'Connecting Type' },
+    { key: 'implementReceiver',  inputId: 'implImplementReceiver',  label: 'Implement Receiver' }
+];
+
+function generateImplementId() {
+    return 'imp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+}
+
+// ---- Storage ----
+function loadImplements() {
+    try {
+        const raw = localStorage.getItem(IMPLEMENTS_STORAGE_KEY);
+        globalImplements = raw ? JSON.parse(raw) : [];
+    } catch (e) {
+        globalImplements = [];
+    }
+    updateImplementCount();
+    return globalImplements.length > 0;
+}
+
+function saveImplements() {
+    try {
+        localStorage.setItem(IMPLEMENTS_STORAGE_KEY, JSON.stringify(globalImplements));
+    } catch (e) {
+        showToast('Storage full. Could not save implements.', 'error');
+    }
+}
+
+function updateImplementCount() {
+    const el = document.getElementById('implementCount');
+    if (el) el.textContent = `${globalImplements.length} implement(s) in database`;
+}
+
+// ---- Render ----
+function renderImplementsTable() {
+    updateImplementCount();
+    selectedImplementIds.clear();
+    updateSelectedImplementCount();
+
+    const selectAllBox = document.getElementById('selectAllImpl');
+    if (selectAllBox) selectAllBox.checked = false;
+
+    const query = (document.getElementById('implementSearch')?.value || '').toLowerCase().trim();
+    const rows = query
+        ? globalImplements.filter(d =>
+            `${d.profileName} ${d.equipmentType} ${d.operation} ${d.connectingType} ${d.workingWidth}`
+                .toLowerCase().includes(query))
+        : globalImplements;
+
+    const tbody = document.getElementById('implementBody');
+    if (!tbody) return;
+
+    if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:#718096">${
+            query ? 'No implements match your search'
+                  : 'No implements yet. Click <strong>Add Implement</strong> to get started.'
+        }</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = rows.map((d, i) => `
+        <tr>
+            <td class="col-check"><input type="checkbox" class="impl-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedImplementCount()"></td>
+            <td>${i + 1}</td>
+            <td>${escapeHtml(d.profileName)}</td>
+            <td>${escapeHtml(d.equipmentType)}</td>
+            <td>${escapeHtml(d.workingWidth)}</td>
+            <td>${escapeHtml(d.operation)}</td>
+            <td>${escapeHtml(d.connectingType)}</td>
+            <td class="col-actions">
+                <div class="row-actions">
+                    <button class="btn btn-secondary" title="Edit" onclick="editImplement('${escapeHtml(d.id)}')"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Delete" onclick="deleteImplement('${escapeHtml(d.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                </div>
+            </td>
+        </tr>`).join('');
+}
+
+// ---- Selection ----
+function toggleSelectAllImplements() {
+    const checked = document.getElementById('selectAllImpl').checked;
+    document.querySelectorAll('.impl-check').forEach(cb => { cb.checked = checked; });
+    updateSelectedImplementCount();
+}
+
+function updateSelectedImplementCount() {
+    selectedImplementIds.clear();
+    document.querySelectorAll('.impl-check:checked').forEach(cb => selectedImplementIds.add(cb.dataset.id));
+    const count = selectedImplementIds.size;
+    const countEl = document.getElementById('selectedImplCount');
+    const btn = document.getElementById('btnDeleteSelectedImpl');
+    if (countEl) countEl.textContent = count;
+    if (btn) btn.style.display = count > 0 ? '' : 'none';
+}
+
+// ---- Modal: Add / Edit ----
+function showAddImplementForm() {
+    document.getElementById('implementModalTitle').textContent = 'Add Implement';
+    document.getElementById('editImplementId').value = '';
+    document.getElementById('implementForm').reset();
+    document.getElementById('implementModal').classList.add('open');
+}
+
+function editImplement(id) {
+    const imp = globalImplements.find(d => d.id === id);
+    if (!imp) return;
+
+    document.getElementById('implementModalTitle').textContent = 'Edit Implement';
+    document.getElementById('editImplementId').value = id;
+    IMPLEMENT_FIELDS.forEach(f => {
+        const el = document.getElementById(f.inputId);
+        if (el) el.value = imp[f.key] || '';
+    });
+    document.getElementById('implementModal').classList.add('open');
+}
+
+function saveImplement(event) {
+    event.preventDefault();
+
+    const id = document.getElementById('editImplementId').value;
+    const data = {};
+    IMPLEMENT_FIELDS.forEach(f => {
+        const el = document.getElementById(f.inputId);
+        data[f.key] = el ? el.value.trim() : '';
+    });
+
+    if (id) {
+        // Update existing
+        const idx = globalImplements.findIndex(d => d.id === id);
+        if (idx !== -1) {
+            const before = { ...globalImplements[idx] };
+            globalImplements[idx] = { ...before, ...data, updatedAt: Date.now() };
+            saveImplements();
+            // Audit log per changed field
+            IMPLEMENT_FIELDS.forEach(f => {
+                if (before[f.key] !== data[f.key]) {
+                    logEvent({
+                        action: 'update',
+                        unitId: id,
+                        unitName: `[Implement] ${data.profileName}`,
+                        field: f.label,
+                        before: before[f.key],
+                        after: data[f.key]
+                    });
+                }
+            });
+            showToast(`Implement "${data.profileName}" updated`, 'success');
+        }
+    } else {
+        // Create new
+        const newImp = {
+            id: generateImplementId(),
+            ...data,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+        };
+        globalImplements.push(newImp);
+        saveImplements();
+        logEvent({
+            action: 'add',
+            unitId: newImp.id,
+            unitName: `[Implement] ${newImp.profileName}`,
+            after: newImp.equipmentType || newImp.profileName
+        });
+        showToast(`Implement "${newImp.profileName}" added`, 'success');
+    }
+
+    closeImplementModal();
+    renderImplementsTable();
+}
+
+function closeImplementModal() {
+    document.getElementById('implementModal').classList.remove('open');
+}
+
+// ---- Delete ----
+function deleteImplement(id) {
+    const imp = globalImplements.find(d => d.id === id);
+    if (!imp) return;
+    if (!confirm(`Delete implement "${imp.profileName}"?`)) return;
+
+    globalImplements = globalImplements.filter(d => d.id !== id);
+    saveImplements();
+    logEvent({
+        action: 'delete',
+        unitId: imp.id,
+        unitName: `[Implement] ${imp.profileName}`,
+        before: imp.equipmentType || imp.profileName
+    });
+    renderImplementsTable();
+    showToast(`Implement "${imp.profileName}" deleted`, 'success');
+}
+
+function deleteSelectedImplements() {
+    const count = selectedImplementIds.size;
+    if (count === 0) return;
+    if (!confirm(`Delete ${count} selected implement(s)?`)) return;
+
+    const idSet = new Set(selectedImplementIds);
+    const removed = globalImplements.filter(d => idSet.has(d.id));
+    globalImplements = globalImplements.filter(d => !idSet.has(d.id));
+    saveImplements();
+    removed.forEach(imp => logEvent({
+        action: 'delete',
+        unitId: imp.id,
+        unitName: `[Implement] ${imp.profileName}`,
+        before: imp.equipmentType || imp.profileName
+    }));
+    renderImplementsTable();
+    showToast(`${count} implement(s) deleted`, 'success');
 }

@@ -32,6 +32,7 @@
 
 <!-- ===== HEADER ===== -->
 <header class="header">
+  <div class="header__inner">
     <div class="header__brand">
         <i class="fas fa-tractor"></i>
         <span>Tractor Unit Monitoring</span>
@@ -42,6 +43,9 @@
         </a>
         <a class="nav__link" data-view="editUnits" onclick="navigateTo('editUnits')">
             <i class="fas fa-pen-to-square"></i> Edit Units
+        </a>
+        <a class="nav__link" data-view="implements" onclick="navigateTo('implements')">
+            <i class="fas fa-trailer"></i> Implements
         </a>
         <a class="nav__link" onclick="showHistory()" title="Change History">
             <i class="fas fa-clock-rotate-left"></i> History
@@ -57,6 +61,7 @@
         </div>
         <span id="lastUpdated"></span>
     </div>
+  </div>
 </header>
 
 <!-- ===== MAIN ===== -->
@@ -356,6 +361,54 @@
 
     </div><!-- /viewEditUnits -->
 
+    <!-- ==================== IMPLEMENTS VIEW ==================== -->
+    <div id="viewImplements" class="view" style="display:none;">
+
+        <!-- Implements Toolbar -->
+        <div class="edit-toolbar">
+            <div class="edit-toolbar__left">
+                <button class="btn btn-success" onclick="showAddImplementForm()">
+                    <i class="fas fa-plus"></i> Add Implement
+                </button>
+                <button class="btn btn-danger" id="btnDeleteSelectedImpl" style="display:none" onclick="deleteSelectedImplements()">
+                    <i class="fas fa-trash"></i> Delete Selected (<span id="selectedImplCount">0</span>)
+                </button>
+            </div>
+            <div class="edit-toolbar__right">
+                <div class="edit-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="implementSearch" placeholder="Search implements...">
+                </div>
+                <span id="implementCount">0 implements in database</span>
+            </div>
+        </div>
+
+        <!-- Implements Table -->
+        <div class="table-card">
+            <div class="table-card__header">
+                <div class="table-card__title"><i class="fas fa-trailer"></i> Implements Database</div>
+            </div>
+            <div class="table-wrapper" style="max-height:600px;">
+                <table class="data-table" id="implementTable">
+                    <thead>
+                        <tr>
+                            <th class="col-check"><input type="checkbox" id="selectAllImpl" onchange="toggleSelectAllImplements()"></th>
+                            <th>No</th>
+                            <th>Profile Name</th>
+                            <th>Equipment Type</th>
+                            <th>Working Width</th>
+                            <th>Operation</th>
+                            <th>Connecting Type</th>
+                            <th class="col-actions">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="implementBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+    </div><!-- /viewImplements -->
+
 </main>
 
 <!-- ===== UNIT MODAL (outside views, overlays everything) ===== -->
@@ -476,6 +529,80 @@
         </div>
         <div class="form-actions">
             <button class="btn btn-primary" onclick="closeImportReport()">OK</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== IMPLEMENT MODAL ===== -->
+<div class="modal-overlay" id="implementModal">
+    <div class="modal-card modal-card--wide">
+        <div class="modal-header">
+            <h3 id="implementModalTitle">Add Implement</h3>
+            <button class="btn-icon" onclick="closeImplementModal()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <form id="implementForm" onsubmit="saveImplement(event)">
+                <input type="hidden" id="editImplementId">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">Profile Name</label>
+                        <input class="form-input" id="implProfileName" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Type of Equipment</label>
+                        <input class="form-input" id="implEquipmentType" placeholder="e.g. Plow, Sprayer, Seeder">
+                    </div>
+                </div>
+
+                <fieldset class="form-section">
+                    <legend>Dimension</legend>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label">Lateral Offset</label>
+                            <input class="form-input" id="implLateralOffset" placeholder="e.g. 0 m">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Center of Rotation</label>
+                            <input class="form-input" id="implCenterOfRotation" placeholder="e.g. 1.2 m">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Rear Connection</label>
+                            <input class="form-input" id="implRearConnection" placeholder="e.g. 0.8 m">
+                        </div>
+                    </div>
+                </fieldset>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">Operation</label>
+                        <input class="form-input" id="implOperation" placeholder="e.g. Tillage, Spraying">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Working Width</label>
+                        <input class="form-input" id="implWorkingWidth" placeholder="e.g. 4.5 m">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Work Point</label>
+                        <input class="form-input" id="implWorkPoint">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Work Recording</label>
+                        <input class="form-input" id="implWorkRecording">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Connecting Type</label>
+                        <input class="form-input" id="implConnectingType" placeholder="e.g. 3-Point Hitch, Drawbar">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Implement Receiver</label>
+                        <input class="form-input" id="implImplementReceiver">
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeImplementModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" form="implementForm"><i class="fas fa-check"></i> Save Implement</button>
         </div>
     </div>
 </div>

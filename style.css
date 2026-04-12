@@ -51,15 +51,23 @@ body {
 .header {
     background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
     color: #fff;
-    padding: 0 32px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+    padding: 0;
     height: 64px;
     position: sticky;
     top: 0;
     z-index: 100;
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.header__inner {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 0 32px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
 }
 
 .header__brand {
@@ -1379,3 +1387,21 @@ body.dark .audit-delete { background: #3b1a1a; color: #fc8181; }
 @media (max-width: 600px) {
     .downtime-kpis { grid-template-columns: 1fr; }
 }
+
+/* --- Implements: form fieldset section --- */
+.form-section {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 16px 4px;
+    margin: 8px 0 16px;
+    background: var(--bg-soft, transparent);
+}
+.form-section legend {
+    padding: 0 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+body.dark .form-section { border-color: var(--border); }
