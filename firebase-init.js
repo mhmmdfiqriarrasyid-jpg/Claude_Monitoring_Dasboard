@@ -1,6 +1,6 @@
-/* OT Monitoring Tractor and Device — Firebase / Firestore initializer
-   Loaded as an ES module from index.html. Bridges Firestore to the
-   classic (non-module) script.js via a global window.cloud API.        */
+/* OT Monitoring Tractor and Device — Firebase / Firestore / Auth initializer
+   Loaded as an ES module from index.html. Bridges Firebase Auth + Firestore
+   to the classic (non-module) script.js via a global window.cloud API.        */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
 import {
@@ -9,11 +9,22 @@ import {
     doc,
     setDoc,
     deleteDoc,
+    getDoc,
     getDocs,
     onSnapshot,
     writeBatch,
     enableIndexedDbPersistence
 } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
+import {
+    getAuth,
+    onAuthStateChanged,
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    signOut,
+    updateProfile,
+    setPersistence,
+    browserLocalPersistence
+} from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyB0rZdvv44jDErvA6dGCrivyueY-2UB-Mw",
@@ -27,6 +38,17 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
+
+// Owner allowlist — any account that signs up with one of these emails is
+// auto-promoted to role=owner with status=active. Other emails start as
+// role=viewer with status=pending and must be approved by an owner.
+const OWNER_EMAILS = ['mhmmdfiqriarrasyid@gmail.com'];
+
+// Persist login across reloads / browser restarts (best-effort).
+setPersistence(auth, browserLocalPersistence).catch(err => {
+    console.warn('[auth] persistence not enabled:', err.code);
+});
 
 // Best-effort offline persistence — works in single-tab Chrome, may fail
 // in multi-tab or private mode; we just log and continue.
@@ -38,6 +60,7 @@ try {
 
 const UNITS_COL = 'units';
 const IMPL_COL = 'implements';
+const USERS_COL = 'users';
 
 function batchInChunks(items, fn, chunkSize = 400) {
     // Firestore allows up to 500 ops per batch; 400 is a safe cap.
@@ -53,6 +76,7 @@ function batchInChunks(items, fn, chunkSize = 400) {
 
 window.cloud = {
     isReady: true,
+    OWNER_EMAILS,
 
     // ---- Units ----
     async saveUnit(unit) {
@@ -114,6 +138,93 @@ window.cloud = {
                 if (errorCallback) errorCallback(err);
             }
         );
+    },
+
+    // ---- Auth ----
+    isOwnerEmail(email) {
+        return OWNER_EMAILS.includes((email || '').toLowerCase());
+    },
+    onAuthChange(callback) {
+        return onAuthStateChanged(auth, callback);
+    },
+    getCurrentUser() {
+        return auth.currentUser;
+    },
+    async signIn(email, password) {
+        const cred = await signInWithEmailAndPassword(auth, email, password);
+        return cred.user;
+    },
+    async signUp(email, password, displayName) {
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        if (displayName) {
+            try { await updateProfile(cred.user, { displayName }); } catch (e) { /* non-fatal */ }
+        }
+        return cred.user;
+    },
+    async signOutUser() {
+        await signOut(auth);
+    },
+
+    // ---- User profile docs ----
+    async getUserDoc(uid) {
+        const snap = await getDoc(doc(db, USERS_COL, uid));
+        return snap.exists() ? snap.data() : null;
+    },
+    async createUserDoc(user, displayName) {
+        const isOwner = this.isOwnerEmail(user.email);
+        const data = {
+            uid: user.uid,
+            email: user.email,
+            displayName: displayName || user.displayName || (user.email || '').split('@')[0],
+            role: isOwner ? 'owner' : 'viewer',
+            status: isOwner ? 'active' : 'pending',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            updatedBy: isOwner ? 'system' : null
+        };
+        await setDoc(doc(db, USERS_COL, user.uid), data, { merge: true });
+        return data;
+    },
+    async ensureOwnerDoc(user) {
+        // If an owner-allowlisted user signs in but their doc is missing or
+        // wrong (e.g. they were created before the auth feature shipped),
+        // fix it so they actually get owner privileges.
+        if (!this.isOwnerEmail(user.email)) return null;
+        const existing = await this.getUserDoc(user.uid);
+        if (existing && existing.role === 'owner' && existing.status === 'active') return existing;
+        const fixed = {
+            uid: user.uid,
+            email: user.email,
+            displayName: (existing && existing.displayName) || user.displayName || (user.email || '').split('@')[0],
+            role: 'owner',
+            status: 'active',
+            createdAt: (existing && existing.createdAt) || Date.now(),
+            updatedAt: Date.now(),
+            updatedBy: 'system'
+        };
+        await setDoc(doc(db, USERS_COL, user.uid), fixed, { merge: true });
+        return fixed;
+    },
+    async updateUserRole(uid, role, status, updatedByEmail) {
+        await setDoc(doc(db, USERS_COL, uid), {
+            role,
+            status,
+            updatedAt: Date.now(),
+            updatedBy: updatedByEmail || null
+        }, { merge: true });
+    },
+    async deleteUserDoc(uid) {
+        await deleteDoc(doc(db, USERS_COL, uid));
+    },
+    subscribeUsers(callback, errorCallback) {
+        return onSnapshot(
+            collection(db, USERS_COL),
+            snap => callback(snap.docs.map(d => d.data())),
+            err => {
+                console.error('[cloud] users subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
     }
 };
 
@@ -122,4 +233,4 @@ window.cloud = {
 // event before this module ever runs, so the order is safe.
 window.cloudReady = true;
 document.dispatchEvent(new CustomEvent('cloud-ready'));
-console.log('[cloud] Firestore ready — project:', firebaseConfig.projectId);
+console.log('[cloud] Firestore + Auth ready — project:', firebaseConfig.projectId);

@@ -30,6 +30,85 @@
 <!-- Toast Container -->
 <div class="toast-container" id="toastContainer"></div>
 
+<!-- ===== AUTH GATE (Login / Sign-up / Pending) ===== -->
+<div class="auth-gate" id="authGate">
+    <div class="auth-card">
+        <div class="auth-card__brand">
+            <i class="fas fa-tractor"></i>
+            <h1>OT Monitoring Tractor and Device</h1>
+            <p>Fleet health, devices &amp; implements — one dashboard.</p>
+        </div>
+
+        <!-- Tabs: Sign In / Create Account -->
+        <div class="auth-tabs">
+            <button class="auth-tab active" id="authTabSignIn" onclick="switchAuthTab('signin')">Sign In</button>
+            <button class="auth-tab" id="authTabSignUp" onclick="switchAuthTab('signup')">Create Account</button>
+        </div>
+
+        <!-- Sign In form -->
+        <form id="signInForm" class="auth-form" onsubmit="handleSignIn(event)">
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-input" id="signInEmail" required autocomplete="email">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="password" class="form-input" id="signInPassword" required autocomplete="current-password">
+            </div>
+            <div class="auth-error" id="signInError"></div>
+            <button type="submit" class="btn btn-primary auth-submit">
+                <i class="fas fa-right-to-bracket"></i> Sign In
+            </button>
+        </form>
+
+        <!-- Sign Up form -->
+        <form id="signUpForm" class="auth-form" style="display:none" onsubmit="handleSignUp(event)">
+            <div class="form-group">
+                <label class="form-label">Display Name</label>
+                <input type="text" class="form-input" id="signUpName" placeholder="Your name" autocomplete="name">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-input" id="signUpEmail" required autocomplete="email">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="password" class="form-input" id="signUpPassword" required minlength="6" autocomplete="new-password">
+            </div>
+            <div class="auth-error" id="signUpError"></div>
+            <div class="auth-hint">
+                <i class="fas fa-info-circle"></i>
+                New accounts start as <strong>view-only</strong> and need approval from the owner before you can edit data.
+            </div>
+            <button type="submit" class="btn btn-primary auth-submit">
+                <i class="fas fa-user-plus"></i> Create Account
+            </button>
+        </form>
+
+        <div class="auth-card__footer">© 2026 OT Monitoring Tractor and Device</div>
+    </div>
+</div>
+
+<!-- ===== PENDING APPROVAL SCREEN (logged in but not approved) ===== -->
+<div class="auth-gate" id="pendingGate" style="display:none">
+    <div class="auth-card">
+        <div class="auth-card__brand">
+            <i class="fas fa-hourglass-half" style="color:#d69e2e"></i>
+            <h1>Waiting for approval</h1>
+            <p id="pendingEmail"></p>
+        </div>
+        <div class="pending-message">
+            <p>Your account has been created, but the owner needs to approve it before you can access the dashboard.</p>
+            <p style="margin-top:12px;color:var(--text-secondary);font-size:13px">
+                Once approved, refresh this page or sign in again. You'll start with <strong>view-only</strong> access — the owner can grant edit rights at any time.
+            </p>
+        </div>
+        <button class="btn btn-secondary auth-submit" onclick="handleSignOut()">
+            <i class="fas fa-right-from-bracket"></i> Sign Out
+        </button>
+    </div>
+</div>
+
 <!-- ===== HEADER ===== -->
 <header class="header">
   <div class="header__inner">
@@ -47,6 +126,9 @@
         <a class="nav__link" data-view="implements" onclick="navigateTo('implements')">
             <i class="fas fa-trailer"></i> Implements
         </a>
+        <a class="nav__link" data-view="users" data-owner-only onclick="navigateTo('users')" style="display:none">
+            <i class="fas fa-users-gear"></i> Users
+        </a>
         <a class="nav__link" onclick="showHistory()" title="Change History">
             <i class="fas fa-clock-rotate-left"></i> History
         </a>
@@ -60,6 +142,21 @@
             <span id="connectionLabel">No Data</span>
         </div>
         <span id="lastUpdated"></span>
+        <div class="user-pill" id="userPill" style="display:none" onclick="toggleUserMenu()">
+            <i class="fas fa-user-circle"></i>
+            <span class="user-pill__name" id="userPillName">—</span>
+            <span class="user-pill__role" id="userPillRole">—</span>
+            <i class="fas fa-chevron-down user-pill__chev"></i>
+            <div class="user-menu" id="userMenu">
+                <div class="user-menu__header">
+                    <div class="user-menu__email" id="userMenuEmail">—</div>
+                    <div class="user-menu__role-label" id="userMenuRoleLabel">—</div>
+                </div>
+                <button class="user-menu__item" onclick="handleSignOut(); event.stopPropagation();">
+                    <i class="fas fa-right-from-bracket"></i> Sign out
+                </button>
+            </div>
+        </div>
     </div>
   </div>
 </header>
@@ -243,6 +340,7 @@
                                 <th onclick="sortTable('steering')">Steering <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                                 <th onclick="sortTable('jdlink')">JDLink <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                                 <th onclick="sortTable('site')">Site <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th>License</th>
                             </tr>
                         </thead>
                         <tbody id="detailBody"></tbody>
@@ -409,6 +507,64 @@
 
     </div><!-- /viewImplements -->
 
+    <!-- ==================== USERS VIEW (Owner only) ==================== -->
+    <div id="viewUsers" class="view" style="display:none;">
+        <div class="edit-toolbar">
+            <div class="edit-toolbar__left">
+                <h2 style="margin:0;font-size:18px;font-weight:600;color:var(--primary)">
+                    <i class="fas fa-users-gear"></i> User Management
+                </h2>
+            </div>
+            <div class="edit-toolbar__right">
+                <span id="usersCount">0 user(s)</span>
+            </div>
+        </div>
+
+        <div class="users-summary" id="usersSummary"></div>
+
+        <div class="table-card">
+            <div class="table-card__header">
+                <div class="table-card__title"><i class="fas fa-clock"></i> Pending Approvals</div>
+            </div>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>No</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Signed up</th>
+                            <th class="col-actions">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pendingUsersBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="table-card" style="margin-top:20px">
+            <div class="table-card__header">
+                <div class="table-card__title"><i class="fas fa-user-check"></i> Active Users</div>
+            </div>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>No</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Last updated</th>
+                            <th>Updated by</th>
+                            <th class="col-actions">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="activeUsersBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div><!-- /viewUsers -->
+
 </main>
 
 <!-- ===== UNIT MODAL (outside views, overlays everything) ===== -->
@@ -474,6 +630,40 @@
                         </select>
                     </div>
                 </div>
+
+                <fieldset class="form-section">
+                    <legend>License &amp; Notes</legend>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label">GPS License</label>
+                            <select class="form-select" id="formGpsLicense">
+                                <option value="">—</option>
+                                <option value="SF-RTK">SF-RTK</option>
+                                <option value="SF-1">SF-1</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">License Display</label>
+                            <select class="form-select" id="formLicenseDisplay">
+                                <option value="">—</option>
+                                <option value="G5 Basic">G5 Basic</option>
+                                <option value="G5 Advance">G5 Advance</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">License Start Date</label>
+                            <input type="date" class="form-input" id="formLicenseStart" onchange="autoFillLicenseEnd()">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">License Expiration Date</label>
+                            <input type="date" class="form-input" id="formLicenseEnd">
+                        </div>
+                        <div class="form-group full-width">
+                            <label class="form-label">Remarks / Notes</label>
+                            <textarea class="form-input" id="formRemarks" rows="3" placeholder="Free-text notes about this unit..."></textarea>
+                        </div>
+                    </div>
+                </fieldset>
             </form>
         </div>
         <div class="form-actions">

@@ -18,11 +18,18 @@ let selectedImplementIds = new Set();
 let cloudInitialized = false;
 let cloudUnitsUnsub = null;
 let cloudImplUnsub = null;
+let cloudUsersUnsub = null;
 let suppressCloudWrites = false; // true while applying a cloud snapshot — prevents loops
 let _cloudReadyFired = false;
 let _localDataLoaded = false;
 let _firstUnitsSnapshot = true;
 let _firstImplSnapshot = true;
+
+// ---- Auth state ----
+let currentUser = null;        // Firebase Auth user object
+let currentUserDoc = null;     // Firestore profile doc { email, role, status, ... }
+let allUsers = [];             // Mirror of users collection (owner only)
+let authInitialized = false;
 
 // ---- Constants ----
 const STORAGE_KEY = 'tractorUnits';
@@ -216,10 +223,22 @@ function formatDuration(ms) {
 // ============================================================
 
 function navigateTo(view) {
+    // Role gating: viewers can only see the dashboard; only owners see Users.
+    if ((view === 'editUnits' || view === 'implements') && !canEdit()) {
+        showToast('Read-only access — viewers can only see the dashboard', 'warning');
+        view = 'dashboard';
+    }
+    if (view === 'users' && !isOwner()) {
+        showToast('Owner only', 'warning');
+        view = 'dashboard';
+    }
+
     document.getElementById('viewDashboard').style.display = (view === 'dashboard') ? 'block' : 'none';
     document.getElementById('viewEditUnits').style.display = (view === 'editUnits') ? 'block' : 'none';
     const implView = document.getElementById('viewImplements');
     if (implView) implView.style.display = (view === 'implements') ? 'block' : 'none';
+    const usersView = document.getElementById('viewUsers');
+    if (usersView) usersView.style.display = (view === 'users') ? 'block' : 'none';
 
     document.querySelectorAll('.nav__link').forEach(el => el.classList.remove('active'));
     const activeLink = document.querySelector(`[data-view="${view}"]`);
@@ -249,6 +268,11 @@ function navigateTo(view) {
     if (view === 'implements') {
         loadImplements();
         renderImplementsTable();
+    }
+
+    if (view === 'users') {
+        ensureUsersSubscription();
+        renderUsersView();
     }
 }
 
@@ -643,6 +667,11 @@ function processData(rows) {
             steering: clean(getVal(r, 'Status Unit Steering')),
             jdlink: clean(getVal(r, 'Status Unit JDLink')),
             site: clean(getVal(r, 'Site')),
+            gpsLicense: clean(getVal(r, 'GPS License')),
+            licenseDisplay: clean(getVal(r, 'License Display')),
+            licenseStartDate: clean(getVal(r, 'License Start Date')),
+            licenseEndDate: clean(getVal(r, 'License Expiration Date')),
+            remarks: clean(getVal(r, 'Remarks')),
             downtimeHistory: [],
             breakdownStartedAt: null
         };
@@ -837,6 +866,7 @@ function renderTable(data) {
             <td class="${isGood(d.steering) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.steering)}</td>
             <td class="${isGood(d.jdlink) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.jdlink)}</td>
             <td>${escapeHtml(d.site)}</td>
+            <td>${licenseBadge(d)}</td>
         </tr>`;
     }).join('');
 }
@@ -962,8 +992,10 @@ function updateFilterCount(data) {
 
 function exportCSV() {
     if (filteredData.length === 0) { showToast('No data to export', 'warning'); return; }
-    const headers = ['No', 'Nickname', 'Model', 'Serial Number', 'Status', 'Display', 'GPS', 'Steering', 'JDLink', 'Site'];
-    const rows = filteredData.map((d, i) => [i + 1, d.name, d.model, d.sn, d.status, d.display, d.gps, d.steering, d.jdlink, d.site]);
+    const headers = ['No', 'Nickname', 'Model', 'Serial Number', 'Status', 'Display', 'GPS', 'Steering', 'JDLink', 'Site',
+                     'GPS License', 'License Display', 'License Start Date', 'License Expiration Date', 'Remarks'];
+    const rows = filteredData.map((d, i) => [i + 1, d.name, d.model, d.sn, d.status, d.display, d.gps, d.steering, d.jdlink, d.site,
+                     d.gpsLicense || '', d.licenseDisplay || '', d.licenseStartDate || '', d.licenseEndDate || '', d.remarks || '']);
     const csv = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -1090,6 +1122,14 @@ function renderEditTable() {
 
 // ---- Inline Edit ----
 function saveInlineEdit(el) {
+    if (!canEdit()) {
+        // Revert the DOM if a viewer somehow triggered this
+        const id = el.dataset.id;
+        const field = el.dataset.field;
+        const unit = globalData.find(d => d.id === id);
+        if (unit) el.textContent = unit[field] || '';
+        return;
+    }
     const id = el.dataset.id;
     const field = el.dataset.field;
     const newValue = clean(el.textContent);
@@ -1117,6 +1157,7 @@ function updateSelectedCount() {
 }
 
 function deleteUnit(id) {
+    if (!requireEdit()) return;
     const unit = globalData.find(d => d.id === id);
     if (!unit) return;
     const { removed } = deleteUnits([id]);
@@ -1125,6 +1166,7 @@ function deleteUnit(id) {
 }
 
 function deleteSelected() {
+    if (!requireEdit()) return;
     const count = selectedUnitIds.size;
     if (count === 0) return;
     const { removed } = deleteUnits([...selectedUnitIds]);
@@ -1170,6 +1212,7 @@ function undoDelete() {
 
 // ---- Modal: Add / Edit ----
 function showAddForm() {
+    if (!requireEdit()) return;
     document.getElementById('modalTitle').textContent = 'Add Unit';
     document.getElementById('editUnitId').value = '';
     document.getElementById('unitForm').reset();
@@ -1177,6 +1220,7 @@ function showAddForm() {
 }
 
 function editUnit(id) {
+    if (!requireEdit()) return;
     const unit = globalData.find(d => d.id === id);
     if (!unit) return;
 
@@ -1192,11 +1236,19 @@ function editUnit(id) {
     document.getElementById('formSteering').value = isGood(unit.steering) ? 'Good' : 'Breakdown';
     document.getElementById('formJDLink').value = isGood(unit.jdlink) ? 'Good' : 'Breakdown';
 
+    // License & notes
+    document.getElementById('formGpsLicense').value     = unit.gpsLicense || '';
+    document.getElementById('formLicenseDisplay').value = unit.licenseDisplay || '';
+    document.getElementById('formLicenseStart').value   = unit.licenseStartDate || '';
+    document.getElementById('formLicenseEnd').value     = unit.licenseEndDate || '';
+    document.getElementById('formRemarks').value        = unit.remarks || '';
+
     document.getElementById('unitModal').classList.add('open');
 }
 
 function saveUnit(event) {
     event.preventDefault();
+    if (!requireEdit()) return;
 
     const id = document.getElementById('editUnitId').value;
     const fields = {
@@ -1208,7 +1260,12 @@ function saveUnit(event) {
         display: document.getElementById('formDisplay').value,
         gps: document.getElementById('formGPS').value,
         steering: document.getElementById('formSteering').value,
-        jdlink: document.getElementById('formJDLink').value
+        jdlink: document.getElementById('formJDLink').value,
+        gpsLicense: document.getElementById('formGpsLicense').value,
+        licenseDisplay: document.getElementById('formLicenseDisplay').value,
+        licenseStartDate: document.getElementById('formLicenseStart').value || '',
+        licenseEndDate: document.getElementById('formLicenseEnd').value || '',
+        remarks: document.getElementById('formRemarks').value.trim()
     };
 
     if (id) {
@@ -1228,6 +1285,48 @@ function saveUnit(event) {
 
     closeModal();
     renderEditTable();
+}
+
+// Auto-fill license expiration to start + 1 year (still editable)
+function autoFillLicenseEnd() {
+    const startVal = document.getElementById('formLicenseStart').value;
+    if (!startVal) return;
+    const endEl = document.getElementById('formLicenseEnd');
+    // Only auto-fill if expiration is empty — don't overwrite a manual choice
+    if (endEl.value) return;
+    const d = new Date(startVal);
+    if (isNaN(d.getTime())) return;
+    d.setFullYear(d.getFullYear() + 1);
+    endEl.value = d.toISOString().slice(0, 10);
+}
+
+// Compute license expiry status for display.
+// Returns one of: { kind: 'none'|'expired'|'soon'|'ok', label, daysLeft }
+function getLicenseStatus(unit) {
+    if (!unit || !unit.licenseEndDate) return { kind: 'none', label: '—' };
+    const end = new Date(unit.licenseEndDate);
+    if (isNaN(end.getTime())) return { kind: 'none', label: '—' };
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+    const days = Math.round((end - today) / 86400000);
+    if (days < 0)  return { kind: 'expired', label: `Expired ${-days}d ago`, daysLeft: days };
+    if (days <= 30) return { kind: 'soon',    label: `${days}d left`,        daysLeft: days };
+    return { kind: 'ok', label: `${days}d left`, daysLeft: days };
+}
+
+function licenseBadge(unit) {
+    const s = getLicenseStatus(unit);
+    if (s.kind === 'none') return '<span style="color:#a0aec0;font-size:11px">—</span>';
+    const cls = `license-badge license-badge--${s.kind}`;
+    const icon = s.kind === 'expired' ? 'circle-xmark'
+               : s.kind === 'soon'    ? 'triangle-exclamation'
+               : 'circle-check';
+    const tt = [];
+    if (unit.gpsLicense)     tt.push(`GPS: ${unit.gpsLicense}`);
+    if (unit.licenseDisplay) tt.push(`Display: ${unit.licenseDisplay}`);
+    if (unit.licenseEndDate) tt.push(`Expires: ${unit.licenseEndDate}`);
+    return `<span class="${cls}" title="${escapeHtml(tt.join(' · '))}"><i class="fas fa-${icon}"></i> ${escapeHtml(s.label)}</span>`;
 }
 
 function closeModal() {
@@ -1345,6 +1444,7 @@ function updateSelectedImplementCount() {
 
 // ---- Modal: Add / Edit ----
 function showAddImplementForm() {
+    if (!requireEdit()) return;
     document.getElementById('implementModalTitle').textContent = 'Add Implement';
     document.getElementById('editImplementId').value = '';
     document.getElementById('implementForm').reset();
@@ -1352,6 +1452,7 @@ function showAddImplementForm() {
 }
 
 function editImplement(id) {
+    if (!requireEdit()) return;
     const imp = globalImplements.find(d => d.id === id);
     if (!imp) return;
 
@@ -1427,6 +1528,7 @@ function closeImplementModal() {
 
 // ---- Delete ----
 function deleteImplement(id) {
+    if (!requireEdit()) return;
     const imp = globalImplements.find(d => d.id === id);
     if (!imp) return;
     if (!confirm(`Delete implement "${imp.profileName}"?`)) return;
@@ -1445,6 +1547,7 @@ function deleteImplement(id) {
 }
 
 function deleteSelectedImplements() {
+    if (!requireEdit()) return;
     const count = selectedImplementIds.size;
     if (count === 0) return;
     if (!confirm(`Delete ${count} selected implement(s)?`)) return;
@@ -1608,9 +1711,11 @@ function initCloudSync() {
 
     console.log('[cloud] initializing sync...');
 
-    // Step 1: push any local-only data up before subscribing
-    migrateLocalToCloudIfNeeded().finally(() => {
-        // Step 2: subscribe to live updates from Firestore
+    // Only the owner should bulk-migrate local→cloud. Viewers and pending
+    // users must never push their (possibly stale) local data up.
+    const canMigrate = currentUserDoc && currentUserDoc.role === 'owner';
+
+    const startSubscriptions = () => {
         cloudUnitsUnsub = window.cloud.subscribeUnits(applyCloudUnitsSnapshot, err => {
             const lbl = document.getElementById('connectionLabel');
             if (lbl) lbl.textContent = 'Cloud offline';
@@ -1618,27 +1723,454 @@ function initCloudSync() {
         cloudImplUnsub = window.cloud.subscribeImplements(applyCloudImplementsSnapshot, err => {
             console.warn('[cloud] implements offline');
         });
+    };
+
+    if (canMigrate) {
+        migrateLocalToCloudIfNeeded().finally(startSubscriptions);
+    } else {
+        // Non-owners: never write, only read. Disable the local-first guard
+        // so the cloud snapshot is the source of truth.
+        _firstUnitsSnapshot = false;
+        _firstImplSnapshot = false;
+        startSubscriptions();
+    }
+}
+
+// ============================================================
+// AUTHENTICATION & ROLE GATING
+// ============================================================
+
+function setupAuth() {
+    if (authInitialized) return;
+    authInitialized = true;
+    if (!window.cloud?.onAuthChange) return;
+
+    window.cloud.onAuthChange(async user => {
+        if (!user) {
+            // Signed out — show login, tear down sync, clear in-memory data
+            currentUser = null;
+            currentUserDoc = null;
+            tearDownCloudSync();
+            showAuthGate('signin');
+            return;
+        }
+
+        currentUser = user;
+
+        // Look up (or create) the Firestore profile document for this user.
+        let profile;
+        try {
+            profile = await window.cloud.getUserDoc(user.uid);
+            if (!profile) {
+                profile = await window.cloud.createUserDoc(user);
+            } else if (window.cloud.isOwnerEmail(user.email) &&
+                       (profile.role !== 'owner' || profile.status !== 'active')) {
+                // Owner allowlist takes precedence — repair the doc.
+                profile = await window.cloud.ensureOwnerDoc(user);
+            }
+        } catch (e) {
+            console.error('[auth] could not load/create user doc:', e);
+            showAuthError('signInError', 'Could not load your account profile. Please try again.');
+            try { await window.cloud.signOutUser(); } catch (_) {}
+            return;
+        }
+
+        currentUserDoc = profile;
+
+        // Pending users: park them on the waiting screen.
+        if (profile.status !== 'active') {
+            showPendingGate(user.email);
+            return;
+        }
+
+        // Active user — show app, gate UI by role, start cloud sync.
+        hideAuthGates();
+        applyRoleGating();
+        renderUserPill();
+        maybeInitCloudSync();
     });
 }
 
-// Cloud sync starts only after BOTH conditions are true:
-//   1. firebase-init.js has dispatched 'cloud-ready' (Firestore SDK ready)
-//   2. DOMContentLoaded has fired and loadFromStorage() has populated globalData
-// This avoids a race where migration would run with an empty globalData and
-// fail to upload anything, then a subsequent empty-snapshot would wipe local
-// storage before loadFromStorage ever ran.
+function tearDownCloudSync() {
+    if (cloudUnitsUnsub) { try { cloudUnitsUnsub(); } catch (_) {} cloudUnitsUnsub = null; }
+    if (cloudImplUnsub) { try { cloudImplUnsub(); } catch (_) {} cloudImplUnsub = null; }
+    if (cloudUsersUnsub) { try { cloudUsersUnsub(); } catch (_) {} cloudUsersUnsub = null; }
+    cloudInitialized = false;
+}
+
+function showAuthGate(tab) {
+    document.getElementById('authGate').style.display = 'flex';
+    document.getElementById('pendingGate').style.display = 'none';
+    document.body.classList.add('auth-blocked');
+    if (tab) switchAuthTab(tab);
+}
+
+function showPendingGate(email) {
+    document.getElementById('authGate').style.display = 'none';
+    const el = document.getElementById('pendingGate');
+    el.style.display = 'flex';
+    document.body.classList.add('auth-blocked');
+    const emailEl = document.getElementById('pendingEmail');
+    if (emailEl) emailEl.textContent = email || '';
+}
+
+function hideAuthGates() {
+    document.getElementById('authGate').style.display = 'none';
+    document.getElementById('pendingGate').style.display = 'none';
+    document.body.classList.remove('auth-blocked');
+}
+
+function switchAuthTab(tab) {
+    const isSignIn = tab === 'signin';
+    document.getElementById('authTabSignIn').classList.toggle('active', isSignIn);
+    document.getElementById('authTabSignUp').classList.toggle('active', !isSignIn);
+    document.getElementById('signInForm').style.display = isSignIn ? '' : 'none';
+    document.getElementById('signUpForm').style.display = isSignIn ? 'none' : '';
+    showAuthError('signInError', '');
+    showAuthError('signUpError', '');
+}
+
+function showAuthError(id, msg) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = msg || '';
+    el.style.display = msg ? 'block' : 'none';
+}
+
+function friendlyAuthError(err) {
+    const code = (err && err.code) || '';
+    const map = {
+        'auth/invalid-email': 'That email address is not valid.',
+        'auth/user-not-found': 'No account found for that email.',
+        'auth/wrong-password': 'Incorrect password.',
+        'auth/invalid-credential': 'Email or password is incorrect.',
+        'auth/email-already-in-use': 'An account with that email already exists.',
+        'auth/weak-password': 'Password is too weak (min 6 characters).',
+        'auth/network-request-failed': 'Network error — check your connection.',
+        'auth/too-many-requests': 'Too many failed attempts. Try again later.'
+    };
+    return map[code] || (err && err.message) || 'Authentication failed.';
+}
+
+async function handleSignIn(event) {
+    event.preventDefault();
+    showAuthError('signInError', '');
+    const email = document.getElementById('signInEmail').value.trim();
+    const password = document.getElementById('signInPassword').value;
+    try {
+        showLoading(true);
+        await window.cloud.signIn(email, password);
+        // onAuthChange will take over from here.
+    } catch (err) {
+        showAuthError('signInError', friendlyAuthError(err));
+    } finally {
+        showLoading(false);
+    }
+}
+
+async function handleSignUp(event) {
+    event.preventDefault();
+    showAuthError('signUpError', '');
+    const name = document.getElementById('signUpName').value.trim();
+    const email = document.getElementById('signUpEmail').value.trim();
+    const password = document.getElementById('signUpPassword').value;
+    try {
+        showLoading(true);
+        const user = await window.cloud.signUp(email, password, name);
+        // Eagerly create the user doc so the owner sees them in the pending list.
+        await window.cloud.createUserDoc(user, name);
+        // onAuthChange will pick up the new user and route to pending/app.
+    } catch (err) {
+        showAuthError('signUpError', friendlyAuthError(err));
+    } finally {
+        showLoading(false);
+    }
+}
+
+async function handleSignOut() {
+    try {
+        await window.cloud.signOutUser();
+    } catch (e) { /* ignore */ }
+}
+
+function renderUserPill() {
+    if (!currentUserDoc) return;
+    const pill = document.getElementById('userPill');
+    if (!pill) return;
+    pill.style.display = '';
+    document.getElementById('userPillName').textContent =
+        currentUserDoc.displayName || currentUserDoc.email || 'User';
+    const roleLabel = currentUserDoc.role === 'owner' ? 'Owner'
+        : currentUserDoc.role === 'team' ? 'Team' : 'Viewer';
+    document.getElementById('userPillRole').textContent = roleLabel;
+    pill.dataset.role = currentUserDoc.role;
+    document.getElementById('userMenuEmail').textContent = currentUserDoc.email || '';
+    document.getElementById('userMenuRoleLabel').textContent = roleLabel + ' account';
+}
+
+function toggleUserMenu() {
+    const menu = document.getElementById('userMenu');
+    if (!menu) return;
+    menu.classList.toggle('open');
+    // Close on next outside click
+    if (menu.classList.contains('open')) {
+        setTimeout(() => {
+            const close = (e) => {
+                if (!document.getElementById('userPill').contains(e.target)) {
+                    menu.classList.remove('open');
+                    document.removeEventListener('click', close);
+                }
+            };
+            document.addEventListener('click', close);
+        }, 0);
+    }
+}
+
+function canEdit() {
+    return currentUserDoc && (currentUserDoc.role === 'owner' || currentUserDoc.role === 'team');
+}
+function isOwner() {
+    return currentUserDoc && currentUserDoc.role === 'owner';
+}
+
+function applyRoleGating() {
+    const editor = canEdit();
+    const owner = isOwner();
+    document.body.classList.toggle('role-viewer', !editor);
+    document.body.classList.toggle('role-owner', !!owner);
+
+    // Owner-only navigation links
+    document.querySelectorAll('[data-owner-only]').forEach(el => {
+        el.style.display = owner ? '' : 'none';
+    });
+
+    // If a non-owner is currently viewing the Users page, kick them back.
+    if (!owner && currentView === 'users') {
+        navigateTo('dashboard');
+    }
+    // If a viewer is on the Edit Units page, send them back to the dashboard.
+    if (!editor && (currentView === 'editUnits' || currentView === 'implements')) {
+        navigateTo('dashboard');
+    }
+
+    // Re-render any visible table to refresh its action buttons
+    if (currentView === 'editUnits') renderEditTable();
+    if (currentView === 'implements') renderImplementsTable();
+}
+
+function requireEdit() {
+    if (!canEdit()) {
+        showToast('Read-only access — ask the owner to grant edit rights', 'warning');
+        return false;
+    }
+    return true;
+}
+
+// ============================================================
+// USER MANAGEMENT (Owner only)
+// ============================================================
+
+function ensureUsersSubscription() {
+    if (!isOwner()) return;
+    if (cloudUsersUnsub) return;
+    cloudUsersUnsub = window.cloud.subscribeUsers(users => {
+        allUsers = users;
+        if (currentView === 'users') renderUsersView();
+    }, err => {
+        console.warn('[cloud] users subscription error:', err);
+    });
+}
+
+function renderUsersView() {
+    if (!isOwner()) return;
+    const pending = allUsers.filter(u => u.status !== 'active');
+    const active  = allUsers.filter(u => u.status === 'active');
+
+    document.getElementById('usersCount').textContent =
+        `${allUsers.length} user(s) · ${pending.length} pending`;
+
+    // Summary chips
+    const ownerCount = active.filter(u => u.role === 'owner').length;
+    const teamCount  = active.filter(u => u.role === 'team').length;
+    const viewerCount = active.filter(u => u.role === 'viewer').length;
+    document.getElementById('usersSummary').innerHTML = `
+        <div class="user-chip user-chip--owner"><i class="fas fa-crown"></i> ${ownerCount} Owner</div>
+        <div class="user-chip user-chip--team"><i class="fas fa-user-pen"></i> ${teamCount} Team</div>
+        <div class="user-chip user-chip--viewer"><i class="fas fa-eye"></i> ${viewerCount} Viewer</div>
+        <div class="user-chip user-chip--pending"><i class="fas fa-hourglass-half"></i> ${pending.length} Pending</div>
+    `;
+
+    // Pending table
+    const pendingBody = document.getElementById('pendingUsersBody');
+    if (pending.length === 0) {
+        pendingBody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:20px;color:#718096">No pending sign-ups</td></tr>`;
+    } else {
+        pendingBody.innerHTML = pending.map((u, i) => `
+            <tr>
+                <td>${i + 1}</td>
+                <td><strong>${escapeHtml(u.displayName || '—')}</strong></td>
+                <td style="font-family:monospace;font-size:12px">${escapeHtml(u.email || '')}</td>
+                <td style="white-space:nowrap;font-size:12px;color:#718096">${u.createdAt ? new Date(u.createdAt).toLocaleString() : '—'}</td>
+                <td class="col-actions">
+                    <div class="row-actions">
+                        <button class="btn btn-success btn-sm" title="Approve as Viewer" onclick="approveUser('${escapeHtml(u.uid)}','viewer')">
+                            <i class="fas fa-eye"></i> Approve as Viewer
+                        </button>
+                        <button class="btn btn-primary btn-sm" title="Approve as Team (with edit rights)" onclick="approveUser('${escapeHtml(u.uid)}','team')">
+                            <i class="fas fa-user-pen"></i> Approve as Team
+                        </button>
+                        <button class="btn btn-secondary btn-sm" title="Reject and remove" onclick="rejectUser('${escapeHtml(u.uid)}')">
+                            <i class="fas fa-xmark" style="color:var(--danger)"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>`).join('');
+    }
+
+    // Active table
+    const activeBody = document.getElementById('activeUsersBody');
+    if (active.length === 0) {
+        activeBody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:#718096">No active users yet</td></tr>`;
+    } else {
+        activeBody.innerHTML = active.map((u, i) => {
+            const isMe = currentUser && u.uid === currentUser.uid;
+            const isOwnerRow = u.role === 'owner';
+            // Owner can't be demoted from this UI (and can't demote themselves).
+            const roleSelect = isOwnerRow
+                ? `<span class="badge badge-good"><i class="fas fa-crown"></i> Owner</span>`
+                : `<select class="form-select user-role-select" onchange="changeUserRole('${escapeHtml(u.uid)}', this.value)">
+                       <option value="viewer" ${u.role === 'viewer' ? 'selected' : ''}>Viewer (read-only)</option>
+                       <option value="team"   ${u.role === 'team'   ? 'selected' : ''}>Team (can edit)</option>
+                   </select>`;
+            return `
+            <tr>
+                <td>${i + 1}</td>
+                <td><strong>${escapeHtml(u.displayName || '—')}</strong>${isMe ? ' <span style="font-size:11px;color:#718096">(you)</span>' : ''}</td>
+                <td style="font-family:monospace;font-size:12px">${escapeHtml(u.email || '')}</td>
+                <td>${roleSelect}</td>
+                <td style="white-space:nowrap;font-size:12px;color:#718096">${u.updatedAt ? new Date(u.updatedAt).toLocaleString() : '—'}</td>
+                <td style="font-size:12px;color:#718096">${escapeHtml(u.updatedBy || '—')}</td>
+                <td class="col-actions">
+                    ${isOwnerRow
+                        ? '<span style="font-size:11px;color:#a0aec0">protected</span>'
+                        : `<button class="btn btn-secondary btn-sm" title="Remove user" onclick="removeUser('${escapeHtml(u.uid)}')"><i class="fas fa-user-minus" style="color:var(--danger)"></i></button>`}
+                </td>
+            </tr>`;
+        }).join('');
+    }
+}
+
+async function approveUser(uid, role) {
+    if (!isOwner()) return;
+    const user = allUsers.find(u => u.uid === uid);
+    if (!user) return;
+    try {
+        await window.cloud.updateUserRole(uid, role, 'active', currentUserDoc.email);
+        const roleLabel = role === 'team' ? 'Team' : 'Viewer';
+        logEvent({
+            action: 'approve',
+            unitId: uid,
+            unitName: `[User] ${user.displayName || user.email}`,
+            field: 'role',
+            before: 'pending',
+            after: roleLabel
+        });
+        showToast(`Approved ${user.email} as ${roleLabel}`, 'success');
+    } catch (e) {
+        console.error('[users] approve failed:', e);
+        showToast('Could not approve user — ' + e.message, 'error');
+    }
+}
+
+async function rejectUser(uid) {
+    if (!isOwner()) return;
+    const user = allUsers.find(u => u.uid === uid);
+    if (!user) return;
+    if (!confirm(`Reject and remove ${user.email}? Their auth account will remain in Firebase but lose dashboard access.`)) return;
+    try {
+        await window.cloud.deleteUserDoc(uid);
+        logEvent({
+            action: 'reject',
+            unitId: uid,
+            unitName: `[User] ${user.displayName || user.email}`,
+            before: 'pending',
+            after: 'rejected'
+        });
+        showToast(`Rejected ${user.email}`, 'success');
+    } catch (e) {
+        showToast('Could not reject user — ' + e.message, 'error');
+    }
+}
+
+async function changeUserRole(uid, newRole) {
+    if (!isOwner()) return;
+    const user = allUsers.find(u => u.uid === uid);
+    if (!user) return;
+    if (user.uid === currentUser.uid && user.role === 'owner') {
+        showToast("You can't change your own owner role.", 'warning');
+        renderUsersView();
+        return;
+    }
+    const oldRole = user.role;
+    if (oldRole === newRole) return;
+    try {
+        await window.cloud.updateUserRole(uid, newRole, 'active', currentUserDoc.email);
+        const before = oldRole === 'team' ? 'Team' : oldRole === 'viewer' ? 'Viewer' : oldRole;
+        const after  = newRole === 'team' ? 'Team' : 'Viewer';
+        logEvent({
+            action: 'role-change',
+            unitId: uid,
+            unitName: `[User] ${user.displayName || user.email}`,
+            field: 'role',
+            before,
+            after
+        });
+        showToast(`${user.email} is now ${after}`, 'success');
+    } catch (e) {
+        showToast('Could not change role — ' + e.message, 'error');
+    }
+}
+
+async function removeUser(uid) {
+    if (!isOwner()) return;
+    const user = allUsers.find(u => u.uid === uid);
+    if (!user) return;
+    if (user.role === 'owner') { showToast('Cannot remove an owner', 'warning'); return; }
+    if (!confirm(`Remove ${user.email} from the dashboard? Their auth account stays in Firebase but they lose all access.`)) return;
+    try {
+        await window.cloud.deleteUserDoc(uid);
+        logEvent({
+            action: 'remove',
+            unitId: uid,
+            unitName: `[User] ${user.displayName || user.email}`,
+            before: user.role,
+            after: 'removed'
+        });
+        showToast(`Removed ${user.email}`, 'success');
+    } catch (e) {
+        showToast('Could not remove user — ' + e.message, 'error');
+    }
+}
+
+// ============================================================
+// CLOUD-READY HOOK
+// ============================================================
+// Cloud sync used to start as soon as the SDK was ready. Now it waits for
+// the auth state to be known, so Firestore reads happen with a logged-in user.
+
 function maybeInitCloudSync() {
-    if (_cloudReadyFired && _localDataLoaded) {
+    if (_cloudReadyFired && _localDataLoaded && currentUser && currentUserDoc?.status === 'active') {
         initCloudSync();
+        ensureUsersSubscription();
     }
 }
 
 if (window.cloudReady) {
     _cloudReadyFired = true;
-    maybeInitCloudSync();
+    setupAuth();
 } else {
     document.addEventListener('cloud-ready', () => {
         _cloudReadyFired = true;
-        maybeInitCloudSync();
+        setupAuth();
     });
 }
