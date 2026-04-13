@@ -14,6 +14,12 @@ let undoTimer = null;
 let globalImplements = [];
 let selectedImplementIds = new Set();
 
+// ---- Cloud sync state ----
+let cloudInitialized = false;
+let cloudUnitsUnsub = null;
+let cloudImplUnsub = null;
+let suppressCloudWrites = false; // true while applying a cloud snapshot — prevents loops
+
 // ---- Constants ----
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -297,6 +303,7 @@ function addUnits(newUnits) {
         saveToStorage(globalData);
         recordChange({ type: 'added', detail: `${toAdd.length} unit(s) added` });
         toAdd.forEach(u => logEvent({ action: 'add', unitId: u.id, unitName: u.name, after: u.sn }));
+        cloudPushUnits(toAdd);
     }
 
     return { added: toAdd.length, skipped, skippedDetails };
@@ -316,6 +323,7 @@ function updateUnit(id, fields) {
 
     globalData[idx] = unit;
     saveToStorage(globalData);
+    cloudPushUnits([unit]);
     recordChange({ type: 'updated', detail: `Unit "${unit.name}" updated` });
 
     // Log each field change
@@ -344,6 +352,7 @@ function deleteUnits(ids) {
     if (count > 0) {
         recordChange({ type: 'deleted', detail: `${count} unit(s) deleted` });
         removed.forEach(u => logEvent({ action: 'delete', unitId: u.id, unitName: u.name, before: u.sn }));
+        cloudDeleteUnits(ids);
     }
     return { count, removed };
 }
@@ -1141,6 +1150,7 @@ function undoDelete() {
     const restored = lastDeletedUnits;
     globalData = [...globalData, ...restored];
     saveToStorage(globalData);
+    cloudPushUnits(restored);
     restored.forEach(u => logEvent({ action: 'restore', unitId: u.id, unitName: u.name, after: 'undelete' }));
     recordChange({ type: 'restored', detail: `${restored.length} unit(s) restored` });
     renderEditTable();
@@ -1363,6 +1373,7 @@ function saveImplement(event) {
             const before = { ...globalImplements[idx] };
             globalImplements[idx] = { ...before, ...data, updatedAt: Date.now() };
             saveImplements();
+            cloudPushImplement(globalImplements[idx]);
             // Audit log per changed field
             IMPLEMENT_FIELDS.forEach(f => {
                 if (before[f.key] !== data[f.key]) {
@@ -1388,6 +1399,7 @@ function saveImplement(event) {
         };
         globalImplements.push(newImp);
         saveImplements();
+        cloudPushImplement(newImp);
         logEvent({
             action: 'add',
             unitId: newImp.id,
@@ -1413,6 +1425,7 @@ function deleteImplement(id) {
 
     globalImplements = globalImplements.filter(d => d.id !== id);
     saveImplements();
+    cloudDeleteImplement(id);
     logEvent({
         action: 'delete',
         unitId: imp.id,
@@ -1432,6 +1445,7 @@ function deleteSelectedImplements() {
     const removed = globalImplements.filter(d => idSet.has(d.id));
     globalImplements = globalImplements.filter(d => !idSet.has(d.id));
     saveImplements();
+    removed.forEach(imp => cloudDeleteImplement(imp.id));
     removed.forEach(imp => logEvent({
         action: 'delete',
         unitId: imp.id,
@@ -1440,4 +1454,137 @@ function deleteSelectedImplements() {
     }));
     renderImplementsTable();
     showToast(`${count} implement(s) deleted`, 'success');
+}
+
+// ============================================================
+// CLOUD SYNC (Firestore via window.cloud from firebase-init.js)
+// ============================================================
+
+function cloudPushUnits(units) {
+    if (suppressCloudWrites || !window.cloud?.isReady || !units?.length) return;
+    window.cloud.saveUnits(units).catch(err => {
+        console.error('[cloud] push units failed:', err);
+        showToast('Cloud sync failed — changes saved locally', 'warning');
+    });
+}
+
+function cloudDeleteUnits(ids) {
+    if (suppressCloudWrites || !window.cloud?.isReady || !ids?.length) return;
+    window.cloud.deleteUnits(ids).catch(err => {
+        console.error('[cloud] delete units failed:', err);
+        showToast('Cloud delete failed — changes saved locally', 'warning');
+    });
+}
+
+function cloudPushImplement(imp) {
+    if (suppressCloudWrites || !window.cloud?.isReady || !imp) return;
+    window.cloud.saveImplement(imp).catch(err => {
+        console.error('[cloud] push implement failed:', err);
+        showToast('Cloud sync failed — changes saved locally', 'warning');
+    });
+}
+
+function cloudDeleteImplement(id) {
+    if (suppressCloudWrites || !window.cloud?.isReady || !id) return;
+    window.cloud.deleteImplement(id).catch(err => {
+        console.error('[cloud] delete implement failed:', err);
+    });
+}
+
+async function migrateLocalToCloudIfNeeded() {
+    try {
+        // Units
+        const cloudUnits = await window.cloud.getAllUnits();
+        if (cloudUnits.length === 0 && globalData.length > 0) {
+            console.log(`[cloud] migrating ${globalData.length} local units to Firestore...`);
+            await window.cloud.saveUnits(globalData);
+            showToast(`Uploaded ${globalData.length} units to cloud`, 'success');
+        }
+        // Implements
+        const cloudImpls = await window.cloud.getAllImplements();
+        if (cloudImpls.length === 0 && globalImplements.length > 0) {
+            console.log(`[cloud] migrating ${globalImplements.length} local implements to Firestore...`);
+            await window.cloud.saveImplements(globalImplements);
+            showToast(`Uploaded ${globalImplements.length} implements to cloud`, 'success');
+        }
+    } catch (e) {
+        console.error('[cloud] migration failed:', e);
+    }
+}
+
+function applyCloudUnitsSnapshot(units) {
+    suppressCloudWrites = true;
+    try {
+        globalData = units;
+        // Persist to local cache so offline / next visit sees latest snapshot
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(units)); } catch (e) {}
+
+        // Update connection indicator
+        const dot = document.getElementById('connectionDot');
+        const lbl = document.getElementById('connectionLabel');
+        if (dot) dot.classList.add('connected');
+        if (lbl) lbl.textContent = `Cloud · ${units.length} units`;
+
+        // Re-render whichever view is visible
+        if (currentView === 'dashboard') {
+            const empty = document.getElementById('emptyState');
+            const content = document.getElementById('dashboardContent');
+            if (units.length > 0) {
+                if (empty) empty.style.display = 'none';
+                if (content) content.style.display = 'block';
+                filteredData = [...units];
+                onDataLoaded();
+            } else {
+                if (empty) empty.style.display = '';
+                if (content) content.style.display = 'none';
+            }
+        } else if (currentView === 'editUnits') {
+            renderEditTable();
+        }
+    } finally {
+        suppressCloudWrites = false;
+    }
+}
+
+function applyCloudImplementsSnapshot(items) {
+    suppressCloudWrites = true;
+    try {
+        globalImplements = items;
+        try { localStorage.setItem(IMPLEMENTS_STORAGE_KEY, JSON.stringify(items)); } catch (e) {}
+        if (currentView === 'implements') {
+            renderImplementsTable();
+        } else {
+            updateImplementCount();
+        }
+    } finally {
+        suppressCloudWrites = false;
+    }
+}
+
+function initCloudSync() {
+    if (cloudInitialized) return;
+    if (!window.cloud?.isReady) return;
+    cloudInitialized = true;
+
+    console.log('[cloud] initializing sync...');
+
+    // Step 1: push any local-only data up before subscribing
+    migrateLocalToCloudIfNeeded().finally(() => {
+        // Step 2: subscribe to live updates from Firestore
+        cloudUnitsUnsub = window.cloud.subscribeUnits(applyCloudUnitsSnapshot, err => {
+            const lbl = document.getElementById('connectionLabel');
+            if (lbl) lbl.textContent = 'Cloud offline';
+        });
+        cloudImplUnsub = window.cloud.subscribeImplements(applyCloudImplementsSnapshot, err => {
+            console.warn('[cloud] implements offline');
+        });
+    });
+}
+
+// Wait for firebase-init.js to dispatch 'cloud-ready'. It may already
+// have run by the time this listener registers, so check the flag too.
+if (window.cloudReady) {
+    initCloudSync();
+} else {
+    document.addEventListener('cloud-ready', initCloudSync);
 }
