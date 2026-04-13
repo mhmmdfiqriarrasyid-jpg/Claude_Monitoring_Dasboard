@@ -19,6 +19,10 @@ let cloudInitialized = false;
 let cloudUnitsUnsub = null;
 let cloudImplUnsub = null;
 let suppressCloudWrites = false; // true while applying a cloud snapshot — prevents loops
+let _cloudReadyFired = false;
+let _localDataLoaded = false;
+let _firstUnitsSnapshot = true;
+let _firstImplSnapshot = true;
 
 // ---- Constants ----
 const STORAGE_KEY = 'tractorUnits';
@@ -57,6 +61,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (loadFromStorage()) {
         onDataLoaded();
     }
+
+    // Local data is now in globalData — safe to start cloud sync if cloud is ready.
+    _localDataLoaded = true;
+    maybeInitCloudSync();
 });
 
 function setupEventListeners() {
@@ -1495,6 +1503,7 @@ async function migrateLocalToCloudIfNeeded() {
     try {
         // Units
         const cloudUnits = await window.cloud.getAllUnits();
+        console.log(`[cloud] check: cloud has ${cloudUnits.length} units, local has ${globalData.length} units`);
         if (cloudUnits.length === 0 && globalData.length > 0) {
             console.log(`[cloud] migrating ${globalData.length} local units to Firestore...`);
             await window.cloud.saveUnits(globalData);
@@ -1502,6 +1511,7 @@ async function migrateLocalToCloudIfNeeded() {
         }
         // Implements
         const cloudImpls = await window.cloud.getAllImplements();
+        console.log(`[cloud] check: cloud has ${cloudImpls.length} implements, local has ${globalImplements.length} implements`);
         if (cloudImpls.length === 0 && globalImplements.length > 0) {
             console.log(`[cloud] migrating ${globalImplements.length} local implements to Firestore...`);
             await window.cloud.saveImplements(globalImplements);
@@ -1509,10 +1519,26 @@ async function migrateLocalToCloudIfNeeded() {
         }
     } catch (e) {
         console.error('[cloud] migration failed:', e);
+        showToast('Cloud migration failed — check console', 'error');
     }
 }
 
 function applyCloudUnitsSnapshot(units) {
+    console.log(`[cloud] units snapshot received — ${units.length} docs`);
+
+    // First-snapshot guard: if cloud is empty but we have local data, do NOT
+    // wipe — migration may still be in-flight, or this client beat the rest of
+    // the team to upload. Re-push our local data and bail out for this round.
+    if (_firstUnitsSnapshot && units.length === 0 && globalData.length > 0) {
+        console.warn(`[cloud] first units snapshot is empty but local has ${globalData.length} — keeping local, re-uploading`);
+        _firstUnitsSnapshot = false;
+        window.cloud.saveUnits(globalData).catch(err => {
+            console.error('[cloud] re-upload after empty snapshot failed:', err);
+        });
+        return;
+    }
+    _firstUnitsSnapshot = false;
+
     suppressCloudWrites = true;
     try {
         globalData = units;
@@ -1547,6 +1573,20 @@ function applyCloudUnitsSnapshot(units) {
 }
 
 function applyCloudImplementsSnapshot(items) {
+    console.log(`[cloud] implements snapshot received — ${items.length} docs`);
+
+    // First-snapshot guard: same idea as units — don't wipe local data on the
+    // very first empty snapshot; re-upload instead.
+    if (_firstImplSnapshot && items.length === 0 && globalImplements.length > 0) {
+        console.warn(`[cloud] first implements snapshot is empty but local has ${globalImplements.length} — keeping local, re-uploading`);
+        _firstImplSnapshot = false;
+        window.cloud.saveImplements(globalImplements).catch(err => {
+            console.error('[cloud] re-upload implements after empty snapshot failed:', err);
+        });
+        return;
+    }
+    _firstImplSnapshot = false;
+
     suppressCloudWrites = true;
     try {
         globalImplements = items;
@@ -1581,10 +1621,24 @@ function initCloudSync() {
     });
 }
 
-// Wait for firebase-init.js to dispatch 'cloud-ready'. It may already
-// have run by the time this listener registers, so check the flag too.
+// Cloud sync starts only after BOTH conditions are true:
+//   1. firebase-init.js has dispatched 'cloud-ready' (Firestore SDK ready)
+//   2. DOMContentLoaded has fired and loadFromStorage() has populated globalData
+// This avoids a race where migration would run with an empty globalData and
+// fail to upload anything, then a subsequent empty-snapshot would wipe local
+// storage before loadFromStorage ever ran.
+function maybeInitCloudSync() {
+    if (_cloudReadyFired && _localDataLoaded) {
+        initCloudSync();
+    }
+}
+
 if (window.cloudReady) {
-    initCloudSync();
+    _cloudReadyFired = true;
+    maybeInitCloudSync();
 } else {
-    document.addEventListener('cloud-ready', initCloudSync);
+    document.addEventListener('cloud-ready', () => {
+        _cloudReadyFired = true;
+        maybeInitCloudSync();
+    });
 }
