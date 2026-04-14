@@ -1093,11 +1093,17 @@ function renderEditTable() {
 
     const tbody = document.getElementById('editBody');
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:24px;color:#718096">${query ? 'No units match your search' : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="16" style="text-align:center;padding:24px;color:#718096">${query ? 'No units match your search' : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.'}</td></tr>`;
         return;
     }
 
-    tbody.innerHTML = rows.map((d, i) => `
+    tbody.innerHTML = rows.map((d, i) => {
+        const remarks = d.remarks || '';
+        const remarksShort = remarks.length > 40 ? remarks.slice(0, 40) + '…' : remarks;
+        const expiry = d.licenseEndDate
+            ? `<span title="${escapeHtml(d.licenseEndDate)}">${licenseBadge(d)}</span>`
+            : '<span style="color:#a0aec0;font-size:11px">—</span>';
+        return `
         <tr>
             <td class="col-check"><input type="checkbox" class="unit-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedCount()"></td>
             <td>${i + 1}</td>
@@ -1110,6 +1116,10 @@ function renderEditTable() {
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="steering" onblur="saveInlineEdit(this)">${escapeHtml(d.steering)}</span></td>
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="jdlink" onblur="saveInlineEdit(this)">${escapeHtml(d.jdlink)}</span></td>
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="site" onblur="saveInlineEdit(this)">${escapeHtml(d.site)}</span></td>
+            <td>${d.gpsLicense ? `<span class="badge badge-good" style="font-size:10px">${escapeHtml(d.gpsLicense)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
+            <td>${d.licenseDisplay ? `<span class="badge badge-good" style="font-size:10px">${escapeHtml(d.licenseDisplay)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
+            <td>${expiry}</td>
+            <td style="max-width:180px;font-size:12px;color:#4a5568" title="${escapeHtml(remarks)}">${escapeHtml(remarksShort) || '<span style="color:#a0aec0">—</span>'}</td>
             <td class="col-actions">
                 <div class="row-actions">
                     <button class="btn btn-secondary" title="History" onclick="showHistory('${escapeHtml(d.id)}')"><i class="fas fa-clock-rotate-left"></i></button>
@@ -1117,7 +1127,7 @@ function renderEditTable() {
                     <button class="btn btn-secondary" title="Delete" onclick="deleteUnit('${escapeHtml(d.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
                 </div>
             </td>
-        </tr>`).join('');
+        </tr>`; }).join('');
 }
 
 // ---- Inline Edit ----
