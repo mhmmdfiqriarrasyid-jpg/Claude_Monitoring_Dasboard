@@ -40,6 +40,7 @@ const AUDIT_LOG_MAX = 500;
 const BACKUP_RING_KEY = 'tractorUnits_autobackup';
 const BACKUP_RING_SIZE = 3;
 const DARK_MODE_KEY = 'tractorDarkMode';
+const LICENSE_DEFAULTS_KEY = 'tractorLicenseDefaultsApplied';
 const COMPONENT_KEYS = ['display', 'gps', 'steering', 'jdlink'];
 const COMPONENT_LABELS = { display: 'Display', gps: 'GPS', steering: 'Steering', jdlink: 'JDLink' };
 const COMPONENT_COLORS = {
@@ -1683,6 +1684,10 @@ function applyCloudUnitsSnapshot(units) {
     } finally {
         suppressCloudWrites = false;
     }
+
+    // One-shot license defaults fill — runs only for owner on first load
+    // that has units, gated by a localStorage flag so it never repeats.
+    applyDefaultLicensesIfNeeded();
 }
 
 function applyCloudImplementsSnapshot(items) {
@@ -1712,6 +1717,52 @@ function applyCloudImplementsSnapshot(items) {
     } finally {
         suppressCloudWrites = false;
     }
+}
+
+// One-shot migration: seed every unit that has blank license fields with
+// sensible defaults (GPS License = SF-RTK, Display License = G5 Basic).
+// Only the owner runs it, and the localStorage flag guarantees it never
+// re-runs after the initial fill. Manually-set values are preserved.
+function applyDefaultLicensesIfNeeded() {
+    if (!isOwner || !isOwner()) return;
+    if (localStorage.getItem(LICENSE_DEFAULTS_KEY) === '1') return;
+    if (!Array.isArray(globalData) || globalData.length === 0) return;
+
+    const updates = [];
+    globalData.forEach(unit => {
+        const patch = {};
+        if (!unit.gpsLicense)     patch.gpsLicense = 'SF-RTK';
+        if (!unit.licenseDisplay) patch.licenseDisplay = 'G5 Basic';
+        if (Object.keys(patch).length > 0) {
+            Object.assign(unit, patch);
+            updates.push(unit);
+        }
+    });
+
+    if (updates.length === 0) {
+        localStorage.setItem(LICENSE_DEFAULTS_KEY, '1');
+        return;
+    }
+
+    console.log(`[license-defaults] seeding defaults on ${updates.length} units...`);
+    try { saveToStorage(globalData); } catch (e) {}
+    window.cloud.saveUnits(updates).then(() => {
+        localStorage.setItem(LICENSE_DEFAULTS_KEY, '1');
+        try {
+            logEvent({
+                action: 'migrate',
+                unitName: '-',
+                field: 'license defaults',
+                after: `GPS=SF-RTK + Display=G5 Basic on ${updates.length} units`
+            });
+        } catch (e) {}
+        showToast(`Applied default licenses to ${updates.length} units`, 'success');
+        if (currentView === 'dashboard') updateDashboard(filteredData);
+        if (currentView === 'editUnits') renderEditTable();
+    }).catch(err => {
+        console.error('[license-defaults] bulk save failed:', err);
+        showToast('License defaults migration failed — check console', 'error');
+    });
 }
 
 function initCloudSync() {
