@@ -41,6 +41,96 @@ const BACKUP_RING_KEY = 'tractorUnits_autobackup';
 const BACKUP_RING_SIZE = 3;
 const DARK_MODE_KEY = 'tractorDarkMode';
 const LICENSE_DEFAULTS_KEY = 'tractorLicenseDefaultsApplied';
+const LICENSE_DATES_KEY = 'tractorLicenseDatesApplied_v1';
+
+// One-shot import: license start dates supplied by the owner (serial number → start date).
+// Expiration is auto-computed as +1 year. Only applied to units that currently
+// have no licenseStartDate — manual edits are preserved.
+const LICENSE_DATES_MAP = {
+    'IT8C570HKST250056': '2025-08-04',
+    '1YR6I50BASU540056': '2025-10-30',
+    '1YR6I50BCSU540035': '2026-02-14',
+    '1YR6I50BCSU540083': '2025-09-12',
+    '1YR6I50BCSU540068': '2025-11-08',
+    'IBM7230CVS3001122': '2025-09-14',
+    'IBM7230CJS3001134': '2025-09-16',
+    'IBM7230CCS3001132': '2025-09-23',
+    'IBM7230CCS3001026': '2026-01-03',
+    'IBM7230CCS3001047': '2026-01-31',
+    'IBM7230CLS3001141': '2026-01-31',
+    'IBM7230CHS3001125': '2025-09-19',
+    'IBM7230CJS3001139': '2025-09-16',
+    'IBM7230CLS3001150': '2026-01-01',
+    'IBM7230CLS3001117': '2025-09-12',
+    'IBM7230CAS3001137': '2025-09-12',
+    'IBM7230CLS3001118': '2025-09-12',
+    'IBM7230CCS3001143': '2025-09-13',
+    'IBM7230CLS3001149': '2025-09-12',
+    'IBM7230CLS3001136': '2025-09-12',
+    'IBM7230CTS3001128': '2025-09-24',
+    'IBM7230CCS3001080': '2025-09-13',
+    'IBM7230CLS3001050': '2026-01-31',
+    'IBM7230CCS3001045': '2025-09-17',
+    'IBM7230CCS3001065': '2025-09-17',
+    'IBM7230CCS3001077': '2025-09-13',
+    'IBM7230CCS3001083': '2025-09-24',
+    'IBM7230CCS3001063': '2026-01-05',
+    'IBM7230CJS3001098': '2025-09-23',
+    'IBM7230CCS3001094': '2025-09-11',
+    'IBM7230CAS3001090': '2025-09-13',
+    'IBM7230CPS3001101': '2025-09-13',
+    'IBM7230CLS3001088': '2025-09-16',
+    'IBM7230CCS3001102': '2025-09-13',
+    'IBM7230CCS3001035': '2025-09-16',
+    'IBM7230CCS3001108': '2025-09-13',
+    'IBM7230CCS3001112': '2025-09-14',
+    'IBM7230CLS3001110': '2025-09-16',
+    'IBM7230CJS3001036': '2025-09-24',
+    'IBM7230CCS3001057': '2025-09-18',
+    'IBM7230CCS3001028': '2025-11-17',
+    'IBM7230CCS3001071': '2025-09-14',
+    'IBM7230CCS3001068': '2025-07-30',
+    'IBM7230CHS3001110': '2025-09-14',
+    'IBM7230CCS3001066': '2025-09-11',
+    'IBM7230CCS3001075': '2025-09-15',
+    'IBM7230CJS3001073': '2025-09-30',
+    'IBM7230CCS3001073': '2025-09-23',
+    'IBM7230CJS3001053': '2025-09-25',
+    'IBM7230CCS3001051': '2025-09-08',
+    'IBM7230CCS3001034': '2025-09-12',
+    'IBM7230CVS3001069': '2025-09-13',
+    'IBM7230CVS3001082': '2025-09-30',
+    'IBM7230CVS3001072': '2025-09-12',
+    'IBM7230CVS3001074': '2025-09-16',
+    'IBM7230CCS3001060': '2025-09-16',
+    'IFW8310DLSA260677': '2025-09-23',
+    'IFW8310DCSA260876': '2025-09-23',
+    'IFW8310DLSA260881': '2026-02-01',
+    'IFW8310DLSA260853': '2025-07-26',
+    'IFW8310DESA260910': '2025-07-26',
+    'IFW8310DESA260912': '2025-07-26',
+    'IFW8310DPSA261028': '2025-07-26',
+    'IFW8310DPSA261036': '2025-07-26',
+    'IFW8310DESB261152': '2025-10-03',
+    'IFW8310DPSB260929': '2026-02-01',
+    'IFW8310DESB261222': '2026-02-01',
+    'IFW8310DPSB260963': '2025-09-18',
+    'IFW8310DASB260937': '2025-09-26',
+    'IFW8310DPSB261126': '2026-01-31',
+    'IFW8310DPSB261205': '2025-09-26',
+    'IBM7230CTS3001114': '2025-09-12',
+    'IFW8310DHSB261010': '2025-10-03',
+    'IFW8310DPSB260946': '2025-09-23',
+    'IFW8310DPSB260905': '2025-09-17',
+    'IFW8310DCSB261105': '2025-09-17',
+    'IFW8310DVSB261096': '2025-09-24',
+    'IBM7230CJS3001095': '2025-09-14',
+    'INV4025MJS0250247': '2025-09-19',
+    'INV4025MPS0250245': '2025-10-10',
+    'INV4025MKS0250246': '2025-09-05',
+    'INV4025MKS0250249': '2025-10-30',
+    'INV4025MVS0250233': '2025-09-20'
+};
 const COMPONENT_KEYS = ['display', 'gps', 'steering', 'jdlink'];
 const COMPONENT_LABELS = { display: 'Display', gps: 'GPS', steering: 'Steering', jdlink: 'JDLink' };
 const COMPONENT_COLORS = {
@@ -1688,6 +1778,7 @@ function applyCloudUnitsSnapshot(units) {
     // One-shot license defaults fill — runs only for owner on first load
     // that has units, gated by a localStorage flag so it never repeats.
     applyDefaultLicensesIfNeeded();
+    applyLicenseDatesIfNeeded();
 }
 
 function applyCloudImplementsSnapshot(items) {
@@ -1762,6 +1853,75 @@ function applyDefaultLicensesIfNeeded() {
     }).catch(err => {
         console.error('[license-defaults] bulk save failed:', err);
         showToast('License defaults migration failed — check console', 'error');
+    });
+}
+
+// One-shot migration: import license start dates from LICENSE_DATES_MAP
+// (serial number → YYYY-MM-DD). Expiration is auto-set to +1 year. Only
+// patches units with no existing licenseStartDate; manual values are kept.
+// Owner-only, guarded by a localStorage flag so it never repeats.
+function applyLicenseDatesIfNeeded() {
+    if (!isOwner || !isOwner()) return;
+    if (localStorage.getItem(LICENSE_DATES_KEY) === '1') return;
+    if (!Array.isArray(globalData) || globalData.length === 0) return;
+
+    const addOneYear = (isoDate) => {
+        const d = new Date(isoDate);
+        if (isNaN(d.getTime())) return '';
+        d.setFullYear(d.getFullYear() + 1);
+        return d.toISOString().slice(0, 10);
+    };
+
+    const updates = [];
+    const unmatched = [];
+    const matchedSns = new Set();
+
+    globalData.forEach(unit => {
+        const sn = (unit.sn || '').trim();
+        if (!sn || !LICENSE_DATES_MAP[sn]) return;
+        // Preserve any existing license dates the owner entered manually.
+        if (unit.licenseStartDate || unit.licenseEndDate) {
+            matchedSns.add(sn);
+            return;
+        }
+        const start = LICENSE_DATES_MAP[sn];
+        const end = addOneYear(start);
+        unit.licenseStartDate = start;
+        unit.licenseEndDate = end;
+        updates.push(unit);
+        matchedSns.add(sn);
+    });
+
+    Object.keys(LICENSE_DATES_MAP).forEach(sn => {
+        if (!matchedSns.has(sn)) unmatched.push(sn);
+    });
+    if (unmatched.length) {
+        console.warn(`[license-dates] ${unmatched.length} serial numbers in the map were not found in cloud data:`, unmatched);
+    }
+
+    if (updates.length === 0) {
+        localStorage.setItem(LICENSE_DATES_KEY, '1');
+        return;
+    }
+
+    console.log(`[license-dates] applying start/end dates to ${updates.length} units...`);
+    try { saveToStorage(globalData); } catch (e) {}
+    window.cloud.saveUnits(updates).then(() => {
+        localStorage.setItem(LICENSE_DATES_KEY, '1');
+        try {
+            logEvent({
+                action: 'migrate',
+                unitName: '-',
+                field: 'license dates',
+                after: `Imported start+expiry dates on ${updates.length} units`
+            });
+        } catch (e) {}
+        showToast(`Imported license dates for ${updates.length} units`, 'success');
+        if (currentView === 'dashboard') updateDashboard(filteredData);
+        if (currentView === 'editUnits') renderEditTable();
+    }).catch(err => {
+        console.error('[license-dates] bulk save failed:', err);
+        showToast('License dates import failed — check console', 'error');
     });
 }
 
