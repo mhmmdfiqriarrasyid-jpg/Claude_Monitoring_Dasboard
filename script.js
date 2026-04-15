@@ -23,6 +23,9 @@ let cloudHistoryUnsub = null;
 let cloudHistory = [];               // newest-first, mirrors Firestore `history`
 let _historyFlushTimer = null;
 const _historyPushQueue = [];
+let cloudUserCategoriesUnsub = null;
+let userCategories = [];             // [{ id, name, createdAt }] from Firestore
+let _firstUserCategoriesSnapshot = true;
 let suppressCloudWrites = false; // true while applying a cloud snapshot — prevents loops
 let _cloudReadyFired = false;
 let _localDataLoaded = false;
@@ -46,6 +49,12 @@ const BACKUP_RING_SIZE = 3;
 const DARK_MODE_KEY = 'tractorDarkMode';
 const LICENSE_DEFAULTS_KEY = 'tractorLicenseDefaultsApplied';
 const LICENSE_DATES_KEY = 'tractorLicenseDatesApplied_v2';
+const USER_CATEGORIES_SEED_KEY = 'tractorUserCategoriesSeeded_v1';
+const DEFAULT_USER_CATEGORIES = [
+    'Land Development',
+    'Maintenance and Fertilization',
+    'Planting'
+];
 
 // One-shot import: license start dates supplied by the owner (serial number → start date).
 // Expiration is auto-computed as +1 year. Only applied to units that currently
@@ -1394,6 +1403,7 @@ function showAddForm() {
     document.getElementById('modalTitle').textContent = 'Add Unit';
     document.getElementById('editUnitId').value = '';
     document.getElementById('unitForm').reset();
+    renderUserCategoryOptions();
     document.getElementById('unitModal').classList.add('open');
 }
 
@@ -1415,6 +1425,8 @@ function editUnit(id) {
     document.getElementById('formJDLink').value = isGood(unit.jdlink) ? 'Good' : 'Breakdown';
 
     // License & notes
+    renderUserCategoryOptions();
+    document.getElementById('formUserCategory').value   = unit.userCategory || '';
     document.getElementById('formGpsLicense').value     = unit.gpsLicense || '';
     document.getElementById('formLicenseDisplay').value = unit.licenseDisplay || '';
     document.getElementById('formLicenseStart').value   = unit.licenseStartDate || '';
@@ -1429,6 +1441,13 @@ function saveUnit(event) {
     if (!requireEdit()) return;
 
     const id = document.getElementById('editUnitId').value;
+    const userCategoryEl = document.getElementById('formUserCategory');
+    const userCategoryVal = userCategoryEl.value;
+    if (!userCategoryVal) {
+        showToast('Please select a User Category', 'warning');
+        userCategoryEl.focus();
+        return;
+    }
     const fields = {
         name: document.getElementById('formName').value.trim(),
         model: document.getElementById('formModel').value.trim(),
@@ -1439,6 +1458,7 @@ function saveUnit(event) {
         gps: document.getElementById('formGPS').value,
         steering: document.getElementById('formSteering').value,
         jdlink: document.getElementById('formJDLink').value,
+        userCategory: userCategoryVal,
         gpsLicense: document.getElementById('formGpsLicense').value,
         licenseDisplay: document.getElementById('formLicenseDisplay').value,
         licenseStartDate: document.getElementById('formLicenseStart').value || '',
@@ -2018,6 +2038,140 @@ function applyLicenseDatesIfNeeded() {
     });
 }
 
+// ============================================================
+// USER CATEGORIES (dynamic dropdown source)
+// ============================================================
+
+function applyCloudUserCategoriesSnapshot(cats) {
+    // Sort alphabetically for a stable UI
+    userCategories = (cats || []).slice().sort((a, b) =>
+        (a.name || '').localeCompare(b.name || '')
+    );
+    // First-snapshot seed: if an owner lands on an empty collection, populate
+    // the three defaults so the dropdown is never blank.
+    if (_firstUserCategoriesSnapshot) {
+        _firstUserCategoriesSnapshot = false;
+        if (userCategories.length === 0) {
+            seedDefaultUserCategoriesIfOwner();
+        }
+    }
+    renderUserCategoryOptions();
+    // Re-render the management modal if it's open
+    const mgr = document.getElementById('categoriesModal');
+    if (mgr && mgr.classList.contains('open')) renderCategoriesList();
+}
+
+function seedDefaultUserCategoriesIfOwner() {
+    if (!isOwner || !isOwner()) return;
+    if (localStorage.getItem(USER_CATEGORIES_SEED_KEY) === '1') return;
+    const now = Date.now();
+    const defaults = DEFAULT_USER_CATEGORIES.map((name, idx) => ({
+        id: `cat_${now}_${idx}`,
+        name,
+        createdAt: now
+    }));
+    console.log('[user-categories] seeding 3 default categories...');
+    window.cloud.saveUserCategories(defaults).then(() => {
+        localStorage.setItem(USER_CATEGORIES_SEED_KEY, '1');
+        showToast('Seeded default user categories', 'success');
+    }).catch(err => {
+        console.error('[user-categories] seed failed:', err);
+    });
+}
+
+function renderUserCategoryOptions() {
+    const select = document.getElementById('formUserCategory');
+    if (!select) return;
+    const current = select.value;
+    const opts = ['<option value="">Select category…</option>'];
+    userCategories.forEach(c => {
+        opts.push(`<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`);
+    });
+    select.innerHTML = opts.join('');
+    // Preserve whatever the user had selected across live updates
+    if (current) select.value = current;
+}
+
+function openCategoriesModal() {
+    if (!requireEdit()) return;
+    renderCategoriesList();
+    document.getElementById('categoriesModal').classList.add('open');
+    setTimeout(() => {
+        const input = document.getElementById('newCategoryName');
+        if (input) input.focus();
+    }, 50);
+}
+
+function closeCategoriesModal() {
+    document.getElementById('categoriesModal').classList.remove('open');
+}
+
+function renderCategoriesList() {
+    const list = document.getElementById('categoriesList');
+    if (!list) return;
+    if (userCategories.length === 0) {
+        list.innerHTML = '<li class="category-empty">No categories yet — add one below.</li>';
+        return;
+    }
+    list.innerHTML = userCategories.map(c => `
+        <li class="category-item">
+            <span class="category-item__name">${escapeHtml(c.name)}</span>
+            <button class="btn-icon category-item__del" title="Delete category" onclick="deleteCategory('${escapeHtml(c.id)}')">
+                <i class="fas fa-trash" style="color:var(--danger)"></i>
+            </button>
+        </li>
+    `).join('');
+}
+
+function addCategory(event) {
+    if (event) event.preventDefault();
+    if (!requireEdit()) return;
+    const input = document.getElementById('newCategoryName');
+    const name = (input.value || '').trim();
+    if (!name) {
+        showToast('Enter a category name', 'warning');
+        return;
+    }
+    // Prevent duplicates (case-insensitive)
+    const exists = userCategories.some(c => (c.name || '').toLowerCase() === name.toLowerCase());
+    if (exists) {
+        showToast(`Category "${name}" already exists`, 'warning');
+        return;
+    }
+    const cat = {
+        id: `cat_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        name,
+        createdAt: Date.now()
+    };
+    window.cloud.saveUserCategory(cat).then(() => {
+        input.value = '';
+        showToast(`Category "${name}" added`, 'success');
+        logEvent({ action: 'add', unitName: '-', field: 'user category', after: name });
+    }).catch(err => {
+        console.error('[user-categories] save failed:', err);
+        showToast('Failed to save category', 'error');
+    });
+}
+
+function deleteCategory(id) {
+    if (!requireEdit()) return;
+    const cat = userCategories.find(c => c.id === id);
+    if (!cat) return;
+    // Warn if this category is in use by any unit
+    const inUse = globalData.filter(u => u.userCategory === cat.name).length;
+    const prompt = inUse > 0
+        ? `Delete category "${cat.name}"?\n${inUse} unit(s) still reference it — their value will be cleared.`
+        : `Delete category "${cat.name}"?`;
+    if (!confirm(prompt)) return;
+    window.cloud.deleteUserCategory(id).then(() => {
+        showToast(`Category "${cat.name}" deleted`, 'success');
+        logEvent({ action: 'delete', unitName: '-', field: 'user category', before: cat.name });
+    }).catch(err => {
+        console.error('[user-categories] delete failed:', err);
+        showToast('Failed to delete category', 'error');
+    });
+}
+
 function initCloudSync() {
     if (cloudInitialized) return;
     if (!window.cloud?.isReady) return;
@@ -2048,6 +2202,12 @@ function initCloudSync() {
             }, err => {
                 console.warn('[cloud] history offline:', err && err.code);
             });
+        }
+        if (window.cloud.subscribeUserCategories) {
+            cloudUserCategoriesUnsub = window.cloud.subscribeUserCategories(
+                applyCloudUserCategoriesSnapshot,
+                err => console.warn('[cloud] userCategories offline:', err && err.code)
+            );
         }
     };
 
@@ -2122,7 +2282,10 @@ function tearDownCloudSync() {
     if (cloudImplUnsub) { try { cloudImplUnsub(); } catch (_) {} cloudImplUnsub = null; }
     if (cloudUsersUnsub) { try { cloudUsersUnsub(); } catch (_) {} cloudUsersUnsub = null; }
     if (cloudHistoryUnsub) { try { cloudHistoryUnsub(); } catch (_) {} cloudHistoryUnsub = null; }
+    if (cloudUserCategoriesUnsub) { try { cloudUserCategoriesUnsub(); } catch (_) {} cloudUserCategoriesUnsub = null; }
     cloudHistory = [];
+    userCategories = [];
+    _firstUserCategoriesSnapshot = true;
     cloudInitialized = false;
 }
 

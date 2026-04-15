@@ -65,6 +65,7 @@ const UNITS_COL = 'units';
 const IMPL_COL = 'implements';
 const USERS_COL = 'users';
 const HISTORY_COL = 'history';
+const USER_CATEGORIES_COL = 'userCategories';
 
 function batchInChunks(items, fn, chunkSize = 400) {
     // Firestore allows up to 500 ops per batch; 400 is a safe cap.
@@ -256,6 +257,34 @@ window.cloud = {
         const snap = await getDocs(collection(db, HISTORY_COL));
         if (snap.empty) return;
         await batchInChunks(snap.docs, (batch, d) => batch.delete(d.ref));
+    },
+
+    // ---- User categories (dynamic dropdown source) ----
+    async saveUserCategory(cat) {
+        await setDoc(doc(db, USER_CATEGORIES_COL, cat.id), cat, { merge: true });
+    },
+    async saveUserCategories(cats) {
+        if (!cats.length) return;
+        await batchInChunks(cats, (batch, c) =>
+            batch.set(doc(db, USER_CATEGORIES_COL, c.id), c, { merge: true })
+        );
+    },
+    async deleteUserCategory(id) {
+        await deleteDoc(doc(db, USER_CATEGORIES_COL, id));
+    },
+    async getAllUserCategories() {
+        const snap = await getDocs(collection(db, USER_CATEGORIES_COL));
+        return snap.docs.map(d => d.data());
+    },
+    subscribeUserCategories(callback, errorCallback) {
+        return onSnapshot(
+            collection(db, USER_CATEGORIES_COL),
+            snap => callback(snap.docs.map(d => d.data())),
+            err => {
+                console.error('[cloud] userCategories subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
     }
 };
 
