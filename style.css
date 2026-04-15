@@ -60,7 +60,7 @@ body {
 }
 
 .header__inner {
-    max-width: 1200px;
+    max-width: 1400px;
     margin: 0 auto;
     padding: 0 24px;
     height: 100%;
@@ -68,6 +68,7 @@ body {
     align-items: center;
     justify-content: space-between;
     gap: 16px;
+    flex-wrap: nowrap;
 }
 
 .header__brand {
@@ -77,19 +78,32 @@ body {
     font-size: 20px;
     font-weight: 700;
     letter-spacing: -0.3px;
+    flex: 0 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.header__brand span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .header__brand i {
     font-size: 24px;
     opacity: 0.9;
+    flex-shrink: 0;
 }
 
 .header__meta {
     display: flex;
     align-items: center;
-    gap: 20px;
+    gap: 16px;
     font-size: 13px;
     opacity: 0.85;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .header__status {
@@ -831,6 +845,7 @@ body {
     display: flex;
     align-items: center;
     gap: 4px;
+    flex-shrink: 0;
 }
 
 .nav__link {

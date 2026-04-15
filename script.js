@@ -41,7 +41,7 @@ const BACKUP_RING_KEY = 'tractorUnits_autobackup';
 const BACKUP_RING_SIZE = 3;
 const DARK_MODE_KEY = 'tractorDarkMode';
 const LICENSE_DEFAULTS_KEY = 'tractorLicenseDefaultsApplied';
-const LICENSE_DATES_KEY = 'tractorLicenseDatesApplied_v1';
+const LICENSE_DATES_KEY = 'tractorLicenseDatesApplied_v2';
 
 // One-shot import: license start dates supplied by the owner (serial number → start date).
 // Expiration is auto-computed as +1 year. Only applied to units that currently
@@ -1872,28 +1872,44 @@ function applyLicenseDatesIfNeeded() {
         return d.toISOString().slice(0, 10);
     };
 
+    // Normalize serial numbers so OCR-style confusables match:
+    // uppercase, strip whitespace, and collapse I↔1 and O↔0.
+    const normSn = (s) => (s || '')
+        .toString()
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, '')
+        .replace(/I/g, '1')
+        .replace(/O/g, '0');
+
+    // Build a normalized lookup table once, keeping a reverse index so we
+    // can report which map keys went unmatched.
+    const normalizedMap = {};
+    Object.keys(LICENSE_DATES_MAP).forEach(rawKey => {
+        normalizedMap[normSn(rawKey)] = { start: LICENSE_DATES_MAP[rawKey], rawKey };
+    });
+
     const updates = [];
     const unmatched = [];
-    const matchedSns = new Set();
+    const matchedKeys = new Set();
 
     globalData.forEach(unit => {
-        const sn = (unit.sn || '').trim();
-        if (!sn || !LICENSE_DATES_MAP[sn]) return;
+        const key = normSn(unit.sn);
+        if (!key) return;
+        const hit = normalizedMap[key];
+        if (!hit) return;
+        matchedKeys.add(hit.rawKey);
         // Preserve any existing license dates the owner entered manually.
-        if (unit.licenseStartDate || unit.licenseEndDate) {
-            matchedSns.add(sn);
-            return;
-        }
-        const start = LICENSE_DATES_MAP[sn];
+        if (unit.licenseStartDate || unit.licenseEndDate) return;
+        const start = hit.start;
         const end = addOneYear(start);
         unit.licenseStartDate = start;
         unit.licenseEndDate = end;
         updates.push(unit);
-        matchedSns.add(sn);
     });
 
-    Object.keys(LICENSE_DATES_MAP).forEach(sn => {
-        if (!matchedSns.has(sn)) unmatched.push(sn);
+    Object.keys(LICENSE_DATES_MAP).forEach(rawKey => {
+        if (!matchedKeys.has(rawKey)) unmatched.push(rawKey);
     });
     if (unmatched.length) {
         console.warn(`[license-dates] ${unmatched.length} serial numbers in the map were not found in cloud data:`, unmatched);
