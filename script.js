@@ -19,6 +19,10 @@ let cloudInitialized = false;
 let cloudUnitsUnsub = null;
 let cloudImplUnsub = null;
 let cloudUsersUnsub = null;
+let cloudHistoryUnsub = null;
+let cloudHistory = [];               // newest-first, mirrors Firestore `history`
+let _historyFlushTimer = null;
+const _historyPushQueue = [];
 let suppressCloudWrites = false; // true while applying a cloud snapshot — prevents loops
 let _cloudReadyFired = false;
 let _localDataLoaded = false;
@@ -485,17 +489,64 @@ function deleteUnits(ids) {
 // ============================================================
 
 function logEvent(entry) {
+    const ts = Date.now();
+    const id = `${ts}_${Math.random().toString(36).slice(2, 10)}`;
+    const actor = currentUser ? {
+        actorUid:   currentUser.uid,
+        actorEmail: currentUser.email || '',
+        actorName:  (currentUserDoc && currentUserDoc.displayName)
+                    || currentUser.displayName
+                    || (currentUser.email || '').split('@')[0],
+        actorRole:  (currentUserDoc && currentUserDoc.role) || 'unknown'
+    } : { actorUid: '', actorEmail: '', actorName: 'system', actorRole: 'system' };
+
+    const full = {
+        id,
+        timestamp: ts,
+        action:    entry.action || 'edit',
+        unitId:    entry.unitId || '',
+        unitName:  entry.unitName || '',
+        field:     entry.field || '',
+        before:    entry.before != null ? String(entry.before) : '',
+        after:     entry.after  != null ? String(entry.after)  : '',
+        ...actor
+    };
+
+    // Local cache — instant render + offline support.
     try {
         const log = JSON.parse(localStorage.getItem(AUDIT_LOG_KEY) || '[]');
-        log.unshift({ ...entry, timestamp: Date.now() });
+        log.unshift(full);
         while (log.length > AUDIT_LOG_MAX) log.pop();
         localStorage.setItem(AUDIT_LOG_KEY, JSON.stringify(log));
     } catch (e) { /* ignore */ }
+
+    // Cloud push — coalesce many calls in the same tick into one batch.
+    // Skip if not signed in (auto-migrations), or while a snapshot is being
+    // applied (those mutations aren't user-initiated and shouldn't be logged).
+    if (!currentUser || suppressCloudWrites || !window.cloud?.addHistoryEvents) return;
+    _historyPushQueue.push(full);
+    if (_historyFlushTimer) return;
+    _historyFlushTimer = setTimeout(() => {
+        const batch = _historyPushQueue.splice(0);
+        _historyFlushTimer = null;
+        if (batch.length === 0) return;
+        window.cloud.addHistoryEvents(batch).catch(err => {
+            console.error('[cloud] history push failed:', err);
+        });
+    }, 80);
 }
 
 function getAuditLog() {
-    try { return JSON.parse(localStorage.getItem(AUDIT_LOG_KEY) || '[]'); }
-    catch (e) { return []; }
+    let local = [];
+    try { local = JSON.parse(localStorage.getItem(AUDIT_LOG_KEY) || '[]'); }
+    catch (e) {}
+    // Cloud is the source of truth; fall back to local when offline or for
+    // any entry that hasn't synced yet.
+    if (!cloudHistory.length) return local;
+    const seen = new Set(cloudHistory.map(e => e.id));
+    const merged = [...cloudHistory, ...local.filter(e => e.id && !seen.has(e.id))];
+    merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return merged.slice(0, AUDIT_LOG_MAX);
 }
 
 function showHistory(unitId) {
@@ -506,21 +557,31 @@ function showHistory(unitId) {
         : 'Change History';
     document.getElementById('historyTitle').innerHTML = title;
 
+    const modal = document.getElementById('historyModal');
+    // Stash filter so live snapshots can re-render with the same scope.
+    modal.dataset.unitId = unitId || '';
+
     const tbody = document.getElementById('historyBody');
     if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#718096">No history recorded</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:#718096">No history recorded</td></tr>';
     } else {
-        tbody.innerHTML = filtered.map(e => `
+        tbody.innerHTML = filtered.map(e => {
+            const who = e.actorName
+                ? `<span class="audit-actor" title="${escapeHtml(e.actorEmail || '')}">${escapeHtml(e.actorName)} <em>(${escapeHtml(e.actorRole || '?')})</em></span>`
+                : '<span style="color:#a0aec0">—</span>';
+            return `
             <tr>
                 <td style="white-space:nowrap">${new Date(e.timestamp).toLocaleString()}</td>
                 <td><span class="audit-badge audit-${escapeHtml(e.action)}">${escapeHtml(e.action)}</span></td>
+                <td>${who}</td>
                 <td>${escapeHtml(e.unitName || '-')}</td>
                 <td>${escapeHtml(e.field || '-')}</td>
                 <td>${escapeHtml(e.before != null ? e.before : '-')}</td>
-                <td>${escapeHtml(e.after != null ? e.after : '-')}</td>
-            </tr>`).join('');
+                <td>${escapeHtml(e.after  != null ? e.after  : '-')}</td>
+            </tr>`;
+        }).join('');
     }
-    document.getElementById('historyModal').classList.add('open');
+    modal.classList.add('open');
 }
 
 function closeHistory() {
@@ -528,10 +589,26 @@ function closeHistory() {
 }
 
 function clearHistory() {
-    if (!confirm('Clear ALL change history? This cannot be undone.')) return;
+    if (!isOwner || !isOwner()) {
+        showToast('Only the owner can clear shared history', 'warning');
+        return;
+    }
+    if (!confirm('Clear ALL change history for the entire team? This cannot be undone.')) return;
     localStorage.removeItem(AUDIT_LOG_KEY);
-    showHistory();
-    showToast('History cleared', 'success');
+    if (window.cloud?.clearHistoryCloud) {
+        window.cloud.clearHistoryCloud().then(() => {
+            cloudHistory = [];
+            showHistory();
+            showToast('Team history cleared', 'success');
+        }).catch(err => {
+            console.error('[cloud] clear history failed:', err);
+            showToast('Cloud clear failed — check console', 'error');
+        });
+    } else {
+        cloudHistory = [];
+        showHistory();
+        showToast('History cleared', 'success');
+    }
 }
 
 function exportHistory() {
@@ -1960,6 +2037,18 @@ function initCloudSync() {
         cloudImplUnsub = window.cloud.subscribeImplements(applyCloudImplementsSnapshot, err => {
             console.warn('[cloud] implements offline');
         });
+        if (window.cloud.subscribeHistory) {
+            cloudHistoryUnsub = window.cloud.subscribeHistory(events => {
+                cloudHistory = events || [];
+                // Re-render the history modal live if it's currently open
+                const modal = document.getElementById('historyModal');
+                if (modal && modal.classList.contains('open')) {
+                    showHistory(modal.dataset.unitId || undefined);
+                }
+            }, err => {
+                console.warn('[cloud] history offline:', err && err.code);
+            });
+        }
     };
 
     if (canMigrate) {
@@ -2032,6 +2121,8 @@ function tearDownCloudSync() {
     if (cloudUnitsUnsub) { try { cloudUnitsUnsub(); } catch (_) {} cloudUnitsUnsub = null; }
     if (cloudImplUnsub) { try { cloudImplUnsub(); } catch (_) {} cloudImplUnsub = null; }
     if (cloudUsersUnsub) { try { cloudUsersUnsub(); } catch (_) {} cloudUsersUnsub = null; }
+    if (cloudHistoryUnsub) { try { cloudHistoryUnsub(); } catch (_) {} cloudHistoryUnsub = null; }
+    cloudHistory = [];
     cloudInitialized = false;
 }
 

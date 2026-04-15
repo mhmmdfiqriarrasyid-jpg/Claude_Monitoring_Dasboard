@@ -1298,10 +1298,21 @@ body {
 
 .audit-add { background: #f0fff4; color: #276749; }
 .audit-update { background: #ebf8ff; color: #2c5282; }
+.audit-edit { background: #ebf8ff; color: #2c5282; }
 .audit-delete { background: #fff5f5; color: #c53030; }
 .audit-restore { background: #faf5ff; color: #553c9a; }
+.audit-migrate { background: #fffaf0; color: #975a16; }
 
-.modal-card--wide { max-width: 900px; }
+.audit-actor { font-weight: 600; }
+.audit-actor em {
+    font-weight: 400;
+    opacity: 0.7;
+    font-style: normal;
+    font-size: 11px;
+    text-transform: capitalize;
+}
+
+.modal-card--wide { max-width: 980px; }
 
 /* ============================================================
    UNDO TOAST

@@ -13,7 +13,10 @@ import {
     getDocs,
     onSnapshot,
     writeBatch,
-    enableIndexedDbPersistence
+    enableIndexedDbPersistence,
+    query,
+    orderBy,
+    limit
 } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 import {
     getAuth,
@@ -61,6 +64,7 @@ try {
 const UNITS_COL = 'units';
 const IMPL_COL = 'implements';
 const USERS_COL = 'users';
+const HISTORY_COL = 'history';
 
 function batchInChunks(items, fn, chunkSize = 400) {
     // Firestore allows up to 500 ops per batch; 400 is a safe cap.
@@ -225,6 +229,33 @@ window.cloud = {
                 if (errorCallback) errorCallback(err);
             }
         );
+    },
+
+    // ---- History (shared audit log) ----
+    async addHistoryEvents(events) {
+        if (!events || !events.length) return;
+        await batchInChunks(events, (batch, e) =>
+            batch.set(doc(db, HISTORY_COL, e.id), e)
+        );
+    },
+    subscribeHistory(callback, errorCallback, max = 500) {
+        const q = query(
+            collection(db, HISTORY_COL),
+            orderBy('timestamp', 'desc'),
+            limit(max)
+        );
+        return onSnapshot(q,
+            snap => callback(snap.docs.map(d => d.data())),
+            err => {
+                console.error('[cloud] history subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
+    },
+    async clearHistoryCloud() {
+        const snap = await getDocs(collection(db, HISTORY_COL));
+        if (snap.empty) return;
+        await batchInChunks(snap.docs, (batch, d) => batch.delete(d.ref));
     }
 };
 
