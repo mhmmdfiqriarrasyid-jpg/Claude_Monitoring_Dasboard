@@ -1270,7 +1270,7 @@ function renderEditTable() {
 
     const tbody = document.getElementById('editBody');
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="16" style="text-align:center;padding:24px;color:#718096">${query ? 'No units match your search' : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="17" style="text-align:center;padding:24px;color:#718096">${query ? 'No units match your search' : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.'}</td></tr>`;
         return;
     }
 
@@ -1293,6 +1293,7 @@ function renderEditTable() {
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="steering" onblur="saveInlineEdit(this)">${escapeHtml(d.steering)}</span></td>
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="jdlink" onblur="saveInlineEdit(this)">${escapeHtml(d.jdlink)}</span></td>
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="site" onblur="saveInlineEdit(this)">${escapeHtml(d.site)}</span></td>
+            <td>${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
             <td>${d.gpsLicense ? `<span class="badge badge-good" style="font-size:10px">${escapeHtml(d.gpsLicense)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
             <td>${d.licenseDisplay ? `<span class="badge badge-good" style="font-size:10px">${escapeHtml(d.licenseDisplay)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
             <td>${expiry}</td>
@@ -2076,7 +2077,37 @@ function seedDefaultUserCategoriesIfOwner() {
         showToast('Seeded default user categories', 'success');
     }).catch(err => {
         console.error('[user-categories] seed failed:', err);
+        if (err && err.code === 'permission-denied') {
+            showCategoryRulesBanner();
+        }
     });
+}
+
+// Surfaces a clear, actionable banner inside the Manage Categories modal
+// when Firestore rejects writes to userCategories. The most common cause
+// is that the owner hasn't added rules for the new collection yet.
+function showCategoryRulesBanner() {
+    const modal = document.getElementById('categoriesModal');
+    if (!modal) return;
+    // Only inject once per open
+    if (modal.querySelector('.category-rules-banner')) return;
+    const body = modal.querySelector('.modal-body');
+    if (!body) return;
+    const banner = document.createElement('div');
+    banner.className = 'category-rules-banner';
+    banner.innerHTML = `
+        <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules are blocking this write.</strong>
+        <p>Your project's security rules don't allow anyone to write to the <code>userCategories</code> collection yet.
+        Paste the block below into <em>Firebase Console → Firestore → Rules</em>, then try again:</p>
+        <pre>match /userCategories/{catId} {
+  allow read:  if request.auth != null
+               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+  allow write: if request.auth != null
+               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['owner', 'team']
+               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+}</pre>
+    `;
+    body.insertBefore(banner, body.firstChild);
 }
 
 function renderUserCategoryOptions() {
@@ -2149,7 +2180,13 @@ function addCategory(event) {
         logEvent({ action: 'add', unitName: '-', field: 'user category', after: name });
     }).catch(err => {
         console.error('[user-categories] save failed:', err);
-        showToast('Failed to save category', 'error');
+        const code = (err && err.code) || 'unknown';
+        if (code === 'permission-denied') {
+            showToast('Firestore rules block writes to userCategories — see banner', 'error');
+            showCategoryRulesBanner();
+        } else {
+            showToast(`Failed to save category (${code})`, 'error');
+        }
     });
 }
 
@@ -2168,7 +2205,13 @@ function deleteCategory(id) {
         logEvent({ action: 'delete', unitName: '-', field: 'user category', before: cat.name });
     }).catch(err => {
         console.error('[user-categories] delete failed:', err);
-        showToast('Failed to delete category', 'error');
+        const code = (err && err.code) || 'unknown';
+        if (code === 'permission-denied') {
+            showToast('Firestore rules block writes to userCategories — see banner', 'error');
+            showCategoryRulesBanner();
+        } else {
+            showToast(`Failed to delete category (${code})`, 'error');
+        }
     });
 }
 
@@ -2206,7 +2249,15 @@ function initCloudSync() {
         if (window.cloud.subscribeUserCategories) {
             cloudUserCategoriesUnsub = window.cloud.subscribeUserCategories(
                 applyCloudUserCategoriesSnapshot,
-                err => console.warn('[cloud] userCategories offline:', err && err.code)
+                err => {
+                    console.warn('[cloud] userCategories offline:', err && err.code);
+                    // Permission-denied here means the Firestore rules are
+                    // missing — the Manage Categories modal (if open) should
+                    // show the banner so the owner knows what to paste.
+                    if (err && err.code === 'permission-denied') {
+                        showCategoryRulesBanner();
+                    }
+                }
             );
         }
     };
