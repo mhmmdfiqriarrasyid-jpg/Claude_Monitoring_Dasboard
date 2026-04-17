@@ -541,6 +541,9 @@ function logEvent(entry) {
         if (batch.length === 0) return;
         window.cloud.addHistoryEvents(batch).catch(err => {
             console.error('[cloud] history push failed:', err);
+            if (err && err.code === 'permission-denied') {
+                showHistoryRulesBanner();
+            }
         });
     }, 80);
 }
@@ -1442,13 +1445,6 @@ function saveUnit(event) {
     if (!requireEdit()) return;
 
     const id = document.getElementById('editUnitId').value;
-    const userCategoryEl = document.getElementById('formUserCategory');
-    const userCategoryVal = userCategoryEl.value;
-    if (!userCategoryVal) {
-        showToast('Please select a User Category', 'warning');
-        userCategoryEl.focus();
-        return;
-    }
     const fields = {
         name: document.getElementById('formName').value.trim(),
         model: document.getElementById('formModel').value.trim(),
@@ -1459,7 +1455,7 @@ function saveUnit(event) {
         gps: document.getElementById('formGPS').value,
         steering: document.getElementById('formSteering').value,
         jdlink: document.getElementById('formJDLink').value,
-        userCategory: userCategoryVal,
+        userCategory: document.getElementById('formUserCategory').value,
         gpsLicense: document.getElementById('formGpsLicense').value,
         licenseDisplay: document.getElementById('formLicenseDisplay').value,
         licenseStartDate: document.getElementById('formLicenseStart').value || '',
@@ -2110,6 +2106,34 @@ function showCategoryRulesBanner() {
     body.insertBefore(banner, body.firstChild);
 }
 
+// Surfaces the exact Firestore rules that need to be pasted into the Firebase
+// Console when the `history` collection rejects reads or writes. Without this
+// the team-visibility failure is invisible to the user — they just see an empty
+// History modal with no clue why.
+function showHistoryRulesBanner() {
+    const modal = document.getElementById('historyModal');
+    if (!modal) return;
+    const slot = modal.querySelector('.history-rules-slot');
+    if (!slot || slot.querySelector('.category-rules-banner')) return;
+    const banner = document.createElement('div');
+    banner.className = 'category-rules-banner';
+    banner.innerHTML = `
+        <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules are blocking change history.</strong>
+        <p>Your project's security rules don't allow this account to read or write the shared <code>history</code> collection yet — that's why you can't see edits from other team members. Paste the block below into <em>Firebase Console → Firestore → Rules</em>, then hard-refresh:</p>
+        <pre>match /history/{eventId} {
+  allow read:   if request.auth != null
+                &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+  allow create: if request.auth != null
+                &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['owner', 'team']
+                &amp;&amp; request.resource.data.actorUid == request.auth.uid;
+  allow delete: if request.auth != null
+                &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner';
+  allow update: if false;
+}</pre>
+    `;
+    slot.appendChild(banner);
+}
+
 function renderUserCategoryOptions() {
     const select = document.getElementById('formUserCategory');
     if (!select) return;
@@ -2244,6 +2268,10 @@ function initCloudSync() {
                 }
             }, err => {
                 console.warn('[cloud] history offline:', err && err.code);
+                if (err && err.code === 'permission-denied') {
+                    showHistoryRulesBanner();
+                    showToast('History blocked by Firestore rules — open History for fix', 'warning');
+                }
             });
         }
         if (window.cloud.subscribeUserCategories) {

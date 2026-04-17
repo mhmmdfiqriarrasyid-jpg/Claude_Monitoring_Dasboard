@@ -34,7 +34,7 @@
 <div class="auth-gate" id="authGate">
     <div class="auth-card">
         <div class="auth-card__brand">
-            <i class="fas fa-tractor"></i>
+            <img src="./logo.png" alt="OT Monitoring logo" class="brand-logo brand-logo--lg">
             <h1>OT Monitoring Tractor and Device</h1>
             <p>Fleet health, devices &amp; implements — one dashboard.</p>
         </div>
@@ -113,7 +113,7 @@
 <header class="header">
   <div class="header__inner">
     <div class="header__brand">
-        <i class="fas fa-tractor"></i>
+        <img src="./logo.png" alt="OT Monitoring logo" class="brand-logo">
         <span>OT Monitoring Tractor and Device</span>
     </div>
     <nav class="header__nav">
@@ -640,11 +640,9 @@
                     <legend>Category, License &amp; Notes</legend>
                     <div class="form-grid">
                         <div class="form-group full-width">
-                            <label class="form-label" for="formUserCategory">
-                                User Category <span class="form-required">*</span>
-                            </label>
+                            <label class="form-label" for="formUserCategory">User Category</label>
                             <div class="form-category-row">
-                                <select class="form-select" id="formUserCategory" required>
+                                <select class="form-select" id="formUserCategory">
                                     <option value="">Select category…</option>
                                 </select>
                                 <button type="button" class="btn btn-secondary btn-sm" onclick="openCategoriesModal()" title="Manage categories">
@@ -726,6 +724,7 @@
             </div>
         </div>
         <div class="modal-body" style="padding:0">
+            <div class="history-rules-slot"></div>
             <div class="table-wrapper" style="max-height:60vh">
                 <table class="data-table">
                     <thead>
