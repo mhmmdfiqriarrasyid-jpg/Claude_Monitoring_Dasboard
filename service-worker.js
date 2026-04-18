@@ -1,14 +1,13 @@
 /* Tractor Monitoring Dashboard - Service Worker
    Cache-first strategy for app shell, network fallback for everything else. */
 
-const CACHE_NAME = 'tractor-monitor-v11';
+const CACHE_NAME = 'tractor-monitor-v12';
 const APP_SHELL = [
     './',
     './index.html',
     './script.js',
     './firebase-init.js',
     './style.css',
-    './logo.png',
     './manifest.webmanifest',
     'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap',
     'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',

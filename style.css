@@ -96,19 +96,6 @@ body {
     flex-shrink: 0;
 }
 
-.brand-logo {
-    height: 32px;
-    width: auto;
-    object-fit: contain;
-    flex-shrink: 0;
-    display: block;
-}
-
-.brand-logo--lg {
-    height: 64px;
-    margin: 0 auto 8px;
-}
-
 .header__meta {
     display: flex;
     align-items: center;
