@@ -1046,6 +1046,7 @@ function renderTable(data) {
             <td class="${isGood(d.steering) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.steering)}</td>
             <td class="${isGood(d.jdlink) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.jdlink)}</td>
             <td>${escapeHtml(d.site)}</td>
+            <td>${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
             <td>${licenseBadge(d)}</td>
         </tr>`;
     }).join('');
