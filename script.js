@@ -849,8 +849,12 @@ function processData(rows) {
             site: clean(getVal(r, 'Site')),
             gpsLicense: clean(getVal(r, 'GPS License')),
             licenseDisplay: clean(getVal(r, 'License Display')),
-            licenseStartDate: clean(getVal(r, 'License Start Date')),
-            licenseEndDate: clean(getVal(r, 'License Expiration Date')),
+            // New dual columns. Fall back to the legacy single-pair columns so
+            // importing an old export still works — legacy dates map to GPS.
+            gpsLicenseStartDate: clean(getVal(r, 'GPS License Start Date')) || clean(getVal(r, 'License Start Date')),
+            gpsLicenseEndDate:   clean(getVal(r, 'GPS License Expiration Date')) || clean(getVal(r, 'License Expiration Date')),
+            displayLicenseStartDate: clean(getVal(r, 'Display License Start Date')),
+            displayLicenseEndDate:   clean(getVal(r, 'Display License Expiration Date')),
             remarks: clean(getVal(r, 'Remarks')),
             downtimeHistory: [],
             breakdownStartedAt: null
@@ -1048,8 +1052,9 @@ function renderTable(data) {
             <td>${escapeHtml(d.site)}</td>
             <td>${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
             <td>${d.gpsLicense ? `<span class="badge badge-good" style="font-size:10px">${escapeHtml(d.gpsLicense)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
+            <td>${licenseBadgeFor(d, 'gps')}</td>
             <td>${d.licenseDisplay ? `<span class="badge badge-good" style="font-size:10px">${escapeHtml(d.licenseDisplay)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
-            <td>${licenseBadge(d)}</td>
+            <td>${licenseBadgeFor(d, 'display')}</td>
         </tr>`;
     }).join('');
 }
@@ -1176,9 +1181,16 @@ function updateFilterCount(data) {
 function exportCSV() {
     if (filteredData.length === 0) { showToast('No data to export', 'warning'); return; }
     const headers = ['No', 'Nickname', 'Model', 'Serial Number', 'Status', 'Display', 'GPS', 'Steering', 'JDLink', 'Site',
-                     'GPS License', 'License Display', 'License Start Date', 'License Expiration Date', 'Remarks'];
+                     'User Category', 'GPS License', 'Display License',
+                     'GPS License Start Date', 'GPS License Expiration Date',
+                     'Display License Start Date', 'Display License Expiration Date', 'Remarks'];
     const rows = filteredData.map((d, i) => [i + 1, d.name, d.model, d.sn, d.status, d.display, d.gps, d.steering, d.jdlink, d.site,
-                     d.gpsLicense || '', d.licenseDisplay || '', d.licenseStartDate || '', d.licenseEndDate || '', d.remarks || '']);
+                     d.userCategory || '', d.gpsLicense || '', d.licenseDisplay || '',
+                     d.gpsLicenseStartDate || d.licenseStartDate || '',
+                     d.gpsLicenseEndDate   || d.licenseEndDate   || '',
+                     d.displayLicenseStartDate || '',
+                     d.displayLicenseEndDate   || '',
+                     d.remarks || '']);
     const csv = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -1276,16 +1288,13 @@ function renderEditTable() {
 
     const tbody = document.getElementById('editBody');
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="17" style="text-align:center;padding:24px;color:#718096">${query ? 'No units match your search' : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="18" style="text-align:center;padding:24px;color:#718096">${query ? 'No units match your search' : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.'}</td></tr>`;
         return;
     }
 
     tbody.innerHTML = rows.map((d, i) => {
         const remarks = d.remarks || '';
         const remarksShort = remarks.length > 40 ? remarks.slice(0, 40) + '…' : remarks;
-        const expiry = d.licenseEndDate
-            ? `<span title="${escapeHtml(d.licenseEndDate)}">${licenseBadge(d)}</span>`
-            : '<span style="color:#a0aec0;font-size:11px">—</span>';
         return `
         <tr>
             <td class="col-check"><input type="checkbox" class="unit-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedCount()"></td>
@@ -1301,8 +1310,9 @@ function renderEditTable() {
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="site" onblur="saveInlineEdit(this)">${escapeHtml(d.site)}</span></td>
             <td>${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
             <td>${d.gpsLicense ? `<span class="badge badge-good" style="font-size:10px">${escapeHtml(d.gpsLicense)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
+            <td>${licenseBadgeFor(d, 'gps')}</td>
             <td>${d.licenseDisplay ? `<span class="badge badge-good" style="font-size:10px">${escapeHtml(d.licenseDisplay)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
-            <td>${expiry}</td>
+            <td>${licenseBadgeFor(d, 'display')}</td>
             <td style="max-width:180px;font-size:12px;color:#4a5568" title="${escapeHtml(remarks)}">${escapeHtml(remarksShort) || '<span style="color:#a0aec0">—</span>'}</td>
             <td class="col-actions">
                 <div class="row-actions">
@@ -1436,8 +1446,15 @@ function editUnit(id) {
     document.getElementById('formUserCategory').value   = unit.userCategory || '';
     document.getElementById('formGpsLicense').value     = unit.gpsLicense || '';
     document.getElementById('formLicenseDisplay').value = unit.licenseDisplay || '';
-    document.getElementById('formLicenseStart').value   = unit.licenseStartDate || '';
-    document.getElementById('formLicenseEnd').value     = unit.licenseEndDate || '';
+    // New dual-license date pairs; fall back to legacy licenseStartDate /
+    // licenseEndDate (which were GPS-license dates historically) if the new
+    // GPS-specific fields are empty.
+    document.getElementById('formGpsLicenseStart').value =
+        unit.gpsLicenseStartDate || unit.licenseStartDate || '';
+    document.getElementById('formGpsLicenseEnd').value =
+        unit.gpsLicenseEndDate || unit.licenseEndDate || '';
+    document.getElementById('formDisplayLicenseStart').value = unit.displayLicenseStartDate || '';
+    document.getElementById('formDisplayLicenseEnd').value   = unit.displayLicenseEndDate || '';
     document.getElementById('formRemarks').value        = unit.remarks || '';
 
     document.getElementById('unitModal').classList.add('open');
@@ -1461,8 +1478,10 @@ function saveUnit(event) {
         userCategory: document.getElementById('formUserCategory').value,
         gpsLicense: document.getElementById('formGpsLicense').value,
         licenseDisplay: document.getElementById('formLicenseDisplay').value,
-        licenseStartDate: document.getElementById('formLicenseStart').value || '',
-        licenseEndDate: document.getElementById('formLicenseEnd').value || '',
+        gpsLicenseStartDate: document.getElementById('formGpsLicenseStart').value || '',
+        gpsLicenseEndDate:   document.getElementById('formGpsLicenseEnd').value   || '',
+        displayLicenseStartDate: document.getElementById('formDisplayLicenseStart').value || '',
+        displayLicenseEndDate:   document.getElementById('formDisplayLicenseEnd').value   || '',
         remarks: document.getElementById('formRemarks').value.trim()
     };
 
@@ -1485,24 +1504,28 @@ function saveUnit(event) {
     renderEditTable();
 }
 
-// Auto-fill license expiration to start + 1 year (still editable)
-function autoFillLicenseEnd() {
-    const startVal = document.getElementById('formLicenseStart').value;
-    if (!startVal) return;
-    const endEl = document.getElementById('formLicenseEnd');
-    // Only auto-fill if expiration is empty — don't overwrite a manual choice
+// Auto-fill expiration to start + 1 year (still editable). One helper per
+// license kind so the onchange on each start-date input targets the right
+// expiration field.
+function autoFillGpsLicenseEnd()     { _autoFillEnd('formGpsLicenseStart',     'formGpsLicenseEnd'); }
+function autoFillDisplayLicenseEnd() { _autoFillEnd('formDisplayLicenseStart', 'formDisplayLicenseEnd'); }
+function _autoFillEnd(startId, endId) {
+    const startEl = document.getElementById(startId);
+    const endEl = document.getElementById(endId);
+    if (!startEl || !endEl) return;
+    if (!startEl.value) return;
     if (endEl.value) return;
-    const d = new Date(startVal);
+    const d = new Date(startEl.value);
     if (isNaN(d.getTime())) return;
     d.setFullYear(d.getFullYear() + 1);
     endEl.value = d.toISOString().slice(0, 10);
 }
 
-// Compute license expiry status for display.
+// Compute expiry status for a single end-date string.
 // Returns one of: { kind: 'none'|'expired'|'soon'|'ok', label, daysLeft }
-function getLicenseStatus(unit) {
-    if (!unit || !unit.licenseEndDate) return { kind: 'none', label: '—' };
-    const end = new Date(unit.licenseEndDate);
+function getExpiryStatus(endDate) {
+    if (!endDate) return { kind: 'none', label: '—' };
+    const end = new Date(endDate);
     if (isNaN(end.getTime())) return { kind: 'none', label: '—' };
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -1513,6 +1536,48 @@ function getLicenseStatus(unit) {
     return { kind: 'ok', label: `${days}d left`, daysLeft: days };
 }
 
+// Pick the effective end date for a license kind. Falls back to the legacy
+// `licenseEndDate` for `gps` only, since historically that single field
+// stored the GPS-license expiry. Display kind has no legacy fallback.
+function getLicenseEndDate(unit, kind) {
+    if (!unit) return '';
+    if (kind === 'display') return unit.displayLicenseEndDate || '';
+    return unit.gpsLicenseEndDate || unit.licenseEndDate || '';
+}
+
+// Legacy helper kept for any old callers — returns status for whichever
+// expiry is soonest (across GPS + Display + legacy).
+function getLicenseStatus(unit) {
+    const dates = [
+        getLicenseEndDate(unit, 'gps'),
+        getLicenseEndDate(unit, 'display')
+    ].filter(Boolean);
+    if (!dates.length) return { kind: 'none', label: '—' };
+    let worst = null;
+    dates.forEach(d => {
+        const s = getExpiryStatus(d);
+        if (s.kind === 'none') return;
+        if (!worst || (s.daysLeft ?? 0) < (worst.daysLeft ?? 0)) worst = s;
+    });
+    return worst || { kind: 'none', label: '—' };
+}
+
+// Render an expiry badge for either 'gps' or 'display' license.
+function licenseBadgeFor(unit, kind) {
+    const end = getLicenseEndDate(unit, kind);
+    const s = getExpiryStatus(end);
+    if (s.kind === 'none') return '<span style="color:#a0aec0;font-size:11px">—</span>';
+    const cls = `license-badge license-badge--${s.kind}`;
+    const icon = s.kind === 'expired' ? 'circle-xmark'
+               : s.kind === 'soon'    ? 'triangle-exclamation'
+               : 'circle-check';
+    const labelName = kind === 'display' ? (unit.licenseDisplay || 'Display') : (unit.gpsLicense || 'GPS');
+    const tt = `${labelName} · Expires: ${end}`;
+    return `<span class="${cls}" title="${escapeHtml(tt)}"><i class="fas fa-${icon}"></i> ${escapeHtml(s.label)}</span>`;
+}
+
+// Back-compat shim — callers that used the single-badge version now get the
+// earliest-of-both rendered with generic tooltip.
 function licenseBadge(unit) {
     const s = getLicenseStatus(unit);
     if (s.kind === 'none') return '<span style="color:#a0aec0;font-size:11px">—</span>';
@@ -1520,11 +1585,7 @@ function licenseBadge(unit) {
     const icon = s.kind === 'expired' ? 'circle-xmark'
                : s.kind === 'soon'    ? 'triangle-exclamation'
                : 'circle-check';
-    const tt = [];
-    if (unit.gpsLicense)     tt.push(`GPS: ${unit.gpsLicense}`);
-    if (unit.licenseDisplay) tt.push(`Display: ${unit.licenseDisplay}`);
-    if (unit.licenseEndDate) tt.push(`Expires: ${unit.licenseEndDate}`);
-    return `<span class="${cls}" title="${escapeHtml(tt.join(' · '))}"><i class="fas fa-${icon}"></i> ${escapeHtml(s.label)}</span>`;
+    return `<span class="${cls}"><i class="fas fa-${icon}"></i> ${escapeHtml(s.label)}</span>`;
 }
 
 function closeModal() {
@@ -1996,12 +2057,14 @@ function applyLicenseDatesIfNeeded() {
         const hit = normalizedMap[key];
         if (!hit) return;
         matchedKeys.add(hit.rawKey);
-        // Preserve any existing license dates the owner entered manually.
-        if (unit.licenseStartDate || unit.licenseEndDate) return;
+        // Preserve any existing license dates the owner entered manually
+        // (either in the new GPS pair or the legacy single pair).
+        if (unit.gpsLicenseStartDate || unit.gpsLicenseEndDate
+            || unit.licenseStartDate || unit.licenseEndDate) return;
         const start = hit.start;
         const end = addOneYear(start);
-        unit.licenseStartDate = start;
-        unit.licenseEndDate = end;
+        unit.gpsLicenseStartDate = start;
+        unit.gpsLicenseEndDate = end;
         updates.push(unit);
     });
 

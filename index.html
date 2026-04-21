@@ -341,8 +341,9 @@
                                 <th onclick="sortTable('site')">Site <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                                 <th onclick="sortTable('userCategory')">User Category <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                                 <th onclick="sortTable('gpsLicense')">GPS License <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th>GPS Expiry</th>
                                 <th onclick="sortTable('licenseDisplay')">Display License <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
-                                <th>License</th>
+                                <th>Display Expiry</th>
                             </tr>
                         </thead>
                         <tbody id="detailBody"></tbody>
@@ -453,8 +454,9 @@
                             <th>Site</th>
                             <th>User Category</th>
                             <th>GPS License</th>
+                            <th>GPS Expiry</th>
                             <th>Display License</th>
-                            <th>License Expiry</th>
+                            <th>Display Expiry</th>
                             <th>Remarks</th>
                             <th class="col-actions">Actions</th>
                         </tr>
@@ -669,12 +671,20 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">License Start Date</label>
-                            <input type="date" class="form-input" id="formLicenseStart" onchange="autoFillLicenseEnd()">
+                            <label class="form-label">GPS License Start Date</label>
+                            <input type="date" class="form-input" id="formGpsLicenseStart" onchange="autoFillGpsLicenseEnd()">
                         </div>
                         <div class="form-group">
-                            <label class="form-label">License Expiration Date</label>
-                            <input type="date" class="form-input" id="formLicenseEnd">
+                            <label class="form-label">GPS License Expiration Date</label>
+                            <input type="date" class="form-input" id="formGpsLicenseEnd">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Display License Start Date</label>
+                            <input type="date" class="form-input" id="formDisplayLicenseStart" onchange="autoFillDisplayLicenseEnd()">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Display License Expiration Date</label>
+                            <input type="date" class="form-input" id="formDisplayLicenseEnd">
                         </div>
                         <div class="form-group full-width">
                             <label class="form-label">Remarks / Notes <span class="form-optional">(optional)</span></label>
