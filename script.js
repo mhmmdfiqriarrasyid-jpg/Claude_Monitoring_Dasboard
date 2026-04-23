@@ -14,6 +14,12 @@ let undoTimer = null;
 let globalImplements = [];
 let selectedImplementIds = new Set();
 
+// ---- Breakdown reason modal state ----
+let _pendingBreakdown = null;  // { unitId, fields, isInline, el }
+
+// ---- Edit table sort state ----
+let editSortState = { key: null, asc: true };
+
 // ---- Cloud sync state ----
 let cloudInitialized = false;
 let cloudUnitsUnsub = null;
@@ -740,6 +746,7 @@ function trackStatusChange(unit, oldStatus, newStatus) {
         if (!unit.downtimeHistory) unit.downtimeHistory = [];
         unit.downtimeHistory.push({ start, end, durationMs: end - start });
         unit.breakdownStartedAt = null;
+        unit.breakdownReason = '';
     }
 }
 
@@ -900,6 +907,7 @@ function onDataLoaded() {
     document.getElementById('dashboardContent').style.display = 'block';
 
     populateFilters();
+    populateEditFilters();
     filteredData = [...globalData];
     updateDashboard(filteredData);
 
@@ -1042,9 +1050,10 @@ function renderTable(data) {
             <td><strong>${escapeHtml(d.name)}</strong></td>
             <td>${escapeHtml(d.model)}</td>
             <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
-            <td><span class="badge ${isGood(d.status) ? 'badge-good' : 'badge-breakdown'}">
-                <i class="fas fa-${isGood(d.status) ? 'check' : 'xmark'}"></i> ${escapeHtml(d.status)}
-            </span></td>
+            <td>${!isGood(d.status) && d.breakdownReason
+                ? `<span class="badge badge-breakdown bd-clickable" onclick="showBreakdownPopover(event, '${escapeHtml(d.breakdownReason).replace(/'/g, "\\'")}')"><i class="fas fa-xmark"></i> ${escapeHtml(d.status)}</span>`
+                : `<span class="badge ${isGood(d.status) ? 'badge-good' : 'badge-breakdown'}"><i class="fas fa-${isGood(d.status) ? 'check' : 'xmark'}"></i> ${escapeHtml(d.status)}</span>`
+            }</td>
             <td class="${isGood(d.display) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.display)}</td>
             <td class="${isGood(d.gps) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.gps)}</td>
             <td class="${isGood(d.steering) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.steering)}</td>
@@ -1282,13 +1291,28 @@ function renderEditTable() {
     if (selectAllBox) selectAllBox.checked = false;
 
     const query = (document.getElementById('editSearch')?.value || '').toLowerCase().trim();
-    const rows = query
-        ? globalData.filter(d => `${d.name} ${d.model} ${d.sn} ${d.site}`.toLowerCase().includes(query))
-        : globalData;
+    const statusVal = (document.getElementById('editStatusFilter')?.value || '');
+    const siteVal = (document.getElementById('editSiteFilter')?.value || '');
+
+    let rows = [...globalData];
+    if (query) rows = rows.filter(d => `${d.name} ${d.model} ${d.sn} ${d.site}`.toLowerCase().includes(query));
+    if (statusVal) rows = rows.filter(d => d.status === statusVal);
+    if (siteVal) rows = rows.filter(d => d.site === siteVal);
+
+    // Apply sort
+    if (editSortState.key && editSortState.key !== 'no') {
+        const k = editSortState.key;
+        rows.sort((a, b) => {
+            const va = (a[k] || '').toLowerCase(), vb = (b[k] || '').toLowerCase();
+            if (va < vb) return editSortState.asc ? -1 : 1;
+            if (va > vb) return editSortState.asc ? 1 : -1;
+            return 0;
+        });
+    }
 
     const tbody = document.getElementById('editBody');
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="18" style="text-align:center;padding:24px;color:#718096">${query ? 'No units match your search' : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="18" style="text-align:center;padding:24px;color:#718096">${(query || statusVal || siteVal) ? 'No units match your filters' : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.'}</td></tr>`;
         return;
     }
 
@@ -1324,6 +1348,30 @@ function renderEditTable() {
         </tr>`; }).join('');
 }
 
+function sortEditTable(key) {
+    if (key === 'no') { editSortState.key = null; }
+    else if (editSortState.key === key) { editSortState.asc = !editSortState.asc; }
+    else { editSortState.key = key; editSortState.asc = true; }
+    renderEditTable();
+}
+
+function populateEditFilters() {
+    const statuses = [...new Set(globalData.map(d => d.status))].filter(Boolean).sort();
+    const sites = [...new Set(globalData.map(d => d.site))].filter(Boolean).sort();
+    const sf = document.getElementById('editStatusFilter');
+    const sif = document.getElementById('editSiteFilter');
+    if (sf) {
+        const cur = sf.value;
+        sf.innerHTML = '<option value="">All Status</option>' + statuses.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+        sf.value = cur;
+    }
+    if (sif) {
+        const cur = sif.value;
+        sif.innerHTML = '<option value="">All Sites</option>' + sites.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+        sif.value = cur;
+    }
+}
+
 // ---- Inline Edit ----
 function saveInlineEdit(el) {
     if (!canEdit()) {
@@ -1340,9 +1388,68 @@ function saveInlineEdit(el) {
     const unit = globalData.find(d => d.id === id);
 
     if (unit && unit[field] !== newValue) {
+        // Intercept status changing TO Breakdown → prompt for reason
+        if (field === 'status' && !isGood(newValue) && isGood(unit.status)) {
+            _pendingBreakdown = { unitId: id, fields: { status: newValue }, isInline: true, el };
+            document.getElementById('breakdownReasonText').value = '';
+            document.getElementById('breakdownReasonModal').classList.add('open');
+            return;
+        }
         updateUnit(id, { [field]: newValue });
         showToast(`${COMPONENT_LABELS[field] || field.charAt(0).toUpperCase() + field.slice(1)} updated`, 'success');
     }
+}
+
+// ---- Breakdown reason modal ----
+function confirmBreakdownReason() {
+    const reason = (document.getElementById('breakdownReasonText').value || '').trim();
+    if (!reason) {
+        showToast('Please enter a breakdown reason', 'warning');
+        document.getElementById('breakdownReasonText').focus();
+        return;
+    }
+    const p = _pendingBreakdown;
+    if (!p) return;
+    _pendingBreakdown = null;
+    document.getElementById('breakdownReasonModal').classList.remove('open');
+
+    p.fields.breakdownReason = reason;
+    if (p.isInline) {
+        updateUnit(p.unitId, p.fields);
+        showToast('Status updated — breakdown reason recorded', 'success');
+    } else {
+        _commitSaveUnit(p.unitId, p.fields);
+    }
+}
+
+function cancelBreakdownReason() {
+    const p = _pendingBreakdown;
+    _pendingBreakdown = null;
+    document.getElementById('breakdownReasonModal').classList.remove('open');
+    // Revert inline edit cell if it was an inline change
+    if (p && p.isInline && p.el) {
+        const unit = globalData.find(d => d.id === p.unitId);
+        if (unit) p.el.textContent = unit.status || 'Good';
+    }
+}
+
+// ---- Breakdown popover (dashboard) ----
+function showBreakdownPopover(event, reason) {
+    event.stopPropagation();
+    const pop = document.getElementById('breakdownPopover');
+    pop.textContent = reason;
+    pop.style.display = 'block';
+    const rect = event.currentTarget.getBoundingClientRect();
+    pop.style.top = (rect.bottom + window.scrollY + 8) + 'px';
+    pop.style.left = (rect.left + window.scrollX + rect.width / 2) + 'px';
+
+    const dismiss = (e) => {
+        if (!pop.contains(e.target)) {
+            pop.style.display = 'none';
+            document.removeEventListener('click', dismiss);
+        }
+    };
+    setTimeout(() => document.addEventListener('click', dismiss), 0);
 }
 
 // ---- Select / Delete ----
@@ -1457,6 +1564,17 @@ function editUnit(id) {
     document.getElementById('formDisplayLicenseEnd').value   = unit.displayLicenseEndDate || '';
     document.getElementById('formRemarks').value        = unit.remarks || '';
 
+    // Show breakdown reason if this unit is currently in Breakdown
+    const bdBox = document.getElementById('breakdownReasonDisplay');
+    const bdInfo = document.getElementById('breakdownReasonInfo');
+    if (!isGood(unit.status) && unit.breakdownReason) {
+        bdInfo.textContent = unit.breakdownReason;
+        bdBox.style.display = '';
+    } else {
+        bdInfo.textContent = '';
+        bdBox.style.display = 'none';
+    }
+
     document.getElementById('unitModal').classList.add('open');
 }
 
@@ -1485,12 +1603,26 @@ function saveUnit(event) {
         remarks: document.getElementById('formRemarks').value.trim()
     };
 
+    // If status is changing TO Breakdown, prompt for a reason first.
+    if (!isGood(fields.status)) {
+        const existingUnit = id ? globalData.find(d => d.id === id) : null;
+        const wasGood = existingUnit ? isGood(existingUnit.status) : true;
+        if (wasGood) {
+            _pendingBreakdown = { unitId: id, fields, isInline: false };
+            document.getElementById('breakdownReasonText').value = '';
+            document.getElementById('breakdownReasonModal').classList.add('open');
+            return;
+        }
+    }
+
+    _commitSaveUnit(id, fields);
+}
+
+function _commitSaveUnit(id, fields) {
     if (id) {
-        // Edit existing
         updateUnit(id, fields);
         showToast(`Unit "${fields.name}" updated`, 'success');
     } else {
-        // Add new
         const newUnit = { id: generateId(), ...fields, downtimeHistory: [], breakdownStartedAt: null };
         const { added } = addUnits([newUnit]);
         if (added > 0) {

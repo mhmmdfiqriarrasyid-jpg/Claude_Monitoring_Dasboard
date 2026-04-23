@@ -413,6 +413,12 @@
                 </button>
             </div>
             <div class="edit-toolbar__right">
+                <select class="form-select form-select--sm" id="editStatusFilter" onchange="renderEditTable()">
+                    <option value="">All Status</option>
+                </select>
+                <select class="form-select form-select--sm" id="editSiteFilter" onchange="renderEditTable()">
+                    <option value="">All Sites</option>
+                </select>
                 <div class="edit-search">
                     <i class="fas fa-search"></i>
                     <input type="text" id="editSearch" placeholder="Search units... (press /)">
@@ -442,20 +448,20 @@
                     <thead>
                         <tr>
                             <th class="col-check"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
-                            <th>No</th>
-                            <th>Nickname</th>
-                            <th>Model</th>
-                            <th>Serial Number</th>
-                            <th>Status</th>
-                            <th>Display</th>
-                            <th>GPS</th>
-                            <th>Steering</th>
-                            <th>JDLink</th>
-                            <th>Site</th>
-                            <th>User Category</th>
-                            <th>GPS License</th>
+                            <th onclick="sortEditTable('no')">No <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('name')">Nickname <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('model')">Model <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('sn')">Serial Number <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('status')">Status <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('display')">Display <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('gps')">GPS <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('steering')">Steering <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('jdlink')">JDLink <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('site')">Site <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('userCategory')">User Category <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('gpsLicense')">GPS License <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                             <th>GPS Expiry</th>
-                            <th>Display License</th>
+                            <th onclick="sortEditTable('licenseDisplay')">Display License <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                             <th>Display Expiry</th>
                             <th>Remarks</th>
                             <th class="col-actions">Actions</th>
@@ -637,6 +643,10 @@
                             <option value="Good">Good</option>
                             <option value="Breakdown">Breakdown</option>
                         </select>
+                    </div>
+                    <div class="form-group full-width" id="breakdownReasonDisplay" style="display:none">
+                        <label class="form-label">Breakdown Reason</label>
+                        <div id="breakdownReasonInfo" class="breakdown-reason-box"></div>
                     </div>
                 </div>
 
@@ -853,6 +863,29 @@
 <footer class="footer">
     OT Monitoring Tractor and Device &copy; 2026 &mdash; Data-driven fleet management
 </footer>
+
+<!-- ===== BREAKDOWN REASON MODAL ===== -->
+<div class="modal-overlay" id="breakdownReasonModal">
+    <div class="modal-card" style="max-width:420px">
+        <div class="modal-header">
+            <h3>Breakdown Reason</h3>
+            <button class="btn-icon" onclick="cancelBreakdownReason()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+                Why is this unit breaking down? This will be recorded in the unit's history.
+            </p>
+            <textarea class="form-input form-textarea" id="breakdownReasonText" rows="3" placeholder="Enter breakdown reason…"></textarea>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-secondary" onclick="cancelBreakdownReason()">Cancel</button>
+            <button class="btn btn-danger" onclick="confirmBreakdownReason()"><i class="fas fa-check"></i> Confirm Breakdown</button>
+        </div>
+    </div>
+</div>
+
+<!-- Breakdown popover (positioned via JS) -->
+<div id="breakdownPopover" class="breakdown-popover" style="display:none"></div>
 
 <script src="script.js"></script>
 <script type="module" src="firebase-init.js"></script>

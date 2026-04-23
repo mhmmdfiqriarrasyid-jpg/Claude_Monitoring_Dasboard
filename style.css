@@ -1431,6 +1431,55 @@ body.dark .badge-cat {
     text-transform: capitalize;
 }
 
+/* Breakdown popover */
+.breakdown-popover {
+    position: absolute;
+    z-index: 9999;
+    background: #fff;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    max-width: 280px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.15);
+    transform: translateX(-50%);
+    line-height: 1.5;
+    word-wrap: break-word;
+}
+body.dark .breakdown-popover {
+    background: #2d3748;
+    border-color: #4a5568;
+    color: #e2e8f0;
+}
+
+.bd-clickable { cursor: pointer; }
+.bd-clickable:hover { opacity: 0.85; }
+
+/* Breakdown reason display in edit form */
+.breakdown-reason-box {
+    background: #fff5f5;
+    border: 1px solid #feb2b2;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: #c53030;
+    line-height: 1.5;
+}
+body.dark .breakdown-reason-box {
+    background: #3b1a1a;
+    border-color: #9b2c2c;
+    color: #feb2b2;
+}
+
+/* Edit table filter selects */
+.form-select--sm {
+    padding: 6px 28px 6px 10px;
+    font-size: 12px;
+    border-radius: 6px;
+    min-width: 100px;
+}
+
 .modal-card--wide { max-width: 980px; }
 
 /* ============================================================
