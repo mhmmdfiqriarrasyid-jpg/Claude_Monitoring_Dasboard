@@ -512,6 +512,7 @@
                             <th>Working Width</th>
                             <th>Operation</th>
                             <th>Connecting Type</th>
+                            <th>Chart of Account</th>
                             <th class="col-actions">Actions</th>
                         </tr>
                     </thead>
@@ -850,6 +851,14 @@
                         <input class="form-input" id="implImplementReceiver">
                     </div>
                 </div>
+
+                <fieldset class="form-section">
+                    <legend>Chart of Account</legend>
+                    <div id="implChartOfAccountsList" class="coa-list"></div>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="addChartOfAccountRow()">
+                        <i class="fas fa-plus"></i> Add Chart of Account
+                    </button>
+                </fieldset>
             </form>
         </div>
         <div class="form-actions">

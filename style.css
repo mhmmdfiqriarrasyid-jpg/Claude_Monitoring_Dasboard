@@ -1480,6 +1480,25 @@ body.dark .breakdown-reason-box {
     min-width: 100px;
 }
 
+/* Chart of Account dynamic list in implement modal */
+.coa-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.coa-row {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+}
+.coa-row .coa-input { flex: 1; min-width: 0; }
+.coa-row .coa-remove {
+    flex-shrink: 0;
+    padding: 6px 12px;
+    color: var(--danger);
+}
+
 .modal-card--wide { max-width: 980px; }
 
 /* ============================================================

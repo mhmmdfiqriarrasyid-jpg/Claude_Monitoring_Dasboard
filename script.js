@@ -1746,6 +1746,52 @@ function generateImplementId() {
     return 'imp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
 }
 
+// ---- Chart of Account dynamic list ----
+function renderChartOfAccountsInputs(values) {
+    const container = document.getElementById('implChartOfAccountsList');
+    if (!container) return;
+    const list = (Array.isArray(values) && values.length) ? values : [''];
+    container.innerHTML = list.map(v => `
+        <div class="coa-row">
+            <input type="text" class="form-input coa-input" value="${escapeHtml(v)}" placeholder="e.g. 5100-001 Spare Parts">
+            <button type="button" class="btn btn-secondary coa-remove" onclick="removeChartOfAccountRow(this)" title="Remove">
+                <i class="fas fa-xmark"></i>
+            </button>
+        </div>
+    `).join('');
+}
+
+function addChartOfAccountRow() {
+    const container = document.getElementById('implChartOfAccountsList');
+    if (!container) return;
+    const row = document.createElement('div');
+    row.className = 'coa-row';
+    row.innerHTML = `
+        <input type="text" class="form-input coa-input" placeholder="e.g. 5100-001 Spare Parts">
+        <button type="button" class="btn btn-secondary coa-remove" onclick="removeChartOfAccountRow(this)" title="Remove">
+            <i class="fas fa-xmark"></i>
+        </button>
+    `;
+    container.appendChild(row);
+    row.querySelector('input').focus();
+}
+
+function removeChartOfAccountRow(btn) {
+    const row = btn.closest('.coa-row');
+    if (row) row.remove();
+    // Always keep at least one empty row so the UI never looks empty.
+    const container = document.getElementById('implChartOfAccountsList');
+    if (container && container.children.length === 0) {
+        renderChartOfAccountsInputs(['']);
+    }
+}
+
+function collectChartOfAccounts() {
+    return Array.from(document.querySelectorAll('#implChartOfAccountsList .coa-input'))
+        .map(i => i.value.trim())
+        .filter(Boolean);
+}
+
 // ---- Storage ----
 function loadImplements() {
     try {
@@ -1791,14 +1837,19 @@ function renderImplementsTable() {
     if (!tbody) return;
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:#718096">${
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:24px;color:#718096">${
             query ? 'No implements match your search'
                   : 'No implements yet. Click <strong>Add Implement</strong> to get started.'
         }</td></tr>`;
         return;
     }
 
-    tbody.innerHTML = rows.map((d, i) => `
+    tbody.innerHTML = rows.map((d, i) => {
+        const coaList = Array.isArray(d.chartOfAccounts) ? d.chartOfAccounts.filter(Boolean) : [];
+        const coaCell = coaList.length
+            ? coaList.map(c => `<span class="badge badge-cat" style="font-size:10px;margin:1px">${escapeHtml(c)}</span>`).join(' ')
+            : '<span style="color:#a0aec0;font-size:11px">—</span>';
+        return `
         <tr>
             <td class="col-check"><input type="checkbox" class="impl-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedImplementCount()"></td>
             <td>${i + 1}</td>
@@ -1807,13 +1858,15 @@ function renderImplementsTable() {
             <td>${escapeHtml(d.workingWidth)}</td>
             <td>${escapeHtml(d.operation)}</td>
             <td>${escapeHtml(d.connectingType)}</td>
+            <td style="max-width:220px">${coaCell}</td>
             <td class="col-actions">
                 <div class="row-actions">
                     <button class="btn btn-secondary" title="Edit" onclick="editImplement('${escapeHtml(d.id)}')"><i class="fas fa-pen"></i></button>
                     <button class="btn btn-secondary" title="Delete" onclick="deleteImplement('${escapeHtml(d.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
                 </div>
             </td>
-        </tr>`).join('');
+        </tr>`;
+    }).join('');
 }
 
 // ---- Selection ----
@@ -1839,6 +1892,7 @@ function showAddImplementForm() {
     document.getElementById('implementModalTitle').textContent = 'Add Implement';
     document.getElementById('editImplementId').value = '';
     document.getElementById('implementForm').reset();
+    renderChartOfAccountsInputs(['']);
     document.getElementById('implementModal').classList.add('open');
 }
 
@@ -1853,6 +1907,7 @@ function editImplement(id) {
         const el = document.getElementById(f.inputId);
         if (el) el.value = imp[f.key] || '';
     });
+    renderChartOfAccountsInputs(imp.chartOfAccounts || ['']);
     document.getElementById('implementModal').classList.add('open');
 }
 
@@ -1865,6 +1920,7 @@ function saveImplement(event) {
         const el = document.getElementById(f.inputId);
         data[f.key] = el ? el.value.trim() : '';
     });
+    data.chartOfAccounts = collectChartOfAccounts();
 
     if (id) {
         // Update existing
@@ -1887,6 +1943,18 @@ function saveImplement(event) {
                     });
                 }
             });
+            const beforeCoa = JSON.stringify(before.chartOfAccounts || []);
+            const afterCoa = JSON.stringify(data.chartOfAccounts);
+            if (beforeCoa !== afterCoa) {
+                logEvent({
+                    action: 'update',
+                    unitId: id,
+                    unitName: `[Implement] ${data.profileName}`,
+                    field: 'Chart of Account',
+                    before: (before.chartOfAccounts || []).join(', '),
+                    after: data.chartOfAccounts.join(', ')
+                });
+            }
             showToast(`Implement "${data.profileName}" updated`, 'success');
         }
     } else {
