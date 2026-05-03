@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OT Monitoring Tractor and Device</title>
+
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <!-- Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#2b6cb0">
+
+    <!-- Dashboard Styles -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner"></div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ===== AUTH GATE (Login / Sign-up / Pending) ===== -->
+<div class="auth-gate" id="authGate">
+    <div class="auth-card">
+        <div class="auth-card__brand">
+            <img src="./logo.png" alt="OT Monitoring logo" class="brand-logo--lg">
+            <h1>OT Monitoring Tractor and Device</h1>
+            <p>Fleet health, devices &amp; implements — one dashboard.</p>
+        </div>
+
+        <!-- Tabs: Sign In / Create Account -->
+        <div class="auth-tabs">
+            <button class="auth-tab active" id="authTabSignIn" onclick="switchAuthTab('signin')">Sign In</button>
+            <button class="auth-tab" id="authTabSignUp" onclick="switchAuthTab('signup')">Create Account</button>
+        </div>
+
+        <!-- Sign In form -->
+        <form id="signInForm" class="auth-form" onsubmit="handleSignIn(event)">
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-input" id="signInEmail" required autocomplete="email">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="password" class="form-input" id="signInPassword" required autocomplete="current-password">
+            </div>
+            <div class="auth-error" id="signInError"></div>
+            <button type="submit" class="btn btn-primary auth-submit">
+                <i class="fas fa-right-to-bracket"></i> Sign In
+            </button>
+        </form>
+
+        <!-- Sign Up form -->
+        <form id="signUpForm" class="auth-form" style="display:none" onsubmit="handleSignUp(event)">
+            <div class="form-group">
+                <label class="form-label">Display Name</label>
+                <input type="text" class="form-input" id="signUpName" placeholder="Your name" autocomplete="name">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" class="form-input" id="signUpEmail" required autocomplete="email">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="password" class="form-input" id="signUpPassword" required minlength="6" autocomplete="new-password">
+            </div>
+            <div class="auth-error" id="signUpError"></div>
+            <div class="auth-hint">
+                <i class="fas fa-info-circle"></i>
+                New accounts start as <strong>view-only</strong> and need approval from the owner before you can edit data.
+            </div>
+            <button type="submit" class="btn btn-primary auth-submit">
+                <i class="fas fa-user-plus"></i> Create Account
+            </button>
+        </form>
+
+        <div class="auth-card__footer">© 2026 OT Monitoring Tractor and Device</div>
+    </div>
+</div>
+
+<!-- ===== PENDING APPROVAL SCREEN (logged in but not approved) ===== -->
+<div class="auth-gate" id="pendingGate" style="display:none">
+    <div class="auth-card">
+        <div class="auth-card__brand">
+            <i class="fas fa-hourglass-half" style="color:#d69e2e"></i>
+            <h1>Waiting for approval</h1>
+            <p id="pendingEmail"></p>
+        </div>
+        <div class="pending-message">
+            <p>Your account has been created, but the owner needs to approve it before you can access the dashboard.</p>
+            <p style="margin-top:12px;color:var(--text-secondary);font-size:13px">
+                Once approved, refresh this page or sign in again. You'll start with <strong>view-only</strong> access — the owner can grant edit rights at any time.
+            </p>
+        </div>
+        <button class="btn btn-secondary auth-submit" onclick="handleSignOut()">
+            <i class="fas fa-right-from-bracket"></i> Sign Out
+        </button>
+    </div>
+</div>
+
+<!-- ===== HEADER ===== -->
+<header class="header">
+  <div class="header__inner">
+    <div class="header__brand">
+        <img src="./logo.png" alt="OT Monitoring logo" class="brand-logo">
+    </div>
+    <nav class="header__nav">
+        <a class="nav__link active" data-view="dashboard" onclick="navigateTo('dashboard')">
+            <i class="fas fa-chart-line"></i> Dashboard
+        </a>
+        <a class="nav__link" data-view="editUnits" onclick="navigateTo('editUnits')">
+            <i class="fas fa-pen-to-square"></i> Edit Units
+        </a>
+        <a class="nav__link" data-view="implements" onclick="navigateTo('implements')">
+            <i class="fas fa-trailer"></i> Implements
+        </a>
+        <a class="nav__link" data-view="users" data-owner-only onclick="navigateTo('users')" style="display:none">
+            <i class="fas fa-users-gear"></i> Users
+        </a>
+        <a class="nav__link" onclick="showHistory()" title="Change History">
+            <i class="fas fa-clock-rotate-left"></i> History
+        </a>
+    </nav>
+    <div class="header__meta">
+        <button class="btn-icon header__dark-toggle" onclick="toggleDarkMode()" title="Toggle dark mode (Shift+D)">
+            <i class="fas fa-moon"></i>
+        </button>
+        <div class="header__status">
+            <span class="status-dot" id="connectionDot"></span>
+            <span id="connectionLabel">No Data</span>
+        </div>
+        <span id="lastUpdated"></span>
+        <div class="user-pill" id="userPill" style="display:none" onclick="toggleUserMenu()">
+            <i class="fas fa-user-circle"></i>
+            <span class="user-pill__name" id="userPillName">—</span>
+            <span class="user-pill__role" id="userPillRole">—</span>
+            <i class="fas fa-chevron-down user-pill__chev"></i>
+            <div class="user-menu" id="userMenu">
+                <div class="user-menu__header">
+                    <div class="user-menu__email" id="userMenuEmail">—</div>
+                    <div class="user-menu__role-label" id="userMenuRoleLabel">—</div>
+                </div>
+                <button class="user-menu__item" onclick="handleSignOut(); event.stopPropagation();">
+                    <i class="fas fa-right-from-bracket"></i> Sign out
+                </button>
+            </div>
+        </div>
+    </div>
+  </div>
+</header>
+
+<!-- ===== MAIN ===== -->
+<main class="main">
+
+    <!-- ==================== DASHBOARD VIEW ==================== -->
+    <div id="viewDashboard" class="view">
+
+        <!-- Change Alert Banner -->
+        <div class="change-banner" id="changeBanner">
+            <div class="change-banner__content">
+                <i class="fas fa-info-circle"></i>
+                <span id="changeBannerText"></span>
+            </div>
+            <button class="btn-icon" onclick="dismissBanner()"><i class="fas fa-xmark"></i></button>
+        </div>
+
+        <!-- Empty State (shown when no data) -->
+        <div id="emptyState" class="empty-state">
+            <i class="fas fa-database"></i>
+            <h3>No Units in Database</h3>
+            <p>Go to Edit Units to add tractor units manually or import from a CSV file.</p>
+            <br>
+            <button class="btn btn-primary" onclick="navigateTo('editUnits')">
+                <i class="fas fa-pen-to-square"></i> Manage Units
+            </button>
+        </div>
+
+        <!-- Dashboard Content (hidden until data exists) -->
+        <div id="dashboardContent" style="display:none;">
+
+            <!-- KPI Cards -->
+            <div class="kpi-grid">
+                <div class="kpi-card total">
+                    <div class="kpi-card__header">
+                        <span class="kpi-card__label">Total Units</span>
+                        <div class="kpi-card__icon"><i class="fas fa-boxes-stacked"></i></div>
+                    </div>
+                    <div class="kpi-card__value" id="kpiTotal">0</div>
+                    <div class="kpi-card__sub">All registered units</div>
+                </div>
+                <div class="kpi-card good">
+                    <div class="kpi-card__header">
+                        <span class="kpi-card__label">Good</span>
+                        <div class="kpi-card__icon"><i class="fas fa-check-circle"></i></div>
+                    </div>
+                    <div class="kpi-card__value" id="kpiGood">0</div>
+                    <div class="kpi-card__sub" id="kpiGoodPct">0% of total</div>
+                    <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiGoodBar" style="width:0%"></div></div>
+                </div>
+                <div class="kpi-card breakdown">
+                    <div class="kpi-card__header">
+                        <span class="kpi-card__label">Breakdown</span>
+                        <div class="kpi-card__icon"><i class="fas fa-exclamation-triangle"></i></div>
+                    </div>
+                    <div class="kpi-card__value" id="kpiBreakdown">0</div>
+                    <div class="kpi-card__sub" id="kpiBreakdownPct">0% of total</div>
+                    <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiBreakdownBar" style="width:0%"></div></div>
+                </div>
+                <div class="kpi-card issue">
+                    <div class="kpi-card__header">
+                        <span class="kpi-card__label">Units with Issues</span>
+                        <div class="kpi-card__icon"><i class="fas fa-wrench"></i></div>
+                    </div>
+                    <div class="kpi-card__value" id="kpiIssue">0</div>
+                    <div class="kpi-card__sub" id="kpiIssuePct">0% of total</div>
+                    <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiIssueBar" style="width:0%"></div></div>
+                </div>
+                <div class="kpi-card health">
+                    <div class="kpi-card__header">
+                        <span class="kpi-card__label">Health Rate</span>
+                        <div class="kpi-card__icon"><i class="fas fa-heart-pulse"></i></div>
+                    </div>
+                    <div class="kpi-card__value" id="kpiHealth">0%</div>
+                    <div class="kpi-card__sub">Overall fleet health</div>
+                    <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiHealthBar" style="width:0%"></div></div>
+                </div>
+            </div>
+
+            <!-- Charts Row -->
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <div class="chart-card__title"><i class="fas fa-chart-pie"></i> Unit Status Overview</div>
+                    <div class="chart-container"><canvas id="statusChart"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-card__title"><i class="fas fa-chart-bar"></i> Distribution by Site</div>
+                    <div class="chart-container"><canvas id="siteChart"></canvas></div>
+                </div>
+            </div>
+
+            <!-- Component Health -->
+            <div class="component-health">
+                <div class="section-header">
+                    <div class="section-title"><i class="fas fa-microchip"></i> Component Health Overview</div>
+                </div>
+                <div class="component-grid" id="componentGrid"></div>
+            </div>
+
+            <!-- Downtime & Reliability Section -->
+            <div class="downtime-section">
+                <div class="section-header">
+                    <div class="section-title"><i class="fas fa-stopwatch"></i> Reliability &amp; Downtime</div>
+                    <span style="font-size:11px;color:var(--text-light)">Tracked automatically from status changes</span>
+                </div>
+                <div class="downtime-kpis">
+                    <div class="downtime-kpi">
+                        <div class="downtime-kpi__label">MTBF</div>
+                        <div class="downtime-kpi__value" id="kpiMTBF">-</div>
+                        <div class="downtime-kpi__sub">Mean time between failures</div>
+                    </div>
+                    <div class="downtime-kpi">
+                        <div class="downtime-kpi__label">MTTR</div>
+                        <div class="downtime-kpi__value" id="kpiMTTR">-</div>
+                        <div class="downtime-kpi__sub">Mean time to repair</div>
+                    </div>
+                    <div class="downtime-kpi">
+                        <div class="downtime-kpi__label">This Month</div>
+                        <div class="downtime-kpi__value" id="kpiMonthDowntime">-</div>
+                        <div class="downtime-kpi__sub">Total downtime</div>
+                    </div>
+                    <div class="downtime-kpi">
+                        <div class="downtime-kpi__label">Failures</div>
+                        <div class="downtime-kpi__value" id="kpiFailures">0</div>
+                        <div class="downtime-kpi__sub">Breakdowns recorded</div>
+                    </div>
+                </div>
+                <div class="downtime-grid">
+                    <div>
+                        <div class="chart-card__title"><i class="fas fa-ranking-star"></i> Top 5 Worst Offenders</div>
+                        <div class="top-offenders" id="topOffendersList"></div>
+                    </div>
+                    <div>
+                        <div class="chart-card__title"><i class="fas fa-chart-bar"></i> Downtime by Unit (Top 10)</div>
+                        <div class="chart-container-sm"><canvas id="downtimeChart"></canvas></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filter Bar -->
+            <div class="filter-bar">
+                <div class="filter-bar__search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="searchInput" placeholder="Search by nickname, model, or serial...">
+                </div>
+                <select id="statusFilter"><option value="">All Status</option></select>
+                <select id="siteFilter"><option value="">All Sites</option></select>
+                <select id="componentFilter">
+                    <option value="">All Components</option>
+                    <option value="Display">Display Issues</option>
+                    <option value="GPS">GPS Issues</option>
+                    <option value="Steering">Steering Issues</option>
+                    <option value="JDLink">JDLink Issues</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" onclick="clearFilter()"><i class="fas fa-rotate-left"></i> Reset</button>
+                <span class="filter-count" id="filterCount"></span>
+            </div>
+
+            <!-- Detail Table -->
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-table-list"></i> Unit Detail</div>
+                    <div class="table-card__actions">
+                        <button class="btn btn-secondary btn-sm" onclick="exportCSV()"><i class="fas fa-download"></i> Export CSV</button>
+                        <button class="btn btn-secondary btn-sm" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table" id="detailTable">
+                        <thead>
+                            <tr>
+                                <th onclick="sortTable('no')">No <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('name')">Nickname <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('model')">Model <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('sn')">Serial Number <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('status')">Status <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('display')">Display <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('gps')">GPS <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('steering')">Steering <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('jdlink')">JDLink <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('site')">Site <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('userCategory')">User Category <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('gpsLicense')">GPS License <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th>GPS Expiry</th>
+                                <th onclick="sortTable('licenseDisplay')">Display License <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th>Display Expiry</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detailBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Repair & Maintenance Section -->
+            <div class="repair-section">
+                <div class="repair-header">
+                    <div class="table-card__title"><i class="fas fa-tools"></i> Repair &amp; Maintenance</div>
+                    <div class="table-card__actions">
+                        <select id="issueFilter" class="btn btn-secondary btn-sm" onchange="renderRepair()">
+                            <option value="">All Issues</option>
+                            <option value="Unit">Unit</option>
+                            <option value="Display">Display</option>
+                            <option value="GPS">GPS</option>
+                            <option value="Steering">Steering</option>
+                            <option value="JDLink">JDLink</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="repair-body">
+                    <div class="issue-summary" id="issueSummary"></div>
+                    <div class="repair-grid">
+                        <div>
+                            <div class="chart-card__title"><i class="fas fa-ranking-star"></i> Top Issues</div>
+                            <div class="chart-container-sm"><canvas id="topIssueChart"></canvas></div>
+                        </div>
+                        <div>
+                            <div class="chart-card__title"><i class="fas fa-location-dot"></i> Issues by Site</div>
+                            <div class="chart-container-sm"><canvas id="issueBySiteChart"></canvas></div>
+                        </div>
+                    </div>
+                    <div class="table-wrapper" style="max-height:320px;">
+                        <table class="data-table">
+                            <thead><tr><th>No</th><th>Nickname</th><th>Model</th><th>Serial Number</th><th>Issues</th><th>Site</th></tr></thead>
+                            <tbody id="repairBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /dashboardContent -->
+    </div><!-- /viewDashboard -->
+
+    <!-- ==================== EDIT UNITS VIEW ==================== -->
+    <div id="viewEditUnits" class="view" style="display:none;">
+
+        <!-- Edit Toolbar -->
+        <div class="edit-toolbar">
+            <div class="edit-toolbar__left">
+                <button class="btn btn-primary" onclick="toggleImportPanel()">
+                    <i class="fas fa-file-import"></i> Import CSV
+                </button>
+                <button class="btn btn-success" onclick="showAddForm()">
+                    <i class="fas fa-plus"></i> Add Unit
+                </button>
+                <button class="btn btn-secondary" onclick="exportBackup()" title="Download full JSON backup (Ctrl+S)">
+                    <i class="fas fa-download"></i> Backup
+                </button>
+                <button class="btn btn-secondary" onclick="triggerRestore()" title="Restore from JSON backup">
+                    <i class="fas fa-upload"></i> Restore
+                </button>
+                <button class="btn btn-danger" id="btnDeleteSelected" style="display:none" onclick="deleteSelected()">
+                    <i class="fas fa-trash"></i> Delete Selected (<span id="selectedCount">0</span>)
+                </button>
+            </div>
+            <div class="edit-toolbar__right">
+                <select class="form-select form-select--sm" id="editStatusFilter" onchange="renderEditTable()">
+                    <option value="">All Status</option>
+                </select>
+                <select class="form-select form-select--sm" id="editSiteFilter" onchange="renderEditTable()">
+                    <option value="">All Sites</option>
+                </select>
+                <div class="edit-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="editSearch" placeholder="Search units... (press /)">
+                </div>
+                <span id="editUnitCount">0 units in database</span>
+            </div>
+        </div>
+        <input type="file" id="restoreFileInput" accept=".json" hidden>
+
+        <!-- Import Panel (collapsible) -->
+        <div class="import-panel" id="importPanel">
+            <div class="file-upload-area" id="editDropZone" onclick="document.getElementById('editCsvInput').click()">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <p>Click to upload or drag & drop a CSV file</p>
+                <span class="hint">New units will be added. Duplicate serial numbers are skipped.</span>
+                <input type="file" id="editCsvInput" accept=".csv" hidden>
+            </div>
+        </div>
+
+        <!-- Edit Table -->
+        <div class="table-card">
+            <div class="table-card__header">
+                <div class="table-card__title"><i class="fas fa-pen-to-square"></i> Unit Database</div>
+            </div>
+            <div class="table-wrapper" style="max-height:600px;">
+                <table class="data-table" id="editTable">
+                    <thead>
+                        <tr>
+                            <th class="col-check"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
+                            <th onclick="sortEditTable('no')">No <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('name')">Nickname <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('model')">Model <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('sn')">Serial Number <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('status')">Status <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('display')">Display <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('gps')">GPS <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('steering')">Steering <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('jdlink')">JDLink <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('site')">Site <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('userCategory')">User Category <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('gpsLicense')">GPS License <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th>GPS Expiry</th>
+                            <th onclick="sortEditTable('licenseDisplay')">Display License <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th>Display Expiry</th>
+                            <th>Remarks</th>
+                            <th class="col-actions">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="editBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+    </div><!-- /viewEditUnits -->
+
+    <!-- ==================== IMPLEMENTS VIEW ==================== -->
+    <div id="viewImplements" class="view" style="display:none;">
+
+        <!-- Implements Toolbar -->
+        <div class="edit-toolbar">
+            <div class="edit-toolbar__left">
+                <button class="btn btn-success" onclick="showAddImplementForm()">
+                    <i class="fas fa-plus"></i> Add Implement
+                </button>
+                <button class="btn btn-danger" id="btnDeleteSelectedImpl" style="display:none" onclick="deleteSelectedImplements()">
+                    <i class="fas fa-trash"></i> Delete Selected (<span id="selectedImplCount">0</span>)
+                </button>
+            </div>
+            <div class="edit-toolbar__right">
+                <div class="edit-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="implementSearch" placeholder="Search implements...">
+                </div>
+                <span id="implementCount">0 implements in database</span>
+            </div>
+        </div>
+
+        <!-- Implements Table -->
+        <div class="table-card">
+            <div class="table-card__header">
+                <div class="table-card__title"><i class="fas fa-trailer"></i> Implements Database</div>
+            </div>
+            <div class="table-wrapper" style="max-height:600px;">
+                <table class="data-table" id="implementTable">
+                    <thead>
+                        <tr>
+                            <th class="col-check"><input type="checkbox" id="selectAllImpl" onchange="toggleSelectAllImplements()"></th>
+                            <th>No</th>
+                            <th>Profile Name</th>
+                            <th>Equipment Type</th>
+                            <th>Working Width</th>
+                            <th>Operation</th>
+                            <th>Connecting Type</th>
+                            <th>Chart of Account</th>
+                            <th class="col-actions">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="implementBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+    </div><!-- /viewImplements -->
+
+    <!-- ==================== USERS VIEW (Owner only) ==================== -->
+    <div id="viewUsers" class="view" style="display:none;">
+        <div class="edit-toolbar">
+            <div class="edit-toolbar__left">
+                <h2 style="margin:0;font-size:18px;font-weight:600;color:var(--primary)">
+                    <i class="fas fa-users-gear"></i> User Management
+                </h2>
+            </div>
+            <div class="edit-toolbar__right">
+                <span id="usersCount">0 user(s)</span>
+            </div>
+        </div>
+
+        <div class="users-summary" id="usersSummary"></div>
+
+        <div class="table-card">
+            <div class="table-card__header">
+                <div class="table-card__title"><i class="fas fa-clock"></i> Pending Approvals</div>
+            </div>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>No</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Signed up</th>
+                            <th class="col-actions">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pendingUsersBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="table-card" style="margin-top:20px">
+            <div class="table-card__header">
+                <div class="table-card__title"><i class="fas fa-user-check"></i> Active Users</div>
+            </div>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>No</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Last updated</th>
+                            <th>Updated by</th>
+                            <th class="col-actions">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="activeUsersBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div><!-- /viewUsers -->
+
+</main>
+
+<!-- ===== UNIT MODAL (outside views, overlays everything) ===== -->
+<div class="modal-overlay" id="unitModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="modalTitle">Add Unit</h3>
+            <button class="btn-icon" onclick="closeModal()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <form id="unitForm" onsubmit="saveUnit(event)">
+                <input type="hidden" id="editUnitId">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">Nickname</label>
+                        <input class="form-input" id="formName" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Model</label>
+                        <input class="form-input" id="formModel">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Serial Number</label>
+                        <input class="form-input" id="formSN" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Site</label>
+                        <input class="form-input" id="formSite">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Status Unit</label>
+                        <select class="form-select" id="formStatus">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Display</label>
+                        <select class="form-select" id="formDisplay">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">GPS</label>
+                        <select class="form-select" id="formGPS">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Steering</label>
+                        <select class="form-select" id="formSteering">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">JDLink</label>
+                        <select class="form-select" id="formJDLink">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group full-width" id="breakdownReasonDisplay" style="display:none">
+                        <label class="form-label">Breakdown Reason</label>
+                        <div id="breakdownReasonInfo" class="breakdown-reason-box"></div>
+                    </div>
+                </div>
+
+                <fieldset class="form-section">
+                    <legend>Category, License &amp; Notes</legend>
+                    <div class="form-grid">
+                        <div class="form-group full-width">
+                            <label class="form-label" for="formUserCategory">User Category</label>
+                            <div class="form-category-row">
+                                <select class="form-select" id="formUserCategory">
+                                    <option value="">Select category…</option>
+                                </select>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="openCategoriesModal()" title="Manage categories">
+                                    <i class="fas fa-gear"></i> Manage
+                                </button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">GPS License</label>
+                            <select class="form-select" id="formGpsLicense">
+                                <option value="">—</option>
+                                <option value="SF-RTK">SF-RTK</option>
+                                <option value="SF-1">SF-1</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">License Display</label>
+                            <select class="form-select" id="formLicenseDisplay">
+                                <option value="">—</option>
+                                <option value="G5 Basic">G5 Basic</option>
+                                <option value="G5 Advance">G5 Advance</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">GPS License Start Date</label>
+                            <input type="date" class="form-input" id="formGpsLicenseStart" onchange="autoFillGpsLicenseEnd()">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">GPS License Expiration Date</label>
+                            <input type="date" class="form-input" id="formGpsLicenseEnd">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Display License Start Date</label>
+                            <input type="date" class="form-input" id="formDisplayLicenseStart" onchange="autoFillDisplayLicenseEnd()">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Display License Expiration Date</label>
+                            <input type="date" class="form-input" id="formDisplayLicenseEnd">
+                        </div>
+                        <div class="form-group full-width">
+                            <label class="form-label">Remarks / Notes <span class="form-optional">(optional)</span></label>
+                            <textarea class="form-input form-textarea" id="formRemarks" rows="5" placeholder="Free-text notes about this unit — operator observations, repair history, scheduling notes, etc."></textarea>
+                        </div>
+                    </div>
+                </fieldset>
+            </form>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" form="unitForm"><i class="fas fa-check"></i> Save Unit</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== MANAGE USER CATEGORIES MODAL ===== -->
+<div class="modal-overlay" id="categoriesModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3><i class="fas fa-tags"></i> Manage User Categories</h3>
+            <button class="btn-icon" onclick="closeCategoriesModal()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+                Categories appear in the unit edit form. Changes are saved instantly and visible to the whole team.
+            </p>
+            <ul class="categories-list" id="categoriesList"></ul>
+            <form class="category-add-form" onsubmit="addCategory(event)">
+                <input type="text" class="form-input" id="newCategoryName" placeholder="New category name…" maxlength="60" autocomplete="off">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> Add</button>
+            </form>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeCategoriesModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== HISTORY MODAL ===== -->
+<div class="modal-overlay" id="historyModal">
+    <div class="modal-card modal-card--wide">
+        <div class="modal-header">
+            <h3 id="historyTitle">Change History</h3>
+            <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-secondary btn-sm" onclick="exportHistory()"><i class="fas fa-download"></i> Export</button>
+                <button class="btn btn-secondary btn-sm" onclick="clearHistory()"><i class="fas fa-eraser"></i> Clear</button>
+                <button class="btn-icon" onclick="closeHistory()"><i class="fas fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="modal-body" style="padding:0">
+            <div class="history-rules-slot"></div>
+            <div class="table-wrapper" style="max-height:60vh">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>When</th><th>Action</th><th>By</th><th>Unit</th><th>Field</th><th>Before</th><th>After</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== IMPORT REPORT MODAL ===== -->
+<div class="modal-overlay" id="importReportModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>Import Report</h3>
+            <button class="btn-icon" onclick="closeImportReport()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+                <strong id="importReportSummary"></strong>
+            </p>
+            <div class="table-wrapper" style="max-height:50vh">
+                <table class="data-table">
+                    <thead><tr><th>Unit / Row</th><th>Serial / Ref</th><th>Reason</th></tr></thead>
+                    <tbody id="importReportBody"></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-primary" onclick="closeImportReport()">OK</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== IMPLEMENT MODAL ===== -->
+<div class="modal-overlay" id="implementModal">
+    <div class="modal-card modal-card--wide">
+        <div class="modal-header">
+            <h3 id="implementModalTitle">Add Implement</h3>
+            <button class="btn-icon" onclick="closeImplementModal()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <form id="implementForm" onsubmit="saveImplement(event)">
+                <input type="hidden" id="editImplementId">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">Profile Name</label>
+                        <input class="form-input" id="implProfileName" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Type of Equipment</label>
+                        <input class="form-input" id="implEquipmentType" placeholder="e.g. Plow, Sprayer, Seeder">
+                    </div>
+                </div>
+
+                <fieldset class="form-section">
+                    <legend>Dimension</legend>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label">Lateral Offset</label>
+                            <input class="form-input" id="implLateralOffset" placeholder="e.g. 0 m">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Center of Rotation</label>
+                            <input class="form-input" id="implCenterOfRotation" placeholder="e.g. 1.2 m">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Rear Connection</label>
+                            <input class="form-input" id="implRearConnection" placeholder="e.g. 0.8 m">
+                        </div>
+                    </div>
+                </fieldset>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">Operation</label>
+                        <input class="form-input" id="implOperation" placeholder="e.g. Tillage, Spraying">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Working Width</label>
+                        <input class="form-input" id="implWorkingWidth" placeholder="e.g. 4.5 m">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Work Point</label>
+                        <input class="form-input" id="implWorkPoint">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Work Recording</label>
+                        <input class="form-input" id="implWorkRecording">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Connecting Type</label>
+                        <input class="form-input" id="implConnectingType" placeholder="e.g. 3-Point Hitch, Drawbar">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Implement Receiver</label>
+                        <input class="form-input" id="implImplementReceiver">
+                    </div>
+                </div>
+
+                <fieldset class="form-section">
+                    <legend>Chart of Account</legend>
+                    <div id="implChartOfAccountsList" class="coa-list"></div>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="addChartOfAccountRow()">
+                        <i class="fas fa-plus"></i> Add Chart of Account
+                    </button>
+                </fieldset>
+            </form>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeImplementModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" form="implementForm"><i class="fas fa-check"></i> Save Implement</button>
+        </div>
+    </div>
+</div>
+
+<!-- Footer -->
+<footer class="footer">
+    OT Monitoring Tractor and Device &copy; 2026 &mdash; Data-driven fleet management
+</footer>
+
+<!-- ===== BREAKDOWN REASON MODAL ===== -->
+<div class="modal-overlay" id="breakdownReasonModal">
+    <div class="modal-card" style="max-width:420px">
+        <div class="modal-header">
+            <h3>Breakdown Reason</h3>
+            <button class="btn-icon" onclick="cancelBreakdownReason()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+                Why is this unit breaking down? This will be recorded in the unit's history.
+            </p>
+            <textarea class="form-input form-textarea" id="breakdownReasonText" rows="3" placeholder="Enter breakdown reason…"></textarea>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-secondary" onclick="cancelBreakdownReason()">Cancel</button>
+            <button class="btn btn-danger" onclick="confirmBreakdownReason()"><i class="fas fa-check"></i> Confirm Breakdown</button>
+        </div>
+    </div>
+</div>
+
+<!-- Breakdown popover (positioned via JS) -->
+<div id="breakdownPopover" class="breakdown-popover" style="display:none"></div>
+
+<script src="script.js"></script>
+<script type="module" src="firebase-init.js"></script>
+</body>
+</html>
