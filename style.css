@@ -1503,6 +1503,38 @@ body.dark .breakdown-reason-box {
     color: var(--danger);
 }
 
+/* Chart of Account cell dropdown */
+.coa-cell { position: relative; display: inline-flex; align-items: center; gap: 4px; flex-wrap: nowrap; }
+.coa-more {
+    font-size: 10px;
+    color: var(--accent);
+    cursor: pointer;
+    white-space: nowrap;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--primary-lighter);
+}
+.coa-more:hover { background: var(--accent); color: #fff; }
+.coa-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 120;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: var(--shadow-lg);
+    padding: 6px 8px;
+    margin-top: 4px;
+    min-width: 180px;
+    max-width: 320px;
+    flex-direction: column;
+    gap: 3px;
+}
+.coa-cell.open .coa-dropdown { display: flex; }
+
 .modal-card--wide { max-width: 980px; }
 
 /* ============================================================

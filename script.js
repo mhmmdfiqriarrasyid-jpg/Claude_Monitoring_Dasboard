@@ -231,6 +231,11 @@ function setupEventListeners() {
             restoreInput.value = '';
         });
     }
+
+    // Close COA dropdowns on outside click
+    document.addEventListener('click', () => {
+        document.querySelectorAll('.coa-cell.open').forEach(el => el.classList.remove('open'));
+    });
 }
 
 function setupKeyboardShortcuts() {
@@ -1846,9 +1851,16 @@ function renderImplementsTable() {
 
     tbody.innerHTML = rows.map((d, i) => {
         const coaList = Array.isArray(d.chartOfAccounts) ? d.chartOfAccounts.filter(Boolean) : [];
-        const coaCell = coaList.length
-            ? coaList.map(c => `<span class="badge badge-cat" style="font-size:10px;margin:1px">${escapeHtml(c)}</span>`).join(' ')
-            : '<span style="color:#a0aec0;font-size:11px">—</span>';
+        let coaCell;
+        if (!coaList.length) {
+            coaCell = '<span style="color:#a0aec0;font-size:11px">—</span>';
+        } else if (coaList.length === 1) {
+            coaCell = `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(coaList[0])}</span>`;
+        } else {
+            const first = `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(coaList[0])}</span>`;
+            const rest = coaList.slice(1).map(c => `<span class="badge badge-cat" style="font-size:10px;margin:2px 0">${escapeHtml(c)}</span>`).join('');
+            coaCell = `<div class="coa-cell">${first}<span class="coa-more" onclick="this.parentElement.classList.toggle('open');event.stopPropagation()">+${coaList.length - 1} more</span><div class="coa-dropdown">${rest}</div></div>`;
+        }
         return `
         <tr>
             <td class="col-check"><input type="checkbox" class="impl-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedImplementCount()"></td>
@@ -1858,7 +1870,7 @@ function renderImplementsTable() {
             <td>${escapeHtml(d.workingWidth)}</td>
             <td>${escapeHtml(d.operation)}</td>
             <td>${escapeHtml(d.connectingType)}</td>
-            <td style="max-width:220px">${coaCell}</td>
+            <td style="max-width:240px;white-space:nowrap">${coaCell}</td>
             <td class="col-actions">
                 <div class="row-actions">
                     <button class="btn btn-secondary" title="Edit" onclick="editImplement('${escapeHtml(d.id)}')"><i class="fas fa-pen"></i></button>

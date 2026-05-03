@@ -1,7 +1,7 @@
 /* Tractor Monitoring Dashboard - Service Worker
    Cache-first strategy for app shell, network fallback for everything else. */
 
-const CACHE_NAME = 'tractor-monitor-v20';
+const CACHE_NAME = 'tractor-monitor-v21';
 const APP_SHELL = [
     './',
     './index.html',
