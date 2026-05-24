@@ -1074,12 +1074,18 @@ function renderTable(data) {
 }
 
 // ---- Sorting ----
+function _resolveSortValue(d, key) {
+    if (key === 'gpsExpiry') return getLicenseEndDate(d, 'gps');
+    if (key === 'displayExpiry') return getLicenseEndDate(d, 'display');
+    return d[key] || '';
+}
+
 function sortTable(key) {
     if (sortState.key === key) { sortState.asc = !sortState.asc; } else { sortState.key = key; sortState.asc = true; }
     if (key === 'no') { sortState.key = null; filteredData = [...applyFilterLogic()]; }
     else {
         filteredData.sort((a, b) => {
-            const va = (a[key] || '').toLowerCase(), vb = (b[key] || '').toLowerCase();
+            const va = _resolveSortValue(a, key).toLowerCase(), vb = _resolveSortValue(b, key).toLowerCase();
             if (va < vb) return sortState.asc ? -1 : 1;
             if (va > vb) return sortState.asc ? 1 : -1;
             return 0;
@@ -1308,7 +1314,7 @@ function renderEditTable() {
     if (editSortState.key && editSortState.key !== 'no') {
         const k = editSortState.key;
         rows.sort((a, b) => {
-            const va = (a[k] || '').toLowerCase(), vb = (b[k] || '').toLowerCase();
+            const va = _resolveSortValue(a, k).toLowerCase(), vb = _resolveSortValue(b, k).toLowerCase();
             if (va < vb) return editSortState.asc ? -1 : 1;
             if (va > vb) return editSortState.asc ? 1 : -1;
             return 0;
