@@ -2158,6 +2158,7 @@ function applyCloudUnitsSnapshot(units) {
     migrateNicknamesFromExcel();
     migrateLicenseDataBatch1();
     migrateLicenseDataBatch2();
+    migrateSiteData20260525();
 }
 
 function applyCloudImplementsSnapshot(items) {
@@ -3165,6 +3166,192 @@ function migrateLicenseDataBatch2() {
         else if (currentView === 'editUnits') renderEditTable();
     }
     console.log(`[migration] license batch 2: ${updated} updated out of ${data.length}`);
+}
+
+// One-shot site assignment migration — 2025-05-25
+function migrateSiteData20260525() {
+    const FLAG = 'site_migration_20260525_done';
+    if (localStorage.getItem(FLAG)) return;
+    if (!globalData.length) return;
+
+    const data = [
+        {sn:"1T8C570HKST250056",site:"PT. GPA"},
+        {sn:"1YR6150BASU540056",site:"PT. GPA"},
+        {sn:"1YR6150BCSU540068",site:"PT. GPA"},
+        {sn:"1YR6150BVSU540055",site:"PT. GPA"},
+        {sn:"1BM7230CVS3001122",site:"PT. GPA"},
+        {sn:"1BM7230CKS3001133",site:"PT. GPA"},
+        {sn:"1BM7230CJS3001134",site:"PT. GPA"},
+        {sn:"1BM7230CPS3001115",site:"PT. GPA"},
+        {sn:"1BM7230CKS3001147",site:"PT. GPA"},
+        {sn:"1BM7230CLS3001141",site:"PT. GPA"},
+        {sn:"1BM7230CCS3001113",site:"PT. GPA"},
+        {sn:"1BM7230CHS3001125",site:"PT. GPA"},
+        {sn:"1BM7230CHS3001139",site:"PT. GPA"},
+        {sn:"1BM7230CKS3001150",site:"PT. GPA"},
+        {sn:"1BM7230CLS3001107",site:"PT. GPA"},
+        {sn:"1BM7230CCS3001118",site:"PT. GPA"},
+        {sn:"1BM7230CES3001143",site:"PT. GPA"},
+        {sn:"1BM7230CCS3001149",site:"PT. GPA"},
+        {sn:"1BM7230CCS3001127",site:"PT. GPA"},
+        {sn:"1BM7230CTS3001128",site:"PT. GPA"},
+        {sn:"1BM7230CES3001045",site:"PT. GPA"},
+        {sn:"1BM7230CKS3001049",site:"PT. GPA"},
+        {sn:"1BM7230CCS3001077",site:"PT. GPA"},
+        {sn:"1BM7230CKS3001083",site:"PT. GPA"},
+        {sn:"1BM7230CES3001076",site:"PT. GPA"},
+        {sn:"1BM7230CJS3001084",site:"PT. GPA"},
+        {sn:"1BM7230CCS3001104",site:"PT. GPA"},
+        {sn:"1BM7230CAS3001090",site:"PT. GPA"},
+        {sn:"1BM7230CAS3001087",site:"PT. GPA"},
+        {sn:"1BM7230CES3001093",site:"PT. GPA"},
+        {sn:"1BM7230CLS3001088",site:"PT. GPA"},
+        {sn:"1BM7230CKS3001102",site:"PT. GPA"},
+        {sn:"1BM7230CHS3001108",site:"PT. GPA"},
+        {sn:"1BM7230CES3001112",site:"PT. GPA"},
+        {sn:"1BM7230CJS3001036",site:"PT. GPA"},
+        {sn:"1BM7230CLS3001057",site:"PT. GPA"},
+        {sn:"1BM7230CLS3001026",site:"PT. GPA"},
+        {sn:"1BM7230CCS3001071",site:"PT. GPA"},
+        {sn:"1BM7230CCS3001068",site:"PT. GPA"},
+        {sn:"1BM7230CKS3001066",site:"PT. GPA"},
+        {sn:"1BM7230CHS3001075",site:"PT. GPA"},
+        {sn:"1BM7230CAS3001073",site:"PT. GPA"},
+        {sn:"1BM7230CJS3001053",site:"PT. GPA"},
+        {sn:"1BM7230CPS3001051",site:"PT. GPA"},
+        {sn:"1BM7230CCS3001054",site:"PT. GPA"},
+        {sn:"1BM7230CKS3001052",site:"PT. GPA"},
+        {sn:"1BM7230CVS3001069",site:"PT. GPA"},
+        {sn:"1BM7230CVS3001072",site:"PT. GPA"},
+        {sn:"1BM7230CJS3001067",site:"PT. GPA"},
+        {sn:"1RW8310DCSA260870",site:"PT. GPA"},
+        {sn:"1RW8310DLSA260881",site:"PT. GPA"},
+        {sn:"1RW8310DESB260912",site:"PT. GPA"},
+        {sn:"1RW8310DPSB261028",site:"PT. GPA"},
+        {sn:"1RW8310DCSB261180",site:"PT. GPA"},
+        {sn:"1RW8310DASB261036",site:"PT. GPA"},
+        {sn:"1RW8310DLSB261152",site:"PT. GPA"},
+        {sn:"1RW8310DPSB260929",site:"PT. GPA"},
+        {sn:"1RW8310DCSB261222",site:"PT. GPA"},
+        {sn:"1RW8310DPSB260963",site:"PT. GPA"},
+        {sn:"1RW8310DASB260937",site:"PT. GPA"},
+        {sn:"1RW8310DHSB260973",site:"PT. GPA"},
+        {sn:"1RW8310DPSB261126",site:"PT. GPA"},
+        {sn:"1RW8310DCSB261205",site:"PT. GPA"},
+        {sn:"1RW8310DHSB261010",site:"PT. GPA"},
+        {sn:"1RW8310DPSB260946",site:"PT. GPA"},
+        {sn:"1RW8310DPSB261000",site:"PT. GPA"},
+        {sn:"1RW8310DVSB261200",site:"PT. GPA"},
+        {sn:"1RW8310DCSB261096",site:"PT. GPA"},
+        {sn:"1BM7230CTS3001095",site:"PT. GPA"},
+        {sn:"1NW4025MKS0250246",site:"PT. GPA"},
+        {sn:"1NW4025MCS0250248",site:"PT. GPA"},
+        {sn:"1NW4025MVS0250249",site:"PT. GPA"},
+        {sn:"1T8C570HHST260045",site:"PT. GPA"},
+        {sn:"1T8C570HEST260046",site:"PT. GPA"},
+        {sn:"1T8C570HTST260048",site:"PT. GPA"},
+        {sn:"1T8C570HPST260049",site:"PT. GPA"},
+        {sn:"1BM7230CKS3002332",site:"PT. GPA"},
+        {sn:"1BM7230CPS3002331",site:"PT. GPA"},
+        {sn:"1BM7230CCS3002320",site:"PT. GPA"},
+        {sn:"1BM7230CHS3002324",site:"PT. GPA"},
+        {sn:"1BM7230CCS3002334",site:"PT. GPA"},
+        {sn:"1BM7230CHS3002355",site:"PT. GPA"},
+        {sn:"1BM7230CKS3002346",site:"PT. GPA"},
+        {sn:"1BM7230CVS3002349",site:"PT. GPA"},
+        {sn:"1BM7230CJS3002350",site:"PT. GPA"},
+        {sn:"1BM7230CCS3002348",site:"PT. GPA"},
+        {sn:"1BM7230CCS3002351",site:"PT. GPA"},
+        {sn:"1BM7230CPS3002345",site:"PT. GPA"},
+        {sn:"1BM7230CAS3002353",site:"PT. GPA"},
+        {sn:"1BM7230CTS3002344",site:"PT. GPA"},
+        {sn:"1BM7230CLS3002340",site:"PT. GPA"},
+        {sn:"1BM7230CAT3002368",site:"PT. GPA"},
+        {sn:"1BM7230CTT3002376",site:"PT. GPA"},
+        {sn:"1BM7230CET3002374",site:"PT. GPA"},
+        {sn:"1BM7230CKT3002378",site:"PT. GPA"},
+        {sn:"1BM7230CTT3002359",site:"PT. GPA"},
+        {sn:"1BM7230CET3002360",site:"PT. GPA"},
+        {sn:"1BM7230CHT3002390",site:"PT. GPA"},
+        {sn:"1BM7230CET3002388",site:"PT. GPA"},
+        {sn:"1BM7230CPS3001132",site:"PT. MNM"},
+        {sn:"1BM7230CES3001126",site:"PT. MNM"},
+        {sn:"1BM7230CJS3001117",site:"PT. MNM"},
+        {sn:"1BM7230CLS3001124",site:"PT. MNM"},
+        {sn:"1BM7230CAS3001137",site:"PT. MNM"},
+        {sn:"1BM7230CPS3001129",site:"PT. MNM"},
+        {sn:"1BM7230CCS3001080",site:"PT. MNM"},
+        {sn:"1BM7230CTS3001050",site:"PT. MNM"},
+        {sn:"1BM7230CPS3001065",site:"PT. MNM"},
+        {sn:"1BM7230CJS3001098",site:"PT. MNM"},
+        {sn:"1BM7230CPS3001101",site:"PT. MNM"},
+        {sn:"1BM7230CCS3001135",site:"PT. MNM"},
+        {sn:"1BM7230CCS3001121",site:"PT. MNM"},
+        {sn:"1BM7230CLS3001110",site:"PT. MNM"},
+        {sn:"1BM7230CES3001028",site:"PT. MNM"},
+        {sn:"1BM7230CCS3001063",site:"PT. MNM"},
+        {sn:"1BM7230CTS3001047",site:"PT. MNM"},
+        {sn:"1BM7230CPS3001082",site:"PT. MNM"},
+        {sn:"1BM7230CTS3001078",site:"PT. MNM"},
+        {sn:"1BM7230CLS3001060",site:"PT. MNM"},
+        {sn:"1RW8310DKSA260873",site:"PT. MNM"},
+        {sn:"1RW8310DCSA260853",site:"PT. MNM"},
+        {sn:"1RW8310DLSB260910",site:"PT. MNM"},
+        {sn:"1BM7230CTS3001114",site:"PT. MNM"},
+        {sn:"1RW8310DPSA260905",site:"PT. MNM"},
+        {sn:"1RW8310DHSB261105",site:"PT. MNM"},
+        {sn:"1NW4025MJS0250247",site:"PT. MNM"},
+        {sn:"1NW4025MPS0250245",site:"PT. MNM"},
+        {sn:"1T8C570HCST260047",site:"PT. MNM"},
+        {sn:"1T8C570HETT260050",site:"PT. MNM"},
+        {sn:"1BM7230CKS3002329",site:"PT. MNM"},
+        {sn:"1BM7230CCS3002326",site:"PT. MNM"},
+        {sn:"1BM7230CES3002325",site:"PT. MNM"},
+        {sn:"1BM7230CTS3002330",site:"PT. MNM"},
+        {sn:"1BM7230CAS3002322",site:"PT. MNM"},
+        {sn:"1BM7230CHS3002338",site:"PT. MNM"},
+        {sn:"1BM7230CLS3002323",site:"PT. MNM"},
+        {sn:"1BM7230CLS3002337",site:"PT. MNM"},
+        {sn:"1BM7230CVS3002352",site:"PT. MNM"},
+        {sn:"1BM7230CHS3002341",site:"PT. MNM"},
+        {sn:"1BM7230CES3002339",site:"PT. MNM"},
+        {sn:"1BM7230CJS3002347",site:"PT. MNM"},
+        {sn:"1BM7230CES3002342",site:"PT. MNM"},
+        {sn:"1BM7230CCS3002343",site:"PT. MNM"},
+        {sn:"1BM7230CES3002356",site:"PT. MNM"},
+        {sn:"1BM7230CKT3002381",site:"PT. MNM"},
+        {sn:"1BM7230CCT3002389",site:"PT. MNM"},
+        {sn:"1BM7230CCT3002361",site:"PT. MNM"},
+        {sn:"1BM7230CJT3002379",site:"PT. MNM"},
+        {sn:"1BM7230CAT3002371",site:"PT. MNM"},
+        {sn:"1BM7230CCT3002383",site:"PT. MNM"},
+        {sn:"1BM7230CVT3002370",site:"PT. MNM"},
+        {sn:"1BM7230CHT3002387",site:"PT. MNM"},
+        {sn:"1BM7230CVT3002384",site:"PT. MNM"},
+        {sn:"1BM7230CAT3002385",site:"PT. MNM"},
+        {sn:"1BM7230CCT3002375",site:"PT. MNM"},
+        {sn:"1BM7230CPT3002363",site:"PT. MNM"},
+        {sn:"1BM7230CCT3002366",site:"PT. MNM"},
+        {sn:"1BM7230CLT3002386",site:"PT. MNM"}
+    ];
+
+    let updated = 0;
+    data.forEach(entry => {
+        const unit = globalData.find(u => (u.sn || '').trim() === entry.sn);
+        if (!unit) return;
+        if (unit.site !== entry.site) {
+            updateUnit(unit.id, { site: entry.site });
+            updated++;
+        }
+    });
+
+    localStorage.setItem(FLAG, '1');
+    if (updated > 0) {
+        showToast(`Site migration: ${updated} unit(s) updated`, 'success');
+        if (currentView === 'dashboard') { filteredData = [...globalData]; onDataLoaded(); }
+        else if (currentView === 'editUnits') renderEditTable();
+    }
+    console.log(`[migration] site assignment: ${updated} updated out of ${data.length}`);
 }
 
 if (window.cloudReady) {
