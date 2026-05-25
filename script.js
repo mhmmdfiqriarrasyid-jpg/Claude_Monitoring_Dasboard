@@ -2157,6 +2157,7 @@ function applyCloudUnitsSnapshot(units) {
     applyLicenseDatesIfNeeded();
     migrateNicknamesFromExcel();
     migrateLicenseDataBatch1();
+    migrateLicenseDataBatch2();
 }
 
 function applyCloudImplementsSnapshot(items) {
@@ -3104,6 +3105,66 @@ function migrateLicenseDataBatch1() {
         else if (currentView === 'editUnits') renderEditTable();
     }
     console.log(`[migration] license batch 1: ${updated} updated out of ${data.length}`);
+}
+
+// One-shot license data migration — batch 2
+function migrateLicenseDataBatch2() {
+    const FLAG = 'license_batch2_migration_done';
+    if (localStorage.getItem(FLAG)) return;
+    if (!globalData.length) return;
+
+    const data = [
+        {sn:"1BM7230CCS3002351",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-10",gpsLicenseEndDate:"2027-05-10"},
+        {sn:"1BM7230CPS3002345",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CAS3002353",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-14",gpsLicenseEndDate:"2027-05-14"},
+        {sn:"1BM7230CTS3002344",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-10",gpsLicenseEndDate:"2027-05-10"},
+        {sn:"1BM7230CLS3002340",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CAT3002368",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CTT3002376",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CET3002374",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CKT3002378",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CTT3002359",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CET3002360",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CHT3002390",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CET3002388",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-14",gpsLicenseEndDate:"2027-05-14"},
+        {sn:"1BM7230CKT3002381",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CCT3002389",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CCT3002361",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-14",gpsLicenseEndDate:"2027-05-14"},
+        {sn:"1BM7230CJT3002379",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CAT3002371",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CCT3002383",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CVT3002370",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CHT3002387",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-10",gpsLicenseEndDate:"2027-05-10"},
+        {sn:"1BM7230CVT3002384",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CAT3002385",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CCT3002375",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CPT3002363",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
+        {sn:"1BM7230CCT3002366",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-10",gpsLicenseEndDate:"2027-05-10"},
+        {sn:"1BM7230CLT3002386",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-10",gpsLicenseEndDate:"2027-05-10"}
+    ];
+
+    let updated = 0;
+    data.forEach(entry => {
+        const unit = globalData.find(u => (u.sn || '').trim() === entry.sn);
+        if (!unit) return;
+        const fields = {};
+        if (unit.gpsLicense !== entry.gpsLicense) fields.gpsLicense = entry.gpsLicense;
+        if (unit.licenseDisplay !== entry.licenseDisplay) fields.licenseDisplay = entry.licenseDisplay;
+        if (unit.gpsLicenseStartDate !== entry.gpsLicenseStartDate) fields.gpsLicenseStartDate = entry.gpsLicenseStartDate;
+        if (unit.gpsLicenseEndDate !== entry.gpsLicenseEndDate) fields.gpsLicenseEndDate = entry.gpsLicenseEndDate;
+        if (Object.keys(fields).length > 0) {
+            updateUnit(unit.id, fields);
+            updated++;
+        }
+    });
+
+    localStorage.setItem(FLAG, '1');
+    if (updated > 0) {
+        showToast(`License migration (batch 2): ${updated} unit(s) updated`, 'success');
+        if (currentView === 'dashboard') { filteredData = [...globalData]; onDataLoaded(); }
+        else if (currentView === 'editUnits') renderEditTable();
+    }
+    console.log(`[migration] license batch 2: ${updated} updated out of ${data.length}`);
 }
 
 if (window.cloudReady) {
