@@ -1200,13 +1200,14 @@ function updateFilterCount(data) {
 // EXPORT
 // ============================================================
 
-function exportCSV() {
-    if (filteredData.length === 0) { showToast('No data to export', 'warning'); return; }
+function exportCSV(data) {
+    const exportData = Array.isArray(data) ? data : filteredData;
+    if (exportData.length === 0) { showToast('No data to export', 'warning'); return; }
     const headers = ['No', 'Nickname', 'Model', 'Serial Number', 'Status', 'Display', 'GPS', 'Steering', 'JDLink', 'Site',
                      'Tahun Penerimaan', 'User Category', 'GPS License', 'Display License',
                      'GPS License Start Date', 'GPS License Expiration Date',
                      'Display License Start Date', 'Display License Expiration Date', 'Remarks'];
-    const rows = filteredData.map((d, i) => [i + 1, d.name, d.model, d.sn, d.status, d.display, d.gps, d.steering, d.jdlink, d.site,
+    const rows = exportData.map((d, i) => [i + 1, d.name, d.model, d.sn, d.status, d.display, d.gps, d.steering, d.jdlink, d.site,
                      d.yearReceived || '', d.userCategory || '', d.gpsLicense || '', d.licenseDisplay || '',
                      d.gpsLicenseStartDate || d.licenseStartDate || '',
                      d.gpsLicenseEndDate   || d.licenseEndDate   || '',
@@ -1221,7 +1222,14 @@ function exportCSV() {
     a.download = `tractor_monitoring_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`Exported ${filteredData.length} units to CSV`, 'success');
+    showToast(`Exported ${exportData.length} units to CSV`, 'success');
+}
+
+// Export the units currently visible in the Edit Units table (honors its
+// search + status/site filters and sort). Falls back to all units when no
+// filter is active.
+function exportEditCSV() {
+    exportCSV(getEditTableRows());
 }
 
 // ============================================================
@@ -1295,6 +1303,31 @@ function closeImportReport() {
 }
 
 // ---- Edit Table ----
+// Compute the rows shown in the Edit Units table — honors the search box,
+// status/site filters and the active sort. Shared by renderEditTable() and
+// the Export CSV button so both stay in sync.
+function getEditTableRows() {
+    const query = (document.getElementById('editSearch')?.value || '').toLowerCase().trim();
+    const statusVal = (document.getElementById('editStatusFilter')?.value || '');
+    const siteVal = (document.getElementById('editSiteFilter')?.value || '');
+
+    let rows = [...globalData];
+    if (query) rows = rows.filter(d => `${d.name} ${d.model} ${d.sn} ${d.site}`.toLowerCase().includes(query));
+    if (statusVal) rows = rows.filter(d => d.status === statusVal);
+    if (siteVal) rows = rows.filter(d => d.site === siteVal);
+
+    if (editSortState.key && editSortState.key !== 'no') {
+        const k = editSortState.key;
+        rows.sort((a, b) => {
+            const va = _resolveSortValue(a, k).toLowerCase(), vb = _resolveSortValue(b, k).toLowerCase();
+            if (va < vb) return editSortState.asc ? -1 : 1;
+            if (va > vb) return editSortState.asc ? 1 : -1;
+            return 0;
+        });
+    }
+    return rows;
+}
+
 function renderEditTable() {
     updateEditCount();
     selectedUnitIds.clear();
@@ -1307,21 +1340,7 @@ function renderEditTable() {
     const statusVal = (document.getElementById('editStatusFilter')?.value || '');
     const siteVal = (document.getElementById('editSiteFilter')?.value || '');
 
-    let rows = [...globalData];
-    if (query) rows = rows.filter(d => `${d.name} ${d.model} ${d.sn} ${d.site}`.toLowerCase().includes(query));
-    if (statusVal) rows = rows.filter(d => d.status === statusVal);
-    if (siteVal) rows = rows.filter(d => d.site === siteVal);
-
-    // Apply sort
-    if (editSortState.key && editSortState.key !== 'no') {
-        const k = editSortState.key;
-        rows.sort((a, b) => {
-            const va = _resolveSortValue(a, k).toLowerCase(), vb = _resolveSortValue(b, k).toLowerCase();
-            if (va < vb) return editSortState.asc ? -1 : 1;
-            if (va > vb) return editSortState.asc ? 1 : -1;
-            return 0;
-        });
-    }
+    const rows = getEditTableRows();
 
     const tbody = document.getElementById('editBody');
     if (rows.length === 0) {
