@@ -859,6 +859,7 @@ function processData(rows) {
             steering: clean(getVal(r, 'Status Unit Steering')),
             jdlink: clean(getVal(r, 'Status Unit JDLink')),
             site: clean(getVal(r, 'Site')),
+            yearReceived: clean(getVal(r, 'Tahun Penerimaan')) || clean(getVal(r, 'Year Received')),
             gpsLicense: clean(getVal(r, 'GPS License')),
             licenseDisplay: clean(getVal(r, 'License Display')),
             // New dual columns. Fall back to the legacy single-pair columns so
@@ -1064,6 +1065,7 @@ function renderTable(data) {
             <td class="${isGood(d.steering) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.steering)}</td>
             <td class="${isGood(d.jdlink) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.jdlink)}</td>
             <td>${escapeHtml(d.site)}</td>
+            <td>${escapeHtml(d.yearReceived || '') || '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
             <td>${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
             <td>${d.gpsLicense ? `<span class="badge badge-good" style="font-size:10px">${escapeHtml(d.gpsLicense)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
             <td>${licenseBadgeFor(d, 'gps')}</td>
@@ -1201,11 +1203,11 @@ function updateFilterCount(data) {
 function exportCSV() {
     if (filteredData.length === 0) { showToast('No data to export', 'warning'); return; }
     const headers = ['No', 'Nickname', 'Model', 'Serial Number', 'Status', 'Display', 'GPS', 'Steering', 'JDLink', 'Site',
-                     'User Category', 'GPS License', 'Display License',
+                     'Tahun Penerimaan', 'User Category', 'GPS License', 'Display License',
                      'GPS License Start Date', 'GPS License Expiration Date',
                      'Display License Start Date', 'Display License Expiration Date', 'Remarks'];
     const rows = filteredData.map((d, i) => [i + 1, d.name, d.model, d.sn, d.status, d.display, d.gps, d.steering, d.jdlink, d.site,
-                     d.userCategory || '', d.gpsLicense || '', d.licenseDisplay || '',
+                     d.yearReceived || '', d.userCategory || '', d.gpsLicense || '', d.licenseDisplay || '',
                      d.gpsLicenseStartDate || d.licenseStartDate || '',
                      d.gpsLicenseEndDate   || d.licenseEndDate   || '',
                      d.displayLicenseStartDate || '',
@@ -1323,7 +1325,7 @@ function renderEditTable() {
 
     const tbody = document.getElementById('editBody');
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="18" style="text-align:center;padding:24px;color:#718096">${(query || statusVal || siteVal) ? 'No units match your filters' : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="19" style="text-align:center;padding:24px;color:#718096">${(query || statusVal || siteVal) ? 'No units match your filters' : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.'}</td></tr>`;
         return;
     }
 
@@ -1343,6 +1345,7 @@ function renderEditTable() {
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="steering" onblur="saveInlineEdit(this)">${escapeHtml(d.steering)}</span></td>
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="jdlink" onblur="saveInlineEdit(this)">${escapeHtml(d.jdlink)}</span></td>
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="site" onblur="saveInlineEdit(this)">${escapeHtml(d.site)}</span></td>
+            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="yearReceived" onblur="saveInlineEdit(this)">${escapeHtml(d.yearReceived || '')}</span></td>
             <td>${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
             <td>${d.gpsLicense ? `<span class="badge badge-good" style="font-size:10px">${escapeHtml(d.gpsLicense)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
             <td>${licenseBadgeFor(d, 'gps')}</td>
@@ -1553,6 +1556,7 @@ function editUnit(id) {
     document.getElementById('formModel').value = unit.model;
     document.getElementById('formSN').value = unit.sn;
     document.getElementById('formSite').value = unit.site;
+    document.getElementById('formYearReceived').value = unit.yearReceived || '';
     document.getElementById('formStatus').value = isGood(unit.status) ? 'Good' : 'Breakdown';
     document.getElementById('formDisplay').value = isGood(unit.display) ? 'Good' : 'Breakdown';
     document.getElementById('formGPS').value = isGood(unit.gps) ? 'Good' : 'Breakdown';
@@ -1599,6 +1603,7 @@ function saveUnit(event) {
         model: document.getElementById('formModel').value.trim(),
         sn: document.getElementById('formSN').value.trim(),
         site: document.getElementById('formSite').value.trim(),
+        yearReceived: document.getElementById('formYearReceived').value.trim(),
         status: document.getElementById('formStatus').value,
         display: document.getElementById('formDisplay').value,
         gps: document.getElementById('formGPS').value,

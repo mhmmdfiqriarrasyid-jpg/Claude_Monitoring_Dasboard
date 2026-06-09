@@ -339,6 +339,7 @@
                                 <th onclick="sortTable('steering')">Steering <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                                 <th onclick="sortTable('jdlink')">JDLink <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                                 <th onclick="sortTable('site')">Site <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th onclick="sortTable('yearReceived')">Tahun Penerimaan <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                                 <th onclick="sortTable('userCategory')">User Category <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                                 <th onclick="sortTable('gpsLicense')">GPS License <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                                 <th onclick="sortTable('gpsExpiry')">GPS Expiry <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
@@ -458,6 +459,7 @@
                             <th onclick="sortEditTable('steering')">Steering <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                             <th onclick="sortEditTable('jdlink')">JDLink <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                             <th onclick="sortEditTable('site')">Site <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th onclick="sortEditTable('yearReceived')">Tahun Penerimaan <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                             <th onclick="sortEditTable('userCategory')">User Category <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                             <th onclick="sortEditTable('gpsLicense')">GPS License <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                             <th onclick="sortEditTable('gpsExpiry')">GPS Expiry <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
@@ -609,6 +611,16 @@
                     <div class="form-group">
                         <label class="form-label">Site</label>
                         <input class="form-input" id="formSite">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Tahun Penerimaan</label>
+                        <input class="form-input" id="formYearReceived" list="yearReceivedList" placeholder="Pilih atau ketik tahun…">
+                        <datalist id="yearReceivedList">
+                            <option value="2024">
+                            <option value="2025">
+                            <option value="2026">
+                            <option value="2027">
+                        </datalist>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Status Unit</label>
