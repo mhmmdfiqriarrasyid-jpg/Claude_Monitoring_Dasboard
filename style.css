@@ -1952,6 +1952,74 @@ body.dark .license-badge--soon    { background: #3b2a14; color: #fbd38d; border-
 body.dark .license-badge--expired { background: #3b1a1a; color: #fc8181; border-color: #c53030; }
 
 /* ============================================================
+   LICENSE ALERTS PANEL
+   ============================================================ */
+.license-alerts-section {
+    margin-bottom: 20px;
+}
+.license-alerts-section .section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
+}
+.license-alerts-summary {
+    display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px;
+}
+.license-alerts-summary .la-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 999px; font-weight: 600;
+}
+.la-chip.expired { background: #fff5f5; color: #c53030; }
+.la-chip.soon    { background: #fffaf0; color: #b7791f; }
+body.dark .la-chip.expired { background: #3b1a1a; color: #fc8181; }
+body.dark .la-chip.soon    { background: #3b2a14; color: #fbd38d; }
+
+.license-alerts-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 10px;
+}
+.la-card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px; border-radius: 10px;
+    background: var(--bg-card); border: 1px solid var(--border);
+    transition: box-shadow .15s;
+}
+.la-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.la-card.expired { border-left: 4px solid #e53e3e; }
+.la-card.soon    { border-left: 4px solid #d69e2e; }
+
+.la-card__icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+}
+.la-card.expired .la-card__icon { background: #fff5f5; color: #c53030; }
+.la-card.soon    .la-card__icon { background: #fffaf0; color: #d69e2e; }
+body.dark .la-card.expired .la-card__icon { background: #3b1a1a; color: #fc8181; }
+body.dark .la-card.soon    .la-card__icon { background: #3b2a14; color: #fbd38d; }
+
+.la-card__body { flex: 1; min-width: 0; }
+.la-card__name {
+    font-weight: 600; font-size: 13px; color: var(--text-primary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.la-card__meta {
+    font-size: 11px; color: var(--text-secondary); margin-top: 2px;
+}
+.la-card__badge {
+    font-size: 11px; font-weight: 700; padding: 3px 10px;
+    border-radius: 999px; white-space: nowrap;
+}
+.la-card.expired .la-card__badge { background: #fff5f5; color: #c53030; border: 1px solid #fc8181; }
+.la-card.soon    .la-card__badge { background: #fffaf0; color: #b7791f; border: 1px solid #fbd38d; }
+body.dark .la-card.expired .la-card__badge { background: #3b1a1a; color: #fc8181; border-color: #c53030; }
+body.dark .la-card.soon    .la-card__badge { background: #3b2a14; color: #fbd38d; border-color: #b7791f; }
+
+@media (max-width: 600px) {
+    .license-alerts-cards { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
    ROLE GATING — hide editor-only UI for viewers
    ============================================================ */
 body.role-viewer #btnDeleteSelected,

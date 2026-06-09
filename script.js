@@ -930,6 +930,7 @@ function updateDashboard(data) {
     renderKPI(data);
     renderStatusChart(data);
     renderSiteChart(data);
+    renderLicenseAlerts(data);
     renderComponentHealth(data);
     renderDowntimeKPIs();
     renderTable(data);
@@ -1016,6 +1017,67 @@ function renderSiteChart(data) {
             }
         }
     });
+}
+
+// ---- License Alerts ----
+function renderLicenseAlerts(data) {
+    const section = document.getElementById('licenseAlertsSection');
+    const container = document.getElementById('licenseAlertsCards');
+    const summary = document.getElementById('licenseAlertsSummary');
+
+    const SOON_DAYS = 90;
+    const alerts = [];
+
+    data.forEach(unit => {
+        ['gps', 'display'].forEach(kind => {
+            const end = getLicenseEndDate(unit, kind);
+            if (!end) return;
+            const s = getExpiryStatus(end);
+            if (s.kind === 'expired' || (s.kind === 'soon' || (s.kind === 'ok' && s.daysLeft <= SOON_DAYS))) {
+                const licName = kind === 'display'
+                    ? (unit.licenseDisplay || 'Display')
+                    : (unit.gpsLicense || 'GPS');
+                alerts.push({
+                    unit,
+                    kind,
+                    licName,
+                    endDate: end,
+                    status: s.kind === 'expired' ? 'expired' : 'soon',
+                    daysLeft: s.daysLeft,
+                    label: s.label
+                });
+            }
+        });
+    });
+
+    if (alerts.length === 0) {
+        section.style.display = 'none';
+        return;
+    }
+
+    alerts.sort((a, b) => a.daysLeft - b.daysLeft);
+
+    const expiredCount = alerts.filter(a => a.status === 'expired').length;
+    const soonCount = alerts.filter(a => a.status === 'soon').length;
+
+    section.style.display = '';
+    summary.innerHTML = [
+        expiredCount ? `<span class="la-chip expired"><i class="fas fa-circle-xmark"></i> ${expiredCount} Expired</span>` : '',
+        soonCount ? `<span class="la-chip soon"><i class="fas fa-triangle-exclamation"></i> ${soonCount} Expiring ≤${SOON_DAYS}d</span>` : ''
+    ].filter(Boolean).join('');
+
+    container.innerHTML = alerts.map(a => `
+        <div class="la-card ${a.status}">
+            <div class="la-card__icon">
+                <i class="fas fa-${a.status === 'expired' ? 'circle-xmark' : 'triangle-exclamation'}"></i>
+            </div>
+            <div class="la-card__body">
+                <div class="la-card__name">${escapeHtml(a.unit.name || a.unit.sn)}</div>
+                <div class="la-card__meta">${escapeHtml(a.licName)} · ${escapeHtml(a.unit.site || '')} · Exp: ${escapeHtml(a.endDate)}</div>
+            </div>
+            <div class="la-card__badge">${escapeHtml(a.label)}</div>
+        </div>
+    `).join('');
 }
 
 // ---- Component Health ----
