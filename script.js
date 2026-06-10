@@ -696,6 +696,81 @@ function updateUnit(id, fields) {
     return true;
 }
 
+// Bulk-update existing units from parsed CSV rows, matched by serial number.
+// Only non-empty CSV fields are applied so a partial CSV (e.g. just
+// "Serial Number, Tahun Penerimaan") never blanks out other data.
+// Storage/cloud/changelog are written once for the whole batch.
+const CSV_UPDATABLE_FIELDS = [
+    'name', 'model', 'status', 'display', 'gps', 'steering', 'jdlink', 'site',
+    'yearReceived', 'gpsLicense', 'licenseDisplay',
+    'gpsLicenseStartDate', 'gpsLicenseEndDate',
+    'displayLicenseStartDate', 'displayLicenseEndDate', 'remarks'
+];
+
+function bulkUpdateUnitsFromCSV(parsedUnits) {
+    const bySN = new Map();
+    globalData.forEach(d => { const k = (d.sn || '').toLowerCase(); if (k) bySN.set(k, d); });
+
+    let updated = 0, unchanged = 0;
+    const failed = [];
+    const changedUnits = [];
+
+    parsedUnits.forEach(p => {
+        const existing = bySN.get((p.sn || '').toLowerCase());
+        if (!existing) {
+            failed.push({ sn: p.sn, reason: 'Serial number not found' });
+            return;
+        }
+
+        const idx = globalData.findIndex(d => d.id === existing.id);
+        if (idx === -1) {
+            failed.push({ sn: p.sn, reason: 'Unit not found' });
+            return;
+        }
+
+        const before = { ...globalData[idx] };
+        const fields = {};
+        CSV_UPDATABLE_FIELDS.forEach(f => {
+            const val = p[f];
+            if (val !== undefined && val !== null && String(val).trim() !== '' && val !== before[f]) {
+                fields[f] = val;
+            }
+        });
+
+        if (Object.keys(fields).length === 0) {
+            unchanged++;
+            return;
+        }
+
+        const unit = { ...before, ...fields };
+        if (fields.status !== undefined && fields.status !== before.status) {
+            trackStatusChange(unit, before.status, fields.status);
+        }
+
+        globalData[idx] = unit;
+        Object.keys(fields).forEach(field => {
+            logEvent({
+                action: 'update',
+                unitId: unit.id,
+                unitName: unit.name,
+                field,
+                before: before[field],
+                after: fields[field]
+            });
+        });
+        changedUnits.push(unit);
+        updated++;
+    });
+
+    if (changedUnits.length > 0) {
+        saveToStorage(globalData);
+        cloudPushUnits(changedUnits);
+        recordChange({ type: 'updated', detail: `${changedUnits.length} unit(s) updated via CSV import` });
+    }
+
+    return { updated, unchanged, failed };
+}
+
 function deleteUnits(ids) {
     const idSet = new Set(ids);
     const removed = globalData.filter(d => idSet.has(d.id));
@@ -1693,8 +1768,41 @@ function handleEditCSVImport(file) {
         skipEmptyLines: true,
         complete: result => {
             const { valid, rejected } = processData(result.data);
-            const { added, skipped, skippedDetails } = addUnits(valid);
-            showImportReport({ total: result.data.length, added, skipped, skippedDetails, rejected });
+
+            // Split rows into brand-new units vs updates to existing SNs
+            const existingSNs = new Set(globalData.map(d => (d.sn || '').toLowerCase()).filter(Boolean));
+            const newUnits = [];
+            const updateCandidates = [];
+            valid.forEach(u => {
+                if (existingSNs.has((u.sn || '').toLowerCase())) updateCandidates.push(u);
+                else newUnits.push(u);
+            });
+
+            let updateResult = { updated: 0, unchanged: 0, failed: [] };
+            let updatesAsSkipped = [];
+            if (updateCandidates.length > 0) {
+                const doUpdate = confirm(
+                    `${updateCandidates.length} unit dengan Serial Number yang sama sudah ada di database.\n\n` +
+                    `OK = UPDATE field yang terisi di CSV\n` +
+                    `Cancel = SKIP (hanya tambah unit baru)`
+                );
+                if (doUpdate) {
+                    updateResult = bulkUpdateUnitsFromCSV(updateCandidates);
+                } else {
+                    updatesAsSkipped = updateCandidates.map(u => ({ name: u.name, sn: u.sn, reason: 'Duplicate serial number' }));
+                }
+            }
+
+            const { added, skipped, skippedDetails } = addUnits(newUnits);
+            showImportReport({
+                total: result.data.length, added,
+                skipped: skipped + updatesAsSkipped.length,
+                skippedDetails: [...skippedDetails, ...updatesAsSkipped],
+                rejected,
+                updated: updateResult.updated,
+                unchanged: updateResult.unchanged,
+                updateFailed: updateResult.failed
+            });
             renderEditTable();
             showLoading(false);
             document.getElementById('importPanel').classList.remove('open');
@@ -1706,22 +1814,29 @@ function handleEditCSVImport(file) {
     });
 }
 
-function showImportReport({ total, added, skipped, skippedDetails, rejected }) {
-    const hasIssues = skipped > 0 || rejected.length > 0;
-    const type = added > 0 ? (hasIssues ? 'warning' : 'success') : 'warning';
-    const shortMsg = `Imported ${added} of ${total}. ${skipped} duplicate(s), ${rejected.length} rejected.`;
-    showToast(shortMsg, type);
+function showImportReport({ total, added, skipped, skippedDetails, rejected, updated = 0, unchanged = 0, updateFailed = [] }) {
+    const hasIssues = skipped > 0 || rejected.length > 0 || updateFailed.length > 0;
+    const type = (added > 0 || updated > 0) ? (hasIssues ? 'warning' : 'success') : 'warning';
+
+    const parts = [`${added} added`];
+    if (updated > 0) parts.push(`${updated} updated`);
+    if (unchanged > 0) parts.push(`${unchanged} unchanged`);
+    if (skipped > 0) parts.push(`${skipped} duplicate(s) skipped`);
+    if (rejected.length > 0) parts.push(`${rejected.length} rejected`);
+    if (updateFailed.length > 0) parts.push(`${updateFailed.length} update failed`);
+    const summary = parts.join(' · ');
+    showToast(`Import: ${summary} (of ${total} rows)`, type);
 
     if (!hasIssues) return;
 
     const rows = [
         ...skippedDetails.map(d => `<tr><td>${escapeHtml(d.name || '-')}</td><td style="font-family:monospace">${escapeHtml(d.sn || '-')}</td><td>${escapeHtml(d.reason)}</td></tr>`),
+        ...updateFailed.map(f => `<tr><td>-</td><td style="font-family:monospace">${escapeHtml(f.sn || '-')}</td><td>${escapeHtml(f.reason)}</td></tr>`),
         ...rejected.map(r => `<tr><td>${escapeHtml(r.name || '-')}</td><td>Row ${r.row}</td><td>${escapeHtml(r.reason)}</td></tr>`)
     ].join('');
 
     document.getElementById('importReportBody').innerHTML = rows;
-    document.getElementById('importReportSummary').textContent =
-        `${added} added · ${skipped} duplicate(s) · ${rejected.length} rejected`;
+    document.getElementById('importReportSummary').textContent = summary;
     document.getElementById('importReportModal').classList.add('open');
 }
 
