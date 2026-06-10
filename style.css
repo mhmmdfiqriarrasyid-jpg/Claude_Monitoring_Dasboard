@@ -1217,39 +1217,49 @@ body.dark .badge-cat {
     white-space: nowrap;
 }
 
-/* --- Sticky Columns (left: checkbox+no+nickname, right: actions) --- */
-.data-table th:nth-child(1), .data-table td:nth-child(1),
-.data-table th:nth-child(2), .data-table td:nth-child(2),
-.data-table th:nth-child(3), .data-table td:nth-child(3) {
+/* --- Sticky Columns — Edit Units table only ---
+   Left: checkbox (40px) + No (48px) + Nickname. Right: Actions.
+   td uses background:inherit (rows always have an explicit background for
+   zebra/hover/breakdown); th needs its own explicit background because the
+   base th rule's #f7fafc would otherwise be overridden to transparent. */
+#editTable th:nth-child(2), #editTable td:nth-child(2) { width: 48px; }
+
+#editTable th:nth-child(1), #editTable td:nth-child(1),
+#editTable th:nth-child(2), #editTable td:nth-child(2),
+#editTable th:nth-child(3), #editTable td:nth-child(3) {
     position: sticky;
     z-index: 5;
     background: inherit;
 }
-.data-table th:nth-child(1), .data-table td:nth-child(1) { left: 0; }
-.data-table th:nth-child(2), .data-table td:nth-child(2) { left: 40px; }
-.data-table th:nth-child(3), .data-table td:nth-child(3) { left: 84px; position: relative; }
-.data-table th:nth-child(3) { position: sticky; }
-.data-table thead th:nth-child(1),
-.data-table thead th:nth-child(2),
-.data-table thead th:nth-child(3) { z-index: 15; }
+#editTable th:nth-child(1), #editTable td:nth-child(1) { left: 0; }
+#editTable th:nth-child(2), #editTable td:nth-child(2) { left: 40px; }
+#editTable th:nth-child(3), #editTable td:nth-child(3) { left: 88px; }
 
-.data-table th:last-child, .data-table td:last-child {
+#editTable th:last-child, #editTable td:last-child {
     position: sticky;
     right: 0;
     z-index: 5;
     background: inherit;
 }
-.data-table thead th:last-child { z-index: 15; }
 
-.data-table td:nth-child(3)::after,
-.data-table th:nth-child(3)::after {
+#editTable thead th:nth-child(1),
+#editTable thead th:nth-child(2),
+#editTable thead th:nth-child(3),
+#editTable thead th:last-child {
+    z-index: 15;
+    background: #f7fafc;
+}
+
+/* sticky cells are positioned, so the shadow pseudo-elements anchor to them */
+#editTable td:nth-child(3)::after,
+#editTable th:nth-child(3)::after {
     content: ''; position: absolute; top: 0; right: -4px;
     width: 4px; height: 100%;
     background: linear-gradient(to right, rgba(0,0,0,0.04), transparent);
     pointer-events: none;
 }
-.data-table td:last-child::before,
-.data-table th:last-child::before {
+#editTable td:last-child::before,
+#editTable th:last-child::before {
     content: ''; position: absolute; top: 0; left: -4px;
     width: 4px; height: 100%;
     background: linear-gradient(to left, rgba(0,0,0,0.04), transparent);
@@ -1653,14 +1663,18 @@ body.dark .data-table tbody tr:nth-child(even) { background: #232d3b; }
 body.dark .data-table tbody tr:hover { background: #2d3a4a; }
 body.dark .data-table tbody tr.row-breakdown { background: #3b1a1a; }
 body.dark .data-table tbody tr.row-breakdown:hover { background: #4a1f1f; }
-body.dark .data-table td:nth-child(3)::after,
-body.dark .data-table th:nth-child(3)::after {
-    background: linear-gradient(to right, rgba(0,0,0,0.15), transparent);
+body.dark #editTable td:nth-child(3)::after,
+body.dark #editTable th:nth-child(3)::after {
+    background: linear-gradient(to right, rgba(0,0,0,0.3), transparent);
 }
-body.dark .data-table td:last-child::before,
-body.dark .data-table th:last-child::before {
-    background: linear-gradient(to left, rgba(0,0,0,0.15), transparent);
+body.dark #editTable td:last-child::before,
+body.dark #editTable th:last-child::before {
+    background: linear-gradient(to left, rgba(0,0,0,0.3), transparent);
 }
+body.dark #editTable thead th:nth-child(1),
+body.dark #editTable thead th:nth-child(2),
+body.dark #editTable thead th:nth-child(3),
+body.dark #editTable thead th:last-child { background: #262f3d; }
 body.dark .badge-good { background: #1c3b2a; color: #9ae6b4; border-color: #2f855a; }
 body.dark .badge-breakdown { background: #3b1a1a; color: #fc8181; border-color: #c53030; }
 body.dark .cell-good { color: #68d391; }
