@@ -238,6 +238,14 @@ function setupEventListeners() {
         attachInput.addEventListener('change', handleAttachFileChange);
     }
 
+    // Restore compact mode preference
+    if (localStorage.getItem('editTableCompact') === '1') {
+        const table = document.getElementById('editTable');
+        if (table) table.classList.add('compact');
+        const icon = document.querySelector('#compactToggle i');
+        if (icon) icon.className = 'fas fa-expand';
+    }
+
     // Close COA dropdowns on outside click
     document.addEventListener('click', () => {
         document.querySelectorAll('.coa-cell.open').forEach(el => el.classList.remove('open'));
@@ -617,9 +625,13 @@ async function removeAttachment(unitId, attId) {
 function renderAttachCell(d) {
     const atts = d.attachments || [];
     let html = '<div class="attach-cell">';
+    if (atts.length === 0) {
+        html += '<span class="attach-empty">No files</span>';
+    }
     atts.forEach(a => {
+        const ext = a.name.split('.').pop().toLowerCase();
         const shortName = a.name.length > 18 ? a.name.slice(0, 15) + '…' + a.name.slice(a.name.lastIndexOf('.')) : a.name;
-        html += `<div class="attach-chip" title="${escapeHtml(a.name)} (${formatFileSize(a.size)})">
+        html += `<div class="attach-chip attach-chip--${escapeHtml(ext)}" title="${escapeHtml(a.name)} (${formatFileSize(a.size)})">
             <i class="fas ${attachFileIcon(a.name)}"></i>
             <span class="attach-chip__name">${escapeHtml(shortName)}</span>
             <button class="btn-icon attach-chip__dl" title="Download" onclick="downloadAttachment('${a.id}')"><i class="fas fa-download"></i></button>
@@ -1868,6 +1880,17 @@ function getEditTableRows() {
         });
     }
     return rows;
+}
+
+function toggleCompactMode() {
+    const table = document.getElementById('editTable');
+    if (!table) return;
+    const isCompact = table.classList.toggle('compact');
+    localStorage.setItem('editTableCompact', isCompact ? '1' : '');
+    const icon = document.querySelector('#compactToggle i');
+    if (icon) {
+        icon.className = isCompact ? 'fas fa-expand' : 'fas fa-compress';
+    }
 }
 
 function renderEditTable() {

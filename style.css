@@ -656,9 +656,11 @@ body {
 
 .data-table tbody tr {
     transition: var(--transition);
+    background: var(--card);
 }
 
-.data-table tbody tr:hover { background: #f7fafc; }
+.data-table tbody tr:nth-child(even) { background: #f8fafc; }
+.data-table tbody tr:hover { background: #edf2f7; }
 .data-table tbody tr.row-breakdown { background: #fff5f5; }
 .data-table tbody tr.row-breakdown:hover { background: #fed7d7; }
 
@@ -1215,6 +1217,54 @@ body.dark .badge-cat {
     white-space: nowrap;
 }
 
+/* --- Sticky Columns (left: checkbox+no+nickname, right: actions) --- */
+.data-table th:nth-child(1), .data-table td:nth-child(1),
+.data-table th:nth-child(2), .data-table td:nth-child(2),
+.data-table th:nth-child(3), .data-table td:nth-child(3) {
+    position: sticky;
+    z-index: 5;
+    background: inherit;
+}
+.data-table th:nth-child(1), .data-table td:nth-child(1) { left: 0; }
+.data-table th:nth-child(2), .data-table td:nth-child(2) { left: 40px; }
+.data-table th:nth-child(3), .data-table td:nth-child(3) { left: 84px; position: relative; }
+.data-table th:nth-child(3) { position: sticky; }
+.data-table thead th:nth-child(1),
+.data-table thead th:nth-child(2),
+.data-table thead th:nth-child(3) { z-index: 15; }
+
+.data-table th:last-child, .data-table td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 5;
+    background: inherit;
+}
+.data-table thead th:last-child { z-index: 15; }
+
+.data-table td:nth-child(3)::after,
+.data-table th:nth-child(3)::after {
+    content: ''; position: absolute; top: 0; right: -4px;
+    width: 4px; height: 100%;
+    background: linear-gradient(to right, rgba(0,0,0,0.04), transparent);
+    pointer-events: none;
+}
+.data-table td:last-child::before,
+.data-table th:last-child::before {
+    content: ''; position: absolute; top: 0; left: -4px;
+    width: 4px; height: 100%;
+    background: linear-gradient(to left, rgba(0,0,0,0.04), transparent);
+    pointer-events: none;
+}
+
+/* --- Compact Mode --- */
+.data-table.compact td { padding: 5px 10px; font-size: 12px; }
+.data-table.compact th { padding: 7px 10px; font-size: 10px; }
+.data-table.compact .row-actions .btn { width: 26px; height: 26px; font-size: 11px; }
+.data-table.compact .badge { padding: 2px 7px; font-size: 10px; }
+.data-table.compact .inline-edit { padding: 2px 4px; }
+.data-table.compact .attach-chip { padding: 1px 4px; font-size: 10px; }
+.data-table.compact .attach-upload-btn { width: 20px; height: 20px; font-size: 11px; }
+
 /* --- Footer --- */
 .footer {
     text-align: center;
@@ -1598,9 +1648,19 @@ body.dark {
 
 body.dark .data-table th { background: #262f3d; color: var(--text-secondary); }
 body.dark .data-table th:hover { background: #2d3748; }
-body.dark .data-table tbody tr:hover { background: #262f3d; }
+body.dark .data-table tbody tr { background: var(--card); }
+body.dark .data-table tbody tr:nth-child(even) { background: #232d3b; }
+body.dark .data-table tbody tr:hover { background: #2d3a4a; }
 body.dark .data-table tbody tr.row-breakdown { background: #3b1a1a; }
 body.dark .data-table tbody tr.row-breakdown:hover { background: #4a1f1f; }
+body.dark .data-table td:nth-child(3)::after,
+body.dark .data-table th:nth-child(3)::after {
+    background: linear-gradient(to right, rgba(0,0,0,0.15), transparent);
+}
+body.dark .data-table td:last-child::before,
+body.dark .data-table th:last-child::before {
+    background: linear-gradient(to left, rgba(0,0,0,0.15), transparent);
+}
 body.dark .badge-good { background: #1c3b2a; color: #9ae6b4; border-color: #2f855a; }
 body.dark .badge-breakdown { background: #3b1a1a; color: #fc8181; border-color: #c53030; }
 body.dark .cell-good { color: #68d391; }
@@ -2078,7 +2138,12 @@ body.dark .user-chip--pending { background: #3b2a14; color: #fbd38d; border-colo
     border: 1px dashed var(--border); background: none; cursor: pointer;
     border-radius: 4px; color: var(--text-light); transition: var(--transition);
 }
-.attach-upload-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--primary-lighter); }
+.attach-upload-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--primary-lighter); transform: scale(1.1); }
+.attach-empty { color: var(--text-light); font-size: 11px; font-style: italic; }
+.attach-chip--pdf i:first-child { color: #e53e3e; }
+.attach-chip--doc i:first-child, .attach-chip--docx i:first-child { color: #3182ce; }
+.attach-chip--xls i:first-child, .attach-chip--xlsx i:first-child { color: #38a169; }
+.attach-chip--csv i:first-child { color: #718096; }
 
 body.dark .attach-chip { background: #2d3748; border-color: #4a5568; }
 body.dark .attach-upload-btn { border-color: #4a5568; }
