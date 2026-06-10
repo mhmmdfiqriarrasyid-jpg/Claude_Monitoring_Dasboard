@@ -1132,7 +1132,7 @@ function _buildAlertList() {
                 if (s.kind === 'expired') expiredCount++; else soonCount++;
                 lines.push({
                     daysLeft: s.daysLeft,
-                    text: `${tag} | ${unit.name || unit.sn} | ${licName} | ${unit.site || '-'} | ${end} | ${s.label}`
+                    text: `${tag} | ${unit.name || '-'} | ${unit.sn || '-'} | ${licName} | ${unit.site || '-'} | ${end} | ${s.label}`
                 });
             }
         });
@@ -1159,7 +1159,7 @@ function sendLicenseAlertEmail() {
         `License Alert Report — ${today}`,
         `Expired: ${report.expiredCount} | Expiring soon: ${report.soonCount}`,
         '',
-        'Status | Unit | License | Site | Expiry Date | Remaining',
+        'Status | Unit | Serial Number | License | Site | Expiry Date | Remaining',
         '—'.repeat(60),
         ...report.lines
     ].join('\n');
