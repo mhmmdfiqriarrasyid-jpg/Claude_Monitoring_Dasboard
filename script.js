@@ -232,6 +232,12 @@ function setupEventListeners() {
         });
     }
 
+    // Attachment file input
+    const attachInput = document.getElementById('attachFileInput');
+    if (attachInput) {
+        attachInput.addEventListener('change', handleAttachFileChange);
+    }
+
     // Close COA dropdowns on outside click
     document.addEventListener('click', () => {
         document.querySelectorAll('.coa-cell.open').forEach(el => el.classList.remove('open'));
@@ -425,6 +431,206 @@ function loadFromStorage() {
     return false;
 }
 
+// ============================================================
+// INDEXEDDB — ATTACHMENT STORAGE
+// ============================================================
+
+const ATTACH_DB_NAME = 'tractorAttachments';
+const ATTACH_DB_VERSION = 1;
+const ATTACH_STORE = 'files';
+const ATTACH_MAX_SIZE = 5 * 1024 * 1024;
+const ATTACH_MAX_PER_UNIT = 10;
+const ATTACH_ALLOWED_EXT = ['.pdf', '.csv', '.doc', '.docx', '.xls', '.xlsx'];
+
+let _attachDb = null;
+
+function attachDbOpen() {
+    if (_attachDb) return Promise.resolve(_attachDb);
+    return new Promise((resolve, reject) => {
+        if (!window.indexedDB) { reject(new Error('IndexedDB not available')); return; }
+        const req = indexedDB.open(ATTACH_DB_NAME, ATTACH_DB_VERSION);
+        req.onupgradeneeded = e => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains(ATTACH_STORE)) {
+                const store = db.createObjectStore(ATTACH_STORE, { keyPath: 'id' });
+                store.createIndex('unitId', 'unitId', { unique: false });
+            }
+        };
+        req.onsuccess = () => { _attachDb = req.result; resolve(_attachDb); };
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function attachDbPut(record) {
+    return attachDbOpen().then(db => new Promise((resolve, reject) => {
+        const tx = db.transaction(ATTACH_STORE, 'readwrite');
+        tx.objectStore(ATTACH_STORE).put(record);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    }));
+}
+
+function attachDbGet(id) {
+    return attachDbOpen().then(db => new Promise((resolve, reject) => {
+        const tx = db.transaction(ATTACH_STORE, 'readonly');
+        const req = tx.objectStore(ATTACH_STORE).get(id);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+    }));
+}
+
+function attachDbDelete(ids) {
+    if (!ids || ids.length === 0) return Promise.resolve();
+    return attachDbOpen().then(db => new Promise((resolve, reject) => {
+        const tx = db.transaction(ATTACH_STORE, 'readwrite');
+        const store = tx.objectStore(ATTACH_STORE);
+        ids.forEach(id => store.delete(id));
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    }));
+}
+
+function attachDbGetByUnit(unitId) {
+    return attachDbOpen().then(db => new Promise((resolve, reject) => {
+        const tx = db.transaction(ATTACH_STORE, 'readonly');
+        const idx = tx.objectStore(ATTACH_STORE).index('unitId');
+        const req = idx.getAll(unitId);
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    }));
+}
+
+function generateAttachId() {
+    return 'att_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function attachFileIcon(name) {
+    const ext = (name || '').split('.').pop().toLowerCase();
+    if (ext === 'pdf') return 'fa-file-pdf';
+    if (ext === 'csv') return 'fa-file-csv';
+    if (ext === 'doc' || ext === 'docx') return 'fa-file-word';
+    if (ext === 'xls' || ext === 'xlsx') return 'fa-file-excel';
+    return 'fa-file';
+}
+
+// ---- Attachment UI in Edit Table ----
+
+let _currentAttachUnitId = null;
+let _pendingAttachPurge = [];
+
+function triggerAttachUpload(unitId) {
+    _currentAttachUnitId = unitId;
+    document.getElementById('attachFileInput').click();
+}
+
+async function handleAttachFileChange(e) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const unitId = _currentAttachUnitId;
+    if (!unitId) return;
+
+    const unit = globalData.find(d => d.id === unitId);
+    if (!unit) return;
+    if (!unit.attachments) unit.attachments = [];
+
+    const currentCount = unit.attachments.length;
+    let added = 0;
+
+    for (const file of files) {
+        if (currentCount + added >= ATTACH_MAX_PER_UNIT) {
+            showToast(`Maks ${ATTACH_MAX_PER_UNIT} file per unit`, 'warning');
+            break;
+        }
+        const ext = '.' + file.name.split('.').pop().toLowerCase();
+        if (!ATTACH_ALLOWED_EXT.includes(ext)) {
+            showToast(`"${file.name}" — tipe tidak didukung (hanya PDF, CSV, Word, Excel)`, 'warning');
+            continue;
+        }
+        if (file.size > ATTACH_MAX_SIZE) {
+            showToast(`"${file.name}" — melebihi batas 5MB`, 'warning');
+            continue;
+        }
+
+        const attId = generateAttachId();
+        const meta = { id: attId, name: file.name, type: file.type, size: file.size, addedAt: new Date().toISOString() };
+        try {
+            await attachDbPut({ id: attId, unitId, name: file.name, type: file.type, size: file.size, addedAt: meta.addedAt, blob: file });
+            unit.attachments.push(meta);
+            added++;
+        } catch (err) {
+            showToast(`Gagal menyimpan "${file.name}": ${err.message}`, 'error');
+        }
+    }
+
+    if (added > 0) {
+        saveToStorage(globalData);
+        cloudPushUnits([unit]);
+        renderEditTable();
+        showToast(`${added} file dilampirkan`, 'success');
+    }
+
+    e.target.value = '';
+    _currentAttachUnitId = null;
+}
+
+async function downloadAttachment(attId) {
+    try {
+        const record = await attachDbGet(attId);
+        if (!record || !record.blob) {
+            showToast('File tidak tersedia di perangkat ini — diunggah dari perangkat lain. Gunakan Export/Import Backup.', 'warning');
+            return;
+        }
+        const blob = record.blob instanceof Blob ? record.blob : new Blob([record.blob], { type: record.type });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = record.name;
+        a.click();
+        URL.revokeObjectURL(url);
+    } catch (err) {
+        showToast('Gagal mengunduh file: ' + err.message, 'error');
+    }
+}
+
+async function removeAttachment(unitId, attId) {
+    if (!confirm('Hapus lampiran ini?')) return;
+    const unit = globalData.find(d => d.id === unitId);
+    if (!unit) return;
+
+    try {
+        await attachDbDelete([attId]);
+    } catch (err) { /* best effort */ }
+
+    unit.attachments = (unit.attachments || []).filter(a => a.id !== attId);
+    saveToStorage(globalData);
+    cloudPushUnits([unit]);
+    renderEditTable();
+    showToast('Lampiran dihapus', 'success');
+}
+
+function renderAttachCell(d) {
+    const atts = d.attachments || [];
+    let html = '<div class="attach-cell">';
+    atts.forEach(a => {
+        const shortName = a.name.length > 18 ? a.name.slice(0, 15) + '…' + a.name.slice(a.name.lastIndexOf('.')) : a.name;
+        html += `<div class="attach-chip" title="${escapeHtml(a.name)} (${formatFileSize(a.size)})">
+            <i class="fas ${attachFileIcon(a.name)}"></i>
+            <span class="attach-chip__name">${escapeHtml(shortName)}</span>
+            <button class="btn-icon attach-chip__dl" title="Download" onclick="downloadAttachment('${a.id}')"><i class="fas fa-download"></i></button>
+            <button class="btn-icon attach-chip__rm" title="Hapus" onclick="removeAttachment('${escapeHtml(d.id)}','${a.id}')"><i class="fas fa-xmark"></i></button>
+        </div>`;
+    });
+    html += `<button class="btn-icon attach-upload-btn" title="Upload file" onclick="triggerAttachUpload('${escapeHtml(d.id)}')"><i class="fas fa-paperclip"></i></button>`;
+    html += '</div>';
+    return html;
+}
+
 function addUnits(newUnits) {
     const existingSNs = new Set(globalData.map(d => (d.sn || '').toLowerCase()));
     const toAdd = [];
@@ -500,6 +706,7 @@ function deleteUnits(ids) {
         recordChange({ type: 'deleted', detail: `${count} unit(s) deleted` });
         removed.forEach(u => logEvent({ action: 'delete', unitId: u.id, unitName: u.name, before: u.sn }));
         cloudDeleteUnits(ids);
+        _pendingAttachPurge = removed.flatMap(u => (u.attachments || []).map(a => a.id));
     }
     return { count, removed };
 }
@@ -658,13 +865,39 @@ function exportHistory() {
 // BACKUP & RESTORE
 // ============================================================
 
-function exportBackup() {
+async function exportBackup() {
+    const includeFiles = globalData.some(u => u.attachments && u.attachments.length > 0)
+        && confirm('Sertakan file lampiran dalam backup? (ukuran file bisa besar)');
+
     const payload = {
-        version: 1,
+        version: includeFiles ? 2 : 1,
         exportedAt: new Date().toISOString(),
         count: globalData.length,
         units: globalData
     };
+
+    if (includeFiles) {
+        const attachArr = [];
+        for (const unit of globalData) {
+            if (!unit.attachments || unit.attachments.length === 0) continue;
+            for (const meta of unit.attachments) {
+                try {
+                    const rec = await attachDbGet(meta.id);
+                    if (rec && rec.blob) {
+                        const b64 = await new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = () => resolve(reader.result);
+                            reader.onerror = () => reject(reader.error);
+                            reader.readAsDataURL(rec.blob instanceof Blob ? rec.blob : new Blob([rec.blob], { type: rec.type }));
+                        });
+                        attachArr.push({ id: meta.id, unitId: unit.id, name: meta.name, type: meta.type, size: meta.size, dataB64: b64 });
+                    }
+                } catch (e) { /* skip unavailable */ }
+            }
+        }
+        if (attachArr.length > 0) payload.attachments = attachArr;
+    }
+
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -681,7 +914,7 @@ function triggerRestore() {
 
 function importBackup(file) {
     const reader = new FileReader();
-    reader.onload = e => {
+    reader.onload = async e => {
         try {
             const data = JSON.parse(e.target.result);
             if (!data || !Array.isArray(data.units)) {
@@ -704,6 +937,23 @@ function importBackup(file) {
                 recordChange({ type: 'restored', detail: `${data.units.length} units restored from backup` });
                 showToast(`Restored ${data.units.length} units from backup`, 'success');
             }
+
+            if (Array.isArray(data.attachments) && data.attachments.length > 0) {
+                let restored = 0;
+                for (const att of data.attachments) {
+                    try {
+                        const parts = att.dataB64.split(',');
+                        const byteStr = atob(parts.length > 1 ? parts[1] : parts[0]);
+                        const bytes = new Uint8Array(byteStr.length);
+                        for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i);
+                        const blob = new Blob([bytes], { type: att.type });
+                        await attachDbPut({ id: att.id, unitId: att.unitId, name: att.name, type: att.type, size: att.size, addedAt: new Date().toISOString(), blob });
+                        restored++;
+                    } catch (err) { /* skip invalid */ }
+                }
+                if (restored > 0) showToast(`${restored} lampiran berhasil di-restore`, 'success');
+            }
+
             renderEditTable();
         } catch (err) {
             showToast('Failed to read backup: ' + err.message, 'error');
@@ -1521,7 +1771,7 @@ function renderEditTable() {
 
     const tbody = document.getElementById('editBody');
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="19" style="text-align:center;padding:24px;color:#718096">${(query || statusVal || siteVal) ? 'No units match your filters' : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="20" style="text-align:center;padding:24px;color:#718096">${(query || statusVal || siteVal) ? 'No units match your filters' : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.'}</td></tr>`;
         return;
     }
 
@@ -1548,6 +1798,7 @@ function renderEditTable() {
             <td>${d.licenseDisplay ? `<span class="badge badge-good" style="font-size:10px">${escapeHtml(d.licenseDisplay)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
             <td>${licenseBadgeFor(d, 'display')}</td>
             <td style="max-width:180px;font-size:12px;color:#4a5568" title="${escapeHtml(remarks)}">${escapeHtml(remarksShort) || '<span style="color:#a0aec0">—</span>'}</td>
+            <td class="col-attach">${renderAttachCell(d)}</td>
             <td class="col-actions">
                 <div class="row-actions">
                     <button class="btn btn-secondary" title="History" onclick="showHistory('${escapeHtml(d.id)}')"><i class="fas fa-clock-rotate-left"></i></button>
@@ -1713,11 +1964,16 @@ function showUndoToast(message, units) {
         setTimeout(() => toast.remove(), 300);
         lastDeletedUnits = null;
         undoTimer = null;
+        if (_pendingAttachPurge.length > 0) {
+            attachDbDelete(_pendingAttachPurge).catch(() => {});
+            _pendingAttachPurge = [];
+        }
     }, 10000);
 }
 
 function undoDelete() {
     if (!lastDeletedUnits || lastDeletedUnits.length === 0) return;
+    _pendingAttachPurge = [];
     const restored = lastDeletedUnits;
     globalData = [...globalData, ...restored];
     saveToStorage(globalData);

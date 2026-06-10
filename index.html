@@ -487,6 +487,7 @@
                             <th onclick="sortEditTable('licenseDisplay')">Display License <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                             <th onclick="sortEditTable('displayExpiry')">Display Expiry <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                             <th>Remarks</th>
+                            <th>Attachments</th>
                             <th class="col-actions">Actions</th>
                         </tr>
                     </thead>
@@ -494,6 +495,9 @@
                 </table>
             </div>
         </div>
+
+    <!-- Hidden file input for unit attachments -->
+    <input type="file" id="attachFileInput" multiple accept=".pdf,.csv,.doc,.docx,.xls,.xlsx" style="display:none">
 
     </div><!-- /viewEditUnits -->
 
