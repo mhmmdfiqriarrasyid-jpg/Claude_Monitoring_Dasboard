@@ -924,6 +924,8 @@ function onDataLoaded() {
     document.getElementById('connectionLabel').textContent = `${globalData.length} Units`;
 
     updateEditCount();
+
+    _tryAutoDailyEmail();
 }
 
 function updateDashboard(data) {
@@ -1078,6 +1080,119 @@ function renderLicenseAlerts(data) {
             <div class="la-card__badge">${escapeHtml(a.label)}</div>
         </div>
     `).join('');
+}
+
+// ---- Email Alert (EmailJS) ----
+function _getEmailSettings() {
+    try { return JSON.parse(localStorage.getItem('emailjs_settings') || '{}'); }
+    catch { return {}; }
+}
+
+function openEmailSettingsModal() {
+    const s = _getEmailSettings();
+    document.getElementById('emailjsPublicKey').value  = s.publicKey  || '';
+    document.getElementById('emailjsServiceId').value  = s.serviceId  || '';
+    document.getElementById('emailjsTemplateId').value = s.templateId || '';
+    document.getElementById('emailjsRecipient').value  = s.recipient  || '';
+    document.getElementById('emailjsAutoDaily').checked = !!s.autoDaily;
+    document.getElementById('emailSettingsModal').classList.add('open');
+}
+function closeEmailSettingsModal() {
+    document.getElementById('emailSettingsModal').classList.remove('open');
+}
+function saveEmailSettings() {
+    const s = {
+        publicKey:  document.getElementById('emailjsPublicKey').value.trim(),
+        serviceId:  document.getElementById('emailjsServiceId').value.trim(),
+        templateId: document.getElementById('emailjsTemplateId').value.trim(),
+        recipient:  document.getElementById('emailjsRecipient').value.trim(),
+        autoDaily:  document.getElementById('emailjsAutoDaily').checked
+    };
+    if (!s.publicKey || !s.serviceId || !s.templateId || !s.recipient) {
+        showToast('Please fill in all EmailJS fields', 'warning'); return;
+    }
+    localStorage.setItem('emailjs_settings', JSON.stringify(s));
+    closeEmailSettingsModal();
+    showToast('Email settings saved', 'success');
+}
+
+function _buildAlertList() {
+    const SOON_DAYS = 90;
+    const lines = [];
+    let expiredCount = 0, soonCount = 0;
+
+    globalData.forEach(unit => {
+        ['gps', 'display'].forEach(kind => {
+            const end = getLicenseEndDate(unit, kind);
+            if (!end) return;
+            const s = getExpiryStatus(end);
+            if (s.kind === 'expired' || s.kind === 'soon' || (s.kind === 'ok' && s.daysLeft <= SOON_DAYS)) {
+                const licName = kind === 'display' ? (unit.licenseDisplay || 'Display') : (unit.gpsLicense || 'GPS');
+                const tag = s.kind === 'expired' ? 'EXPIRED' : 'EXPIRING';
+                if (s.kind === 'expired') expiredCount++; else soonCount++;
+                lines.push({
+                    daysLeft: s.daysLeft,
+                    text: `${tag} | ${unit.name || unit.sn} | ${licName} | ${unit.site || '-'} | ${end} | ${s.label}`
+                });
+            }
+        });
+    });
+    lines.sort((a, b) => a.daysLeft - b.daysLeft);
+    return { expiredCount, soonCount, total: lines.length, lines: lines.map(l => l.text) };
+}
+
+function sendLicenseAlertEmail() {
+    const s = _getEmailSettings();
+    if (!s.publicKey || !s.serviceId || !s.templateId || !s.recipient) {
+        showToast('Setup EmailJS first — click the gear icon', 'warning');
+        openEmailSettingsModal();
+        return;
+    }
+
+    const report = _buildAlertList();
+    if (report.total === 0) {
+        showToast('No license alerts to send', 'info'); return;
+    }
+
+    const today = new Date().toLocaleDateString('id-ID', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+    const body = [
+        `License Alert Report — ${today}`,
+        `Expired: ${report.expiredCount} | Expiring soon: ${report.soonCount}`,
+        '',
+        'Status | Unit | License | Site | Expiry Date | Remaining',
+        '—'.repeat(60),
+        ...report.lines
+    ].join('\n');
+
+    const btn = document.getElementById('btnEmailAlert');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending…';
+
+    emailjs.init(s.publicKey);
+    emailjs.send(s.serviceId, s.templateId, {
+        to_email: s.recipient,
+        subject: `License Alert: ${report.expiredCount} expired, ${report.soonCount} expiring soon`,
+        message: body
+    }).then(() => {
+        showToast(`Alert report sent to ${s.recipient}`, 'success');
+        localStorage.setItem('emailjs_last_sent', new Date().toDateString());
+    }).catch(err => {
+        console.error('[emailjs]', err);
+        showToast('Failed to send email — check EmailJS settings', 'error');
+    }).finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-envelope"></i> Email Report';
+    });
+}
+
+function _tryAutoDailyEmail() {
+    const s = _getEmailSettings();
+    if (!s.autoDaily || !s.publicKey) return;
+    const lastSent = localStorage.getItem('emailjs_last_sent');
+    if (lastSent === new Date().toDateString()) return;
+    const report = _buildAlertList();
+    if (report.total === 0) return;
+    sendLicenseAlertEmail();
 }
 
 // ---- Component Health ----
