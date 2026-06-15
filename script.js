@@ -1364,7 +1364,7 @@ function renderLicenseAlerts(data) {
     const container = document.getElementById('licenseAlertsCards');
     const summary = document.getElementById('licenseAlertsSummary');
 
-    const SOON_DAYS = 90;
+    const SOON_DAYS = 30;
     const alerts = [];
 
     data.forEach(unit => {
@@ -1454,7 +1454,7 @@ function saveEmailSettings() {
 }
 
 function _buildAlertList() {
-    const SOON_DAYS = 90;
+    const SOON_DAYS = 30;
     const lines = [];
     let expiredCount = 0, soonCount = 0;
 
