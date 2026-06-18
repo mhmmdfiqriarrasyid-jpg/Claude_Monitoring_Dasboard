@@ -311,6 +311,17 @@ function getVal(row, key) {
     return k ? row[k] : '';
 }
 
+// Try multiple header aliases (e.g. "Status Unit" or short "Status") and
+// return the first non-empty match. Lets CSVs use either the legacy long
+// headers or the shorter ones produced by exportCSV.
+function getValAny(row, keys) {
+    for (const key of keys) {
+        const v = getVal(row, key);
+        if (v !== '' && v != null) return v;
+    }
+    return '';
+}
+
 function generateId() {
     return 'u_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
 }
@@ -714,7 +725,7 @@ function updateUnit(id, fields) {
 // Storage/cloud/changelog are written once for the whole batch.
 const CSV_UPDATABLE_FIELDS = [
     'name', 'model', 'status', 'display', 'gps', 'steering', 'jdlink', 'site',
-    'yearReceived', 'gpsLicense', 'licenseDisplay',
+    'yearReceived', 'userCategory', 'gpsLicense', 'licenseDisplay',
     'gpsLicenseStartDate', 'gpsLicenseEndDate',
     'displayLicenseStartDate', 'displayLicenseEndDate', 'remarks'
 ];
@@ -1190,15 +1201,16 @@ function processData(rows) {
             name: clean(getVal(r, 'Nickname')),
             model: clean(getVal(r, 'Model')),
             sn: clean(getVal(r, 'Serial Number')),
-            status: clean(getVal(r, 'Status Unit')),
-            display: clean(getVal(r, 'Status Unit Display')),
-            gps: clean(getVal(r, 'Status Unit GPS')),
-            steering: clean(getVal(r, 'Status Unit Steering')),
-            jdlink: clean(getVal(r, 'Status Unit JDLink')),
+            status: clean(getValAny(r, ['Status Unit', 'Status'])),
+            display: clean(getValAny(r, ['Status Unit Display', 'Display'])),
+            gps: clean(getValAny(r, ['Status Unit GPS', 'GPS'])),
+            steering: clean(getValAny(r, ['Status Unit Steering', 'Steering'])),
+            jdlink: clean(getValAny(r, ['Status Unit JDLink', 'JDLink'])),
             site: clean(getVal(r, 'Site')),
             yearReceived: clean(getVal(r, 'Tahun Penerimaan')) || clean(getVal(r, 'Year Received')),
+            userCategory: clean(getVal(r, 'User Category')),
             gpsLicense: clean(getVal(r, 'GPS License')),
-            licenseDisplay: clean(getVal(r, 'License Display')),
+            licenseDisplay: clean(getValAny(r, ['License Display', 'Display License'])),
             // New dual columns. Fall back to the legacy single-pair columns so
             // importing an old export still works — legacy dates map to GPS.
             gpsLicenseStartDate: clean(getVal(r, 'GPS License Start Date')) || clean(getVal(r, 'License Start Date')),
