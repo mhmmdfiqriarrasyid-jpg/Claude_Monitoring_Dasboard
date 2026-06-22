@@ -724,7 +724,7 @@ function updateUnit(id, fields) {
 // "Serial Number, Tahun Penerimaan") never blanks out other data.
 // Storage/cloud/changelog are written once for the whole batch.
 const CSV_UPDATABLE_FIELDS = [
-    'name', 'model', 'status', 'display', 'gps', 'steering', 'jdlink', 'site',
+    'name', 'model', 'implement', 'status', 'display', 'gps', 'steering', 'jdlink', 'site',
     'yearReceived', 'userCategory', 'gpsLicense', 'licenseDisplay',
     'gpsLicenseStartDate', 'gpsLicenseEndDate',
     'displayLicenseStartDate', 'displayLicenseEndDate', 'remarks'
@@ -1201,6 +1201,7 @@ function processData(rows) {
             name: clean(getVal(r, 'Nickname')),
             model: clean(getVal(r, 'Model')),
             sn: clean(getVal(r, 'Serial Number')),
+            implement: clean(getVal(r, 'Implement')),
             status: clean(getValAny(r, ['Status Unit', 'Status'])),
             display: clean(getValAny(r, ['Status Unit Display', 'Display'])),
             gps: clean(getValAny(r, ['Status Unit GPS', 'GPS'])),
@@ -1582,6 +1583,7 @@ function renderTable(data) {
             <td><strong>${escapeHtml(d.name)}</strong></td>
             <td>${escapeHtml(d.model)}</td>
             <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
+            <td>${escapeHtml(d.implement || '')}</td>
             <td>${!isGood(d.status) && d.breakdownReason
                 ? `<span class="badge badge-breakdown bd-clickable" onclick="showBreakdownPopover(event, '${escapeHtml(d.breakdownReason).replace(/'/g, "\\'")}')"><i class="fas fa-xmark"></i> ${escapeHtml(d.status)}</span>`
                 : `<span class="badge ${isGood(d.status) ? 'badge-good' : 'badge-breakdown'}"><i class="fas fa-${isGood(d.status) ? 'check' : 'xmark'}"></i> ${escapeHtml(d.status)}</span>`
@@ -1729,11 +1731,11 @@ function updateFilterCount(data) {
 function exportCSV(data) {
     const exportData = Array.isArray(data) ? data : filteredData;
     if (exportData.length === 0) { showToast('No data to export', 'warning'); return; }
-    const headers = ['No', 'Nickname', 'Model', 'Serial Number', 'Status', 'Display', 'GPS', 'Steering', 'JDLink', 'Site',
+    const headers = ['No', 'Nickname', 'Model', 'Serial Number', 'Implement', 'Status', 'Display', 'GPS', 'Steering', 'JDLink', 'Site',
                      'Tahun Penerimaan', 'User Category', 'GPS License', 'Display License',
                      'GPS License Start Date', 'GPS License Expiration Date',
                      'Display License Start Date', 'Display License Expiration Date', 'Remarks'];
-    const rows = exportData.map((d, i) => [i + 1, d.name, d.model, d.sn, d.status, d.display, d.gps, d.steering, d.jdlink, d.site,
+    const rows = exportData.map((d, i) => [i + 1, d.name, d.model, d.sn, d.implement || '', d.status, d.display, d.gps, d.steering, d.jdlink, d.site,
                      d.yearReceived || '', d.userCategory || '', d.gpsLicense || '', d.licenseDisplay || '',
                      d.gpsLicenseStartDate || d.licenseStartDate || '',
                      d.gpsLicenseEndDate   || d.licenseEndDate   || '',
@@ -1878,7 +1880,7 @@ function getEditTableRows() {
     const siteVal = (document.getElementById('editSiteFilter')?.value || '');
 
     let rows = [...globalData];
-    if (query) rows = rows.filter(d => `${d.name} ${d.model} ${d.sn} ${d.site}`.toLowerCase().includes(query));
+    if (query) rows = rows.filter(d => `${d.name} ${d.model} ${d.sn} ${d.implement || ''} ${d.site}`.toLowerCase().includes(query));
     if (statusVal) rows = rows.filter(d => d.status === statusVal);
     if (siteVal) rows = rows.filter(d => d.site === siteVal);
 
@@ -1921,7 +1923,7 @@ function renderEditTable() {
 
     const tbody = document.getElementById('editBody');
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="20" style="text-align:center;padding:24px;color:#718096">${(query || statusVal || siteVal) ? 'No units match your filters' : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="21" style="text-align:center;padding:24px;color:#718096">${(query || statusVal || siteVal) ? 'No units match your filters' : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.'}</td></tr>`;
         return;
     }
 
@@ -1935,6 +1937,7 @@ function renderEditTable() {
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="name" onblur="saveInlineEdit(this)">${escapeHtml(d.name)}</span></td>
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="model" onblur="saveInlineEdit(this)">${escapeHtml(d.model)}</span></td>
             <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
+            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="implement" onblur="saveInlineEdit(this)">${escapeHtml(d.implement || '')}</span></td>
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="status" onblur="saveInlineEdit(this)">${escapeHtml(d.status)}</span></td>
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="display" onblur="saveInlineEdit(this)">${escapeHtml(d.display)}</span></td>
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="gps" onblur="saveInlineEdit(this)">${escapeHtml(d.gps)}</span></td>
@@ -2157,6 +2160,7 @@ function editUnit(id) {
     document.getElementById('formName').value = unit.name;
     document.getElementById('formModel').value = unit.model;
     document.getElementById('formSN').value = unit.sn;
+    document.getElementById('formImplement').value = unit.implement || '';
     document.getElementById('formSite').value = unit.site;
     document.getElementById('formYearReceived').value = unit.yearReceived || '';
     document.getElementById('formStatus').value = isGood(unit.status) ? 'Good' : 'Breakdown';
@@ -2204,6 +2208,7 @@ function saveUnit(event) {
         name: document.getElementById('formName').value.trim(),
         model: document.getElementById('formModel').value.trim(),
         sn: document.getElementById('formSN').value.trim(),
+        implement: document.getElementById('formImplement').value.trim(),
         site: document.getElementById('formSite').value.trim(),
         yearReceived: document.getElementById('formYearReceived').value.trim(),
         status: document.getElementById('formStatus').value,
