@@ -126,6 +126,9 @@
         <a class="nav__link" data-view="implements" onclick="navigateTo('implements')">
             <i class="fas fa-trailer"></i> Implements
         </a>
+        <a class="nav__link" data-view="damage" onclick="navigateTo('damage')">
+            <i class="fas fa-screwdriver-wrench"></i> Kerusakan
+        </a>
         <a class="nav__link" data-view="users" data-owner-only onclick="navigateTo('users')" style="display:none">
             <i class="fas fa-users-gear"></i> Users
         </a>
@@ -553,6 +556,65 @@
 
     </div><!-- /viewImplements -->
 
+    <!-- ==================== DAMAGE (KERUSAKAN) VIEW ==================== -->
+    <div id="viewDamage" class="view" style="display:none;">
+
+        <!-- Damage Toolbar -->
+        <div class="edit-toolbar">
+            <div class="edit-toolbar__left">
+                <button class="btn btn-success" onclick="showAddDamageForm()">
+                    <i class="fas fa-plus"></i> Tambah Kerusakan
+                </button>
+                <button class="btn btn-danger" id="btnDeleteSelectedDamage" style="display:none" onclick="deleteSelectedDamages()">
+                    <i class="fas fa-trash"></i> Delete Selected (<span id="selectedDamageCount">0</span>)
+                </button>
+                <button class="btn btn-secondary" onclick="exportDamageCSV()">
+                    <i class="fas fa-download"></i> Export CSV
+                </button>
+            </div>
+            <div class="edit-toolbar__right">
+                <select id="damageTypeFilter" class="btn btn-secondary btn-sm">
+                    <option value="">Semua Tipe</option>
+                    <option value="Mekanis">Mekanis</option>
+                    <option value="Software">Software</option>
+                    <option value="Device Precision">Device Precision</option>
+                </select>
+                <div class="edit-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="damageSearch" placeholder="Cari kerusakan...">
+                </div>
+                <span id="damageCount">0 catatan kerusakan</span>
+            </div>
+        </div>
+
+        <!-- Damage Table -->
+        <div class="table-card">
+            <div class="table-card__header">
+                <div class="table-card__title"><i class="fas fa-screwdriver-wrench"></i> Riwayat Kerusakan</div>
+            </div>
+            <div class="table-wrapper" style="max-height:600px;">
+                <table class="data-table" id="damageTable">
+                    <thead>
+                        <tr>
+                            <th class="col-check"><input type="checkbox" id="selectAllDamage" onchange="toggleSelectAllDamages()"></th>
+                            <th>No</th>
+                            <th>Tanggal</th>
+                            <th>Unit</th>
+                            <th>Serial Number</th>
+                            <th>Site</th>
+                            <th>Tipe Kerusakan</th>
+                            <th>Komponen</th>
+                            <th>Deskripsi</th>
+                            <th class="col-actions">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="damageBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+    </div><!-- /viewDamage -->
+
     <!-- ==================== USERS VIEW (Owner only) ==================== -->
     <div id="viewUsers" class="view" style="display:none;">
         <div class="edit-toolbar">
@@ -908,6 +970,60 @@
         <div class="form-actions">
             <button type="button" class="btn btn-secondary" onclick="closeImplementModal()">Cancel</button>
             <button type="submit" class="btn btn-primary" form="implementForm"><i class="fas fa-check"></i> Save Implement</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== DAMAGE (KERUSAKAN) MODAL ===== -->
+<div class="modal-overlay" id="damageModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="damageModalTitle">Tambah Kerusakan</h3>
+            <button class="btn-icon" onclick="closeDamageModal()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <form id="damageForm" onsubmit="saveDamage(event)">
+                <input type="hidden" id="editDamageId">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">Tanggal</label>
+                        <input type="date" class="form-input" id="dmgDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Unit</label>
+                        <select class="form-select" id="dmgUnit" required>
+                            <option value="">Pilih unit…</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Tipe Kerusakan</label>
+                        <select class="form-select" id="dmgType" onchange="onDamageTypeChange()" required>
+                            <option value="">Pilih tipe…</option>
+                            <option value="Mekanis">Mekanis</option>
+                            <option value="Software">Software</option>
+                            <option value="Device Precision">Device Precision</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="dmgComponentGroup" style="display:none">
+                        <label class="form-label">Komponen</label>
+                        <select class="form-select" id="dmgComponent">
+                            <option value="">Pilih komponen…</option>
+                            <option value="GPS">GPS</option>
+                            <option value="Display">Display</option>
+                            <option value="JDLink">JDLink</option>
+                            <option value="Steering Sensor">Steering Sensor</option>
+                        </select>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label">Deskripsi <span class="form-optional">(opsional)</span></label>
+                        <textarea class="form-input form-textarea" id="dmgDescription" rows="4" placeholder="Detail kerusakan, gejala, atau catatan perbaikan…"></textarea>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeDamageModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" form="damageForm"><i class="fas fa-check"></i> Simpan</button>
         </div>
     </div>
 </div>

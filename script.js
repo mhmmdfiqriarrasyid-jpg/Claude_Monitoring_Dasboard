@@ -13,6 +13,8 @@ let lastDeletedUnits = null;
 let undoTimer = null;
 let globalImplements = [];
 let selectedImplementIds = new Set();
+let globalDamages = [];
+let selectedDamageIds = new Set();
 
 // ---- Breakdown reason modal state ----
 let _pendingBreakdown = null;  // { unitId, fields, isInline, el }
@@ -24,6 +26,7 @@ let editSortState = { key: null, asc: true };
 let cloudInitialized = false;
 let cloudUnitsUnsub = null;
 let cloudImplUnsub = null;
+let cloudDamageUnsub = null;
 let cloudUsersUnsub = null;
 let cloudHistoryUnsub = null;
 let cloudHistory = [];               // newest-first, mirrors Firestore `history`
@@ -37,6 +40,7 @@ let _cloudReadyFired = false;
 let _localDataLoaded = false;
 let _firstUnitsSnapshot = true;
 let _firstImplSnapshot = true;
+let _firstDamageSnapshot = true;
 
 // ---- Auth state ----
 let currentUser = null;        // Firebase Auth user object
@@ -47,6 +51,9 @@ let authInitialized = false;
 // ---- Constants ----
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
+const DAMAGE_STORAGE_KEY = 'tractorDamageRecords';
+const DAMAGE_TYPES = ['Mekanis', 'Software', 'Device Precision'];
+const DAMAGE_COMPONENTS = ['GPS', 'Display', 'JDLink', 'Steering Sensor'];
 const PENDING_CHANGES_KEY = 'tractorPendingChanges';
 const AUDIT_LOG_KEY = 'tractorAuditLog';
 const AUDIT_LOG_MAX = 500;
@@ -174,6 +181,7 @@ document.addEventListener('DOMContentLoaded', () => {
     registerServiceWorker();
 
     loadImplements();
+    loadDamages();
 
     if (loadFromStorage()) {
         onDataLoaded();
@@ -198,6 +206,12 @@ function setupEventListeners() {
     // Implements page search box
     const implementSearch = document.getElementById('implementSearch');
     if (implementSearch) implementSearch.addEventListener('input', renderImplementsTable);
+
+    // Damage (Kerusakan) page search + type filter
+    const damageSearch = document.getElementById('damageSearch');
+    if (damageSearch) damageSearch.addEventListener('input', renderDamageTable);
+    const damageTypeFilter = document.getElementById('damageTypeFilter');
+    if (damageTypeFilter) damageTypeFilter.addEventListener('change', renderDamageTable);
 
     // Edit page CSV upload
     const editInput = document.getElementById('editCsvInput');
@@ -364,7 +378,7 @@ function formatDuration(ms) {
 
 function navigateTo(view) {
     // Role gating: viewers can only see the dashboard; only owners see Users.
-    if ((view === 'editUnits' || view === 'implements') && !canEdit()) {
+    if ((view === 'editUnits' || view === 'implements' || view === 'damage') && !canEdit()) {
         showToast('Read-only access — viewers can only see the dashboard', 'warning');
         view = 'dashboard';
     }
@@ -377,6 +391,8 @@ function navigateTo(view) {
     document.getElementById('viewEditUnits').style.display = (view === 'editUnits') ? 'block' : 'none';
     const implView = document.getElementById('viewImplements');
     if (implView) implView.style.display = (view === 'implements') ? 'block' : 'none';
+    const damageView = document.getElementById('viewDamage');
+    if (damageView) damageView.style.display = (view === 'damage') ? 'block' : 'none';
     const usersView = document.getElementById('viewUsers');
     if (usersView) usersView.style.display = (view === 'users') ? 'block' : 'none';
 
@@ -408,6 +424,12 @@ function navigateTo(view) {
     if (view === 'implements') {
         loadImplements();
         renderImplementsTable();
+    }
+
+    if (view === 'damage') {
+        loadDamages();
+        populateDamageUnitSelect();
+        renderDamageTable();
     }
 
     if (view === 'users') {
@@ -2657,6 +2679,345 @@ function deleteSelectedImplements() {
 }
 
 // ============================================================
+// DAMAGE LOG (KERUSAKAN)
+// ============================================================
+
+function generateDamageId() {
+    return 'dmg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+}
+
+// ---- Storage ----
+function loadDamages() {
+    try {
+        const raw = localStorage.getItem(DAMAGE_STORAGE_KEY);
+        globalDamages = raw ? JSON.parse(raw) : [];
+    } catch (e) {
+        globalDamages = [];
+    }
+    updateDamageCount();
+    return globalDamages.length > 0;
+}
+
+function saveDamages() {
+    try {
+        localStorage.setItem(DAMAGE_STORAGE_KEY, JSON.stringify(globalDamages));
+    } catch (e) {
+        showToast('Storage full. Could not save damage records.', 'error');
+    }
+}
+
+function updateDamageCount() {
+    const el = document.getElementById('damageCount');
+    if (el) el.textContent = `${globalDamages.length} catatan kerusakan`;
+}
+
+// Apply the current search + type filter and sort newest-first. Shared by the
+// table renderer and the CSV export so both stay in sync.
+function getFilteredDamages() {
+    const query = (document.getElementById('damageSearch')?.value || '').toLowerCase().trim();
+    const typeVal = (document.getElementById('damageTypeFilter')?.value || '');
+
+    let rows = [...globalDamages];
+    if (typeVal) rows = rows.filter(d => d.damageType === typeVal);
+    if (query) rows = rows.filter(d =>
+        `${d.unitName} ${d.sn} ${d.site} ${d.damageType} ${d.component} ${d.description}`
+            .toLowerCase().includes(query));
+
+    rows.sort((a, b) => {
+        const da = a.date || '', db = b.date || '';
+        if (da !== db) return da < db ? 1 : -1;          // date desc
+        return (b.createdAt || 0) - (a.createdAt || 0);   // tie-break newest-first
+    });
+    return rows;
+}
+
+// ---- Unit picker ----
+function populateDamageUnitSelect(selectedId) {
+    const sel = document.getElementById('dmgUnit');
+    if (!sel) return;
+    const units = [...globalData].sort((a, b) =>
+        (a.name || '').localeCompare(b.name || ''));
+    sel.innerHTML = '<option value="">Pilih unit…</option>' + units.map(u =>
+        `<option value="${escapeHtml(u.id)}">${escapeHtml(u.name || '(tanpa nama)')}${u.sn ? ' — ' + escapeHtml(u.sn) : ''}</option>`
+    ).join('');
+    if (selectedId) sel.value = selectedId;
+}
+
+// ---- Render ----
+function renderDamageTable() {
+    updateDamageCount();
+    selectedDamageIds.clear();
+    updateSelectedDamageCount();
+
+    const selectAllBox = document.getElementById('selectAllDamage');
+    if (selectAllBox) selectAllBox.checked = false;
+
+    const rows = getFilteredDamages();
+    const tbody = document.getElementById('damageBody');
+    if (!tbody) return;
+
+    const hasFilter = (document.getElementById('damageSearch')?.value || '') ||
+                      (document.getElementById('damageTypeFilter')?.value || '');
+
+    if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:#718096">${
+            hasFilter ? 'Tidak ada kerusakan yang cocok dengan filter'
+                      : 'Belum ada catatan kerusakan. Klik <strong>Tambah Kerusakan</strong> untuk mulai.'
+        }</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = rows.map((d, i) => {
+        const comp = d.component
+            ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.component)}</span>`
+            : '<span style="color:#a0aec0;font-size:11px">—</span>';
+        const desc = d.description || '';
+        const descShort = desc.length > 50 ? desc.slice(0, 50) + '…' : desc;
+        return `
+        <tr>
+            <td class="col-check"><input type="checkbox" class="damage-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedDamageCount()"></td>
+            <td>${i + 1}</td>
+            <td style="white-space:nowrap">${escapeHtml(d.date || '')}</td>
+            <td><strong>${escapeHtml(d.unitName || '')}</strong></td>
+            <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn || '')}</td>
+            <td>${escapeHtml(d.site || '')}</td>
+            <td><span class="badge badge-breakdown" style="font-size:10px">${escapeHtml(d.damageType || '')}</span></td>
+            <td>${comp}</td>
+            <td style="max-width:240px;font-size:12px;color:#4a5568" title="${escapeHtml(desc)}">${escapeHtml(descShort) || '<span style="color:#a0aec0">—</span>'}</td>
+            <td class="col-actions">
+                <div class="row-actions">
+                    <button class="btn btn-secondary" title="Edit" onclick="editDamage('${escapeHtml(d.id)}')"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Delete" onclick="deleteDamage('${escapeHtml(d.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+// ---- Selection ----
+function toggleSelectAllDamages() {
+    const checked = document.getElementById('selectAllDamage').checked;
+    document.querySelectorAll('.damage-check').forEach(cb => { cb.checked = checked; });
+    updateSelectedDamageCount();
+}
+
+function updateSelectedDamageCount() {
+    selectedDamageIds.clear();
+    document.querySelectorAll('.damage-check:checked').forEach(cb => selectedDamageIds.add(cb.dataset.id));
+    const count = selectedDamageIds.size;
+    const countEl = document.getElementById('selectedDamageCount');
+    const btn = document.getElementById('btnDeleteSelectedDamage');
+    if (countEl) countEl.textContent = count;
+    if (btn) btn.style.display = count > 0 ? '' : 'none';
+}
+
+// ---- Component sub-field visibility ----
+function onDamageTypeChange() {
+    const type = document.getElementById('dmgType').value;
+    const group = document.getElementById('dmgComponentGroup');
+    const compSel = document.getElementById('dmgComponent');
+    if (!group) return;
+    if (type === 'Device Precision') {
+        group.style.display = '';
+    } else {
+        group.style.display = 'none';
+        if (compSel) compSel.value = '';
+    }
+}
+
+// ---- Modal: Add / Edit ----
+function showAddDamageForm() {
+    if (!requireEdit()) return;
+    document.getElementById('damageModalTitle').textContent = 'Tambah Kerusakan';
+    document.getElementById('editDamageId').value = '';
+    document.getElementById('damageForm').reset();
+    document.getElementById('dmgDate').value = new Date().toISOString().slice(0, 10);
+    populateDamageUnitSelect();
+    onDamageTypeChange();
+    document.getElementById('damageModal').classList.add('open');
+}
+
+function editDamage(id) {
+    if (!requireEdit()) return;
+    const rec = globalDamages.find(d => d.id === id);
+    if (!rec) return;
+
+    document.getElementById('damageModalTitle').textContent = 'Edit Kerusakan';
+    document.getElementById('editDamageId').value = id;
+    document.getElementById('dmgDate').value = rec.date || '';
+    populateDamageUnitSelect(rec.unitId);
+    document.getElementById('dmgType').value = rec.damageType || '';
+    document.getElementById('dmgComponent').value = rec.component || '';
+    document.getElementById('dmgDescription').value = rec.description || '';
+    onDamageTypeChange();
+    document.getElementById('damageModal').classList.add('open');
+}
+
+function saveDamage(event) {
+    event.preventDefault();
+    if (!requireEdit()) return;
+
+    const id = document.getElementById('editDamageId').value;
+    const unitId = document.getElementById('dmgUnit').value;
+    const unit = globalData.find(u => u.id === unitId);
+    if (!unit) { showToast('Pilih unit terlebih dahulu', 'warning'); return; }
+
+    const type = document.getElementById('dmgType').value;
+    const data = {
+        date: document.getElementById('dmgDate').value,
+        unitId: unit.id,
+        unitName: unit.name || '',
+        sn: unit.sn || '',
+        site: unit.site || '',
+        damageType: type,
+        component: type === 'Device Precision' ? document.getElementById('dmgComponent').value : '',
+        description: document.getElementById('dmgDescription').value.trim()
+    };
+
+    if (id) {
+        const idx = globalDamages.findIndex(d => d.id === id);
+        if (idx !== -1) {
+            globalDamages[idx] = { ...globalDamages[idx], ...data, updatedAt: Date.now() };
+            saveDamages();
+            cloudPushDamage(globalDamages[idx]);
+            logEvent({
+                action: 'update',
+                unitId: unit.id,
+                unitName: `[Kerusakan] ${data.unitName}`,
+                field: data.damageType + (data.component ? ` / ${data.component}` : ''),
+                after: data.date
+            });
+            showToast('Catatan kerusakan diperbarui', 'success');
+        }
+    } else {
+        const newRec = { id: generateDamageId(), ...data, createdAt: Date.now(), updatedAt: Date.now() };
+        globalDamages.push(newRec);
+        saveDamages();
+        cloudPushDamage(newRec);
+        logEvent({
+            action: 'add',
+            unitId: unit.id,
+            unitName: `[Kerusakan] ${data.unitName}`,
+            field: data.damageType + (data.component ? ` / ${data.component}` : ''),
+            after: data.date
+        });
+        showToast('Catatan kerusakan ditambahkan', 'success');
+    }
+
+    closeDamageModal();
+    renderDamageTable();
+}
+
+function closeDamageModal() {
+    document.getElementById('damageModal').classList.remove('open');
+}
+
+// ---- Delete ----
+function deleteDamage(id) {
+    if (!requireEdit()) return;
+    const rec = globalDamages.find(d => d.id === id);
+    if (!rec) return;
+    if (!confirm(`Hapus catatan kerusakan unit "${rec.unitName}" (${rec.date})?`)) return;
+
+    globalDamages = globalDamages.filter(d => d.id !== id);
+    saveDamages();
+    cloudDeleteDamage(id);
+    logEvent({
+        action: 'delete',
+        unitId: rec.unitId,
+        unitName: `[Kerusakan] ${rec.unitName}`,
+        before: rec.damageType + (rec.component ? ` / ${rec.component}` : '')
+    });
+    renderDamageTable();
+    showToast('Catatan kerusakan dihapus', 'success');
+}
+
+function deleteSelectedDamages() {
+    if (!requireEdit()) return;
+    const count = selectedDamageIds.size;
+    if (count === 0) return;
+    if (!confirm(`Hapus ${count} catatan kerusakan terpilih?`)) return;
+
+    const idSet = new Set(selectedDamageIds);
+    const removed = globalDamages.filter(d => idSet.has(d.id));
+    globalDamages = globalDamages.filter(d => !idSet.has(d.id));
+    saveDamages();
+    removed.forEach(rec => cloudDeleteDamage(rec.id));
+    removed.forEach(rec => logEvent({
+        action: 'delete',
+        unitId: rec.unitId,
+        unitName: `[Kerusakan] ${rec.unitName}`,
+        before: rec.damageType + (rec.component ? ` / ${rec.component}` : '')
+    }));
+    renderDamageTable();
+    showToast(`${count} catatan kerusakan dihapus`, 'success');
+}
+
+// ---- Export report (CSV, opens in Excel via UTF-8 BOM) ----
+function exportDamageCSV() {
+    const rows = getFilteredDamages();
+    if (rows.length === 0) { showToast('Tidak ada data kerusakan untuk diexport', 'warning'); return; }
+    const headers = ['No', 'Tanggal', 'Unit', 'Serial Number', 'Site', 'Tipe Kerusakan', 'Komponen', 'Deskripsi'];
+    const dataRows = rows.map((d, i) => [
+        i + 1, d.date || '', d.unitName || '', d.sn || '', d.site || '',
+        d.damageType || '', d.component || '', d.description || ''
+    ]);
+    const csv = [headers, ...dataRows].map(row =>
+        row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `kerusakan_report_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Export ${rows.length} catatan kerusakan ke CSV`, 'success');
+}
+
+// ---- Cloud ----
+function cloudPushDamage(rec) {
+    if (suppressCloudWrites || !window.cloud?.isReady || !rec) return;
+    window.cloud.saveDamage(rec).catch(err => {
+        console.error('[cloud] push damage failed:', err);
+        showToast('Cloud sync failed — changes saved locally', 'warning');
+    });
+}
+
+function cloudDeleteDamage(id) {
+    if (suppressCloudWrites || !window.cloud?.isReady || !id) return;
+    window.cloud.deleteDamage(id).catch(err => {
+        console.error('[cloud] delete damage failed:', err);
+    });
+}
+
+function applyCloudDamagesSnapshot(items) {
+    console.log(`[cloud] damage snapshot received — ${items.length} docs`);
+
+    if (_firstDamageSnapshot && items.length === 0 && globalDamages.length > 0) {
+        console.warn(`[cloud] first damage snapshot is empty but local has ${globalDamages.length} — keeping local, re-uploading`);
+        _firstDamageSnapshot = false;
+        window.cloud.saveDamages(globalDamages).catch(err => {
+            console.error('[cloud] re-upload damages after empty snapshot failed:', err);
+        });
+        return;
+    }
+    _firstDamageSnapshot = false;
+
+    suppressCloudWrites = true;
+    try {
+        globalDamages = items;
+        try { localStorage.setItem(DAMAGE_STORAGE_KEY, JSON.stringify(items)); } catch (e) {}
+        if (currentView === 'damage') {
+            renderDamageTable();
+        } else {
+            updateDamageCount();
+        }
+    } finally {
+        suppressCloudWrites = false;
+    }
+}
+
+// ============================================================
 // CLOUD SYNC (Firestore via window.cloud from firebase-init.js)
 // ============================================================
 
@@ -3158,6 +3519,11 @@ function initCloudSync() {
         cloudImplUnsub = window.cloud.subscribeImplements(applyCloudImplementsSnapshot, err => {
             console.warn('[cloud] implements offline');
         });
+        if (window.cloud.subscribeDamages) {
+            cloudDamageUnsub = window.cloud.subscribeDamages(applyCloudDamagesSnapshot, err => {
+                console.warn('[cloud] damage records offline');
+            });
+        }
         if (window.cloud.subscribeHistory) {
             cloudHistoryUnsub = window.cloud.subscribeHistory(events => {
                 cloudHistory = events || [];
@@ -3197,6 +3563,7 @@ function initCloudSync() {
         // so the cloud snapshot is the source of truth.
         _firstUnitsSnapshot = false;
         _firstImplSnapshot = false;
+        _firstDamageSnapshot = false;
         startSubscriptions();
     }
 }
@@ -3259,6 +3626,7 @@ function setupAuth() {
 function tearDownCloudSync() {
     if (cloudUnitsUnsub) { try { cloudUnitsUnsub(); } catch (_) {} cloudUnitsUnsub = null; }
     if (cloudImplUnsub) { try { cloudImplUnsub(); } catch (_) {} cloudImplUnsub = null; }
+    if (cloudDamageUnsub) { try { cloudDamageUnsub(); } catch (_) {} cloudDamageUnsub = null; }
     if (cloudUsersUnsub) { try { cloudUsersUnsub(); } catch (_) {} cloudUsersUnsub = null; }
     if (cloudHistoryUnsub) { try { cloudHistoryUnsub(); } catch (_) {} cloudHistoryUnsub = null; }
     if (cloudUserCategoriesUnsub) { try { cloudUserCategoriesUnsub(); } catch (_) {} cloudUserCategoriesUnsub = null; }

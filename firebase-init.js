@@ -63,6 +63,7 @@ try {
 
 const UNITS_COL = 'units';
 const IMPL_COL = 'implements';
+const DAMAGE_COL = 'damageRecords';
 const USERS_COL = 'users';
 const HISTORY_COL = 'history';
 const USER_CATEGORIES_COL = 'userCategories';
@@ -140,6 +141,34 @@ window.cloud = {
             snap => callback(snap.docs.map(d => d.data())),
             err => {
                 console.error('[cloud] implements subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
+    },
+
+    // ---- Damage Records ----
+    async saveDamage(rec) {
+        await setDoc(doc(db, DAMAGE_COL, rec.id), rec, { merge: true });
+    },
+    async saveDamages(items) {
+        if (!items.length) return;
+        await batchInChunks(items, (batch, r) =>
+            batch.set(doc(db, DAMAGE_COL, r.id), r, { merge: true })
+        );
+    },
+    async deleteDamage(id) {
+        await deleteDoc(doc(db, DAMAGE_COL, id));
+    },
+    async getAllDamages() {
+        const snap = await getDocs(collection(db, DAMAGE_COL));
+        return snap.docs.map(d => d.data());
+    },
+    subscribeDamages(callback, errorCallback) {
+        return onSnapshot(
+            collection(db, DAMAGE_COL),
+            snap => callback(snap.docs.map(d => d.data())),
+            err => {
+                console.error('[cloud] damage subscription error:', err);
                 if (errorCallback) errorCallback(err);
             }
         );
