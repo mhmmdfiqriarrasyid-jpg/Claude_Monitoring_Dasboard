@@ -3070,6 +3070,16 @@ async function migrateLocalToCloudIfNeeded() {
             await window.cloud.saveImplements(globalImplements);
             showToast(`Uploaded ${globalImplements.length} implements to cloud`, 'success');
         }
+        // Damage records
+        if (window.cloud.getAllDamages) {
+            const cloudDamages = await window.cloud.getAllDamages();
+            console.log(`[cloud] check: cloud has ${cloudDamages.length} damage records, local has ${globalDamages.length}`);
+            if (cloudDamages.length === 0 && globalDamages.length > 0) {
+                console.log(`[cloud] migrating ${globalDamages.length} local damage records to Firestore...`);
+                await window.cloud.saveDamages(globalDamages);
+                showToast(`Uploaded ${globalDamages.length} damage records to cloud`, 'success');
+            }
+        }
     } catch (e) {
         console.error('[cloud] migration failed:', e);
         showToast('Cloud migration failed — check console', 'error');
@@ -3395,6 +3405,28 @@ function showHistoryRulesBanner() {
     slot.appendChild(banner);
 }
 
+// Surfaces the exact Firestore rules for the `damageRecords` collection when it
+// rejects reads/writes. Shown inside the Kerusakan view so the user knows why
+// damage records aren't syncing across devices.
+function showDamageRulesBanner() {
+    const slot = document.querySelector('#viewDamage .damage-rules-slot');
+    if (!slot || slot.querySelector('.category-rules-banner')) return;
+    const banner = document.createElement('div');
+    banner.className = 'category-rules-banner';
+    banner.innerHTML = `
+        <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules are blocking damage records.</strong>
+        <p>Your project's security rules don't allow this account to read or write the <code>damageRecords</code> collection yet — that's why damage records won't sync across devices. Paste the block below into <em>Firebase Console → Firestore → Rules</em>, then hard-refresh:</p>
+        <pre>match /damageRecords/{docId} {
+  allow read:  if request.auth != null
+               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+  allow write: if request.auth != null
+               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['owner', 'team']
+               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+}</pre>
+    `;
+    slot.appendChild(banner);
+}
+
 function renderUserCategoryOptions() {
     const select = document.getElementById('formUserCategory');
     if (!select) return;
@@ -3521,7 +3553,11 @@ function initCloudSync() {
         });
         if (window.cloud.subscribeDamages) {
             cloudDamageUnsub = window.cloud.subscribeDamages(applyCloudDamagesSnapshot, err => {
-                console.warn('[cloud] damage records offline');
+                console.warn('[cloud] damage records offline:', err && err.code);
+                if (err && err.code === 'permission-denied') {
+                    showDamageRulesBanner();
+                    showToast('Kerusakan diblokir Firestore rules — lihat panel Kerusakan', 'warning');
+                }
             });
         }
         if (window.cloud.subscribeHistory) {
