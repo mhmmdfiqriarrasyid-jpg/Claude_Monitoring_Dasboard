@@ -197,6 +197,20 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupEventListeners() {
+    // Grouped nav dropdowns (Setup / Log Report): click toggle opens one group at
+    // a time; any other click (incl. a dropdown item) closes all groups.
+    document.addEventListener('click', e => {
+        const toggle = e.target.closest('.nav__group-toggle');
+        if (toggle) {
+            const grp = toggle.closest('.nav__group');
+            const wasOpen = grp.classList.contains('open');
+            document.querySelectorAll('.nav__group.open').forEach(g => g.classList.remove('open'));
+            if (!wasOpen) grp.classList.add('open');
+            return;
+        }
+        document.querySelectorAll('.nav__group.open').forEach(g => g.classList.remove('open'));
+    });
+
     // Dashboard filters
     document.getElementById('searchInput').addEventListener('input', applyFilter);
     document.getElementById('statusFilter').addEventListener('change', applyFilter);
@@ -402,7 +416,11 @@ function navigateTo(view) {
 
     document.querySelectorAll('.nav__link').forEach(el => el.classList.remove('active'));
     const activeLink = document.querySelector(`[data-view="${view}"]`);
-    if (activeLink) activeLink.classList.add('active');
+    if (activeLink) {
+        activeLink.classList.add('active');
+        // Highlight the parent group toggle when an item inside a dropdown is active.
+        activeLink.closest('.nav__group')?.querySelector('.nav__group-toggle')?.classList.add('active');
+    }
 
     currentView = view;
 

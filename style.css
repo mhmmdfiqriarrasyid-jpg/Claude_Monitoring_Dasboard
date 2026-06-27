@@ -884,6 +884,43 @@ body {
 .nav__link:hover { color: #fff; background: rgba(255,255,255,0.1); }
 .nav__link.active { color: #fff; background: rgba(255,255,255,0.18); font-weight: 600; }
 
+/* --- Grouped nav dropdowns --- */
+.nav__group { position: relative; }
+.nav__group-toggle { background: none; border: none; font: inherit; }
+.nav__caret { font-size: 10px; transition: transform 0.15s ease; }
+.nav__group.open .nav__caret { transform: rotate(180deg); }
+
+.nav__dropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 190px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    padding: 6px;
+    z-index: 300;
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+}
+.nav__group.open .nav__dropdown { display: flex; }
+
+.nav__dropdown .nav__link {
+    color: var(--text-secondary);
+    width: 100%;
+}
+.nav__dropdown .nav__link:hover {
+    color: var(--text);
+    background: rgba(127,127,127,0.12);
+}
+.nav__dropdown .nav__link.active {
+    color: #fff;
+    background: var(--primary);
+    font-weight: 600;
+}
+
 /* --- Change Alert Banner --- */
 .change-banner {
     display: none;
