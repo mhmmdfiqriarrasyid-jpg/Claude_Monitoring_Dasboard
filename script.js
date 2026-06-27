@@ -2732,15 +2732,41 @@ function getFilteredDamages() {
 }
 
 // ---- Unit picker ----
+// Single source of truth for how a unit is shown/typed in the damage picker.
+function damageUnitLabel(u) {
+    return `${u.name || '(tanpa nama)'}${u.sn ? ' — ' + u.sn : ''}`;
+}
+
+// Fill the searchable datalist behind the #dmgUnit input. With selectedId, also
+// pre-fill the input with that unit's label (used when editing).
 function populateDamageUnitSelect(selectedId) {
-    const sel = document.getElementById('dmgUnit');
-    if (!sel) return;
+    const input = document.getElementById('dmgUnit');
+    const list = document.getElementById('dmgUnitList');
+    if (!input || !list) return;
     const units = [...globalData].sort((a, b) =>
         (a.name || '').localeCompare(b.name || ''));
-    sel.innerHTML = '<option value="">Pilih unit…</option>' + units.map(u =>
-        `<option value="${escapeHtml(u.id)}">${escapeHtml(u.name || '(tanpa nama)')}${u.sn ? ' — ' + escapeHtml(u.sn) : ''}</option>`
+    list.innerHTML = units.map(u =>
+        `<option value="${escapeHtml(damageUnitLabel(u))}"></option>`
     ).join('');
-    if (selectedId) sel.value = selectedId;
+    if (selectedId) {
+        const u = globalData.find(x => x.id === selectedId);
+        input.value = u ? damageUnitLabel(u) : '';
+    } else {
+        input.value = '';
+    }
+}
+
+// Resolve the free-typed picker text back to a unit: exact label match first,
+// then fall back to matching the serial number after the "—" separator.
+function resolveDamageUnit(val) {
+    val = (val || '').trim();
+    if (!val) return null;
+    let u = globalData.find(x => damageUnitLabel(x) === val);
+    if (!u && val.includes('—')) {
+        const sn = val.split('—').pop().trim();
+        if (sn) u = globalData.find(x => (x.sn || '') === sn);
+    }
+    return u || null;
 }
 
 // ---- Render ----
@@ -2846,6 +2872,12 @@ function editDamage(id) {
     document.getElementById('editDamageId').value = id;
     document.getElementById('dmgDate').value = rec.date || '';
     populateDamageUnitSelect(rec.unitId);
+    // Unit may have been deleted since this record was created — keep the
+    // original snapshot visible so the picker isn't blank.
+    const dmgUnitInput = document.getElementById('dmgUnit');
+    if (dmgUnitInput && !dmgUnitInput.value) {
+        dmgUnitInput.value = `${rec.unitName || ''}${rec.sn ? ' — ' + rec.sn : ''}`;
+    }
     document.getElementById('dmgType').value = rec.damageType || '';
     document.getElementById('dmgComponent').value = rec.component || '';
     document.getElementById('dmgDescription').value = rec.description || '';
@@ -2858,9 +2890,8 @@ function saveDamage(event) {
     if (!requireEdit()) return;
 
     const id = document.getElementById('editDamageId').value;
-    const unitId = document.getElementById('dmgUnit').value;
-    const unit = globalData.find(u => u.id === unitId);
-    if (!unit) { showToast('Pilih unit terlebih dahulu', 'warning'); return; }
+    const unit = resolveDamageUnit(document.getElementById('dmgUnit').value);
+    if (!unit) { showToast('Pilih unit dari daftar (ketik nama atau SN)', 'warning'); return; }
 
     const type = document.getElementById('dmgType').value;
     const data = {
