@@ -15,6 +15,7 @@ let globalImplements = [];
 let selectedImplementIds = new Set();
 let globalDamages = [];
 let selectedDamageIds = new Set();
+let _dmgPhotoData = '';   // data URL of the photo for the damage modal currently open
 
 // ---- Breakdown reason modal state ----
 let _pendingBreakdown = null;  // { unitId, fields, isInline, el }
@@ -54,6 +55,9 @@ const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
 const DAMAGE_STORAGE_KEY = 'tractorDamageRecords';
 const DAMAGE_TYPES = ['Mekanis', 'Software', 'Device Precision'];
 const DAMAGE_COMPONENTS = ['GPS', 'Display', 'JDLink', 'Steering Sensor'];
+const DAMAGE_PHOTO_MAX_DIM = 1280;     // longest-side px after resize
+const DAMAGE_PHOTO_QUALITY = 0.7;      // initial JPEG quality
+const DAMAGE_PHOTO_MAX_BYTES = 900 * 1024; // keep data URL under Firestore 1MB doc limit
 const PENDING_CHANGES_KEY = 'tractorPendingChanges';
 const AUDIT_LOG_KEY = 'tractorAuditLog';
 const AUDIT_LOG_MAX = 500;
@@ -2686,6 +2690,89 @@ function generateDamageId() {
     return 'dmg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
 }
 
+// ---- Photo: compress/resize an image File to a JPEG data URL ----
+// Resizes to DAMAGE_PHOTO_MAX_DIM on the longest side, then lowers quality
+// until the data URL fits under DAMAGE_PHOTO_MAX_BYTES (Firestore 1MB doc cap).
+function compressImageToDataURL(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Gagal membaca file'));
+        reader.onload = () => {
+            const img = new Image();
+            img.onerror = () => reject(new Error('File bukan gambar yang valid'));
+            img.onload = () => {
+                let { width, height } = img;
+                const max = DAMAGE_PHOTO_MAX_DIM;
+                if (width > height && width > max) { height = Math.round(height * max / width); width = max; }
+                else if (height > max) { width = Math.round(width * max / height); height = max; }
+                const canvas = document.createElement('canvas');
+                canvas.width = width; canvas.height = height;
+                canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+                let q = DAMAGE_PHOTO_QUALITY;
+                let out = canvas.toDataURL('image/jpeg', q);
+                while (out.length > DAMAGE_PHOTO_MAX_BYTES && q > 0.3) {
+                    q -= 0.1;
+                    out = canvas.toDataURL('image/jpeg', q);
+                }
+                resolve(out);
+            };
+            img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
+async function handleDamagePhotoChange(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+        showToast('File harus berupa gambar (foto)', 'warning');
+        return;
+    }
+    try {
+        _dmgPhotoData = await compressImageToDataURL(file);
+        setDamagePhotoPreview();
+    } catch (err) {
+        showToast(err.message || 'Gagal memproses foto', 'error');
+    }
+}
+
+function setDamagePhotoPreview() {
+    const wrap = document.getElementById('dmgPhotoPreviewWrap');
+    const img = document.getElementById('dmgPhotoPreview');
+    if (!wrap || !img) return;
+    if (_dmgPhotoData) {
+        img.src = _dmgPhotoData;
+        wrap.style.display = '';
+    } else {
+        img.removeAttribute('src');
+        wrap.style.display = 'none';
+    }
+}
+
+function removeDamagePhoto() {
+    _dmgPhotoData = '';
+    const input = document.getElementById('dmgPhotoInput');
+    if (input) input.value = '';
+    setDamagePhotoPreview();
+}
+
+// ---- Lightbox (view full-size photo) ----
+function openPhotoLightbox(src) {
+    if (!src) return;
+    const box = document.getElementById('photoLightbox');
+    const img = document.getElementById('photoLightboxImg');
+    if (!box || !img) return;
+    img.src = src;
+    box.classList.add('open');
+}
+
+function closePhotoLightbox() {
+    const box = document.getElementById('photoLightbox');
+    if (box) box.classList.remove('open');
+}
+
 // ---- Storage ----
 function loadDamages() {
     try {
@@ -2786,7 +2873,7 @@ function renderDamageTable() {
                       (document.getElementById('damageTypeFilter')?.value || '');
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:#718096">${
+        tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:24px;color:#718096">${
             hasFilter ? 'Tidak ada kerusakan yang cocok dengan filter'
                       : 'Belum ada catatan kerusakan. Klik <strong>Tambah Kerusakan</strong> untuk mulai.'
         }</td></tr>`;
@@ -2810,6 +2897,9 @@ function renderDamageTable() {
             <td><span class="badge badge-breakdown" style="font-size:10px">${escapeHtml(d.damageType || '')}</span></td>
             <td>${comp}</td>
             <td style="max-width:240px;font-size:12px;color:#4a5568" title="${escapeHtml(desc)}">${escapeHtml(descShort) || '<span style="color:#a0aec0">—</span>'}</td>
+            <td>${d.photo
+                ? `<img class="dmg-thumb" src="${d.photo}" alt="foto" onclick="openPhotoLightbox(this.src)">`
+                : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
             <td class="col-actions">
                 <div class="row-actions">
                     <button class="btn btn-secondary" title="Edit" onclick="editDamage('${escapeHtml(d.id)}')"><i class="fas fa-pen"></i></button>
@@ -2860,6 +2950,8 @@ function showAddDamageForm() {
     document.getElementById('dmgDate').value = new Date().toISOString().slice(0, 10);
     populateDamageUnitSelect();
     onDamageTypeChange();
+    _dmgPhotoData = '';
+    setDamagePhotoPreview();
     document.getElementById('damageModal').classList.add('open');
 }
 
@@ -2882,6 +2974,8 @@ function editDamage(id) {
     document.getElementById('dmgComponent').value = rec.component || '';
     document.getElementById('dmgDescription').value = rec.description || '';
     onDamageTypeChange();
+    _dmgPhotoData = rec.photo || '';
+    setDamagePhotoPreview();
     document.getElementById('damageModal').classList.add('open');
 }
 
@@ -2902,7 +2996,8 @@ function saveDamage(event) {
         site: unit.site || '',
         damageType: type,
         component: type === 'Device Precision' ? document.getElementById('dmgComponent').value : '',
-        description: document.getElementById('dmgDescription').value.trim()
+        description: document.getElementById('dmgDescription').value.trim(),
+        photo: _dmgPhotoData || ''
     };
 
     if (id) {
@@ -2988,10 +3083,10 @@ function deleteSelectedDamages() {
 function exportDamageCSV() {
     const rows = getFilteredDamages();
     if (rows.length === 0) { showToast('Tidak ada data kerusakan untuk diexport', 'warning'); return; }
-    const headers = ['No', 'Tanggal', 'Unit', 'Serial Number', 'Site', 'Tipe Kerusakan', 'Komponen', 'Deskripsi'];
+    const headers = ['No', 'Tanggal', 'Unit', 'Serial Number', 'Site', 'Tipe Kerusakan', 'Komponen', 'Deskripsi', 'Foto'];
     const dataRows = rows.map((d, i) => [
         i + 1, d.date || '', d.unitName || '', d.sn || '', d.site || '',
-        d.damageType || '', d.component || '', d.description || ''
+        d.damageType || '', d.component || '', d.description || '', d.photo ? 'Ada' : ''
     ]);
     const csv = [headers, ...dataRows].map(row =>
         row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
