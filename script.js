@@ -1462,18 +1462,22 @@ function renderLicenseAlerts(data) {
         soonCount ? `<span class="la-chip soon"><i class="fas fa-triangle-exclamation"></i> ${soonCount} Expiring ≤${SOON_DAYS}d</span>` : ''
     ].filter(Boolean).join('');
 
-    container.innerHTML = alerts.map(a => `
+    container.innerHTML = alerts.map(a => {
+        const meta = [a.licName, a.unit.model, a.unit.site, `Exp: ${a.endDate}`]
+            .filter(Boolean).map(escapeHtml).join(' · ');
+        return `
         <div class="la-card ${a.status}">
             <div class="la-card__icon">
                 <i class="fas fa-${a.status === 'expired' ? 'circle-xmark' : 'triangle-exclamation'}"></i>
             </div>
             <div class="la-card__body">
                 <div class="la-card__name">${escapeHtml(a.unit.name || a.unit.sn)}</div>
-                <div class="la-card__meta">${escapeHtml(a.licName)} · ${escapeHtml(a.unit.site || '')} · Exp: ${escapeHtml(a.endDate)}</div>
+                <div class="la-card__meta">${meta}</div>
             </div>
             <div class="la-card__badge">${escapeHtml(a.label)}</div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 // ---- Email Alert (EmailJS) ----
@@ -1526,7 +1530,7 @@ function _buildAlertList() {
                 if (s.kind === 'expired') expiredCount++; else soonCount++;
                 lines.push({
                     daysLeft: s.daysLeft,
-                    text: `${tag} | ${unit.name || '-'} | ${unit.sn || '-'} | ${licName} | ${unit.site || '-'} | ${end} | ${s.label}`
+                    text: `${tag} | ${unit.name || '-'} | ${unit.model || '-'} | ${unit.sn || '-'} | ${licName} | ${unit.site || '-'} | ${end} | ${s.label}`
                 });
             }
         });
@@ -1553,7 +1557,7 @@ function sendLicenseAlertEmail() {
         `License Alert Report — ${today}`,
         `Expired: ${report.expiredCount} | Expiring soon: ${report.soonCount}`,
         '',
-        'Status | Unit | Serial Number | License | Site | Expiry Date | Remaining',
+        'Status | Unit | Model | Serial Number | License | Site | Expiry Date | Remaining',
         '—'.repeat(60),
         ...report.lines
     ].join('\n');
