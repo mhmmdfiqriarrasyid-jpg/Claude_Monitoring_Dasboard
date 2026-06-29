@@ -662,6 +662,13 @@
                 <button class="btn btn-danger" id="btnDeleteSelectedLicense" style="display:none" onclick="deleteSelectedLicenseStock()">
                     <i class="fas fa-trash"></i> Delete Selected (<span id="selectedLicenseCount">0</span>)
                 </button>
+                <input type="file" id="licenseCsvInput" accept=".csv" style="display:none">
+                <button class="btn btn-secondary" onclick="document.getElementById('licenseCsvInput').click()">
+                    <i class="fas fa-file-import"></i> Import CSV
+                </button>
+                <button class="btn btn-secondary" onclick="downloadLicenseTemplate()">
+                    <i class="fas fa-file-arrow-down"></i> Template
+                </button>
                 <button class="btn btn-secondary" onclick="exportLicenseStockCSV()">
                     <i class="fas fa-download"></i> Export CSV
                 </button>

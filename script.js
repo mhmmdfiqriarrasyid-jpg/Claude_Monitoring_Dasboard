@@ -245,6 +245,12 @@ function setupEventListeners() {
     if (licenseTxnFilter) licenseTxnFilter.addEventListener('change', renderLicenseStockTable);
     const licenseTypeFilter = document.getElementById('licenseTypeFilter');
     if (licenseTypeFilter) licenseTypeFilter.addEventListener('change', renderLicenseStockTable);
+    const licenseCsvInput = document.getElementById('licenseCsvInput');
+    if (licenseCsvInput) licenseCsvInput.addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (file) handleLicenseCSVImport(file);
+        licenseCsvInput.value = '';
+    });
 
     // Edit page CSV upload
     const editInput = document.getElementById('editCsvInput');
@@ -3568,6 +3574,99 @@ function exportLicenseStockCSV() {
     a.click();
     URL.revokeObjectURL(url);
     showToast(`Export ${rows.length} transaksi lisensi ke CSV`, 'success');
+}
+
+// ---- Import (CSV, append-only ledger) ----
+function parseLicenseTxnType(s) {
+    const v = (s || '').toString().trim().toLowerCase();
+    if (['out', 'distribusi', 'keluar', 'distribution'].includes(v)) return 'OUT';
+    return 'IN'; // masuk / in / empty default
+}
+
+function downloadLicenseTemplate() {
+    const headers = ['Tanggal', 'Jenis', 'Jenis Lisensi', 'Jumlah', 'Unit', 'Serial Number', 'Catatan'];
+    const sample = [
+        ['2026-04-06', 'Masuk', 'SF-RTK', '50', '', '', 'PO.GPA.2026.04.01343'],
+        ['2026-05-11', 'Distribusi', 'G5 Advance', '1', 'GGCH001G', '', 'Dipasang di unit']
+    ];
+    const csv = [headers, ...sample].map(row =>
+        row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'template_stok_lisensi.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function handleLicenseCSVImport(file) {
+    if (!requireEdit()) return;
+    showLoading(true);
+    Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: result => {
+            const today = new Date().toISOString().slice(0, 10);
+            const added = [];
+            let rejected = 0;
+
+            result.data.forEach(row => {
+                const licenseType = (getValAny(row, ['Jenis Lisensi', 'License', 'License Type']) || '').toString().trim();
+                if (!licenseType) { rejected++; return; }
+
+                const txnType = parseLicenseTxnType(getValAny(row, ['Jenis', 'Type', 'Transaksi', 'Transaction']));
+                const qty = Math.max(1, parseInt(getValAny(row, ['Jumlah', 'Qty', 'Quantity']), 10) || 1);
+                const date = (getValAny(row, ['Tanggal', 'Date']) || '').toString().trim() || today;
+                const note = (getValAny(row, ['Catatan', 'Note', 'Notes', 'Remarks']) || '').toString().trim();
+
+                const rec = {
+                    id: generateLicenseId(),
+                    date, txnType, licenseType, qty,
+                    unitId: '', unitName: '', sn: '',
+                    note,
+                    createdAt: Date.now(), updatedAt: Date.now()
+                };
+
+                if (txnType === 'OUT') {
+                    const snCsv = (getValAny(row, ['Serial Number', 'SN']) || '').toString().trim();
+                    const nameCsv = (getValAny(row, ['Unit', 'Nickname']) || '').toString().trim();
+                    let unit = null;
+                    if (snCsv) unit = globalData.find(u => (u.sn || '').toLowerCase() === snCsv.toLowerCase());
+                    if (!unit && nameCsv) unit = globalData.find(u => (u.name || '').toLowerCase() === nameCsv.toLowerCase());
+                    if (unit) {
+                        rec.unitId = unit.id; rec.unitName = unit.name || ''; rec.sn = unit.sn || '';
+                    } else {
+                        rec.unitName = nameCsv; rec.sn = snCsv;
+                    }
+                }
+                added.push(rec);
+            });
+
+            if (added.length > 0) {
+                globalLicenseStock.push(...added);
+                saveLicenseStockLocal();
+                if (!suppressCloudWrites && window.cloud?.isReady) {
+                    window.cloud.saveLicenses(added).catch(err => {
+                        console.error('[cloud] import licenses failed:', err);
+                        showToast('Cloud sync gagal — data tersimpan lokal', 'warning');
+                    });
+                }
+                logEvent({ action: 'add', unitName: '[Lisensi] Import CSV', after: `${added.length} transaksi` });
+                populateLicenseTypeList();
+                renderLicenseSummary();
+                renderLicenseStockTable();
+            }
+
+            showLoading(false);
+            const msg = `Import lisensi: ${added.length} ditambahkan` + (rejected ? `, ${rejected} dilewati (jenis lisensi kosong)` : '');
+            showToast(msg, added.length ? 'success' : 'warning');
+        },
+        error: err => {
+            showToast('Gagal membaca CSV: ' + err.message, 'error');
+            showLoading(false);
+        }
+    });
 }
 
 // ---- Cloud ----
