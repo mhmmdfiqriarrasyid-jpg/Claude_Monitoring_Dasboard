@@ -64,6 +64,7 @@ try {
 const UNITS_COL = 'units';
 const IMPL_COL = 'implements';
 const DAMAGE_COL = 'damageRecords';
+const LICENSE_COL = 'licenseStock';
 const USERS_COL = 'users';
 const HISTORY_COL = 'history';
 const USER_CATEGORIES_COL = 'userCategories';
@@ -169,6 +170,34 @@ window.cloud = {
             snap => callback(snap.docs.map(d => d.data())),
             err => {
                 console.error('[cloud] damage subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
+    },
+
+    // ---- License Stock ----
+    async saveLicense(rec) {
+        await setDoc(doc(db, LICENSE_COL, rec.id), rec, { merge: true });
+    },
+    async saveLicenses(items) {
+        if (!items.length) return;
+        await batchInChunks(items, (batch, r) =>
+            batch.set(doc(db, LICENSE_COL, r.id), r, { merge: true })
+        );
+    },
+    async deleteLicense(id) {
+        await deleteDoc(doc(db, LICENSE_COL, id));
+    },
+    async getAllLicenses() {
+        const snap = await getDocs(collection(db, LICENSE_COL));
+        return snap.docs.map(d => d.data());
+    },
+    subscribeLicenses(callback, errorCallback) {
+        return onSnapshot(
+            collection(db, LICENSE_COL),
+            snap => callback(snap.docs.map(d => d.data())),
+            err => {
+                console.error('[cloud] license subscription error:', err);
                 if (errorCallback) errorCallback(err);
             }
         );

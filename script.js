@@ -16,6 +16,8 @@ let selectedImplementIds = new Set();
 let globalDamages = [];
 let selectedDamageIds = new Set();
 let _dmgPhotoData = '';   // data URL of the photo for the damage modal currently open
+let globalLicenseStock = [];
+let selectedLicenseIds = new Set();
 
 // ---- Breakdown reason modal state ----
 let _pendingBreakdown = null;  // { unitId, fields, isInline, el }
@@ -28,6 +30,7 @@ let cloudInitialized = false;
 let cloudUnitsUnsub = null;
 let cloudImplUnsub = null;
 let cloudDamageUnsub = null;
+let cloudLicenseUnsub = null;
 let cloudUsersUnsub = null;
 let cloudHistoryUnsub = null;
 let cloudHistory = [];               // newest-first, mirrors Firestore `history`
@@ -42,6 +45,7 @@ let _localDataLoaded = false;
 let _firstUnitsSnapshot = true;
 let _firstImplSnapshot = true;
 let _firstDamageSnapshot = true;
+let _firstLicenseSnapshot = true;
 
 // ---- Auth state ----
 let currentUser = null;        // Firebase Auth user object
@@ -58,6 +62,8 @@ const DAMAGE_COMPONENTS = ['GPS', 'Display', 'JDLink', 'Steering Sensor'];
 const DAMAGE_PHOTO_MAX_DIM = 1280;     // longest-side px after resize
 const DAMAGE_PHOTO_QUALITY = 0.7;      // initial JPEG quality
 const DAMAGE_PHOTO_MAX_BYTES = 900 * 1024; // keep data URL under Firestore 1MB doc limit
+const LICENSE_STORAGE_KEY = 'tractorLicenseStock';
+const LICENSE_TYPE_DEFAULTS = ['SF-RTK', 'SF-1', 'G5 Basic', 'G5 Advance'];
 const PENDING_CHANGES_KEY = 'tractorPendingChanges';
 const AUDIT_LOG_KEY = 'tractorAuditLog';
 const AUDIT_LOG_MAX = 500;
@@ -186,6 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loadImplements();
     loadDamages();
+    loadLicenseStock();
 
     if (loadFromStorage()) {
         onDataLoaded();
@@ -230,6 +237,14 @@ function setupEventListeners() {
     if (damageSearch) damageSearch.addEventListener('input', renderDamageTable);
     const damageTypeFilter = document.getElementById('damageTypeFilter');
     if (damageTypeFilter) damageTypeFilter.addEventListener('change', renderDamageTable);
+
+    // License stock page search + filters
+    const licenseSearch = document.getElementById('licenseSearch');
+    if (licenseSearch) licenseSearch.addEventListener('input', renderLicenseStockTable);
+    const licenseTxnFilter = document.getElementById('licenseTxnFilter');
+    if (licenseTxnFilter) licenseTxnFilter.addEventListener('change', renderLicenseStockTable);
+    const licenseTypeFilter = document.getElementById('licenseTypeFilter');
+    if (licenseTypeFilter) licenseTypeFilter.addEventListener('change', renderLicenseStockTable);
 
     // Edit page CSV upload
     const editInput = document.getElementById('editCsvInput');
@@ -396,7 +411,7 @@ function formatDuration(ms) {
 
 function navigateTo(view) {
     // Role gating: viewers can only see the dashboard; only owners see Users.
-    if ((view === 'editUnits' || view === 'implements' || view === 'damage') && !canEdit()) {
+    if ((view === 'editUnits' || view === 'implements' || view === 'damage' || view === 'licenseStock') && !canEdit()) {
         showToast('Read-only access — viewers can only see the dashboard', 'warning');
         view = 'dashboard';
     }
@@ -411,6 +426,8 @@ function navigateTo(view) {
     if (implView) implView.style.display = (view === 'implements') ? 'block' : 'none';
     const damageView = document.getElementById('viewDamage');
     if (damageView) damageView.style.display = (view === 'damage') ? 'block' : 'none';
+    const licenseView = document.getElementById('viewLicenseStock');
+    if (licenseView) licenseView.style.display = (view === 'licenseStock') ? 'block' : 'none';
     const usersView = document.getElementById('viewUsers');
     if (usersView) usersView.style.display = (view === 'users') ? 'block' : 'none';
 
@@ -452,6 +469,13 @@ function navigateTo(view) {
         loadDamages();
         populateDamageUnitSelect();
         renderDamageTable();
+    }
+
+    if (view === 'licenseStock') {
+        loadLicenseStock();
+        populateLicenseTypeList();
+        renderLicenseSummary();
+        renderLicenseStockTable();
     }
 
     if (view === 'users') {
@@ -3166,6 +3190,452 @@ function applyCloudDamagesSnapshot(items) {
 }
 
 // ============================================================
+// LICENSE STOCK (STOK LISENSI)
+// ============================================================
+
+function generateLicenseId() {
+    return 'lic_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+}
+
+// ---- Storage ----
+function loadLicenseStock() {
+    try {
+        const raw = localStorage.getItem(LICENSE_STORAGE_KEY);
+        globalLicenseStock = raw ? JSON.parse(raw) : [];
+    } catch (e) {
+        globalLicenseStock = [];
+    }
+    updateLicenseCount();
+    return globalLicenseStock.length > 0;
+}
+
+function saveLicenseStockLocal() {
+    try {
+        localStorage.setItem(LICENSE_STORAGE_KEY, JSON.stringify(globalLicenseStock));
+    } catch (e) {
+        showToast('Storage full. Could not save license stock.', 'error');
+    }
+}
+
+function updateLicenseCount() {
+    const el = document.getElementById('licenseCount');
+    if (el) el.textContent = `${globalLicenseStock.length} transaksi`;
+}
+
+// All distinct license types: defaults plus any already used in the data.
+function allLicenseTypes() {
+    const set = new Set(LICENSE_TYPE_DEFAULTS);
+    globalLicenseStock.forEach(r => { if (r.licenseType) set.add(r.licenseType); });
+    return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+// Per-type stock summary: { type: { in, out, sisa } }
+function computeLicenseSummary() {
+    const map = {};
+    globalLicenseStock.forEach(r => {
+        const t = r.licenseType || '(tanpa jenis)';
+        if (!map[t]) map[t] = { in: 0, out: 0, sisa: 0 };
+        const q = Number(r.qty) || 0;
+        if (r.txnType === 'OUT') map[t].out += q;
+        else map[t].in += q;
+    });
+    Object.values(map).forEach(v => { v.sisa = v.in - v.out; });
+    return map;
+}
+
+function renderLicenseSummary() {
+    const el = document.getElementById('licenseSummary');
+    if (!el) return;
+    const map = computeLicenseSummary();
+    const types = Object.keys(map).sort((a, b) => a.localeCompare(b));
+    if (types.length === 0) {
+        el.innerHTML = '<div class="license-summary__empty">Belum ada data stok lisensi.</div>';
+        return;
+    }
+    el.innerHTML = types.map(t => {
+        const s = map[t];
+        const low = s.sisa <= 0;
+        return `
+        <div class="license-sum-card${low ? ' low' : ''}">
+            <div class="license-sum-card__type">${escapeHtml(t)}</div>
+            <div class="license-sum-card__nums">
+                <span title="Masuk"><i class="fas fa-arrow-down" style="color:var(--success)"></i> ${s.in}</span>
+                <span title="Terdistribusi"><i class="fas fa-arrow-up" style="color:var(--primary)"></i> ${s.out}</span>
+                <span class="license-sum-card__sisa" title="Sisa">Sisa: <strong>${s.sisa}</strong></span>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+// ---- Filtering / sort (newest date first) ----
+function getFilteredLicenseStock() {
+    const query = (document.getElementById('licenseSearch')?.value || '').toLowerCase().trim();
+    const txnVal = (document.getElementById('licenseTxnFilter')?.value || '');
+    const typeVal = (document.getElementById('licenseTypeFilter')?.value || '');
+
+    let rows = [...globalLicenseStock];
+    if (txnVal) rows = rows.filter(r => r.txnType === txnVal);
+    if (typeVal) rows = rows.filter(r => r.licenseType === typeVal);
+    if (query) rows = rows.filter(r =>
+        `${r.licenseType} ${r.unitName} ${r.sn} ${r.note}`.toLowerCase().includes(query));
+
+    rows.sort((a, b) => {
+        const da = a.date || '', db = b.date || '';
+        if (da !== db) return da < db ? 1 : -1;
+        return (b.createdAt || 0) - (a.createdAt || 0);
+    });
+    return rows;
+}
+
+// ---- Render table ----
+function renderLicenseStockTable() {
+    updateLicenseCount();
+    selectedLicenseIds.clear();
+    updateSelectedLicenseCount();
+
+    const selectAllBox = document.getElementById('selectAllLicense');
+    if (selectAllBox) selectAllBox.checked = false;
+
+    const rows = getFilteredLicenseStock();
+    const tbody = document.getElementById('licenseBody');
+    if (!tbody) return;
+
+    const hasFilter = (document.getElementById('licenseSearch')?.value || '') ||
+                      (document.getElementById('licenseTxnFilter')?.value || '') ||
+                      (document.getElementById('licenseTypeFilter')?.value || '');
+
+    if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:#718096">${
+            hasFilter ? 'Tidak ada transaksi yang cocok dengan filter'
+                      : 'Belum ada transaksi stok lisensi. Klik <strong>Tambah Stok</strong> atau <strong>Distribusi</strong>.'
+        }</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = rows.map((r, i) => {
+        const isOut = r.txnType === 'OUT';
+        const badge = isOut
+            ? '<span class="badge badge-cat" style="font-size:10px"><i class="fas fa-share-from-square"></i> Distribusi</span>'
+            : '<span class="badge badge-good" style="font-size:10px"><i class="fas fa-arrow-down"></i> Masuk</span>';
+        const note = r.note || '';
+        const noteShort = note.length > 40 ? note.slice(0, 40) + '…' : note;
+        return `
+        <tr>
+            <td class="col-check"><input type="checkbox" class="license-check" data-id="${escapeHtml(r.id)}" onchange="updateSelectedLicenseCount()"></td>
+            <td>${i + 1}</td>
+            <td style="white-space:nowrap">${escapeHtml(r.date || '')}</td>
+            <td>${badge}</td>
+            <td><strong>${escapeHtml(r.licenseType || '')}</strong></td>
+            <td>${Number(r.qty) || 0}</td>
+            <td>${isOut ? escapeHtml(r.unitName || '') : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
+            <td style="font-family:monospace;font-size:12px">${isOut ? escapeHtml(r.sn || '') : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
+            <td style="max-width:200px;font-size:12px;color:#4a5568" title="${escapeHtml(note)}">${escapeHtml(noteShort) || '<span style="color:#a0aec0">—</span>'}</td>
+            <td class="col-actions">
+                <div class="row-actions">
+                    <button class="btn btn-secondary" title="Edit" onclick="editLicenseStock('${escapeHtml(r.id)}')"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Delete" onclick="deleteLicenseStock('${escapeHtml(r.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+// ---- Selection ----
+function toggleSelectAllLicense() {
+    const checked = document.getElementById('selectAllLicense').checked;
+    document.querySelectorAll('.license-check').forEach(cb => { cb.checked = checked; });
+    updateSelectedLicenseCount();
+}
+
+function updateSelectedLicenseCount() {
+    selectedLicenseIds.clear();
+    document.querySelectorAll('.license-check:checked').forEach(cb => selectedLicenseIds.add(cb.dataset.id));
+    const count = selectedLicenseIds.size;
+    const countEl = document.getElementById('selectedLicenseCount');
+    const btn = document.getElementById('btnDeleteSelectedLicense');
+    if (countEl) countEl.textContent = count;
+    if (btn) btn.style.display = count > 0 ? '' : 'none';
+}
+
+// ---- Pickers ----
+function populateLicenseTypeList() {
+    const types = allLicenseTypes();
+    const list = document.getElementById('licTypeList');
+    if (list) list.innerHTML = types.map(t => `<option value="${escapeHtml(t)}"></option>`).join('');
+    // Also keep the toolbar type filter in sync.
+    const filter = document.getElementById('licenseTypeFilter');
+    if (filter) {
+        const cur = filter.value;
+        filter.innerHTML = '<option value="">Semua Jenis</option>' +
+            types.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+        filter.value = cur;
+    }
+}
+
+function populateLicenseUnitList(selectedLabel) {
+    const input = document.getElementById('licUnit');
+    const list = document.getElementById('licUnitList');
+    if (!input || !list) return;
+    const units = [...globalData].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    list.innerHTML = units.map(u => `<option value="${escapeHtml(damageUnitLabel(u))}"></option>`).join('');
+    input.value = selectedLabel || '';
+}
+
+function onLicenseTxnChange() {
+    const type = document.getElementById('licTxnType').value;
+    const group = document.getElementById('licUnitGroup');
+    if (group) group.style.display = (type === 'OUT') ? '' : 'none';
+}
+
+// ---- Modal: Add / Edit ----
+function showAddLicenseForm(txnType) {
+    if (!requireEdit()) return;
+    document.getElementById('licenseModalTitle').textContent =
+        txnType === 'OUT' ? 'Distribusi Lisensi' : 'Tambah Stok Lisensi';
+    document.getElementById('editLicenseId').value = '';
+    document.getElementById('licenseForm').reset();
+    document.getElementById('licTxnType').value = txnType || 'IN';
+    document.getElementById('licDate').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('licQty').value = '1';
+    populateLicenseTypeList();
+    populateLicenseUnitList('');
+    onLicenseTxnChange();
+    document.getElementById('licenseModal').classList.add('open');
+}
+
+function editLicenseStock(id) {
+    if (!requireEdit()) return;
+    const rec = globalLicenseStock.find(r => r.id === id);
+    if (!rec) return;
+
+    document.getElementById('licenseModalTitle').textContent = 'Edit Transaksi Lisensi';
+    document.getElementById('editLicenseId').value = id;
+    populateLicenseTypeList();
+    document.getElementById('licTxnType').value = rec.txnType || 'IN';
+    document.getElementById('licDate').value = rec.date || '';
+    document.getElementById('licType').value = rec.licenseType || '';
+    document.getElementById('licQty').value = rec.qty || 1;
+    const label = rec.unitId
+        ? (globalData.find(u => u.id === rec.unitId) ? damageUnitLabel(globalData.find(u => u.id === rec.unitId))
+           : `${rec.unitName || ''}${rec.sn ? ' — ' + rec.sn : ''}`)
+        : '';
+    populateLicenseUnitList(label);
+    document.getElementById('licNote').value = rec.note || '';
+    onLicenseTxnChange();
+    document.getElementById('licenseModal').classList.add('open');
+}
+
+function saveLicenseStock(event) {
+    event.preventDefault();
+    if (!requireEdit()) return;
+
+    const id = document.getElementById('editLicenseId').value;
+    const txnType = document.getElementById('licTxnType').value;
+    const licenseType = document.getElementById('licType').value.trim();
+    const qty = Math.max(1, parseInt(document.getElementById('licQty').value, 10) || 1);
+    if (!licenseType) { showToast('Isi jenis lisensi', 'warning'); return; }
+
+    const data = {
+        date: document.getElementById('licDate').value,
+        txnType,
+        licenseType,
+        qty,
+        unitId: '', unitName: '', sn: '',
+        note: document.getElementById('licNote').value.trim()
+    };
+
+    if (txnType === 'OUT') {
+        const unit = resolveDamageUnit(document.getElementById('licUnit').value);
+        if (!unit) { showToast('Pilih unit tujuan dari daftar (ketik nama atau SN)', 'warning'); return; }
+        data.unitId = unit.id;
+        data.unitName = unit.name || '';
+        data.sn = unit.sn || '';
+
+        // Warn (but allow) if distributing more than current remaining stock.
+        const sum = computeLicenseSummary()[licenseType];
+        let sisa = sum ? sum.sisa : 0;
+        if (id) { // editing an existing OUT — add its old qty back to available
+            const old = globalLicenseStock.find(r => r.id === id);
+            if (old && old.txnType === 'OUT' && old.licenseType === licenseType) sisa += (Number(old.qty) || 0);
+        }
+        if (qty > sisa) {
+            if (!confirm(`Stok "${licenseType}" tidak cukup (sisa ${sisa}). Tetap simpan?`)) return;
+        }
+    }
+
+    if (id) {
+        const idx = globalLicenseStock.findIndex(r => r.id === id);
+        if (idx !== -1) {
+            globalLicenseStock[idx] = { ...globalLicenseStock[idx], ...data, updatedAt: Date.now() };
+            saveLicenseStockLocal();
+            cloudPushLicense(globalLicenseStock[idx]);
+            logEvent({
+                action: 'update',
+                unitId: data.unitId || '',
+                unitName: `[Lisensi] ${data.licenseType}`,
+                field: txnType === 'OUT' ? `Distribusi → ${data.unitName}` : 'Stok masuk',
+                after: `${qty} (${data.date})`
+            });
+            showToast('Transaksi lisensi diperbarui', 'success');
+        }
+    } else {
+        const newRec = { id: generateLicenseId(), ...data, createdAt: Date.now(), updatedAt: Date.now() };
+        globalLicenseStock.push(newRec);
+        saveLicenseStockLocal();
+        cloudPushLicense(newRec);
+        logEvent({
+            action: 'add',
+            unitId: data.unitId || '',
+            unitName: `[Lisensi] ${data.licenseType}`,
+            field: txnType === 'OUT' ? `Distribusi → ${data.unitName}` : 'Stok masuk',
+            after: `${qty} (${data.date})`
+        });
+        showToast(txnType === 'OUT' ? 'Distribusi lisensi dicatat' : 'Stok lisensi ditambahkan', 'success');
+    }
+
+    closeLicenseModal();
+    populateLicenseTypeList();
+    renderLicenseSummary();
+    renderLicenseStockTable();
+}
+
+function closeLicenseModal() {
+    document.getElementById('licenseModal').classList.remove('open');
+}
+
+// ---- Delete ----
+function deleteLicenseStock(id) {
+    if (!requireEdit()) return;
+    const rec = globalLicenseStock.find(r => r.id === id);
+    if (!rec) return;
+    if (!confirm(`Hapus transaksi lisensi "${rec.licenseType}" (${rec.date})?`)) return;
+
+    globalLicenseStock = globalLicenseStock.filter(r => r.id !== id);
+    saveLicenseStockLocal();
+    cloudDeleteLicense(id);
+    logEvent({
+        action: 'delete',
+        unitId: rec.unitId || '',
+        unitName: `[Lisensi] ${rec.licenseType}`,
+        before: rec.txnType === 'OUT' ? `Distribusi → ${rec.unitName}` : 'Stok masuk'
+    });
+    renderLicenseSummary();
+    renderLicenseStockTable();
+    showToast('Transaksi lisensi dihapus', 'success');
+}
+
+function deleteSelectedLicenseStock() {
+    if (!requireEdit()) return;
+    const count = selectedLicenseIds.size;
+    if (count === 0) return;
+    if (!confirm(`Hapus ${count} transaksi lisensi terpilih?`)) return;
+
+    const idSet = new Set(selectedLicenseIds);
+    const removed = globalLicenseStock.filter(r => idSet.has(r.id));
+    globalLicenseStock = globalLicenseStock.filter(r => !idSet.has(r.id));
+    saveLicenseStockLocal();
+    removed.forEach(rec => cloudDeleteLicense(rec.id));
+    removed.forEach(rec => logEvent({
+        action: 'delete',
+        unitId: rec.unitId || '',
+        unitName: `[Lisensi] ${rec.licenseType}`,
+        before: rec.txnType === 'OUT' ? `Distribusi → ${rec.unitName}` : 'Stok masuk'
+    }));
+    renderLicenseSummary();
+    renderLicenseStockTable();
+    showToast(`${count} transaksi lisensi dihapus`, 'success');
+}
+
+// ---- Export report (CSV, opens in Excel via UTF-8 BOM) ----
+function exportLicenseStockCSV() {
+    const rows = getFilteredLicenseStock();
+    if (rows.length === 0) { showToast('Tidak ada data lisensi untuk diexport', 'warning'); return; }
+    const headers = ['No', 'Tanggal', 'Jenis', 'Jenis Lisensi', 'Jumlah', 'Unit', 'Serial Number', 'Catatan'];
+    const dataRows = rows.map((r, i) => [
+        i + 1, r.date || '', r.txnType === 'OUT' ? 'Distribusi' : 'Masuk',
+        r.licenseType || '', Number(r.qty) || 0,
+        r.txnType === 'OUT' ? (r.unitName || '') : '',
+        r.txnType === 'OUT' ? (r.sn || '') : '',
+        r.note || ''
+    ]);
+    const csv = [headers, ...dataRows].map(row =>
+        row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `stok_lisensi_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Export ${rows.length} transaksi lisensi ke CSV`, 'success');
+}
+
+// ---- Cloud ----
+function cloudPushLicense(rec) {
+    if (suppressCloudWrites || !window.cloud?.isReady || !rec) return;
+    window.cloud.saveLicense(rec).catch(err => {
+        console.error('[cloud] push license failed:', err);
+        showToast('Cloud sync failed — changes saved locally', 'warning');
+    });
+}
+
+function cloudDeleteLicense(id) {
+    if (suppressCloudWrites || !window.cloud?.isReady || !id) return;
+    window.cloud.deleteLicense(id).catch(err => {
+        console.error('[cloud] delete license failed:', err);
+    });
+}
+
+function applyCloudLicenseSnapshot(items) {
+    console.log(`[cloud] license snapshot received — ${items.length} docs`);
+
+    if (_firstLicenseSnapshot && items.length === 0 && globalLicenseStock.length > 0) {
+        console.warn(`[cloud] first license snapshot is empty but local has ${globalLicenseStock.length} — keeping local, re-uploading`);
+        _firstLicenseSnapshot = false;
+        window.cloud.saveLicenses(globalLicenseStock).catch(err => {
+            console.error('[cloud] re-upload licenses after empty snapshot failed:', err);
+        });
+        return;
+    }
+    _firstLicenseSnapshot = false;
+
+    suppressCloudWrites = true;
+    try {
+        globalLicenseStock = items;
+        try { localStorage.setItem(LICENSE_STORAGE_KEY, JSON.stringify(items)); } catch (e) {}
+        if (currentView === 'licenseStock') {
+            populateLicenseTypeList();
+            renderLicenseSummary();
+            renderLicenseStockTable();
+        } else {
+            updateLicenseCount();
+        }
+    } finally {
+        suppressCloudWrites = false;
+    }
+}
+
+// Firestore rules banner for the licenseStock collection (mirrors damage/history).
+function showLicenseRulesBanner() {
+    const slot = document.querySelector('#viewLicenseStock .license-rules-slot');
+    if (!slot || slot.querySelector('.category-rules-banner')) return;
+    const banner = document.createElement('div');
+    banner.className = 'category-rules-banner';
+    banner.innerHTML = `
+        <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules are blocking license stock.</strong>
+        <p>Your project's security rules don't allow this account to read or write the <code>licenseStock</code> collection yet — that's why license stock won't sync across devices. Paste the block below into <em>Firebase Console → Firestore → Rules</em>, then hard-refresh:</p>
+        <pre>match /licenseStock/{id} {
+  allow read:  if request.auth != null
+               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+  allow write: if request.auth != null
+               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['owner', 'team']
+               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+}</pre>
+    `;
+    slot.appendChild(banner);
+}
+
+// ============================================================
 // CLOUD SYNC (Firestore via window.cloud from firebase-init.js)
 // ============================================================
 
@@ -3226,6 +3696,16 @@ async function migrateLocalToCloudIfNeeded() {
                 console.log(`[cloud] migrating ${globalDamages.length} local damage records to Firestore...`);
                 await window.cloud.saveDamages(globalDamages);
                 showToast(`Uploaded ${globalDamages.length} damage records to cloud`, 'success');
+            }
+        }
+        // License stock
+        if (window.cloud.getAllLicenses) {
+            const cloudLicenses = await window.cloud.getAllLicenses();
+            console.log(`[cloud] check: cloud has ${cloudLicenses.length} license records, local has ${globalLicenseStock.length}`);
+            if (cloudLicenses.length === 0 && globalLicenseStock.length > 0) {
+                console.log(`[cloud] migrating ${globalLicenseStock.length} local license records to Firestore...`);
+                await window.cloud.saveLicenses(globalLicenseStock);
+                showToast(`Uploaded ${globalLicenseStock.length} license records to cloud`, 'success');
             }
         }
     } catch (e) {
@@ -3708,6 +4188,15 @@ function initCloudSync() {
                 }
             });
         }
+        if (window.cloud.subscribeLicenses) {
+            cloudLicenseUnsub = window.cloud.subscribeLicenses(applyCloudLicenseSnapshot, err => {
+                console.warn('[cloud] license stock offline:', err && err.code);
+                if (err && err.code === 'permission-denied') {
+                    showLicenseRulesBanner();
+                    showToast('Stok Lisensi diblokir Firestore rules — lihat panel Stok Lisensi', 'warning');
+                }
+            });
+        }
         if (window.cloud.subscribeHistory) {
             cloudHistoryUnsub = window.cloud.subscribeHistory(events => {
                 cloudHistory = events || [];
@@ -3748,6 +4237,7 @@ function initCloudSync() {
         _firstUnitsSnapshot = false;
         _firstImplSnapshot = false;
         _firstDamageSnapshot = false;
+        _firstLicenseSnapshot = false;
         startSubscriptions();
     }
 }
@@ -3811,6 +4301,7 @@ function tearDownCloudSync() {
     if (cloudUnitsUnsub) { try { cloudUnitsUnsub(); } catch (_) {} cloudUnitsUnsub = null; }
     if (cloudImplUnsub) { try { cloudImplUnsub(); } catch (_) {} cloudImplUnsub = null; }
     if (cloudDamageUnsub) { try { cloudDamageUnsub(); } catch (_) {} cloudDamageUnsub = null; }
+    if (cloudLicenseUnsub) { try { cloudLicenseUnsub(); } catch (_) {} cloudLicenseUnsub = null; }
     if (cloudUsersUnsub) { try { cloudUsersUnsub(); } catch (_) {} cloudUsersUnsub = null; }
     if (cloudHistoryUnsub) { try { cloudHistoryUnsub(); } catch (_) {} cloudHistoryUnsub = null; }
     if (cloudUserCategoriesUnsub) { try { cloudUserCategoriesUnsub(); } catch (_) {} cloudUserCategoriesUnsub = null; }

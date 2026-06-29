@@ -146,6 +146,9 @@
                 <a class="nav__link" data-view="damage" onclick="navigateTo('damage')">
                     <i class="fas fa-screwdriver-wrench"></i> Kerusakan
                 </a>
+                <a class="nav__link" data-view="licenseStock" onclick="navigateTo('licenseStock')">
+                    <i class="fas fa-key"></i> Stok Lisensi
+                </a>
                 <a class="nav__link" onclick="showHistory()" title="Change History">
                     <i class="fas fa-clock-rotate-left"></i> History
                 </a>
@@ -634,6 +637,80 @@
 
     </div><!-- /viewDamage -->
 
+    <!-- ==================== LICENSE STOCK VIEW ==================== -->
+    <div id="viewLicenseStock" class="view" style="display:none;">
+
+        <div class="license-rules-slot"></div>
+
+        <!-- Stock summary per license type -->
+        <div class="table-card" style="margin-bottom:16px;">
+            <div class="table-card__header">
+                <div class="table-card__title"><i class="fas fa-boxes-stacked"></i> Ringkasan Stok Lisensi</div>
+            </div>
+            <div id="licenseSummary" class="license-summary"></div>
+        </div>
+
+        <!-- License Stock Toolbar -->
+        <div class="edit-toolbar">
+            <div class="edit-toolbar__left">
+                <button class="btn btn-success" onclick="showAddLicenseForm('IN')">
+                    <i class="fas fa-plus"></i> Tambah Stok
+                </button>
+                <button class="btn btn-primary" onclick="showAddLicenseForm('OUT')">
+                    <i class="fas fa-share-from-square"></i> Distribusi
+                </button>
+                <button class="btn btn-danger" id="btnDeleteSelectedLicense" style="display:none" onclick="deleteSelectedLicenseStock()">
+                    <i class="fas fa-trash"></i> Delete Selected (<span id="selectedLicenseCount">0</span>)
+                </button>
+                <button class="btn btn-secondary" onclick="exportLicenseStockCSV()">
+                    <i class="fas fa-download"></i> Export CSV
+                </button>
+            </div>
+            <div class="edit-toolbar__right">
+                <select id="licenseTxnFilter" class="btn btn-secondary btn-sm">
+                    <option value="">Semua Transaksi</option>
+                    <option value="IN">Masuk</option>
+                    <option value="OUT">Distribusi</option>
+                </select>
+                <select id="licenseTypeFilter" class="btn btn-secondary btn-sm">
+                    <option value="">Semua Jenis</option>
+                </select>
+                <div class="edit-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="licenseSearch" placeholder="Cari lisensi / unit...">
+                </div>
+                <span id="licenseCount">0 transaksi</span>
+            </div>
+        </div>
+
+        <!-- License Stock Table -->
+        <div class="table-card">
+            <div class="table-card__header">
+                <div class="table-card__title"><i class="fas fa-key"></i> Riwayat Stok Lisensi</div>
+            </div>
+            <div class="table-wrapper" style="max-height:600px;">
+                <table class="data-table" id="licenseTable">
+                    <thead>
+                        <tr>
+                            <th class="col-check"><input type="checkbox" id="selectAllLicense" onchange="toggleSelectAllLicense()"></th>
+                            <th>No</th>
+                            <th>Tanggal</th>
+                            <th>Jenis</th>
+                            <th>Jenis Lisensi</th>
+                            <th>Jumlah</th>
+                            <th>Unit</th>
+                            <th>Serial Number</th>
+                            <th>Catatan</th>
+                            <th class="col-actions">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="licenseBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+    </div><!-- /viewLicenseStock -->
+
     <!-- ==================== USERS VIEW (Owner only) ==================== -->
     <div id="viewUsers" class="view" style="display:none;">
         <div class="edit-toolbar">
@@ -1065,6 +1142,58 @@
 <!-- ===== PHOTO LIGHTBOX ===== -->
 <div class="photo-lightbox" id="photoLightbox" onclick="closePhotoLightbox()">
     <img id="photoLightboxImg" alt="Foto kerusakan">
+</div>
+
+<!-- ===== LICENSE STOCK MODAL ===== -->
+<div class="modal-overlay" id="licenseModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="licenseModalTitle">Tambah Stok Lisensi</h3>
+            <button class="btn-icon" onclick="closeLicenseModal()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <form id="licenseForm" onsubmit="saveLicenseStock(event)">
+                <input type="hidden" id="editLicenseId">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">Jenis Transaksi</label>
+                        <select class="form-select" id="licTxnType" onchange="onLicenseTxnChange()" required>
+                            <option value="IN">Tambah Stok (Masuk)</option>
+                            <option value="OUT">Distribusi ke Unit</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Tanggal</label>
+                        <input type="date" class="form-input" id="licDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Jenis Lisensi</label>
+                        <input class="form-input" id="licType" list="licTypeList" required
+                               placeholder="Pilih atau ketik jenis…" autocomplete="off">
+                        <datalist id="licTypeList"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Jumlah</label>
+                        <input type="number" class="form-input" id="licQty" min="1" value="1" required>
+                    </div>
+                    <div class="form-group full-width" id="licUnitGroup" style="display:none">
+                        <label class="form-label">Unit Tujuan</label>
+                        <input class="form-input" id="licUnit" list="licUnitList"
+                               placeholder="Ketik nama atau SN unit…" autocomplete="off">
+                        <datalist id="licUnitList"></datalist>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label">Catatan <span class="form-optional">(opsional)</span></label>
+                        <textarea class="form-input form-textarea" id="licNote" rows="3" placeholder="Supplier / no. PO untuk stok masuk, atau catatan distribusi…"></textarea>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeLicenseModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" form="licenseForm"><i class="fas fa-check"></i> Simpan</button>
+        </div>
+    </div>
 </div>
 
 <!-- Footer -->

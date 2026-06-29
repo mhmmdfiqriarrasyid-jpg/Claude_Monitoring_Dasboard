@@ -2257,3 +2257,42 @@ body.dark .attach-upload-btn:hover { border-color: var(--accent); }
     border-radius: var(--radius);
     box-shadow: 0 8px 40px rgba(0,0,0,0.5);
 }
+
+/* ===== License stock summary ===== */
+.license-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 16px;
+}
+.license-summary__empty {
+    color: var(--text-secondary);
+    font-size: 13px;
+    padding: 8px 0;
+}
+.license-sum-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    min-width: 150px;
+    background: var(--bg);
+}
+.license-sum-card.low {
+    border-color: var(--danger);
+    background: rgba(229,62,62,0.06);
+}
+.license-sum-card__type {
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 6px;
+    color: var(--text);
+}
+.license-sum-card__nums {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.license-sum-card__sisa { margin-left: auto; }
+.license-sum-card__sisa strong { color: var(--text); font-size: 14px; }
