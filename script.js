@@ -2439,6 +2439,7 @@ const IMPLEMENT_FIELDS = [
     { key: 'profileName',        inputId: 'implProfileName',        label: 'Profile Name' },
     { key: 'brand',              inputId: 'implBrand',              label: 'Brand' },
     { key: 'equipmentType',      inputId: 'implEquipmentType',      label: 'Type of Equipment' },
+    { key: 'code',               inputId: 'implCode',               label: 'Code' },
     { key: 'lateralOffset',      inputId: 'implLateralOffset',      label: 'Lateral Offset' },
     { key: 'centerOfRotation',   inputId: 'implCenterOfRotation',   label: 'Center of Rotation' },
     { key: 'rearConnection',     inputId: 'implRearConnection',     label: 'Rear Connection' },
@@ -2537,7 +2538,7 @@ function renderImplementsTable() {
     const query = (document.getElementById('implementSearch')?.value || '').toLowerCase().trim();
     const rows = query
         ? globalImplements.filter(d =>
-            `${d.profileName} ${d.brand || ''} ${d.equipmentType} ${d.operation} ${d.connectingType} ${d.workingWidth}`
+            `${d.profileName} ${d.brand || ''} ${d.equipmentType} ${d.code || ''} ${d.operation} ${d.connectingType} ${d.workingWidth}`
                 .toLowerCase().includes(query))
         : globalImplements;
 
@@ -2545,7 +2546,7 @@ function renderImplementsTable() {
     if (!tbody) return;
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:#718096">${
+        tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:24px;color:#718096">${
             query ? 'No implements match your search'
                   : 'No implements yet. Click <strong>Add Implement</strong> to get started.'
         }</td></tr>`;
@@ -2571,6 +2572,7 @@ function renderImplementsTable() {
             <td>${escapeHtml(d.profileName)}</td>
             <td>${escapeHtml(d.brand || '')}</td>
             <td>${escapeHtml(d.equipmentType)}</td>
+            <td>${escapeHtml(d.code || '')}</td>
             <td>${escapeHtml(d.workingWidth)}</td>
             <td>${escapeHtml(d.operation)}</td>
             <td>${escapeHtml(d.connectingType)}</td>
@@ -2777,7 +2779,7 @@ function exportImplementsCSV() {
 function downloadImplementTemplate() {
     const headers = ['No', ...IMPLEMENT_FIELDS.map(f => f.label), 'Chart of Account'];
     // One example row (No is ignored on import).
-    const sample = ['1', 'JNR Leopard E 10.0', 'John Deere', 'Scooping', '0 m', '1.2 m', '0.8 m',
+    const sample = ['1', 'JNR Leopard E 10.0', 'John Deere', 'Scooping', 'IMP-001', '0 m', '1.2 m', '0.8 m',
         'Tillage', '3', 'Center', 'Manual', 'Drawbar', 'iGrade',
         '159361_Scooping; 159201_Offset Harrow'];
     const csv = [headers, sample].map(row =>
