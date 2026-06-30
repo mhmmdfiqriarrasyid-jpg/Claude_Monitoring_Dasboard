@@ -2908,6 +2908,24 @@ function resolveDamageUnit(val) {
     return u || null;
 }
 
+// Find the CURRENT unit for a saved record (damage / license distribution) so
+// renames in the unit database reflect everywhere. Matches by unitId first,
+// then by serial number; returns null if the unit no longer exists (caller
+// falls back to the stored snapshot).
+function liveUnitFor(rec) {
+    if (!rec) return null;
+    if (rec.unitId) {
+        const u = globalData.find(x => x.id === rec.unitId);
+        if (u) return u;
+    }
+    if (rec.sn) {
+        const sn = (rec.sn || '').toLowerCase();
+        const u = globalData.find(x => (x.sn || '').toLowerCase() === sn);
+        if (u) return u;
+    }
+    return null;
+}
+
 // ---- Render ----
 function renderDamageTable() {
     updateDamageCount();
@@ -2938,14 +2956,18 @@ function renderDamageTable() {
             : '<span style="color:#a0aec0;font-size:11px">—</span>';
         const desc = d.description || '';
         const descShort = desc.length > 50 ? desc.slice(0, 50) + '…' : desc;
+        const lu = liveUnitFor(d);
+        const uName = lu ? (lu.name || '') : (d.unitName || '');
+        const uSn   = lu ? (lu.sn || '')   : (d.sn || '');
+        const uSite = lu ? (lu.site || '') : (d.site || '');
         return `
         <tr>
             <td class="col-check"><input type="checkbox" class="damage-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedDamageCount()"></td>
             <td>${i + 1}</td>
             <td style="white-space:nowrap">${escapeHtml(d.date || '')}</td>
-            <td><strong>${escapeHtml(d.unitName || '')}</strong></td>
-            <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn || '')}</td>
-            <td>${escapeHtml(d.site || '')}</td>
+            <td><strong>${escapeHtml(uName)}</strong></td>
+            <td style="font-family:monospace;font-size:12px">${escapeHtml(uSn)}</td>
+            <td>${escapeHtml(uSite)}</td>
             <td><span class="badge badge-breakdown" style="font-size:10px">${escapeHtml(d.damageType || '')}</span></td>
             <td>${comp}</td>
             <td style="max-width:240px;font-size:12px;color:#4a5568" title="${escapeHtml(desc)}">${escapeHtml(descShort) || '<span style="color:#a0aec0">—</span>'}</td>
@@ -3015,9 +3037,10 @@ function editDamage(id) {
     document.getElementById('damageModalTitle').textContent = 'Edit Kerusakan';
     document.getElementById('editDamageId').value = id;
     document.getElementById('dmgDate').value = rec.date || '';
-    populateDamageUnitSelect(rec.unitId);
-    // Unit may have been deleted since this record was created — keep the
-    // original snapshot visible so the picker isn't blank.
+    // Prefer the current unit (by id or serial) so a renamed unit shows its new
+    // name; fall back to the stored snapshot if the unit was deleted.
+    const liveDmg = liveUnitFor(rec);
+    populateDamageUnitSelect(liveDmg ? liveDmg.id : rec.unitId);
     const dmgUnitInput = document.getElementById('dmgUnit');
     if (dmgUnitInput && !dmgUnitInput.value) {
         dmgUnitInput.value = `${rec.unitName || ''}${rec.sn ? ' — ' + rec.sn : ''}`;
@@ -3136,10 +3159,16 @@ function exportDamageCSV() {
     const rows = getFilteredDamages();
     if (rows.length === 0) { showToast('Tidak ada data kerusakan untuk diexport', 'warning'); return; }
     const headers = ['No', 'Tanggal', 'Unit', 'Serial Number', 'Site', 'Tipe Kerusakan', 'Komponen', 'Deskripsi', 'Foto'];
-    const dataRows = rows.map((d, i) => [
-        i + 1, d.date || '', d.unitName || '', d.sn || '', d.site || '',
-        d.damageType || '', d.component || '', d.description || '', d.photo ? 'Ada' : ''
-    ]);
+    const dataRows = rows.map((d, i) => {
+        const lu = liveUnitFor(d);
+        return [
+            i + 1, d.date || '',
+            lu ? (lu.name || '') : (d.unitName || ''),
+            lu ? (lu.sn || '') : (d.sn || ''),
+            lu ? (lu.site || '') : (d.site || ''),
+            d.damageType || '', d.component || '', d.description || '', d.photo ? 'Ada' : ''
+        ];
+    });
     const csv = [headers, ...dataRows].map(row =>
         row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -3325,6 +3354,9 @@ function renderLicenseStockTable() {
             : '<span class="badge badge-good" style="font-size:10px"><i class="fas fa-arrow-down"></i> Masuk</span>';
         const note = r.note || '';
         const noteShort = note.length > 40 ? note.slice(0, 40) + '…' : note;
+        const lu = isOut ? liveUnitFor(r) : null;
+        const uName = isOut ? (lu ? (lu.name || '') : (r.unitName || '')) : '';
+        const uSn   = isOut ? (lu ? (lu.sn || '')   : (r.sn || '')) : '';
         return `
         <tr>
             <td class="col-check"><input type="checkbox" class="license-check" data-id="${escapeHtml(r.id)}" onchange="updateSelectedLicenseCount()"></td>
@@ -3333,8 +3365,8 @@ function renderLicenseStockTable() {
             <td>${badge}</td>
             <td><strong>${escapeHtml(r.licenseType || '')}</strong></td>
             <td>${Number(r.qty) || 0}</td>
-            <td>${isOut ? escapeHtml(r.unitName || '') : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
-            <td style="font-family:monospace;font-size:12px">${isOut ? escapeHtml(r.sn || '') : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
+            <td>${isOut ? escapeHtml(uName) : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
+            <td style="font-family:monospace;font-size:12px">${isOut ? escapeHtml(uSn) : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
             <td style="max-width:200px;font-size:12px;color:#4a5568" title="${escapeHtml(note)}">${escapeHtml(noteShort) || '<span style="color:#a0aec0">—</span>'}</td>
             <td class="col-actions">
                 <div class="row-actions">
@@ -3421,10 +3453,12 @@ function editLicenseStock(id) {
     document.getElementById('licDate').value = rec.date || '';
     document.getElementById('licType').value = rec.licenseType || '';
     document.getElementById('licQty').value = rec.qty || 1;
-    const label = rec.unitId
-        ? (globalData.find(u => u.id === rec.unitId) ? damageUnitLabel(globalData.find(u => u.id === rec.unitId))
-           : `${rec.unitName || ''}${rec.sn ? ' — ' + rec.sn : ''}`)
-        : '';
+    // Prefer the current unit (by id or serial) so renames show; fall back to
+    // the stored snapshot if the unit was deleted.
+    const liveLic = rec.txnType === 'OUT' ? liveUnitFor(rec) : null;
+    const label = liveLic
+        ? damageUnitLabel(liveLic)
+        : (rec.txnType === 'OUT' ? `${rec.unitName || ''}${rec.sn ? ' — ' + rec.sn : ''}` : '');
     populateLicenseUnitList(label);
     document.getElementById('licNote').value = rec.note || '';
     onLicenseTxnChange();
@@ -3557,13 +3591,16 @@ function exportLicenseStockCSV() {
     const rows = getFilteredLicenseStock();
     if (rows.length === 0) { showToast('Tidak ada data lisensi untuk diexport', 'warning'); return; }
     const headers = ['No', 'Tanggal', 'Jenis', 'Jenis Lisensi', 'Jumlah', 'Unit', 'Serial Number', 'Catatan'];
-    const dataRows = rows.map((r, i) => [
-        i + 1, r.date || '', r.txnType === 'OUT' ? 'Distribusi' : 'Masuk',
-        r.licenseType || '', Number(r.qty) || 0,
-        r.txnType === 'OUT' ? (r.unitName || '') : '',
-        r.txnType === 'OUT' ? (r.sn || '') : '',
-        r.note || ''
-    ]);
+    const dataRows = rows.map((r, i) => {
+        const lu = r.txnType === 'OUT' ? liveUnitFor(r) : null;
+        return [
+            i + 1, r.date || '', r.txnType === 'OUT' ? 'Distribusi' : 'Masuk',
+            r.licenseType || '', Number(r.qty) || 0,
+            r.txnType === 'OUT' ? (lu ? (lu.name || '') : (r.unitName || '')) : '',
+            r.txnType === 'OUT' ? (lu ? (lu.sn || '') : (r.sn || '')) : '',
+            r.note || ''
+        ];
+    });
     const csv = [headers, ...dataRows].map(row =>
         row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
