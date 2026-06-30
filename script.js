@@ -231,6 +231,12 @@ function setupEventListeners() {
     // Implements page search box
     const implementSearch = document.getElementById('implementSearch');
     if (implementSearch) implementSearch.addEventListener('input', renderImplementsTable);
+    const implementCsvInput = document.getElementById('implementCsvInput');
+    if (implementCsvInput) implementCsvInput.addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (file) handleImplementCSVImport(file);
+        implementCsvInput.value = '';
+    });
 
     // Damage (Kerusakan) page search + type filter
     const damageSearch = document.getElementById('damageSearch');
@@ -2431,6 +2437,7 @@ function closeModal() {
 
 const IMPLEMENT_FIELDS = [
     { key: 'profileName',        inputId: 'implProfileName',        label: 'Profile Name' },
+    { key: 'brand',              inputId: 'implBrand',              label: 'Brand' },
     { key: 'equipmentType',      inputId: 'implEquipmentType',      label: 'Type of Equipment' },
     { key: 'lateralOffset',      inputId: 'implLateralOffset',      label: 'Lateral Offset' },
     { key: 'centerOfRotation',   inputId: 'implCenterOfRotation',   label: 'Center of Rotation' },
@@ -2530,7 +2537,7 @@ function renderImplementsTable() {
     const query = (document.getElementById('implementSearch')?.value || '').toLowerCase().trim();
     const rows = query
         ? globalImplements.filter(d =>
-            `${d.profileName} ${d.equipmentType} ${d.operation} ${d.connectingType} ${d.workingWidth}`
+            `${d.profileName} ${d.brand || ''} ${d.equipmentType} ${d.operation} ${d.connectingType} ${d.workingWidth}`
                 .toLowerCase().includes(query))
         : globalImplements;
 
@@ -2538,7 +2545,7 @@ function renderImplementsTable() {
     if (!tbody) return;
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:24px;color:#718096">${
+        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:#718096">${
             query ? 'No implements match your search'
                   : 'No implements yet. Click <strong>Add Implement</strong> to get started.'
         }</td></tr>`;
@@ -2562,6 +2569,7 @@ function renderImplementsTable() {
             <td class="col-check"><input type="checkbox" class="impl-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedImplementCount()"></td>
             <td>${i + 1}</td>
             <td>${escapeHtml(d.profileName)}</td>
+            <td>${escapeHtml(d.brand || '')}</td>
             <td>${escapeHtml(d.equipmentType)}</td>
             <td>${escapeHtml(d.workingWidth)}</td>
             <td>${escapeHtml(d.operation)}</td>
@@ -2732,6 +2740,101 @@ function deleteSelectedImplements() {
     }));
     renderImplementsTable();
     showToast(`${count} implement(s) deleted`, 'success');
+}
+
+// ---- Implements CSV: export / template / import ----
+// Header aliases accepted on import (besides the canonical label).
+function _implementColAliases(field) {
+    const map = {
+        equipmentType: ['Type of Equipment', 'Equipment Type'],
+        profileName:   ['Profile Name', 'Profile'],
+        workingWidth:  ['Working Width'],
+        connectingType:['Connecting Type']
+    };
+    return map[field.key] || [field.label];
+}
+
+function exportImplementsCSV() {
+    if (globalImplements.length === 0) { showToast('No implements to export', 'warning'); return; }
+    const headers = ['No', ...IMPLEMENT_FIELDS.map(f => f.label), 'Chart of Account'];
+    const rows = globalImplements.map((d, i) => [
+        i + 1,
+        ...IMPLEMENT_FIELDS.map(f => d[f.key] || ''),
+        (Array.isArray(d.chartOfAccounts) ? d.chartOfAccounts.filter(Boolean) : []).join('; ')
+    ]);
+    const csv = [headers, ...rows].map(row =>
+        row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `implements_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Exported ${globalImplements.length} implements to CSV`, 'success');
+}
+
+function downloadImplementTemplate() {
+    const headers = ['No', ...IMPLEMENT_FIELDS.map(f => f.label), 'Chart of Account'];
+    // One example row (No is ignored on import).
+    const sample = ['1', 'JNR Leopard E 10.0', 'John Deere', 'Scooping', '0 m', '1.2 m', '0.8 m',
+        'Tillage', '3', 'Center', 'Manual', 'Drawbar', 'iGrade',
+        '159361_Scooping; 159201_Offset Harrow'];
+    const csv = [headers, sample].map(row =>
+        row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'template_implements.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function handleImplementCSVImport(file) {
+    if (!requireEdit()) return;
+    showLoading(true);
+    Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: result => {
+            const added = [];
+            let rejected = 0;
+            result.data.forEach(row => {
+                const obj = { id: generateImplementId() };
+                IMPLEMENT_FIELDS.forEach(f => {
+                    obj[f.key] = (getValAny(row, _implementColAliases(f)) || '').toString().trim();
+                });
+                if (!obj.profileName) { rejected++; return; }
+                const coaRaw = (getValAny(row, ['Chart of Account', 'Chart of Accounts', 'COA']) || '').toString();
+                obj.chartOfAccounts = coaRaw.split(/[;\n]/).map(s => s.trim()).filter(Boolean);
+                obj.createdAt = Date.now();
+                obj.updatedAt = Date.now();
+                added.push(obj);
+            });
+
+            if (added.length > 0) {
+                globalImplements.push(...added);
+                saveImplements();
+                if (!suppressCloudWrites && window.cloud?.isReady) {
+                    window.cloud.saveImplements(added).catch(err => {
+                        console.error('[cloud] import implements failed:', err);
+                        showToast('Cloud sync gagal — data tersimpan lokal', 'warning');
+                    });
+                }
+                logEvent({ action: 'add', unitName: '[Implement] Import CSV', after: `${added.length} implement` });
+                renderImplementsTable();
+            }
+
+            showLoading(false);
+            const msg = `Import implement: ${added.length} ditambahkan` + (rejected ? `, ${rejected} dilewati (Profile Name kosong)` : '');
+            showToast(msg, added.length ? 'success' : 'warning');
+        },
+        error: err => {
+            showToast('Gagal membaca CSV: ' + err.message, 'error');
+            showLoading(false);
+        }
+    });
 }
 
 // ============================================================
