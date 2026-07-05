@@ -1,23 +1,33 @@
 /* Tractor Monitoring Dashboard - Service Worker
-   Cache-first strategy for app shell, network fallback for everything else. */
+   Network-first for the app shell (so deploys show up on reload), cache-first
+   for static assets, network-only for Firebase live endpoints. */
 
-const CACHE_NAME = 'tractor-monitor-v50';
-const APP_SHELL = [
+const CACHE_NAME = 'tractor-monitor-v51';
+
+// Same-origin core files — always revalidated from network first so a new
+// deploy is picked up on the next reload (falls back to cache when offline).
+const CORE = [
     './',
     './index.html',
     './script.js',
     './firebase-init.js',
     './style.css',
     './logo.png',
-    './manifest.webmanifest',
-    'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap',
+    './manifest.webmanifest'
+];
+
+// Optional third-party libs — best-effort precache; served cache-first.
+const CDN = [
     'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
     'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
     'https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js'
 ];
 
-// Hosts whose responses must always go to the network (real-time data,
-// auth, telemetry). Caching them would break Firestore live sync.
+// Same-origin paths served network-first (kept fresh). Everything else
+// same-origin (assets) is cache-first.
+const NETWORK_FIRST_PATHS = ['/', '/index.html', '/script.js', '/firebase-init.js', '/style.css'];
+
+// Hosts whose responses must always go to the network (real-time data, auth).
 const NETWORK_ONLY_HOSTS = [
     'firestore.googleapis.com',
     'firebaseinstallations.googleapis.com',
@@ -30,20 +40,24 @@ const NETWORK_ONLY_HOSTS = [
 ];
 
 self.addEventListener('install', event => {
-    event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then(cache => cache.addAll(APP_SHELL).catch(() => { /* best-effort */ }))
-    );
+    event.waitUntil((async () => {
+        const cache = await caches.open(CACHE_NAME);
+        // Per-item best-effort: one failing URL must not abort the whole precache.
+        await Promise.allSettled([...CORE, ...CDN].map(u => cache.add(u)));
+    })());
     self.skipWaiting();
 });
 
 self.addEventListener('activate', event => {
-    event.waitUntil(
-        caches.keys().then(keys =>
-            Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-        )
-    );
-    self.clients.claim();
+    event.waitUntil((async () => {
+        const keys = await caches.keys();
+        await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
+        await self.clients.claim();
+    })());
+});
+
+self.addEventListener('message', event => {
+    if (event.data === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('fetch', event => {
@@ -52,19 +66,50 @@ self.addEventListener('fetch', event => {
     let url;
     try { url = new URL(event.request.url); } catch (e) { return; }
 
-    // Firestore + Firebase live endpoints: never cache, never intercept.
+    // Firebase/Firestore live endpoints: never cache, never intercept.
     if (NETWORK_ONLY_HOSTS.includes(url.hostname)) return;
 
-    event.respondWith(
-        caches.match(event.request).then(cached => {
-            if (cached) return cached;
-            return fetch(event.request).then(response => {
-                if (response.ok) {
-                    const copy = response.clone();
-                    caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy)).catch(() => {});
-                }
-                return response;
-            }).catch(() => cached);
-        })
-    );
+    const sameOrigin = url.origin === self.location.origin;
+    const isNavigation = event.request.mode === 'navigate';
+    const isCorePath = sameOrigin && NETWORK_FIRST_PATHS.includes(url.pathname);
+
+    // Network-first for navigations and core app-shell files → fresh on reload.
+    if (isNavigation || isCorePath) {
+        event.respondWith(networkFirst(event.request));
+        return;
+    }
+
+    // Cache-first for everything else (static assets, CDN libs, fonts).
+    event.respondWith(cacheFirst(event.request));
 });
+
+async function networkFirst(request) {
+    const cache = await caches.open(CACHE_NAME);
+    try {
+        const response = await fetch(request);
+        if (response && response.ok) cache.put(request, response.clone());
+        return response;
+    } catch (e) {
+        const cached = await cache.match(request);
+        if (cached) return cached;
+        // Navigation offline fallback → the cached shell.
+        if (request.mode === 'navigate') {
+            const shell = await cache.match('./index.html');
+            if (shell) return shell;
+        }
+        throw e;
+    }
+}
+
+async function cacheFirst(request) {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    try {
+        const response = await fetch(request);
+        if (response && response.ok) cache.put(request, response.clone());
+        return response;
+    } catch (e) {
+        return cached;
+    }
+}

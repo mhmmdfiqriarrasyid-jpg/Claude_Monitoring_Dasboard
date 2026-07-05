@@ -344,11 +344,36 @@ function setupKeyboardShortcuts() {
 function toggleDarkMode() {}
 
 function registerServiceWorker() {
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('./service-worker.js').catch(() => { /* offline support is best-effort */ });
-        });
-    }
+    if (!('serviceWorker' in navigator)) return;
+
+    // When a new service worker takes control, reload once so the fresh app
+    // shell is shown. Guard against reload loops, and skip the very first
+    // install (no previous controller = first visit, nothing to refresh).
+    let refreshing = false;
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshing || !hadController) return;
+        refreshing = true;
+        window.location.reload();
+    });
+
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js').then(reg => {
+            // Check for a newer version on every load.
+            reg.update().catch(() => {});
+            // If an updated worker is already waiting, activate it now.
+            if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
+            reg.addEventListener('updatefound', () => {
+                const nw = reg.installing;
+                if (!nw) return;
+                nw.addEventListener('statechange', () => {
+                    if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+                        nw.postMessage('SKIP_WAITING');
+                    }
+                });
+            });
+        }).catch(() => { /* offline support is best-effort */ });
+    });
 }
 
 // ---- Utilities ----
