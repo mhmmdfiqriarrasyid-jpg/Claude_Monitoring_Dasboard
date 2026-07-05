@@ -181,10 +181,9 @@ Chart.defaults.devicePixelRatio = Math.max(window.devicePixelRatio || 1, 2);
 
 // ---- Initialization ----
 document.addEventListener('DOMContentLoaded', () => {
-    // Dark mode: apply saved preference before render
-    if (localStorage.getItem(DARK_MODE_KEY) === '1') {
-        document.body.classList.add('dark');
-    }
+    // Light-only theme (warm editorial). Clear any stale dark preference so the
+    // app never renders the retired dark mode.
+    document.body.classList.remove('dark');
 
     setupEventListeners();
     setupKeyboardShortcuts();
@@ -336,21 +335,13 @@ function setupKeyboardShortcuts() {
         } else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
             e.preventDefault();
             exportBackup();
-        } else if (e.key === 'd' && e.shiftKey) {
-            e.preventDefault();
-            toggleDarkMode();
         }
     });
 }
 
-function toggleDarkMode() {
-    const dark = document.body.classList.toggle('dark');
-    localStorage.setItem(DARK_MODE_KEY, dark ? '1' : '0');
-    // Re-render charts so colors pick up (Chart.js doesn't reactively recolor)
-    if (currentView === 'dashboard' && globalData.length > 0) {
-        updateDashboard(filteredData);
-    }
-}
+// Dark mode retired — the app is light-only (warm editorial theme). Kept as a
+// no-op so any lingering reference stays safe.
+function toggleDarkMode() {}
 
 function registerServiceWorker() {
     if ('serviceWorker' in navigator) {
@@ -1253,7 +1244,7 @@ function renderDowntimeKPIs() {
                 labels: s.topTen.map(u => u.name || 'Unnamed'),
                 datasets: [{
                     data: s.topTen.map(u => +(u.downtime / 3600000).toFixed(2)),
-                    backgroundColor: '#e53e3e', borderRadius: 4, barPercentage: 0.6
+                    backgroundColor: '#D97757', borderRadius: 4, barPercentage: 0.6
                 }]
             },
             options: {
@@ -1404,7 +1395,7 @@ function renderStatusChart(data) {
         type: 'doughnut',
         data: {
             labels: ['Good', 'Breakdown'],
-            datasets: [{ data: [good, breakdown], backgroundColor: ['#38a169', '#e53e3e'], borderWidth: 0, hoverOffset: 6 }]
+            datasets: [{ data: [good, breakdown], backgroundColor: ['#4F7B58', '#BF4D43'], borderWidth: 0, hoverOffset: 6 }]
         },
         options: {
             responsive: true, maintainAspectRatio: false, cutout: '65%',
@@ -1433,8 +1424,8 @@ function renderSiteChart(data) {
         data: {
             labels,
             datasets: [
-                { label: 'Good', data: labels.map(s => siteMap[s].good), backgroundColor: '#38a169', borderRadius: 4, barPercentage: 0.6 },
-                { label: 'Breakdown', data: labels.map(s => siteMap[s].breakdown), backgroundColor: '#e53e3e', borderRadius: 4, barPercentage: 0.6 }
+                { label: 'Good', data: labels.map(s => siteMap[s].good), backgroundColor: '#4F7B58', borderRadius: 4, barPercentage: 0.6 },
+                { label: 'Breakdown', data: labels.map(s => siteMap[s].breakdown), backgroundColor: '#BF4D43', borderRadius: 4, barPercentage: 0.6 }
             ]
         },
         options: {
@@ -1713,7 +1704,7 @@ function sortTable(key) {
 function renderRepair() {
     const issueFilterVal = document.getElementById('issueFilter').value;
     const issueData = countIssues(globalData);
-    const chipColors = { Unit: '#e53e3e', Display: '#dd6b20', GPS: '#805ad5', Steering: '#319795', JDLink: '#2d3748' };
+    const chipColors = { Unit: '#BF4D43', Display: '#BC8A2E', GPS: '#5A7DA0', Steering: '#4F7B58', JDLink: '#403E3A' };
 
     document.getElementById('issueSummary').innerHTML = Object.entries(issueData.counts).map(([key, count]) => `
         <div class="issue-chip">
@@ -1740,7 +1731,7 @@ function renderRepair() {
     destroyChart('issueBySiteChart');
     charts.issueBySiteChart = new Chart(document.getElementById('issueBySiteChart'), {
         type: 'bar',
-        data: { labels: siteLabels, datasets: [{ data: siteLabels.map(s => siteCounts[s]), backgroundColor: '#d69e2e', borderRadius: 4, barPercentage: 0.5 }] },
+        data: { labels: siteLabels, datasets: [{ data: siteLabels.map(s => siteCounts[s]), backgroundColor: '#BC8A2E', borderRadius: 4, barPercentage: 0.5 }] },
         options: { responsive: true, maintainAspectRatio: false,
             scales: { y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: '#edf2f7' } }, x: { ticks: { font: { size: 11, family: 'Inter' } }, grid: { display: false } } },
             plugins: { legend: { display: false } } }

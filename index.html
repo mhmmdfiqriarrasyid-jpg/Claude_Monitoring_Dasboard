@@ -6,7 +6,9 @@
     <title>OT Monitoring Tractor and Device</title>
 
     <!-- Fonts & Icons -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
     <!-- Libraries -->
@@ -16,7 +18,7 @@
 
     <!-- PWA -->
     <link rel="manifest" href="manifest.webmanifest">
-    <meta name="theme-color" content="#2b6cb0">
+    <meta name="theme-color" content="#F0EEE6">
 
     <!-- Dashboard Styles -->
     <link rel="stylesheet" href="style.css">
@@ -156,9 +158,6 @@
         </div>
     </nav>
     <div class="header__meta">
-        <button class="btn-icon header__dark-toggle" onclick="toggleDarkMode()" title="Toggle dark mode (Shift+D)">
-            <i class="fas fa-moon"></i>
-        </button>
         <div class="header__status">
             <span class="status-dot" id="connectionDot"></span>
             <span id="connectionLabel">No Data</span>
