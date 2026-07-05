@@ -112,57 +112,64 @@
     </div>
 </div>
 
-<!-- ===== HEADER ===== -->
-<header class="header">
-  <div class="header__inner">
-    <div class="header__brand">
+<!-- ===== APP SHELL (sidebar + body) ===== -->
+<div class="app-shell" id="appShell">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar__brand">
         <img src="./logo.png" alt="OT Monitoring logo" class="brand-logo">
-    </div>
-    <nav class="header__nav">
-        <a class="nav__link active" data-view="dashboard" onclick="navigateTo('dashboard')">
-            <i class="fas fa-chart-line"></i> Dashboard
-        </a>
-
-        <div class="nav__group">
-            <button class="nav__link nav__group-toggle" type="button">
-                <i class="fas fa-gear"></i> Setup <i class="fas fa-chevron-down nav__caret"></i>
-            </button>
-            <div class="nav__dropdown">
-                <a class="nav__link" data-view="editUnits" onclick="navigateTo('editUnits')">
-                    <i class="fas fa-pen-to-square"></i> Edit Units
-                </a>
-                <a class="nav__link" data-view="implements" onclick="navigateTo('implements')">
-                    <i class="fas fa-trailer"></i> Implements
-                </a>
-                <a class="nav__link" data-view="users" data-owner-only onclick="navigateTo('users')" style="display:none">
-                    <i class="fas fa-users-gear"></i> Users
-                </a>
-            </div>
+        <div class="sidebar__brand-text">
+            <div class="sidebar__brand-name">OT Monitoring</div>
+            <div class="sidebar__brand-sub">Tractor &amp; device fleet</div>
         </div>
-
-        <div class="nav__group">
-            <button class="nav__link nav__group-toggle" type="button">
-                <i class="fas fa-clipboard-list"></i> Log Report <i class="fas fa-chevron-down nav__caret"></i>
-            </button>
-            <div class="nav__dropdown">
-                <a class="nav__link" data-view="damage" onclick="navigateTo('damage')">
-                    <i class="fas fa-screwdriver-wrench"></i> Kerusakan
-                </a>
-                <a class="nav__link" data-view="licenseStock" onclick="navigateTo('licenseStock')">
-                    <i class="fas fa-key"></i> Stok Lisensi
-                </a>
-                <a class="nav__link" onclick="showHistory()" title="Change History">
-                    <i class="fas fa-clock-rotate-left"></i> History
-                </a>
-            </div>
+    </div>
+    <nav class="sidebar__nav" onclick="if(event.target.closest('.nav__link'))document.getElementById('appShell').classList.remove('nav-open')">
+        <div class="nav-group">
+            <div class="nav-group__label">General</div>
+            <a class="nav__link active" data-view="dashboard" onclick="navigateTo('dashboard')">
+                <i class="fas fa-chart-line"></i> Dashboard
+            </a>
+            <a class="nav__link" data-view="editUnits" onclick="navigateTo('editUnits')">
+                <i class="fas fa-pen-to-square"></i> Edit Units
+            </a>
+            <a class="nav__link" data-view="implements" onclick="navigateTo('implements')">
+                <i class="fas fa-trailer"></i> Implements
+            </a>
+        </div>
+        <div class="nav-group">
+            <div class="nav-group__label">Log report</div>
+            <a class="nav__link" data-view="damage" onclick="navigateTo('damage')">
+                <i class="fas fa-screwdriver-wrench"></i> Kerusakan
+            </a>
+            <a class="nav__link" data-view="licenseStock" onclick="navigateTo('licenseStock')">
+                <i class="fas fa-key"></i> Stok Lisensi
+            </a>
+            <a class="nav__link" onclick="showHistory()" title="Change History">
+                <i class="fas fa-clock-rotate-left"></i> History
+            </a>
+        </div>
+        <div class="nav-group" data-owner-only style="display:none">
+            <div class="nav-group__label">Admin</div>
+            <a class="nav__link" data-view="users" onclick="navigateTo('users')">
+                <i class="fas fa-users-gear"></i> Users
+            </a>
         </div>
     </nav>
-    <div class="header__meta">
+  </aside>
+
+  <!-- Body: topbar + main -->
+  <div class="app-body">
+    <div class="topbar">
+        <button class="topbar__burger" title="Menu" onclick="document.getElementById('appShell').classList.toggle('nav-open')">
+            <i class="fas fa-bars"></i>
+        </button>
         <div class="header__status">
             <span class="status-dot" id="connectionDot"></span>
             <span id="connectionLabel">No Data</span>
         </div>
         <span id="lastUpdated"></span>
+        <div class="topbar__spacer"></div>
         <div class="user-pill" id="userPill" style="display:none" onclick="toggleUserMenu()">
             <i class="fas fa-user-circle"></i>
             <span class="user-pill__name" id="userPillName">—</span>
@@ -179,8 +186,6 @@
             </div>
         </div>
     </div>
-  </div>
-</header>
 
 <!-- ===== MAIN ===== -->
 <main class="main">
@@ -788,6 +793,8 @@
     </div><!-- /viewUsers -->
 
 </main>
+  </div><!-- /app-body -->
+</div><!-- /app-shell -->
 
 <!-- ===== UNIT MODAL (outside views, overlays everything) ===== -->
 <div class="modal-overlay" id="unitModal">
