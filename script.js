@@ -3623,6 +3623,33 @@ function editLicenseStock(id) {
     document.getElementById('licenseModal').classList.add('open');
 }
 
+// Which unit license field-group a stock license type belongs to.
+function _licenseKindForType(type) {
+    if (type === 'SF-RTK' || type === 'SF-1') return 'gps';
+    if (type === 'G5 Advance' || type === 'G5 Basic') return 'display';
+    return null; // custom type — not a standard unit license
+}
+
+// Connect a distribution (OUT) to its target unit: set the unit's license type,
+// start date (= distribution date) and expiry (= start + 1 year). This flows
+// straight into expiry status, License Alerts and the auto-downgrade. Returns
+// true when a unit license was updated.
+function applyDistributedLicenseToUnit(rec) {
+    if (!rec || rec.txnType !== 'OUT' || !rec.unitId) return false;
+    const kind = _licenseKindForType(rec.licenseType);
+    if (!kind) return false;
+    const unit = globalData.find(u => u.id === rec.unitId);
+    if (!unit) return false;
+    const start = rec.date || new Date().toISOString().slice(0, 10);
+    let end = '';
+    const d = new Date(start);
+    if (!isNaN(d.getTime())) { d.setFullYear(d.getFullYear() + 1); end = d.toISOString().slice(0, 10); }
+    const fields = kind === 'gps'
+        ? { gpsLicense: rec.licenseType, gpsLicenseStartDate: start, gpsLicenseEndDate: end }
+        : { licenseDisplay: rec.licenseType, displayLicenseStartDate: start, displayLicenseEndDate: end };
+    return updateUnit(rec.unitId, fields);
+}
+
 function saveLicenseStock(event) {
     event.preventDefault();
     if (!requireEdit()) return;
@@ -3689,6 +3716,17 @@ function saveLicenseStock(event) {
             after: `${qty} (${data.date})`
         });
         showToast(txnType === 'OUT' ? 'Distribusi lisensi dicatat' : 'Stok lisensi ditambahkan', 'success');
+    }
+
+    // Connect distribution → the unit's own license (type + dates).
+    if (txnType === 'OUT') {
+        const applied = applyDistributedLicenseToUnit({ txnType, unitId: data.unitId, licenseType, date: data.date });
+        if (applied) {
+            const kind = _licenseKindForType(licenseType) === 'display' ? 'Display' : 'GPS';
+            showToast(`Lisensi ${kind} unit "${data.unitName}" di-set ${licenseType} (berlaku 1 tahun)`, 'info');
+        } else if (!_licenseKindForType(licenseType)) {
+            showToast(`"${licenseType}" bukan lisensi unit standar — hanya dicatat di stok`, 'warning');
+        }
     }
 
     closeLicenseModal();
