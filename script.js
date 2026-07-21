@@ -1684,7 +1684,7 @@ function renderTable(data) {
         return `
         <tr class="${isBD ? 'row-breakdown' : ''}">
             <td>${i + 1}</td>
-            <td><strong>${escapeHtml(d.name)}</strong></td>
+            <td><strong class="unit-link" title="Lihat profil unit" onclick="showUnitProfile('${escapeHtml(d.id)}')">${escapeHtml(d.name)}</strong></td>
             <td>${escapeHtml(d.model)}</td>
             <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
             <td>${escapeHtml(d.implement || '')}</td>
@@ -2059,6 +2059,7 @@ function renderEditTable() {
             <td class="col-attach">${renderAttachCell(d)}</td>
             <td class="col-actions">
                 <div class="row-actions">
+                    <button class="btn btn-secondary" title="Profil" onclick="showUnitProfile('${escapeHtml(d.id)}')"><i class="fas fa-eye"></i></button>
                     <button class="btn btn-secondary" title="History" onclick="showHistory('${escapeHtml(d.id)}')"><i class="fas fa-clock-rotate-left"></i></button>
                     <button class="btn btn-secondary" title="Edit" onclick="editUnit('${escapeHtml(d.id)}')"><i class="fas fa-pen"></i></button>
                     <button class="btn btn-secondary" title="Delete" onclick="deleteUnit('${escapeHtml(d.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
@@ -2981,6 +2982,122 @@ function openPhotoLightbox(src) {
 function closePhotoLightbox() {
     const box = document.getElementById('photoLightbox');
     if (box) box.classList.remove('open');
+}
+
+// ============================================================
+// UNIT PROFILE (Profil Unit) — one panel with everything about a unit
+// ============================================================
+
+function closeUnitProfile() {
+    document.getElementById('unitProfileModal').classList.remove('open');
+}
+
+function showUnitProfile(id) {
+    const u = globalData.find(d => d.id === id);
+    if (!u) { showToast('Unit tidak ditemukan', 'warning'); return; }
+
+    document.getElementById('unitProfileTitle').textContent = u.name || u.sn || 'Profil Unit';
+    document.getElementById('unitProfileEditBtn').onclick = () => { closeUnitProfile(); editUnit(id); };
+    document.getElementById('unitProfileHistoryBtn').onclick = () => showHistory(id);
+
+    const snLc = (u.sn || '').toLowerCase();
+    const dash = '<span style="color:#a0aec0">—</span>';
+    const val = v => v ? escapeHtml(v) : dash;
+
+    const identity = [
+        ['Model', val(u.model)],
+        ['Serial Number', u.sn ? `<span style="font-family:var(--font-mono);font-size:12px">${escapeHtml(u.sn)}</span>` : dash],
+        ['Implement', val(u.implement)],
+        ['Site', val(u.site)],
+        ['Tahun Penerimaan', val(u.yearReceived)],
+        ['User Category', u.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(u.userCategory)}</span>` : dash]
+    ].map(([l, v]) => `<div class="profile-row"><span class="profile-row__label">${l}</span><span>${v}</span></div>`).join('');
+
+    const statusBadge = isGood(u.status)
+        ? '<span class="badge badge-good"><i class="fas fa-check"></i> Good</span>'
+        : `<span class="badge badge-breakdown"><i class="fas fa-xmark"></i> ${escapeHtml(u.status || 'Breakdown')}</span>`;
+    const compRow = ['display', 'gps', 'steering', 'jdlink'].map(k => {
+        const label = { display: 'Display', gps: 'GPS', steering: 'Steering', jdlink: 'JDLink' }[k];
+        const good = isGood(u[k]);
+        return `<div class="profile-comp ${good ? 'ok' : 'bad'}"><i class="fas fa-${good ? 'circle-check' : 'circle-xmark'}"></i> ${label}</div>`;
+    }).join('');
+    const bdReason = (!isGood(u.status) && u.breakdownReason)
+        ? `<div class="profile-note"><i class="fas fa-triangle-exclamation"></i> ${escapeHtml(u.breakdownReason)}</div>` : '';
+
+    const licenses = ['gps', 'display'].map(kind => {
+        const label = kind === 'gps' ? 'GPS License' : 'Display License';
+        const end = getLicenseEndDate(u, kind);
+        return `<div class="profile-row"><span class="profile-row__label">${label}</span>
+            <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${licenseTypeBadge(u, kind)} ${licenseBadgeFor(u, kind)}${end ? ` <span style="font-size:11.5px;color:var(--text-secondary)">exp ${escapeHtml(end)}</span>` : ''}</span></div>`;
+    }).join('');
+
+    const dmg = globalDamages
+        .filter(r => r.unitId === id || (snLc && (r.sn || '').toLowerCase() === snLc))
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const dmgHtml = dmg.length ? dmg.map(r => `
+        <div class="profile-item">
+            <span class="profile-item__date">${escapeHtml(r.date || '')}</span>
+            <span class="badge badge-breakdown" style="font-size:10px">${escapeHtml(r.damageType || '')}</span>
+            ${r.component ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(r.component)}</span>` : ''}
+            <span class="profile-item__text" title="${escapeHtml(r.description || '')}">${escapeHtml((r.description || '').slice(0, 60))}</span>
+            ${r.photo ? `<img class="dmg-thumb" src="${r.photo}" alt="foto" onclick="openPhotoLightbox(this.src)">` : ''}
+        </div>`).join('')
+        : '<div class="profile-empty">Belum ada catatan kerusakan.</div>';
+
+    const dist = globalLicenseStock
+        .filter(r => r.txnType === 'OUT' && (r.unitId === id || (snLc && (r.sn || '').toLowerCase() === snLc)))
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const distHtml = dist.length ? dist.map(r => `
+        <div class="profile-item">
+            <span class="profile-item__date">${escapeHtml(r.date || '')}</span>
+            <span class="badge badge-good" style="font-size:10px">${escapeHtml(r.licenseType || '')}</span>
+            <span style="font-size:12px">× ${Number(r.qty) || 0}</span>
+            ${r.note ? `<span class="profile-item__text" title="${escapeHtml(r.note)}">${escapeHtml(r.note.slice(0, 40))}</span>` : ''}
+        </div>`).join('')
+        : '<div class="profile-empty">Belum ada distribusi lisensi.</div>';
+
+    const hist = u.downtimeHistory || [];
+    const downParts = hist.slice(-5).reverse().map(iv =>
+        `<div class="profile-item"><span class="profile-item__date">${new Date(iv.start).toLocaleDateString()}</span><span style="font-size:12px">${formatDuration(iv.durationMs)}</span></div>`);
+    if (u.breakdownStartedAt) {
+        downParts.unshift(`<div class="profile-item"><span class="badge badge-breakdown" style="font-size:10px">Sedang breakdown</span><span style="font-size:12px">${formatDuration(Date.now() - u.breakdownStartedAt)}</span></div>`);
+    }
+    const downHtml = downParts.length ? downParts.join('') : '<div class="profile-empty">Tidak ada riwayat downtime.</div>';
+
+    document.getElementById('unitProfileBody').innerHTML = `
+        <div class="profile-grid">
+            <div class="profile-section">
+                <div class="profile-section__title">Identitas</div>
+                ${identity}
+                ${u.remarks ? `<div class="profile-note">${escapeHtml(u.remarks)}</div>` : ''}
+            </div>
+            <div class="profile-section">
+                <div class="profile-section__title">Status</div>
+                <div style="margin-bottom:10px">${statusBadge}</div>
+                <div class="profile-comps">${compRow}</div>
+                ${bdReason}
+                <div class="profile-section__title" style="margin-top:16px">Lisensi</div>
+                ${licenses}
+            </div>
+            <div class="profile-section">
+                <div class="profile-section__title">Riwayat Kerusakan (${dmg.length})</div>
+                <div class="profile-list">${dmgHtml}</div>
+            </div>
+            <div class="profile-section">
+                <div class="profile-section__title">Distribusi Lisensi (${dist.length})</div>
+                <div class="profile-list">${distHtml}</div>
+            </div>
+            <div class="profile-section">
+                <div class="profile-section__title">Lampiran</div>
+                <div class="profile-attach">${renderAttachCell(u)}</div>
+            </div>
+            <div class="profile-section">
+                <div class="profile-section__title">Downtime</div>
+                <div class="profile-list">${downHtml}</div>
+            </div>
+        </div>`;
+
+    document.getElementById('unitProfileModal').classList.add('open');
 }
 
 // ---- Storage ----

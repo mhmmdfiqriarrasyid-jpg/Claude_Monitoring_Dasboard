@@ -2427,3 +2427,62 @@ body.dark .attach-upload-btn:hover { border-color: var(--accent); }
 }
 .license-sum-card__sisa { margin-left: auto; }
 .license-sum-card__sisa strong { color: var(--text); font-size: 14px; }
+
+/* ===== Unit profile modal ===== */
+.profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 28px; }
+.profile-section__title {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+    margin-bottom: 10px;
+}
+.profile-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 5px 0;
+    font-size: 13px;
+    border-bottom: 1px dashed var(--border-light);
+}
+.profile-row__label { color: var(--text-secondary); flex-shrink: 0; }
+.profile-comps { display: flex; gap: 8px; flex-wrap: wrap; }
+.profile-comp {
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+}
+.profile-comp.ok  { color: var(--success); background: var(--success-bg); }
+.profile-comp.bad { color: var(--danger);  background: var(--danger-bg); }
+.profile-note {
+    margin-top: 10px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+.profile-list { display: flex; flex-direction: column; gap: 6px; max-height: 190px; overflow-y: auto; }
+.profile-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    padding: 4px 0;
+    border-bottom: 1px dashed var(--border-light);
+    flex-wrap: wrap;
+}
+.profile-item__date { font-variant-numeric: tabular-nums; color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
+.profile-item__text { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.profile-empty { font-size: 12.5px; color: var(--text-light); padding: 6px 0; }
+.unit-link { cursor: pointer; }
+.unit-link:hover { color: var(--accent-text); text-decoration: underline; }
+@media (max-width: 700px) { .profile-grid { grid-template-columns: 1fr; } }

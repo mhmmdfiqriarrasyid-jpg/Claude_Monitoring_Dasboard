@@ -1232,6 +1232,21 @@
     </div>
 </div>
 
+<!-- ===== UNIT PROFILE MODAL ===== -->
+<div class="modal-overlay" id="unitProfileModal">
+    <div class="modal-card modal-card--wide">
+        <div class="modal-header">
+            <h3 id="unitProfileTitle">Profil Unit</h3>
+            <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-secondary btn-sm" id="unitProfileEditBtn"><i class="fas fa-pen"></i> Edit</button>
+                <button class="btn btn-secondary btn-sm" id="unitProfileHistoryBtn"><i class="fas fa-clock-rotate-left"></i> History</button>
+                <button class="btn-icon" onclick="closeUnitProfile()"><i class="fas fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="modal-body" id="unitProfileBody"></div>
+    </div>
+</div>
+
 <!-- Footer -->
 <footer class="footer">
     OT Monitoring Tractor and Device &copy; 2026 &mdash; Data-driven fleet management
