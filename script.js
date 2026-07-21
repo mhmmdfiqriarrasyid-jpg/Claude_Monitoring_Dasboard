@@ -195,6 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadImplements();
     loadDamages();
     loadLicenseStock();
+    checkStorageUsage();
 
     if (loadFromStorage()) {
         onDataLoaded();
@@ -1067,10 +1068,14 @@ async function exportBackup() {
         && confirm('Sertakan file lampiran dalam backup? (ukuran file bisa besar)');
 
     const payload = {
-        version: includeFiles ? 2 : 1,
+        version: 3,
         exportedAt: new Date().toISOString(),
         count: globalData.length,
-        units: globalData
+        units: globalData,
+        // v3: the full dataset, not just units.
+        implements: globalImplements,
+        damages: globalDamages,
+        licenseStock: globalLicenseStock
     };
 
     if (includeFiles) {
@@ -1102,11 +1107,47 @@ async function exportBackup() {
     a.download = `tractor_backup_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`Backup exported (${globalData.length} units)`, 'success');
+    showToast(`Backup exported: ${globalData.length} units, ${globalImplements.length} implements, ${globalDamages.length} kerusakan, ${globalLicenseStock.length} transaksi lisensi`, 'success');
+}
+
+// ---- localStorage usage guard ----
+// Damage photos (base64) are the main storage driver; warn before the ~5MB
+// quota is hit so the user can export a backup / prune old photos in time.
+let _storageWarned = false;
+const STORAGE_WARN_BYTES = 4.5 * 1024 * 1024;
+
+function estimateLocalStorageBytes() {
+    let total = 0;
+    try {
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            total += (k.length + (localStorage.getItem(k) || '').length) * 2; // UTF-16
+        }
+    } catch (e) { /* ignore */ }
+    return total;
+}
+
+function checkStorageUsage() {
+    if (_storageWarned) return;
+    const used = estimateLocalStorageBytes();
+    if (used > STORAGE_WARN_BYTES) {
+        _storageWarned = true;
+        showToast(`Penyimpanan browser hampir penuh (${(used / 1048576).toFixed(1)} MB terpakai) — export Backup sekarang & pertimbangkan menghapus foto kerusakan lama`, 'warning');
+    }
 }
 
 function triggerRestore() {
     document.getElementById('restoreFileInput').click();
+}
+
+// Merge (union by id, backup wins) or replace one auxiliary collection from a
+// backup file, mirroring the mode chosen for units.
+function _restoreCollection(items, current, merge) {
+    const valid = items.filter(r => r && r.id);
+    if (!merge) return valid;
+    const map = new Map(current.map(r => [r.id, r]));
+    valid.forEach(r => map.set(r.id, r));
+    return [...map.values()];
 }
 
 function importBackup(file) {
@@ -1134,6 +1175,29 @@ function importBackup(file) {
                 recordChange({ type: 'restored', detail: `${data.units.length} units restored from backup` });
                 showToast(`Restored ${data.units.length} units from backup`, 'success');
             }
+
+            // v3 backups carry the other collections too — restore them with
+            // the same mode (merge / replace) the user chose for units.
+            const extras = [];
+            if (Array.isArray(data.implements)) {
+                globalImplements = _restoreCollection(data.implements, globalImplements, merge);
+                saveImplements();
+                if (window.cloud?.isReady) window.cloud.saveImplements(globalImplements).catch(() => {});
+                extras.push(`${data.implements.length} implements`);
+            }
+            if (Array.isArray(data.damages)) {
+                globalDamages = _restoreCollection(data.damages, globalDamages, merge);
+                saveDamages();
+                if (window.cloud?.isReady) window.cloud.saveDamages(globalDamages).catch(() => {});
+                extras.push(`${data.damages.length} kerusakan`);
+            }
+            if (Array.isArray(data.licenseStock)) {
+                globalLicenseStock = _restoreCollection(data.licenseStock, globalLicenseStock, merge);
+                saveLicenseStockLocal();
+                if (window.cloud?.isReady) window.cloud.saveLicenses(globalLicenseStock).catch(() => {});
+                extras.push(`${data.licenseStock.length} transaksi lisensi`);
+            }
+            if (extras.length) showToast(`Ikut direstore: ${extras.join(', ')}`, 'success');
 
             if (Array.isArray(data.attachments) && data.attachments.length > 0) {
                 let restored = 0;
@@ -3210,6 +3274,7 @@ function loadDamages() {
 function saveDamages() {
     try {
         localStorage.setItem(DAMAGE_STORAGE_KEY, JSON.stringify(globalDamages));
+        checkStorageUsage(); // photos are the main storage driver
     } catch (e) {
         showToast('Storage full. Could not save damage records.', 'error');
     }
