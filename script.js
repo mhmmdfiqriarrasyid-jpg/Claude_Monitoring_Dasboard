@@ -221,6 +221,28 @@ function setupEventListeners() {
         document.querySelectorAll('.nav__group.open').forEach(g => g.classList.remove('open'));
     });
 
+    // Global unit search (topbar)
+    const gSearch = document.getElementById('globalSearch');
+    if (gSearch) {
+        let gTimer = null;
+        gSearch.addEventListener('input', () => {
+            clearTimeout(gTimer);
+            gTimer = setTimeout(renderGlobalSearchResults, 150);
+        });
+        gSearch.addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                const first = document.querySelector('#globalSearchResults .global-search__item');
+                if (first) first.click();
+            } else if (e.key === 'Escape') {
+                closeGlobalSearch();
+                gSearch.blur();
+            }
+        });
+        document.addEventListener('click', e => {
+            if (!e.target.closest('#globalSearchWrap')) closeGlobalSearch();
+        });
+    }
+
     // Dashboard filters
     document.getElementById('searchInput').addEventListener('input', applyFilter);
     document.getElementById('statusFilter').addEventListener('change', applyFilter);
@@ -3149,6 +3171,40 @@ function closePhotoLightbox() {
 
 function closeUnitProfile() {
     document.getElementById('unitProfileModal').classList.remove('open');
+}
+
+// ---- Global unit search (topbar) — jumps straight to a unit's profile ----
+function closeGlobalSearch() {
+    const box = document.getElementById('globalSearchResults');
+    if (box) { box.innerHTML = ''; box.style.display = 'none'; }
+}
+
+function renderGlobalSearchResults() {
+    const input = document.getElementById('globalSearch');
+    const box = document.getElementById('globalSearchResults');
+    if (!input || !box) return;
+    const q = input.value.toLowerCase().trim();
+    if (!q) { closeGlobalSearch(); return; }
+    const hits = globalData.filter(u =>
+        `${u.name} ${u.sn} ${u.model} ${u.site}`.toLowerCase().includes(q)).slice(0, 8);
+    if (!hits.length) {
+        box.innerHTML = '<div class="global-search__empty">Tidak ada unit yang cocok</div>';
+        box.style.display = '';
+        return;
+    }
+    box.innerHTML = hits.map(u => `
+        <div class="global-search__item" onclick="openUnitFromSearch('${escapeHtml(u.id)}')">
+            <span class="global-search__name">${escapeHtml(u.name || '(tanpa nama)')}</span>
+            <span class="global-search__meta"><span class="mono">${escapeHtml(u.sn || '')}</span>${u.site ? ' · ' + escapeHtml(u.site) : ''}</span>
+        </div>`).join('');
+    box.style.display = '';
+}
+
+function openUnitFromSearch(id) {
+    closeGlobalSearch();
+    const input = document.getElementById('globalSearch');
+    if (input) input.value = '';
+    showUnitProfile(id);
 }
 
 function showUnitProfile(id) {
