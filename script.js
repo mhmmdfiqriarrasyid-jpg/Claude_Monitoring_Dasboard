@@ -59,6 +59,8 @@ const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
 const DAMAGE_STORAGE_KEY = 'tractorDamageRecords';
 const DAMAGE_TYPES = ['Mekanis', 'Software', 'Device Precision'];
 const DAMAGE_COMPONENTS = ['GPS', 'Display', 'JDLink', 'Steering Sensor'];
+// Map a Device Precision component to the unit field it controls.
+const DAMAGE_COMPONENT_FIELD = { 'GPS': 'gps', 'Display': 'display', 'Steering Sensor': 'steering', 'JDLink': 'jdlink' };
 const DAMAGE_PHOTO_MAX_DIM = 1280;     // longest-side px after resize
 const DAMAGE_PHOTO_QUALITY = 0.7;      // initial JPEG quality
 const DAMAGE_PHOTO_MAX_BYTES = 900 * 1024; // keep data URL under Firestore 1MB doc limit
@@ -3218,7 +3220,7 @@ function renderDamageTable() {
                       (document.getElementById('damageTypeFilter')?.value || '');
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:24px;color:#718096">${
+        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:24px;color:#718096">${
             hasFilter ? 'Tidak ada kerusakan yang cocok dengan filter'
                       : 'Belum ada catatan kerusakan. Klik <strong>Tambah Kerusakan</strong> untuk mulai.'
         }</td></tr>`;
@@ -3249,6 +3251,9 @@ function renderDamageTable() {
             <td>${d.photo
                 ? `<img class="dmg-thumb" src="${d.photo}" alt="foto" onclick="openPhotoLightbox(this.src)">`
                 : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
+            <td style="white-space:nowrap">${d.resolved
+                ? `<span class="badge badge-good" style="font-size:10px" title="Selesai diperbaiki"><i class="fas fa-check"></i> Selesai${d.resolvedAt ? ' ' + escapeHtml(d.resolvedAt) : ''}</span>`
+                : `<button class="btn btn-secondary btn-sm" style="font-size:11px" title="Tandai selesai & pulihkan status unit" onclick="resolveDamage('${escapeHtml(d.id)}')"><i class="fas fa-wrench"></i> Tandai selesai</button>`}</td>
             <td class="col-actions">
                 <div class="row-actions">
                     <button class="btn btn-secondary" title="Edit" onclick="editDamage('${escapeHtml(d.id)}')"><i class="fas fa-pen"></i></button>
@@ -3301,6 +3306,8 @@ function showAddDamageForm() {
     onDamageTypeChange();
     _dmgPhotoData = '';
     setDamagePhotoPreview();
+    const bdGroup = document.getElementById('dmgSetBreakdownGroup');
+    if (bdGroup) bdGroup.style.display = '';
     document.getElementById('damageModal').classList.add('open');
 }
 
@@ -3326,6 +3333,9 @@ function editDamage(id) {
     onDamageTypeChange();
     _dmgPhotoData = rec.photo || '';
     setDamagePhotoPreview();
+    // Status linkage only applies when recording a NEW damage, not when editing.
+    const bdGroup = document.getElementById('dmgSetBreakdownGroup');
+    if (bdGroup) bdGroup.style.display = 'none';
     document.getElementById('damageModal').classList.add('open');
 }
 
@@ -3366,7 +3376,7 @@ function saveDamage(event) {
             showToast('Catatan kerusakan diperbarui', 'success');
         }
     } else {
-        const newRec = { id: generateDamageId(), ...data, createdAt: Date.now(), updatedAt: Date.now() };
+        const newRec = { id: generateDamageId(), ...data, resolved: false, resolvedAt: '', createdAt: Date.now(), updatedAt: Date.now() };
         globalDamages.push(newRec);
         saveDamages();
         cloudPushDamage(newRec);
@@ -3378,10 +3388,67 @@ function saveDamage(event) {
             after: data.date
         });
         showToast('Catatan kerusakan ditambahkan', 'success');
+
+        // Link to unit status: put the unit (or the affected component) into
+        // Breakdown so the dashboard/downtime tracking reflect this damage.
+        if (document.getElementById('dmgSetBreakdown')?.checked) {
+            const target = _applyDamageBreakdown(unit.id, data.damageType, data.component, data.description);
+            if (target) showToast(`${target} "${unit.name}" di-set Breakdown`, 'info');
+        }
     }
 
     closeDamageModal();
     renderDamageTable();
+}
+
+// Put the unit (or the damaged Device Precision component) into Breakdown.
+// Returns a label describing what was changed, or '' when nothing changed.
+function _applyDamageBreakdown(unitId, damageType, component, description) {
+    const compField = DAMAGE_COMPONENT_FIELD[component];
+    if (damageType === 'Device Precision' && compField) {
+        updateUnit(unitId, { [compField]: 'Breakdown' });
+        return `Komponen ${component} unit`;
+    }
+    const reason = `${damageType}${component ? ' / ' + component : ''}: ${description || '-'}`;
+    updateUnit(unitId, { status: 'Breakdown', breakdownReason: reason });
+    return 'Status unit';
+}
+
+// Mark a damage record repaired: flag it resolved and restore the unit /
+// component this damage put into Breakdown (downtime duration is recorded
+// automatically by trackStatusChange inside updateUnit).
+function resolveDamage(id) {
+    if (!requireEdit()) return;
+    const rec = globalDamages.find(d => d.id === id);
+    if (!rec || rec.resolved) return;
+    if (!confirm(`Tandai kerusakan unit "${rec.unitName}" (${rec.date}) selesai diperbaiki?`)) return;
+
+    rec.resolved = true;
+    rec.resolvedAt = new Date().toISOString().slice(0, 10);
+    rec.updatedAt = Date.now();
+    saveDamages();
+    cloudPushDamage(rec);
+    logEvent({
+        action: 'update',
+        unitId: rec.unitId,
+        unitName: `[Kerusakan] ${rec.unitName}`,
+        field: 'Perbaikan',
+        before: 'Open',
+        after: `Selesai (${rec.resolvedAt})`
+    });
+
+    const unit = liveUnitFor(rec);
+    if (unit) {
+        const compField = DAMAGE_COMPONENT_FIELD[rec.component];
+        if (rec.damageType === 'Device Precision' && compField) {
+            if (!isGood(unit[compField])) updateUnit(unit.id, { [compField]: 'Good' });
+        } else if (!isGood(unit.status)) {
+            updateUnit(unit.id, { status: 'Good' });
+        }
+    }
+
+    renderDamageTable();
+    showToast('Kerusakan ditandai selesai — status unit dipulihkan', 'success');
 }
 
 function closeDamageModal() {
@@ -3433,7 +3500,7 @@ function deleteSelectedDamages() {
 function exportDamageCSV() {
     const rows = getFilteredDamages();
     if (rows.length === 0) { showToast('Tidak ada data kerusakan untuk diexport', 'warning'); return; }
-    const headers = ['No', 'Tanggal', 'Unit', 'Serial Number', 'Site', 'Tipe Kerusakan', 'Komponen', 'Deskripsi', 'Foto'];
+    const headers = ['No', 'Tanggal', 'Unit', 'Serial Number', 'Site', 'Tipe Kerusakan', 'Komponen', 'Deskripsi', 'Foto', 'Perbaikan'];
     const dataRows = rows.map((d, i) => {
         const lu = liveUnitFor(d);
         return [
@@ -3441,7 +3508,8 @@ function exportDamageCSV() {
             lu ? (lu.name || '') : (d.unitName || ''),
             lu ? (lu.sn || '') : (d.sn || ''),
             lu ? (lu.site || '') : (d.site || ''),
-            d.damageType || '', d.component || '', d.description || '', d.photo ? 'Ada' : ''
+            d.damageType || '', d.component || '', d.description || '', d.photo ? 'Ada' : '',
+            d.resolved ? `Selesai ${d.resolvedAt || ''}`.trim() : 'Open'
         ];
     });
     const csv = [headers, ...dataRows].map(row =>
