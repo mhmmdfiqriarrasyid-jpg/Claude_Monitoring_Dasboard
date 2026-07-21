@@ -3650,6 +3650,39 @@ function applyDistributedLicenseToUnit(rec) {
     return updateUnit(rec.unitId, fields);
 }
 
+// Backfill: apply EXISTING distributions to their units in one go. For each
+// unit + license kind we take the latest-dated OUT record, so a unit ends up
+// with its most recent distributed license. Overwrites current unit license
+// data (confirmed first). Use after recording distributions that predate the
+// auto-link, or after a CSV import of the stock ledger.
+function syncDistributionsToUnits() {
+    if (!requireEdit()) return;
+    const latest = {}; // `${unitId}|${kind}` -> record
+    globalLicenseStock.forEach(r => {
+        if (r.txnType !== 'OUT' || !r.unitId) return;
+        const kind = _licenseKindForType(r.licenseType);
+        if (!kind) return;
+        if (!globalData.some(u => u.id === r.unitId)) return;
+        const key = r.unitId + '|' + kind;
+        const cur = latest[key];
+        const newer = !cur || (r.date || '') > (cur.date || '')
+            || ((r.date || '') === (cur.date || '') && (r.createdAt || 0) > (cur.createdAt || 0));
+        if (newer) latest[key] = r;
+    });
+    const recs = Object.values(latest);
+    if (recs.length === 0) {
+        showToast('Tidak ada distribusi standar (SF-RTK/SF-1/G5) yang bisa disinkron ke unit', 'info');
+        return;
+    }
+    if (!confirm(`Terapkan ${recs.length} distribusi terbaru ke lisensi unit terkait?\n\n` +
+                 `Tanggal habis = tanggal distribusi + 1 tahun. Data lisensi unit yang ada akan ditimpa.`)) return;
+    let n = 0;
+    recs.forEach(r => { if (applyDistributedLicenseToUnit(r)) n++; });
+    showToast(`${n} lisensi unit disinkron dari daftar distribusi`, 'success');
+    if (currentView === 'dashboard') updateDashboard(filteredData);
+    else if (currentView === 'editUnits') renderEditTable();
+}
+
 function saveLicenseStock(event) {
     event.preventDefault();
     if (!requireEdit()) return;

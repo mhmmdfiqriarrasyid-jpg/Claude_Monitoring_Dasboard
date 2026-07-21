@@ -678,6 +678,9 @@
                 <button class="btn btn-danger" id="btnDeleteSelectedLicense" style="display:none" onclick="deleteSelectedLicenseStock()">
                     <i class="fas fa-trash"></i> Delete Selected (<span id="selectedLicenseCount">0</span>)
                 </button>
+                <button class="btn btn-secondary" onclick="syncDistributionsToUnits()" title="Terapkan distribusi terbaru ke lisensi unit">
+                    <i class="fas fa-link"></i> Sync ke Unit
+                </button>
                 <input type="file" id="licenseCsvInput" accept=".csv" style="display:none">
                 <button class="btn btn-secondary" onclick="document.getElementById('licenseCsvInput').click()">
                     <i class="fas fa-file-import"></i> Import CSV
