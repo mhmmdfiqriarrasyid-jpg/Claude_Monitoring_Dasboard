@@ -2682,3 +2682,16 @@ body[data-ro-editunits]  .editonly--editunits,
 body[data-ro-implements] .editonly--implements,
 body[data-ro-damage]     .editonly--damage,
 body[data-ro-license]    .editonly--license { display: none !important; }
+
+/* ===== User access editor ===== */
+.access-grid { display: flex; flex-direction: column; gap: 10px; }
+.access-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--border-light);
+}
+.access-row__label { font-size: 13.5px; font-weight: 600; }
+.access-row .access-select { width: 150px; }

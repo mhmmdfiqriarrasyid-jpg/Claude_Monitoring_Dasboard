@@ -276,6 +276,13 @@ window.cloud = {
             updatedBy: updatedByEmail || null
         }, { merge: true });
     },
+    async updateUserAccess(uid, access, updatedByEmail) {
+        await setDoc(doc(db, USERS_COL, uid), {
+            access,
+            updatedAt: Date.now(),
+            updatedBy: updatedByEmail || null
+        }, { merge: true });
+    },
     async deleteUserDoc(uid) {
         await deleteDoc(doc(db, USERS_COL, uid));
     },

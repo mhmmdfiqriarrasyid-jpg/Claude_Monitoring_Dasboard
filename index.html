@@ -1221,6 +1221,31 @@
     </div>
 </div>
 
+<!-- ===== USER ACCESS MODAL (owner) ===== -->
+<div class="modal-overlay" id="accessModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>Atur Akses — <span id="accessUserName">—</span></h3>
+            <button class="btn-icon" onclick="closeAccessModal()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="accessUserUid">
+            <p style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px">
+                Atur per menu: <strong>Tidak ada</strong> (tak bisa buka), <strong>Lihat</strong> (baca saja),
+                atau <strong>Edit</strong> (ubah data). Dashboard selalu bisa diakses.
+            </p>
+            <div id="accessGrid" class="access-grid"></div>
+            <p style="font-size:11.5px;color:var(--text-light);margin-top:14px">
+                Catatan: pengamanan penuh butuh Firestore rules yang cocok (lihat pesan di chat).
+            </p>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeAccessModal()">Batal</button>
+            <button type="button" class="btn btn-primary" onclick="saveAccess()"><i class="fas fa-check"></i> Simpan Akses</button>
+        </div>
+    </div>
+</div>
+
 <!-- ===== PHOTO LIGHTBOX ===== -->
 <div class="photo-lightbox" id="photoLightbox" onclick="closePhotoLightbox()">
     <img id="photoLightboxImg" alt="Foto kerusakan">

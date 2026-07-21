@@ -5470,10 +5470,61 @@ function renderUsersView() {
                 <td class="col-actions">
                     ${isOwnerRow
                         ? '<span style="font-size:11px;color:#a0aec0">protected</span>'
-                        : `<button class="btn btn-secondary btn-sm" title="Remove user" onclick="removeUser('${escapeHtml(u.uid)}')"><i class="fas fa-user-minus" style="color:var(--danger)"></i></button>`}
+                        : `<div class="row-actions">
+                            <button class="btn btn-secondary btn-sm" title="Atur akses per menu" onclick="openAccessModal('${escapeHtml(u.uid)}')"><i class="fas fa-sliders"></i> Akses</button>
+                            <button class="btn btn-secondary btn-sm" title="Remove user" onclick="removeUser('${escapeHtml(u.uid)}')"><i class="fas fa-user-minus" style="color:var(--danger)"></i></button>
+                           </div>`}
                 </td>
             </tr>`;
         }).join('');
+    }
+}
+
+// ---- Per-user access editor (owner) ----
+function openAccessModal(uid) {
+    if (!isOwner()) return;
+    const user = allUsers.find(u => u.uid === uid);
+    if (!user) return;
+    document.getElementById('accessUserUid').value = uid;
+    document.getElementById('accessUserName').textContent = user.displayName || user.email || uid;
+    document.getElementById('accessGrid').innerHTML = ACCESS_AREAS.map(area => {
+        const cur = effectiveAccess(area.key, user);
+        const labels = { none: 'Tidak ada', view: 'Lihat', edit: 'Edit' };
+        const opts = area.levels.map(l => `<option value="${l}" ${l === cur ? 'selected' : ''}>${labels[l]}</option>`).join('');
+        return `<div class="access-row">
+            <span class="access-row__label">${escapeHtml(area.label)}</span>
+            <select class="form-select access-select" data-area="${area.key}">${opts}</select>
+        </div>`;
+    }).join('');
+    document.getElementById('accessModal').classList.add('open');
+}
+
+function closeAccessModal() {
+    document.getElementById('accessModal').classList.remove('open');
+}
+
+async function saveAccess() {
+    if (!isOwner()) return;
+    const uid = document.getElementById('accessUserUid').value;
+    const user = allUsers.find(u => u.uid === uid);
+    if (!user) return;
+    const access = {};
+    document.querySelectorAll('#accessGrid .access-select').forEach(sel => {
+        access[sel.dataset.area] = sel.value;
+    });
+    try {
+        await window.cloud.updateUserAccess(uid, access, currentUserDoc.email);
+        logEvent({
+            action: 'update',
+            unitId: uid,
+            unitName: `[User] ${user.displayName || user.email}`,
+            field: 'access',
+            after: ACCESS_AREAS.map(a => `${a.label}:${access[a.key]}`).join(', ')
+        });
+        showToast(`Akses "${user.displayName || user.email}" diperbarui`, 'success');
+        closeAccessModal();
+    } catch (e) {
+        showToast('Gagal menyimpan akses: ' + e.message, 'error');
     }
 }
 
