@@ -1481,6 +1481,9 @@ function renderLicenseAlerts(data) {
             const end = getLicenseEndDate(unit, kind);
             if (!end) return;
             const s = getExpiryStatus(end);
+            // Auto-downgraded premium (expired SF-RTK/G5 Advance) is now on its
+            // stable fallback tier — no action needed, so drop it from alerts.
+            if (effectiveLicense(unit, kind).downgraded) return;
             if (s.kind === 'expired' || (s.kind === 'soon' || (s.kind === 'ok' && s.daysLeft <= SOON_DAYS))) {
                 const licName = kind === 'display'
                     ? (unit.licenseDisplay || 'Display')
@@ -1576,6 +1579,7 @@ function _buildAlertList() {
             const end = getLicenseEndDate(unit, kind);
             if (!end) return;
             const s = getExpiryStatus(end);
+            if (effectiveLicense(unit, kind).downgraded) return; // on fallback tier — not an alert
             if (s.kind === 'expired' || s.kind === 'soon' || (s.kind === 'ok' && s.daysLeft <= SOON_DAYS)) {
                 const licName = kind === 'display' ? (unit.licenseDisplay || 'Display') : (unit.gpsLicense || 'GPS');
                 const tag = s.kind === 'expired' ? 'EXPIRED' : 'EXPIRING';
@@ -1695,9 +1699,9 @@ function renderTable(data) {
             <td>${escapeHtml(d.site)}</td>
             <td>${escapeHtml(d.yearReceived || '') || '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
             <td>${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
-            <td>${d.gpsLicense ? `<span class="badge badge-good" style="font-size:10px">${escapeHtml(d.gpsLicense)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
+            <td>${licenseTypeBadge(d, 'gps')}</td>
             <td>${licenseBadgeFor(d, 'gps')}</td>
-            <td>${d.licenseDisplay ? `<span class="badge badge-good" style="font-size:10px">${escapeHtml(d.licenseDisplay)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
+            <td>${licenseTypeBadge(d, 'display')}</td>
             <td>${licenseBadgeFor(d, 'display')}</td>
         </tr>`;
     }).join('');
@@ -1836,7 +1840,8 @@ function exportCSV(data) {
                      'GPS License Start Date', 'GPS License Expiration Date',
                      'Display License Start Date', 'Display License Expiration Date', 'Remarks'];
     const rows = exportData.map((d, i) => [i + 1, d.name, d.model, d.sn, d.implement || '', d.status, d.display, d.gps, d.steering, d.jdlink, d.site,
-                     d.yearReceived || '', d.userCategory || '', d.gpsLicense || '', d.licenseDisplay || '',
+                     d.yearReceived || '', d.userCategory || '',
+                     effectiveLicense(d, 'gps').type || '', effectiveLicense(d, 'display').type || '',
                      d.gpsLicenseStartDate || d.licenseStartDate || '',
                      d.gpsLicenseEndDate   || d.licenseEndDate   || '',
                      d.displayLicenseStartDate || '',
@@ -2046,9 +2051,9 @@ function renderEditTable() {
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="site" onblur="saveInlineEdit(this)">${escapeHtml(d.site)}</span></td>
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="yearReceived" onblur="saveInlineEdit(this)">${escapeHtml(d.yearReceived || '')}</span></td>
             <td>${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
-            <td>${d.gpsLicense ? `<span class="badge badge-good" style="font-size:10px">${escapeHtml(d.gpsLicense)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
+            <td>${licenseTypeBadge(d, 'gps')}</td>
             <td>${licenseBadgeFor(d, 'gps')}</td>
-            <td>${d.licenseDisplay ? `<span class="badge badge-good" style="font-size:10px">${escapeHtml(d.licenseDisplay)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
+            <td>${licenseTypeBadge(d, 'display')}</td>
             <td>${licenseBadgeFor(d, 'display')}</td>
             <td style="max-width:180px;font-size:12px;color:#4a5568" title="${escapeHtml(remarks)}">${escapeHtml(remarksShort) || '<span style="color:#a0aec0">—</span>'}</td>
             <td class="col-attach">${renderAttachCell(d)}</td>
@@ -2391,6 +2396,31 @@ function getExpiryStatus(endDate) {
     return { kind: 'ok', label: `${days}d left`, daysLeft: days };
 }
 
+// Auto-downgrade: a premium license that has EXPIRED falls back to the lower
+// tier (GPS SF-RTK → SF-1, Display G5 Advance → G5 Basic). Display-only —
+// the stored value stays as-is; renewing the date brings the premium tier back.
+function effectiveLicense(unit, kind) {
+    const rawType = kind === 'display' ? (unit.licenseDisplay || '') : (unit.gpsLicense || '');
+    const end = getLicenseEndDate(unit, kind);
+    const status = getExpiryStatus(end);
+    const premium  = kind === 'display' ? 'G5 Advance' : 'SF-RTK';
+    const fallback = kind === 'display' ? 'G5 Basic'   : 'SF-1';
+    const downgraded = rawType === premium && status.kind === 'expired';
+    return { type: downgraded ? fallback : rawType, rawType, premium, fallback, downgraded, status, end };
+}
+
+// Render the license-type badge for a table cell, showing the effective tier
+// (with a small marker + tooltip when auto-downgraded).
+function licenseTypeBadge(unit, kind) {
+    const eff = effectiveLicense(unit, kind);
+    if (!eff.type) return '<span style="color:#a0aec0;font-size:11px">—</span>';
+    if (eff.downgraded) {
+        const tt = `Otomatis turun dari ${eff.premium} (expired ${eff.end})`;
+        return `<span class="badge badge-cat" style="font-size:10px" title="${escapeHtml(tt)}"><i class="fas fa-arrow-turn-down" style="font-size:9px;opacity:.7"></i> ${escapeHtml(eff.type)}</span>`;
+    }
+    return `<span class="badge badge-good" style="font-size:10px">${escapeHtml(eff.type)}</span>`;
+}
+
 // Pick the effective end date for a license kind. Falls back to the legacy
 // `licenseEndDate` for `gps` only, since historically that single field
 // stored the GPS-license expiry. Display kind has no legacy fallback.
@@ -2422,6 +2452,13 @@ function licenseBadgeFor(unit, kind) {
     const end = getLicenseEndDate(unit, kind);
     const s = getExpiryStatus(end);
     if (s.kind === 'none') return '<span style="color:#a0aec0;font-size:11px">—</span>';
+    // Auto-downgraded premium → show a neutral "on fallback tier" badge instead
+    // of a red expired one (the receiver still works on SF-1 / G5 Basic).
+    const eff = effectiveLicense(unit, kind);
+    if (eff.downgraded) {
+        const tt = `Auto-fallback dari ${eff.premium} (expired ${end})`;
+        return `<span class="license-badge license-badge--ok" title="${escapeHtml(tt)}"><i class="fas fa-circle-check"></i> ${escapeHtml(eff.fallback)}</span>`;
+    }
     const cls = `license-badge license-badge--${s.kind}`;
     const icon = s.kind === 'expired' ? 'circle-xmark'
                : s.kind === 'soon'    ? 'triangle-exclamation'
