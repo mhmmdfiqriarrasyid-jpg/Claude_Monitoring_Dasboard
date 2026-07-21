@@ -464,9 +464,9 @@ function formatDuration(ms) {
 // ============================================================
 
 function navigateTo(view) {
-    // Role gating: viewers can only see the dashboard; only owners see Users.
-    if ((view === 'editUnits' || view === 'implements' || view === 'damage' || view === 'licenseStock') && !canEdit()) {
-        showToast('Read-only access — viewers can only see the dashboard', 'warning');
+    // Per-user access gating: the user needs at least 'view' on the area.
+    if (['editUnits', 'implements', 'damage', 'licenseStock'].includes(view) && !hasAccess(view, 'view')) {
+        showToast('Anda tidak punya akses ke menu ini', 'warning');
         view = 'dashboard';
     }
     if (view === 'users' && !isOwner()) {
@@ -666,6 +666,7 @@ let _currentAttachUnitId = null;
 let _pendingAttachPurge = [];
 
 function triggerAttachUpload(unitId) {
+    if (!requireEdit('editUnits')) return;
     _currentAttachUnitId = unitId;
     document.getElementById('attachFileInput').click();
 }
@@ -740,6 +741,7 @@ async function downloadAttachment(attId) {
 }
 
 async function removeAttachment(unitId, attId) {
+    if (!requireEdit('editUnits')) return;
     if (!confirm('Hapus lampiran ini?')) return;
     const unit = globalData.find(d => d.id === unitId);
     if (!unit) return;
@@ -1000,6 +1002,7 @@ function getAuditLog() {
 }
 
 function showHistory(unitId) {
+    if (!hasAccess('history', 'view')) { showToast('Anda tidak punya akses ke History', 'warning'); return; }
     const log = getAuditLog();
     const filtered = unitId ? log.filter(e => e.unitId === unitId) : log;
     const title = unitId
@@ -1173,6 +1176,7 @@ function _restoreCollection(items, current, merge) {
 }
 
 function importBackup(file) {
+    if (!requireEdit('editUnits')) return;
     const reader = new FileReader();
     reader.onload = async e => {
         try {
@@ -2101,6 +2105,7 @@ function toggleImportPanel() {
 }
 
 function handleEditCSVImport(file) {
+    if (!requireEdit('editUnits')) return;
     showLoading(true);
     Papa.parse(file, {
         header: true,
@@ -2240,6 +2245,7 @@ function renderEditTable() {
         return;
     }
 
+    const _ceEdit = hasAccess('editUnits', 'edit') ? 'true' : 'false'; // inline editing off for view-only
     tbody.innerHTML = rows.map((d, i) => {
         const remarks = d.remarks || '';
         const remarksShort = remarks.length > 40 ? remarks.slice(0, 40) + '…' : remarks;
@@ -2247,17 +2253,17 @@ function renderEditTable() {
         <tr>
             <td class="col-check"><input type="checkbox" class="unit-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedCount()"></td>
             <td>${i + 1}</td>
-            <td data-label="Nickname"><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="name" onblur="saveInlineEdit(this)">${escapeHtml(d.name)}</span></td>
-            <td data-label="Model"><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="model" onblur="saveInlineEdit(this)">${escapeHtml(d.model)}</span></td>
+            <td data-label="Nickname"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="name" onblur="saveInlineEdit(this)">${escapeHtml(d.name)}</span></td>
+            <td data-label="Model"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="model" onblur="saveInlineEdit(this)">${escapeHtml(d.model)}</span></td>
             <td data-label="SN" style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
-            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="implement" onblur="saveInlineEdit(this)">${escapeHtml(d.implement || '')}</span></td>
-            <td data-label="Status"><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="status" onblur="saveInlineEdit(this)">${escapeHtml(d.status)}</span></td>
-            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="display" onblur="saveInlineEdit(this)">${escapeHtml(d.display)}</span></td>
-            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="gps" onblur="saveInlineEdit(this)">${escapeHtml(d.gps)}</span></td>
-            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="steering" onblur="saveInlineEdit(this)">${escapeHtml(d.steering)}</span></td>
-            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="jdlink" onblur="saveInlineEdit(this)">${escapeHtml(d.jdlink)}</span></td>
-            <td data-label="Site"><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="site" onblur="saveInlineEdit(this)">${escapeHtml(d.site)}</span></td>
-            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="yearReceived" onblur="saveInlineEdit(this)">${escapeHtml(d.yearReceived || '')}</span></td>
+            <td><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="implement" onblur="saveInlineEdit(this)">${escapeHtml(d.implement || '')}</span></td>
+            <td data-label="Status"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="status" onblur="saveInlineEdit(this)">${escapeHtml(d.status)}</span></td>
+            <td><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="display" onblur="saveInlineEdit(this)">${escapeHtml(d.display)}</span></td>
+            <td><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="gps" onblur="saveInlineEdit(this)">${escapeHtml(d.gps)}</span></td>
+            <td><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="steering" onblur="saveInlineEdit(this)">${escapeHtml(d.steering)}</span></td>
+            <td><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="jdlink" onblur="saveInlineEdit(this)">${escapeHtml(d.jdlink)}</span></td>
+            <td data-label="Site"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="site" onblur="saveInlineEdit(this)">${escapeHtml(d.site)}</span></td>
+            <td><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="yearReceived" onblur="saveInlineEdit(this)">${escapeHtml(d.yearReceived || '')}</span></td>
             <td>${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
             <td>${licenseTypeBadge(d, 'gps')}</td>
             <td>${licenseBadgeFor(d, 'gps')}</td>
@@ -2302,8 +2308,8 @@ function populateEditFilters() {
 
 // ---- Inline Edit ----
 function saveInlineEdit(el) {
-    if (!canEdit()) {
-        // Revert the DOM if a viewer somehow triggered this
+    if (!hasAccess('editUnits', 'edit')) {
+        // Revert the DOM if a view-only user somehow triggered this
         const id = el.dataset.id;
         const field = el.dataset.field;
         const unit = globalData.find(d => d.id === id);
@@ -2396,7 +2402,7 @@ function updateSelectedCount() {
 }
 
 function deleteUnit(id) {
-    if (!requireEdit()) return;
+    if (!requireEdit('editUnits')) return;
     const unit = globalData.find(d => d.id === id);
     if (!unit) return;
     const { removed } = deleteUnits([id]);
@@ -2405,7 +2411,7 @@ function deleteUnit(id) {
 }
 
 function deleteSelected() {
-    if (!requireEdit()) return;
+    if (!requireEdit('editUnits')) return;
     const count = selectedUnitIds.size;
     if (count === 0) return;
     const { removed } = deleteUnits([...selectedUnitIds]);
@@ -2491,7 +2497,7 @@ function matchImplementForUnit(text) {
 }
 
 function showAddForm() {
-    if (!requireEdit()) return;
+    if (!requireEdit('editUnits')) return;
     document.getElementById('modalTitle').textContent = 'Add Unit';
     document.getElementById('editUnitId').value = '';
     document.getElementById('unitForm').reset();
@@ -2501,7 +2507,7 @@ function showAddForm() {
 }
 
 function editUnit(id) {
-    if (!requireEdit()) return;
+    if (!requireEdit('editUnits')) return;
     const unit = globalData.find(d => d.id === id);
     if (!unit) return;
 
@@ -2552,7 +2558,7 @@ function editUnit(id) {
 
 function saveUnit(event) {
     event.preventDefault();
-    if (!requireEdit()) return;
+    if (!requireEdit('editUnits')) return;
 
     const id = document.getElementById('editUnitId').value;
     const fields = {
@@ -2905,7 +2911,7 @@ function updateSelectedImplementCount() {
 
 // ---- Modal: Add / Edit ----
 function showAddImplementForm() {
-    if (!requireEdit()) return;
+    if (!requireEdit('implements')) return;
     document.getElementById('implementModalTitle').textContent = 'Add Implement';
     document.getElementById('editImplementId').value = '';
     document.getElementById('implementForm').reset();
@@ -2914,7 +2920,7 @@ function showAddImplementForm() {
 }
 
 function editImplement(id) {
-    if (!requireEdit()) return;
+    if (!requireEdit('implements')) return;
     const imp = globalImplements.find(d => d.id === id);
     if (!imp) return;
 
@@ -3004,7 +3010,7 @@ function closeImplementModal() {
 
 // ---- Delete ----
 function deleteImplement(id) {
-    if (!requireEdit()) return;
+    if (!requireEdit('implements')) return;
     const imp = globalImplements.find(d => d.id === id);
     if (!imp) return;
     if (!confirm(`Delete implement "${imp.profileName}"?`)) return;
@@ -3023,7 +3029,7 @@ function deleteImplement(id) {
 }
 
 function deleteSelectedImplements() {
-    if (!requireEdit()) return;
+    if (!requireEdit('implements')) return;
     const count = selectedImplementIds.size;
     if (count === 0) return;
     if (!confirm(`Delete ${count} selected implement(s)?`)) return;
@@ -3093,7 +3099,7 @@ function downloadImplementTemplate() {
 }
 
 function handleImplementCSVImport(file) {
-    if (!requireEdit()) return;
+    if (!requireEdit('implements')) return;
     showLoading(true);
     Papa.parse(file, {
         header: true,
@@ -3586,7 +3592,7 @@ function onDamageTypeChange() {
 
 // ---- Modal: Add / Edit ----
 function showAddDamageForm() {
-    if (!requireEdit()) return;
+    if (!requireEdit('damage')) return;
     document.getElementById('damageModalTitle').textContent = 'Tambah Kerusakan';
     document.getElementById('editDamageId').value = '';
     document.getElementById('damageForm').reset();
@@ -3601,7 +3607,7 @@ function showAddDamageForm() {
 }
 
 function editDamage(id) {
-    if (!requireEdit()) return;
+    if (!requireEdit('damage')) return;
     const rec = globalDamages.find(d => d.id === id);
     if (!rec) return;
 
@@ -3630,7 +3636,7 @@ function editDamage(id) {
 
 function saveDamage(event) {
     event.preventDefault();
-    if (!requireEdit()) return;
+    if (!requireEdit('damage')) return;
 
     const id = document.getElementById('editDamageId').value;
     const unit = resolveDamageUnit(document.getElementById('dmgUnit').value);
@@ -3707,7 +3713,7 @@ function _applyDamageBreakdown(unitId, damageType, component, description) {
 // component this damage put into Breakdown (downtime duration is recorded
 // automatically by trackStatusChange inside updateUnit).
 function resolveDamage(id) {
-    if (!requireEdit()) return;
+    if (!requireEdit('damage')) return;
     const rec = globalDamages.find(d => d.id === id);
     if (!rec || rec.resolved) return;
     if (!confirm(`Tandai kerusakan unit "${rec.unitName}" (${rec.date}) selesai diperbaiki?`)) return;
@@ -3746,7 +3752,7 @@ function closeDamageModal() {
 
 // ---- Delete ----
 function deleteDamage(id) {
-    if (!requireEdit()) return;
+    if (!requireEdit('damage')) return;
     const rec = globalDamages.find(d => d.id === id);
     if (!rec) return;
     if (!confirm(`Hapus catatan kerusakan unit "${rec.unitName}" (${rec.date})?`)) return;
@@ -3765,7 +3771,7 @@ function deleteDamage(id) {
 }
 
 function deleteSelectedDamages() {
-    if (!requireEdit()) return;
+    if (!requireEdit('damage')) return;
     const count = selectedDamageIds.size;
     if (count === 0) return;
     if (!confirm(`Hapus ${count} catatan kerusakan terpilih?`)) return;
@@ -4059,7 +4065,7 @@ function onLicenseTxnChange() {
 
 // ---- Modal: Add / Edit ----
 function showAddLicenseForm(txnType) {
-    if (!requireEdit()) return;
+    if (!requireEdit('licenseStock')) return;
     document.getElementById('licenseModalTitle').textContent =
         txnType === 'OUT' ? 'Distribusi Lisensi' : 'Tambah Stok Lisensi';
     document.getElementById('editLicenseId').value = '';
@@ -4074,7 +4080,7 @@ function showAddLicenseForm(txnType) {
 }
 
 function editLicenseStock(id) {
-    if (!requireEdit()) return;
+    if (!requireEdit('licenseStock')) return;
     const rec = globalLicenseStock.find(r => r.id === id);
     if (!rec) return;
 
@@ -4130,7 +4136,7 @@ function applyDistributedLicenseToUnit(rec) {
 // data (confirmed first). Use after recording distributions that predate the
 // auto-link, or after a CSV import of the stock ledger.
 function syncDistributionsToUnits() {
-    if (!requireEdit()) return;
+    if (!requireEdit('licenseStock')) return;
     const latest = {}; // `${unitId}|${kind}` -> record
     globalLicenseStock.forEach(r => {
         if (r.txnType !== 'OUT' || !r.unitId) return;
@@ -4159,7 +4165,7 @@ function syncDistributionsToUnits() {
 
 function saveLicenseStock(event) {
     event.preventDefault();
-    if (!requireEdit()) return;
+    if (!requireEdit('licenseStock')) return;
 
     const id = document.getElementById('editLicenseId').value;
     const txnType = document.getElementById('licTxnType').value;
@@ -4248,7 +4254,7 @@ function closeLicenseModal() {
 
 // ---- Delete ----
 function deleteLicenseStock(id) {
-    if (!requireEdit()) return;
+    if (!requireEdit('licenseStock')) return;
     const rec = globalLicenseStock.find(r => r.id === id);
     if (!rec) return;
     if (!confirm(`Hapus transaksi lisensi "${rec.licenseType}" (${rec.date})?`)) return;
@@ -4268,7 +4274,7 @@ function deleteLicenseStock(id) {
 }
 
 function deleteSelectedLicenseStock() {
-    if (!requireEdit()) return;
+    if (!requireEdit('licenseStock')) return;
     const count = selectedLicenseIds.size;
     if (count === 0) return;
     if (!confirm(`Hapus ${count} transaksi lisensi terpilih?`)) return;
@@ -4341,7 +4347,7 @@ function downloadLicenseTemplate() {
 }
 
 function handleLicenseCSVImport(file) {
-    if (!requireEdit()) return;
+    if (!requireEdit('licenseStock')) return;
     showLoading(true);
     Papa.parse(file, {
         header: true,
@@ -4908,7 +4914,7 @@ function renderUserCategoryOptions() {
 }
 
 function openCategoriesModal() {
-    if (!requireEdit()) return;
+    if (!requireEdit('editUnits')) return;
     renderCategoriesList();
     document.getElementById('categoriesModal').classList.add('open');
     setTimeout(() => {
@@ -4940,7 +4946,7 @@ function renderCategoriesList() {
 
 function addCategory(event) {
     if (event) event.preventDefault();
-    if (!requireEdit()) return;
+    if (!requireEdit('editUnits')) return;
     const input = document.getElementById('newCategoryName');
     const name = (input.value || '').trim();
     if (!name) {
@@ -4975,7 +4981,7 @@ function addCategory(event) {
 }
 
 function deleteCategory(id) {
-    if (!requireEdit()) return;
+    if (!requireEdit('editUnits')) return;
     const cat = userCategories.find(c => c.id === id);
     if (!cat) return;
     // Warn if this category is in use by any unit
@@ -5285,6 +5291,41 @@ function isOwner() {
     return currentUserDoc && currentUserDoc.role === 'owner';
 }
 
+// ============================================================
+// PER-USER ACCESS (privilege per area)
+// ============================================================
+// Configurable areas the owner can restrict per user. Users management stays
+// owner-only; the Dashboard is always available to any active user.
+const ACCESS_AREAS = [
+    { key: 'editUnits',    label: 'Edit Units',   levels: ['none', 'view', 'edit'] },
+    { key: 'implements',   label: 'Implements',   levels: ['none', 'view', 'edit'] },
+    { key: 'damage',       label: 'Kerusakan',    levels: ['none', 'view', 'edit'] },
+    { key: 'licenseStock', label: 'Stok Lisensi', levels: ['none', 'view', 'edit'] },
+    { key: 'history',      label: 'History',      levels: ['none', 'view'] }
+];
+const _LVL_RANK = { none: 0, view: 1, edit: 2 };
+
+// Level a role grants for an area when the user has no explicit override.
+function roleDefaultAccess(role, area) {
+    if (role === 'owner') return 'edit';
+    if (role === 'team')  return area === 'history' ? 'view' : 'edit';
+    return 'none'; // viewer / pending
+}
+
+// Effective level of a user for an area (explicit access override → role default).
+function effectiveAccess(area, user = currentUserDoc) {
+    if (!user) return 'none';
+    if (user.role === 'owner') return 'edit';
+    const explicit = user.access && user.access[area];
+    return explicit || roleDefaultAccess(user.role, area);
+}
+
+// Does the user meet at least `min` access ('view' or 'edit') for an area?
+function hasAccess(area, min, user = currentUserDoc) {
+    if (user && user.role === 'owner') return true;
+    return _LVL_RANK[effectiveAccess(area, user)] >= _LVL_RANK[min];
+}
+
 function applyRoleGating() {
     const editor = canEdit();
     const owner = isOwner();
@@ -5296,23 +5337,47 @@ function applyRoleGating() {
         el.style.display = owner ? '' : 'none';
     });
 
-    // If a non-owner is currently viewing the Users page, kick them back.
-    if (!owner && currentView === 'users') {
-        navigateTo('dashboard');
-    }
-    // If a viewer is on the Edit Units page, send them back to the dashboard.
-    if (!editor && (currentView === 'editUnits' || currentView === 'implements')) {
+    applyAccessVisibility();
+
+    // If the user lost access to the current view, send them to the dashboard.
+    const gated = ['editUnits', 'implements', 'damage', 'licenseStock'];
+    if ((!owner && currentView === 'users') ||
+        (gated.includes(currentView) && !hasAccess(currentView, 'view'))) {
         navigateTo('dashboard');
     }
 
-    // Re-render any visible table to refresh its action buttons
+    // Re-render any visible table to refresh its action buttons / editability
     if (currentView === 'editUnits') renderEditTable();
     if (currentView === 'implements') renderImplementsTable();
 }
 
-function requireEdit() {
-    if (!canEdit()) {
-        showToast('Read-only access — ask the owner to grant edit rights', 'warning');
+// Hide sidebar links the user can't view, and flag view-only areas on <body>
+// so edit-only controls (Add buttons, inline editing) can be CSS-hidden.
+function applyAccessVisibility() {
+    document.querySelectorAll('.nav__link[data-view]').forEach(el => {
+        const v = el.getAttribute('data-view');
+        if (['editUnits', 'implements', 'damage', 'licenseStock'].includes(v)) {
+            el.style.display = hasAccess(v, 'view') ? '' : 'none';
+        }
+    });
+    const navHistory = document.getElementById('navHistory');
+    if (navHistory) navHistory.style.display = hasAccess('history', 'view') ? '' : 'none';
+
+    // data-ro-<area>="1" when the user can view but not edit that area.
+    const map = { editUnits: 'roEditunits', implements: 'roImplements', damage: 'roDamage', licenseStock: 'roLicense' };
+    Object.entries(map).forEach(([area, flag]) => {
+        const viewOnly = hasAccess(area, 'view') && !hasAccess(area, 'edit');
+        if (viewOnly) document.body.dataset[flag] = '1';
+        else delete document.body.dataset[flag];
+    });
+}
+
+// Gate an edit action. With an `area` it checks per-area edit access; without,
+// it falls back to the global canEdit() (any-area editor).
+function requireEdit(area) {
+    const ok = area ? hasAccess(area, 'edit') : canEdit();
+    if (!ok) {
+        showToast('Akses hanya-lihat — minta owner untuk memberi hak edit', 'warning');
         return false;
     }
     return true;

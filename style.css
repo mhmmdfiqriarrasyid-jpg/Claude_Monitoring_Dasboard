@@ -2676,3 +2676,9 @@ body.dark .attach-upload-btn:hover { border-color: var(--accent); }
 @media (min-width: 1200px) {
     .kpi-grid .kpi-card + .kpi-card { border-left: 1px solid var(--border); }
 }
+
+/* ===== Per-user access: hide edit-only buttons in view-only areas ===== */
+body[data-ro-editunits]  .editonly--editunits,
+body[data-ro-implements] .editonly--implements,
+body[data-ro-damage]     .editonly--damage,
+body[data-ro-license]    .editonly--license { display: none !important; }

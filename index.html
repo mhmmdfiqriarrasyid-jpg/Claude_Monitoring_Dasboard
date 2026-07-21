@@ -145,7 +145,7 @@
             <a class="nav__link" data-view="licenseStock" onclick="navigateTo('licenseStock')">
                 <i class="fas fa-key"></i> Stok Lisensi
             </a>
-            <a class="nav__link" onclick="showHistory()" title="Change History">
+            <a class="nav__link" id="navHistory" onclick="showHistory()" title="Change History">
                 <i class="fas fa-clock-rotate-left"></i> History
             </a>
         </div>
@@ -480,7 +480,7 @@
                 <button class="btn btn-primary" onclick="toggleImportPanel()">
                     <i class="fas fa-file-import"></i> Import CSV
                 </button>
-                <button class="btn btn-success" onclick="showAddForm()">
+                <button class="btn btn-success editonly editonly--editunits" onclick="showAddForm()">
                     <i class="fas fa-plus"></i> Add Unit
                 </button>
                 <button class="btn btn-secondary" onclick="exportEditCSV()" title="Export the units shown below to CSV">
@@ -571,7 +571,7 @@
         <!-- Implements Toolbar -->
         <div class="edit-toolbar">
             <div class="edit-toolbar__left">
-                <button class="btn btn-success" onclick="showAddImplementForm()">
+                <button class="btn btn-success editonly editonly--implements" onclick="showAddImplementForm()">
                     <i class="fas fa-plus"></i> Add Implement
                 </button>
                 <button class="btn btn-danger" id="btnDeleteSelectedImpl" style="display:none" onclick="deleteSelectedImplements()">
@@ -634,7 +634,7 @@
         <!-- Damage Toolbar -->
         <div class="edit-toolbar">
             <div class="edit-toolbar__left">
-                <button class="btn btn-success" onclick="showAddDamageForm()">
+                <button class="btn btn-success editonly editonly--damage" onclick="showAddDamageForm()">
                     <i class="fas fa-plus"></i> Tambah Kerusakan
                 </button>
                 <button class="btn btn-danger" id="btnDeleteSelectedDamage" style="display:none" onclick="deleteSelectedDamages()">
@@ -705,10 +705,10 @@
         <!-- License Stock Toolbar -->
         <div class="edit-toolbar">
             <div class="edit-toolbar__left">
-                <button class="btn btn-success" onclick="showAddLicenseForm('IN')">
+                <button class="btn btn-success editonly editonly--license" onclick="showAddLicenseForm('IN')">
                     <i class="fas fa-plus"></i> Tambah Stok
                 </button>
-                <button class="btn btn-primary" onclick="showAddLicenseForm('OUT')">
+                <button class="btn btn-primary editonly editonly--license" onclick="showAddLicenseForm('OUT')">
                     <i class="fas fa-share-from-square"></i> Distribusi
                 </button>
                 <button class="btn btn-danger" id="btnDeleteSelectedLicense" style="display:none" onclick="deleteSelectedLicenseStock()">
