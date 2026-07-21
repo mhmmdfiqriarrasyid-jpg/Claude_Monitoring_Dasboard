@@ -2198,16 +2198,16 @@ function renderEditTable() {
         <tr>
             <td class="col-check"><input type="checkbox" class="unit-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedCount()"></td>
             <td>${i + 1}</td>
-            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="name" onblur="saveInlineEdit(this)">${escapeHtml(d.name)}</span></td>
-            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="model" onblur="saveInlineEdit(this)">${escapeHtml(d.model)}</span></td>
-            <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
+            <td data-label="Nickname"><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="name" onblur="saveInlineEdit(this)">${escapeHtml(d.name)}</span></td>
+            <td data-label="Model"><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="model" onblur="saveInlineEdit(this)">${escapeHtml(d.model)}</span></td>
+            <td data-label="SN" style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="implement" onblur="saveInlineEdit(this)">${escapeHtml(d.implement || '')}</span></td>
-            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="status" onblur="saveInlineEdit(this)">${escapeHtml(d.status)}</span></td>
+            <td data-label="Status"><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="status" onblur="saveInlineEdit(this)">${escapeHtml(d.status)}</span></td>
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="display" onblur="saveInlineEdit(this)">${escapeHtml(d.display)}</span></td>
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="gps" onblur="saveInlineEdit(this)">${escapeHtml(d.gps)}</span></td>
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="steering" onblur="saveInlineEdit(this)">${escapeHtml(d.steering)}</span></td>
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="jdlink" onblur="saveInlineEdit(this)">${escapeHtml(d.jdlink)}</span></td>
-            <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="site" onblur="saveInlineEdit(this)">${escapeHtml(d.site)}</span></td>
+            <td data-label="Site"><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="site" onblur="saveInlineEdit(this)">${escapeHtml(d.site)}</span></td>
             <td><span class="inline-edit" contenteditable="true" data-id="${escapeHtml(d.id)}" data-field="yearReceived" onblur="saveInlineEdit(this)">${escapeHtml(d.yearReceived || '')}</span></td>
             <td>${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
             <td>${licenseTypeBadge(d, 'gps')}</td>
@@ -3399,17 +3399,17 @@ function renderDamageTable() {
         <tr>
             <td class="col-check"><input type="checkbox" class="damage-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedDamageCount()"></td>
             <td>${i + 1}</td>
-            <td style="white-space:nowrap">${escapeHtml(d.date || '')}</td>
-            <td><strong>${escapeHtml(uName)}</strong></td>
-            <td style="font-family:monospace;font-size:12px">${escapeHtml(uSn)}</td>
-            <td>${escapeHtml(uSite)}</td>
-            <td><span class="badge badge-breakdown" style="font-size:10px">${escapeHtml(d.damageType || '')}</span></td>
-            <td>${comp}</td>
-            <td style="max-width:240px;font-size:12px;color:#4a5568" title="${escapeHtml(desc)}">${escapeHtml(descShort) || '<span style="color:#a0aec0">—</span>'}</td>
-            <td>${d.photo
+            <td data-label="Tanggal" style="white-space:nowrap">${escapeHtml(d.date || '')}</td>
+            <td data-label="Unit"><strong>${escapeHtml(uName)}</strong></td>
+            <td data-label="SN" style="font-family:monospace;font-size:12px">${escapeHtml(uSn)}</td>
+            <td data-label="Site">${escapeHtml(uSite)}</td>
+            <td data-label="Tipe"><span class="badge badge-breakdown" style="font-size:10px">${escapeHtml(d.damageType || '')}</span></td>
+            <td data-label="Komponen">${comp}</td>
+            <td data-label="Deskripsi" style="max-width:240px;font-size:12px;color:#4a5568" title="${escapeHtml(desc)}">${escapeHtml(descShort) || '<span style="color:#a0aec0">—</span>'}</td>
+            <td data-label="Foto">${d.photo
                 ? `<img class="dmg-thumb" src="${d.photo}" alt="foto" onclick="openPhotoLightbox(this.src)">`
                 : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
-            <td style="white-space:nowrap">${d.resolved
+            <td data-label="Perbaikan" style="white-space:nowrap">${d.resolved
                 ? `<span class="badge badge-good" style="font-size:10px" title="Selesai diperbaiki"><i class="fas fa-check"></i> Selesai${d.resolvedAt ? ' ' + escapeHtml(d.resolvedAt) : ''}</span>`
                 : `<button class="btn btn-secondary btn-sm" style="font-size:11px" title="Tandai selesai & pulihkan status unit" onclick="resolveDamage('${escapeHtml(d.id)}')"><i class="fas fa-wrench"></i> Tandai selesai</button>`}</td>
             <td class="col-actions">
@@ -3862,13 +3862,13 @@ function renderLicenseStockTable() {
         <tr>
             <td class="col-check"><input type="checkbox" class="license-check" data-id="${escapeHtml(r.id)}" onchange="updateSelectedLicenseCount()"></td>
             <td>${i + 1}</td>
-            <td style="white-space:nowrap">${escapeHtml(r.date || '')}</td>
-            <td>${badge}</td>
-            <td><strong>${escapeHtml(r.licenseType || '')}</strong></td>
-            <td>${Number(r.qty) || 0}</td>
-            <td>${isOut ? escapeHtml(uName) : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
-            <td style="font-family:monospace;font-size:12px">${isOut ? escapeHtml(uSn) : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
-            <td style="max-width:200px;font-size:12px;color:#4a5568" title="${escapeHtml(note)}">${escapeHtml(noteShort) || '<span style="color:#a0aec0">—</span>'}</td>
+            <td data-label="Tanggal" style="white-space:nowrap">${escapeHtml(r.date || '')}</td>
+            <td data-label="Transaksi">${badge}</td>
+            <td data-label="Jenis"><strong>${escapeHtml(r.licenseType || '')}</strong></td>
+            <td data-label="Jumlah">${Number(r.qty) || 0}</td>
+            <td data-label="Unit">${isOut ? escapeHtml(uName) : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
+            <td data-label="SN" style="font-family:monospace;font-size:12px">${isOut ? escapeHtml(uSn) : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
+            <td data-label="Catatan" style="max-width:200px;font-size:12px;color:#4a5568" title="${escapeHtml(note)}">${escapeHtml(noteShort) || '<span style="color:#a0aec0">—</span>'}</td>
             <td class="col-actions">
                 <div class="row-actions">
                     <button class="btn btn-secondary" title="Edit" onclick="editLicenseStock('${escapeHtml(r.id)}')"><i class="fas fa-pen"></i></button>

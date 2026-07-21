@@ -2533,3 +2533,53 @@ body.dark .attach-upload-btn:hover { border-color: var(--accent); }
 .stock-alert-card.empty { background: var(--danger-bg); border-color: #E0B4AE; color: var(--danger); }
 .stock-alert-card__type { font-weight: 700; }
 .stock-alert-card__n { font-variant-numeric: tabular-nums; }
+
+/* ===== Mobile card view for wide tables (.table--cardable) =====
+   On phones the table collapses into stacked cards. Only cells carrying a
+   data-label are shown (plus actions and colspan empty-states); the label is
+   rendered by the ::before pseudo. Desktop is untouched. */
+@media (max-width: 700px) {
+    .table--cardable thead { display: none; }
+    .table--cardable,
+    .table--cardable tbody,
+    .table--cardable tr { display: block; width: 100%; }
+    .table--cardable tr {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        margin-bottom: 10px;
+        padding: 10px 14px;
+    }
+    .table--cardable td { display: none; }
+    .table--cardable td[data-label] {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border: none;
+        padding: 5px 0;
+        width: 100%;
+        max-width: none !important;
+        white-space: normal;
+    }
+    .table--cardable td[data-label]::before {
+        content: attr(data-label);
+        font-size: 10.5px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 600;
+        color: var(--text-light);
+        flex-shrink: 0;
+    }
+    .table--cardable td.col-actions {
+        display: flex;
+        justify-content: flex-end;
+        border: none;
+        padding: 8px 0 2px;
+    }
+    .table--cardable td[colspan] { display: block; border: none; }
+    /* Sticky columns & their shadow gradients don't apply to stacked cards */
+    #editTable th, #editTable td { position: static !important; }
+    #editTable td::after { background: none; }
+    .table--cardable .table-wrapper { max-height: none; }
+}
