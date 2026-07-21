@@ -1065,6 +1065,7 @@ function clearHistory() {
 }
 
 function exportHistory() {
+    if (!canCsv('export')) return;
     const log = getAuditLog();
     if (log.length === 0) { showToast('No history to export', 'warning'); return; }
     const headers = ['Timestamp', 'Action', 'Unit', 'Field', 'Before', 'After'];
@@ -2045,6 +2046,7 @@ function updateFilterCount(data) {
 // ============================================================
 
 function exportCSV(data) {
+    if (!canCsv('export')) return;
     const exportData = Array.isArray(data) ? data : filteredData;
     if (exportData.length === 0) { showToast('No data to export', 'warning'); return; }
     const headers = ['No', 'Nickname', 'Model', 'Serial Number', 'Implement', 'Status', 'Display', 'GPS', 'Steering', 'JDLink', 'Site',
@@ -2105,6 +2107,7 @@ function toggleImportPanel() {
 }
 
 function handleEditCSVImport(file) {
+    if (!canCsv('full')) return;
     if (!requireEdit('editUnits')) return;
     showLoading(true);
     Papa.parse(file, {
@@ -3112,6 +3115,7 @@ function _implementColAliases(field) {
 }
 
 function exportImplementsCSV() {
+    if (!canCsv('export')) return;
     if (globalImplements.length === 0) { showToast('No implements to export', 'warning'); return; }
     const headers = ['No', ...IMPLEMENT_FIELDS.map(f => f.label), 'Chart of Account'];
     const rows = globalImplements.map((d, i) => [
@@ -3132,6 +3136,7 @@ function exportImplementsCSV() {
 }
 
 function downloadImplementTemplate() {
+    if (!canCsv('export')) return;
     const headers = ['No', ...IMPLEMENT_FIELDS.map(f => f.label), 'Chart of Account'];
     // One example row (No is ignored on import).
     const sample = ['1', 'JNR Leopard E 10.0', 'John Deere', 'Scooping', 'IMP-001', '0 m', '1.2 m', '0.8 m',
@@ -3149,6 +3154,7 @@ function downloadImplementTemplate() {
 }
 
 function handleImplementCSVImport(file) {
+    if (!canCsv('full')) return;
     if (!requireEdit('implements')) return;
     showLoading(true);
     Papa.parse(file, {
@@ -3843,6 +3849,7 @@ function deleteSelectedDamages() {
 
 // ---- Export report (CSV, opens in Excel via UTF-8 BOM) ----
 function exportDamageCSV() {
+    if (!canCsv('export')) return;
     const rows = getFilteredDamages();
     if (rows.length === 0) { showToast('Tidak ada data kerusakan untuk diexport', 'warning'); return; }
     const headers = ['No', 'Tanggal', 'Unit', 'Serial Number', 'Site', 'Tipe Kerusakan', 'Komponen', 'Deskripsi', 'Foto', 'Perbaikan'];
@@ -4347,6 +4354,7 @@ function deleteSelectedLicenseStock() {
 
 // ---- Export report (CSV, opens in Excel via UTF-8 BOM) ----
 function exportLicenseStockCSV() {
+    if (!canCsv('export')) return;
     const rows = getFilteredLicenseStock();
     if (rows.length === 0) { showToast('Tidak ada data lisensi untuk diexport', 'warning'); return; }
     const headers = ['No', 'Tanggal', 'Jenis', 'Jenis Lisensi', 'Jumlah', 'Unit', 'Serial Number', 'Catatan'];
@@ -4380,6 +4388,7 @@ function parseLicenseTxnType(s) {
 }
 
 function downloadLicenseTemplate() {
+    if (!canCsv('export')) return;
     const headers = ['Tanggal', 'Jenis', 'Jenis Lisensi', 'Jumlah', 'Unit', 'Serial Number', 'Catatan'];
     const sample = [
         ['2026-04-06', 'Masuk', 'SF-RTK', '50', '', '', 'PO.GPA.2026.04.01343'],
@@ -4397,6 +4406,7 @@ function downloadLicenseTemplate() {
 }
 
 function handleLicenseCSVImport(file) {
+    if (!canCsv('full')) return;
     if (!requireEdit('licenseStock')) return;
     showLoading(true);
     Papa.parse(file, {
@@ -5376,6 +5386,27 @@ function hasAccess(area, min, user = currentUserDoc) {
     return _LVL_RANK[effectiveAccess(area, user)] >= _LVL_RANK[min];
 }
 
+// ---- CSV export/import capability (separate none/export/full privilege) ----
+const CSV_LEVELS = ['none', 'export', 'full'];
+const _CSV_RANK = { none: 0, export: 1, full: 2 };
+function roleDefaultCsv(role) { return (role === 'owner' || role === 'team') ? 'full' : 'none'; }
+function effectiveCsv(user = currentUserDoc) {
+    if (!user) return 'none';
+    if (user.role === 'owner') return 'full';
+    return (user.access && user.access.csv) || roleDefaultCsv(user.role);
+}
+// min = 'export' (can export) or 'full' (can import). Shows a toast when denied.
+function canCsv(min, notify = true) {
+    if (currentUserDoc && currentUserDoc.role === 'owner') return true;
+    const ok = _CSV_RANK[effectiveCsv()] >= _CSV_RANK[min];
+    if (!ok && notify) {
+        showToast(min === 'full'
+            ? 'Anda tidak punya izin Import CSV'
+            : 'Anda tidak punya izin Export CSV', 'warning');
+    }
+    return ok;
+}
+
 function applyRoleGating() {
     const editor = canEdit();
     const owner = isOwner();
@@ -5420,6 +5451,10 @@ function applyAccessVisibility() {
         if (viewOnly) document.body.dataset[flag] = '1';
         else delete document.body.dataset[flag];
     });
+
+    // CSV capability flags → hide export/import buttons.
+    if (canCsv('export', false)) delete document.body.dataset.nocsvexport; else document.body.dataset.nocsvexport = '1';
+    if (canCsv('full', false))   delete document.body.dataset.nocsvimport; else document.body.dataset.nocsvimport = '1';
 }
 
 // Gate an edit action. With an `area` it checks per-area edit access; without,
@@ -5537,15 +5572,23 @@ function openAccessModal(uid) {
     if (!user) return;
     document.getElementById('accessUserUid').value = uid;
     document.getElementById('accessUserName').textContent = user.displayName || user.email || uid;
-    document.getElementById('accessGrid').innerHTML = ACCESS_AREAS.map(area => {
+    const labels = { none: 'Tidak ada', view: 'Lihat', edit: 'Edit' };
+    let rows = ACCESS_AREAS.map(area => {
         const cur = effectiveAccess(area.key, user);
-        const labels = { none: 'Tidak ada', view: 'Lihat', edit: 'Edit' };
         const opts = area.levels.map(l => `<option value="${l}" ${l === cur ? 'selected' : ''}>${labels[l]}</option>`).join('');
         return `<div class="access-row">
             <span class="access-row__label">${escapeHtml(area.label)}</span>
             <select class="form-select access-select" data-area="${area.key}">${opts}</select>
         </div>`;
     }).join('');
+    // CSV export/import capability (its own level set)
+    const csvLabels = { none: 'Tidak ada', export: 'Export saja', full: 'Export + Import' };
+    const curCsv = effectiveCsv(user);
+    rows += `<div class="access-row">
+        <span class="access-row__label">CSV Export/Import</span>
+        <select class="form-select access-select" data-area="csv">${CSV_LEVELS.map(l => `<option value="${l}" ${l === curCsv ? 'selected' : ''}>${csvLabels[l]}</option>`).join('')}</select>
+    </div>`;
+    document.getElementById('accessGrid').innerHTML = rows;
     document.getElementById('accessModal').classList.add('open');
 }
 

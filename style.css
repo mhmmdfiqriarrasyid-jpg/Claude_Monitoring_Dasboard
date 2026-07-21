@@ -2683,6 +2683,10 @@ body[data-ro-implements] .editonly--implements,
 body[data-ro-damage]     .editonly--damage,
 body[data-ro-license]    .editonly--license { display: none !important; }
 
+/* CSV export/import capability: hide buttons the user isn't allowed to use */
+body[data-nocsvexport] .csv-export { display: none !important; }
+body[data-nocsvimport] .csv-import { display: none !important; }
+
 /* ===== User access editor ===== */
 .access-grid { display: flex; flex-direction: column; gap: 10px; }
 .access-row {

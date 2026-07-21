@@ -378,7 +378,7 @@
                 <div class="table-card__header">
                     <div class="table-card__title"><i class="fas fa-table-list"></i> Unit Detail</div>
                     <div class="table-card__actions">
-                        <button class="btn btn-secondary btn-sm" onclick="exportCSV()"><i class="fas fa-download"></i> Export CSV</button>
+                        <button class="btn btn-secondary btn-sm csv-export" onclick="exportCSV()"><i class="fas fa-download"></i> Export CSV</button>
                         <button class="btn btn-secondary btn-sm" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
                     </div>
                 </div>
@@ -483,7 +483,7 @@
                 <button class="btn btn-success editonly editonly--editunits" onclick="showAddForm()">
                     <i class="fas fa-plus"></i> Add Unit
                 </button>
-                <button class="btn btn-secondary" onclick="exportEditCSV()" title="Export the units shown below to CSV">
+                <button class="btn btn-secondary csv-export" onclick="exportEditCSV()" title="Export the units shown below to CSV">
                     <i class="fas fa-file-csv"></i> Export CSV
                 </button>
                 <button class="btn btn-secondary" onclick="exportBackup()" title="Download full JSON backup (Ctrl+S)">
@@ -581,13 +581,13 @@
                     <i class="fas fa-trash"></i> Delete Selected (<span id="selectedImplCount">0</span>)
                 </button>
                 <input type="file" id="implementCsvInput" accept=".csv" style="display:none">
-                <button class="btn btn-secondary" onclick="document.getElementById('implementCsvInput').click()">
+                <button class="btn btn-secondary csv-import" onclick="document.getElementById('implementCsvInput').click()">
                     <i class="fas fa-file-import"></i> Import CSV
                 </button>
-                <button class="btn btn-secondary" onclick="downloadImplementTemplate()">
+                <button class="btn btn-secondary csv-import" onclick="downloadImplementTemplate()">
                     <i class="fas fa-file-arrow-down"></i> Template
                 </button>
-                <button class="btn btn-secondary" onclick="exportImplementsCSV()">
+                <button class="btn btn-secondary csv-export" onclick="exportImplementsCSV()">
                     <i class="fas fa-download"></i> Export CSV
                 </button>
             </div>
@@ -643,7 +643,7 @@
                 <button class="btn btn-danger" id="btnDeleteSelectedDamage" style="display:none" onclick="deleteSelectedDamages()">
                     <i class="fas fa-trash"></i> Delete Selected (<span id="selectedDamageCount">0</span>)
                 </button>
-                <button class="btn btn-secondary" onclick="exportDamageCSV()">
+                <button class="btn btn-secondary csv-export" onclick="exportDamageCSV()">
                     <i class="fas fa-download"></i> Export CSV
                 </button>
             </div>
@@ -721,13 +721,13 @@
                     <i class="fas fa-link"></i> Sync ke Unit
                 </button>
                 <input type="file" id="licenseCsvInput" accept=".csv" style="display:none">
-                <button class="btn btn-secondary" onclick="document.getElementById('licenseCsvInput').click()">
+                <button class="btn btn-secondary csv-import" onclick="document.getElementById('licenseCsvInput').click()">
                     <i class="fas fa-file-import"></i> Import CSV
                 </button>
-                <button class="btn btn-secondary" onclick="downloadLicenseTemplate()">
+                <button class="btn btn-secondary csv-import" onclick="downloadLicenseTemplate()">
                     <i class="fas fa-file-arrow-down"></i> Template
                 </button>
-                <button class="btn btn-secondary" onclick="exportLicenseStockCSV()">
+                <button class="btn btn-secondary csv-export" onclick="exportLicenseStockCSV()">
                     <i class="fas fa-download"></i> Export CSV
                 </button>
             </div>
@@ -1011,7 +1011,7 @@
         <div class="modal-header">
             <h3 id="historyTitle">Change History</h3>
             <div style="display:flex;gap:8px;align-items:center">
-                <button class="btn btn-secondary btn-sm" onclick="exportHistory()"><i class="fas fa-download"></i> Export</button>
+                <button class="btn btn-secondary btn-sm csv-export" onclick="exportHistory()"><i class="fas fa-download"></i> Export</button>
                 <button class="btn btn-secondary btn-sm" onclick="clearHistory()"><i class="fas fa-eraser"></i> Clear</button>
                 <button class="btn-icon" onclick="closeHistory()"><i class="fas fa-xmark"></i></button>
             </div>
