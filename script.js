@@ -66,6 +66,7 @@ const DAMAGE_PHOTO_QUALITY = 0.7;      // initial JPEG quality
 const DAMAGE_PHOTO_MAX_BYTES = 900 * 1024; // keep data URL under Firestore 1MB doc limit
 const LICENSE_STORAGE_KEY = 'tractorLicenseStock';
 const LICENSE_TYPE_DEFAULTS = ['SF-RTK', 'SF-1', 'G5 Basic', 'G5 Advance'];
+const LICENSE_LOW_STOCK_THRESHOLD = 5; // "sisa" at or below this → dashboard warning
 const PENDING_CHANGES_KEY = 'tractorPendingChanges';
 const AUDIT_LOG_KEY = 'tractorAuditLog';
 const AUDIT_LOG_MAX = 500;
@@ -1381,6 +1382,7 @@ function updateDashboard(data) {
     renderStatusChart(data);
     renderSiteChart(data);
     renderLicenseAlerts(data);
+    renderStockAlerts();
     renderComponentHealth(data);
     renderDowntimeKPIs();
     renderTable(data);
@@ -1538,6 +1540,30 @@ function renderLicenseAlerts(data) {
     }).join('');
 }
 
+// ---- Low license stock (dashboard) ----
+function _lowStockList() {
+    const sum = computeLicenseSummary();
+    return Object.keys(sum)
+        .filter(t => (sum[t].in > 0 || sum[t].out > 0) && sum[t].sisa <= LICENSE_LOW_STOCK_THRESHOLD)
+        .sort((a, b) => sum[a].sisa - sum[b].sisa)
+        .map(t => ({ type: t, sisa: sum[t].sisa }));
+}
+
+function renderStockAlerts() {
+    const section = document.getElementById('stockAlertsSection');
+    const cards = document.getElementById('stockAlertsCards');
+    if (!section || !cards) return;
+    const low = _lowStockList();
+    if (!low.length) { section.style.display = 'none'; return; }
+    section.style.display = '';
+    cards.innerHTML = low.map(l => `
+        <div class="stock-alert-card ${l.sisa <= 0 ? 'empty' : ''}" onclick="navigateTo('licenseStock')" title="Buka Stok Lisensi">
+            <i class="fas fa-${l.sisa <= 0 ? 'circle-xmark' : 'triangle-exclamation'}"></i>
+            <span class="stock-alert-card__type">${escapeHtml(l.type)}</span>
+            <span class="stock-alert-card__n">sisa ${l.sisa}</span>
+        </div>`).join('');
+}
+
 // ---- Email Alert (EmailJS) ----
 function _getEmailSettings() {
     try { return JSON.parse(localStorage.getItem('emailjs_settings') || '{}'); }
@@ -1612,13 +1638,15 @@ function sendLicenseAlertEmail() {
     }
 
     const today = new Date().toLocaleDateString('id-ID', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+    const lowStock = _lowStockList();
     const body = [
         `License Alert Report — ${today}`,
         `Expired: ${report.expiredCount} | Expiring soon: ${report.soonCount}`,
         '',
         'Status | Unit | Model | Serial Number | License | Site | Expiry Date | Remaining',
         '—'.repeat(60),
-        ...report.lines
+        ...report.lines,
+        ...(lowStock.length ? ['', 'STOK LISENSI MENIPIS', ...lowStock.map(l => `${l.type} | sisa ${l.sisa}`)] : [])
     ].join('\n');
 
     const btn = document.getElementById('btnEmailAlert');

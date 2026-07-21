@@ -2512,3 +2512,24 @@ body.dark .attach-upload-btn:hover { border-color: var(--accent); }
 .damage-top-row__bar span { display: block; height: 100%; background: #E29C7C; }
 .damage-top-row__n { width: 22px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
 @media (max-width: 900px) { .damage-stats-grid { grid-template-columns: 1fr; } }
+
+/* ===== Low license stock alerts (dashboard) ===== */
+.stock-alerts-section { margin-bottom: 24px; }
+.stock-alerts-cards { display: flex; gap: 10px; flex-wrap: wrap; }
+.stock-alert-card {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    background: var(--warning-bg);
+    border: 1px solid #E4CE9A;
+    color: #8a6417;
+    font-size: 13px;
+    transition: var(--transition);
+}
+.stock-alert-card:hover { filter: brightness(0.97); }
+.stock-alert-card.empty { background: var(--danger-bg); border-color: #E0B4AE; color: var(--danger); }
+.stock-alert-card__type { font-weight: 700; }
+.stock-alert-card__n { font-variant-numeric: tabular-nums; }
