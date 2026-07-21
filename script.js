@@ -2399,6 +2399,56 @@ function updateSelectedCount() {
     const count = selectedUnitIds.size;
     document.getElementById('selectedCount').textContent = count;
     document.getElementById('btnDeleteSelected').style.display = count > 0 ? '' : 'none';
+    const bulk = document.getElementById('btnBulkEdit');
+    const bulkCount = document.getElementById('bulkEditCount');
+    if (bulkCount) bulkCount.textContent = count;
+    if (bulk) bulk.style.display = count > 0 ? '' : 'none';
+}
+
+// ---- Bulk edit selected units ----
+function openBulkEdit() {
+    if (!requireEdit('editUnits')) return;
+    if (selectedUnitIds.size === 0) return;
+    document.getElementById('bulkEditTitle').textContent = `${selectedUnitIds.size} unit`;
+    ['bulkChkSite', 'bulkChkStatus', 'bulkChkCategory', 'bulkChkYear', 'bulkChkImplement'].forEach(id => {
+        document.getElementById(id).checked = false;
+    });
+    document.getElementById('bulkSite').value = '';
+    document.getElementById('bulkYear').value = '';
+    document.getElementById('bulkImplement').value = '';
+    // Category options
+    const cat = document.getElementById('bulkCategory');
+    cat.innerHTML = '<option value="">—</option>' +
+        (userCategories || []).map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
+    populateImplementUnitList();
+    document.getElementById('bulkEditModal').classList.add('open');
+}
+
+function closeBulkEdit() {
+    document.getElementById('bulkEditModal').classList.remove('open');
+}
+
+function applyBulkEdit() {
+    if (!requireEdit('editUnits')) return;
+    const ids = [...selectedUnitIds];
+    if (ids.length === 0) { closeBulkEdit(); return; }
+
+    const fields = {};
+    if (document.getElementById('bulkChkSite').checked)     fields.site = document.getElementById('bulkSite').value.trim();
+    if (document.getElementById('bulkChkStatus').checked)   fields.status = document.getElementById('bulkStatus').value;
+    if (document.getElementById('bulkChkCategory').checked) fields.userCategory = document.getElementById('bulkCategory').value;
+    if (document.getElementById('bulkChkYear').checked)     fields.yearReceived = document.getElementById('bulkYear').value.trim();
+    if (document.getElementById('bulkChkImplement').checked) fields.implement = document.getElementById('bulkImplement').value.trim();
+
+    if (Object.keys(fields).length === 0) { showToast('Centang minimal satu field untuk diubah', 'warning'); return; }
+    if (fields.status === 'Breakdown') fields.breakdownReason = fields.breakdownReason || 'Bulk edit';
+    if (!confirm(`Terapkan perubahan ke ${ids.length} unit?`)) return;
+
+    let n = 0;
+    ids.forEach(id => { if (updateUnit(id, fields)) n++; });
+    closeBulkEdit();
+    renderEditTable();
+    showToast(`${n} unit diperbarui`, 'success');
 }
 
 function deleteUnit(id) {

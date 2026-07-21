@@ -492,6 +492,9 @@
                 <button class="btn btn-secondary" onclick="triggerRestore()" title="Restore from JSON backup">
                     <i class="fas fa-upload"></i> Restore
                 </button>
+                <button class="btn btn-secondary editonly editonly--editunits" id="btnBulkEdit" style="display:none" onclick="openBulkEdit()">
+                    <i class="fas fa-pen-to-square"></i> Bulk Edit (<span id="bulkEditCount">0</span>)
+                </button>
                 <button class="btn btn-danger" id="btnDeleteSelected" style="display:none" onclick="deleteSelected()">
                     <i class="fas fa-trash"></i> Delete Selected (<span id="selectedCount">0</span>)
                 </button>
@@ -1217,6 +1220,48 @@
         <div class="form-actions">
             <button type="button" class="btn btn-secondary" onclick="closeDamageModal()">Cancel</button>
             <button type="submit" class="btn btn-primary" form="damageForm"><i class="fas fa-check"></i> Simpan</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== BULK EDIT UNITS MODAL ===== -->
+<div class="modal-overlay" id="bulkEditModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>Bulk Edit — <span id="bulkEditTitle">0 unit</span></h3>
+            <button class="btn-icon" onclick="closeBulkEdit()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px">
+                Centang field yang mau diubah. Hanya field tercentang yang diterapkan ke semua unit terpilih.
+            </p>
+            <div class="bulk-row">
+                <label><input type="checkbox" id="bulkChkSite"> Site</label>
+                <input class="form-input" id="bulkSite" placeholder="Site baru…">
+            </div>
+            <div class="bulk-row">
+                <label><input type="checkbox" id="bulkChkStatus"> Status Unit</label>
+                <select class="form-select" id="bulkStatus">
+                    <option value="Good">Good</option>
+                    <option value="Breakdown">Breakdown</option>
+                </select>
+            </div>
+            <div class="bulk-row">
+                <label><input type="checkbox" id="bulkChkCategory"> User Category</label>
+                <select class="form-select" id="bulkCategory"><option value="">—</option></select>
+            </div>
+            <div class="bulk-row">
+                <label><input type="checkbox" id="bulkChkYear"> Tahun Penerimaan</label>
+                <input class="form-input" id="bulkYear" placeholder="mis. 2026">
+            </div>
+            <div class="bulk-row">
+                <label><input type="checkbox" id="bulkChkImplement"> Implement</label>
+                <input class="form-input" id="bulkImplement" list="implementUnitList" placeholder="Pilih/ketik implement…">
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeBulkEdit()">Batal</button>
+            <button type="button" class="btn btn-primary" onclick="applyBulkEdit()"><i class="fas fa-check"></i> Terapkan</button>
         </div>
     </div>
 </div>
