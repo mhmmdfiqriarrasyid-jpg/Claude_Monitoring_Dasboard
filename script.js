@@ -1464,6 +1464,7 @@ function onDataLoaded() {
 }
 
 function updateDashboard(data) {
+    renderNarrative(data);
     renderKPI(data);
     renderStatusChart(data);
     renderSiteChart(data);
@@ -1475,6 +1476,32 @@ function updateDashboard(data) {
     renderRepair();
     renderDamageStats();
     updateFilterCount(data);
+}
+
+// ---- Narrative summary sentence (editorial style) ----
+function renderNarrative(data) {
+    const el = document.getElementById('dashNarrative');
+    if (!el) return;
+    if (!data.length) { el.style.display = 'none'; return; }
+
+    const total = data.length;
+    const sites = [...new Set(data.map(d => d.site).filter(Boolean))].length || 1;
+    const breakdown = data.filter(d => !isGood(d.status)).length;
+    const issues = data.filter(d => detectIssues(d).length > 0).length;
+    const alerts = _buildAlertList().total;
+
+    const clauses = [
+        breakdown === 0 ? 'semua unit beroperasi hari ini' : `${breakdown} unit sedang breakdown`
+    ];
+    if (issues > 0) clauses.push(`${issues} berjalan dengan gangguan komponen`);
+    if (alerts > 0) clauses.push(`${alerts} lisensi akan expire dalam 30 hari ke depan`);
+
+    let tail;
+    if (clauses.length === 1) tail = clauses[0];
+    else tail = clauses.slice(0, -1).join(', ') + ', dan ' + clauses[clauses.length - 1];
+
+    el.textContent = `${total} unit di ${sites} site — ${tail}.`;
+    el.style.display = '';
 }
 
 // ---- KPI Cards ----

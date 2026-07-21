@@ -2625,3 +2625,54 @@ body.dark .attach-upload-btn:hover { border-color: var(--accent); }
     .global-search input { width: 130px; }
     .global-search > i { display: none; }
 }
+
+/* ===== Editorial dashboard: narrative + ledger KPI =====
+   Appended last so these overrides win the cascade against the original
+   card-style KPI rules. Markup and element IDs are unchanged. */
+.dash-narrative {
+    font-family: var(--font-serif);
+    font-size: 20px;
+    line-height: 1.5;
+    max-width: 780px;
+    margin: 2px 0 22px;
+    color: var(--text);
+    text-wrap: pretty;
+}
+.kpi-grid {
+    gap: 0;
+    border-top: 2px solid var(--text);
+    border-bottom: 1px solid var(--border-light);
+}
+.kpi-grid .kpi-card {
+    background: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 18px 20px 20px;
+}
+.kpi-grid .kpi-card:hover { transform: none; box-shadow: none; }
+.kpi-grid .kpi-card::before { display: none; }
+.kpi-grid .kpi-card .kpi-card__icon { display: none; }
+.kpi-grid .kpi-card .kpi-card__bar { display: none; }
+.kpi-grid .kpi-card__label {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+.kpi-grid .kpi-card__value {
+    font-family: var(--font-serif);
+    font-size: 44px;
+    line-height: 1.05;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+}
+.kpi-grid .kpi-card.good .kpi-card__value { color: var(--success); }
+.kpi-grid .kpi-card.breakdown .kpi-card__value { color: var(--danger); }
+.kpi-grid .kpi-card.issue .kpi-card__value { color: var(--warning); }
+.kpi-grid .kpi-card__sub { font-size: 12.5px; color: var(--text-light); }
+@media (min-width: 1200px) {
+    .kpi-grid .kpi-card + .kpi-card { border-left: 1px solid var(--border); }
+}
