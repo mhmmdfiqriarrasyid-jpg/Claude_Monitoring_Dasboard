@@ -2455,12 +2455,40 @@ function undoDelete() {
 }
 
 // ---- Modal: Add / Edit ----
+// ---- Implement picker (unit form ↔ Implements database) ----
+// Options read "profileName — equipmentType" because profile names repeat
+// (e.g. several "Gessner" profiles). Free text is still allowed, so legacy
+// values, inline edits and CSV imports keep working unchanged.
+function implementOptionLabel(imp) {
+    return `${imp.profileName || ''}${imp.equipmentType ? ' — ' + imp.equipmentType : ''}`;
+}
+
+function populateImplementUnitList() {
+    const list = document.getElementById('implementUnitList');
+    if (!list) return;
+    const labels = [...new Set(globalImplements
+        .map(implementOptionLabel)
+        .filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b));
+    list.innerHTML = labels.map(l => `<option value="${escapeHtml(l)}"></option>`).join('');
+}
+
+// Find the implement record a unit's free-text implement value refers to.
+function matchImplementForUnit(text) {
+    const t = (text || '').toLowerCase().trim();
+    if (!t) return null;
+    return globalImplements.find(imp =>
+        implementOptionLabel(imp).toLowerCase() === t ||
+        (imp.profileName || '').toLowerCase() === t) || null;
+}
+
 function showAddForm() {
     if (!requireEdit()) return;
     document.getElementById('modalTitle').textContent = 'Add Unit';
     document.getElementById('editUnitId').value = '';
     document.getElementById('unitForm').reset();
     renderUserCategoryOptions();
+    populateImplementUnitList();
     document.getElementById('unitModal').classList.add('open');
 }
 
@@ -2474,6 +2502,7 @@ function editUnit(id) {
     document.getElementById('formName').value = unit.name;
     document.getElementById('formModel').value = unit.model;
     document.getElementById('formSN').value = unit.sn;
+    populateImplementUnitList();
     document.getElementById('formImplement').value = unit.implement || '';
     document.getElementById('formSite').value = unit.site;
     document.getElementById('formYearReceived').value = unit.yearReceived || '';
@@ -3246,10 +3275,21 @@ function showUnitProfile(id) {
     const dash = '<span style="color:#a0aec0">—</span>';
     const val = v => v ? escapeHtml(v) : dash;
 
+    // When the unit's implement text matches a record in the Implements
+    // database, show its key specs under the value.
+    const impMatch = matchImplementForUnit(u.implement);
+    const impDetail = impMatch
+        ? [impMatch.brand, impMatch.code, impMatch.workingWidth ? `WW ${impMatch.workingWidth}` : '']
+            .filter(Boolean).map(escapeHtml).join(' · ')
+        : '';
+    const impVal = u.implement
+        ? `<span style="text-align:right">${escapeHtml(u.implement)}${impDetail ? `<div style="font-size:11px;color:var(--text-light);margin-top:2px">${impDetail}</div>` : ''}</span>`
+        : dash;
+
     const identity = [
         ['Model', val(u.model)],
         ['Serial Number', u.sn ? `<span style="font-family:var(--font-mono);font-size:12px">${escapeHtml(u.sn)}</span>` : dash],
-        ['Implement', val(u.implement)],
+        ['Implement', impVal],
         ['Site', val(u.site)],
         ['Tahun Penerimaan', val(u.yearReceived)],
         ['User Category', u.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(u.userCategory)}</span>` : dash]
