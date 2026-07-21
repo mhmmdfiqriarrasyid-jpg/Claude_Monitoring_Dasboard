@@ -2456,11 +2456,18 @@ function undoDelete() {
 
 // ---- Modal: Add / Edit ----
 // ---- Implement picker (unit form ↔ Implements database) ----
-// Options read "profileName — equipmentType" because profile names repeat
-// (e.g. several "Gessner" profiles). Free text is still allowed, so legacy
-// values, inline edits and CSV imports keep working unchanged.
+// Options read "equipmentType — brand" (e.g. "HDR Ripper — Gessner"). Free
+// text is still allowed, so legacy values, inline edits and CSV imports keep
+// working unchanged.
 function implementOptionLabel(imp) {
-    return `${imp.profileName || ''}${imp.equipmentType ? ' — ' + imp.equipmentType : ''}`;
+    const parts = [imp.equipmentType, imp.brand].map(v => (v || '').trim()).filter(Boolean);
+    return parts.length ? parts.join(' — ') : (imp.profileName || '').trim();
+}
+
+// The previous "profileName — equipmentType" label, kept so units saved with
+// the old format still resolve back to their implement.
+function _implementLegacyLabel(imp) {
+    return `${imp.profileName || ''}${imp.equipmentType ? ' — ' + imp.equipmentType : ''}`.trim();
 }
 
 function populateImplementUnitList() {
@@ -2479,6 +2486,7 @@ function matchImplementForUnit(text) {
     if (!t) return null;
     return globalImplements.find(imp =>
         implementOptionLabel(imp).toLowerCase() === t ||
+        _implementLegacyLabel(imp).toLowerCase() === t ||
         (imp.profileName || '').toLowerCase() === t) || null;
 }
 
