@@ -397,6 +397,28 @@
                 </div>
             </div>
 
+            <!-- Damage Statistics -->
+            <div class="table-card" id="damageStatsSection" style="display:none;margin-bottom:24px;">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-screwdriver-wrench"></i> Statistik Kerusakan</div>
+                    <span id="damageStatsTotal" style="font-size:12.5px;color:var(--text-secondary)"></span>
+                </div>
+                <div class="damage-stats-grid">
+                    <div>
+                        <div class="damage-stats__label">Per Tipe</div>
+                        <div id="damageTypeChips" class="damage-type-chips"></div>
+                    </div>
+                    <div>
+                        <div class="damage-stats__label">Tren 6 Bulan Terakhir</div>
+                        <div class="chart-container-sm"><canvas id="damageTrendChart"></canvas></div>
+                    </div>
+                    <div>
+                        <div class="damage-stats__label">Unit Paling Sering Rusak</div>
+                        <div id="damageTopUnits"></div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Repair & Maintenance Section -->
             <div class="repair-section">
                 <div class="repair-header">

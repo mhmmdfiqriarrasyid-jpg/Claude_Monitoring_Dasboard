@@ -1385,6 +1385,7 @@ function updateDashboard(data) {
     renderDowntimeKPIs();
     renderTable(data);
     renderRepair();
+    renderDamageStats();
     updateFilterCount(data);
 }
 
@@ -1732,6 +1733,70 @@ function sortTable(key) {
 }
 
 // ---- Repair & Maintenance ----
+// ---- Damage statistics (dashboard) ----
+function renderDamageStats() {
+    const section = document.getElementById('damageStatsSection');
+    if (!section) return;
+    if (!globalDamages.length) {
+        section.style.display = 'none';
+        destroyChart('damageTrendChart');
+        return;
+    }
+    section.style.display = '';
+
+    const open = globalDamages.filter(r => !r.resolved).length;
+    const totalEl = document.getElementById('damageStatsTotal');
+    if (totalEl) totalEl.textContent = `${globalDamages.length} catatan · ${open} belum selesai`;
+
+    // Counts per damage type
+    const typeColors = { 'Mekanis': 'var(--danger)', 'Software': 'var(--info)', 'Device Precision': 'var(--warning)' };
+    const counts = {};
+    globalDamages.forEach(r => { const t = r.damageType || 'Lainnya'; counts[t] = (counts[t] || 0) + 1; });
+    const typeOrder = DAMAGE_TYPES.concat(Object.keys(counts).filter(t => !DAMAGE_TYPES.includes(t)));
+    document.getElementById('damageTypeChips').innerHTML = typeOrder
+        .filter(t => counts[t])
+        .map(t => `<div class="damage-type-chip"><span class="dot" style="background:${typeColors[t] || 'var(--text-light)'}"></span>${escapeHtml(t)}<strong>${counts[t]}</strong></div>`)
+        .join('');
+
+    // Monthly trend, last 6 months
+    const months = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        months.push({
+            key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+            label: d.toLocaleDateString('id-ID', { month: 'short' })
+        });
+    }
+    const byMonth = months.map(m => globalDamages.filter(r => (r.date || '').startsWith(m.key)).length);
+    destroyChart('damageTrendChart');
+    charts.damageTrendChart = new Chart(document.getElementById('damageTrendChart'), {
+        type: 'bar',
+        data: { labels: months.map(m => m.label), datasets: [{ data: byMonth, backgroundColor: '#D97757', borderRadius: 4, barPercentage: 0.55 }] },
+        options: {
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+            maintainAspectRatio: false
+        }
+    });
+
+    // Top-5 most frequently damaged units (live name via liveUnitFor)
+    const perUnit = {};
+    globalDamages.forEach(r => {
+        const lu = liveUnitFor(r);
+        const name = (lu ? lu.name : r.unitName) || '(tanpa nama)';
+        perUnit[name] = (perUnit[name] || 0) + 1;
+    });
+    const top = Object.entries(perUnit).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const max = top.length ? top[0][1] : 1;
+    document.getElementById('damageTopUnits').innerHTML = top.map(([name, n]) => `
+        <div class="damage-top-row">
+            <span class="damage-top-row__name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+            <span class="damage-top-row__bar"><span style="width:${Math.round(n / max * 100)}%"></span></span>
+            <span class="damage-top-row__n">${n}</span>
+        </div>`).join('');
+}
+
 function renderRepair() {
     const issueFilterVal = document.getElementById('issueFilter').value;
     const issueData = countIssues(globalData);
