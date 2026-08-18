@@ -5161,10 +5161,14 @@ function setupAuth() {
             // Signed out — show login, tear down sync, clear in-memory data
             currentUser = null;
             currentUserDoc = null;
+            clearSessionClock();
             tearDownCloudSync();
             showAuthGate('signin');
             return;
         }
+
+        // Enforce the daily session window on the persisted login.
+        if (!checkDailySession()) return;
 
         currentUser = user;
 
@@ -5270,6 +5274,42 @@ function friendlyAuthError(err) {
     return map[code] || (err && err.message) || 'Authentication failed.';
 }
 
+// ---- Daily session expiry (re-login required after 24h) ----
+const SESSION_MAX_MS = 24 * 60 * 60 * 1000; // 24 hours
+const SESSION_START_KEY = 'tractorSessionStart';
+let _sessionTimer = null;
+
+function startSessionClock() {
+    localStorage.setItem(SESSION_START_KEY, String(Date.now()));
+}
+
+function clearSessionClock() {
+    localStorage.removeItem(SESSION_START_KEY);
+    if (_sessionTimer) { clearTimeout(_sessionTimer); _sessionTimer = null; }
+}
+
+async function expireSession() {
+    clearSessionClock();
+    showToast('Sesi harian berakhir — silakan login kembali', 'warning');
+    try { await window.cloud.signOutUser(); } catch (_) {}
+}
+
+// Returns true while the session is valid; logs out and returns false if the
+// 24-hour window has passed. Also arms a timer to auto-logout when it does.
+function checkDailySession() {
+    let start = parseInt(localStorage.getItem(SESSION_START_KEY), 10);
+    if (!start || isNaN(start)) {
+        // Grandfather an already-persisted login: start counting from now.
+        start = Date.now();
+        localStorage.setItem(SESSION_START_KEY, String(start));
+    }
+    const elapsed = Date.now() - start;
+    if (elapsed >= SESSION_MAX_MS) { expireSession(); return false; }
+    if (_sessionTimer) clearTimeout(_sessionTimer);
+    _sessionTimer = setTimeout(expireSession, SESSION_MAX_MS - elapsed);
+    return true;
+}
+
 async function handleSignIn(event) {
     event.preventDefault();
     showAuthError('signInError', '');
@@ -5278,6 +5318,7 @@ async function handleSignIn(event) {
     try {
         showLoading(true);
         await window.cloud.signIn(email, password);
+        startSessionClock(); // fresh 24h window
         // onAuthChange will take over from here.
     } catch (err) {
         showAuthError('signInError', friendlyAuthError(err));
@@ -5295,6 +5336,7 @@ async function handleSignUp(event) {
     try {
         showLoading(true);
         const user = await window.cloud.signUp(email, password, name);
+        startSessionClock(); // fresh 24h window
         // Eagerly create the user doc so the owner sees them in the pending list.
         await window.cloud.createUserDoc(user, name);
         // onAuthChange will pick up the new user and route to pending/app.
