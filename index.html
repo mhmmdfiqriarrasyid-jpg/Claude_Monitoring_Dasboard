@@ -1176,15 +1176,16 @@
                             <option value="Device Precision">Device Precision</option>
                         </select>
                     </div>
-                    <div class="form-group" id="dmgComponentGroup" style="display:none">
-                        <label class="form-label">Komponen</label>
-                        <select class="form-select" id="dmgComponent">
-                            <option value="">Pilih komponen…</option>
-                            <option value="GPS">GPS</option>
-                            <option value="Display">Display</option>
-                            <option value="JDLink">JDLink</option>
-                            <option value="Steering Sensor">Steering Sensor</option>
-                        </select>
+                    <div class="form-group" id="dmgComponentGroup">
+                        <label class="form-label">Komponen <span class="form-optional">(opsional)</span></label>
+                        <div class="form-category-row">
+                            <select class="form-select" id="dmgComponent">
+                                <option value="">Pilih komponen… (opsional)</option>
+                            </select>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="openDamageComponentsModal()" title="Kelola daftar komponen">
+                                <i class="fas fa-gear"></i> Kelola
+                            </button>
+                        </div>
                     </div>
                     <div class="form-group full-width" id="dmgSetBreakdownGroup">
                         <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
@@ -1220,6 +1221,31 @@
         <div class="form-actions">
             <button type="button" class="btn btn-secondary" onclick="closeDamageModal()">Cancel</button>
             <button type="submit" class="btn btn-primary" form="damageForm"><i class="fas fa-check"></i> Simpan</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== MANAGE DAMAGE COMPONENTS MODAL ===== -->
+<div class="modal-overlay" id="damageComponentsModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3><i class="fas fa-microchip"></i> Kelola Komponen Kerusakan</h3>
+            <button class="btn-icon" onclick="closeDamageComponentsModal()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+                Komponen ini muncul di form Tambah/Edit Kerusakan. Perubahan langsung tersimpan dan terlihat oleh seluruh tim.
+                Komponen bawaan (GPS, Display, JDLink, Steering Sensor) terhubung ke status komponen unit;
+                komponen baru akan mengubah <strong>status unit</strong> saat ditandai Breakdown.
+            </p>
+            <ul class="categories-list" id="damageComponentsList"></ul>
+            <form class="category-add-form" onsubmit="addDamageComponent(event)">
+                <input type="text" class="form-input" id="newComponentName" placeholder="Nama komponen baru…" maxlength="60" autocomplete="off">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> Tambah</button>
+            </form>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeDamageComponentsModal()">Tutup</button>
         </div>
     </div>
 </div>

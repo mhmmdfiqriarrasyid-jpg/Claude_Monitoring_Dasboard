@@ -68,6 +68,7 @@ const LICENSE_COL = 'licenseStock';
 const USERS_COL = 'users';
 const HISTORY_COL = 'history';
 const USER_CATEGORIES_COL = 'userCategories';
+const DAMAGE_COMPONENTS_COL = 'damageComponents';
 
 function batchInChunks(items, fn, chunkSize = 400) {
     // Firestore allows up to 500 ops per batch; 400 is a safe cap.
@@ -347,6 +348,34 @@ window.cloud = {
             snap => callback(snap.docs.map(d => d.data())),
             err => {
                 console.error('[cloud] userCategories subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
+    },
+
+    // ---- Damage components (dynamic dropdown source) ----
+    async saveDamageComponent(comp) {
+        await setDoc(doc(db, DAMAGE_COMPONENTS_COL, comp.id), comp, { merge: true });
+    },
+    async saveDamageComponents(comps) {
+        if (!comps.length) return;
+        await batchInChunks(comps, (batch, c) =>
+            batch.set(doc(db, DAMAGE_COMPONENTS_COL, c.id), c, { merge: true })
+        );
+    },
+    async deleteDamageComponent(id) {
+        await deleteDoc(doc(db, DAMAGE_COMPONENTS_COL, id));
+    },
+    async getAllDamageComponents() {
+        const snap = await getDocs(collection(db, DAMAGE_COMPONENTS_COL));
+        return snap.docs.map(d => d.data());
+    },
+    subscribeDamageComponents(callback, errorCallback) {
+        return onSnapshot(
+            collection(db, DAMAGE_COMPONENTS_COL),
+            snap => callback(snap.docs.map(d => d.data())),
+            err => {
+                console.error('[cloud] damageComponents subscription error:', err);
                 if (errorCallback) errorCallback(err);
             }
         );

@@ -39,6 +39,9 @@ const _historyPushQueue = [];
 let cloudUserCategoriesUnsub = null;
 let userCategories = [];             // [{ id, name, createdAt }] from Firestore
 let _firstUserCategoriesSnapshot = true;
+let cloudDamageComponentsUnsub = null;
+let damageComponents = [];           // [{ id, name, unitField, createdAt }] from Firestore
+let _firstDamageComponentsSnapshot = true;
 let suppressCloudWrites = false; // true while applying a cloud snapshot — prevents loops
 let _cloudReadyFired = false;
 let _localDataLoaded = false;
@@ -58,9 +61,26 @@ const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
 const DAMAGE_STORAGE_KEY = 'tractorDamageRecords';
 const DAMAGE_TYPES = ['Mekanis', 'Software', 'Device Precision'];
-const DAMAGE_COMPONENTS = ['GPS', 'Display', 'JDLink', 'Steering Sensor'];
-// Map a Device Precision component to the unit field it controls.
+// Built-in components seeded into the manageable list. `unitField` links a
+// component to the unit status column it controls; custom components added
+// later have no field, so they flip the whole unit's status instead.
+const DAMAGE_COMPONENTS_SEED_KEY = 'tractorDamageComponentsSeeded_v1';
+const DEFAULT_DAMAGE_COMPONENTS = [
+    { name: 'GPS', unitField: 'gps' },
+    { name: 'Display', unitField: 'display' },
+    { name: 'JDLink', unitField: 'jdlink' },
+    { name: 'Steering Sensor', unitField: 'steering' }
+];
+// Fallback map for the built-ins (used when the cloud list hasn't loaded yet).
 const DAMAGE_COMPONENT_FIELD = { 'GPS': 'gps', 'Display': 'display', 'Steering Sensor': 'steering', 'JDLink': 'jdlink' };
+
+// Which unit status field (if any) a component name controls.
+function componentUnitField(name) {
+    if (!name) return null;
+    const c = damageComponents.find(x => (x.name || '').toLowerCase() === name.toLowerCase());
+    if (c) return c.unitField || null;
+    return DAMAGE_COMPONENT_FIELD[name] || null;
+}
 const DAMAGE_PHOTO_MAX_DIM = 1280;     // longest-side px after resize
 const DAMAGE_PHOTO_QUALITY = 0.7;      // initial JPEG quality
 const DAMAGE_PHOTO_MAX_BYTES = 900 * 1024; // keep data URL under Firestore 1MB doc limit
@@ -3632,18 +3652,12 @@ function updateSelectedDamageCount() {
     if (btn) btn.style.display = count > 0 ? '' : 'none';
 }
 
-// ---- Component sub-field visibility ----
+// ---- Component sub-field ----
+// The component list applies to every damage type (mechanical, software,
+// device precision), so the field stays visible; it is always optional.
 function onDamageTypeChange() {
-    const type = document.getElementById('dmgType').value;
     const group = document.getElementById('dmgComponentGroup');
-    const compSel = document.getElementById('dmgComponent');
-    if (!group) return;
-    if (type === 'Device Precision') {
-        group.style.display = '';
-    } else {
-        group.style.display = 'none';
-        if (compSel) compSel.value = '';
-    }
+    if (group) group.style.display = '';
 }
 
 // ---- Modal: Add / Edit ----
@@ -3654,6 +3668,7 @@ function showAddDamageForm() {
     document.getElementById('damageForm').reset();
     document.getElementById('dmgDate').value = new Date().toISOString().slice(0, 10);
     populateDamageUnitSelect();
+    renderDamageComponentOptions();
     onDamageTypeChange();
     _dmgPhotoData = '';
     setDamagePhotoPreview();
@@ -3679,7 +3694,13 @@ function editDamage(id) {
         dmgUnitInput.value = `${rec.unitName || ''}${rec.sn ? ' — ' + rec.sn : ''}`;
     }
     document.getElementById('dmgType').value = rec.damageType || '';
-    document.getElementById('dmgComponent').value = rec.component || '';
+    renderDamageComponentOptions();
+    // Keep a component that was deleted from the list still selectable here.
+    const compSel = document.getElementById('dmgComponent');
+    if (rec.component && !Array.from(compSel.options).some(o => o.value === rec.component)) {
+        compSel.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(rec.component)}">${escapeHtml(rec.component)}</option>`);
+    }
+    compSel.value = rec.component || '';
     document.getElementById('dmgDescription').value = rec.description || '';
     onDamageTypeChange();
     _dmgPhotoData = rec.photo || '';
@@ -3706,7 +3727,7 @@ function saveDamage(event) {
         sn: unit.sn || '',
         site: unit.site || '',
         damageType: type,
-        component: type === 'Device Precision' ? document.getElementById('dmgComponent').value : '',
+        component: document.getElementById('dmgComponent').value,
         description: document.getElementById('dmgDescription').value.trim(),
         photo: _dmgPhotoData || ''
     };
@@ -3752,11 +3773,12 @@ function saveDamage(event) {
     renderDamageTable();
 }
 
-// Put the unit (or the damaged Device Precision component) into Breakdown.
+// Put the unit (or the damaged component) into Breakdown. Components mapped to
+// a unit status column flip just that column; anything else flips unit status.
 // Returns a label describing what was changed, or '' when nothing changed.
 function _applyDamageBreakdown(unitId, damageType, component, description) {
-    const compField = DAMAGE_COMPONENT_FIELD[component];
-    if (damageType === 'Device Precision' && compField) {
+    const compField = componentUnitField(component);
+    if (compField) {
         updateUnit(unitId, { [compField]: 'Breakdown' });
         return `Komponen ${component} unit`;
     }
@@ -3790,8 +3812,8 @@ function resolveDamage(id) {
 
     const unit = liveUnitFor(rec);
     if (unit) {
-        const compField = DAMAGE_COMPONENT_FIELD[rec.component];
-        if (rec.damageType === 'Device Precision' && compField) {
+        const compField = componentUnitField(rec.component);
+        if (compField) {
             if (!isGood(unit[compField])) updateUnit(unit.id, { [compField]: 'Good' });
         } else if (!isGood(unit.status)) {
             updateUnit(unit.id, { status: 'Good' });
@@ -5065,6 +5087,175 @@ function deleteCategory(id) {
     });
 }
 
+// ============================================================
+// DAMAGE COMPONENTS (dynamic dropdown source)
+// ============================================================
+
+function applyCloudDamageComponentsSnapshot(comps) {
+    damageComponents = (comps || []).slice().sort((a, b) =>
+        (a.name || '').localeCompare(b.name || '')
+    );
+    // First-snapshot seed: populate the four built-ins so the dropdown is
+    // never blank on a fresh project.
+    if (_firstDamageComponentsSnapshot) {
+        _firstDamageComponentsSnapshot = false;
+        if (damageComponents.length === 0) {
+            seedDefaultDamageComponentsIfOwner();
+        }
+    }
+    renderDamageComponentOptions();
+    const mgr = document.getElementById('damageComponentsModal');
+    if (mgr && mgr.classList.contains('open')) renderDamageComponentsList();
+}
+
+function seedDefaultDamageComponentsIfOwner() {
+    if (!isOwner || !isOwner()) return;
+    if (localStorage.getItem(DAMAGE_COMPONENTS_SEED_KEY) === '1') return;
+    const now = Date.now();
+    const defaults = DEFAULT_DAMAGE_COMPONENTS.map((c, idx) => ({
+        id: `dcmp_${now}_${idx}`,
+        name: c.name,
+        unitField: c.unitField,
+        createdAt: now
+    }));
+    console.log('[damage-components] seeding 4 default components...');
+    window.cloud.saveDamageComponents(defaults).then(() => {
+        localStorage.setItem(DAMAGE_COMPONENTS_SEED_KEY, '1');
+    }).catch(err => {
+        console.error('[damage-components] seed failed:', err);
+        if (err && err.code === 'permission-denied') showDamageComponentRulesBanner();
+    });
+}
+
+function showDamageComponentRulesBanner() {
+    const modal = document.getElementById('damageComponentsModal');
+    if (!modal) return;
+    if (modal.querySelector('.category-rules-banner')) return;
+    const body = modal.querySelector('.modal-body');
+    if (!body) return;
+    const banner = document.createElement('div');
+    banner.className = 'category-rules-banner';
+    banner.innerHTML = `
+        <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules memblokir penyimpanan.</strong>
+        <p>Rules proyek Anda belum mengizinkan tulis ke koleksi <code>damageComponents</code>.
+        Paste blok di bawah ke <em>Firebase Console → Firestore → Rules</em>, lalu coba lagi:</p>
+        <pre>match /damageComponents/{id} {
+  allow read:  if request.auth != null
+               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+  allow write: if request.auth != null
+               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['owner', 'team']
+               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
+}</pre>
+    `;
+    body.insertBefore(banner, body.firstChild);
+}
+
+// Fill the damage modal's component <select> from the managed list.
+function renderDamageComponentOptions() {
+    const select = document.getElementById('dmgComponent');
+    if (!select) return;
+    const current = select.value;
+    const list = damageComponents.length
+        ? damageComponents
+        : DEFAULT_DAMAGE_COMPONENTS; // pre-sync fallback
+    const opts = ['<option value="">Pilih komponen… (opsional)</option>'];
+    list.forEach(c => {
+        opts.push(`<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`);
+    });
+    select.innerHTML = opts.join('');
+    if (current) select.value = current;
+}
+
+function openDamageComponentsModal() {
+    if (!requireEdit('damage')) return;
+    renderDamageComponentsList();
+    document.getElementById('damageComponentsModal').classList.add('open');
+    setTimeout(() => {
+        const input = document.getElementById('newComponentName');
+        if (input) input.focus();
+    }, 50);
+}
+
+function closeDamageComponentsModal() {
+    document.getElementById('damageComponentsModal').classList.remove('open');
+}
+
+function renderDamageComponentsList() {
+    const list = document.getElementById('damageComponentsList');
+    if (!list) return;
+    if (damageComponents.length === 0) {
+        list.innerHTML = '<li class="category-empty">Belum ada komponen — tambahkan di bawah.</li>';
+        return;
+    }
+    list.innerHTML = damageComponents.map(c => `
+        <li class="category-item">
+            <span class="category-item__name">${escapeHtml(c.name)}${c.unitField
+                ? ` <span style="font-size:11px;color:var(--text-light)">· status unit: ${escapeHtml(c.unitField)}</span>`
+                : ''}</span>
+            <button class="btn-icon category-item__del" title="Hapus komponen" onclick="deleteDamageComponent('${escapeHtml(c.id)}')">
+                <i class="fas fa-trash" style="color:var(--danger)"></i>
+            </button>
+        </li>
+    `).join('');
+}
+
+function addDamageComponent(event) {
+    if (event) event.preventDefault();
+    if (!requireEdit('damage')) return;
+    const input = document.getElementById('newComponentName');
+    const name = (input.value || '').trim();
+    if (!name) { showToast('Isi nama komponen', 'warning'); return; }
+    const exists = damageComponents.some(c => (c.name || '').toLowerCase() === name.toLowerCase());
+    if (exists) { showToast(`Komponen "${name}" sudah ada`, 'warning'); return; }
+
+    const comp = {
+        id: `dcmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        name,
+        // Custom components aren't tied to a unit status column; a damage on
+        // them flips the unit's overall status instead.
+        unitField: DAMAGE_COMPONENT_FIELD[name] || '',
+        createdAt: Date.now()
+    };
+    window.cloud.saveDamageComponent(comp).then(() => {
+        input.value = '';
+        showToast(`Komponen "${name}" ditambahkan`, 'success');
+        logEvent({ action: 'add', unitName: '-', field: 'komponen kerusakan', after: name });
+    }).catch(err => {
+        console.error('[damage-components] save failed:', err);
+        const code = (err && err.code) || 'unknown';
+        if (code === 'permission-denied') {
+            showToast('Firestore rules memblokir damageComponents — lihat panduan', 'error');
+            showDamageComponentRulesBanner();
+        } else {
+            showToast(`Gagal menyimpan komponen (${code})`, 'error');
+        }
+    });
+}
+
+function deleteDamageComponent(id) {
+    if (!requireEdit('damage')) return;
+    const comp = damageComponents.find(c => c.id === id);
+    if (!comp) return;
+    const inUse = globalDamages.filter(d => d.component === comp.name).length;
+    const prompt = inUse > 0
+        ? `Hapus komponen "${comp.name}"?\n${inUse} catatan kerusakan memakainya (data lama tetap tersimpan).`
+        : `Hapus komponen "${comp.name}"?`;
+    if (!confirm(prompt)) return;
+    window.cloud.deleteDamageComponent(id).then(() => {
+        showToast(`Komponen "${comp.name}" dihapus`, 'success');
+        logEvent({ action: 'delete', unitName: '-', field: 'komponen kerusakan', before: comp.name });
+    }).catch(err => {
+        console.error('[damage-components] delete failed:', err);
+        const code = (err && err.code) || 'unknown';
+        if (code === 'permission-denied') {
+            showToast('Firestore rules memblokir damageComponents — lihat panduan', 'error');
+            showDamageComponentRulesBanner();
+        } else {
+            showToast(`Gagal menghapus komponen (${code})`, 'error');
+        }
+    });
+}
+
 function initCloudSync() {
     if (cloudInitialized) return;
     if (!window.cloud?.isReady) return;
@@ -5117,6 +5308,17 @@ function initCloudSync() {
                     showToast('History blocked by Firestore rules — open History for fix', 'warning');
                 }
             });
+        }
+        if (window.cloud.subscribeDamageComponents) {
+            cloudDamageComponentsUnsub = window.cloud.subscribeDamageComponents(
+                applyCloudDamageComponentsSnapshot,
+                err => {
+                    console.warn('[cloud] damageComponents offline:', err && err.code);
+                    if (err && err.code === 'permission-denied') {
+                        showDamageComponentRulesBanner();
+                    }
+                }
+            );
         }
         if (window.cloud.subscribeUserCategories) {
             cloudUserCategoriesUnsub = window.cloud.subscribeUserCategories(
@@ -5214,9 +5416,12 @@ function tearDownCloudSync() {
     if (cloudUsersUnsub) { try { cloudUsersUnsub(); } catch (_) {} cloudUsersUnsub = null; }
     if (cloudHistoryUnsub) { try { cloudHistoryUnsub(); } catch (_) {} cloudHistoryUnsub = null; }
     if (cloudUserCategoriesUnsub) { try { cloudUserCategoriesUnsub(); } catch (_) {} cloudUserCategoriesUnsub = null; }
+    if (cloudDamageComponentsUnsub) { try { cloudDamageComponentsUnsub(); } catch (_) {} cloudDamageComponentsUnsub = null; }
     cloudHistory = [];
     userCategories = [];
     _firstUserCategoriesSnapshot = true;
+    damageComponents = [];
+    _firstDamageComponentsSnapshot = true;
     cloudInitialized = false;
 }
 
