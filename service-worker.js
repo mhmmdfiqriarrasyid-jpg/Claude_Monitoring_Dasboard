@@ -2,7 +2,7 @@
    Network-first for the app shell (so deploys show up on reload), cache-first
    for static assets, network-only for Firebase live endpoints. */
 
-const CACHE_NAME = 'tractor-monitor-v70';
+const CACHE_NAME = 'tractor-monitor-v71';
 
 // Same-origin core files — always revalidated from network first so a new
 // deploy is picked up on the next reload (falls back to cache when offline).

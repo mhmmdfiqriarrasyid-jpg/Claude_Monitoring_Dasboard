@@ -3548,11 +3548,19 @@ function populateDamageUnitSelect(selectedId) {
 function resolveDamageUnit(val) {
     val = (val || '').trim();
     if (!val) return null;
-    let u = globalData.find(x => damageUnitLabel(x) === val);
+    const lc = val.toLowerCase();
+
+    // 1. Full "Nama — SN" label, as offered by the datalist.
+    let u = globalData.find(x => damageUnitLabel(x).toLowerCase() === lc);
+    // 2. Serial number after the "—" separator (partially typed label).
     if (!u && val.includes('—')) {
-        const sn = val.split('—').pop().trim();
-        if (sn) u = globalData.find(x => (x.sn || '') === sn);
+        const sn = val.split('—').pop().trim().toLowerCase();
+        if (sn) u = globalData.find(x => (x.sn || '').toLowerCase() === sn);
     }
+    // 3/4. Plain nickname or plain serial number — the field's own hint says
+    // "ketik nama atau SN", so accept either on its own.
+    if (!u) u = globalData.find(x => (x.name || '').toLowerCase() === lc);
+    if (!u) u = globalData.find(x => (x.sn || '').toLowerCase() === lc);
     return u || null;
 }
 
