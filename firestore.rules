@@ -1,0 +1,82 @@
+rules_version = '2';
+
+// ============================================================
+// OT Monitoring — Firestore security rules
+// ------------------------------------------------------------
+// Paste this whole file into: Firebase Console → Firestore → Rules → Publish.
+// Keep it in sync with the per-user access model in script.js
+// (ACCESS_AREAS / effectiveAccess / hasAccess).
+//
+// Access model
+//   role   : 'owner' | 'team' | 'viewer'   (on /users/{uid})
+//   access : optional per-area override map, e.g.
+//            { editUnits:'edit', implements:'view', damage:'edit',
+//              licenseStock:'none', history:'view', csv:'export' }
+//   Missing override  → role default (owner/team = edit, viewer = none).
+//   Owner is always a superuser and can never be locked out.
+// ============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- Identity helpers ----
+    function isSignedIn() { return request.auth != null; }
+    function myDoc()      { return get(/databases/$(database)/documents/users/$(request.auth.uid)); }
+    function isActive()   { return isSignedIn() && myDoc().data.status == 'active'; }
+    function isOwner()    { return isActive() && myDoc().data.role == 'owner'; }
+
+    // Effective access level for an area: explicit override → role default.
+    function lvl(area) {
+      return isOwner()
+        ? 'edit'
+        : (myDoc().data.access != null && myDoc().data.access[area] != null)
+            ? myDoc().data.access[area]
+            : (myDoc().data.role == 'team' ? 'edit' : 'none');
+    }
+    function canEditArea(area) { return isActive() && lvl(area) == 'edit'; }
+
+    // True if the user may edit ANY data area — used to gate audit-log writes,
+    // since every edit action also appends a history event.
+    function canEditAnything() {
+      return isActive() && (
+        lvl('editUnits')    == 'edit' ||
+        lvl('implements')   == 'edit' ||
+        lvl('damage')       == 'edit' ||
+        lvl('licenseStock') == 'edit'
+      );
+    }
+
+    // ---- Fleet data (one area each) ----
+    match /units/{id}         { allow read: if isActive(); allow write: if canEditArea('editUnits'); }
+    match /implements/{id}    { allow read: if isActive(); allow write: if canEditArea('implements'); }
+    match /damageRecords/{id} { allow read: if isActive(); allow write: if canEditArea('damage'); }
+    match /licenseStock/{id}  { allow read: if isActive(); allow write: if canEditArea('licenseStock'); }
+
+    // ---- Managed dropdown sources ----
+    // User categories are edited from the unit form; damage components from
+    // the damage form — so each follows its own area.
+    match /userCategories/{catId} { allow read: if isActive(); allow write: if canEditArea('editUnits'); }
+    match /damageComponents/{id}  { allow read: if isActive(); allow write: if canEditArea('damage'); }
+
+    // ---- Accounts ----
+    // A user may read only their own profile; owners read everyone.
+    // Anyone signed in may create their own doc (sign-up), but only owners can
+    // change roles/access or remove accounts.
+    match /users/{uid} {
+      allow read:            if isSignedIn() && (request.auth.uid == uid || isOwner());
+      allow create:          if isSignedIn() && request.auth.uid == uid;
+      allow update, delete:  if isOwner();
+    }
+
+    // ---- Audit log ----
+    // Append-only: events can be created by any editor but never edited, and
+    // the actor must be the signed-in user. Only owners may clear history.
+    match /history/{eventId} {
+      allow read:   if isActive();
+      allow create: if canEditAnything()
+                    && request.resource.data.actorUid == request.auth.uid;
+      allow update: if false;
+      allow delete: if isOwner();
+    }
+  }
+}
