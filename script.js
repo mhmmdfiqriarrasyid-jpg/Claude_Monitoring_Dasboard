@@ -92,7 +92,6 @@ const AUDIT_LOG_KEY = 'tractorAuditLog';
 const AUDIT_LOG_MAX = 500;
 const BACKUP_RING_KEY = 'tractorUnits_autobackup';
 const BACKUP_RING_SIZE = 3;
-const DARK_MODE_KEY = 'tractorDarkMode';
 const LICENSE_DEFAULTS_KEY = 'tractorLicenseDefaultsApplied';
 const LICENSE_DATES_KEY = 'tractorLicenseDatesApplied_v2';
 const USER_CATEGORIES_SEED_KEY = 'tractorUserCategoriesSeeded_v1';
@@ -385,10 +384,6 @@ function setupKeyboardShortcuts() {
     });
 }
 
-// Dark mode retired — the app is light-only (warm editorial theme). Kept as a
-// no-op so any lingering reference stays safe.
-function toggleDarkMode() {}
-
 function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
 
@@ -648,16 +643,6 @@ function attachDbDelete(ids) {
         ids.forEach(id => store.delete(id));
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
-    }));
-}
-
-function attachDbGetByUnit(unitId) {
-    return attachDbOpen().then(db => new Promise((resolve, reject) => {
-        const tx = db.transaction(ATTACH_STORE, 'readonly');
-        const idx = tx.objectStore(ATTACH_STORE).index('unitId');
-        const req = idx.getAll(unitId);
-        req.onsuccess = () => resolve(req.result || []);
-        req.onerror = () => reject(req.error);
     }));
 }
 
@@ -2755,23 +2740,6 @@ function getLicenseEndDate(unit, kind) {
     return unit.gpsLicenseEndDate || unit.licenseEndDate || '';
 }
 
-// Legacy helper kept for any old callers — returns status for whichever
-// expiry is soonest (across GPS + Display + legacy).
-function getLicenseStatus(unit) {
-    const dates = [
-        getLicenseEndDate(unit, 'gps'),
-        getLicenseEndDate(unit, 'display')
-    ].filter(Boolean);
-    if (!dates.length) return { kind: 'none', label: '—' };
-    let worst = null;
-    dates.forEach(d => {
-        const s = getExpiryStatus(d);
-        if (s.kind === 'none') return;
-        if (!worst || (s.daysLeft ?? 0) < (worst.daysLeft ?? 0)) worst = s;
-    });
-    return worst || { kind: 'none', label: '—' };
-}
-
 // Render an expiry badge for either 'gps' or 'display' license.
 function licenseBadgeFor(unit, kind) {
     const end = getLicenseEndDate(unit, kind);
@@ -2791,18 +2759,6 @@ function licenseBadgeFor(unit, kind) {
     const labelName = kind === 'display' ? (unit.licenseDisplay || 'Display') : (unit.gpsLicense || 'GPS');
     const tt = `${labelName} · Expires: ${end}`;
     return `<span class="${cls}" title="${escapeHtml(tt)}"><i class="fas fa-${icon}"></i> ${escapeHtml(s.label)}</span>`;
-}
-
-// Back-compat shim — callers that used the single-badge version now get the
-// earliest-of-both rendered with generic tooltip.
-function licenseBadge(unit) {
-    const s = getLicenseStatus(unit);
-    if (s.kind === 'none') return '<span style="color:#a0aec0;font-size:11px">—</span>';
-    const cls = `license-badge license-badge--${s.kind}`;
-    const icon = s.kind === 'expired' ? 'circle-xmark'
-               : s.kind === 'soon'    ? 'triangle-exclamation'
-               : 'circle-check';
-    return `<span class="${cls}"><i class="fas fa-${icon}"></i> ${escapeHtml(s.label)}</span>`;
 }
 
 function closeModal() {
