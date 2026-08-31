@@ -1095,6 +1095,17 @@ function exportHistory() {
 // ============================================================
 
 async function exportBackup() {
+    // A backup is a full-dataset export, so it needs the export privilege AND
+    // read access to every area it contains — otherwise it is a way around
+    // both the CSV privilege and per-area 'none'.
+    if (!canCsv('export')) return;
+    const blocked = ['editUnits', 'implements', 'damage', 'licenseStock']
+        .filter(a => !hasAccess(a, 'view'));
+    if (blocked.length) {
+        showToast('Backup butuh akses ke semua data — Anda tidak punya akses penuh', 'warning');
+        return;
+    }
+
     const includeFiles = globalData.some(u => u.attachments && u.attachments.length > 0)
         && confirm('Sertakan file lampiran dalam backup? (ukuran file bisa besar)');
 
@@ -1201,8 +1212,15 @@ function importBackup(file) {
                 showToast(`Merged backup: ${result.added} added, ${result.skipped} duplicate(s) skipped`, 'success');
             } else {
                 if (!confirm(`This will DELETE all ${globalData.length} current units and replace them with the backup. Continue?`)) return;
+                // Mirror the replace to the cloud, otherwise the next units
+                // snapshot overwrites localStorage and silently undoes the
+                // whole restore (and deleted units come back).
+                const previousIds = globalData.map(u => u.id);
                 globalData = data.units.map(u => ({ ...u, id: u.id || generateId() }));
+                const keptIds = new Set(globalData.map(u => u.id));
                 saveToStorage(globalData);
+                cloudDeleteUnits(previousIds.filter(id => !keptIds.has(id)));
+                cloudPushUnits(globalData);
                 logEvent({ action: 'restore', unitName: '-', after: `Restored ${data.units.length} units from backup` });
                 recordChange({ type: 'restored', detail: `${data.units.length} units restored from backup` });
                 showToast(`Restored ${data.units.length} units from backup`, 'success');
@@ -1247,7 +1265,15 @@ function importBackup(file) {
                 if (restored > 0) showToast(`${restored} lampiran berhasil di-restore`, 'success');
             }
 
+            // Refresh every surface, not just the units table — a restore can
+            // be triggered from any view and replaces four collections.
             renderEditTable();
+            renderImplementsTable();
+            populateLicenseTypeList();
+            renderLicenseSummary();
+            renderLicenseStockTable();
+            renderDamageTable();
+            updateDashboard(globalData);
         } catch (err) {
             showToast('Failed to read backup: ' + err.message, 'error');
         }
@@ -2449,11 +2475,35 @@ function applyBulkEdit() {
     if (document.getElementById('bulkChkImplement').checked) fields.implement = document.getElementById('bulkImplement').value.trim();
 
     if (Object.keys(fields).length === 0) { showToast('Centang minimal satu field untuk diubah', 'warning'); return; }
-    if (fields.status === 'Breakdown') fields.breakdownReason = fields.breakdownReason || 'Bulk edit';
+
+    // A ticked box with an empty input clears that field on every selected unit
+    // and there is no undo, so make the destructive part explicit rather than
+    // hiding it behind the generic confirm.
+    const labels = { site: 'Site', status: 'Status', userCategory: 'User Category',
+                     yearReceived: 'Tahun Penerimaan', implement: 'Implement' };
+    const cleared = Object.keys(fields).filter(k => fields[k] === '');
+    if (cleared.length) {
+        const names = cleared.map(k => labels[k] || k).join(', ');
+        if (!confirm(`Field berikut akan DIKOSONGKAN pada ${ids.length} unit: ${names}.\n\n` +
+                     `Tindakan ini tidak bisa dibatalkan. Lanjutkan?`)) return;
+    }
     if (!confirm(`Terapkan perubahan ke ${ids.length} unit?`)) return;
 
     let n = 0;
-    ids.forEach(id => { if (updateUnit(id, fields)) n++; });
+    ids.forEach(id => {
+        const unit = globalData.find(u => u.id === id);
+        const perUnit = { ...fields };
+        // Only stamp a placeholder reason on units that were actually running;
+        // never overwrite an existing diagnosis on a unit already broken down.
+        if (perUnit.status === 'Breakdown') {
+            if (unit && !isGood(unit.status) && unit.breakdownReason) {
+                // keep the real reason
+            } else {
+                perUnit.breakdownReason = 'Diset massal (bulk edit)';
+            }
+        }
+        if (updateUnit(id, perUnit)) n++;
+    });
     closeBulkEdit();
     renderEditTable();
     showToast(`${n} unit diperbarui`, 'success');

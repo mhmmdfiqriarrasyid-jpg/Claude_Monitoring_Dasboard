@@ -486,10 +486,10 @@
                 <button class="btn btn-secondary csv-export" onclick="exportEditCSV()" title="Export the units shown below to CSV">
                     <i class="fas fa-file-csv"></i> Export CSV
                 </button>
-                <button class="btn btn-secondary" onclick="exportBackup()" title="Download full JSON backup (Ctrl+S)">
+                <button class="btn btn-secondary csv-export" onclick="exportBackup()" title="Download full JSON backup (Ctrl+S)">
                     <i class="fas fa-download"></i> Backup
                 </button>
-                <button class="btn btn-secondary" onclick="triggerRestore()" title="Restore from JSON backup">
+                <button class="btn btn-secondary editonly editonly--editunits" onclick="triggerRestore()" title="Restore from JSON backup">
                     <i class="fas fa-upload"></i> Restore
                 </button>
                 <button class="btn btn-secondary editonly editonly--editunits" id="btnBulkEdit" style="display:none" onclick="openBulkEdit()">

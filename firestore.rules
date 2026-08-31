@@ -59,13 +59,40 @@ service cloud.firestore {
     match /damageComponents/{id}  { allow read: if isActive(); allow write: if canEditArea('damage'); }
 
     // ---- Accounts ----
-    // A user may read only their own profile; owners read everyone.
-    // Anyone signed in may create their own doc (sign-up), but only owners can
-    // change roles/access or remove accounts.
+    // Sign-up may only ever create a PENDING VIEWER. Without this, any signed-in
+    // user could write {role:'owner', status:'active'} to their own document and
+    // take over the whole project. Role/access changes are owner-only.
+    // The allowlist below must stay in sync with OWNER_EMAILS in firebase-init.js.
+    function isOwnerEmail() {
+      return isSignedIn()
+             && request.auth.token.email != null
+             && request.auth.token.email.lower() in ['mhmmdfiqriarrasyid@gmail.com'];
+    }
+    function selfBootstrapsAsOwner() {
+      return isOwnerEmail()
+             && request.resource.data.role == 'owner'
+             && request.resource.data.status == 'active';
+    }
+
     match /users/{uid} {
-      allow read:            if isSignedIn() && (request.auth.uid == uid || isOwner());
-      allow create:          if isSignedIn() && request.auth.uid == uid;
-      allow update, delete:  if isOwner();
+      allow read: if isSignedIn() && (request.auth.uid == uid || isOwner());
+
+      // Own document only, and only as a pending viewer with no access map —
+      // except the allowlisted owner, which bootstraps itself.
+      allow create: if isSignedIn() && request.auth.uid == uid && (
+                      (request.resource.data.role == 'viewer'
+                       && request.resource.data.status == 'pending'
+                       && !('access' in request.resource.data))
+                      || selfBootstrapsAsOwner()
+                    );
+
+      // Owners manage everyone. The allowlisted owner may also repair its own
+      // document (otherwise a demoted owner can never recover — isOwner() is
+      // already false at that point).
+      allow update: if isOwner()
+                    || (request.auth.uid == uid && selfBootstrapsAsOwner());
+
+      allow delete: if isOwner();
     }
 
     // ---- Audit log ----
