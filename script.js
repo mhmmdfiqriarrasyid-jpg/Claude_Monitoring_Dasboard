@@ -3833,11 +3833,20 @@ function saveDamage(event) {
     renderDamageTable();
 }
 
-// Put the unit (or the damaged component) into Breakdown. Components mapped to
-// a unit status column flip just that column; anything else flips unit status.
+// Which place on the unit does a damage record drive? This is the contract the
+// damage form states: "Device Precision → komponen terkait; tipe lain → status
+// unit". A Mekanis/Software failure hits the unit itself even when a component
+// is named, so its downtime is tracked and its description is kept as the
+// breakdown reason. Returns a unit field name, or null meaning `status`.
+function damageTargetField(damageType, component) {
+    const compField = componentUnitField(component);
+    return (damageType === 'Device Precision' && compField) ? compField : null;
+}
+
+// Put the unit (or the damaged component) into Breakdown.
 // Returns a label describing what was changed, or '' when nothing changed.
 function _applyDamageBreakdown(unitId, damageType, component, description) {
-    const compField = componentUnitField(component);
+    const compField = damageTargetField(damageType, component);
     if (compField) {
         updateUnit(unitId, { [compField]: 'Breakdown' });
         return `Komponen ${component} unit`;
@@ -3847,9 +3856,23 @@ function _applyDamageBreakdown(unitId, damageType, component, description) {
     return 'Status unit';
 }
 
+// Is there ANOTHER still-open damage record on the same unit that drives the
+// same place (same component field, or both the unit's status)? If so,
+// resolving this one must not flip that place back to Good.
+function hasOtherOpenDamage(rec, unit, compField) {
+    if (!unit) return false;
+    return globalDamages.some(d => {
+        if (d.id === rec.id || d.resolved) return false;
+        const u = liveUnitFor(d);
+        if (!u || u.id !== unit.id) return false;
+        return damageTargetField(d.damageType, d.component) === compField;
+    });
+}
+
 // Mark a damage record repaired: flag it resolved and restore the unit /
 // component this damage put into Breakdown (downtime duration is recorded
 // automatically by trackStatusChange inside updateUnit).
+
 function resolveDamage(id) {
     if (!requireEdit('damage')) return;
     const rec = globalDamages.find(d => d.id === id);
@@ -3871,17 +3894,27 @@ function resolveDamage(id) {
     });
 
     const unit = liveUnitFor(rec);
+    let restored = false;
+    let blocked = false;
     if (unit) {
-        const compField = componentUnitField(rec.component);
-        if (compField) {
-            if (!isGood(unit[compField])) updateUnit(unit.id, { [compField]: 'Good' });
+        const compField = damageTargetField(rec.damageType, rec.component);
+        if (hasOtherOpenDamage(rec, unit, compField)) {
+            blocked = true;
+        } else if (compField) {
+            if (!isGood(unit[compField])) restored = updateUnit(unit.id, { [compField]: 'Good' });
         } else if (!isGood(unit.status)) {
-            updateUnit(unit.id, { status: 'Good' });
+            restored = updateUnit(unit.id, { status: 'Good' });
         }
     }
 
     renderDamageTable();
-    showToast('Kerusakan ditandai selesai — status unit dipulihkan', 'success');
+    if (blocked) {
+        showToast('Kerusakan ditandai selesai — status unit belum dipulihkan karena masih ada kerusakan lain yang terbuka', 'warning');
+    } else if (restored) {
+        showToast('Kerusakan ditandai selesai — status unit dipulihkan', 'success');
+    } else {
+        showToast('Kerusakan ditandai selesai', 'success');
+    }
 }
 
 function closeDamageModal() {
@@ -4253,7 +4286,12 @@ function _licenseKindForType(type) {
 // start date (= distribution date) and expiry (= start + 1 year). This flows
 // straight into expiry status, License Alerts and the auto-downgrade. Returns
 // true when a unit license was updated.
-function applyDistributedLicenseToUnit(rec) {
+// Apply an OUT (distribution) record to the unit it was handed to.
+// `force` is for the explicit "Sync ke Unit" action, which warns first; the
+// normal path refuses to move a unit's licence BACKWARDS, so back-filling an
+// old handover can't expire a unit that has since been renewed.
+// Returns 'applied' | 'skipped-older' | false.
+function applyDistributedLicenseToUnit(rec, force = false) {
     if (!rec || rec.txnType !== 'OUT' || !rec.unitId) return false;
     const kind = _licenseKindForType(rec.licenseType);
     if (!kind) return false;
@@ -4263,10 +4301,14 @@ function applyDistributedLicenseToUnit(rec) {
     let end = '';
     const d = new Date(start);
     if (!isNaN(d.getTime())) { d.setFullYear(d.getFullYear() + 1); end = d.toISOString().slice(0, 10); }
+
+    const currentEnd = getLicenseEndDate(unit, kind);
+    if (!force && currentEnd && end && currentEnd > end) return 'skipped-older';
+
     const fields = kind === 'gps'
         ? { gpsLicense: rec.licenseType, gpsLicenseStartDate: start, gpsLicenseEndDate: end }
         : { licenseDisplay: rec.licenseType, displayLicenseStartDate: start, displayLicenseEndDate: end };
-    return updateUnit(rec.unitId, fields);
+    return updateUnit(rec.unitId, fields) ? 'applied' : false;
 }
 
 // Backfill: apply EXISTING distributions to their units in one go. For each
@@ -4295,8 +4337,9 @@ function syncDistributionsToUnits() {
     }
     if (!confirm(`Terapkan ${recs.length} distribusi terbaru ke lisensi unit terkait?\n\n` +
                  `Tanggal habis = tanggal distribusi + 1 tahun. Data lisensi unit yang ada akan ditimpa.`)) return;
+    // Explicit action with an "akan ditimpa" confirm above → force overwrite.
     let n = 0;
-    recs.forEach(r => { if (applyDistributedLicenseToUnit(r)) n++; });
+    recs.forEach(r => { if (applyDistributedLicenseToUnit(r, true) === 'applied') n++; });
     showToast(`${n} lisensi unit disinkron dari daftar distribusi`, 'success');
     if (currentView === 'dashboard') updateDashboard(filteredData);
     else if (currentView === 'editUnits') renderEditTable();
@@ -4307,6 +4350,9 @@ function saveLicenseStock(event) {
     if (!requireEdit('licenseStock')) return;
 
     const id = document.getElementById('editLicenseId').value;
+    // Snapshot BEFORE any mutation — used to decide whether this save should
+    // touch the unit's own licence at all (editing only the note must not).
+    const prevRec = id ? { ...(globalLicenseStock.find(r => r.id === id) || {}) } : null;
     const txnType = document.getElementById('licTxnType').value;
     const licenseType = document.getElementById('licType').value.trim();
     const qty = Math.max(1, parseInt(document.getElementById('licQty').value, 10) || 1);
@@ -4371,11 +4417,20 @@ function saveLicenseStock(event) {
     }
 
     // Connect distribution → the unit's own license (type + dates).
-    if (txnType === 'OUT') {
+    // Only on create, or when the edit actually changed unit / type / date —
+    // fixing a typo in the note must not re-stamp the unit's licence.
+    const licenseRelevantChange = !prevRec
+        || prevRec.txnType !== txnType
+        || (prevRec.unitId || '') !== (data.unitId || '')
+        || (prevRec.licenseType || '') !== licenseType
+        || (prevRec.date || '') !== (data.date || '');
+    if (txnType === 'OUT' && licenseRelevantChange) {
         const applied = applyDistributedLicenseToUnit({ txnType, unitId: data.unitId, licenseType, date: data.date });
-        if (applied) {
-            const kind = _licenseKindForType(licenseType) === 'display' ? 'Display' : 'GPS';
+        const kind = _licenseKindForType(licenseType) === 'display' ? 'Display' : 'GPS';
+        if (applied === 'applied') {
             showToast(`Lisensi ${kind} unit "${data.unitName}" di-set ${licenseType} (berlaku 1 tahun)`, 'info');
+        } else if (applied === 'skipped-older') {
+            showToast(`Lisensi ${kind} unit "${data.unitName}" tidak diubah — unit sudah punya masa berlaku yang lebih panjang`, 'warning');
         } else if (!_licenseKindForType(licenseType)) {
             showToast(`"${licenseType}" bukan lisensi unit standar — hanya dicatat di stok`, 'warning');
         }
