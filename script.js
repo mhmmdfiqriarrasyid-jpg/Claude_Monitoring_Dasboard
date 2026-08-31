@@ -1496,6 +1496,9 @@ function onDataLoaded() {
 
     updateEditCount();
 
+    // Persist any premium licence that has expired into its fallback tier.
+    scheduleExpiredLicenseDowngrades();
+
     _tryAutoDailyEmail();
 }
 
@@ -2767,6 +2770,49 @@ function effectiveLicense(unit, kind) {
     const fallback = kind === 'display' ? 'G5 Basic'   : 'SF-1';
     const downgraded = rawType === premium && status.kind === 'expired';
     return { type: downgraded ? fallback : rawType, rawType, premium, fallback, downgraded, status, end };
+}
+
+// Once a premium licence's expiry has passed the receiver really is running on
+// the lower tier, so write that into the data instead of only painting it:
+// SF-RTK → SF-1, G5 Advance → G5 Basic, clearing the expiry date because the
+// fallback tier has none. The premium tier is not lost — it stays in the
+// licence-stock ledger, and recording a new Distribusi restores it with fresh
+// dates. Idempotent: once a unit reads SF-1 it no longer matches.
+let _downgradeScanQueued = false;
+function scheduleExpiredLicenseDowngrades() {
+    if (_downgradeScanQueued) return;
+    _downgradeScanQueued = true;
+    // Deferred so it runs outside applyCloudUnitsSnapshot's suppressCloudWrites
+    // window — otherwise the change would never reach Firestore.
+    setTimeout(() => { _downgradeScanQueued = false; applyExpiredLicenseDowngrades(); }, 0);
+}
+
+function applyExpiredLicenseDowngrades() {
+    // Viewers must not write; their session would just fail against the rules.
+    if (!hasAccess('editUnits', 'edit')) return 0;
+    let n = 0;
+    globalData.slice().forEach(u => {
+        const fields = {};
+        if (u.gpsLicense === 'SF-RTK' &&
+            getExpiryStatus(getLicenseEndDate(u, 'gps')).kind === 'expired') {
+            fields.gpsLicense = 'SF-1';
+            fields.gpsLicenseEndDate = '';
+            // getLicenseEndDate falls back to the legacy field, so clear it too.
+            if (u.licenseEndDate) fields.licenseEndDate = '';
+        }
+        if (u.licenseDisplay === 'G5 Advance' &&
+            getExpiryStatus(getLicenseEndDate(u, 'display')).kind === 'expired') {
+            fields.licenseDisplay = 'G5 Basic';
+            fields.displayLicenseEndDate = '';
+        }
+        if (Object.keys(fields).length && updateUnit(u.id, fields)) n++;
+    });
+    if (n > 0) {
+        showToast(`${n} unit turun otomatis ke tier fallback (lisensi sudah habis)`, 'info');
+        if (currentView === 'editUnits') renderEditTable();
+        else if (currentView === 'dashboard') updateDashboard(filteredData);
+    }
+    return n;
 }
 
 // Render the license-type badge for a table cell, showing the effective tier
