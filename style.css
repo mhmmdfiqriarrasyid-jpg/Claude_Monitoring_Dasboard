@@ -2171,20 +2171,28 @@ body.auth-blocked .footer { filter: blur(2px); pointer-events: none; }
 }
 
 /* ============================================================
-   ROLE GATING — hide editor-only UI for viewers
+   ACCESS GATING — disable editor-only UI, PER AREA
+   ------------------------------------------------------------
+   These must key off the per-area data-ro-* flags, never off the
+   role: the owner can grant a viewer 'edit' on one area while
+   leaving another view-only, and a role-wide rule would block the
+   access that was deliberately granted.
    ============================================================ */
-body.role-viewer #btnDeleteSelected,
-body.role-viewer #btnDeleteSelectedImpl,
-body.role-viewer .row-actions button[onclick*="editUnit"],
-body.role-viewer .row-actions button[onclick*="deleteUnit"],
-body.role-viewer .row-actions button[onclick*="editImplement"],
-body.role-viewer .row-actions button[onclick*="deleteImplement"],
-body.role-viewer .col-check,
-body.role-viewer .inline-edit {
-    /* Inline-edit fields shouldn't be editable for viewers */
+body[data-ro-editunits] #btnDeleteSelected,
+body[data-ro-editunits] .row-actions button[onclick*="editUnit"],
+body[data-ro-editunits] .row-actions button[onclick*="deleteUnit"],
+body[data-ro-editunits] #viewEditUnits .col-check,
+body[data-ro-editunits] .inline-edit,
+body[data-ro-implements] #btnDeleteSelectedImpl,
+body[data-ro-implements] .row-actions button[onclick*="editImplement"],
+body[data-ro-implements] .row-actions button[onclick*="deleteImplement"],
+body[data-ro-implements] #viewImplements .col-check,
+body[data-ro-damage] #viewDamage .col-check,
+body[data-ro-license] #viewLicenseStock .col-check {
+    /* Inline-edit fields shouldn't be editable without edit access */
     pointer-events: none;
 }
-body.role-viewer .inline-edit { background: transparent !important; }
+body[data-ro-editunits] .inline-edit { background: transparent !important; }
 
 /* Dark-mode tweaks for new components */
 

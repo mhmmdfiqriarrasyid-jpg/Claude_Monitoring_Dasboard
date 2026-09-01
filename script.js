@@ -1192,8 +1192,27 @@ function _restoreCollection(items, current, merge) {
     return [...map.values()];
 }
 
+// The bulk cloud savers only upsert, so a REPLACE restore would leave the
+// dropped documents alive in Firestore and the next live snapshot would put
+// them straight back — silently undoing the restore. Delete what the restore
+// removed, one id at a time (these collections have no bulk delete).
+function _cloudDeleteRemoved(previous, kept, deleteOne) {
+    if (suppressCloudWrites || !window.cloud?.isReady) return;
+    const keptIds = new Set(kept.map(r => r.id));
+    previous.forEach(r => { if (r.id && !keptIds.has(r.id)) deleteOne(r.id); });
+}
+
+// A restore replaces FOUR collections at once, so it needs edit rights on all
+// of them — gating on editUnits alone let a units-only editor wipe implements,
+// damage records and licence stock.
 function importBackup(file) {
-    if (!requireEdit('editUnits')) return;
+    if (!canCsv('full')) return;
+    const areas = { editUnits: 'Unit', implements: 'Implement', damage: 'Kerusakan', licenseStock: 'Stok Lisensi' };
+    const blocked = Object.keys(areas).filter(a => !hasAccess(a, 'edit'));
+    if (blocked.length) {
+        showToast(`Restore butuh hak edit di semua data — Anda belum punya: ${blocked.map(a => areas[a]).join(', ')}`, 'warning');
+        return;
+    }
     const reader = new FileReader();
     reader.onload = async e => {
         try {
@@ -1230,20 +1249,26 @@ function importBackup(file) {
             // the same mode (merge / replace) the user chose for units.
             const extras = [];
             if (Array.isArray(data.implements)) {
-                globalImplements = _restoreCollection(data.implements, globalImplements, merge);
+                const before = globalImplements;
+                globalImplements = _restoreCollection(data.implements, before, merge);
                 saveImplements();
+                _cloudDeleteRemoved(before, globalImplements, cloudDeleteImplement);
                 if (window.cloud?.isReady) window.cloud.saveImplements(globalImplements).catch(() => {});
                 extras.push(`${data.implements.length} implements`);
             }
             if (Array.isArray(data.damages)) {
-                globalDamages = _restoreCollection(data.damages, globalDamages, merge);
+                const before = globalDamages;
+                globalDamages = _restoreCollection(data.damages, before, merge);
                 saveDamages();
+                _cloudDeleteRemoved(before, globalDamages, cloudDeleteDamage);
                 if (window.cloud?.isReady) window.cloud.saveDamages(globalDamages).catch(() => {});
                 extras.push(`${data.damages.length} kerusakan`);
             }
             if (Array.isArray(data.licenseStock)) {
-                globalLicenseStock = _restoreCollection(data.licenseStock, globalLicenseStock, merge);
+                const before = globalLicenseStock;
+                globalLicenseStock = _restoreCollection(data.licenseStock, before, merge);
                 saveLicenseStockLocal();
+                _cloudDeleteRemoved(before, globalLicenseStock, cloudDeleteLicense);
                 if (window.cloud?.isReady) window.cloud.saveLicenses(globalLicenseStock).catch(() => {});
                 extras.push(`${data.licenseStock.length} transaksi lisensi`);
             }
@@ -3061,6 +3086,7 @@ function editImplement(id) {
 
 function saveImplement(event) {
     event.preventDefault();
+    if (!requireEdit('implements')) return;
 
     const id = document.getElementById('editImplementId').value;
     const data = {};
@@ -4326,8 +4352,16 @@ function syncDistributionsToUnits() {
         if (!globalData.some(u => u.id === r.unitId)) return;
         const key = r.unitId + '|' + kind;
         const cur = latest[key];
-        const newer = !cur || (r.date || '') > (cur.date || '')
-            || ((r.date || '') === (cur.date || '') && (r.createdAt || 0) > (cur.createdAt || 0));
+        // date → createdAt → id. The id tie-break keeps the result stable:
+        // without it two same-day records with the same createdAt resolve by
+        // whatever order Firestore happened to return, so the same data could
+        // sync different licences on different runs.
+        const newer = !cur
+            || (r.date || '') > (cur.date || '')
+            || ((r.date || '') === (cur.date || '') && (
+                   (r.createdAt || 0) > (cur.createdAt || 0)
+                || ((r.createdAt || 0) === (cur.createdAt || 0) && String(r.id) > String(cur.id))
+               ));
         if (newer) latest[key] = r;
     });
     const recs = Object.values(latest);
@@ -5278,6 +5312,14 @@ function renderDamageComponentOptions() {
         opts.push(`<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`);
     });
     select.innerHTML = opts.join('');
+    // A live snapshot can land while the damage modal is open. If the selected
+    // component is missing from the new list (someone deleted it, or it's a
+    // legacy value), keep it as an option — otherwise the field silently goes
+    // blank mid-edit and the next save writes an empty component.
+    if (current && !list.some(c => c.name === current)) {
+        select.insertAdjacentHTML('beforeend',
+            `<option value="${escapeHtml(current)}">${escapeHtml(current)}</option>`);
+    }
     if (current) select.value = current;
 }
 
@@ -5509,13 +5551,17 @@ function setupAuth() {
 
         currentUserDoc = profile;
 
-        // Pending users: park them on the waiting screen.
+        // Pending users: park them on the waiting screen. Waiting for approval
+        // is not a session, so stop the 24h clock — otherwise approval at hour
+        // 23 would hand the user a single hour instead of a full day.
         if (profile.status !== 'active') {
+            clearSessionClock();
             showPendingGate(user.email);
             return;
         }
 
         // Active user — show app, gate UI by role, start cloud sync.
+        if (!localStorage.getItem(SESSION_START_KEY)) startSessionClock();
         hideAuthGates();
         applyRoleGating();
         renderUserPill();
@@ -5608,10 +5654,29 @@ function clearSessionClock() {
     if (_sessionTimer) { clearTimeout(_sessionTimer); _sessionTimer = null; }
 }
 
+let _expiring = false;
+
 async function expireSession() {
-    clearSessionClock();
+    if (_expiring) return;
+    _expiring = true;
+    if (_sessionTimer) { clearTimeout(_sessionTimer); _sessionTimer = null; }
     showToast('Sesi harian berakhir — silakan login kembali', 'warning');
-    try { await window.cloud.signOutUser(); } catch (_) {}
+    try {
+        await window.cloud.signOutUser();
+        // onAuthChange(null) clears the clock; do it here too in case it
+        // doesn't fire (e.g. no listener yet).
+        clearSessionClock();
+    } catch (_) {
+        // Offline: the sign-out call failed. Do NOT clear the start timestamp
+        // — that would grandfather a brand-new 24h window on the next check
+        // and let an expired session run indefinitely. Lock the UI now and
+        // leave the expired stamp in place so the next check expires again.
+        currentUser = null;
+        currentUserDoc = null;
+        tearDownCloudSync();
+        showAuthGate('signin');
+    }
+    _expiring = false;
 }
 
 // Returns true while the session is valid; logs out and returns false if the
@@ -5629,6 +5694,16 @@ function checkDailySession() {
     _sessionTimer = setTimeout(expireSession, SESSION_MAX_MS - elapsed);
     return true;
 }
+
+// A sleeping device or a discarded background tab delays setTimeout by however
+// long it was out, so the timer alone can leave an expired session running.
+// Re-check the wall clock whenever the tab comes back to the foreground.
+function watchSessionOnResume() {
+    const recheck = () => { if (currentUser) checkDailySession(); };
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) recheck(); });
+    window.addEventListener('focus', recheck);
+}
+watchSessionOnResume();
 
 async function handleSignIn(event) {
     event.preventDefault();
@@ -5769,8 +5844,16 @@ function canCsv(min, notify = true) {
     return ok;
 }
 
+// True when the user can edit at least one data area — by role OR by an
+// explicit per-area grant. A viewer the owner gave 'edit' on one area is an
+// editor, so gating must not go by role alone.
+function canEditAnyArea() {
+    return ['editUnits', 'implements', 'damage', 'licenseStock']
+        .some(a => hasAccess(a, 'edit'));
+}
+
 function applyRoleGating() {
-    const editor = canEdit();
+    const editor = canEditAnyArea();
     const owner = isOwner();
     document.body.classList.toggle('role-viewer', !editor);
     document.body.classList.toggle('role-owner', !!owner);
@@ -5806,11 +5889,12 @@ function applyAccessVisibility() {
     const navHistory = document.getElementById('navHistory');
     if (navHistory) navHistory.style.display = hasAccess('history', 'view') ? '' : 'none';
 
-    // data-ro-<area>="1" when the user can view but not edit that area.
+    // data-ro-<area>="1" whenever the user may NOT edit that area — including
+    // no access at all, so the edit controls stay hidden even if the section
+    // is somehow reachable.
     const map = { editUnits: 'roEditunits', implements: 'roImplements', damage: 'roDamage', licenseStock: 'roLicense' };
     Object.entries(map).forEach(([area, flag]) => {
-        const viewOnly = hasAccess(area, 'view') && !hasAccess(area, 'edit');
-        if (viewOnly) document.body.dataset[flag] = '1';
+        if (!hasAccess(area, 'edit')) document.body.dataset[flag] = '1';
         else delete document.body.dataset[flag];
     });
 
