@@ -4091,23 +4091,59 @@ function updateLicenseCount() {
 }
 
 // All distinct license types: defaults plus any already used in the data.
-function allLicenseTypes() {
-    const set = new Set(LICENSE_TYPE_DEFAULTS);
-    globalLicenseStock.forEach(r => { if (r.licenseType) set.add(r.licenseType); });
-    return [...set].sort((a, b) => a.localeCompare(b));
+// "Jenis Lisensi" is a free-text field with a datalist, so nothing stops
+// someone typing "sf-rtk" instead of picking "SF-RTK". Without folding, that
+// becomes a SEPARATE stock bucket: the real type keeps counting the units it
+// already handed out (looks over-stocked) while the phantom one goes negative
+// and fires a false "stok habis" alert. Fold on this key everywhere.
+function licenseTypeKey(raw) {
+    return (raw || '').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
-// Per-type stock summary: { type: { in, out, sisa } }
-function computeLicenseSummary() {
-    const map = {};
+// Preferred spelling for a type: a known default wins, otherwise the spelling
+// already stored for that type, otherwise the text as typed (tidied).
+function canonicalLicenseType(raw) {
+    const key = licenseTypeKey(raw);
+    if (!key) return '';
+    const known = LICENSE_TYPE_DEFAULTS.find(t => licenseTypeKey(t) === key);
+    if (known) return known;
+    const seen = globalLicenseStock.find(r => licenseTypeKey(r.licenseType) === key);
+    const src = seen ? seen.licenseType : raw;
+    return (src || '').trim().replace(/\s+/g, ' ');
+}
+
+function allLicenseTypes() {
+    const byKey = new Map();
+    LICENSE_TYPE_DEFAULTS.forEach(t => byKey.set(licenseTypeKey(t), t));
     globalLicenseStock.forEach(r => {
-        const t = r.licenseType || '(tanpa jenis)';
-        if (!map[t]) map[t] = { in: 0, out: 0, sisa: 0 };
-        const q = Number(r.qty) || 0;
-        if (r.txnType === 'OUT') map[t].out += q;
-        else map[t].in += q;
+        const key = licenseTypeKey(r.licenseType);
+        if (key && !byKey.has(key)) byKey.set(key, (r.licenseType || '').trim().replace(/\s+/g, ' '));
     });
-    Object.values(map).forEach(v => { v.sisa = v.in - v.out; });
+    return [...byKey.values()].sort((a, b) => a.localeCompare(b));
+}
+
+// Per-type stock summary: { type: { in, out, sisa } }.
+// Keyed case-insensitively so records already saved with a different casing
+// merge into one bucket without needing the stored data to be rewritten.
+function computeLicenseSummary() {
+    const known = new Map(LICENSE_TYPE_DEFAULTS.map(t => [licenseTypeKey(t), t]));
+    const acc = {};   // key -> { label, in, out }
+    globalLicenseStock.forEach(r => {
+        const key = licenseTypeKey(r.licenseType) || '(tanpa jenis)';
+        if (!acc[key]) {
+            acc[key] = {
+                label: known.get(key) || (r.licenseType || '').trim().replace(/\s+/g, ' ') || '(tanpa jenis)',
+                in: 0, out: 0
+            };
+        }
+        const q = Number(r.qty) || 0;
+        if (r.txnType === 'OUT') acc[key].out += q;
+        else acc[key].in += q;
+    });
+    const map = {};
+    Object.values(acc).forEach(v => {
+        map[v.label] = { in: v.in, out: v.out, sisa: v.in - v.out };
+    });
     return map;
 }
 
@@ -4143,7 +4179,8 @@ function getFilteredLicenseStock() {
 
     let rows = [...globalLicenseStock];
     if (txnVal) rows = rows.filter(r => r.txnType === txnVal);
-    if (typeVal) rows = rows.filter(r => r.licenseType === typeVal);
+    // Folded so filtering by "SF-RTK" also catches rows stored as "sf-rtk".
+    if (typeVal) rows = rows.filter(r => licenseTypeKey(r.licenseType) === licenseTypeKey(typeVal));
     if (query) rows = rows.filter(r =>
         `${r.licenseType} ${r.unitName} ${r.sn} ${r.note}`.toLowerCase().includes(query));
 
@@ -4299,9 +4336,12 @@ function editLicenseStock(id) {
 }
 
 // Which unit license field-group a stock license type belongs to.
+// Folded, so a record saved as "sf-rtk" still links to the unit's GPS licence
+// instead of being written off as a non-standard type.
 function _licenseKindForType(type) {
-    if (type === 'SF-RTK' || type === 'SF-1') return 'gps';
-    if (type === 'G5 Advance' || type === 'G5 Basic') return 'display';
+    const k = licenseTypeKey(type);
+    if (k === 'sf-rtk' || k === 'sf-1') return 'gps';
+    if (k === 'g5 advance' || k === 'g5 basic') return 'display';
     return null; // custom type — not a standard unit license
 }
 
@@ -4385,9 +4425,15 @@ function saveLicenseStock(event) {
     // touch the unit's own licence at all (editing only the note must not).
     const prevRec = id ? { ...(globalLicenseStock.find(r => r.id === id) || {}) } : null;
     const txnType = document.getElementById('licTxnType').value;
-    const licenseType = document.getElementById('licType').value.trim();
+    const typedType = document.getElementById('licType').value.trim();
+    // Snap to the existing spelling so a stray "sf-rtk" doesn't open a second
+    // stock bucket for a type that already exists.
+    const licenseType = canonicalLicenseType(typedType);
     const qty = Math.max(1, parseInt(document.getElementById('licQty').value, 10) || 1);
     if (!licenseType) { showToast('Isi jenis lisensi', 'warning'); return; }
+    if (typedType && licenseType !== typedType) {
+        showToast(`Jenis lisensi disamakan menjadi "${licenseType}"`, 'info');
+    }
 
     const data = {
         date: document.getElementById('licDate').value,
@@ -4410,7 +4456,13 @@ function saveLicenseStock(event) {
         let sisa = sum ? sum.sisa : 0;
         if (id) { // editing an existing OUT — add its old qty back to available
             const old = globalLicenseStock.find(r => r.id === id);
-            if (old && old.txnType === 'OUT' && old.licenseType === licenseType) sisa += (Number(old.qty) || 0);
+            // Folded: the stored row may carry a different casing than the
+            // canonical type, and missing that would understate the stock the
+            // edit frees up and warn about a shortage that isn't real.
+            if (old && old.txnType === 'OUT' &&
+                licenseTypeKey(old.licenseType) === licenseTypeKey(licenseType)) {
+                sisa += (Number(old.qty) || 0);
+            }
         }
         if (qty > sisa) {
             if (!confirm(`Stok "${licenseType}" tidak cukup (sisa ${sisa}). Tetap simpan?`)) return;
