@@ -191,11 +191,22 @@ const LICENSE_DATES_MAP = {
 };
 const COMPONENT_KEYS = ['display', 'gps', 'steering', 'jdlink'];
 const COMPONENT_LABELS = { display: 'Display', gps: 'GPS', steering: 'Steering', jdlink: 'JDLink' };
+// Chart.js and SVG stroke attributes need a resolved colour string, not a
+// var() reference, so read the palette token at draw time. This keeps charts
+// in step with style.css instead of drifting into a second, stale palette.
+function themeColor(name, fallback) {
+    try {
+        const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        if (v) return v;
+    } catch (e) { /* pre-render / no document */ }
+    return fallback;
+}
+// Keyed to --color-* in style.css; the fallbacks mirror those token values.
 const COMPONENT_COLORS = {
-    display: '#dd6b20',
-    gps: '#805ad5',
-    steering: '#319795',
-    jdlink: '#2d3748'
+    get display()  { return themeColor('--color-display', '#BC8A2E'); },
+    get gps()      { return themeColor('--color-gps', '#5A7DA0'); },
+    get steering() { return themeColor('--color-steering', '#4F7B58'); },
+    get jdlink()   { return themeColor('--color-jdlink', '#403E3A'); }
 };
 
 // ---- Chart.js Global Config (HD rendering on all screens) ----
@@ -226,20 +237,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupEventListeners() {
-    // Grouped nav dropdowns (Setup / Log Report): click toggle opens one group at
-    // a time; any other click (incl. a dropdown item) closes all groups.
-    document.addEventListener('click', e => {
-        const toggle = e.target.closest('.nav__group-toggle');
-        if (toggle) {
-            const grp = toggle.closest('.nav__group');
-            const wasOpen = grp.classList.contains('open');
-            document.querySelectorAll('.nav__group.open').forEach(g => g.classList.remove('open'));
-            if (!wasOpen) grp.classList.add('open');
-            return;
-        }
-        document.querySelectorAll('.nav__group.open').forEach(g => g.classList.remove('open'));
-    });
-
     // Global unit search (topbar)
     const gSearch = document.getElementById('globalSearch');
     if (gSearch) {
@@ -312,7 +309,7 @@ function setupEventListeners() {
 
     // Edit page drag & drop
     const dropZone = document.getElementById('editDropZone');
-    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = '#3182ce'; });
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = themeColor('--info', '#5A7DA0'); });
     dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = ''; });
     dropZone.addEventListener('drop', e => {
         e.preventDefault();
@@ -321,7 +318,7 @@ function setupEventListeners() {
         if (file && file.name.endsWith('.csv')) {
             handleEditCSVImport(file);
         } else {
-            showToast('Please upload a .csv file', 'error');
+            showToast('Silakan unggah berkas .csv', 'error');
         }
     });
 
@@ -485,7 +482,7 @@ function navigateTo(view) {
         view = 'dashboard';
     }
     if (view === 'users' && !isOwner()) {
-        showToast('Owner only', 'warning');
+        showToast('Khusus owner', 'warning');
         view = 'dashboard';
     }
 
@@ -502,11 +499,7 @@ function navigateTo(view) {
 
     document.querySelectorAll('.nav__link').forEach(el => el.classList.remove('active'));
     const activeLink = document.querySelector(`[data-view="${view}"]`);
-    if (activeLink) {
-        activeLink.classList.add('active');
-        // Highlight the parent group toggle when an item inside a dropdown is active.
-        activeLink.closest('.nav__group')?.querySelector('.nav__group-toggle')?.classList.add('active');
-    }
+    if (activeLink) activeLink.classList.add('active');
 
     currentView = view;
 
@@ -562,7 +555,7 @@ function saveToStorage(data) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
         writeAutoBackup(data);
     } catch (e) {
-        showToast('Storage full. Could not save data.', 'error');
+        showToast('Penyimpanan penuh. Data tidak tersimpan.', 'error');
     }
 }
 
@@ -1021,12 +1014,12 @@ function showHistory(unitId) {
 
     const tbody = document.getElementById('historyBody');
     if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:#718096">No history recorded</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-secondary)">Belum ada riwayat</td></tr>';
     } else {
         tbody.innerHTML = filtered.map(e => {
             const who = e.actorName
                 ? `<span class="audit-actor" title="${escapeHtml(e.actorEmail || '')}">${escapeHtml(e.actorName)} <em>(${escapeHtml(e.actorRole || '?')})</em></span>`
-                : '<span style="color:#a0aec0">—</span>';
+                : '<span style="color:var(--text-light)">—</span>';
             return `
             <tr>
                 <td style="white-space:nowrap">${new Date(e.timestamp).toLocaleString()}</td>
@@ -1048,31 +1041,31 @@ function closeHistory() {
 
 function clearHistory() {
     if (!isOwner || !isOwner()) {
-        showToast('Only the owner can clear shared history', 'warning');
+        showToast('Hanya owner yang bisa menghapus riwayat bersama', 'warning');
         return;
     }
-    if (!confirm('Clear ALL change history for the entire team? This cannot be undone.')) return;
+    if (!confirm('Hapus SELURUH riwayat perubahan untuk seluruh tim? Tindakan ini tidak bisa dibatalkan.')) return;
     localStorage.removeItem(AUDIT_LOG_KEY);
     if (window.cloud?.clearHistoryCloud) {
         window.cloud.clearHistoryCloud().then(() => {
             cloudHistory = [];
             showHistory();
-            showToast('Team history cleared', 'success');
+            showToast('Riwayat tim dihapus', 'success');
         }).catch(err => {
             console.error('[cloud] clear history failed:', err);
-            showToast('Cloud clear failed — check console', 'error');
+            showToast('Gagal menghapus di cloud — periksa console', 'error');
         });
     } else {
         cloudHistory = [];
         showHistory();
-        showToast('History cleared', 'success');
+        showToast('Riwayat dihapus', 'success');
     }
 }
 
 function exportHistory() {
     if (!canCsv('export')) return;
     const log = getAuditLog();
-    if (log.length === 0) { showToast('No history to export', 'warning'); return; }
+    if (log.length === 0) { showToast('Tidak ada riwayat untuk diekspor', 'warning'); return; }
     const headers = ['Timestamp', 'Action', 'Unit', 'Field', 'Before', 'After'];
     const rows = log.map(e => [
         new Date(e.timestamp).toISOString(),
@@ -1087,7 +1080,7 @@ function exportHistory() {
     a.download = `tractor_history_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('History exported', 'success');
+    showToast('Riwayat diekspor', 'success');
 }
 
 // ============================================================
@@ -1218,7 +1211,7 @@ function importBackup(file) {
         try {
             const data = JSON.parse(e.target.result);
             if (!data || !Array.isArray(data.units)) {
-                showToast('Invalid backup file', 'error');
+                showToast('Berkas backup tidak valid', 'error');
                 return;
             }
             const merge = confirm(
@@ -1228,9 +1221,9 @@ function importBackup(file) {
             );
             if (merge) {
                 const result = addUnits(data.units);
-                showToast(`Merged backup: ${result.added} added, ${result.skipped} duplicate(s) skipped`, 'success');
+                showToast(`Backup digabung: ${result.added} ditambahkan, ${result.skipped} duplikat dilewati`, 'success');
             } else {
-                if (!confirm(`This will DELETE all ${globalData.length} current units and replace them with the backup. Continue?`)) return;
+                if (!confirm(`Ini akan MENGHAPUS seluruh ${globalData.length} unit saat ini dan menggantinya dengan isi backup. Lanjutkan?`)) return;
                 // Mirror the replace to the cloud, otherwise the next units
                 // snapshot overwrites localStorage and silently undoes the
                 // whole restore (and deleted units come back).
@@ -1300,7 +1293,7 @@ function importBackup(file) {
             renderDamageTable();
             updateDashboard(globalData);
         } catch (err) {
-            showToast('Failed to read backup: ' + err.message, 'error');
+            showToast('Gagal membaca backup: ' + err.message, 'error');
         }
     };
     reader.readAsText(file);
@@ -1401,7 +1394,7 @@ function renderDowntimeKPIs() {
     const listEl = document.getElementById('topOffendersList');
     if (!listEl) return;
     if (s.topOffenders.length === 0) {
-        listEl.innerHTML = '<div class="top-offender top-offender--empty">No downtime recorded yet</div>';
+        listEl.innerHTML = '<div class="top-offender top-offender--empty">Belum ada downtime tercatat</div>';
     } else {
         listEl.innerHTML = s.topOffenders.map((u, i) => `
             <div class="top-offender">
@@ -1419,13 +1412,13 @@ function renderDowntimeKPIs() {
                 labels: s.topTen.map(u => u.name || 'Unnamed'),
                 datasets: [{
                     data: s.topTen.map(u => +(u.downtime / 3600000).toFixed(2)),
-                    backgroundColor: '#D97757', borderRadius: 4, barPercentage: 0.6
+                    backgroundColor: themeColor('--primary', '#D97757'), borderRadius: 4, barPercentage: 0.6
                 }]
             },
             options: {
                 responsive: true, maintainAspectRatio: false, indexAxis: 'y',
                 scales: {
-                    x: { beginAtZero: true, title: { display: true, text: 'Downtime (hours)', font: { size: 11, family: 'Inter' } }, ticks: { font: { size: 11 } }, grid: { color: '#edf2f7' } },
+                    x: { beginAtZero: true, title: { display: true, text: 'Downtime (hours)', font: { size: 11, family: 'Inter' } }, ticks: { font: { size: 11 } }, grid: { color: themeColor('--border-light', '#DEDACE') } },
                     y: { ticks: { font: { size: 11, family: 'Inter' } }, grid: { display: false } }
                 },
                 plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.x}h` } } }
@@ -1602,7 +1595,7 @@ function renderStatusChart(data) {
         type: 'doughnut',
         data: {
             labels: ['Good', 'Breakdown'],
-            datasets: [{ data: [good, breakdown], backgroundColor: ['#4F7B58', '#BF4D43'], borderWidth: 0, hoverOffset: 6 }]
+            datasets: [{ data: [good, breakdown], backgroundColor: [themeColor('--success', '#4F7B58'), themeColor('--danger', '#BF4D43')], borderWidth: 0, hoverOffset: 6 }]
         },
         options: {
             responsive: true, maintainAspectRatio: false, cutout: '65%',
@@ -1631,14 +1624,14 @@ function renderSiteChart(data) {
         data: {
             labels,
             datasets: [
-                { label: 'Good', data: labels.map(s => siteMap[s].good), backgroundColor: '#4F7B58', borderRadius: 4, barPercentage: 0.6 },
-                { label: 'Breakdown', data: labels.map(s => siteMap[s].breakdown), backgroundColor: '#BF4D43', borderRadius: 4, barPercentage: 0.6 }
+                { label: 'Good', data: labels.map(s => siteMap[s].good), backgroundColor: themeColor('--success', '#4F7B58'), borderRadius: 4, barPercentage: 0.6 },
+                { label: 'Breakdown', data: labels.map(s => siteMap[s].breakdown), backgroundColor: themeColor('--danger', '#BF4D43'), borderRadius: 4, barPercentage: 0.6 }
             ]
         },
         options: {
             responsive: true, maintainAspectRatio: false, indexAxis: 'y',
             scales: {
-                x: { stacked: true, beginAtZero: true, ticks: { stepSize: 1, font: { size: 11, family: 'Inter' } }, grid: { color: '#edf2f7' } },
+                x: { stacked: true, beginAtZero: true, ticks: { stepSize: 1, font: { size: 11, family: 'Inter' } }, grid: { color: themeColor('--border-light', '#DEDACE') } },
                 y: { stacked: true, ticks: { font: { size: 11, family: 'Inter' } }, grid: { display: false } }
             },
             plugins: {
@@ -1768,11 +1761,11 @@ function saveEmailSettings() {
         autoDaily:  document.getElementById('emailjsAutoDaily').checked
     };
     if (!s.publicKey || !s.serviceId || !s.templateId || !s.recipient) {
-        showToast('Please fill in all EmailJS fields', 'warning'); return;
+        showToast('Lengkapi semua kolom EmailJS', 'warning'); return;
     }
     localStorage.setItem('emailjs_settings', JSON.stringify(s));
     closeEmailSettingsModal();
-    showToast('Email settings saved', 'success');
+    showToast('Pengaturan email disimpan', 'success');
 }
 
 function _buildAlertList() {
@@ -1804,14 +1797,14 @@ function _buildAlertList() {
 function sendLicenseAlertEmail() {
     const s = _getEmailSettings();
     if (!s.publicKey || !s.serviceId || !s.templateId || !s.recipient) {
-        showToast('Setup EmailJS first — click the gear icon', 'warning');
+        showToast('Atur EmailJS dulu — klik ikon gerigi', 'warning');
         openEmailSettingsModal();
         return;
     }
 
     const report = _buildAlertList();
     if (report.total === 0) {
-        showToast('No license alerts to send', 'info'); return;
+        showToast('Tidak ada peringatan lisensi untuk dikirim', 'info'); return;
     }
 
     const today = new Date().toLocaleDateString('id-ID', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
@@ -1840,7 +1833,7 @@ function sendLicenseAlertEmail() {
         localStorage.setItem('emailjs_last_sent', new Date().toDateString());
     }).catch(err => {
         console.error('[emailjs]', err);
-        showToast('Failed to send email — check EmailJS settings', 'error');
+        showToast('Gagal mengirim email — periksa pengaturan EmailJS', 'error');
     }).finally(() => {
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-envelope"></i> Email Report';
@@ -1873,7 +1866,7 @@ function renderComponentHealth(data) {
             <div class="component-stat__name">${COMPONENT_LABELS[key]}</div>
             <div class="component-stat__ring">
                 <svg width="72" height="72" viewBox="0 0 72 72">
-                    <circle cx="36" cy="36" r="28" fill="none" stroke="#edf2f7" stroke-width="6"/>
+                    <circle cx="36" cy="36" r="28" fill="none" style="stroke:var(--border-light)" stroke-width="6"/>
                     <circle cx="36" cy="36" r="28" fill="none" stroke="${color}" stroke-width="6"
                         stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" stroke-linecap="round"/>
                 </svg>
@@ -1905,8 +1898,8 @@ function renderTable(data) {
             <td class="${isGood(d.steering) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.steering)}</td>
             <td class="${isGood(d.jdlink) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.jdlink)}</td>
             <td>${escapeHtml(d.site)}</td>
-            <td>${escapeHtml(d.yearReceived || '') || '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
-            <td>${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
+            <td>${escapeHtml(d.yearReceived || '') || '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
+            <td>${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td>${licenseTypeBadge(d, 'gps')}</td>
             <td>${licenseBadgeFor(d, 'gps')}</td>
             <td>${licenseTypeBadge(d, 'display')}</td>
@@ -1977,7 +1970,7 @@ function renderDamageStats() {
     destroyChart('damageTrendChart');
     charts.damageTrendChart = new Chart(document.getElementById('damageTrendChart'), {
         type: 'bar',
-        data: { labels: months.map(m => m.label), datasets: [{ data: byMonth, backgroundColor: '#D97757', borderRadius: 4, barPercentage: 0.55 }] },
+        data: { labels: months.map(m => m.label), datasets: [{ data: byMonth, backgroundColor: themeColor('--primary', '#D97757'), borderRadius: 4, barPercentage: 0.55 }] },
         options: {
             plugins: { legend: { display: false } },
             scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
@@ -2005,7 +1998,11 @@ function renderDamageStats() {
 function renderRepair() {
     const issueFilterVal = document.getElementById('issueFilter').value;
     const issueData = countIssues(globalData);
-    const chipColors = { Unit: '#BF4D43', Display: '#BC8A2E', GPS: '#5A7DA0', Steering: '#4F7B58', JDLink: '#403E3A' };
+    const chipColors = {
+        Unit: themeColor('--danger', '#BF4D43'), Display: COMPONENT_COLORS.display,
+        GPS: COMPONENT_COLORS.gps, Steering: COMPONENT_COLORS.steering,
+        JDLink: COMPONENT_COLORS.jdlink
+    };
 
     document.getElementById('issueSummary').innerHTML = Object.entries(issueData.counts).map(([key, count]) => `
         <div class="issue-chip">
@@ -2021,7 +2018,7 @@ function renderRepair() {
         type: 'bar',
         data: { labels: sorted.map(x => x[0]), datasets: [{ data: sorted.map(x => x[1]), backgroundColor: sorted.map(x => chipColors[x[0]]), borderRadius: 4, barPercentage: 0.5 }] },
         options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y',
-            scales: { x: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: '#edf2f7' } }, y: { ticks: { font: { size: 11, family: 'Inter', weight: 600 } }, grid: { display: false } } },
+            scales: { x: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: themeColor('--border-light', '#DEDACE') } }, y: { ticks: { font: { size: 11, family: 'Inter', weight: 600 } }, grid: { display: false } } },
             plugins: { legend: { display: false } } }
     });
 
@@ -2032,9 +2029,9 @@ function renderRepair() {
     destroyChart('issueBySiteChart');
     charts.issueBySiteChart = new Chart(document.getElementById('issueBySiteChart'), {
         type: 'bar',
-        data: { labels: siteLabels, datasets: [{ data: siteLabels.map(s => siteCounts[s]), backgroundColor: '#BC8A2E', borderRadius: 4, barPercentage: 0.5 }] },
+        data: { labels: siteLabels, datasets: [{ data: siteLabels.map(s => siteCounts[s]), backgroundColor: themeColor('--warning', '#BC8A2E'), borderRadius: 4, barPercentage: 0.5 }] },
         options: { responsive: true, maintainAspectRatio: false,
-            scales: { y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: '#edf2f7' } }, x: { ticks: { font: { size: 11, family: 'Inter' } }, grid: { display: false } } },
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: themeColor('--border-light', '#DEDACE') } }, x: { ticks: { font: { size: 11, family: 'Inter' } }, grid: { display: false } } },
             plugins: { legend: { display: false } } }
     });
 
@@ -2128,7 +2125,7 @@ function exportCSV(data) {
     a.download = `tractor_monitoring_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`Exported ${exportData.length} units to CSV`, 'success');
+    showToast(`${exportData.length} unit diekspor ke CSV`, 'success');
 }
 
 // Export the units currently visible in the Edit Units table (honors its
@@ -2214,7 +2211,7 @@ function handleEditCSVImport(file) {
             document.getElementById('importPanel').classList.remove('open');
         },
         error: err => {
-            showToast('Failed to parse CSV: ' + err.message, 'error');
+            showToast('Gagal membaca CSV: ' + err.message, 'error');
             showLoading(false);
         }
     });
@@ -2303,7 +2300,7 @@ function renderEditTable() {
 
     const tbody = document.getElementById('editBody');
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="21" style="text-align:center;padding:24px;color:#718096">${(query || statusVal || siteVal) ? 'No units match your filters' : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="21" style="text-align:center;padding:24px;color:var(--text-secondary)">${(query || statusVal || siteVal) ? 'Tidak ada unit yang cocok dengan filter' : 'Belum ada unit. Klik <strong>Add Unit</strong> atau <strong>Import CSV</strong> untuk memulai.'}</td></tr>`;
         return;
     }
 
@@ -2326,12 +2323,12 @@ function renderEditTable() {
             <td><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="jdlink" onblur="saveInlineEdit(this)">${escapeHtml(d.jdlink)}</span></td>
             <td data-label="Site"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="site" onblur="saveInlineEdit(this)">${escapeHtml(d.site)}</span></td>
             <td><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="yearReceived" onblur="saveInlineEdit(this)">${escapeHtml(d.yearReceived || '')}</span></td>
-            <td>${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
+            <td>${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td>${licenseTypeBadge(d, 'gps')}</td>
             <td>${licenseBadgeFor(d, 'gps')}</td>
             <td>${licenseTypeBadge(d, 'display')}</td>
             <td>${licenseBadgeFor(d, 'display')}</td>
-            <td style="max-width:180px;font-size:12px;color:#4a5568" title="${escapeHtml(remarks)}">${escapeHtml(remarksShort) || '<span style="color:#a0aec0">—</span>'}</td>
+            <td style="max-width:180px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(remarks)}">${escapeHtml(remarksShort) || '<span style="color:var(--text-light)">—</span>'}</td>
             <td class="col-attach">${renderAttachCell(d)}</td>
             <td class="col-actions">
                 <div class="row-actions">
@@ -2392,7 +2389,7 @@ function saveInlineEdit(el) {
             return;
         }
         updateUnit(id, { [field]: newValue });
-        showToast(`${COMPONENT_LABELS[field] || field.charAt(0).toUpperCase() + field.slice(1)} updated`, 'success');
+        showToast(`${COMPONENT_LABELS[field] || field.charAt(0).toUpperCase() + field.slice(1)} diperbarui`, 'success');
     }
 }
 
@@ -2400,7 +2397,7 @@ function saveInlineEdit(el) {
 function confirmBreakdownReason() {
     const reason = (document.getElementById('breakdownReasonText').value || '').trim();
     if (!reason) {
-        showToast('Please enter a breakdown reason', 'warning');
+        showToast('Isi alasan breakdown', 'warning');
         document.getElementById('breakdownReasonText').focus();
         return;
     }
@@ -2412,7 +2409,7 @@ function confirmBreakdownReason() {
     p.fields.breakdownReason = reason;
     if (p.isInline) {
         updateUnit(p.unitId, p.fields);
-        showToast('Status updated — breakdown reason recorded', 'success');
+        showToast('Status diperbarui — alasan breakdown dicatat', 'success');
     } else {
         _commitSaveUnit(p.unitId, p.fields);
     }
@@ -2844,7 +2841,7 @@ function applyExpiredLicenseDowngrades() {
 // (with a small marker + tooltip when auto-downgraded).
 function licenseTypeBadge(unit, kind) {
     const eff = effectiveLicense(unit, kind);
-    if (!eff.type) return '<span style="color:#a0aec0;font-size:11px">—</span>';
+    if (!eff.type) return '<span style="color:var(--text-light);font-size:11px">—</span>';
     if (eff.downgraded) {
         const tt = `Otomatis turun dari ${eff.premium} (expired ${eff.end})`;
         return `<span class="badge badge-cat" style="font-size:10px" title="${escapeHtml(tt)}"><i class="fas fa-arrow-turn-down" style="font-size:9px;opacity:.7"></i> ${escapeHtml(eff.type)}</span>`;
@@ -2865,7 +2862,7 @@ function getLicenseEndDate(unit, kind) {
 function licenseBadgeFor(unit, kind) {
     const end = getLicenseEndDate(unit, kind);
     const s = getExpiryStatus(end);
-    if (s.kind === 'none') return '<span style="color:#a0aec0;font-size:11px">—</span>';
+    if (s.kind === 'none') return '<span style="color:var(--text-light);font-size:11px">—</span>';
     // Auto-downgraded premium → show a neutral "on fallback tier" badge instead
     // of a red expired one (the receiver still works on SF-1 / G5 Basic).
     const eff = effectiveLicense(unit, kind);
@@ -2972,7 +2969,7 @@ function saveImplements() {
     try {
         localStorage.setItem(IMPLEMENTS_STORAGE_KEY, JSON.stringify(globalImplements));
     } catch (e) {
-        showToast('Storage full. Could not save implements.', 'error');
+        showToast('Penyimpanan penuh. Implement tidak tersimpan.', 'error');
     }
 }
 
@@ -3001,7 +2998,7 @@ function renderImplementsTable() {
     if (!tbody) return;
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:24px;color:#718096">${
+        tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--text-secondary)">${
             query ? 'No implements match your search'
                   : 'No implements yet. Click <strong>Add Implement</strong> to get started.'
         }</td></tr>`;
@@ -3012,7 +3009,7 @@ function renderImplementsTable() {
         const coaList = Array.isArray(d.chartOfAccounts) ? d.chartOfAccounts.filter(Boolean) : [];
         let coaCell;
         if (!coaList.length) {
-            coaCell = '<span style="color:#a0aec0;font-size:11px">—</span>';
+            coaCell = '<span style="color:var(--text-light);font-size:11px">—</span>';
         } else if (coaList.length === 1) {
             coaCell = `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(coaList[0])}</span>`;
         } else {
@@ -3148,7 +3145,7 @@ function saveImplement(event) {
             unitName: `[Implement] ${newImp.profileName}`,
             after: newImp.equipmentType || newImp.profileName
         });
-        showToast(`Implement "${newImp.profileName}" added`, 'success');
+        showToast(`Implement "${newImp.profileName}" ditambahkan`, 'success');
     }
 
     closeImplementModal();
@@ -3164,7 +3161,7 @@ function deleteImplement(id) {
     if (!requireEdit('implements')) return;
     const imp = globalImplements.find(d => d.id === id);
     if (!imp) return;
-    if (!confirm(`Delete implement "${imp.profileName}"?`)) return;
+    if (!confirm(`Hapus implement "${imp.profileName}"?`)) return;
 
     globalImplements = globalImplements.filter(d => d.id !== id);
     saveImplements();
@@ -3183,7 +3180,7 @@ function deleteSelectedImplements() {
     if (!requireEdit('implements')) return;
     const count = selectedImplementIds.size;
     if (count === 0) return;
-    if (!confirm(`Delete ${count} selected implement(s)?`)) return;
+    if (!confirm(`Hapus ${count} implement terpilih?`)) return;
 
     const idSet = new Set(selectedImplementIds);
     const removed = globalImplements.filter(d => idSet.has(d.id));
@@ -3214,7 +3211,7 @@ function _implementColAliases(field) {
 
 function exportImplementsCSV() {
     if (!canCsv('export')) return;
-    if (globalImplements.length === 0) { showToast('No implements to export', 'warning'); return; }
+    if (globalImplements.length === 0) { showToast('Tidak ada implement untuk diekspor', 'warning'); return; }
     const headers = ['No', ...IMPLEMENT_FIELDS.map(f => f.label), 'Chart of Account'];
     const rows = globalImplements.map((d, i) => [
         i + 1,
@@ -3230,7 +3227,7 @@ function exportImplementsCSV() {
     a.download = `implements_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`Exported ${globalImplements.length} implements to CSV`, 'success');
+    showToast(`${globalImplements.length} implement diekspor ke CSV`, 'success');
 }
 
 function downloadImplementTemplate() {
@@ -3440,7 +3437,7 @@ function showUnitProfile(id) {
     document.getElementById('unitProfileHistoryBtn').onclick = () => showHistory(id);
 
     const snLc = (u.sn || '').toLowerCase();
-    const dash = '<span style="color:#a0aec0">—</span>';
+    const dash = '<span style="color:var(--text-light)">—</span>';
     const val = v => v ? escapeHtml(v) : dash;
 
     // When the unit's implement text matches a record in the Implements
@@ -3567,7 +3564,7 @@ function saveDamages() {
         localStorage.setItem(DAMAGE_STORAGE_KEY, JSON.stringify(globalDamages));
         checkStorageUsage(); // photos are the main storage driver
     } catch (e) {
-        showToast('Storage full. Could not save damage records.', 'error');
+        showToast('Penyimpanan penuh. Catatan kerusakan tidak tersimpan.', 'error');
     }
 }
 
@@ -3677,7 +3674,7 @@ function renderDamageTable() {
                       (document.getElementById('damageTypeFilter')?.value || '');
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:24px;color:#718096">${
+        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--text-secondary)">${
             hasFilter ? 'Tidak ada kerusakan yang cocok dengan filter'
                       : 'Belum ada catatan kerusakan. Klik <strong>Tambah Kerusakan</strong> untuk mulai.'
         }</td></tr>`;
@@ -3687,7 +3684,7 @@ function renderDamageTable() {
     tbody.innerHTML = rows.map((d, i) => {
         const comp = d.component
             ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.component)}</span>`
-            : '<span style="color:#a0aec0;font-size:11px">—</span>';
+            : '<span style="color:var(--text-light);font-size:11px">—</span>';
         const desc = d.description || '';
         const descShort = desc.length > 50 ? desc.slice(0, 50) + '…' : desc;
         const lu = liveUnitFor(d);
@@ -3704,10 +3701,10 @@ function renderDamageTable() {
             <td data-label="Site">${escapeHtml(uSite)}</td>
             <td data-label="Tipe"><span class="badge badge-breakdown" style="font-size:10px">${escapeHtml(d.damageType || '')}</span></td>
             <td data-label="Komponen">${comp}</td>
-            <td data-label="Deskripsi" style="max-width:240px;font-size:12px;color:#4a5568" title="${escapeHtml(desc)}">${escapeHtml(descShort) || '<span style="color:#a0aec0">—</span>'}</td>
+            <td data-label="Deskripsi" style="max-width:240px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(desc)}">${escapeHtml(descShort) || '<span style="color:var(--text-light)">—</span>'}</td>
             <td data-label="Foto">${d.photo
                 ? `<img class="dmg-thumb" src="${d.photo}" alt="foto" onclick="openPhotoLightbox(this.src)">`
-                : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
+                : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td data-label="Perbaikan" style="white-space:nowrap">${d.resolved
                 ? `<span class="badge badge-good" style="font-size:10px" title="Selesai diperbaiki"><i class="fas fa-check"></i> Selesai${d.resolvedAt ? ' ' + escapeHtml(d.resolvedAt) : ''}</span>`
                 : `<button class="btn btn-secondary btn-sm" style="font-size:11px" title="Tandai selesai & pulihkan status unit" onclick="resolveDamage('${escapeHtml(d.id)}')"><i class="fas fa-wrench"></i> Tandai selesai</button>`}</td>
@@ -4022,7 +4019,7 @@ function cloudPushDamage(rec) {
     if (suppressCloudWrites || !window.cloud?.isReady || !rec) return;
     window.cloud.saveDamage(rec).catch(err => {
         console.error('[cloud] push damage failed:', err);
-        showToast('Cloud sync failed — changes saved locally', 'warning');
+        showToast('Sinkronisasi cloud gagal — perubahan tersimpan lokal', 'warning');
     });
 }
 
@@ -4084,7 +4081,7 @@ function saveLicenseStockLocal() {
     try {
         localStorage.setItem(LICENSE_STORAGE_KEY, JSON.stringify(globalLicenseStock));
     } catch (e) {
-        showToast('Storage full. Could not save license stock.', 'error');
+        showToast('Penyimpanan penuh. Stok lisensi tidak tersimpan.', 'error');
     }
 }
 
@@ -4176,7 +4173,7 @@ function renderLicenseStockTable() {
                       (document.getElementById('licenseTypeFilter')?.value || '');
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:#718096">${
+        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-secondary)">${
             hasFilter ? 'Tidak ada transaksi yang cocok dengan filter'
                       : 'Belum ada transaksi stok lisensi. Klik <strong>Tambah Stok</strong> atau <strong>Distribusi</strong>.'
         }</td></tr>`;
@@ -4201,9 +4198,9 @@ function renderLicenseStockTable() {
             <td data-label="Transaksi">${badge}</td>
             <td data-label="Jenis"><strong>${escapeHtml(r.licenseType || '')}</strong></td>
             <td data-label="Jumlah">${Number(r.qty) || 0}</td>
-            <td data-label="Unit">${isOut ? escapeHtml(uName) : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
-            <td data-label="SN" style="font-family:monospace;font-size:12px">${isOut ? escapeHtml(uSn) : '<span style="color:#a0aec0;font-size:11px">—</span>'}</td>
-            <td data-label="Catatan" style="max-width:200px;font-size:12px;color:#4a5568" title="${escapeHtml(note)}">${escapeHtml(noteShort) || '<span style="color:#a0aec0">—</span>'}</td>
+            <td data-label="Unit">${isOut ? escapeHtml(uName) : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
+            <td data-label="SN" style="font-family:monospace;font-size:12px">${isOut ? escapeHtml(uSn) : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
+            <td data-label="Catatan" style="max-width:200px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(note)}">${escapeHtml(noteShort) || '<span style="color:var(--text-light)">—</span>'}</td>
             <td class="col-actions">
                 <div class="row-actions">
                     <button class="btn btn-secondary" title="Edit" onclick="editLicenseStock('${escapeHtml(r.id)}')"><i class="fas fa-pen"></i></button>
@@ -4651,7 +4648,7 @@ function cloudPushLicense(rec) {
     if (suppressCloudWrites || !window.cloud?.isReady || !rec) return;
     window.cloud.saveLicense(rec).catch(err => {
         console.error('[cloud] push license failed:', err);
-        showToast('Cloud sync failed — changes saved locally', 'warning');
+        showToast('Sinkronisasi cloud gagal — perubahan tersimpan lokal', 'warning');
     });
 }
 
@@ -4699,7 +4696,7 @@ function showLicenseRulesBanner() {
     banner.className = 'category-rules-banner';
     banner.innerHTML = `
         <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules are blocking license stock.</strong>
-        <p>Your project's security rules don't allow this account to read or write the <code>licenseStock</code> collection yet — that's why license stock won't sync across devices. Paste the block below into <em>Firebase Console → Firestore → Rules</em>, then hard-refresh:</p>
+        <p>Security rules project Anda tidak mengizinkan akun ini membaca atau menulis <code>licenseStock</code> collection yet — that's why license stock won't sync across devices. Paste the block below into <em>Firebase Console → Firestore → Rules</em>, then hard-refresh:</p>
         <pre>match /licenseStock/{id} {
   allow read:  if request.auth != null
                &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
@@ -4719,7 +4716,7 @@ function cloudPushUnits(units) {
     if (suppressCloudWrites || !window.cloud?.isReady || !units?.length) return;
     window.cloud.saveUnits(units).catch(err => {
         console.error('[cloud] push units failed:', err);
-        showToast('Cloud sync failed — changes saved locally', 'warning');
+        showToast('Sinkronisasi cloud gagal — perubahan tersimpan lokal', 'warning');
     });
 }
 
@@ -4727,7 +4724,7 @@ function cloudDeleteUnits(ids) {
     if (suppressCloudWrites || !window.cloud?.isReady || !ids?.length) return;
     window.cloud.deleteUnits(ids).catch(err => {
         console.error('[cloud] delete units failed:', err);
-        showToast('Cloud delete failed — changes saved locally', 'warning');
+        showToast('Hapus di cloud gagal — perubahan tersimpan lokal', 'warning');
     });
 }
 
@@ -4735,7 +4732,7 @@ function cloudPushImplement(imp) {
     if (suppressCloudWrites || !window.cloud?.isReady || !imp) return;
     window.cloud.saveImplement(imp).catch(err => {
         console.error('[cloud] push implement failed:', err);
-        showToast('Cloud sync failed — changes saved locally', 'warning');
+        showToast('Sinkronisasi cloud gagal — perubahan tersimpan lokal', 'warning');
     });
 }
 
@@ -4754,7 +4751,7 @@ async function migrateLocalToCloudIfNeeded() {
         if (cloudUnits.length === 0 && globalData.length > 0) {
             console.log(`[cloud] migrating ${globalData.length} local units to Firestore...`);
             await window.cloud.saveUnits(globalData);
-            showToast(`Uploaded ${globalData.length} units to cloud`, 'success');
+            showToast(`${globalData.length} unit diunggah ke cloud`, 'success');
         }
         // Implements
         const cloudImpls = await window.cloud.getAllImplements();
@@ -4771,7 +4768,7 @@ async function migrateLocalToCloudIfNeeded() {
             if (cloudDamages.length === 0 && globalDamages.length > 0) {
                 console.log(`[cloud] migrating ${globalDamages.length} local damage records to Firestore...`);
                 await window.cloud.saveDamages(globalDamages);
-                showToast(`Uploaded ${globalDamages.length} damage records to cloud`, 'success');
+                showToast(`${globalDamages.length} catatan kerusakan diunggah ke cloud`, 'success');
             }
         }
         // License stock
@@ -4781,12 +4778,12 @@ async function migrateLocalToCloudIfNeeded() {
             if (cloudLicenses.length === 0 && globalLicenseStock.length > 0) {
                 console.log(`[cloud] migrating ${globalLicenseStock.length} local license records to Firestore...`);
                 await window.cloud.saveLicenses(globalLicenseStock);
-                showToast(`Uploaded ${globalLicenseStock.length} license records to cloud`, 'success');
+                showToast(`${globalLicenseStock.length} catatan lisensi diunggah ke cloud`, 'success');
             }
         }
     } catch (e) {
         console.error('[cloud] migration failed:', e);
-        showToast('Cloud migration failed — check console', 'error');
+        showToast('Migrasi ke cloud gagal — periksa console', 'error');
     }
 }
 
@@ -4914,12 +4911,12 @@ function applyDefaultLicensesIfNeeded() {
                 after: `GPS=SF-RTK + Display=G5 Basic on ${updates.length} units`
             });
         } catch (e) {}
-        showToast(`Applied default licenses to ${updates.length} units`, 'success');
+        showToast(`Lisensi default diterapkan ke ${updates.length} unit`, 'success');
         if (currentView === 'dashboard') updateDashboard(filteredData);
         if (currentView === 'editUnits') renderEditTable();
     }).catch(err => {
         console.error('[license-defaults] bulk save failed:', err);
-        showToast('License defaults migration failed — check console', 'error');
+        showToast('Migrasi default lisensi gagal — periksa console', 'error');
     });
 }
 
@@ -5001,12 +4998,12 @@ function applyLicenseDatesIfNeeded() {
                 after: `Imported start+expiry dates on ${updates.length} units`
             });
         } catch (e) {}
-        showToast(`Imported license dates for ${updates.length} units`, 'success');
+        showToast(`Tanggal lisensi diimpor untuk ${updates.length} unit`, 'success');
         if (currentView === 'dashboard') updateDashboard(filteredData);
         if (currentView === 'editUnits') renderEditTable();
     }).catch(err => {
         console.error('[license-dates] bulk save failed:', err);
-        showToast('License dates import failed — check console', 'error');
+        showToast('Impor tanggal lisensi gagal — periksa console', 'error');
     });
 }
 
@@ -5045,7 +5042,7 @@ function seedDefaultUserCategoriesIfOwner() {
     console.log('[user-categories] seeding 3 default categories...');
     window.cloud.saveUserCategories(defaults).then(() => {
         localStorage.setItem(USER_CATEGORIES_SEED_KEY, '1');
-        showToast('Seeded default user categories', 'success');
+        showToast('Kategori user bawaan ditambahkan', 'success');
     }).catch(err => {
         console.error('[user-categories] seed failed:', err);
         if (err && err.code === 'permission-denied') {
@@ -5068,7 +5065,7 @@ function showCategoryRulesBanner() {
     banner.className = 'category-rules-banner';
     banner.innerHTML = `
         <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules are blocking this write.</strong>
-        <p>Your project's security rules don't allow anyone to write to the <code>userCategories</code> collection yet.
+        <p>Security rules project Anda tidak mengizinkan siapa pun menulis ke <code>userCategories</code> collection yet.
         Paste the block below into <em>Firebase Console → Firestore → Rules</em>, then try again:</p>
         <pre>match /userCategories/{catId} {
   allow read:  if request.auth != null
@@ -5094,7 +5091,7 @@ function showHistoryRulesBanner() {
     banner.className = 'category-rules-banner';
     banner.innerHTML = `
         <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules are blocking change history.</strong>
-        <p>Your project's security rules don't allow this account to read or write the shared <code>history</code> collection yet — that's why you can't see edits from other team members. Paste the block below into <em>Firebase Console → Firestore → Rules</em>, then hard-refresh:</p>
+        <p>Security rules project Anda tidak mengizinkan akun ini membaca atau menulis <code>history</code> collection yet — that's why you can't see edits from other team members. Paste the block below into <em>Firebase Console → Firestore → Rules</em>, then hard-refresh:</p>
         <pre>match /history/{eventId} {
   allow read:   if request.auth != null
                 &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
@@ -5119,7 +5116,7 @@ function showDamageRulesBanner() {
     banner.className = 'category-rules-banner';
     banner.innerHTML = `
         <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules are blocking damage records.</strong>
-        <p>Your project's security rules don't allow this account to read or write the <code>damageRecords</code> collection yet — that's why damage records won't sync across devices. Paste the block below into <em>Firebase Console → Firestore → Rules</em>, then hard-refresh:</p>
+        <p>Security rules project Anda tidak mengizinkan akun ini membaca atau menulis <code>damageRecords</code> collection yet — that's why damage records won't sync across devices. Paste the block below into <em>Firebase Console → Firestore → Rules</em>, then hard-refresh:</p>
         <pre>match /damageRecords/{docId} {
   allow read:  if request.auth != null
                &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
@@ -5181,7 +5178,7 @@ function addCategory(event) {
     const input = document.getElementById('newCategoryName');
     const name = (input.value || '').trim();
     if (!name) {
-        showToast('Enter a category name', 'warning');
+        showToast('Isi nama kategori', 'warning');
         return;
     }
     // Prevent duplicates (case-insensitive)
@@ -5197,16 +5194,16 @@ function addCategory(event) {
     };
     window.cloud.saveUserCategory(cat).then(() => {
         input.value = '';
-        showToast(`Category "${name}" added`, 'success');
+        showToast(`Kategori "${name}" ditambahkan`, 'success');
         logEvent({ action: 'add', unitName: '-', field: 'user category', after: name });
     }).catch(err => {
         console.error('[user-categories] save failed:', err);
         const code = (err && err.code) || 'unknown';
         if (code === 'permission-denied') {
-            showToast('Firestore rules block writes to userCategories — see banner', 'error');
+            showToast('Firestore rules memblokir userCategories — lihat banner', 'error');
             showCategoryRulesBanner();
         } else {
-            showToast(`Failed to save category (${code})`, 'error');
+            showToast(`Gagal menyimpan kategori (${code})`, 'error');
         }
     });
 }
@@ -5228,10 +5225,10 @@ function deleteCategory(id) {
         console.error('[user-categories] delete failed:', err);
         const code = (err && err.code) || 'unknown';
         if (code === 'permission-denied') {
-            showToast('Firestore rules block writes to userCategories — see banner', 'error');
+            showToast('Firestore rules memblokir userCategories — lihat banner', 'error');
             showCategoryRulesBanner();
         } else {
-            showToast(`Failed to delete category (${code})`, 'error');
+            showToast(`Gagal menghapus kategori (${code})`, 'error');
         }
     });
 }
@@ -5462,7 +5459,7 @@ function initCloudSync() {
                 console.warn('[cloud] history offline:', err && err.code);
                 if (err && err.code === 'permission-denied') {
                     showHistoryRulesBanner();
-                    showToast('History blocked by Firestore rules — open History for fix', 'warning');
+                    showToast('History diblokir Firestore rules — buka History untuk perbaikan', 'warning');
                 }
             });
         }
@@ -5781,9 +5778,6 @@ function toggleUserMenu() {
     }
 }
 
-function canEdit() {
-    return currentUserDoc && (currentUserDoc.role === 'owner' || currentUserDoc.role === 'team');
-}
 function isOwner() {
     return currentUserDoc && currentUserDoc.role === 'owner';
 }
@@ -5853,10 +5847,7 @@ function canEditAnyArea() {
 }
 
 function applyRoleGating() {
-    const editor = canEditAnyArea();
     const owner = isOwner();
-    document.body.classList.toggle('role-viewer', !editor);
-    document.body.classList.toggle('role-owner', !!owner);
 
     // Owner-only navigation links
     document.querySelectorAll('[data-owner-only]').forEach(el => {
@@ -5904,9 +5895,10 @@ function applyAccessVisibility() {
 }
 
 // Gate an edit action. With an `area` it checks per-area edit access; without,
-// it falls back to the global canEdit() (any-area editor).
+// it falls back to canEditAnyArea() — an explicit per-area grant counts, so
+// this must not go by role alone.
 function requireEdit(area) {
-    const ok = area ? hasAccess(area, 'edit') : canEdit();
+    const ok = area ? hasAccess(area, 'edit') : canEditAnyArea();
     if (!ok) {
         showToast('Akses hanya-lihat — minta owner untuk memberi hak edit', 'warning');
         return false;
@@ -5915,7 +5907,7 @@ function requireEdit(area) {
 }
 
 // ============================================================
-// USER MANAGEMENT (Owner only)
+// USER MANAGEMENT (Khusus owner)
 // ============================================================
 
 function ensureUsersSubscription() {
@@ -5951,14 +5943,14 @@ function renderUsersView() {
     // Pending table
     const pendingBody = document.getElementById('pendingUsersBody');
     if (pending.length === 0) {
-        pendingBody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:20px;color:#718096">No pending sign-ups</td></tr>`;
+        pendingBody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-secondary)">Tidak ada pendaftaran menunggu</td></tr>`;
     } else {
         pendingBody.innerHTML = pending.map((u, i) => `
             <tr>
                 <td>${i + 1}</td>
                 <td><strong>${escapeHtml(u.displayName || '—')}</strong></td>
                 <td style="font-family:monospace;font-size:12px">${escapeHtml(u.email || '')}</td>
-                <td style="white-space:nowrap;font-size:12px;color:#718096">${u.createdAt ? new Date(u.createdAt).toLocaleString() : '—'}</td>
+                <td style="white-space:nowrap;font-size:12px;color:var(--text-secondary)">${u.createdAt ? new Date(u.createdAt).toLocaleString() : '—'}</td>
                 <td class="col-actions">
                     <div class="row-actions">
                         <button class="btn btn-success btn-sm" title="Approve as Viewer" onclick="approveUser('${escapeHtml(u.uid)}','viewer')">
@@ -5978,7 +5970,7 @@ function renderUsersView() {
     // Active table
     const activeBody = document.getElementById('activeUsersBody');
     if (active.length === 0) {
-        activeBody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:#718096">No active users yet</td></tr>`;
+        activeBody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-secondary)">Belum ada user aktif</td></tr>`;
     } else {
         activeBody.innerHTML = active.map((u, i) => {
             const isMe = currentUser && u.uid === currentUser.uid;
@@ -5987,20 +5979,20 @@ function renderUsersView() {
             const roleSelect = isOwnerRow
                 ? `<span class="badge badge-good"><i class="fas fa-crown"></i> Owner</span>`
                 : `<select class="form-select user-role-select" onchange="changeUserRole('${escapeHtml(u.uid)}', this.value)">
-                       <option value="viewer" ${u.role === 'viewer' ? 'selected' : ''}>Viewer (read-only)</option>
+                       <option value="viewer" ${u.role === 'viewer' ? 'selected' : ''}>Viewer (hanya lihat)</option>
                        <option value="team"   ${u.role === 'team'   ? 'selected' : ''}>Team (can edit)</option>
                    </select>`;
             return `
             <tr>
                 <td>${i + 1}</td>
-                <td><strong>${escapeHtml(u.displayName || '—')}</strong>${isMe ? ' <span style="font-size:11px;color:#718096">(you)</span>' : ''}</td>
+                <td><strong>${escapeHtml(u.displayName || '—')}</strong>${isMe ? ' <span style="font-size:11px;color:var(--text-secondary)">(you)</span>' : ''}</td>
                 <td style="font-family:monospace;font-size:12px">${escapeHtml(u.email || '')}</td>
                 <td>${roleSelect}</td>
-                <td style="white-space:nowrap;font-size:12px;color:#718096">${u.updatedAt ? new Date(u.updatedAt).toLocaleString() : '—'}</td>
-                <td style="font-size:12px;color:#718096">${escapeHtml(u.updatedBy || '—')}</td>
+                <td style="white-space:nowrap;font-size:12px;color:var(--text-secondary)">${u.updatedAt ? new Date(u.updatedAt).toLocaleString() : '—'}</td>
+                <td style="font-size:12px;color:var(--text-secondary)">${escapeHtml(u.updatedBy || '—')}</td>
                 <td class="col-actions">
                     ${isOwnerRow
-                        ? '<span style="font-size:11px;color:#a0aec0">protected</span>'
+                        ? '<span style="font-size:11px;color:var(--text-light)">protected</span>'
                         : `<div class="row-actions">
                             <button class="btn btn-secondary btn-sm" title="Atur akses per menu" onclick="openAccessModal('${escapeHtml(u.uid)}')"><i class="fas fa-sliders"></i> Akses</button>
                             <button class="btn btn-secondary btn-sm" title="Remove user" onclick="removeUser('${escapeHtml(u.uid)}')"><i class="fas fa-user-minus" style="color:var(--danger)"></i></button>
@@ -6085,7 +6077,7 @@ async function approveUser(uid, role) {
         showToast(`Approved ${user.email} as ${roleLabel}`, 'success');
     } catch (e) {
         console.error('[users] approve failed:', e);
-        showToast('Could not approve user — ' + e.message, 'error');
+        showToast('Gagal menyetujui user — ' + e.message, 'error');
     }
 }
 
@@ -6105,7 +6097,7 @@ async function rejectUser(uid) {
         });
         showToast(`Rejected ${user.email}`, 'success');
     } catch (e) {
-        showToast('Could not reject user — ' + e.message, 'error');
+        showToast('Gagal menolak user — ' + e.message, 'error');
     }
 }
 
@@ -6114,7 +6106,7 @@ async function changeUserRole(uid, newRole) {
     const user = allUsers.find(u => u.uid === uid);
     if (!user) return;
     if (user.uid === currentUser.uid && user.role === 'owner') {
-        showToast("You can't change your own owner role.", 'warning');
+        showToast("Anda tidak bisa mengubah role owner milik sendiri.", 'warning');
         renderUsersView();
         return;
     }
@@ -6134,7 +6126,7 @@ async function changeUserRole(uid, newRole) {
         });
         showToast(`${user.email} is now ${after}`, 'success');
     } catch (e) {
-        showToast('Could not change role — ' + e.message, 'error');
+        showToast('Gagal mengubah role — ' + e.message, 'error');
     }
 }
 
@@ -6142,7 +6134,7 @@ async function removeUser(uid) {
     if (!isOwner()) return;
     const user = allUsers.find(u => u.uid === uid);
     if (!user) return;
-    if (user.role === 'owner') { showToast('Cannot remove an owner', 'warning'); return; }
+    if (user.role === 'owner') { showToast('Owner tidak bisa dihapus', 'warning'); return; }
     if (!confirm(`Remove ${user.email} from the dashboard? Their auth account stays in Firebase but they lose all access.`)) return;
     try {
         await window.cloud.deleteUserDoc(uid);
@@ -6155,7 +6147,7 @@ async function removeUser(uid) {
         });
         showToast(`Removed ${user.email}`, 'success');
     } catch (e) {
-        showToast('Could not remove user — ' + e.message, 'error');
+        showToast('Gagal menghapus user — ' + e.message, 'error');
     }
 }
 

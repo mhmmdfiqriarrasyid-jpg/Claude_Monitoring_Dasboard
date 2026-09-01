@@ -81,7 +81,7 @@
             <div class="auth-error" id="signUpError"></div>
             <div class="auth-hint">
                 <i class="fas fa-info-circle"></i>
-                New accounts start as <strong>view-only</strong> and need approval from the owner before you can edit data.
+                Akun baru dimulai sebagai <strong>hanya-lihat</strong> dan perlu persetujuan owner sebelum bisa mengedit data.
             </div>
             <button type="submit" class="btn btn-primary auth-submit">
                 <i class="fas fa-user-plus"></i> Create Account
@@ -97,13 +97,13 @@
     <div class="auth-card">
         <div class="auth-card__brand">
             <i class="fas fa-hourglass-half" style="color:#d69e2e"></i>
-            <h1>Waiting for approval</h1>
+            <h1>Menunggu persetujuan</h1>
             <p id="pendingEmail"></p>
         </div>
         <div class="pending-message">
-            <p>Your account has been created, but the owner needs to approve it before you can access the dashboard.</p>
+            <p>Akun Anda sudah dibuat, tetapi owner harus menyetujuinya dulu sebelum Anda bisa membuka dashboard.</p>
             <p style="margin-top:12px;color:var(--text-secondary);font-size:13px">
-                Once approved, refresh this page or sign in again. You'll start with <strong>view-only</strong> access — the owner can grant edit rights at any time.
+                Setelah disetujui, muat ulang halaman ini atau login lagi. Anda akan mulai dengan akses <strong>hanya-lihat</strong> — owner bisa memberi hak edit kapan saja.
             </p>
         </div>
         <button class="btn btn-secondary auth-submit" onclick="handleSignOut()">
@@ -210,8 +210,8 @@
         <!-- Empty State (shown when no data) -->
         <div id="emptyState" class="empty-state">
             <i class="fas fa-database"></i>
-            <h3>No Units in Database</h3>
-            <p>Go to Edit Units to add tractor units manually or import from a CSV file.</p>
+            <h3>Belum ada unit di database</h3>
+            <p>Buka Edit Units untuk menambah unit traktor manual atau impor dari berkas CSV.</p>
             <br>
             <button class="btn btn-primary" onclick="navigateTo('editUnits')">
                 <i class="fas fa-pen-to-square"></i> Manage Units
@@ -231,7 +231,7 @@
                         <div class="kpi-card__icon"><i class="fas fa-boxes-stacked"></i></div>
                     </div>
                     <div class="kpi-card__value" id="kpiTotal">0</div>
-                    <div class="kpi-card__sub">All registered units</div>
+                    <div class="kpi-card__sub">Seluruh unit terdaftar</div>
                 </div>
                 <div class="kpi-card good">
                     <div class="kpi-card__header">
@@ -266,7 +266,7 @@
                         <div class="kpi-card__icon"><i class="fas fa-heart-pulse"></i></div>
                     </div>
                     <div class="kpi-card__value" id="kpiHealth">0%</div>
-                    <div class="kpi-card__sub">Overall fleet health</div>
+                    <div class="kpi-card__sub">Kesehatan armada keseluruhan</div>
                     <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiHealthBar" style="width:0%"></div></div>
                 </div>
             </div>
@@ -318,18 +318,18 @@
             <div class="downtime-section">
                 <div class="section-header">
                     <div class="section-title"><i class="fas fa-stopwatch"></i> Reliability &amp; Downtime</div>
-                    <span style="font-size:11px;color:var(--text-light)">Tracked automatically from status changes</span>
+                    <span style="font-size:11px;color:var(--text-light)">Dicatat otomatis dari perubahan status</span>
                 </div>
                 <div class="downtime-kpis">
                     <div class="downtime-kpi">
                         <div class="downtime-kpi__label">MTBF</div>
                         <div class="downtime-kpi__value" id="kpiMTBF">-</div>
-                        <div class="downtime-kpi__sub">Mean time between failures</div>
+                        <div class="downtime-kpi__sub">Rata-rata jarak antar kerusakan</div>
                     </div>
                     <div class="downtime-kpi">
                         <div class="downtime-kpi__label">MTTR</div>
                         <div class="downtime-kpi__value" id="kpiMTTR">-</div>
-                        <div class="downtime-kpi__sub">Mean time to repair</div>
+                        <div class="downtime-kpi__sub">Rata-rata waktu perbaikan</div>
                     </div>
                     <div class="downtime-kpi">
                         <div class="downtime-kpi__label">This Month</div>
@@ -339,7 +339,7 @@
                     <div class="downtime-kpi">
                         <div class="downtime-kpi__label">Failures</div>
                         <div class="downtime-kpi__value" id="kpiFailures">0</div>
-                        <div class="downtime-kpi__sub">Breakdowns recorded</div>
+                        <div class="downtime-kpi__sub">Breakdown tercatat</div>
                     </div>
                 </div>
                 <div class="downtime-grid">
@@ -520,8 +520,8 @@
         <div class="import-panel" id="importPanel">
             <div class="file-upload-area" id="editDropZone" onclick="document.getElementById('editCsvInput').click()">
                 <i class="fas fa-cloud-upload-alt"></i>
-                <p>Click to upload or drag & drop a CSV file</p>
-                <span class="hint">New units will be added. Duplicate serial numbers are skipped.</span>
+                <p>Klik untuk mengunggah atau seret & lepas berkas CSV</p>
+                <span class="hint">Unit baru akan ditambahkan. Serial number duplikat dilewati.</span>
                 <input type="file" id="editCsvInput" accept=".csv" hidden>
             </div>
         </div>
@@ -802,7 +802,7 @@
                             <th>No</th>
                             <th>Name</th>
                             <th>Email</th>
-                            <th>Signed up</th>
+                            <th>Waktu daftar</th>
                             <th class="col-actions">Action</th>
                         </tr>
                     </thead>
@@ -823,8 +823,8 @@
                             <th>Name</th>
                             <th>Email</th>
                             <th>Role</th>
-                            <th>Last updated</th>
-                            <th>Updated by</th>
+                            <th>Terakhir diubah</th>
+                            <th>Diubah oleh</th>
                             <th class="col-actions">Actions</th>
                         </tr>
                     </thead>
