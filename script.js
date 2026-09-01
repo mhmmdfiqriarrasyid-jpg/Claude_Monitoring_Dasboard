@@ -1233,9 +1233,9 @@ function importBackup(file) {
                 saveToStorage(globalData);
                 cloudDeleteUnits(previousIds.filter(id => !keptIds.has(id)));
                 cloudPushUnits(globalData);
-                logEvent({ action: 'restore', unitName: '-', after: `Restored ${data.units.length} units from backup` });
+                logEvent({ action: 'restore', unitName: '-', after: `${data.units.length} unit dipulihkan dari backup` });
                 recordChange({ type: 'restored', detail: `${data.units.length} units restored from backup` });
-                showToast(`Restored ${data.units.length} units from backup`, 'success');
+                showToast(`${data.units.length} unit dipulihkan dari backup`, 'success');
             }
 
             // v3 backups carry the other collections too — restore them with
@@ -2228,7 +2228,7 @@ function showImportReport({ total, added, skipped, skippedDetails, rejected, upd
     if (rejected.length > 0) parts.push(`${rejected.length} rejected`);
     if (updateFailed.length > 0) parts.push(`${updateFailed.length} update failed`);
     const summary = parts.join(' · ');
-    showToast(`Import: ${summary} (of ${total} rows)`, type);
+    showToast(`Impor: ${summary} (dari ${total} baris)`, type);
 
     if (!hasIssues) return;
 
@@ -2587,7 +2587,7 @@ function undoDelete() {
     restored.forEach(u => logEvent({ action: 'restore', unitId: u.id, unitName: u.name, after: 'undelete' }));
     recordChange({ type: 'restored', detail: `${restored.length} unit(s) restored` });
     renderEditTable();
-    showToast(`Restored ${restored.length} unit(s)`, 'success');
+    showToast(`${restored.length} unit dipulihkan`, 'success');
     lastDeletedUnits = null;
     if (undoTimer) { clearTimeout(undoTimer); undoTimer = null; }
     document.querySelectorAll('.undo-toast').forEach(t => t.remove());
@@ -6145,7 +6145,7 @@ async function removeUser(uid) {
             before: user.role,
             after: 'removed'
         });
-        showToast(`Removed ${user.email}`, 'success');
+        showToast(`${user.email} dihapus`, 'success');
     } catch (e) {
         showToast('Gagal menghapus user — ' + e.message, 'error');
     }
