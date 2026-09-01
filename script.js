@@ -419,6 +419,35 @@ function clean(v) { return (v || '').toString().trim(); }
 function isGood(v) { return clean(v).toLowerCase() === 'good'; }
 function pct(part, total) { return total > 0 ? Math.round((part / total) * 1000) / 10 : 0; }
 
+// ---- Calendar dates (YYYY-MM-DD), always in the viewer's LOCAL time ----
+// Every date in this app is a calendar day, not an instant, but the built-ins
+// treat them as UTC: `new Date('2026-09-01')` is UTC midnight, and
+// `toISOString().slice(0,10)` reports the UTC day. That skews a whole day
+// wherever the local date differs from the UTC one — one day EARLY west of
+// UTC, and in WIB/WITA any time before 07:00/08:00 local still reports
+// yesterday. It stopped being cosmetic once applyExpiredLicenseDowngrades
+// began WRITING a tier downgrade off getExpiryStatus.
+function parseLocalDate(value) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || '').trim());
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3]);   // local midnight
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+}
+
+function toISODate(d = new Date()) {
+    if (!d || isNaN(d.getTime())) return '';
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+// Calendar date exactly one year on, or '' when the input isn't a date.
+function addOneYearISO(value) {
+    const d = parseLocalDate(value);
+    if (!d) return '';
+    d.setFullYear(d.getFullYear() + 1);
+    return toISODate(d);
+}
+
 function getVal(row, key) {
     const k = Object.keys(row).find(h => h.toLowerCase().trim() === key.toLowerCase());
     return k ? row[k] : '';
@@ -790,7 +819,10 @@ function addUnits(newUnits) {
             skippedDetails.push({ name: u.name, sn: u.sn, reason: 'Duplicate serial number' });
         } else {
             if (!u.downtimeHistory) u.downtimeHistory = [];
-            if (!isGood(u.status)) u.breakdownStartedAt = Date.now();
+            if (!isGood(u.status)) {
+                u.breakdownStartedAt = Date.now();
+                if (!u.breakdownReason) u.breakdownReason = 'Diset via impor CSV';
+            }
             toAdd.push(u);
             if (snLower) existingSNs.add(snLower);
         }
@@ -849,7 +881,7 @@ const CSV_UPDATABLE_FIELDS = [
     'name', 'model', 'implement', 'status', 'display', 'gps', 'steering', 'jdlink', 'site',
     'yearReceived', 'userCategory', 'gpsLicense', 'licenseDisplay',
     'gpsLicenseStartDate', 'gpsLicenseEndDate',
-    'displayLicenseStartDate', 'displayLicenseEndDate', 'remarks'
+    'displayLicenseStartDate', 'displayLicenseEndDate', 'remarks', 'breakdownReason'
 ];
 
 function bulkUpdateUnitsFromCSV(parsedUnits) {
@@ -885,6 +917,16 @@ function bulkUpdateUnitsFromCSV(parsedUnits) {
         if (Object.keys(fields).length === 0) {
             unchanged++;
             return;
+        }
+
+        // A CSV can push a unit into Breakdown without naming a reason, which
+        // leaves the Alasan Breakdown column blank — the same gap Bulk Edit
+        // already guards against. Keep a real reason if one is already on the
+        // unit, otherwise record where it came from.
+        if (fields.status !== undefined && !isGood(fields.status) && !fields.breakdownReason) {
+            if (!(!isGood(before.status) && before.breakdownReason)) {
+                fields.breakdownReason = 'Diset via impor CSV';
+            }
         }
 
         const unit = { ...before, ...fields };
@@ -1077,7 +1119,7 @@ function exportHistory() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `tractor_history_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `tractor_history_${toISODate()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     showToast('Riwayat diekspor', 'success');
@@ -1139,7 +1181,7 @@ async function exportBackup() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `tractor_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `tractor_backup_${toISODate()}.json`;
     a.click();
     URL.revokeObjectURL(url);
     showToast(`Backup exported: ${globalData.length} units, ${globalImplements.length} implements, ${globalDamages.length} kerusakan, ${globalLicenseStock.length} transaksi lisensi`, 'success');
@@ -1458,6 +1500,7 @@ function processData(rows) {
             displayLicenseStartDate: clean(getVal(r, 'Display License Start Date')),
             displayLicenseEndDate:   clean(getVal(r, 'Display License Expiration Date')),
             remarks: clean(getVal(r, 'Remarks')),
+            breakdownReason: clean(getValAny(r, ['Breakdown Reason', 'Alasan Breakdown'])),
             downtimeHistory: [],
             breakdownStartedAt: null
         };
@@ -2108,7 +2151,7 @@ function exportCSV(data) {
     const headers = ['No', 'Nickname', 'Model', 'Serial Number', 'Implement', 'Status', 'Display', 'GPS', 'Steering', 'JDLink', 'Site',
                      'Tahun Penerimaan', 'User Category', 'GPS License', 'Display License',
                      'GPS License Start Date', 'GPS License Expiration Date',
-                     'Display License Start Date', 'Display License Expiration Date', 'Remarks'];
+                     'Display License Start Date', 'Display License Expiration Date', 'Remarks', 'Breakdown Reason'];
     const rows = exportData.map((d, i) => [i + 1, d.name, d.model, d.sn, d.implement || '', d.status, d.display, d.gps, d.steering, d.jdlink, d.site,
                      d.yearReceived || '', d.userCategory || '',
                      effectiveLicense(d, 'gps').type || '', effectiveLicense(d, 'display').type || '',
@@ -2116,13 +2159,14 @@ function exportCSV(data) {
                      d.gpsLicenseEndDate   || d.licenseEndDate   || '',
                      d.displayLicenseStartDate || '',
                      d.displayLicenseEndDate   || '',
-                     d.remarks || '']);
+                     d.remarks || '',
+                     (!isGood(d.status) && d.breakdownReason) ? d.breakdownReason : '']);
     const csv = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `tractor_monitoring_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `tractor_monitoring_${toISODate()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     showToast(`${exportData.length} unit diekspor ke CSV`, 'success');
@@ -2760,18 +2804,17 @@ function _autoFillEnd(startId, endId) {
     if (!startEl || !endEl) return;
     if (!startEl.value) return;
     if (endEl.value) return;
-    const d = new Date(startEl.value);
-    if (isNaN(d.getTime())) return;
-    d.setFullYear(d.getFullYear() + 1);
-    endEl.value = d.toISOString().slice(0, 10);
+    const end = addOneYearISO(startEl.value);
+    if (!end) return;
+    endEl.value = end;
 }
 
 // Compute expiry status for a single end-date string.
 // Returns one of: { kind: 'none'|'expired'|'soon'|'ok', label, daysLeft }
 function getExpiryStatus(endDate) {
     if (!endDate) return { kind: 'none', label: '—' };
-    const end = new Date(endDate);
-    if (isNaN(end.getTime())) return { kind: 'none', label: '—' };
+    const end = parseLocalDate(endDate);
+    if (!end) return { kind: 'none', label: '—' };
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     end.setHours(0, 0, 0, 0);
@@ -3224,7 +3267,7 @@ function exportImplementsCSV() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `implements_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `implements_${toISODate()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     showToast(`${globalImplements.length} implement diekspor ke CSV`, 'success');
@@ -3749,7 +3792,7 @@ function showAddDamageForm() {
     document.getElementById('damageModalTitle').textContent = 'Tambah Kerusakan';
     document.getElementById('editDamageId').value = '';
     document.getElementById('damageForm').reset();
-    document.getElementById('dmgDate').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('dmgDate').value = toISODate();
     populateDamageUnitSelect();
     renderDamageComponentOptions();
     onDamageTypeChange();
@@ -3903,7 +3946,7 @@ function resolveDamage(id) {
     if (!confirm(`Tandai kerusakan unit "${rec.unitName}" (${rec.date}) selesai diperbaiki?`)) return;
 
     rec.resolved = true;
-    rec.resolvedAt = new Date().toISOString().slice(0, 10);
+    rec.resolvedAt = toISODate();
     rec.updatedAt = Date.now();
     saveDamages();
     cloudPushDamage(rec);
@@ -4008,7 +4051,7 @@ function exportDamageCSV() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `kerusakan_report_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `kerusakan_report_${toISODate()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     showToast(`Export ${rows.length} catatan kerusakan ke CSV`, 'success');
@@ -4303,7 +4346,7 @@ function showAddLicenseForm(txnType) {
     document.getElementById('editLicenseId').value = '';
     document.getElementById('licenseForm').reset();
     document.getElementById('licTxnType').value = txnType || 'IN';
-    document.getElementById('licDate').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('licDate').value = toISODate();
     document.getElementById('licQty').value = '1';
     populateLicenseTypeList();
     populateLicenseUnitList('');
@@ -4360,10 +4403,8 @@ function applyDistributedLicenseToUnit(rec, force = false) {
     if (!kind) return false;
     const unit = globalData.find(u => u.id === rec.unitId);
     if (!unit) return false;
-    const start = rec.date || new Date().toISOString().slice(0, 10);
-    let end = '';
-    const d = new Date(start);
-    if (!isNaN(d.getTime())) { d.setFullYear(d.getFullYear() + 1); end = d.toISOString().slice(0, 10); }
+    const start = rec.date || toISODate();
+    const end = addOneYearISO(start);
 
     const currentEnd = getLicenseEndDate(unit, kind);
     if (!force && currentEnd && end && currentEnd > end) return 'skipped-older';
@@ -4594,7 +4635,7 @@ function exportLicenseStockCSV() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `stok_lisensi_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `stok_lisensi_${toISODate()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     showToast(`Export ${rows.length} transaksi lisensi ke CSV`, 'success');
@@ -4633,7 +4674,7 @@ function handleLicenseCSVImport(file) {
         header: true,
         skipEmptyLines: true,
         complete: result => {
-            const today = new Date().toISOString().slice(0, 10);
+            const today = toISODate();
             const added = [];
             let rejected = 0;
 
@@ -4981,12 +5022,7 @@ function applyLicenseDatesIfNeeded() {
     if (localStorage.getItem(LICENSE_DATES_KEY) === '1') return;
     if (!Array.isArray(globalData) || globalData.length === 0) return;
 
-    const addOneYear = (isoDate) => {
-        const d = new Date(isoDate);
-        if (isNaN(d.getTime())) return '';
-        d.setFullYear(d.getFullYear() + 1);
-        return d.toISOString().slice(0, 10);
-    };
+    const addOneYear = addOneYearISO;
 
     // Normalize serial numbers so OCR-style confusables match:
     // uppercase, strip whitespace, and collapse I↔1 and O↔0.
