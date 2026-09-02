@@ -319,6 +319,12 @@ window.cloud = {
             }
         );
     },
+    // The live subscription is capped so the dashboard stays light. Export
+    // needs the whole audit trail, not just the newest page of it.
+    async getAllHistory() {
+        const snap = await getDocs(query(collection(db, HISTORY_COL), orderBy('timestamp', 'desc')));
+        return snap.docs.map(d => d.data());
+    },
     async clearHistoryCloud() {
         const snap = await getDocs(collection(db, HISTORY_COL));
         if (snap.empty) return;

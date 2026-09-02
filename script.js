@@ -419,6 +419,23 @@ function clean(v) { return (v || '').toString().trim(); }
 function isGood(v) { return clean(v).toLowerCase() === 'good'; }
 function pct(part, total) { return total > 0 ? Math.round((part / total) * 1000) / 10 : 0; }
 
+// ---- CSV output ----
+// Quoting alone does NOT stop a spreadsheet executing a cell: Excel and Google
+// Sheets evaluate any cell whose text begins with = + - @ (or a leading tab /
+// carriage return) when the file is opened. Every free-text field here —
+// Nickname, Remarks, Deskripsi, Catatan — is user supplied and lands in an
+// export other people open, so prefix those with an apostrophe, which
+// spreadsheets strip on display but never evaluate.
+function csvCell(value) {
+    let v = value == null ? '' : String(value);
+    if (/^[=+\-@\t\r]/.test(v)) v = "'" + v;
+    return '"' + v.replace(/"/g, '""') + '"';
+}
+
+function toCSV(headers, rows) {
+    return [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n');
+}
+
 // ---- Calendar dates (YYYY-MM-DD), always in the viewer's LOCAL time ----
 // Every date in this app is a calendar day, not an instant, but the built-ins
 // treat them as UTC: `new Date('2026-09-01')` is UTC midnight, and
@@ -1104,9 +1121,30 @@ function clearHistory() {
     }
 }
 
-function exportHistory() {
+// The History view is fed by a capped live subscription (newest 500), so
+// exporting what's on screen silently truncated the audit trail. Pull the full
+// collection from Firestore instead, falling back to the cached window when
+// offline — and say which one the file actually contains.
+async function exportHistory() {
     if (!canCsv('export')) return;
-    const log = getAuditLog();
+
+    let log = getAuditLog();
+    let complete = false;
+    if (window.cloud?.isReady && window.cloud.getAllHistory) {
+        try {
+            showLoading(true);
+            const all = await window.cloud.getAllHistory();
+            if (Array.isArray(all) && all.length >= log.length) {
+                log = all.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                complete = true;
+            }
+        } catch (err) {
+            console.warn('[cloud] full history fetch failed, exporting cached window:', err);
+        } finally {
+            showLoading(false);
+        }
+    }
+
     if (log.length === 0) { showToast('Tidak ada riwayat untuk diekspor', 'warning'); return; }
     const headers = ['Timestamp', 'Action', 'Unit', 'Field', 'Before', 'After'];
     const rows = log.map(e => [
@@ -1114,7 +1152,7 @@ function exportHistory() {
         e.action, e.unitName || '', e.field || '',
         e.before != null ? e.before : '', e.after != null ? e.after : ''
     ]);
-    const csv = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const csv = [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1122,7 +1160,10 @@ function exportHistory() {
     a.download = `tractor_history_${toISODate()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('Riwayat diekspor', 'success');
+    showToast(complete
+        ? `${log.length} kejadian riwayat diekspor (lengkap)`
+        : `${log.length} kejadian riwayat diekspor — hanya yang tersimpan di perangkat ini, bukan seluruh riwayat`,
+        complete ? 'success' : 'warning');
 }
 
 // ============================================================
@@ -1395,6 +1436,21 @@ function computeDowntimeStats() {
     let totalMonthDowntime = 0;
     const perUnit = [];
 
+    // How far back the downtime record actually goes. MTBF used to divide
+    // all-time failures by a FIXED 30 days per unit, so the denominator stood
+    // still while the numerator kept growing: an unchanged fleet's MTBF fell
+    // from ~30 days to ~2 days over a year, and hit 0 once total downtime
+    // passed 30 days per unit. Measure the real observation window instead.
+    let earliestEventMs = Infinity;
+    globalData.forEach(u => {
+        (u.downtimeHistory || []).forEach(iv => {
+            if (typeof iv.start === 'number' && iv.start < earliestEventMs) earliestEventMs = iv.start;
+        });
+        if (typeof u.breakdownStartedAt === 'number' && u.breakdownStartedAt < earliestEventMs) {
+            earliestEventMs = u.breakdownStartedAt;
+        }
+    });
+
     globalData.forEach(u => {
         const history = u.downtimeHistory || [];
         let unitDowntime = 0;
@@ -1418,18 +1474,36 @@ function computeDowntimeStats() {
     });
 
     const mttr = totalFailures > 0 ? totalDowntimeMs / totalFailures : 0;
-    const fleetOperatingMs = Math.max(1, globalData.length) * 30 * 24 * 3600 * 1000;
+
+    // Observed window per unit, floored at a day so a fleet whose first
+    // breakdown happened minutes ago can't produce an absurd MTBF.
+    const DAY_MS = 24 * 3600 * 1000;
+    const windowMs = earliestEventMs === Infinity
+        ? 30 * DAY_MS                       // nothing recorded yet
+        : Math.max(DAY_MS, now - earliestEventMs);
+    const fleetOperatingMs = Math.max(1, globalData.length) * windowMs;
     const uptimeMs = Math.max(0, fleetOperatingMs - totalDowntimeMs);
     const mtbf = totalFailures > 0 ? uptimeMs / totalFailures : 0;
 
     perUnit.sort((a, b) => b.downtime - a.downtime);
-    return { mtbf, mttr, totalMonthDowntime, totalFailures, topOffenders: perUnit.slice(0, 5), topTen: perUnit.slice(0, 10) };
+    return {
+        mtbf, mttr, totalMonthDowntime, totalFailures,
+        observedMs: earliestEventMs === Infinity ? 0 : now - earliestEventMs,
+        topOffenders: perUnit.slice(0, 5), topTen: perUnit.slice(0, 10)
+    };
 }
 
 function renderDowntimeKPIs() {
     const s = computeDowntimeStats();
     document.getElementById('kpiMTBF').textContent = formatDuration(s.mtbf);
     document.getElementById('kpiMTTR').textContent = formatDuration(s.mttr);
+    // MTBF only means something against the period it was measured over.
+    const mtbfSub = document.getElementById('kpiMTBFSub');
+    if (mtbfSub) {
+        mtbfSub.textContent = s.observedMs > 0
+            ? `Rata-rata jarak antar kerusakan · diamati ${formatDuration(s.observedMs)}`
+            : 'Rata-rata jarak antar kerusakan';
+    }
     document.getElementById('kpiMonthDowntime').textContent = formatDuration(s.totalMonthDowntime);
     document.getElementById('kpiFailures').textContent = s.totalFailures;
 
@@ -2161,7 +2235,7 @@ function exportCSV(data) {
                      d.displayLicenseEndDate   || '',
                      d.remarks || '',
                      (!isGood(d.status) && d.breakdownReason) ? d.breakdownReason : '']);
-    const csv = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const csv = [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -3262,7 +3336,7 @@ function exportImplementsCSV() {
         (Array.isArray(d.chartOfAccounts) ? d.chartOfAccounts.filter(Boolean) : []).join('; ')
     ]);
     const csv = [headers, ...rows].map(row =>
-        row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+        row.map(csvCell).join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -3281,7 +3355,7 @@ function downloadImplementTemplate() {
         'Tillage', '3', 'Center', 'Manual', 'Drawbar', 'iGrade',
         '159361_Scooping; 159201_Offset Harrow'];
     const csv = [headers, sample].map(row =>
-        row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+        row.map(csvCell).join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -4046,7 +4120,7 @@ function exportDamageCSV() {
         ];
     });
     const csv = [headers, ...dataRows].map(row =>
-        row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+        row.map(csvCell).join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -4630,7 +4704,7 @@ function exportLicenseStockCSV() {
         ];
     });
     const csv = [headers, ...dataRows].map(row =>
-        row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+        row.map(csvCell).join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -4656,7 +4730,7 @@ function downloadLicenseTemplate() {
         ['2026-05-11', 'Distribusi', 'G5 Advance', '1', 'GGCH001G', '', 'Dipasang di unit']
     ];
     const csv = [headers, ...sample].map(row =>
-        row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+        row.map(csvCell).join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
