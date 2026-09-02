@@ -6083,6 +6083,28 @@ function ensureUsersSubscription() {
     });
 }
 
+// Compact, Indonesian, no seconds — the default toLocaleString() renders
+// "8/19/2026, 2:16:34 PM", which is US-formatted and wide enough to crowd the
+// action column out of the row.
+function formatUserTime(ms) {
+    if (!ms) return '—';
+    const d = new Date(ms);
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleString('id-ID', {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+    });
+}
+
+// "Diubah oleh" repeats the same address on every row, and the domain is the
+// noisy half. Show the local part; the full address stays in the tooltip.
+function shortActor(value) {
+    const v = (value || '').trim();
+    if (!v) return '—';
+    const at = v.indexOf('@');
+    return at > 0 ? v.slice(0, at) : v;
+}
+
 function renderUsersView() {
     if (!isOwner()) return;
     const pending = allUsers.filter(u => u.status !== 'active');
@@ -6111,17 +6133,17 @@ function renderUsersView() {
             <tr>
                 <td>${i + 1}</td>
                 <td><strong>${escapeHtml(u.displayName || '—')}</strong></td>
-                <td style="font-family:monospace;font-size:12px">${escapeHtml(u.email || '')}</td>
-                <td style="white-space:nowrap;font-size:12px;color:var(--text-secondary)">${u.createdAt ? new Date(u.createdAt).toLocaleString() : '—'}</td>
+                <td><span class="user-cell-email" title="${escapeHtml(u.email || '')}">${escapeHtml(u.email || '')}</span></td>
+                <td><span class="user-cell-time">${formatUserTime(u.createdAt)}</span></td>
                 <td class="col-actions">
-                    <div class="row-actions">
-                        <button class="btn btn-success btn-sm" title="Approve as Viewer" onclick="approveUser('${escapeHtml(u.uid)}','viewer')">
-                            <i class="fas fa-eye"></i> Approve as Viewer
+                    <div class="row-actions row-actions--labeled">
+                        <button class="btn btn-success btn-sm" title="Setujui sebagai Viewer (hanya lihat)" onclick="approveUser('${escapeHtml(u.uid)}','viewer')">
+                            <i class="fas fa-eye"></i> Viewer
                         </button>
-                        <button class="btn btn-primary btn-sm" title="Approve as Team (with edit rights)" onclick="approveUser('${escapeHtml(u.uid)}','team')">
-                            <i class="fas fa-user-pen"></i> Approve as Team
+                        <button class="btn btn-primary btn-sm" title="Setujui sebagai Team (bisa mengedit)" onclick="approveUser('${escapeHtml(u.uid)}','team')">
+                            <i class="fas fa-user-pen"></i> Team
                         </button>
-                        <button class="btn btn-secondary btn-sm" title="Reject and remove" onclick="rejectUser('${escapeHtml(u.uid)}')">
+                        <button class="btn btn-secondary btn-sm row-actions__icon" title="Tolak dan hapus pendaftaran" onclick="rejectUser('${escapeHtml(u.uid)}')">
                             <i class="fas fa-xmark" style="color:var(--danger)"></i>
                         </button>
                     </div>
@@ -6140,24 +6162,25 @@ function renderUsersView() {
             // Owner can't be demoted from this UI (and can't demote themselves).
             const roleSelect = isOwnerRow
                 ? `<span class="badge badge-good"><i class="fas fa-crown"></i> Owner</span>`
-                : `<select class="form-select user-role-select" onchange="changeUserRole('${escapeHtml(u.uid)}', this.value)">
-                       <option value="viewer" ${u.role === 'viewer' ? 'selected' : ''}>Viewer (hanya lihat)</option>
-                       <option value="team"   ${u.role === 'team'   ? 'selected' : ''}>Team (can edit)</option>
+                : `<select class="form-select user-role-select" title="Viewer = hanya lihat · Team = bisa mengedit"
+                           onchange="changeUserRole('${escapeHtml(u.uid)}', this.value)">
+                       <option value="viewer" ${u.role === 'viewer' ? 'selected' : ''}>Viewer</option>
+                       <option value="team"   ${u.role === 'team'   ? 'selected' : ''}>Team</option>
                    </select>`;
             return `
             <tr>
                 <td>${i + 1}</td>
-                <td><strong>${escapeHtml(u.displayName || '—')}</strong>${isMe ? ' <span style="font-size:11px;color:var(--text-secondary)">(you)</span>' : ''}</td>
-                <td style="font-family:monospace;font-size:12px">${escapeHtml(u.email || '')}</td>
+                <td><strong>${escapeHtml(u.displayName || '—')}</strong>${isMe ? ' <span style="font-size:11px;color:var(--text-secondary)">(Anda)</span>' : ''}</td>
+                <td><span class="user-cell-email" title="${escapeHtml(u.email || '')}">${escapeHtml(u.email || '')}</span></td>
                 <td>${roleSelect}</td>
-                <td style="white-space:nowrap;font-size:12px;color:var(--text-secondary)">${u.updatedAt ? new Date(u.updatedAt).toLocaleString() : '—'}</td>
-                <td style="font-size:12px;color:var(--text-secondary)">${escapeHtml(u.updatedBy || '—')}</td>
+                <td><span class="user-cell-time">${formatUserTime(u.updatedAt)}</span></td>
+                <td><span class="user-cell-actor" title="${escapeHtml(u.updatedBy || '')}">${escapeHtml(shortActor(u.updatedBy))}</span></td>
                 <td class="col-actions">
                     ${isOwnerRow
-                        ? '<span style="font-size:11px;color:var(--text-light)">protected</span>'
-                        : `<div class="row-actions">
+                        ? '<span class="user-cell-protected">dilindungi</span>'
+                        : `<div class="row-actions row-actions--labeled">
                             <button class="btn btn-secondary btn-sm" title="Atur akses per menu" onclick="openAccessModal('${escapeHtml(u.uid)}')"><i class="fas fa-sliders"></i> Akses</button>
-                            <button class="btn btn-secondary btn-sm" title="Remove user" onclick="removeUser('${escapeHtml(u.uid)}')"><i class="fas fa-user-minus" style="color:var(--danger)"></i></button>
+                            <button class="btn btn-secondary btn-sm row-actions__icon" title="Hapus user" onclick="removeUser('${escapeHtml(u.uid)}')"><i class="fas fa-user-minus" style="color:var(--danger)"></i></button>
                            </div>`}
                 </td>
             </tr>`;

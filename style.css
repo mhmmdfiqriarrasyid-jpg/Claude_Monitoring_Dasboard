@@ -1216,6 +1216,27 @@ body {
     font-size: 12px;
 }
 
+/* The square sizing above is for icon-only buttons. A row-action group that
+   carries labelled buttons opts out, otherwise the label is clipped to 30px
+   ("Akses" rendered as "Akse"). Icon-only buttons inside such a group keep
+   their square shape via .row-actions__icon. */
+.row-actions--labeled {
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    gap: 6px;
+}
+.row-actions--labeled .btn {
+    width: auto;
+    height: 28px;
+    padding: 0 10px;
+    gap: 6px;
+    white-space: nowrap;
+}
+.row-actions--labeled .btn.row-actions__icon {
+    width: 28px;
+    padding: 0;
+}
+
 .data-table th.col-check,
 .data-table td.col-check {
     width: 40px;
@@ -1908,9 +1929,70 @@ body.auth-blocked .footer { filter: blur(2px); pointer-events: none; }
 .user-chip--pending { color: #A24E32; border-color: #E4B79A; background: var(--primary-lighter); }
 
 .user-role-select {
-    padding: 4px 10px;
+    padding: 4px 8px;
     font-size: 12px;
-    min-width: 160px;
+    width: 100%;
+    min-width: 96px;
+}
+
+/* ===== User Management tables =====
+   The generic .col-actions is 80px, sized for two icon buttons; these tables
+   carry labelled ones, so the column is given room instead of squeezing them
+   against the edge. Long emails get an ellipsis rather than stretching the
+   row — the full value stays available as a tooltip. */
+#viewUsers .data-table th:first-child,
+#viewUsers .data-table td:first-child {
+    width: 48px;
+    text-align: center;
+    color: var(--text-secondary);
+}
+/* Sized to its buttons rather than a fixed reservation, so the columns that
+   actually carry information keep the width. */
+#viewUsers .data-table th.col-actions,
+#viewUsers .data-table td.col-actions {
+    width: 1%;
+    white-space: nowrap;
+    text-align: right;
+}
+#viewUsers .data-table td { vertical-align: middle; }
+
+/* Measured: without caps this table came to 1062px inside a 968px wrapper.
+   Email and the "diubah oleh" actor (the same owner address on every row)
+   were the two widest columns, so they truncate with the full value on hover. */
+.user-cell-email {
+    display: block;
+    max-width: 185px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.user-cell-actor {
+    display: block;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.user-cell-email {
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+.user-cell-actor,
+.user-cell-time {
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+.user-cell-protected {
+    font-size: 11px;
+    color: var(--text-light);
+    font-style: italic;
+}
+
+@media (max-width: 900px) {
+    .user-cell-email, .user-cell-actor { max-width: 150px; }
+    #viewUsers .data-table th.col-actions,
+    #viewUsers .data-table td.col-actions { min-width: 0; }
 }
 
 .btn-success {
