@@ -1081,13 +1081,13 @@ function showHistory(unitId) {
                 : '<span style="color:var(--text-light)">—</span>';
             return `
             <tr>
-                <td style="white-space:nowrap">${new Date(e.timestamp).toLocaleString()}</td>
-                <td><span class="audit-badge audit-${escapeHtml(e.action)}">${escapeHtml(e.action)}</span></td>
-                <td>${who}</td>
-                <td>${escapeHtml(e.unitName || '-')}</td>
-                <td>${escapeHtml(e.field || '-')}</td>
-                <td>${escapeHtml(e.before != null ? e.before : '-')}</td>
-                <td>${escapeHtml(e.after  != null ? e.after  : '-')}</td>
+                <td data-label="Waktu" style="white-space:nowrap">${formatUserTime(e.timestamp)}</td>
+                <td data-label="Aksi"><span class="audit-badge audit-${escapeHtml(e.action)}">${escapeHtml(e.action)}</span></td>
+                <td data-label="Oleh">${who}</td>
+                <td data-label="Unit">${escapeHtml(e.unitName || '-')}</td>
+                <td data-label="Field">${escapeHtml(e.field || '-')}</td>
+                <td data-label="Sebelum">${escapeHtml(e.before != null ? e.before : '-')}</td>
+                <td data-label="Sesudah">${escapeHtml(e.after  != null ? e.after  : '-')}</td>
             </tr>`;
         }).join('');
     }
@@ -3138,14 +3138,14 @@ function renderImplementsTable() {
         <tr>
             <td class="col-check"><input type="checkbox" class="impl-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedImplementCount()"></td>
             <td>${i + 1}</td>
-            <td>${escapeHtml(d.profileName)}</td>
-            <td>${escapeHtml(d.brand || '')}</td>
-            <td>${escapeHtml(d.equipmentType)}</td>
-            <td>${escapeHtml(d.code || '')}</td>
-            <td>${escapeHtml(d.workingWidth)}</td>
-            <td>${escapeHtml(d.operation)}</td>
-            <td>${escapeHtml(d.connectingType)}</td>
-            <td style="max-width:240px;white-space:nowrap">${coaCell}</td>
+            <td data-label="Profile Name">${escapeHtml(d.profileName)}</td>
+            <td data-label="Brand">${escapeHtml(d.brand || '')}</td>
+            <td data-label="Equipment Type">${escapeHtml(d.equipmentType)}</td>
+            <td data-label="Code">${escapeHtml(d.code || '')}</td>
+            <td data-label="Working Width">${escapeHtml(d.workingWidth)}</td>
+            <td data-label="Operation">${escapeHtml(d.operation)}</td>
+            <td data-label="Connecting Type">${escapeHtml(d.connectingType)}</td>
+            <td data-label="Chart of Account" style="max-width:240px;white-space:nowrap">${coaCell}</td>
             <td class="col-actions">
                 <div class="row-actions">
                     <button class="btn btn-secondary" title="Edit" onclick="editImplement('${escapeHtml(d.id)}')"><i class="fas fa-pen"></i></button>
@@ -6132,9 +6132,9 @@ function renderUsersView() {
         pendingBody.innerHTML = pending.map((u, i) => `
             <tr>
                 <td>${i + 1}</td>
-                <td><strong>${escapeHtml(u.displayName || '—')}</strong></td>
-                <td><span class="user-cell-email" title="${escapeHtml(u.email || '')}">${escapeHtml(u.email || '')}</span></td>
-                <td><span class="user-cell-time">${formatUserTime(u.createdAt)}</span></td>
+                <td data-label="Nama"><strong>${escapeHtml(u.displayName || '—')}</strong></td>
+                <td data-label="Email"><span class="user-cell-email" title="${escapeHtml(u.email || '')}">${escapeHtml(u.email || '')}</span></td>
+                <td data-label="Waktu daftar"><span class="user-cell-time">${formatUserTime(u.createdAt)}</span></td>
                 <td class="col-actions">
                     <div class="row-actions row-actions--labeled">
                         <button class="btn btn-success btn-sm" title="Setujui sebagai Viewer (hanya lihat)" onclick="approveUser('${escapeHtml(u.uid)}','viewer')">
@@ -6170,11 +6170,11 @@ function renderUsersView() {
             return `
             <tr>
                 <td>${i + 1}</td>
-                <td><strong>${escapeHtml(u.displayName || '—')}</strong>${isMe ? ' <span style="font-size:11px;color:var(--text-secondary)">(Anda)</span>' : ''}</td>
-                <td><span class="user-cell-email" title="${escapeHtml(u.email || '')}">${escapeHtml(u.email || '')}</span></td>
-                <td>${roleSelect}</td>
-                <td><span class="user-cell-time">${formatUserTime(u.updatedAt)}</span></td>
-                <td><span class="user-cell-actor" title="${escapeHtml(u.updatedBy || '')}">${escapeHtml(shortActor(u.updatedBy))}</span></td>
+                <td data-label="Nama"><strong>${escapeHtml(u.displayName || '—')}</strong>${isMe ? ' <span style="font-size:11px;color:var(--text-secondary)">(Anda)</span>' : ''}</td>
+                <td data-label="Email"><span class="user-cell-email" title="${escapeHtml(u.email || '')}">${escapeHtml(u.email || '')}</span></td>
+                <td data-label="Role">${roleSelect}</td>
+                <td data-label="Terakhir diubah"><span class="user-cell-time">${formatUserTime(u.updatedAt)}</span></td>
+                <td data-label="Diubah oleh"><span class="user-cell-actor" title="${escapeHtml(u.updatedBy || '')}">${escapeHtml(shortActor(u.updatedBy))}</span></td>
                 <td class="col-actions">
                     ${isOwnerRow
                         ? '<span class="user-cell-protected">dilindungi</span>'

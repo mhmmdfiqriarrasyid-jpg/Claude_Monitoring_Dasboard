@@ -2392,6 +2392,18 @@ body[data-ro-editunits] .inline-edit { background: transparent !important; }
         padding: 8px 0 2px;
     }
     .table--cardable td[colspan] { display: block; border: none; }
+    /* Desktop truncation caps exist to keep columns in line; a stacked card
+       has the whole row width, so show the values in full instead. */
+    .table--cardable .user-cell-email,
+    .table--cardable .user-cell-actor {
+        max-width: none;
+        overflow: visible;
+        text-overflow: clip;
+        white-space: normal;
+        word-break: break-all;
+        text-align: right;
+    }
+    .table--cardable .user-role-select { max-width: 160px; }
     /* Sticky columns & their shadow gradients don't apply to stacked cards */
     #editTable th, #editTable td { position: static !important; }
     #editTable td::after { background: none; }
