@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -51,11 +51,11 @@
         <!-- Sign In form -->
         <form id="signInForm" class="auth-form" onsubmit="handleSignIn(event)">
             <div class="form-group">
-                <label class="form-label">Email</label>
+                <label class="form-label" for="signInEmail">Email</label>
                 <input type="email" class="form-input" id="signInEmail" required autocomplete="email">
             </div>
             <div class="form-group">
-                <label class="form-label">Password</label>
+                <label class="form-label" for="signInPassword">Password</label>
                 <input type="password" class="form-input" id="signInPassword" required autocomplete="current-password">
             </div>
             <div class="auth-error" id="signInError"></div>
@@ -67,15 +67,15 @@
         <!-- Sign Up form -->
         <form id="signUpForm" class="auth-form" style="display:none" onsubmit="handleSignUp(event)">
             <div class="form-group">
-                <label class="form-label">Display Name</label>
+                <label class="form-label" for="signUpName">Display Name</label>
                 <input type="text" class="form-input" id="signUpName" placeholder="Your name" autocomplete="name">
             </div>
             <div class="form-group">
-                <label class="form-label">Email</label>
+                <label class="form-label" for="signUpEmail">Email</label>
                 <input type="email" class="form-input" id="signUpEmail" required autocomplete="email">
             </div>
             <div class="form-group">
-                <label class="form-label">Password</label>
+                <label class="form-label" for="signUpPassword">Password</label>
                 <input type="password" class="form-input" id="signUpPassword" required minlength="6" autocomplete="new-password">
             </div>
             <div class="auth-error" id="signUpError"></div>
@@ -172,7 +172,7 @@
         <div class="topbar__spacer"></div>
         <div class="global-search" id="globalSearchWrap">
             <i class="fas fa-search"></i>
-            <input type="text" id="globalSearch" placeholder="Cari unit… (nama/SN)" autocomplete="off">
+            <input type="text" id="globalSearch" aria-label="Cari unit di seluruh armada" placeholder="Cari unit… (nama/SN)" autocomplete="off">
             <div class="global-search__results" id="globalSearchResults"></div>
         </div>
         <div class="user-pill" id="userPill" style="display:none" onclick="toggleUserMenu()">
@@ -204,7 +204,7 @@
                 <i class="fas fa-info-circle"></i>
                 <span id="changeBannerText"></span>
             </div>
-            <button class="btn-icon" onclick="dismissBanner()"><i class="fas fa-xmark"></i></button>
+            <button class="btn-icon" onclick="dismissBanner()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
         </div>
 
         <!-- Empty State (shown when no data) -->
@@ -358,11 +358,11 @@
             <div class="filter-bar">
                 <div class="filter-bar__search">
                     <i class="fas fa-search"></i>
-                    <input type="text" id="searchInput" placeholder="Search by nickname, model, or serial...">
+                    <input type="text" id="searchInput" aria-label="Cari unit berdasarkan nama, model, atau serial number" placeholder="Search by nickname, model, or serial...">
                 </div>
-                <select id="statusFilter"><option value="">All Status</option></select>
-                <select id="siteFilter"><option value="">All Sites</option></select>
-                <select id="componentFilter">
+                <select id="statusFilter" aria-label="Filter status unit"><option value="">All Status</option></select>
+                <select id="siteFilter" aria-label="Filter site"><option value="">All Sites</option></select>
+                <select id="componentFilter" aria-label="Filter komponen">
                     <option value="">All Components</option>
                     <option value="Display">Display Issues</option>
                     <option value="GPS">GPS Issues</option>
@@ -437,7 +437,7 @@
                 <div class="repair-header">
                     <div class="table-card__title"><i class="fas fa-tools"></i> Repair &amp; Maintenance</div>
                     <div class="table-card__actions">
-                        <select id="issueFilter" class="btn btn-secondary btn-sm" onchange="renderRepair()">
+                        <select id="issueFilter" aria-label="Filter jenis masalah" class="btn btn-secondary btn-sm" onchange="renderRepair()">
                             <option value="">All Issues</option>
                             <option value="Unit">Unit</option>
                             <option value="Display">Display</option>
@@ -500,21 +500,21 @@
                 </button>
             </div>
             <div class="edit-toolbar__right">
-                <select class="form-select form-select--sm" id="editStatusFilter" onchange="renderEditTable()">
+                <select class="form-select form-select--sm" id="editStatusFilter" aria-label="Filter status unit" onchange="renderEditTable()">
                     <option value="">All Status</option>
                 </select>
-                <select class="form-select form-select--sm" id="editSiteFilter" onchange="renderEditTable()">
+                <select class="form-select form-select--sm" id="editSiteFilter" aria-label="Filter site" onchange="renderEditTable()">
                     <option value="">All Sites</option>
                 </select>
                 <div class="edit-search">
                     <i class="fas fa-search"></i>
-                    <input type="text" id="editSearch" placeholder="Search units... (press /)">
+                    <input type="text" id="editSearch" aria-label="Cari unit" placeholder="Search units... (press /)">
                 </div>
                 <button class="btn btn-secondary" id="compactToggle" onclick="toggleCompactMode()" title="Compact view"><i class="fas fa-compress"></i></button>
                 <span id="editUnitCount">0 units in database</span>
             </div>
         </div>
-        <input type="file" id="restoreFileInput" accept=".json" hidden>
+        <input type="file" id="restoreFileInput" aria-label="Pilih berkas backup untuk direstore" accept=".json" hidden>
 
         <!-- Import Panel (collapsible) -->
         <div class="import-panel" id="importPanel">
@@ -522,7 +522,7 @@
                 <i class="fas fa-cloud-upload-alt"></i>
                 <p>Klik untuk mengunggah atau seret & lepas berkas CSV</p>
                 <span class="hint">Unit baru akan ditambahkan. Serial number duplikat dilewati.</span>
-                <input type="file" id="editCsvInput" accept=".csv" hidden>
+                <input type="file" id="editCsvInput" aria-label="Pilih berkas CSV unit untuk diimpor" accept=".csv" hidden>
             </div>
         </div>
 
@@ -535,7 +535,7 @@
                 <table class="data-table table--cardable" id="editTable">
                     <thead>
                         <tr>
-                            <th class="col-check"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
+                            <th class="col-check"><input type="checkbox" id="selectAll" aria-label="Pilih semua unit" onchange="toggleSelectAll()"></th>
                             <th onclick="sortEditTable('no')">No <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                             <th onclick="sortEditTable('name')">Nickname <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
                             <th onclick="sortEditTable('model')">Model <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
@@ -564,7 +564,7 @@
         </div>
 
     <!-- Hidden file input for unit attachments -->
-    <input type="file" id="attachFileInput" multiple accept=".pdf,.csv,.doc,.docx,.xls,.xlsx" style="display:none">
+    <input type="file" id="attachFileInput" aria-label="Pilih berkas lampiran" multiple accept=".pdf,.csv,.doc,.docx,.xls,.xlsx" style="display:none">
 
     </div><!-- /viewEditUnits -->
 
@@ -580,7 +580,7 @@
                 <button class="btn btn-danger" id="btnDeleteSelectedImpl" style="display:none" onclick="deleteSelectedImplements()">
                     <i class="fas fa-trash"></i> Delete Selected (<span id="selectedImplCount">0</span>)
                 </button>
-                <input type="file" id="implementCsvInput" accept=".csv" style="display:none">
+                <input type="file" id="implementCsvInput" aria-label="Pilih berkas CSV implement untuk diimpor" accept=".csv" style="display:none">
                 <button class="btn btn-secondary csv-import" onclick="document.getElementById('implementCsvInput').click()">
                     <i class="fas fa-file-import"></i> Import CSV
                 </button>
@@ -594,7 +594,7 @@
             <div class="edit-toolbar__right">
                 <div class="edit-search">
                     <i class="fas fa-search"></i>
-                    <input type="text" id="implementSearch" placeholder="Search implements...">
+                    <input type="text" id="implementSearch" aria-label="Cari implement" placeholder="Search implements...">
                 </div>
                 <span id="implementCount">0 implements in database</span>
             </div>
@@ -609,7 +609,7 @@
                 <table class="data-table table--cardable" id="implementTable">
                     <thead>
                         <tr>
-                            <th class="col-check"><input type="checkbox" id="selectAllImpl" onchange="toggleSelectAllImplements()"></th>
+                            <th class="col-check"><input type="checkbox" id="selectAllImpl" aria-label="Pilih semua implement" onchange="toggleSelectAllImplements()"></th>
                             <th>No</th>
                             <th>Profile Name</th>
                             <th>Brand</th>
@@ -648,7 +648,7 @@
                 </button>
             </div>
             <div class="edit-toolbar__right">
-                <select id="damageTypeFilter" class="btn btn-secondary btn-sm">
+                <select id="damageTypeFilter" aria-label="Filter tipe kerusakan" class="btn btn-secondary btn-sm">
                     <option value="">Semua Tipe</option>
                     <option value="Mekanis">Mekanis</option>
                     <option value="Software">Software</option>
@@ -656,7 +656,7 @@
                 </select>
                 <div class="edit-search">
                     <i class="fas fa-search"></i>
-                    <input type="text" id="damageSearch" placeholder="Cari kerusakan...">
+                    <input type="text" id="damageSearch" aria-label="Cari kerusakan" placeholder="Cari kerusakan...">
                 </div>
                 <span id="damageCount">0 catatan kerusakan</span>
             </div>
@@ -671,7 +671,7 @@
                 <table class="data-table table--cardable" id="damageTable">
                     <thead>
                         <tr>
-                            <th class="col-check"><input type="checkbox" id="selectAllDamage" onchange="toggleSelectAllDamages()"></th>
+                            <th class="col-check"><input type="checkbox" id="selectAllDamage" aria-label="Pilih semua catatan kerusakan" onchange="toggleSelectAllDamages()"></th>
                             <th>No</th>
                             <th>Tanggal</th>
                             <th>Unit</th>
@@ -720,7 +720,7 @@
                 <button class="btn btn-secondary" onclick="syncDistributionsToUnits()" title="Terapkan distribusi terbaru ke lisensi unit">
                     <i class="fas fa-link"></i> Sync ke Unit
                 </button>
-                <input type="file" id="licenseCsvInput" accept=".csv" style="display:none">
+                <input type="file" id="licenseCsvInput" aria-label="Pilih berkas CSV lisensi untuk diimpor" accept=".csv" style="display:none">
                 <button class="btn btn-secondary csv-import" onclick="document.getElementById('licenseCsvInput').click()">
                     <i class="fas fa-file-import"></i> Import CSV
                 </button>
@@ -732,17 +732,17 @@
                 </button>
             </div>
             <div class="edit-toolbar__right">
-                <select id="licenseTxnFilter" class="btn btn-secondary btn-sm">
+                <select id="licenseTxnFilter" aria-label="Filter jenis transaksi" class="btn btn-secondary btn-sm">
                     <option value="">Semua Transaksi</option>
                     <option value="IN">Masuk</option>
                     <option value="OUT">Distribusi</option>
                 </select>
-                <select id="licenseTypeFilter" class="btn btn-secondary btn-sm">
+                <select id="licenseTypeFilter" aria-label="Filter jenis lisensi" class="btn btn-secondary btn-sm">
                     <option value="">Semua Jenis</option>
                 </select>
                 <div class="edit-search">
                     <i class="fas fa-search"></i>
-                    <input type="text" id="licenseSearch" placeholder="Cari lisensi / unit...">
+                    <input type="text" id="licenseSearch" aria-label="Cari lisensi atau unit" placeholder="Cari lisensi / unit...">
                 </div>
                 <span id="licenseCount">0 transaksi</span>
             </div>
@@ -757,7 +757,7 @@
                 <table class="data-table table--cardable" id="licenseTable">
                     <thead>
                         <tr>
-                            <th class="col-check"><input type="checkbox" id="selectAllLicense" onchange="toggleSelectAllLicense()"></th>
+                            <th class="col-check"><input type="checkbox" id="selectAllLicense" aria-label="Pilih semua transaksi lisensi" onchange="toggleSelectAllLicense()"></th>
                             <th>No</th>
                             <th>Tanggal</th>
                             <th>Jenis</th>
@@ -843,35 +843,35 @@
     <div class="modal-card">
         <div class="modal-header">
             <h3 id="modalTitle">Add Unit</h3>
-            <button class="btn-icon" onclick="closeModal()"><i class="fas fa-xmark"></i></button>
+            <button class="btn-icon" onclick="closeModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
         </div>
         <div class="modal-body">
             <form id="unitForm" onsubmit="saveUnit(event)">
                 <input type="hidden" id="editUnitId">
                 <div class="form-grid">
                     <div class="form-group">
-                        <label class="form-label">Nickname</label>
+                        <label class="form-label" for="formName">Nickname</label>
                         <input class="form-input" id="formName" required>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Model</label>
+                        <label class="form-label" for="formModel">Model</label>
                         <input class="form-input" id="formModel">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Serial Number</label>
+                        <label class="form-label" for="formSN">Serial Number</label>
                         <input class="form-input" id="formSN" required>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Implement</label>
+                        <label class="form-label" for="formImplement">Implement</label>
                         <input class="form-input" id="formImplement" list="implementUnitList" placeholder="Pilih dari Implements atau ketik…" autocomplete="off">
                         <datalist id="implementUnitList"></datalist>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Site</label>
+                        <label class="form-label" for="formSite">Site</label>
                         <input class="form-input" id="formSite">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Tahun Penerimaan</label>
+                        <label class="form-label" for="formYearReceived">Tahun Penerimaan</label>
                         <input class="form-input" id="formYearReceived" list="yearReceivedList" placeholder="Pilih atau ketik tahun…">
                         <datalist id="yearReceivedList">
                             <option value="2024">
@@ -881,35 +881,35 @@
                         </datalist>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Status Unit</label>
+                        <label class="form-label" for="formStatus">Status Unit</label>
                         <select class="form-select" id="formStatus">
                             <option value="Good">Good</option>
                             <option value="Breakdown">Breakdown</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Display</label>
+                        <label class="form-label" for="formDisplay">Display</label>
                         <select class="form-select" id="formDisplay">
                             <option value="Good">Good</option>
                             <option value="Breakdown">Breakdown</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">GPS</label>
+                        <label class="form-label" for="formGPS">GPS</label>
                         <select class="form-select" id="formGPS">
                             <option value="Good">Good</option>
                             <option value="Breakdown">Breakdown</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Steering</label>
+                        <label class="form-label" for="formSteering">Steering</label>
                         <select class="form-select" id="formSteering">
                             <option value="Good">Good</option>
                             <option value="Breakdown">Breakdown</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">JDLink</label>
+                        <label class="form-label" for="formJDLink">JDLink</label>
                         <select class="form-select" id="formJDLink">
                             <option value="Good">Good</option>
                             <option value="Breakdown">Breakdown</option>
@@ -936,7 +936,7 @@
                             </div>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">GPS License</label>
+                            <label class="form-label" for="formGpsLicense">GPS License</label>
                             <select class="form-select" id="formGpsLicense">
                                 <option value="">—</option>
                                 <option value="SF-RTK">SF-RTK</option>
@@ -944,7 +944,7 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">License Display</label>
+                            <label class="form-label" for="formLicenseDisplay">License Display</label>
                             <select class="form-select" id="formLicenseDisplay">
                                 <option value="">—</option>
                                 <option value="G5 Basic">G5 Basic</option>
@@ -952,23 +952,23 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">GPS License Start Date</label>
+                            <label class="form-label" for="formGpsLicenseStart">GPS License Start Date</label>
                             <input type="date" class="form-input" id="formGpsLicenseStart" onchange="autoFillGpsLicenseEnd()">
                         </div>
                         <div class="form-group">
-                            <label class="form-label">GPS License Expiration Date</label>
+                            <label class="form-label" for="formGpsLicenseEnd">GPS License Expiration Date</label>
                             <input type="date" class="form-input" id="formGpsLicenseEnd">
                         </div>
                         <div class="form-group">
-                            <label class="form-label">Display License Start Date</label>
+                            <label class="form-label" for="formDisplayLicenseStart">Display License Start Date</label>
                             <input type="date" class="form-input" id="formDisplayLicenseStart" onchange="autoFillDisplayLicenseEnd()">
                         </div>
                         <div class="form-group">
-                            <label class="form-label">Display License Expiration Date</label>
+                            <label class="form-label" for="formDisplayLicenseEnd">Display License Expiration Date</label>
                             <input type="date" class="form-input" id="formDisplayLicenseEnd">
                         </div>
                         <div class="form-group full-width">
-                            <label class="form-label">Remarks / Notes <span class="form-optional">(optional)</span></label>
+                            <label class="form-label" for="formRemarks">Remarks / Notes <span class="form-optional">(optional)</span></label>
                             <textarea class="form-input form-textarea" id="formRemarks" rows="5" placeholder="Free-text notes about this unit — operator observations, repair history, scheduling notes, etc."></textarea>
                         </div>
                     </div>
@@ -987,7 +987,7 @@
     <div class="modal-card">
         <div class="modal-header">
             <h3><i class="fas fa-tags"></i> Manage User Categories</h3>
-            <button class="btn-icon" onclick="closeCategoriesModal()"><i class="fas fa-xmark"></i></button>
+            <button class="btn-icon" onclick="closeCategoriesModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
         </div>
         <div class="modal-body">
             <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
@@ -995,7 +995,7 @@
             </p>
             <ul class="categories-list" id="categoriesList"></ul>
             <form class="category-add-form" onsubmit="addCategory(event)">
-                <input type="text" class="form-input" id="newCategoryName" placeholder="New category name…" maxlength="60" autocomplete="off">
+                <input type="text" class="form-input" id="newCategoryName" aria-label="Nama kategori baru" placeholder="New category name…" maxlength="60" autocomplete="off">
                 <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> Add</button>
             </form>
         </div>
@@ -1013,7 +1013,7 @@
             <div style="display:flex;gap:8px;align-items:center">
                 <button class="btn btn-secondary btn-sm csv-export" onclick="exportHistory()"><i class="fas fa-download"></i> Export</button>
                 <button class="btn btn-secondary btn-sm" onclick="clearHistory()"><i class="fas fa-eraser"></i> Clear</button>
-                <button class="btn-icon" onclick="closeHistory()"><i class="fas fa-xmark"></i></button>
+                <button class="btn-icon" onclick="closeHistory()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
             </div>
         </div>
         <div class="modal-body" style="padding:0">
@@ -1037,7 +1037,7 @@
     <div class="modal-card">
         <div class="modal-header">
             <h3>Import Report</h3>
-            <button class="btn-icon" onclick="closeImportReport()"><i class="fas fa-xmark"></i></button>
+            <button class="btn-icon" onclick="closeImportReport()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
         </div>
         <div class="modal-body">
             <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
@@ -1061,26 +1061,26 @@
     <div class="modal-card modal-card--wide">
         <div class="modal-header">
             <h3 id="implementModalTitle">Add Implement</h3>
-            <button class="btn-icon" onclick="closeImplementModal()"><i class="fas fa-xmark"></i></button>
+            <button class="btn-icon" onclick="closeImplementModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
         </div>
         <div class="modal-body">
             <form id="implementForm" onsubmit="saveImplement(event)">
                 <input type="hidden" id="editImplementId">
                 <div class="form-grid">
                     <div class="form-group">
-                        <label class="form-label">Profile Name</label>
+                        <label class="form-label" for="implProfileName">Profile Name</label>
                         <input class="form-input" id="implProfileName" required>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Brand</label>
+                        <label class="form-label" for="implBrand">Brand</label>
                         <input class="form-input" id="implBrand" placeholder="e.g. John Deere, Baldan, Gessner">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Type of Equipment</label>
+                        <label class="form-label" for="implEquipmentType">Type of Equipment</label>
                         <input class="form-input" id="implEquipmentType" placeholder="e.g. Plow, Sprayer, Seeder">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Code</label>
+                        <label class="form-label" for="implCode">Code</label>
                         <input class="form-input" id="implCode" placeholder="e.g. IMP-001">
                     </div>
                 </div>
@@ -1089,15 +1089,15 @@
                     <legend>Dimension</legend>
                     <div class="form-grid">
                         <div class="form-group">
-                            <label class="form-label">Lateral Offset</label>
+                            <label class="form-label" for="implLateralOffset">Lateral Offset</label>
                             <input class="form-input" id="implLateralOffset" placeholder="e.g. 0 m">
                         </div>
                         <div class="form-group">
-                            <label class="form-label">Center of Rotation</label>
+                            <label class="form-label" for="implCenterOfRotation">Center of Rotation</label>
                             <input class="form-input" id="implCenterOfRotation" placeholder="e.g. 1.2 m">
                         </div>
                         <div class="form-group">
-                            <label class="form-label">Rear Connection</label>
+                            <label class="form-label" for="implRearConnection">Rear Connection</label>
                             <input class="form-input" id="implRearConnection" placeholder="e.g. 0.8 m">
                         </div>
                     </div>
@@ -1105,27 +1105,27 @@
 
                 <div class="form-grid">
                     <div class="form-group">
-                        <label class="form-label">Operation</label>
+                        <label class="form-label" for="implOperation">Operation</label>
                         <input class="form-input" id="implOperation" placeholder="e.g. Tillage, Spraying">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Working Width</label>
+                        <label class="form-label" for="implWorkingWidth">Working Width</label>
                         <input class="form-input" id="implWorkingWidth" placeholder="e.g. 4.5 m">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Work Point</label>
+                        <label class="form-label" for="implWorkPoint">Work Point</label>
                         <input class="form-input" id="implWorkPoint">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Work Recording</label>
+                        <label class="form-label" for="implWorkRecording">Work Recording</label>
                         <input class="form-input" id="implWorkRecording">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Connecting Type</label>
+                        <label class="form-label" for="implConnectingType">Connecting Type</label>
                         <input class="form-input" id="implConnectingType" placeholder="e.g. 3-Point Hitch, Drawbar">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Implement Receiver</label>
+                        <label class="form-label" for="implImplementReceiver">Implement Receiver</label>
                         <input class="form-input" id="implImplementReceiver">
                     </div>
                 </div>
@@ -1151,24 +1151,24 @@
     <div class="modal-card">
         <div class="modal-header">
             <h3 id="damageModalTitle">Tambah Kerusakan</h3>
-            <button class="btn-icon" onclick="closeDamageModal()"><i class="fas fa-xmark"></i></button>
+            <button class="btn-icon" onclick="closeDamageModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
         </div>
         <div class="modal-body">
             <form id="damageForm" onsubmit="saveDamage(event)">
                 <input type="hidden" id="editDamageId">
                 <div class="form-grid">
                     <div class="form-group">
-                        <label class="form-label">Tanggal</label>
+                        <label class="form-label" for="dmgDate">Tanggal</label>
                         <input type="date" class="form-input" id="dmgDate" required>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Unit</label>
+                        <label class="form-label" for="dmgUnit">Unit</label>
                         <input class="form-input" id="dmgUnit" list="dmgUnitList" required
                                placeholder="Ketik nama atau SN unit…" autocomplete="off">
                         <datalist id="dmgUnitList"></datalist>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Tipe Kerusakan</label>
+                        <label class="form-label" for="dmgType">Tipe Kerusakan</label>
                         <select class="form-select" id="dmgType" onchange="onDamageTypeChange()" required>
                             <option value="">Pilih tipe…</option>
                             <option value="Mekanis">Mekanis</option>
@@ -1177,7 +1177,7 @@
                         </select>
                     </div>
                     <div class="form-group" id="dmgComponentGroup">
-                        <label class="form-label">Komponen <span class="form-optional">(opsional)</span></label>
+                        <label class="form-label" for="dmgComponent">Komponen <span class="form-optional">(opsional)</span></label>
                         <div class="form-category-row">
                             <select class="form-select" id="dmgComponent">
                                 <option value="">Pilih komponen… (opsional)</option>
@@ -1197,7 +1197,7 @@
                         </div>
                     </div>
                     <div class="form-group full-width">
-                        <label class="form-label">Foto <span class="form-optional">(opsional)</span></label>
+                        <label class="form-label" for="dmgPhotoInput">Foto <span class="form-optional">(opsional)</span></label>
                         <input type="file" id="dmgPhotoInput" accept="image/*" style="display:none" onchange="handleDamagePhotoChange(event)">
                         <div class="dmg-photo-row">
                             <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('dmgPhotoInput').click()">
@@ -1212,7 +1212,7 @@
                         </div>
                     </div>
                     <div class="form-group full-width">
-                        <label class="form-label">Deskripsi <span class="form-optional">(opsional)</span></label>
+                        <label class="form-label" for="dmgDescription">Deskripsi <span class="form-optional">(opsional)</span></label>
                         <textarea class="form-input form-textarea" id="dmgDescription" rows="4" placeholder="Detail kerusakan, gejala, atau catatan perbaikan…"></textarea>
                     </div>
                 </div>
@@ -1230,7 +1230,7 @@
     <div class="modal-card">
         <div class="modal-header">
             <h3><i class="fas fa-microchip"></i> Kelola Komponen Kerusakan</h3>
-            <button class="btn-icon" onclick="closeDamageComponentsModal()"><i class="fas fa-xmark"></i></button>
+            <button class="btn-icon" onclick="closeDamageComponentsModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
         </div>
         <div class="modal-body">
             <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
@@ -1240,7 +1240,7 @@
             </p>
             <ul class="categories-list" id="damageComponentsList"></ul>
             <form class="category-add-form" onsubmit="addDamageComponent(event)">
-                <input type="text" class="form-input" id="newComponentName" placeholder="Nama komponen baru…" maxlength="60" autocomplete="off">
+                <input type="text" class="form-input" id="newComponentName" aria-label="Nama komponen baru" placeholder="Nama komponen baru…" maxlength="60" autocomplete="off">
                 <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> Tambah</button>
             </form>
         </div>
@@ -1255,7 +1255,7 @@
     <div class="modal-card">
         <div class="modal-header">
             <h3>Bulk Edit — <span id="bulkEditTitle">0 unit</span></h3>
-            <button class="btn-icon" onclick="closeBulkEdit()"><i class="fas fa-xmark"></i></button>
+            <button class="btn-icon" onclick="closeBulkEdit()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
         </div>
         <div class="modal-body">
             <p style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px">
@@ -1263,26 +1263,26 @@
             </p>
             <div class="bulk-row">
                 <label><input type="checkbox" id="bulkChkSite"> Site</label>
-                <input class="form-input" id="bulkSite" placeholder="Site baru…">
+                <input class="form-input" id="bulkSite" aria-label="Site baru untuk unit terpilih" placeholder="Site baru…">
             </div>
             <div class="bulk-row">
                 <label><input type="checkbox" id="bulkChkStatus"> Status Unit</label>
-                <select class="form-select" id="bulkStatus">
+                <select class="form-select" id="bulkStatus" aria-label="Status baru untuk unit terpilih">
                     <option value="Good">Good</option>
                     <option value="Breakdown">Breakdown</option>
                 </select>
             </div>
             <div class="bulk-row">
                 <label><input type="checkbox" id="bulkChkCategory"> User Category</label>
-                <select class="form-select" id="bulkCategory"><option value="">—</option></select>
+                <select class="form-select" id="bulkCategory" aria-label="User category baru untuk unit terpilih"><option value="">—</option></select>
             </div>
             <div class="bulk-row">
                 <label><input type="checkbox" id="bulkChkYear"> Tahun Penerimaan</label>
-                <input class="form-input" id="bulkYear" placeholder="mis. 2026">
+                <input class="form-input" id="bulkYear" aria-label="Tahun penerimaan baru untuk unit terpilih" placeholder="mis. 2026">
             </div>
             <div class="bulk-row">
                 <label><input type="checkbox" id="bulkChkImplement"> Implement</label>
-                <input class="form-input" id="bulkImplement" list="implementUnitList" placeholder="Pilih/ketik implement…">
+                <input class="form-input" id="bulkImplement" aria-label="Implement baru untuk unit terpilih" list="implementUnitList" placeholder="Pilih/ketik implement…">
             </div>
         </div>
         <div class="form-actions">
@@ -1297,7 +1297,7 @@
     <div class="modal-card">
         <div class="modal-header">
             <h3>Atur Akses — <span id="accessUserName">—</span></h3>
-            <button class="btn-icon" onclick="closeAccessModal()"><i class="fas fa-xmark"></i></button>
+            <button class="btn-icon" onclick="closeAccessModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
         </div>
         <div class="modal-body">
             <input type="hidden" id="accessUserUid">
@@ -1327,41 +1327,41 @@
     <div class="modal-card">
         <div class="modal-header">
             <h3 id="licenseModalTitle">Tambah Stok Lisensi</h3>
-            <button class="btn-icon" onclick="closeLicenseModal()"><i class="fas fa-xmark"></i></button>
+            <button class="btn-icon" onclick="closeLicenseModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
         </div>
         <div class="modal-body">
             <form id="licenseForm" onsubmit="saveLicenseStock(event)">
                 <input type="hidden" id="editLicenseId">
                 <div class="form-grid">
                     <div class="form-group">
-                        <label class="form-label">Jenis Transaksi</label>
+                        <label class="form-label" for="licTxnType">Jenis Transaksi</label>
                         <select class="form-select" id="licTxnType" onchange="onLicenseTxnChange()" required>
                             <option value="IN">Tambah Stok (Masuk)</option>
                             <option value="OUT">Distribusi ke Unit</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Tanggal</label>
+                        <label class="form-label" for="licDate">Tanggal</label>
                         <input type="date" class="form-input" id="licDate" required>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Jenis Lisensi</label>
+                        <label class="form-label" for="licType">Jenis Lisensi</label>
                         <input class="form-input" id="licType" list="licTypeList" required
                                placeholder="Pilih atau ketik jenis…" autocomplete="off">
                         <datalist id="licTypeList"></datalist>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Jumlah</label>
+                        <label class="form-label" for="licQty">Jumlah</label>
                         <input type="number" class="form-input" id="licQty" min="1" value="1" required>
                     </div>
                     <div class="form-group full-width" id="licUnitGroup" style="display:none">
-                        <label class="form-label">Unit Tujuan</label>
+                        <label class="form-label" for="licUnit">Unit Tujuan</label>
                         <input class="form-input" id="licUnit" list="licUnitList"
                                placeholder="Ketik nama atau SN unit…" autocomplete="off">
                         <datalist id="licUnitList"></datalist>
                     </div>
                     <div class="form-group full-width">
-                        <label class="form-label">Catatan <span class="form-optional">(opsional)</span></label>
+                        <label class="form-label" for="licNote">Catatan <span class="form-optional">(opsional)</span></label>
                         <textarea class="form-input form-textarea" id="licNote" rows="3" placeholder="Supplier / no. PO untuk stok masuk, atau catatan distribusi…"></textarea>
                     </div>
                 </div>
@@ -1382,7 +1382,7 @@
             <div style="display:flex;gap:8px;align-items:center">
                 <button class="btn btn-secondary btn-sm" id="unitProfileEditBtn"><i class="fas fa-pen"></i> Edit</button>
                 <button class="btn btn-secondary btn-sm" id="unitProfileHistoryBtn"><i class="fas fa-clock-rotate-left"></i> History</button>
-                <button class="btn-icon" onclick="closeUnitProfile()"><i class="fas fa-xmark"></i></button>
+                <button class="btn-icon" onclick="closeUnitProfile()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
             </div>
         </div>
         <div class="modal-body" id="unitProfileBody"></div>
@@ -1399,13 +1399,13 @@
     <div class="modal-card" style="max-width:420px">
         <div class="modal-header">
             <h3>Breakdown Reason</h3>
-            <button class="btn-icon" onclick="cancelBreakdownReason()"><i class="fas fa-xmark"></i></button>
+            <button class="btn-icon" onclick="cancelBreakdownReason()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
         </div>
         <div class="modal-body">
             <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
                 Why is this unit breaking down? This will be recorded in the unit's history.
             </p>
-            <textarea class="form-input form-textarea" id="breakdownReasonText" rows="3" placeholder="Enter breakdown reason…"></textarea>
+            <textarea class="form-input form-textarea" id="breakdownReasonText" aria-label="Alasan breakdown" rows="3" placeholder="Enter breakdown reason…"></textarea>
         </div>
         <div class="form-actions">
             <button class="btn btn-secondary" onclick="cancelBreakdownReason()">Cancel</button>
@@ -1422,7 +1422,7 @@
     <div class="modal-card" style="max-width:480px">
         <div class="modal-header">
             <h3><i class="fas fa-envelope-circle-check"></i> Email Alert Settings</h3>
-            <button class="btn-icon" onclick="closeEmailSettingsModal()"><i class="fas fa-xmark"></i></button>
+            <button class="btn-icon" onclick="closeEmailSettingsModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
         </div>
         <div class="modal-body">
             <p style="margin-bottom:14px;font-size:13px;color:var(--text-secondary)">
@@ -1431,19 +1431,19 @@
             </p>
             <div style="display:flex;flex-direction:column;gap:12px">
                 <div class="form-group">
-                    <label class="form-label">Public Key</label>
+                    <label class="form-label" for="emailjsPublicKey">Public Key</label>
                     <input class="form-input" id="emailjsPublicKey" placeholder="Dari EmailJS → Account → API Keys">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Service ID</label>
+                    <label class="form-label" for="emailjsServiceId">Service ID</label>
                     <input class="form-input" id="emailjsServiceId" placeholder="Dari EmailJS → Email Services">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Template ID</label>
+                    <label class="form-label" for="emailjsTemplateId">Template ID</label>
                     <input class="form-input" id="emailjsTemplateId" placeholder="Dari EmailJS → Email Templates">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Recipient Email</label>
+                    <label class="form-label" for="emailjsRecipient">Recipient Email</label>
                     <input class="form-input" id="emailjsRecipient" type="email" placeholder="your@email.com">
                 </div>
                 <div class="form-group">
