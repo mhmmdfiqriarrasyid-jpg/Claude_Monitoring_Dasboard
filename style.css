@@ -8,15 +8,15 @@
     --primary: #D97757;          /* terracotta accent */
     --primary-light: #C2613F;
     --primary-lighter: #FBF0EB;  /* terracotta-50 wash */
-    --accent: #D97757;
+    --accent: #C5522D;
     --accent-text: #A24E32;
-    --success: #4F7B58;
+    --success: #4B7453;
     --success-bg: #E7EEE7;
-    --danger: #BF4D43;
+    --danger: #AD443B;
     --danger-bg: #F5E0DC;
-    --warning: #BC8A2E;
+    --warning: #886421;
     --warning-bg: #F4EAD3;
-    --info: #5A7DA0;
+    --info: #4D6B89;
     --info-bg: #E2E9F0;
     /* Tinted borders for status chips/cards — these values were already used
        as one-offs throughout the file; naming them keeps chips consistent. */
@@ -29,7 +29,7 @@
     --surface-raised: #FFFFFF;  /* inputs, dialogs, popovers */
     --text: #141413;           /* warm near-black */
     --text-secondary: #5A5853;
-    --text-light: #918C7C;
+    --text-light: #706C5E;
     --border: #E9E6DC;
     --border-light: #DEDACE;
     --border-strong: #CFCABA;
@@ -47,9 +47,9 @@
     --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
 
     /* Component Colors — earthy, muted (never neon) */
-    --color-display: #BC8A2E;   /* ochre */
-    --color-gps: #5A7DA0;       /* slate blue */
-    --color-steering: #4F7B58;  /* forest green */
+    --color-display: #886421;   /* ochre */
+    --color-gps: #4D6B89;       /* slate blue */
+    --color-steering: #4B7453;  /* forest green */
     --color-jdlink: #403E3A;    /* warm ink */
 }
 
@@ -250,7 +250,7 @@ body {
     border-color: var(--accent);
 }
 
-.btn-primary:hover { background: var(--primary-light); border-color: var(--primary-light); }
+.btn-primary:hover { background: var(--accent-text); border-color: var(--accent-text); }
 
 .btn-secondary {
     background: var(--card);
@@ -375,7 +375,7 @@ body {
     font-size: 16px;
 }
 
-.kpi-card.total .kpi-card__icon { background: var(--info-bg); color: var(--accent); }
+.kpi-card.total .kpi-card__icon { background: var(--info-bg); color: var(--accent-text); }
 .kpi-card.good .kpi-card__icon { background: var(--success-bg); color: var(--success); }
 .kpi-card.breakdown .kpi-card__icon { background: var(--danger-bg); color: var(--danger); }
 .kpi-card.issue .kpi-card__icon { background: var(--warning-bg); color: var(--warning); }
@@ -675,7 +675,7 @@ body {
     opacity: 0.4;
 }
 
-.data-table th.sorted .sort-icon { opacity: 1; color: var(--accent); }
+.data-table th.sorted .sort-icon { opacity: 1; color: var(--accent-text); }
 
 .data-table td {
     padding: 10px 14px;
@@ -1584,7 +1584,7 @@ body {
 .coa-cell { position: relative; display: inline-flex; align-items: center; gap: 4px; flex-wrap: nowrap; }
 .coa-more {
     font-size: 10px;
-    color: var(--accent);
+    color: var(--accent-text);
     cursor: pointer;
     white-space: nowrap;
     font-weight: 600;
@@ -1669,7 +1669,7 @@ body {
     padding: 0 8px;
     font-size: 13px;
     font-weight: 600;
-    color: var(--primary);
+    color: var(--accent-text);
     text-transform: uppercase;
     letter-spacing: 0.4px;
 }
@@ -1709,13 +1709,13 @@ body.auth-blocked .footer { filter: blur(2px); pointer-events: none; }
 }
 .auth-card__brand i {
     font-size: 40px;
-    color: var(--primary);
+    color: var(--accent-text);
     margin-bottom: 8px;
 }
 .auth-card__brand h1 {
     font-size: 20px;
     font-weight: 700;
-    color: var(--primary);
+    color: var(--accent-text);
     margin: 8px 0 4px;
     letter-spacing: -0.3px;
 }
@@ -1748,7 +1748,7 @@ body.auth-blocked .footer { filter: blur(2px); pointer-events: none; }
 }
 .auth-tab.active {
     background: #fff;
-    color: var(--primary);
+    color: var(--accent-text);
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 
@@ -2130,7 +2130,7 @@ body[data-ro-editunits] .inline-edit { background: transparent !important; }
     border: none; background: none; cursor: pointer; border-radius: 3px;
     color: var(--text-light); transition: var(--transition);
 }
-.attach-chip__dl:hover { color: var(--accent); }
+.attach-chip__dl:hover { color: var(--accent-text); }
 .attach-chip__rm:hover { color: var(--danger); }
 .attach-upload-btn {
     width: 24px; height: 24px; font-size: 13px; padding: 0;
@@ -2138,7 +2138,7 @@ body[data-ro-editunits] .inline-edit { background: transparent !important; }
     border: 1px dashed var(--border); background: none; cursor: pointer;
     border-radius: 4px; color: var(--text-light); transition: var(--transition);
 }
-.attach-upload-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--primary-lighter); transform: scale(1.1); }
+.attach-upload-btn:hover { border-color: var(--accent); color: var(--accent-text); background: var(--primary-lighter); transform: scale(1.1); }
 .attach-empty { color: var(--text-light); font-size: 11px; font-style: italic; }
 .attach-chip--pdf i:first-child { color: var(--danger); }
 .attach-chip--doc i:first-child, .attach-chip--docx i:first-child { color: var(--info); }
