@@ -67,6 +67,11 @@ let allUsers = [];             // Mirror of users collection (owner only)
 let authInitialized = false;
 
 // ---- Constants ----
+// Build marker, shown in the footer and the account menu. Bumped with the
+// service worker's CACHE_NAME on every deploy, so "is this the new version?"
+// is answerable by looking at the page instead of guessing at caches.
+const APP_VERSION = 'v90';
+
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
 const DAMAGE_STORAGE_KEY = 'tractorDamageRecords';
@@ -260,6 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     setupEventListeners();
     setupKeyboardShortcuts();
+    showAppVersion();
     registerServiceWorker();
 
     loadImplements();
@@ -419,6 +425,13 @@ function setupKeyboardShortcuts() {
             exportBackup();
         }
     });
+}
+
+// Stamp the running build into the footer. Runs regardless of sign-in state,
+// so the version is readable even from the login screen.
+function showAppVersion() {
+    const el = document.getElementById('appVersion');
+    if (el) el.textContent = APP_VERSION;
 }
 
 function registerServiceWorker() {
@@ -6013,7 +6026,7 @@ function renderUserPill() {
     document.getElementById('userPillRole').textContent = label;
     pill.dataset.role = currentUserDoc.role;
     document.getElementById('userMenuEmail').textContent = currentUserDoc.email || '';
-    document.getElementById('userMenuRoleLabel').textContent = 'Akun ' + label;
+    document.getElementById('userMenuRoleLabel').textContent = `Akun ${label} · ${APP_VERSION}`;
 }
 
 function toggleUserMenu() {

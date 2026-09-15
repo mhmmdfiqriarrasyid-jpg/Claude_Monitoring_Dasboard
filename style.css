@@ -2808,3 +2808,16 @@ body[data-nocsvimport] .csv-import { display: none !important; }
     font-size: 13px;
     font-style: italic;
 }
+
+/* Build marker in the footer — makes "am I on the new version?" answerable
+   by looking at the page instead of guessing at caches. */
+.footer__version {
+    margin-left: 8px;
+    padding: 1px 7px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-light);
+}
