@@ -70,7 +70,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v92';
+const APP_VERSION = 'v93';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -5787,6 +5787,7 @@ function setupAuth() {
             currentUser = null;
             currentUserDoc = null;
             clearSessionClock();
+            stopWatchingOwnUserDoc();
             tearDownCloudSync();
             showAuthGate('signin');
             return;
@@ -5831,6 +5832,10 @@ function setupAuth() {
         hideAuthGates();
         applyRoleGating();
         renderUserPill();
+        // Take the account's single session slot, then watch for anyone else
+        // taking it from us.
+        await claimActiveSession(user.uid);
+        watchOwnUserDoc(user.uid);
         maybeInitCloudSync();
     });
 }
@@ -5919,6 +5924,130 @@ let _sessionTimer = null;
 
 function startSessionClock() {
     localStorage.setItem(SESSION_START_KEY, String(Date.now()));
+}
+
+// ============================================================
+// ONE ACTIVE SESSION PER ACCOUNT
+// ------------------------------------------------------------
+// The newest sign-in wins: it writes its own id into the account document,
+// and every other device — which is watching that document — sees an id that
+// is not its own and signs itself out. Newest-wins rather than first-wins on
+// purpose: a tab closed without signing out, or a lost phone, would otherwise
+// hold the account hostage until the session aged out.
+//
+// The id lives in localStorage, which is shared between tabs of the same
+// browser, so several tabs on one device count as one session and do not
+// fight each other.
+//
+// This is enforced by the app, not by the database: it stops an account being
+// shared across two phones, but it is not a defence against someone editing
+// the client. Hard enforcement would need a server.
+// ============================================================
+
+const SESSION_ID_KEY = 'tractorSessionId';
+let _mySessionId = '';
+let _userDocUnsub = null;
+let _sessionTakenOver = false;
+
+function mySessionId() {
+    if (_mySessionId) return _mySessionId;
+    let id = '';
+    try { id = localStorage.getItem(SESSION_ID_KEY) || ''; } catch (e) { /* private mode */ }
+    if (!id) {
+        id = 's_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+        try { localStorage.setItem(SESSION_ID_KEY, id); } catch (e) { /* ignore */ }
+    }
+    _mySessionId = id;
+    return id;
+}
+
+// Coarse, human-readable label so the audit trail says something useful.
+// Deliberately not a fingerprint.
+function deviceLabel() {
+    const ua = navigator.userAgent || '';
+    const os = /Android/i.test(ua) ? 'Android'
+        : /iPhone|iPad|iPod/i.test(ua) ? 'iOS'
+        : /Windows/i.test(ua) ? 'Windows'
+        : /Mac OS X/i.test(ua) ? 'macOS'
+        : /Linux/i.test(ua) ? 'Linux' : 'Perangkat lain';
+    const browser = /Edg\//.test(ua) ? 'Edge'
+        : /OPR\//.test(ua) ? 'Opera'
+        : /Chrome\//.test(ua) ? 'Chrome'
+        : /Safari\//.test(ua) ? 'Safari'
+        : /Firefox\//.test(ua) ? 'Firefox' : 'Browser';
+    return `${browser} · ${os}`;
+}
+
+async function claimActiveSession(uid) {
+    if (!window.cloud?.claimSession) return;
+    try {
+        await window.cloud.claimSession(uid, {
+            id: mySessionId(),
+            startedAt: Date.now(),
+            device: deviceLabel()
+        });
+    } catch (e) {
+        // Old rules that do not allow a self-update of activeSession land here.
+        // Sign-in still works; the single-session rule just is not enforced.
+        console.warn('[session] could not claim session:', e && e.code);
+        if (e && e.code === 'permission-denied') {
+            showToast('Aturan sesi tunggal belum aktif — publish ulang firestore.rules', 'warning');
+        }
+    }
+}
+
+// Watch this user's own document: session takeovers, plus role and access
+// changes, now reach them without a reload.
+function watchOwnUserDoc(uid) {
+    if (_userDocUnsub || !window.cloud?.subscribeUserDoc) return;
+    _userDocUnsub = window.cloud.subscribeUserDoc(uid, doc => {
+        if (!doc || _sessionTakenOver) return;
+
+        const active = doc.activeSession;
+        if (active && active.id && active.id !== mySessionId()) {
+            handleSessionTakenOver(active);
+            return;
+        }
+
+        // Role/status/access changed under us — apply it live.
+        const before = currentUserDoc || {};
+        currentUserDoc = doc;
+        if (doc.status !== 'active') {
+            showPendingGate(doc.email || '');
+            return;
+        }
+        if (JSON.stringify(before.access) !== JSON.stringify(doc.access) || before.role !== doc.role) {
+            applyRoleGating();
+            renderUserPill();
+            showToast('Hak akses Anda diperbarui oleh admin', 'info');
+        }
+    }, err => console.warn('[session] user doc watch failed:', err && err.code));
+}
+
+function stopWatchingOwnUserDoc() {
+    if (_userDocUnsub) { try { _userDocUnsub(); } catch (_) {} _userDocUnsub = null; }
+}
+
+async function handleSessionTakenOver(active) {
+    if (_sessionTakenOver) return;
+    _sessionTakenOver = true;
+    stopWatchingOwnUserDoc();
+    tearDownCloudSync();
+    clearSessionClock();
+
+    const revoked = String(active.id || '').startsWith('revoked_');
+    const where = active.device ? ` (${active.device})` : '';
+    const msg = revoked
+        ? 'Sesi Anda diakhiri oleh admin. Silakan masuk kembali.'
+        : `Anda dikeluarkan karena akun ini dibuka di perangkat lain${where}.`;
+
+    try { await window.cloud.signOutUser(); } catch (e) { /* gate still shows below */ }
+    currentUser = null;
+    currentUserDoc = null;
+    showAuthGate('signin');
+    showAuthError('signInError', msg);
+    // Cleared so the next sign-in on this device is not treated as a takeover.
+    _sessionTakenOver = false;
 }
 
 function clearSessionClock() {
@@ -6363,6 +6492,13 @@ function renderUsersView() {
                 ? '<div class="user-role-note user-role-note--legacy">Role lama — pilihkan role baru</div>'
                 : (noAccess ? '<div class="user-role-note user-role-note--warn">Belum diberi akses apa pun</div>' : '');
 
+            // Which device currently holds this account's single session slot.
+            const sess = u.activeSession;
+            const live = sess && sess.id && !String(sess.id).startsWith('revoked_');
+            const sessionTitle = live
+                ? `Keluarkan dari perangkat aktif (${sess.device || 'tidak diketahui'}${sess.startedAt ? ' · masuk ' + formatUserTime(sess.startedAt) : ''})`
+                : 'Keluarkan dari semua perangkat';
+
             return `
             <tr>
                 <td>${i + 1}</td>
@@ -6376,6 +6512,7 @@ function renderUsersView() {
                         ? '<span class="user-cell-protected">dilindungi</span>'
                         : `<div class="row-actions row-actions--labeled">
                             <button class="btn btn-secondary btn-sm" title="Atur akses per menu" onclick="openAccessModal('${escapeHtml(u.uid)}')"><i class="fas fa-sliders"></i> Akses</button>
+                            <button class="btn btn-secondary btn-sm row-actions__icon" title="${sessionTitle}" onclick="forceSignOutUser('${escapeHtml(u.uid)}')"><i class="fas fa-right-from-bracket"></i></button>
                             <button class="btn btn-secondary btn-sm row-actions__icon" title="Hapus user" onclick="removeUser('${escapeHtml(u.uid)}')"><i class="fas fa-user-minus" style="color:var(--danger)"></i></button>
                            </div>`}
                 </td>
@@ -6538,6 +6675,35 @@ async function changeUserRole(uid, newRole) {
             : `${user.email} sekarang ${after}`, 'success');
     } catch (e) {
         showToast('Gagal mengubah role — ' + e.message, 'error');
+    }
+}
+
+// Owner-initiated remote sign-out. Writes a session id no device can match,
+// so whoever is signed in is dropped on their next snapshot.
+async function forceSignOutUser(uid) {
+    if (!isOwner()) return;
+    const user = allUsers.find(u => u.uid === uid);
+    if (!user) return;
+    if (currentUser && uid === currentUser.uid) {
+        showToast('Gunakan menu akun untuk keluar dari perangkat ini', 'warning');
+        return;
+    }
+    const sess = user.activeSession;
+    const where = (sess && sess.device) ? `\n\nPerangkat aktif: ${sess.device}` : '';
+    if (!confirm(`Keluarkan ${user.email} dari semua perangkat?${where}\n\nMereka harus masuk lagi. Data mereka tidak terhapus.`)) return;
+    try {
+        await window.cloud.revokeUserSession(uid, currentUserDoc.email);
+        logEvent({
+            action: 'update',
+            unitId: uid,
+            unitName: `[User] ${user.displayName || user.email}`,
+            field: 'Sesi',
+            before: (sess && sess.device) || 'aktif',
+            after: 'dikeluarkan'
+        });
+        showToast(`${user.email} dikeluarkan dari semua perangkat`, 'success');
+    } catch (e) {
+        showToast('Gagal mengakhiri sesi — ' + e.message, 'error');
     }
 }
 

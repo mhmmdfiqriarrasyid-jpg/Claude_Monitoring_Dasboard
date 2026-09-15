@@ -280,6 +280,36 @@ window.cloud = {
             updatedBy: updatedByEmail || null
         }, { merge: true });
     },
+    // ---- Single active session per account ----
+    // Writes ONLY activeSession, because the security rules let a non-owner
+    // touch that one field on their own document and nothing else.
+    async claimSession(uid, session) {
+        await setDoc(doc(db, USERS_COL, uid), { activeSession: session }, { merge: true });
+    },
+    // Owner-initiated remote sign-out: no device can ever hold this id, so
+    // whoever is signed in is dropped on their next snapshot.
+    async revokeUserSession(uid, revokedByEmail) {
+        await setDoc(doc(db, USERS_COL, uid), {
+            activeSession: {
+                id: 'revoked_' + Date.now(),
+                revokedAt: Date.now(),
+                revokedBy: revokedByEmail || null
+            }
+        }, { merge: true });
+    },
+    // Live view of one user's own document — session takeovers, and role or
+    // access changes, reach the signed-in user without a reload.
+    subscribeUserDoc(uid, callback, errorCallback) {
+        return onSnapshot(
+            doc(db, USERS_COL, uid),
+            snap => callback(snap.exists() ? snap.data() : null),
+            err => {
+                console.error('[cloud] user doc subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
+    },
+
     async updateUserAccess(uid, access, updatedByEmail) {
         await setDoc(doc(db, USERS_COL, uid), {
             access,

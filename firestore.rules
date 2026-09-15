@@ -18,6 +18,10 @@ rules_version = '2';
 //   'team' (edit) carry defaults; staff/pbt/khl/viewer grant nothing on their
 //   own, so every area is granted explicitly in the app's Akses dialog.
 //   Owner is always a superuser and can never be locked out.
+//
+//   activeSession : { id, startedAt, device } — the one device currently
+//   signed in. A user may write this one field on their own document; the
+//   newest sign-in wins and every other device signs itself out.
 // ============================================================
 
 service cloud.firestore {
@@ -108,8 +112,17 @@ service cloud.firestore {
       // Owners manage everyone. The allowlisted owner may also repair its own
       // document (otherwise a demoted owner can never recover — isOwner() is
       // already false at that point).
+      //
+      // The third clause is what makes one-session-per-account possible: a
+      // signed-in user may claim the session slot on their OWN document, and
+      // affectedKeys().hasOnly() pins that to the single 'activeSession' field.
+      // Role, status and access stay owner-only, so this opens no path to
+      // self-promotion.
       allow update: if isOwner()
-                    || (request.auth.uid == uid && selfBootstrapsAsOwner());
+                    || (request.auth.uid == uid && selfBootstrapsAsOwner())
+                    || (request.auth.uid == uid
+                        && request.resource.data.diff(resource.data)
+                             .affectedKeys().hasOnly(['activeSession']));
 
       allow delete: if isOwner();
     }
