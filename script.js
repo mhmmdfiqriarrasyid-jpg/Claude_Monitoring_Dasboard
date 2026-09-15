@@ -6988,7 +6988,7 @@ function renderShiftGrid() {
         return `<tr>
             <th scope="row" class="shift-grid__member">
                 <strong>${escapeHtml(m.name)}</strong>
-                ${m.jobTitle ? `<span class="shift-grid__job">${escapeHtml(m.jobTitle)}</span>` : ''}
+                ${m.jobTitle ? `<span class="shift-grid__job" title="${escapeHtml(m.jobTitle)}">${escapeHtml(m.jobTitle)}</span>` : ''}
             </th>${cells}
         </tr>`;
     }).join('');
@@ -7105,10 +7105,12 @@ function renderTeamMembersList() {
     }
     list.innerHTML = teamMembers.map(m => `
         <li class="category-item member-item${m.active === false ? ' is-inactive' : ''}">
-            <span class="category-item__name">
+            <span class="category-item__name member-item__info">
                 <strong>${escapeHtml(m.name)}</strong>
-                ${m.jobTitle ? `<span class="member-item__job">${escapeHtml(m.jobTitle)}</span>` : ''}
-                ${m.active === false ? '<span class="member-item__off">Nonaktif</span>' : ''}
+                ${(m.jobTitle || m.active === false) ? `<span class="member-item__meta">
+                    ${m.jobTitle ? `<span class="member-item__job" title="${escapeHtml(m.jobTitle)}">${escapeHtml(m.jobTitle)}</span>` : ''}
+                    ${m.active === false ? '<span class="member-item__off">Nonaktif</span>' : ''}
+                </span>` : ''}
             </span>
             ${canEdit ? `<span class="row-actions row-actions--labeled">
                 <button class="btn btn-secondary btn-sm" onclick="toggleTeamMember('${escapeHtml(m.id)}')">

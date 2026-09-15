@@ -2606,17 +2606,43 @@ body[data-nocsvimport] .csv-import { display: none !important; }
     vertical-align: middle;
     padding: 8px 6px;
 }
+/* The member cell is a <th scope="row">, so it inherits the column-header look
+   from .data-table th — including white-space:nowrap, which made long names
+   spill over the fixed-width column and sit on top of the first shift cell.
+   Undo the header styling here and let the name wrap instead. */
 .shift-grid .shift-grid__member {
     text-align: left;
-    width: 150px;
+    width: 180px;
     padding-left: 14px;
     background: var(--card);
-    font-weight: 600;
 }
+/* Only the body rows are names — the thead and tfoot cells are labels and keep
+   the uppercase column-header look of the day columns beside them. */
+.shift-grid tbody .shift-grid__member {
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--text);
+    cursor: default;
+    white-space: normal;
+    /* break-word, not anywhere: split a word only when it cannot fit on a
+       line of its own, so names wrap between words wherever possible. */
+    overflow-wrap: break-word;
+    line-height: 1.35;
+}
+/* Job titles can be long ("Tenaga Operational Technician"); keep them to one
+   line with an ellipsis and the full text in the tooltip. */
 .shift-grid__job {
     display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 11px;
     font-weight: 400;
+    text-transform: none;
+    letter-spacing: normal;
     color: var(--text-light);
 }
 .shift-grid th.is-today,
@@ -2680,13 +2706,35 @@ body[data-nocsvimport] .csv-import { display: none !important; }
 }
 
 /* ---- Team member list ---- */
+/* Name on its own line, job title and status beneath it — otherwise a long
+   name and a long job title flow into one paragraph that wraps around the
+   action buttons. min-width:0 lets the ellipsis actually kick in. */
+.member-item { gap: 10px; }
+.member-item__info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    flex: 1;
+    min-width: 0;
+}
+.member-item__meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    min-width: 0;
+}
+.member-item .row-actions { flex-shrink: 0; }
 .member-item__job {
-    margin-left: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 12px;
     color: var(--text-light);
 }
 .member-item__off {
-    margin-left: 8px;
+    flex-shrink: 0;
     padding: 2px 8px;
     border-radius: 10px;
     background: var(--bg);
@@ -2704,8 +2752,12 @@ body[data-nocsvimport] .csv-import { display: none !important; }
     .week-nav__label { min-width: 0; flex: 1; font-size: 13px; }
     .wl-filter-date { flex: 1 1 100%; }
     .wl-filter-date .form-input { flex: 1; }
-    .shift-grid .shift-grid__member { width: 110px; padding-left: 10px; }
+    .shift-grid .shift-grid__member { width: 132px; padding-left: 10px; }
     .shift-foot__detail { display: none; }
+    /* Narrow rows: let the buttons drop to their own line instead of squeezing
+       the name into a two-character column. */
+    .member-item { flex-wrap: wrap; }
+    .member-item .row-actions { width: 100%; justify-content: flex-end; }
 }
 
 /* Shown in place of a chart when the Chart.js CDN could not be reached. */
