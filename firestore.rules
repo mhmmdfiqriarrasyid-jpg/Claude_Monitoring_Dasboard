@@ -8,11 +8,15 @@ rules_version = '2';
 // (ACCESS_AREAS / effectiveAccess / hasAccess).
 //
 // Access model
-//   role   : 'owner' | 'team' | 'viewer'   (on /users/{uid})
-//   access : optional per-area override map, e.g.
+//   role   : 'owner' (Super Admin) | 'staff' | 'pbt' | 'khl'  (on /users/{uid})
+//            'team' and 'viewer' are legacy roles, still honoured unchanged.
+//   access : per-area override map, e.g.
 //            { editUnits:'edit', implements:'view', damage:'edit',
-//              licenseStock:'none', team:'edit', history:'view', csv:'export' }
-//   Missing override  → role default (owner/team = edit, viewer = none).
+//              licenseStock:'none', teamShift:'view', teamLog:'edit',
+//              teamMembers:'none', history:'view', csv:'export' }
+//   Missing override → role default. Only 'owner' (everything) and the legacy
+//   'team' (edit) carry defaults; staff/pbt/khl/viewer grant nothing on their
+//   own, so every area is granted explicitly in the app's Akses dialog.
 //   Owner is always a superuser and can never be locked out.
 // ============================================================
 
@@ -43,7 +47,9 @@ service cloud.firestore {
         lvl('implements')   == 'edit' ||
         lvl('damage')       == 'edit' ||
         lvl('licenseStock') == 'edit' ||
-        lvl('team')         == 'edit'
+        lvl('teamShift')    == 'edit' ||
+        lvl('teamLog')      == 'edit' ||
+        lvl('teamMembers')  == 'edit'
       );
     }
 
@@ -59,17 +65,17 @@ service cloud.firestore {
     match /userCategories/{catId} { allow read: if isActive(); allow write: if canEditArea('editUnits'); }
     match /damageComponents/{id}  { allow read: if isActive(); allow write: if canEditArea('damage'); }
 
-    // ---- Team operations (one area for all three) ----
-    // Everyone active can read the roster, the schedule and the work logs, so
-    // people can see who is on duty. Writing needs edit on 'team'.
+    // ---- Team operations (one area each) ----
+    // Split three ways on purpose: someone may read the schedule without
+    // setting it, and file their daily report without touching the roster.
+    // Reads stay open to any active user so people can see who is on duty.
     //
-    // Work logs are deliberately NOT restricted to their own author: the team
-    // decided an office admin should be able to file reports on behalf of
-    // field operators who have no login. Every write is still attributed in
-    // /history, so who filed what stays traceable.
-    match /teamMembers/{id} { allow read: if isActive(); allow write: if canEditArea('team'); }
-    match /shifts/{id}      { allow read: if isActive(); allow write: if canEditArea('team'); }
-    match /workLogs/{id}    { allow read: if isActive(); allow write: if canEditArea('team'); }
+    // Work logs are deliberately NOT restricted to their own author: an office
+    // admin files reports on behalf of field operators who have no login. Every
+    // write is still attributed in /history, so who filed what stays traceable.
+    match /teamMembers/{id} { allow read: if isActive(); allow write: if canEditArea('teamMembers'); }
+    match /shifts/{id}      { allow read: if isActive(); allow write: if canEditArea('teamShift'); }
+    match /workLogs/{id}    { allow read: if isActive(); allow write: if canEditArea('teamLog'); }
 
     // ---- Accounts ----
     // Sign-up may only ever create a PENDING VIEWER. Without this, any signed-in

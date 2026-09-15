@@ -1924,9 +1924,21 @@ body.auth-blocked .footer { filter: blur(2px); pointer-events: none; }
 }
 .user-chip i { font-size: 12px; }
 .user-chip--owner   { color: var(--warning); border-color: var(--warning-border); background: var(--warning-bg); }
-.user-chip--team    { color: var(--info); border-color: var(--info-border); background: var(--info-bg); }
-.user-chip--viewer  { color: var(--text-secondary); border-color: var(--border); background: var(--bg); }
+.user-chip--staff   { color: var(--info); border-color: var(--info-border); background: var(--info-bg); }
+.user-chip--pbt     { color: var(--success); border-color: var(--success-border); background: var(--success-bg); }
+.user-chip--khl     { color: var(--text-secondary); border-color: var(--border); background: var(--bg); }
+.user-chip--legacy  { color: var(--text-light); border-color: var(--border); background: var(--bg); font-style: italic; }
 .user-chip--pending { color: #A24E32; border-color: #E4B79A; background: var(--primary-lighter); }
+
+/* Note under the role dropdown: a legacy role still to be migrated, or an
+   account that is active but has not been granted a single area yet. */
+.user-role-note {
+    margin-top: 4px;
+    font-size: 10.5px;
+    line-height: 1.3;
+}
+.user-role-note--legacy { color: var(--text-light); font-style: italic; }
+.user-role-note--warn   { color: var(--warning); font-weight: 600; }
 
 .user-role-select {
     padding: 4px 8px;
@@ -2507,8 +2519,10 @@ body[data-ro-editunits] .inline-edit { background: transparent !important; }
 body[data-ro-editunits]  .editonly--editunits,
 body[data-ro-implements] .editonly--implements,
 body[data-ro-damage]     .editonly--damage,
-body[data-ro-license]    .editonly--license,
-body[data-ro-team]       .editonly--team { display: none !important; }
+body[data-ro-license]     .editonly--license,
+body[data-ro-teamshift]   .editonly--teamshift,
+body[data-ro-teamlog]     .editonly--teamlog,
+body[data-ro-teammembers] .editonly--teammembers { display: none !important; }
 
 /* CSV export/import capability: hide buttons the user isn't allowed to use */
 body[data-nocsvexport] .csv-export { display: none !important; }
@@ -2551,12 +2565,34 @@ body[data-nocsvimport] .csv-import { display: none !important; }
    TEAM OPERATIONS — shift schedule + daily work logs
    ============================================================ */
 
-.team-tabs {
+.team-tabbar {
     display: flex;
-    gap: 6px;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
     margin-bottom: 16px;
     border-bottom: 1px solid var(--border);
 }
+.team-tabs {
+    display: flex;
+    gap: 6px;
+}
+/* Sits on the same line as the tabs, lifted clear of the underline. */
+#btnTeamMembers { margin-bottom: 8px; }
+.team-no-panel {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 24px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+.team-no-panel p { margin: 0; }
+.team-no-panel i { font-size: 20px; color: var(--text-light); }
 .team-tab {
     padding: 10px 18px;
     border: none;

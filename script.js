@@ -563,7 +563,7 @@ function formatDuration(ms) {
 
 function navigateTo(view) {
     // Per-user access gating: the user needs at least 'view' on the area.
-    if (GATED_AREAS.includes(view) && !hasAccess(view, 'view')) {
+    if (GATED_VIEWS.includes(view) && !canViewView(view)) {
         showToast('Anda tidak punya akses ke menu ini', 'warning');
         view = 'dashboard';
     }
@@ -6009,12 +6009,11 @@ function renderUserPill() {
     pill.style.display = '';
     document.getElementById('userPillName').textContent =
         currentUserDoc.displayName || currentUserDoc.email || 'User';
-    const roleLabel = currentUserDoc.role === 'owner' ? 'Owner'
-        : currentUserDoc.role === 'team' ? 'Team' : 'Viewer';
-    document.getElementById('userPillRole').textContent = roleLabel;
+    const label = roleLabel(currentUserDoc.role);
+    document.getElementById('userPillRole').textContent = label;
     pill.dataset.role = currentUserDoc.role;
     document.getElementById('userMenuEmail').textContent = currentUserDoc.email || '';
-    document.getElementById('userMenuRoleLabel').textContent = roleLabel + ' account';
+    document.getElementById('userMenuRoleLabel').textContent = 'Akun ' + label;
 }
 
 function toggleUserMenu() {
@@ -6045,25 +6044,79 @@ function isOwner() {
 // Configurable areas the owner can restrict per user. Users management stays
 // owner-only; the Dashboard is always available to any active user.
 const ACCESS_AREAS = [
-    { key: 'editUnits',    label: 'Edit Units',   levels: ['none', 'view', 'edit'] },
-    { key: 'implements',   label: 'Implements',   levels: ['none', 'view', 'edit'] },
-    { key: 'damage',       label: 'Kerusakan',    levels: ['none', 'view', 'edit'] },
-    { key: 'licenseStock', label: 'Stok Lisensi', levels: ['none', 'view', 'edit'] },
-    { key: 'team',         label: 'Tim',          levels: ['none', 'view', 'edit'] },
-    { key: 'history',      label: 'History',      levels: ['none', 'view'] }
+    { key: 'editUnits',    label: 'Edit Units',     levels: ['none', 'view', 'edit'] },
+    { key: 'implements',   label: 'Implements',     levels: ['none', 'view', 'edit'] },
+    { key: 'damage',       label: 'Kerusakan',      levels: ['none', 'view', 'edit'] },
+    { key: 'licenseStock', label: 'Stok Lisensi',   levels: ['none', 'view', 'edit'] },
+    // The Tim page is three separate permissions, not one. A KHL may need to
+    // read the roster and file their own daily report while having no say over
+    // the shift schedule, which a single team-wide level cannot express.
+    { key: 'teamShift',    label: 'Jadwal Shift',   levels: ['none', 'view', 'edit'] },
+    { key: 'teamLog',      label: 'Laporan Harian', levels: ['none', 'view', 'edit'] },
+    { key: 'teamMembers',  label: 'Daftar Anggota', levels: ['none', 'view', 'edit'] },
+    { key: 'history',      label: 'History',        levels: ['none', 'view'] }
 ];
 
-// Areas that own a navigable view and a none/view/edit level. Four separate
-// places used to hardcode this list; keeping it in one place stops them from
-// drifting apart when an area is added.
-const GATED_AREAS = ACCESS_AREAS.filter(a => a.key !== 'history').map(a => a.key);
+// Which access areas back each navigable view. A view opens when the user can
+// view at least one of them — the Tim page is reachable through any of its
+// three areas. Several places used to hardcode this list; keeping the mapping
+// in one place stops them drifting apart when an area is added.
+const VIEW_AREAS = {
+    editUnits:    ['editUnits'],
+    implements:   ['implements'],
+    damage:       ['damage'],
+    licenseStock: ['licenseStock'],
+    team:         ['teamShift', 'teamLog', 'teamMembers']
+};
+const GATED_VIEWS = Object.keys(VIEW_AREAS);
+// Every area that holds data (i.e. everything except the read-only audit log).
+const DATA_AREAS = ACCESS_AREAS.filter(a => a.key !== 'history').map(a => a.key);
+// area key → <body> dataset flag used by the editonly--* CSS rules.
+const RO_FLAGS = {
+    editUnits: 'roEditunits', implements: 'roImplements', damage: 'roDamage',
+    licenseStock: 'roLicense', teamShift: 'roTeamshift', teamLog: 'roTeamlog',
+    teamMembers: 'roTeammembers'
+};
 const _LVL_RANK = { none: 0, view: 1, edit: 2 };
+
+// ---- Roles ----
+// 'owner' keeps its internal key: the owner e-mail allowlist and the Firestore
+// rules are written against it, so only its label changed to Super Admin.
+// Staff / PBT / KHL grant nothing on their own — they are labels, and the owner
+// sets every area explicitly in the Akses dialog.
+const ROLES = [
+    { key: 'owner', label: 'Super Admin' },
+    { key: 'staff', label: 'Staff' },
+    { key: 'pbt',   label: 'PBT' },
+    { key: 'khl',   label: 'KHL' }
+];
+// Roles from before the four-level model. Still honoured exactly as they were,
+// so no existing account silently gains or loses access; the Users table flags
+// them so an owner can move each person over deliberately.
+const LEGACY_ROLES = [
+    { key: 'team',   label: 'Team' },
+    { key: 'viewer', label: 'Viewer' }
+];
+function roleLabel(key) {
+    const r = ROLES.concat(LEGACY_ROLES).find(x => x.key === key);
+    return r ? r.label : (key || '—');
+}
+function isLegacyRole(key) {
+    return LEGACY_ROLES.some(r => r.key === key);
+}
 
 // Level a role grants for an area when the user has no explicit override.
 function roleDefaultAccess(role, area) {
     if (role === 'owner') return 'edit';
+    // Legacy role: keep the old behaviour untouched.
     if (role === 'team')  return area === 'history' ? 'view' : 'edit';
-    return 'none'; // viewer / pending
+    // staff / pbt / khl / viewer / pending — nothing until the owner grants it.
+    return 'none';
+}
+
+// True when the user can open a given view — any one of its areas is enough.
+function canViewView(view) {
+    return (VIEW_AREAS[view] || []).some(a => hasAccess(a, 'view'));
 }
 
 // Effective level of a user for an area (explicit access override → role default).
@@ -6083,6 +6136,8 @@ function hasAccess(area, min, user = currentUserDoc) {
 // ---- CSV export/import capability (separate none/export/full privilege) ----
 const CSV_LEVELS = ['none', 'export', 'full'];
 const _CSV_RANK = { none: 0, export: 1, full: 2 };
+// Same shape as roleDefaultAccess: only the legacy 'team' role carries a
+// default, the new roles start at none and are granted explicitly.
 function roleDefaultCsv(role) { return (role === 'owner' || role === 'team') ? 'full' : 'none'; }
 function effectiveCsv(user = currentUserDoc) {
     if (!user) return 'none';
@@ -6105,7 +6160,7 @@ function canCsv(min, notify = true) {
 // explicit per-area grant. A viewer the owner gave 'edit' on one area is an
 // editor, so gating must not go by role alone.
 function canEditAnyArea() {
-    return GATED_AREAS.some(a => hasAccess(a, 'edit'));
+    return DATA_AREAS.some(a => hasAccess(a, 'edit'));
 }
 
 function applyRoleGating() {
@@ -6120,7 +6175,7 @@ function applyRoleGating() {
 
     // If the user lost access to the current view, send them to the dashboard.
     if ((!owner && currentView === 'users') ||
-        (GATED_AREAS.includes(currentView) && !hasAccess(currentView, 'view'))) {
+        (GATED_VIEWS.includes(currentView) && !canViewView(currentView))) {
         navigateTo('dashboard');
     }
 
@@ -6134,8 +6189,8 @@ function applyRoleGating() {
 function applyAccessVisibility() {
     document.querySelectorAll('.nav__link[data-view]').forEach(el => {
         const v = el.getAttribute('data-view');
-        if (GATED_AREAS.includes(v)) {
-            el.style.display = hasAccess(v, 'view') ? '' : 'none';
+        if (GATED_VIEWS.includes(v)) {
+            el.style.display = canViewView(v) ? '' : 'none';
         }
     });
     const navHistory = document.getElementById('navHistory');
@@ -6144,8 +6199,7 @@ function applyAccessVisibility() {
     // data-ro-<area>="1" whenever the user may NOT edit that area — including
     // no access at all, so the edit controls stay hidden even if the section
     // is somehow reachable.
-    const map = { editUnits: 'roEditunits', implements: 'roImplements', damage: 'roDamage', licenseStock: 'roLicense', team: 'roTeam' };
-    Object.entries(map).forEach(([area, flag]) => {
+    Object.entries(RO_FLAGS).forEach(([area, flag]) => {
         if (!hasAccess(area, 'edit')) document.body.dataset[flag] = '1';
         else delete document.body.dataset[flag];
     });
@@ -6212,16 +6266,19 @@ function renderUsersView() {
     document.getElementById('usersCount').textContent =
         `${allUsers.length} user(s) · ${pending.length} pending`;
 
-    // Summary chips
-    const ownerCount = active.filter(u => u.role === 'owner').length;
-    const teamCount  = active.filter(u => u.role === 'team').length;
-    const viewerCount = active.filter(u => u.role === 'viewer').length;
-    document.getElementById('usersSummary').innerHTML = `
-        <div class="user-chip user-chip--owner"><i class="fas fa-crown"></i> ${ownerCount} Owner</div>
-        <div class="user-chip user-chip--team"><i class="fas fa-user-pen"></i> ${teamCount} Team</div>
-        <div class="user-chip user-chip--viewer"><i class="fas fa-eye"></i> ${viewerCount} Viewer</div>
-        <div class="user-chip user-chip--pending"><i class="fas fa-hourglass-half"></i> ${pending.length} Pending</div>
-    `;
+    // Summary chips — one per current role, plus legacy roles only while any
+    // account still holds one, so the row disappears once everyone is moved.
+    const countOf = key => active.filter(u => u.role === key).length;
+    const icons = { owner: 'crown', staff: 'user-tie', pbt: 'user-gear', khl: 'user' };
+    let chips = ROLES.map(r =>
+        `<div class="user-chip user-chip--${r.key}"><i class="fas fa-${icons[r.key] || 'user'}"></i> ${countOf(r.key)} ${escapeHtml(r.label)}</div>`
+    ).join('');
+    const legacyTotal = LEGACY_ROLES.reduce((n, r) => n + countOf(r.key), 0);
+    if (legacyTotal > 0) {
+        chips += `<div class="user-chip user-chip--legacy" title="Role lama — pilihkan role baru untuk mereka"><i class="fas fa-clock-rotate-left"></i> ${legacyTotal} role lama</div>`;
+    }
+    chips += `<div class="user-chip user-chip--pending"><i class="fas fa-hourglass-half"></i> ${pending.length} Pending</div>`;
+    document.getElementById('usersSummary').innerHTML = chips;
 
     // Pending table
     const pendingBody = document.getElementById('pendingUsersBody');
@@ -6236,11 +6293,13 @@ function renderUsersView() {
                 <td data-label="Waktu daftar"><span class="user-cell-time">${formatUserTime(u.createdAt)}</span></td>
                 <td class="col-actions">
                     <div class="row-actions row-actions--labeled">
-                        <button class="btn btn-success btn-sm" title="Setujui sebagai Viewer (hanya lihat)" onclick="approveUser('${escapeHtml(u.uid)}','viewer')">
-                            <i class="fas fa-eye"></i> Viewer
-                        </button>
-                        <button class="btn btn-primary btn-sm" title="Setujui sebagai Team (bisa mengedit)" onclick="approveUser('${escapeHtml(u.uid)}','team')">
-                            <i class="fas fa-user-pen"></i> Team
+                        <select class="form-select user-role-select" id="approveRole_${escapeHtml(u.uid)}"
+                                aria-label="Role untuk ${escapeHtml(u.email || '')}">
+                            ${ROLES.filter(r => r.key !== 'owner').map(r =>
+                                `<option value="${r.key}"${r.key === 'khl' ? ' selected' : ''}>${escapeHtml(r.label)}</option>`).join('')}
+                        </select>
+                        <button class="btn btn-success btn-sm" title="Setujui dengan role terpilih" onclick="approveUser('${escapeHtml(u.uid)}')">
+                            <i class="fas fa-check"></i> Setujui
                         </button>
                         <button class="btn btn-secondary btn-sm row-actions__icon" title="Tolak dan hapus pendaftaran" onclick="rejectUser('${escapeHtml(u.uid)}')">
                             <i class="fas fa-xmark" style="color:var(--danger)"></i>
@@ -6258,20 +6317,40 @@ function renderUsersView() {
         activeBody.innerHTML = active.map((u, i) => {
             const isMe = currentUser && u.uid === currentUser.uid;
             const isOwnerRow = u.role === 'owner';
-            // Owner can't be demoted from this UI (and can't demote themselves).
-            const roleSelect = isOwnerRow
-                ? `<span class="badge badge-good"><i class="fas fa-crown"></i> Owner</span>`
-                : `<select class="form-select user-role-select" title="Viewer = hanya lihat · Team = bisa mengedit"
-                           onchange="changeUserRole('${escapeHtml(u.uid)}', this.value)">
-                       <option value="viewer" ${u.role === 'viewer' ? 'selected' : ''}>Viewer</option>
-                       <option value="team"   ${u.role === 'team'   ? 'selected' : ''}>Team</option>
-                   </select>`;
+            const legacy = isLegacyRole(u.role);
+
+            // Your own Super Admin row stays locked so you cannot lock yourself
+            // out; every other row is changeable, including demoting another
+            // Super Admin — a promotion by mistake has to be undoable.
+            let roleSelect;
+            if (isOwnerRow && isMe) {
+                roleSelect = `<span class="badge badge-good"><i class="fas fa-crown"></i> ${escapeHtml(roleLabel('owner'))}</span>`;
+            } else {
+                // A legacy role is offered only to the account that still holds
+                // it, so it is never handed out again but also never silently
+                // swapped underneath someone.
+                const opts = ROLES.map(r =>
+                    `<option value="${r.key}" ${u.role === r.key ? 'selected' : ''}>${escapeHtml(r.label)}</option>`)
+                    .concat(legacy ? [`<option value="${u.role}" selected>${escapeHtml(roleLabel(u.role))} (role lama)</option>`] : [])
+                    .join('');
+                roleSelect = `<select class="form-select user-role-select" title="Role hanya label — atur hak aksesnya lewat tombol Akses"
+                           onchange="changeUserRole('${escapeHtml(u.uid)}', this.value)">${opts}</select>`;
+            }
+
+            // A new role grants nothing by itself, so an account can sit active
+            // with no way in. Say so where the owner will see it.
+            const noAccess = !isOwnerRow &&
+                ACCESS_AREAS.every(a => effectiveAccess(a.key, u) === 'none');
+            const roleNote = legacy
+                ? '<div class="user-role-note user-role-note--legacy">Role lama — pilihkan role baru</div>'
+                : (noAccess ? '<div class="user-role-note user-role-note--warn">Belum diberi akses apa pun</div>' : '');
+
             return `
             <tr>
                 <td>${i + 1}</td>
                 <td data-label="Nama"><strong>${escapeHtml(u.displayName || '—')}</strong>${isMe ? ' <span style="font-size:11px;color:var(--text-secondary)">(Anda)</span>' : ''}</td>
                 <td data-label="Email"><span class="user-cell-email" title="${escapeHtml(u.email || '')}">${escapeHtml(u.email || '')}</span></td>
-                <td data-label="Role">${roleSelect}</td>
+                <td data-label="Role">${roleSelect}${roleNote}</td>
                 <td data-label="Terakhir diubah"><span class="user-cell-time">${formatUserTime(u.updatedAt)}</span></td>
                 <td data-label="Diubah oleh"><span class="user-cell-actor" title="${escapeHtml(u.updatedBy || '')}">${escapeHtml(shortActor(u.updatedBy))}</span></td>
                 <td class="col-actions">
@@ -6347,18 +6426,29 @@ async function approveUser(uid, role) {
     if (!isOwner()) return;
     const user = allUsers.find(u => u.uid === uid);
     if (!user) return;
+    // Role comes from the picker in that user's own pending row.
+    if (!role) {
+        const sel = document.getElementById('approveRole_' + uid);
+        role = sel ? sel.value : 'khl';
+    }
+    if (!ROLES.some(r => r.key === role) || role === 'owner') {
+        showToast('Role tidak dikenal', 'warning');
+        return;
+    }
+    const label = roleLabel(role);
     try {
         await window.cloud.updateUserRole(uid, role, 'active', currentUserDoc.email);
-        const roleLabel = role === 'team' ? 'Team' : 'Viewer';
         logEvent({
             action: 'approve',
             unitId: uid,
             unitName: `[User] ${user.displayName || user.email}`,
             field: 'role',
             before: 'pending',
-            after: roleLabel
+            after: label
         });
-        showToast(`Approved ${user.email} as ${roleLabel}`, 'success');
+        // The new roles carry no access, so approving alone leaves them with an
+        // empty app — point the owner straight at the next step.
+        showToast(`${user.email} disetujui sebagai ${label} — atur hak aksesnya lewat tombol Akses`, 'success');
     } catch (e) {
         console.error('[users] approve failed:', e);
         showToast('Gagal menyetujui user — ' + e.message, 'error');
@@ -6396,10 +6486,25 @@ async function changeUserRole(uid, newRole) {
     }
     const oldRole = user.role;
     if (oldRole === newRole) return;
+
+    const before = roleLabel(oldRole);
+    const after  = roleLabel(newRole);
+
+    // Super Admin is unrestricted by design and can manage every other account,
+    // so granting it deserves a deliberate yes.
+    if (newRole === 'owner' &&
+        !confirm(`Jadikan ${user.email} Super Admin?\n\nSuper Admin punya akses penuh ke seluruh data dan bisa mengubah atau menghapus akun lain, termasuk mencabut akses Anda. Hanya berikan ke orang yang Anda percaya sepenuhnya.`)) {
+        renderUsersView();
+        return;
+    }
+    if (oldRole === 'owner' &&
+        !confirm(`Turunkan ${user.email} dari Super Admin menjadi ${after}?\n\nSetelah ini akses mereka mengikuti pengaturan per-menu, dan role baru tidak memberi akses apa pun sampai Anda mengaturnya.`)) {
+        renderUsersView();
+        return;
+    }
+
     try {
         await window.cloud.updateUserRole(uid, newRole, 'active', currentUserDoc.email);
-        const before = oldRole === 'team' ? 'Team' : oldRole === 'viewer' ? 'Viewer' : oldRole;
-        const after  = newRole === 'team' ? 'Team' : 'Viewer';
         logEvent({
             action: 'role-change',
             unitId: uid,
@@ -6408,7 +6513,11 @@ async function changeUserRole(uid, newRole) {
             before,
             after
         });
-        showToast(`${user.email} is now ${after}`, 'success');
+        const needsAccess = newRole !== 'owner' &&
+            ACCESS_AREAS.every(a => effectiveAccess(a.key, { ...user, role: newRole }) === 'none');
+        showToast(needsAccess
+            ? `${user.email} sekarang ${after} — belum punya akses, atur lewat tombol Akses`
+            : `${user.email} sekarang ${after}`, 'success');
     } catch (e) {
         showToast('Gagal mengubah role — ' + e.message, 'error');
     }
@@ -6785,7 +6894,8 @@ function migrateSiteData20260525() {
 // All three collections are cloud-only (like userCategories and
 // damageComponents): there is no legacy local data to migrate, so Firestore
 // stays the single source of truth and its IndexedDB persistence covers
-// offline reads. Everything here is gated by the 'team' access area.
+// offline reads. Each part is gated by its own access area: teamShift for the
+// schedule, teamLog for the daily reports, teamMembers for the roster.
 // ============================================================
 
 const SHIFT_TYPES = [
@@ -6903,18 +7013,39 @@ function switchTeamTab(tab) {
 }
 
 function renderTeamView() {
+    const canShift = hasAccess('teamShift', 'view');
+    const canLog = hasAccess('teamLog', 'view');
+    const canMembers = hasAccess('teamMembers', 'view');
+
+    // Land on a tab the user can actually open — the page is reachable through
+    // any one of the three areas, so the stored tab may not be permitted.
+    if (teamTab === 'shift' && !canShift && canLog) teamTab = 'worklog';
+    if (teamTab === 'worklog' && !canLog && canShift) teamTab = 'shift';
+
     document.querySelectorAll('.team-tab').forEach(btn => {
-        const on = btn.dataset.tab === teamTab;
+        const allowed = btn.dataset.tab === 'shift' ? canShift : canLog;
+        btn.style.display = allowed ? '' : 'none';
+        const on = allowed && btn.dataset.tab === teamTab;
         btn.classList.toggle('active', on);
         btn.setAttribute('aria-selected', on ? 'true' : 'false');
     });
+
+    const membersBtn = document.getElementById('btnTeamMembers');
+    if (membersBtn) membersBtn.style.display = canMembers ? '' : 'none';
+
     const shiftPanel = document.getElementById('teamShiftPanel');
     const logPanel = document.getElementById('teamWorkLogPanel');
-    if (shiftPanel) shiftPanel.style.display = (teamTab === 'shift') ? '' : 'none';
-    if (logPanel) logPanel.style.display = (teamTab === 'worklog') ? '' : 'none';
+    const emptyPanel = document.getElementById('teamNoPanel');
+    const showShift = canShift && teamTab === 'shift';
+    const showLog = canLog && teamTab === 'worklog';
+    if (shiftPanel) shiftPanel.style.display = showShift ? '' : 'none';
+    if (logPanel) logPanel.style.display = showLog ? '' : 'none';
+    // Reachable via Daftar Anggota alone — neither tab is permitted, so say so
+    // instead of showing two blank panels.
+    if (emptyPanel) emptyPanel.style.display = (!canShift && !canLog) ? '' : 'none';
 
-    if (teamTab === 'shift') renderShiftGrid();
-    else renderWorkLogTable();
+    if (showShift) renderShiftGrid();
+    if (showLog) renderWorkLogTable();
 }
 
 // ============================================================
@@ -6941,7 +7072,7 @@ function renderShiftGrid() {
     if (!teamWeekStart) teamWeekStart = startOfWeekISO(toISODate());
     const dates = weekDates(teamWeekStart);
     const today = toISODate();
-    const canEdit = hasAccess('team', 'edit');
+    const canEdit = hasAccess('teamShift', 'edit');
 
     const label = document.getElementById('shiftWeekLabel');
     if (label) label.textContent = weekRangeLabel(teamWeekStart);
@@ -7009,7 +7140,7 @@ function renderShiftGrid() {
 }
 
 function setShift(memberId, date, shiftKey) {
-    if (!requireEdit('team')) { renderShiftGrid(); return; }
+    if (!requireEdit('teamShift')) { renderShiftGrid(); return; }
     const m = memberById(memberId);
     if (!m) return;
 
@@ -7098,7 +7229,7 @@ function closeTeamMembersModal() {
 function renderTeamMembersList() {
     const list = document.getElementById('teamMembersList');
     if (!list) return;
-    const canEdit = hasAccess('team', 'edit');
+    const canEdit = hasAccess('teamMembers', 'edit');
     if (teamMembers.length === 0) {
         list.innerHTML = `<li class="category-empty">Belum ada anggota tim.</li>`;
         return;
@@ -7126,7 +7257,7 @@ function renderTeamMembersList() {
 
 function addTeamMember(event) {
     event.preventDefault();
-    if (!requireEdit('team')) return;
+    if (!requireEdit('teamMembers')) return;
     const nameEl = document.getElementById('newMemberName');
     const jobEl = document.getElementById('newMemberJob');
     const name = (nameEl.value || '').trim();
@@ -7151,7 +7282,7 @@ function addTeamMember(event) {
 }
 
 function toggleTeamMember(id) {
-    if (!requireEdit('team')) return;
+    if (!requireEdit('teamMembers')) return;
     const m = memberById(id);
     if (!m) return;
     const nextActive = m.active === false;
@@ -7168,7 +7299,7 @@ function toggleTeamMember(id) {
 }
 
 function deleteTeamMember(id) {
-    if (!requireEdit('team')) return;
+    if (!requireEdit('teamMembers')) return;
     const m = memberById(id);
     if (!m) return;
     const shiftCount = teamShifts.filter(s => s.memberId === id).length;
@@ -7280,7 +7411,7 @@ function renderWorkLogTable() {
     setText('wlKpiToday', `${reportedToday} / ${activeCount}`);
     setText('workLogCount', `${rows.length} laporan`);
 
-    const canEdit = hasAccess('team', 'edit');
+    const canEdit = hasAccess('teamLog', 'edit');
     const hasFilter = (document.getElementById('wlFrom')?.value || '') ||
                       (document.getElementById('wlTo')?.value || '') ||
                       (document.getElementById('wlMemberFilter')?.value || '') ||
@@ -7336,7 +7467,7 @@ function clearWorkLogFilter() {
 }
 
 function showAddWorkLogForm() {
-    if (!requireEdit('team')) return;
+    if (!requireEdit('teamLog')) return;
     if (activeMembers().length === 0) {
         showToast('Tambahkan anggota tim dulu lewat Kelola Anggota', 'warning');
         return;
@@ -7350,7 +7481,7 @@ function showAddWorkLogForm() {
 }
 
 function editWorkLog(id) {
-    if (!requireEdit('team')) return;
+    if (!requireEdit('teamLog')) return;
     const w = workLogs.find(x => x.id === id);
     if (!w) return;
     document.getElementById('workLogModalTitle').textContent = 'Edit Laporan Harian';
@@ -7373,7 +7504,7 @@ function closeWorkLogModal() {
 
 function saveWorkLog(event) {
     event.preventDefault();
-    if (!requireEdit('team')) return;
+    if (!requireEdit('teamLog')) return;
 
     const id = document.getElementById('editWorkLogId').value;
     const memberId = document.getElementById('wlMember').value;
@@ -7429,7 +7560,7 @@ function saveWorkLog(event) {
 }
 
 function deleteWorkLog(id) {
-    if (!requireEdit('team')) return;
+    if (!requireEdit('teamLog')) return;
     const w = workLogs.find(x => x.id === id);
     if (!w) return;
     if (!confirm(`Hapus laporan ${memberNameOf(w)} tanggal ${w.date}?`)) return;
