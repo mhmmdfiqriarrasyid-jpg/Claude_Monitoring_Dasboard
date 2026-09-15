@@ -2,7 +2,7 @@
    Network-first for the app shell (so deploys show up on reload), cache-first
    for static assets, network-only for Firebase live endpoints. */
 
-const CACHE_NAME = 'tractor-monitor-v87';
+const CACHE_NAME = 'tractor-monitor-v88';
 
 // Same-origin core files — always revalidated from network first so a new
 // deploy is picked up on the next reload (falls back to cache when offline).
@@ -25,7 +25,15 @@ const CDN = [
 
 // Same-origin paths served network-first (kept fresh). Everything else
 // same-origin (assets) is cache-first.
-const NETWORK_FIRST_PATHS = ['/', '/index.html', '/script.js', '/firebase-init.js', '/style.css'];
+//
+// These are resolved against the worker's own scope rather than written as
+// absolute paths. Hosted in a subdirectory — a GitHub Pages project site, say,
+// at /<repo>/ — absolute paths like '/style.css' never match the real request
+// path, so the app shell silently fell back to cache-first and a fresh deploy
+// kept serving the previous style.css and script.js.
+const SCOPE_PATH = new URL('./', self.registration.scope).pathname;
+const NETWORK_FIRST_PATHS = ['', 'index.html', 'script.js', 'firebase-init.js', 'style.css']
+    .map(file => SCOPE_PATH + file);
 
 // Hosts whose responses must always go to the network (real-time data, auth).
 const NETWORK_ONLY_HOSTS = [
