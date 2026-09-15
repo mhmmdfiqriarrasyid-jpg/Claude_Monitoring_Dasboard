@@ -70,7 +70,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v91';
+const APP_VERSION = 'v92';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -3483,7 +3483,12 @@ function generateDamageId() {
 // ---- Photo: compress/resize an image File to a JPEG data URL ----
 // Resizes to DAMAGE_PHOTO_MAX_DIM on the longest side, then lowers quality
 // until the data URL fits under DAMAGE_PHOTO_MAX_BYTES (Firestore 1MB doc cap).
-function compressImageToDataURL(file) {
+// opts lets a caller ask for a tighter budget than the damage-photo defaults —
+// a work log holds several photos in one document, so each gets less room.
+function compressImageToDataURL(file, opts = {}) {
+    const maxDim = opts.maxDim || DAMAGE_PHOTO_MAX_DIM;
+    const maxBytes = opts.maxBytes || DAMAGE_PHOTO_MAX_BYTES;
+    const startQuality = opts.quality || DAMAGE_PHOTO_QUALITY;
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onerror = () => reject(new Error('Gagal membaca file'));
@@ -3492,15 +3497,15 @@ function compressImageToDataURL(file) {
             img.onerror = () => reject(new Error('File bukan gambar yang valid'));
             img.onload = () => {
                 let { width, height } = img;
-                const max = DAMAGE_PHOTO_MAX_DIM;
+                const max = maxDim;
                 if (width > height && width > max) { height = Math.round(height * max / width); width = max; }
                 else if (height > max) { width = Math.round(width * max / height); height = max; }
                 const canvas = document.createElement('canvas');
                 canvas.width = width; canvas.height = height;
                 canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-                let q = DAMAGE_PHOTO_QUALITY;
+                let q = startQuality;
                 let out = canvas.toDataURL('image/jpeg', q);
-                while (out.length > DAMAGE_PHOTO_MAX_BYTES && q > 0.3) {
+                while (out.length > maxBytes && q > 0.3) {
                     q -= 0.1;
                     out = canvas.toDataURL('image/jpeg', q);
                 }
@@ -4402,7 +4407,7 @@ function renderLicenseStockTable() {
                       (document.getElementById('licenseTypeFilter')?.value || '');
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--text-secondary)">${
             hasFilter ? 'Tidak ada transaksi yang cocok dengan filter'
                       : 'Belum ada transaksi stok lisensi. Klik <strong>Tambah Stok</strong> atau <strong>Distribusi</strong>.'
         }</td></tr>`;
@@ -6966,6 +6971,44 @@ function generateWorkLogId() {
     return 'wl_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
 }
 
+// ---- Field documentation photos ----
+// A work log carries several photos in one Firestore document, so each gets a
+// far tighter budget than the single damage photo: 4 × 200KB leaves headroom
+// under the 1MB document limit even with a long description alongside.
+const WORKLOG_PHOTO_MAX = 4;
+const WORKLOG_PHOTO_OPTS = { maxDim: 1024, maxBytes: 200 * 1024, quality: 0.7 };
+const WORKLOG_PHOTOS_TOTAL_BYTES = 800 * 1024;
+
+// ---- Multiple units per report ----
+// Reports used to carry one unit (unitId/unitName/sn). They now carry a list,
+// and this reads either shape so existing rows keep working.
+function workLogUnits(rec) {
+    if (rec && Array.isArray(rec.units) && rec.units.length) return rec.units;
+    if (rec && rec.unitId) return [{ id: rec.unitId, name: rec.unitName || '', sn: rec.sn || '' }];
+    return [];
+}
+
+// Display names, preferring the live unit record over the stored copy so a
+// renamed unit reads correctly on old reports.
+function workLogUnitNames(rec) {
+    return workLogUnits(rec).map(u => {
+        const live = liveUnitFor({ unitId: u.id, sn: u.sn });
+        return live ? (live.name || '') : (u.name || '');
+    }).filter(Boolean);
+}
+
+// ---- Paddock area ----
+// Free text with suggestions gathered from what has already been entered, the
+// same approach as company names.
+function allPaddocks() {
+    const seen = new Map();
+    workLogs.forEach(w => {
+        const p = ((w && w.paddock) || '').trim();
+        if (p && !seen.has(p.toLowerCase())) seen.set(p.toLowerCase(), p);
+    });
+    return [...seen.values()].sort((a, b) => a.localeCompare(b));
+}
+
 function activeMembers() {
     return teamMembers.filter(m => m.active !== false);
 }
@@ -7503,6 +7546,8 @@ function populateWorkLogFilters() {
     const comps = allCompanies();
     const dl = document.getElementById('companyList');
     if (dl) dl.innerHTML = comps.map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
+    const pdl = document.getElementById('paddockList');
+    if (pdl) pdl.innerHTML = allPaddocks().map(p => `<option value="${escapeHtml(p)}"></option>`).join('');
     const compFilter = document.getElementById('wlCompanyFilter');
     if (compFilter) {
         const keep = compFilter.value;
@@ -7529,7 +7574,8 @@ function getFilteredWorkLogs() {
             if (company === '__none__' ? !!c : c !== company) return false;
         }
         if (q) {
-            const hay = [memberNameOf(w), companyOfRecord(w), w.unitName, w.task, w.issue]
+            const hay = [memberNameOf(w), companyOfRecord(w), w.paddock,
+                         ...workLogUnitNames(w), w.task, w.issue]
                 .join(' ').toLowerCase();
             if (!hay.includes(q)) return false;
         }
@@ -7572,8 +7618,8 @@ function renderWorkLogTable() {
     }
 
     tbody.innerHTML = rows.map((w, i) => {
-        const lu = liveUnitFor(w);
-        const unitName = lu ? (lu.name || '') : (w.unitName || '');
+        const names = workLogUnitNames(w);
+        const photos = Array.isArray(w.photos) ? w.photos : [];
         const task = w.task || '';
         const taskShort = task.length > 60 ? task.slice(0, 60) + '…' : task;
         const issue = w.issue || '';
@@ -7588,14 +7634,20 @@ function renderWorkLogTable() {
                 const c = companyOfRecord(w);
                 return c ? escapeHtml(c) : '<span style="color:var(--text-light)">—</span>';
             })()}</td>
-            <td data-label="Jam" style="white-space:nowrap;font-variant-numeric:tabular-nums">${jam}</td>
-            <td data-label="Durasi" style="white-space:nowrap">${escapeHtml(formatMinutes(workLogMinutes(w)))}</td>
-            <td data-label="Unit">${unitName
-                ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(unitName)}</span>`
+            <td data-label="Jam Kerja" style="white-space:nowrap;font-variant-numeric:tabular-nums">
+                ${jam}<span class="wl-duration">${escapeHtml(formatMinutes(workLogMinutes(w)))}</span></td>
+            <td data-label="Unit">${names.length
+                ? names.map(n => `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(n)}</span>`).join(' ')
                 : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
-            <td data-label="Uraian" style="max-width:220px;font-size:12px" title="${escapeHtml(task)}">${escapeHtml(taskShort)}</td>
-            <td data-label="Kendala" style="max-width:160px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(issue)}">${
+            <td data-label="Paddock" style="font-size:12px">${w.paddock
+                ? escapeHtml(w.paddock)
+                : '<span style="color:var(--text-light)">—</span>'}</td>
+            <td data-label="Uraian" style="max-width:170px;font-size:12px" title="${escapeHtml(task)}">${escapeHtml(taskShort)}</td>
+            <td data-label="Kendala" style="max-width:110px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(issue)}">${
                 issueShort ? escapeHtml(issueShort) : '<span style="color:var(--text-light)">—</span>'}</td>
+            <td data-label="Dokumentasi">${photos.length
+                ? photos.map((p, k) => `<img class="dmg-thumb" src="${p}" alt="Dokumentasi ${k + 1}" onclick="openPhotoLightbox(this.src)">`).join('')
+                : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td class="col-actions">
                 ${canEdit ? `<div class="row-actions">
                     <button class="btn btn-secondary" title="Edit" aria-label="Edit laporan" onclick="editWorkLog('${escapeHtml(w.id)}')"><i class="fas fa-pen"></i></button>
@@ -7618,6 +7670,99 @@ function clearWorkLogFilter() {
     renderWorkLogTable();
 }
 
+// ---- Work log form: unit chips + documentation photos ----
+// Held outside the DOM while the modal is open, like _dmgPhotoData.
+let _wlUnits = [];   // [{ id, name, sn }]
+let _wlPhotos = [];  // data URLs
+
+function renderWorkLogUnitChips() {
+    const wrap = document.getElementById('wlUnitChips');
+    if (!wrap) return;
+    wrap.innerHTML = _wlUnits.length
+        ? _wlUnits.map((u, i) => `
+            <span class="unit-chip">
+                ${escapeHtml(u.name || u.sn || '(unit)')}
+                <button type="button" class="unit-chip__x" aria-label="Hapus ${escapeHtml(u.name || u.sn)}"
+                        title="Hapus dari daftar" onclick="removeWorkLogUnit(${i})">&times;</button>
+            </span>`).join('')
+        : '<span class="unit-chip__empty">Belum ada unit dipilih</span>';
+}
+
+function addWorkLogUnit() {
+    const input = document.getElementById('wlUnit');
+    if (!input) return;
+    const raw = (input.value || '').trim();
+    if (!raw) return;
+    const unit = resolveDamageUnit(raw);
+    if (!unit) {
+        showToast(`Unit "${raw}" tidak ditemukan — pilih dari daftar`, 'warning');
+        return;
+    }
+    if (_wlUnits.some(u => u.id === unit.id)) {
+        showToast(`${unit.name || unit.sn} sudah ada di daftar`, 'warning');
+        input.value = '';
+        return;
+    }
+    _wlUnits.push({ id: unit.id, name: unit.name || '', sn: unit.sn || '' });
+    input.value = '';
+    input.focus();
+    renderWorkLogUnitChips();
+}
+
+function removeWorkLogUnit(index) {
+    _wlUnits.splice(index, 1);
+    renderWorkLogUnitChips();
+}
+
+function renderWorkLogPhotos() {
+    const wrap = document.getElementById('wlPhotoPreviews');
+    const count = document.getElementById('wlPhotoCount');
+    if (count) count.textContent = `${_wlPhotos.length}/${WORKLOG_PHOTO_MAX}`;
+    if (!wrap) return;
+    wrap.innerHTML = _wlPhotos.map((src, i) => `
+        <div class="wl-photo">
+            <img src="${src}" alt="Dokumentasi ${i + 1}" onclick="openPhotoLightbox(this.src)">
+            <button type="button" class="wl-photo__x" aria-label="Hapus dokumentasi ${i + 1}"
+                    title="Hapus foto" onclick="removeWorkLogPhoto(${i})">&times;</button>
+        </div>`).join('');
+}
+
+async function handleWorkLogPhotoChange(event) {
+    const files = [...(event.target.files || [])];
+    event.target.value = '';
+    if (!files.length) return;
+
+    for (const file of files) {
+        if (_wlPhotos.length >= WORKLOG_PHOTO_MAX) {
+            showToast(`Maksimal ${WORKLOG_PHOTO_MAX} foto per laporan`, 'warning');
+            break;
+        }
+        if (!file.type.startsWith('image/')) {
+            showToast(`"${file.name}" bukan gambar — dilewati`, 'warning');
+            continue;
+        }
+        try {
+            const data = await compressImageToDataURL(file, WORKLOG_PHOTO_OPTS);
+            // Firestore rejects a document over 1MB outright, so stop before
+            // the write fails rather than after.
+            const total = _wlPhotos.reduce((n, p) => n + p.length, 0) + data.length;
+            if (total > WORKLOG_PHOTOS_TOTAL_BYTES) {
+                showToast('Total ukuran foto sudah maksimal — hapus satu dulu', 'warning');
+                break;
+            }
+            _wlPhotos.push(data);
+        } catch (err) {
+            showToast(err.message || `Gagal memproses "${file.name}"`, 'error');
+        }
+    }
+    renderWorkLogPhotos();
+}
+
+function removeWorkLogPhoto(index) {
+    _wlPhotos.splice(index, 1);
+    renderWorkLogPhotos();
+}
+
 function showAddWorkLogForm() {
     if (!requireEdit('teamLog')) return;
     if (activeMembers().length === 0) {
@@ -7627,7 +7772,11 @@ function showAddWorkLogForm() {
     document.getElementById('workLogModalTitle').textContent = 'Tambah Laporan Harian';
     document.getElementById('editWorkLogId').value = '';
     document.getElementById('workLogForm').reset();
+    _wlUnits = [];
+    _wlPhotos = [];
     populateWorkLogFilters();
+    renderWorkLogUnitChips();
+    renderWorkLogPhotos();
     document.getElementById('wlDate').value = toISODate();
     document.getElementById('workLogModal').classList.add('open');
 }
@@ -7643,8 +7792,13 @@ function editWorkLog(id) {
     document.getElementById('wlMember').value = w.memberId || '';
     document.getElementById('wlStart').value = w.start || '';
     document.getElementById('wlEnd').value = w.end || '';
-    const lu = liveUnitFor(w);
-    document.getElementById('wlUnit').value = lu ? damageUnitLabel(lu) : (w.unitName || '');
+    // Copies, so cancelling the modal leaves the stored record untouched.
+    _wlUnits = workLogUnits(w).map(u => ({ ...u }));
+    _wlPhotos = Array.isArray(w.photos) ? w.photos.slice() : [];
+    document.getElementById('wlUnit').value = '';
+    document.getElementById('wlPaddock').value = w.paddock || '';
+    renderWorkLogUnitChips();
+    renderWorkLogPhotos();
     document.getElementById('wlTask').value = w.task || '';
     document.getElementById('wlIssue').value = w.issue || '';
     document.getElementById('workLogModal').classList.add('open');
@@ -7669,12 +7823,14 @@ function saveWorkLog(event) {
     const task = (document.getElementById('wlTask').value || '').trim();
     if (!task) { showToast('Uraian pekerjaan tidak boleh kosong', 'warning'); return; }
 
-    const unitRaw = (document.getElementById('wlUnit').value || '').trim();
-    const unit = unitRaw ? resolveDamageUnit(unitRaw) : null;
-    if (unitRaw && !unit) {
-        showToast(`Unit "${unitRaw}" tidak ditemukan — kosongkan atau pilih dari daftar`, 'warning');
-        return;
+    // A unit left typed but not added is an easy mistake to make, so fold it in
+    // rather than dropping it silently.
+    const pending = (document.getElementById('wlUnit').value || '').trim();
+    if (pending) {
+        addWorkLogUnit();
+        if ((document.getElementById('wlUnit').value || '').trim()) return; // unresolved
     }
+    const units = _wlUnits.map(u => ({ ...u }));
 
     const existing = id ? workLogs.find(w => w.id === id) : null;
     const rec = {
@@ -7684,9 +7840,14 @@ function saveWorkLog(event) {
         memberName: member.name,
         company: companyOf(member),
         start, end,
-        unitId: unit ? unit.id : '',
-        unitName: unit ? (unit.name || '') : '',
-        sn: unit ? (unit.sn || '') : '',
+        units,
+        // First unit mirrored into the old single-unit fields so anything still
+        // reading them — the unit profile cross-link, older exports — keeps working.
+        unitId: units.length ? units[0].id : '',
+        unitName: units.length ? (units[0].name || '') : '',
+        sn: units.length ? (units[0].sn || '') : '',
+        paddock: (document.getElementById('wlPaddock').value || '').trim(),
+        photos: _wlPhotos.slice(),
         task,
         issue: (document.getElementById('wlIssue').value || '').trim(),
         createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),
@@ -7734,16 +7895,20 @@ function exportWorkLogCSV() {
     if (!canCsv('export')) return;
     const rows = getFilteredWorkLogs();
     if (rows.length === 0) { showToast('Tidak ada laporan untuk diexport', 'warning'); return; }
-    const headers = ['No', 'Tanggal', 'Perusahaan', 'Anggota', 'Jabatan', 'Mulai', 'Selesai', 'Durasi (jam)', 'Unit', 'Serial Number', 'Uraian Pekerjaan', 'Kendala'];
+    const headers = ['No', 'Tanggal', 'Perusahaan', 'Anggota', 'Jabatan', 'Mulai', 'Selesai', 'Durasi (jam)',
+                     'Paddock Area', 'Unit', 'Serial Number', 'Jumlah Foto', 'Uraian Pekerjaan', 'Kendala'];
     const dataRows = rows.map((w, i) => {
         const m = w.memberId ? memberById(w.memberId) : null;
-        const lu = liveUnitFor(w);
+        const us = workLogUnits(w);
         return [
             i + 1, w.date || '', companyOfRecord(w), memberNameOf(w), m ? (m.jobTitle || '') : '',
             w.start || '', w.end || '',
             (workLogMinutes(w) / 60).toFixed(2),
-            lu ? (lu.name || '') : (w.unitName || ''),
-            lu ? (lu.sn || '') : (w.sn || ''),
+            w.paddock || '',
+            // Several units share one cell, separated so the column stays readable.
+            workLogUnitNames(w).join(' | '),
+            us.map(u => u.sn || '').filter(Boolean).join(' | '),
+            Array.isArray(w.photos) ? w.photos.length : 0,
             w.task || '', w.issue || ''
         ];
     });
@@ -7762,10 +7927,11 @@ function exportWorkLogCSV() {
 // "who has worked on this machine" is answerable from the unit's own page.
 function workLogsForUnit(unitId, sn) {
     const snLc = (sn || '').toLowerCase();
-    return workLogs.filter(w =>
-        (unitId && w.unitId === unitId) ||
-        (snLc && (w.sn || '').toLowerCase() === snLc)
-    );
+    // A report can list several units, so match any of them — not just the
+    // first one mirrored into the legacy unitId field.
+    return workLogs.filter(w => workLogUnits(w).some(u =>
+        (unitId && u.id === unitId) || (snLc && (u.sn || '').toLowerCase() === snLc)
+    ));
 }
 
 if (window.cloudReady) {

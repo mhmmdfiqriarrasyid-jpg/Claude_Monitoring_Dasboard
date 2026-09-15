@@ -909,11 +909,12 @@
                                 <th>Tanggal</th>
                                 <th>Anggota</th>
                                 <th>Perusahaan</th>
-                                <th>Jam</th>
-                                <th>Durasi</th>
+                                <th>Jam Kerja</th>
                                 <th>Unit</th>
+                                <th>Paddock</th>
                                 <th>Uraian Pekerjaan</th>
                                 <th>Kendala</th>
+                                <th>Dokumentasi</th>
                                 <th class="col-actions">Actions</th>
                             </tr>
                         </thead>
@@ -1437,10 +1438,37 @@
                         <input type="time" class="form-input" id="wlEnd">
                     </div>
                     <div class="form-group full-width">
-                        <label class="form-label" for="wlUnit">Unit yang Dikerjakan <span class="form-optional">(opsional)</span></label>
-                        <input class="form-input" id="wlUnit" list="wlUnitList" autocomplete="off"
-                               placeholder="Ketik nama atau SN unit…">
+                        <label class="form-label" for="wlPaddock">Paddock Area <span class="form-optional">(opsional)</span></label>
+                        <input class="form-input" id="wlPaddock" list="paddockList" autocomplete="off"
+                               maxlength="60" placeholder="Nama paddock / blok…">
+                        <datalist id="paddockList"></datalist>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="wlUnit">Unit yang Dikerjakan <span class="form-optional">(boleh lebih dari satu)</span></label>
+                        <div class="wl-unit-add">
+                            <input class="form-input" id="wlUnit" list="wlUnitList" autocomplete="off"
+                                   placeholder="Ketik nama atau SN unit, lalu Tambah…"
+                                   onkeydown="if(event.key==='Enter'){event.preventDefault();addWorkLogUnit();}">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="addWorkLogUnit()">
+                                <i class="fas fa-plus"></i> Tambah
+                            </button>
+                        </div>
                         <datalist id="wlUnitList"></datalist>
+                        <div class="unit-chips" id="wlUnitChips"></div>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="wlPhotoInput">Dokumentasi Lapangan
+                            <span class="form-optional">(opsional · <span id="wlPhotoCount">0/4</span>)</span></label>
+                        <input type="file" id="wlPhotoInput" accept="image/*" multiple style="display:none"
+                               onchange="handleWorkLogPhotoChange(event)">
+                        <div class="wl-photo-row">
+                            <button type="button" class="btn btn-secondary btn-sm"
+                                    onclick="document.getElementById('wlPhotoInput').click()">
+                                <i class="fas fa-camera"></i> Tambah Foto
+                            </button>
+                            <span class="wl-photo-hint">Foto dikecilkan otomatis sebelum disimpan.</span>
+                        </div>
+                        <div class="wl-photos" id="wlPhotoPreviews"></div>
                     </div>
                     <div class="form-group full-width">
                         <label class="form-label" for="wlTask">Uraian Pekerjaan</label>

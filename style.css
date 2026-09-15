@@ -2909,3 +2909,129 @@ body[data-nocsvimport] .csv-import { display: none !important; }
     justify-content: flex-end;
     row-gap: 8px;
 }
+
+/* ---- Work log form: unit chips, paddock, field documentation ---- */
+.wl-unit-add {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+}
+.wl-unit-add .form-input { flex: 1; min-width: 0; }
+.wl-unit-add .btn { white-space: nowrap; flex-shrink: 0; }
+
+.unit-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    min-height: 26px;
+}
+.unit-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 6px 3px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg);
+    font-size: 12px;
+    color: var(--text);
+}
+.unit-chip__x {
+    border: none;
+    background: none;
+    padding: 0 3px;
+    font-size: 15px;
+    line-height: 1;
+    color: var(--text-light);
+    cursor: pointer;
+}
+.unit-chip__x:hover { color: var(--danger); }
+.unit-chip__empty { font-size: 12px; color: var(--text-light); font-style: italic; }
+
+.wl-photo-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.wl-photo-hint { font-size: 11.5px; color: var(--text-light); }
+.wl-photos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+.wl-photo { position: relative; }
+.wl-photo img {
+    width: 84px;
+    height: 84px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    cursor: zoom-in;
+    display: block;
+}
+.wl-photo__x {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--card);
+    font-size: 13px;
+    line-height: 1;
+    color: var(--danger);
+    cursor: pointer;
+}
+
+/* Duration sits under the start–end range so the two share one column. */
+.wl-duration {
+    display: block;
+    font-size: 11px;
+    color: var(--text-light);
+}
+#workLogTable td[data-label="Dokumentasi"] {
+    white-space: normal;
+    max-width: 120px;
+}
+#workLogTable td[data-label="Unit"] {
+    white-space: normal;
+    max-width: 150px;
+    line-height: 1.7;
+}
+#workLogTable td[data-label="Paddock"] {
+    white-space: normal;
+    overflow-wrap: break-word;
+    max-width: 110px;
+}
+
+/* Eleven columns only fit once these three are held down. Unit badges keep
+   their name on one line — broken across three lines they were unreadable. */
+#workLogTable td[data-label="Unit"] {
+    max-width: 112px;
+    line-height: 1.9;
+}
+#workLogTable td[data-label="Unit"] .badge { white-space: nowrap; }
+#workLogTable td[data-label="Dokumentasi"] { max-width: 96px; }
+#workLogTable td[data-label="Dokumentasi"] .dmg-thumb {
+    width: 30px;
+    height: 30px;
+    margin: 1px;
+}
+/* Eleven columns need tighter gutters than the shared 14px; this buys back
+   more room than squeezing any single column would, and evenly. */
+#workLogTable th,
+#workLogTable td {
+    padding-left: 8px;
+    padding-right: 8px;
+}
+/* max-width alone does not clip a nowrap cell — the text simply spilled over
+   the next column. The full value stays available as the cell's tooltip. */
+#workLogTable td[data-label="Uraian"],
+#workLogTable td[data-label="Kendala"] {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
