@@ -69,6 +69,9 @@ const USERS_COL = 'users';
 const HISTORY_COL = 'history';
 const USER_CATEGORIES_COL = 'userCategories';
 const DAMAGE_COMPONENTS_COL = 'damageComponents';
+const TEAM_MEMBERS_COL = 'teamMembers';
+const SHIFTS_COL = 'shifts';
+const WORK_LOGS_COL = 'workLogs';
 
 function batchInChunks(items, fn, chunkSize = 400) {
     // Firestore allows up to 500 ops per batch; 400 is a safe cap.
@@ -382,6 +385,74 @@ window.cloud = {
             snap => callback(snap.docs.map(d => d.data())),
             err => {
                 console.error('[cloud] damageComponents subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
+    },
+
+    // ---- Team members (people, including those without a login account) ----
+    async saveTeamMember(member) {
+        await setDoc(doc(db, TEAM_MEMBERS_COL, member.id), member, { merge: true });
+    },
+    async deleteTeamMember(id) {
+        await deleteDoc(doc(db, TEAM_MEMBERS_COL, id));
+    },
+    async getAllTeamMembers() {
+        const snap = await getDocs(collection(db, TEAM_MEMBERS_COL));
+        return snap.docs.map(d => d.data());
+    },
+    subscribeTeamMembers(callback, errorCallback) {
+        return onSnapshot(
+            collection(db, TEAM_MEMBERS_COL),
+            snap => callback(snap.docs.map(d => d.data())),
+            err => {
+                console.error('[cloud] teamMembers subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
+    },
+
+    // ---- Shift schedule ----
+    // Document id is `${date}_${memberId}`, so one person can only ever hold
+    // one shift on a given day — the id itself enforces it, no dedupe needed.
+    async saveShift(shift) {
+        await setDoc(doc(db, SHIFTS_COL, shift.id), shift, { merge: true });
+    },
+    async deleteShift(id) {
+        await deleteDoc(doc(db, SHIFTS_COL, id));
+    },
+    async getAllShifts() {
+        const snap = await getDocs(collection(db, SHIFTS_COL));
+        return snap.docs.map(d => d.data());
+    },
+    subscribeShifts(callback, errorCallback) {
+        return onSnapshot(
+            collection(db, SHIFTS_COL),
+            snap => callback(snap.docs.map(d => d.data())),
+            err => {
+                console.error('[cloud] shifts subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
+    },
+
+    // ---- Daily work logs ----
+    async saveWorkLog(log) {
+        await setDoc(doc(db, WORK_LOGS_COL, log.id), log, { merge: true });
+    },
+    async deleteWorkLog(id) {
+        await deleteDoc(doc(db, WORK_LOGS_COL, id));
+    },
+    async getAllWorkLogs() {
+        const snap = await getDocs(collection(db, WORK_LOGS_COL));
+        return snap.docs.map(d => d.data());
+    },
+    subscribeWorkLogs(callback, errorCallback) {
+        return onSnapshot(
+            query(collection(db, WORK_LOGS_COL), orderBy('date', 'desc')),
+            snap => callback(snap.docs.map(d => d.data())),
+            err => {
+                console.error('[cloud] workLogs subscription error:', err);
                 if (errorCallback) errorCallback(err);
             }
         );

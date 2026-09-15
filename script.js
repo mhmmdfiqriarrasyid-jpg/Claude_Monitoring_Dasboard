@@ -42,6 +42,16 @@ let _firstUserCategoriesSnapshot = true;
 let cloudDamageComponentsUnsub = null;
 let damageComponents = [];           // [{ id, name, unitField, createdAt }] from Firestore
 let _firstDamageComponentsSnapshot = true;
+
+// ---- Team operations (cloud-only, like userCategories/damageComponents) ----
+// These three have no legacy local data to migrate, so Firestore is the single
+// source of truth; its IndexedDB persistence covers offline reads.
+let cloudTeamMembersUnsub = null;
+let teamMembers = [];                // [{ id, name, jobTitle, active, createdAt }]
+let cloudShiftsUnsub = null;
+let teamShifts = [];                 // [{ id:`${date}_${memberId}`, date, memberId, shift }]
+let cloudWorkLogsUnsub = null;
+let workLogs = [];                   // [{ id, date, memberId, start, end, unitId, task, issue }]
 let suppressCloudWrites = false; // true while applying a cloud snapshot — prevents loops
 let _cloudReadyFired = false;
 let _localDataLoaded = false;
@@ -210,7 +220,37 @@ const COMPONENT_COLORS = {
 };
 
 // ---- Chart.js Global Config (HD rendering on all screens) ----
-Chart.defaults.devicePixelRatio = Math.max(window.devicePixelRatio || 1, 2);
+// Chart.js is loaded from a CDN, which can be blocked or simply unreachable in
+// the field. Touching it unguarded here would throw at top level and abort the
+// rest of this file: every `const` below would stay uninitialised while the
+// hoisted function declarations still look alive, so the app would fail in a
+// deeply confusing way instead of just losing its charts.
+if (window.Chart) {
+    Chart.defaults.devicePixelRatio = Math.max(window.devicePixelRatio || 1, 2);
+} else {
+    console.warn('[chart] Chart.js tidak termuat — grafik dinonaktifkan, sisa aplikasi tetap berjalan.');
+}
+
+// Every chart goes through here. Without Chart.js the canvas is replaced by a
+// short note and the caller simply gets null back, so the rest of the render
+// (KPIs, repair table, alerts) still runs instead of dying on a missing CDN.
+function makeChart(canvasId, config) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return null;
+    if (!window.Chart) {
+        const host = canvas.parentNode;
+        if (host && !host.querySelector('.chart-unavailable')) {
+            const note = document.createElement('div');
+            note.className = 'chart-unavailable';
+            note.textContent = 'Grafik tidak tersedia — pustaka grafik gagal dimuat.';
+            host.appendChild(note);
+        }
+        canvas.style.display = 'none';
+        return null;
+    }
+    canvas.style.display = '';
+    return new Chart(canvas, config);
+}
 
 // ---- Initialization ----
 document.addEventListener('DOMContentLoaded', () => {
@@ -523,7 +563,7 @@ function formatDuration(ms) {
 
 function navigateTo(view) {
     // Per-user access gating: the user needs at least 'view' on the area.
-    if (['editUnits', 'implements', 'damage', 'licenseStock'].includes(view) && !hasAccess(view, 'view')) {
+    if (GATED_AREAS.includes(view) && !hasAccess(view, 'view')) {
         showToast('Anda tidak punya akses ke menu ini', 'warning');
         view = 'dashboard';
     }
@@ -540,6 +580,8 @@ function navigateTo(view) {
     if (damageView) damageView.style.display = (view === 'damage') ? 'block' : 'none';
     const licenseView = document.getElementById('viewLicenseStock');
     if (licenseView) licenseView.style.display = (view === 'licenseStock') ? 'block' : 'none';
+    const teamView = document.getElementById('viewTeam');
+    if (teamView) teamView.style.display = (view === 'team') ? 'block' : 'none';
     const usersView = document.getElementById('viewUsers');
     if (usersView) usersView.style.display = (view === 'users') ? 'block' : 'none';
 
@@ -584,6 +626,11 @@ function navigateTo(view) {
         populateLicenseTypeList();
         renderLicenseSummary();
         renderLicenseStockTable();
+    }
+
+    if (view === 'team') {
+        populateWorkLogFilters();
+        renderTeamView();
     }
 
     if (view === 'users') {
@@ -1522,7 +1569,7 @@ function renderDowntimeKPIs() {
 
     destroyChart('downtimeChart');
     if (s.topTen.length > 0) {
-        charts.downtimeChart = new Chart(document.getElementById('downtimeChart'), {
+        charts.downtimeChart = makeChart('downtimeChart', {
             type: 'bar',
             data: {
                 labels: s.topTen.map(u => u.name || 'Unnamed'),
@@ -1708,7 +1755,7 @@ function renderStatusChart(data) {
     const breakdown = data.length - good;
 
     destroyChart('statusChart');
-    charts.statusChart = new Chart(document.getElementById('statusChart'), {
+    charts.statusChart = makeChart('statusChart', {
         type: 'doughnut',
         data: {
             labels: ['Good', 'Breakdown'],
@@ -1736,7 +1783,7 @@ function renderSiteChart(data) {
     const labels = Object.keys(siteMap).sort();
 
     destroyChart('siteChart');
-    charts.siteChart = new Chart(document.getElementById('siteChart'), {
+    charts.siteChart = makeChart('siteChart', {
         type: 'bar',
         data: {
             labels,
@@ -2085,7 +2132,7 @@ function renderDamageStats() {
     }
     const byMonth = months.map(m => globalDamages.filter(r => (r.date || '').startsWith(m.key)).length);
     destroyChart('damageTrendChart');
-    charts.damageTrendChart = new Chart(document.getElementById('damageTrendChart'), {
+    charts.damageTrendChart = makeChart('damageTrendChart', {
         type: 'bar',
         data: { labels: months.map(m => m.label), datasets: [{ data: byMonth, backgroundColor: themeColor('--primary', '#D97757'), borderRadius: 4, barPercentage: 0.55 }] },
         options: {
@@ -2131,7 +2178,7 @@ function renderRepair() {
     // Top Issue Chart
     const sorted = Object.entries(issueData.counts).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
     destroyChart('topIssueChart');
-    charts.topIssueChart = new Chart(document.getElementById('topIssueChart'), {
+    charts.topIssueChart = makeChart('topIssueChart', {
         type: 'bar',
         data: { labels: sorted.map(x => x[0]), datasets: [{ data: sorted.map(x => x[1]), backgroundColor: sorted.map(x => chipColors[x[0]]), borderRadius: 4, barPercentage: 0.5 }] },
         options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y',
@@ -2144,7 +2191,7 @@ function renderRepair() {
     globalData.forEach(d => { if (detectIssues(d).length > 0) { const s = d.site || 'Unknown'; siteCounts[s] = (siteCounts[s] || 0) + 1; } });
     const siteLabels = Object.keys(siteCounts).sort();
     destroyChart('issueBySiteChart');
-    charts.issueBySiteChart = new Chart(document.getElementById('issueBySiteChart'), {
+    charts.issueBySiteChart = makeChart('issueBySiteChart', {
         type: 'bar',
         data: { labels: siteLabels, datasets: [{ data: siteLabels.map(s => siteCounts[s]), backgroundColor: themeColor('--warning', '#BC8A2E'), borderRadius: 4, barPercentage: 0.5 }] },
         options: { responsive: true, maintainAspectRatio: false,
@@ -3628,6 +3675,17 @@ function showUnitProfile(id) {
     }
     const downHtml = downParts.length ? downParts.join('') : '<div class="profile-empty">Tidak ada riwayat downtime.</div>';
 
+    // Who has worked on this machine — newest first, capped like the other lists.
+    const work = workLogsForUnit(u.id, u.sn);
+    const workHtml = work.length ? work.slice(0, 8).map(w => `
+        <div class="profile-item">
+            <span class="profile-item__date">${escapeHtml(w.date || '')}</span>
+            <span style="font-size:12px"><strong>${escapeHtml(memberNameOf(w))}</strong></span>
+            <span style="font-size:12px;color:var(--text-light)">${escapeHtml(formatMinutes(workLogMinutes(w)))}</span>
+            ${w.task ? `<span class="profile-item__text" title="${escapeHtml(w.task)}">${escapeHtml(w.task.slice(0, 40))}</span>` : ''}
+        </div>`).join('')
+        : '<div class="profile-empty">Belum ada laporan kerja untuk unit ini.</div>';
+
     document.getElementById('unitProfileBody').innerHTML = `
         <div class="profile-grid">
             <div class="profile-section">
@@ -3658,6 +3716,10 @@ function showUnitProfile(id) {
             <div class="profile-section">
                 <div class="profile-section__title">Downtime</div>
                 <div class="profile-list">${downHtml}</div>
+            </div>
+            <div class="profile-section">
+                <div class="profile-section__title">Pekerjaan Tim (${work.length})</div>
+                <div class="profile-list">${workHtml}</div>
             </div>
         </div>`;
 
@@ -5636,6 +5698,33 @@ function initCloudSync() {
                 }
             );
         }
+        if (window.cloud.subscribeTeamMembers) {
+            cloudTeamMembersUnsub = window.cloud.subscribeTeamMembers(
+                applyCloudTeamMembersSnapshot,
+                err => {
+                    console.warn('[cloud] teamMembers offline:', err && err.code);
+                    if (err && err.code === 'permission-denied') showTeamRulesBanner();
+                }
+            );
+        }
+        if (window.cloud.subscribeShifts) {
+            cloudShiftsUnsub = window.cloud.subscribeShifts(
+                applyCloudShiftsSnapshot,
+                err => {
+                    console.warn('[cloud] shifts offline:', err && err.code);
+                    if (err && err.code === 'permission-denied') showTeamRulesBanner();
+                }
+            );
+        }
+        if (window.cloud.subscribeWorkLogs) {
+            cloudWorkLogsUnsub = window.cloud.subscribeWorkLogs(
+                applyCloudWorkLogsSnapshot,
+                err => {
+                    console.warn('[cloud] workLogs offline:', err && err.code);
+                    if (err && err.code === 'permission-denied') showTeamRulesBanner();
+                }
+            );
+        }
         if (window.cloud.subscribeUserCategories) {
             cloudUserCategoriesUnsub = window.cloud.subscribeUserCategories(
                 applyCloudUserCategoriesSnapshot,
@@ -5737,6 +5826,12 @@ function tearDownCloudSync() {
     if (cloudHistoryUnsub) { try { cloudHistoryUnsub(); } catch (_) {} cloudHistoryUnsub = null; }
     if (cloudUserCategoriesUnsub) { try { cloudUserCategoriesUnsub(); } catch (_) {} cloudUserCategoriesUnsub = null; }
     if (cloudDamageComponentsUnsub) { try { cloudDamageComponentsUnsub(); } catch (_) {} cloudDamageComponentsUnsub = null; }
+    if (cloudTeamMembersUnsub) { try { cloudTeamMembersUnsub(); } catch (_) {} cloudTeamMembersUnsub = null; }
+    if (cloudShiftsUnsub) { try { cloudShiftsUnsub(); } catch (_) {} cloudShiftsUnsub = null; }
+    if (cloudWorkLogsUnsub) { try { cloudWorkLogsUnsub(); } catch (_) {} cloudWorkLogsUnsub = null; }
+    teamMembers = [];
+    teamShifts = [];
+    workLogs = [];
     cloudHistory = [];
     userCategories = [];
     _firstUserCategoriesSnapshot = true;
@@ -5954,8 +6049,14 @@ const ACCESS_AREAS = [
     { key: 'implements',   label: 'Implements',   levels: ['none', 'view', 'edit'] },
     { key: 'damage',       label: 'Kerusakan',    levels: ['none', 'view', 'edit'] },
     { key: 'licenseStock', label: 'Stok Lisensi', levels: ['none', 'view', 'edit'] },
+    { key: 'team',         label: 'Tim',          levels: ['none', 'view', 'edit'] },
     { key: 'history',      label: 'History',      levels: ['none', 'view'] }
 ];
+
+// Areas that own a navigable view and a none/view/edit level. Four separate
+// places used to hardcode this list; keeping it in one place stops them from
+// drifting apart when an area is added.
+const GATED_AREAS = ACCESS_AREAS.filter(a => a.key !== 'history').map(a => a.key);
 const _LVL_RANK = { none: 0, view: 1, edit: 2 };
 
 // Level a role grants for an area when the user has no explicit override.
@@ -6004,8 +6105,7 @@ function canCsv(min, notify = true) {
 // explicit per-area grant. A viewer the owner gave 'edit' on one area is an
 // editor, so gating must not go by role alone.
 function canEditAnyArea() {
-    return ['editUnits', 'implements', 'damage', 'licenseStock']
-        .some(a => hasAccess(a, 'edit'));
+    return GATED_AREAS.some(a => hasAccess(a, 'edit'));
 }
 
 function applyRoleGating() {
@@ -6019,9 +6119,8 @@ function applyRoleGating() {
     applyAccessVisibility();
 
     // If the user lost access to the current view, send them to the dashboard.
-    const gated = ['editUnits', 'implements', 'damage', 'licenseStock'];
     if ((!owner && currentView === 'users') ||
-        (gated.includes(currentView) && !hasAccess(currentView, 'view'))) {
+        (GATED_AREAS.includes(currentView) && !hasAccess(currentView, 'view'))) {
         navigateTo('dashboard');
     }
 
@@ -6035,7 +6134,7 @@ function applyRoleGating() {
 function applyAccessVisibility() {
     document.querySelectorAll('.nav__link[data-view]').forEach(el => {
         const v = el.getAttribute('data-view');
-        if (['editUnits', 'implements', 'damage', 'licenseStock'].includes(v)) {
+        if (GATED_AREAS.includes(v)) {
             el.style.display = hasAccess(v, 'view') ? '' : 'none';
         }
     });
@@ -6045,7 +6144,7 @@ function applyAccessVisibility() {
     // data-ro-<area>="1" whenever the user may NOT edit that area — including
     // no access at all, so the edit controls stay hidden even if the section
     // is somehow reachable.
-    const map = { editUnits: 'roEditunits', implements: 'roImplements', damage: 'roDamage', licenseStock: 'roLicense' };
+    const map = { editUnits: 'roEditunits', implements: 'roImplements', damage: 'roDamage', licenseStock: 'roLicense', team: 'roTeam' };
     Object.entries(map).forEach(([area, flag]) => {
         if (!hasAccess(area, 'edit')) document.body.dataset[flag] = '1';
         else delete document.body.dataset[flag];
@@ -6678,6 +6777,709 @@ function migrateSiteData20260525() {
         else if (currentView === 'editUnits') renderEditTable();
     }
     console.log(`[migration] site assignment: ${updated} updated out of ${data.length}`);
+}
+
+// ============================================================
+// TEAM OPERATIONS — members, shift schedule, daily work logs
+// ------------------------------------------------------------
+// All three collections are cloud-only (like userCategories and
+// damageComponents): there is no legacy local data to migrate, so Firestore
+// stays the single source of truth and its IndexedDB persistence covers
+// offline reads. Everything here is gated by the 'team' access area.
+// ============================================================
+
+const SHIFT_TYPES = [
+    { key: 'pagi',  label: 'Pagi',  hours: '07:00–15:00' },
+    { key: 'siang', label: 'Siang', hours: '15:00–23:00' },
+    { key: 'malam', label: 'Malam', hours: '23:00–07:00' },
+    { key: 'libur', label: 'Libur', hours: '—' }
+];
+const SHIFT_LABEL = SHIFT_TYPES.reduce((m, s) => { m[s.key] = s.label; return m; }, {});
+const DAY_NAMES = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+let teamTab = 'shift';      // 'shift' | 'worklog'
+let teamWeekStart = null;   // ISO date of the Monday of the visible week
+
+// ---- Week helpers (all local-date, via parseLocalDate/toISODate) ----
+function startOfWeekISO(dateLike) {
+    const d = parseLocalDate(dateLike) || new Date();
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // Monday = 0
+    return toISODate(d);
+}
+
+function addDaysISO(iso, n) {
+    const d = parseLocalDate(iso);
+    if (!d) return iso;
+    d.setDate(d.getDate() + n);
+    return toISODate(d);
+}
+
+function weekDates(startIso) {
+    return Array.from({ length: 7 }, (_, i) => addDaysISO(startIso, i));
+}
+
+function dayLabel(iso) {
+    const d = parseLocalDate(iso);
+    return d ? `${DAY_NAMES[d.getDay()]} ${d.getDate()}` : iso;
+}
+
+function weekRangeLabel(startIso) {
+    const a = parseLocalDate(startIso);
+    const b = parseLocalDate(addDaysISO(startIso, 6));
+    if (!a || !b) return '';
+    const sameMonth = a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
+    return sameMonth
+        ? `${a.getDate()} – ${b.getDate()} ${MONTH_NAMES[b.getMonth()]} ${b.getFullYear()}`
+        : `${a.getDate()} ${MONTH_NAMES[a.getMonth()]} – ${b.getDate()} ${MONTH_NAMES[b.getMonth()]} ${b.getFullYear()}`;
+}
+
+// ---- Member helpers ----
+function generateMemberId() {
+    return 'tm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+}
+
+function generateWorkLogId() {
+    return 'wl_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+}
+
+function activeMembers() {
+    return teamMembers.filter(m => m.active !== false);
+}
+
+function memberById(id) {
+    return teamMembers.find(m => m.id === id) || null;
+}
+
+// Name for display: live member record first, then the name denormalized onto
+// the record, so a deleted member still reads correctly in old rows.
+function memberNameOf(rec) {
+    const m = rec && rec.memberId ? memberById(rec.memberId) : null;
+    return m ? m.name : ((rec && rec.memberName) || '(anggota dihapus)');
+}
+
+// ---- Cloud snapshots ----
+function applyCloudTeamMembersSnapshot(list) {
+    teamMembers = (list || []).slice().sort((a, b) =>
+        (a.name || '').localeCompare(b.name || ''));
+    if (currentView === 'team') renderTeamView();
+    const modal = document.getElementById('teamMembersModal');
+    if (modal && modal.classList.contains('open')) renderTeamMembersList();
+}
+
+function applyCloudShiftsSnapshot(list) {
+    teamShifts = list || [];
+    if (currentView === 'team' && teamTab === 'shift') renderShiftGrid();
+}
+
+function applyCloudWorkLogsSnapshot(list) {
+    workLogs = (list || []).slice().sort((a, b) =>
+        String(b.date || '').localeCompare(String(a.date || '')) ||
+        ((b.createdAt || 0) - (a.createdAt || 0)));
+    if (currentView === 'team') {
+        populateWorkLogFilters();
+        if (teamTab === 'worklog') renderWorkLogTable();
+    }
+}
+
+function showTeamRulesBanner() {
+    const slot = document.querySelector('.team-rules-slot');
+    if (!slot || slot.querySelector('.category-rules-banner')) return;
+    const banner = document.createElement('div');
+    banner.className = 'category-rules-banner';
+    banner.innerHTML = `
+        <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules memblokir data Tim.</strong>
+        <p>Rules proyek Anda belum mengizinkan akses ke koleksi <code>teamMembers</code>,
+        <code>shifts</code>, dan <code>workLogs</code>. Publish ulang file
+        <code>firestore.rules</code> dari repo ini di
+        <em>Firebase Console → Firestore → Rules</em>, lalu muat ulang halaman.</p>`;
+    slot.appendChild(banner);
+}
+
+// ---- View shell ----
+function switchTeamTab(tab) {
+    teamTab = (tab === 'worklog') ? 'worklog' : 'shift';
+    renderTeamView();
+}
+
+function renderTeamView() {
+    document.querySelectorAll('.team-tab').forEach(btn => {
+        const on = btn.dataset.tab === teamTab;
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    const shiftPanel = document.getElementById('teamShiftPanel');
+    const logPanel = document.getElementById('teamWorkLogPanel');
+    if (shiftPanel) shiftPanel.style.display = (teamTab === 'shift') ? '' : 'none';
+    if (logPanel) logPanel.style.display = (teamTab === 'worklog') ? '' : 'none';
+
+    if (teamTab === 'shift') renderShiftGrid();
+    else renderWorkLogTable();
+}
+
+// ============================================================
+// SHIFT SCHEDULE
+// ============================================================
+
+function shiftFor(memberId, date) {
+    const rec = teamShifts.find(s => s.id === `${date}_${memberId}`);
+    return rec ? rec.shift : '';
+}
+
+function shiftWeekShift(delta) {
+    if (!teamWeekStart) teamWeekStart = startOfWeekISO(toISODate());
+    teamWeekStart = addDaysISO(teamWeekStart, delta * 7);
+    renderShiftGrid();
+}
+
+function shiftWeekToday() {
+    teamWeekStart = startOfWeekISO(toISODate());
+    renderShiftGrid();
+}
+
+function renderShiftGrid() {
+    if (!teamWeekStart) teamWeekStart = startOfWeekISO(toISODate());
+    const dates = weekDates(teamWeekStart);
+    const today = toISODate();
+    const canEdit = hasAccess('team', 'edit');
+
+    const label = document.getElementById('shiftWeekLabel');
+    if (label) label.textContent = weekRangeLabel(teamWeekStart);
+
+    const head = document.getElementById('shiftHead');
+    if (head) {
+        head.innerHTML = `<tr><th class="shift-grid__member">Anggota</th>${
+            dates.map(d => `<th class="${d === today ? 'is-today' : ''}">${escapeHtml(dayLabel(d))}</th>`).join('')
+        }</tr>`;
+    }
+
+    const body = document.getElementById('shiftBody');
+    const foot = document.getElementById('shiftFoot');
+    if (!body) return;
+
+    const members = activeMembers();
+    if (members.length === 0) {
+        body.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-secondary)">
+            Belum ada anggota tim aktif. Klik <strong>Kelola Anggota</strong> untuk menambahkan.
+        </td></tr>`;
+        if (foot) foot.innerHTML = '';
+        return;
+    }
+
+    body.innerHTML = members.map(m => {
+        const cells = dates.map(d => {
+            const cur = shiftFor(m.id, d);
+            const cls = `shift-cell${cur ? ' shift-cell--' + cur : ''}${d === today ? ' is-today' : ''}`;
+            if (!canEdit) {
+                return `<td class="${cls}">${cur
+                    ? `<span class="shift-badge shift-badge--${cur}">${escapeHtml(SHIFT_LABEL[cur] || cur)}</span>`
+                    : '<span class="shift-empty">—</span>'}</td>`;
+            }
+            const opts = ['<option value="">—</option>'].concat(
+                SHIFT_TYPES.map(s =>
+                    `<option value="${s.key}"${s.key === cur ? ' selected' : ''}>${escapeHtml(s.label)}</option>`)
+            ).join('');
+            return `<td class="${cls}">
+                <select class="shift-select shift-select--${cur || 'none'}"
+                        aria-label="Shift ${escapeHtml(m.name)} tanggal ${escapeHtml(d)}"
+                        onchange="setShift('${escapeHtml(m.id)}','${escapeHtml(d)}',this.value)">${opts}</select>
+            </td>`;
+        }).join('');
+        return `<tr>
+            <th scope="row" class="shift-grid__member">
+                <strong>${escapeHtml(m.name)}</strong>
+                ${m.jobTitle ? `<span class="shift-grid__job">${escapeHtml(m.jobTitle)}</span>` : ''}
+            </th>${cells}
+        </tr>`;
+    }).join('');
+
+    if (foot) {
+        foot.innerHTML = `<tr><th scope="row" class="shift-grid__member">Bertugas</th>${
+            dates.map(d => {
+                const counts = SHIFT_TYPES.filter(s => s.key !== 'libur')
+                    .map(s => ({ s, n: members.filter(m => shiftFor(m.id, d) === s.key).length }));
+                const working = counts.reduce((a, c) => a + c.n, 0);
+                const detail = counts.map(c => `${c.s.label} ${c.n}`).join(' · ');
+                return `<td class="${d === today ? 'is-today' : ''}" title="${escapeHtml(detail)}">
+                    <strong>${working}</strong> <span class="shift-foot__detail">${escapeHtml(detail)}</span>
+                </td>`;
+            }).join('')
+        }</tr>`;
+    }
+}
+
+function setShift(memberId, date, shiftKey) {
+    if (!requireEdit('team')) { renderShiftGrid(); return; }
+    const m = memberById(memberId);
+    if (!m) return;
+
+    const id = `${date}_${memberId}`;
+    const prev = teamShifts.find(s => s.id === id) || null;
+    if ((prev ? prev.shift : '') === (shiftKey || '')) return;
+
+    const before = prev ? (SHIFT_LABEL[prev.shift] || prev.shift) : '—';
+    const after = shiftKey ? (SHIFT_LABEL[shiftKey] || shiftKey) : '—';
+
+    // Optimistic update so the grid responds instantly. Replace rather than
+    // mutate, so the rollback snapshot stays a valid earlier state.
+    const snapshot = teamShifts.slice();
+    teamShifts = teamShifts.filter(s => s.id !== id);
+    const rec = shiftKey ? {
+        id, date, memberId,
+        memberName: m.name,
+        shift: shiftKey,
+        createdAt: prev ? (prev.createdAt || Date.now()) : Date.now(),
+        updatedAt: Date.now()
+    } : null;
+    if (rec) teamShifts.push(rec);
+    renderShiftGrid();
+
+    if (!window.cloud || !window.cloud.saveShift) {
+        showToast('Cloud belum siap — perubahan shift belum tersimpan', 'warning');
+        teamShifts = snapshot;
+        renderShiftGrid();
+        return;
+    }
+
+    const op = rec ? window.cloud.saveShift(rec) : window.cloud.deleteShift(id);
+    op.then(() => {
+        logEvent({
+            action: 'update',
+            unitName: `[Tim] ${m.name}`,
+            field: `Shift ${date}`,
+            before, after
+        });
+    }).catch(err => {
+        console.error('[team] shift save failed:', err);
+        teamShifts = snapshot;
+        renderShiftGrid();
+        if (err && err.code === 'permission-denied') showTeamRulesBanner();
+        showToast('Gagal menyimpan shift — perubahan dikembalikan', 'error');
+    });
+}
+
+function exportShiftCSV() {
+    if (!canCsv('export')) return;
+    const members = activeMembers();
+    if (members.length === 0) { showToast('Belum ada anggota tim untuk diexport', 'warning'); return; }
+    const dates = weekDates(teamWeekStart || startOfWeekISO(toISODate()));
+    const headers = ['Anggota', 'Jabatan', ...dates.map(d => `${dayLabel(d)} (${d})`)];
+    const rows = members.map(m => [
+        m.name || '', m.jobTitle || '',
+        ...dates.map(d => {
+            const s = shiftFor(m.id, d);
+            return s ? (SHIFT_LABEL[s] || s) : '';
+        })
+    ]);
+    const csv = toCSV(headers, rows);
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `jadwal_shift_${dates[0]}_sd_${dates[6]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Export jadwal shift ${members.length} anggota ke CSV`, 'success');
+}
+
+// ============================================================
+// TEAM MEMBERS (master list — may include people without an account)
+// ============================================================
+
+function openTeamMembersModal() {
+    renderTeamMembersList();
+    document.getElementById('teamMembersModal').classList.add('open');
+}
+
+function closeTeamMembersModal() {
+    document.getElementById('teamMembersModal').classList.remove('open');
+}
+
+function renderTeamMembersList() {
+    const list = document.getElementById('teamMembersList');
+    if (!list) return;
+    const canEdit = hasAccess('team', 'edit');
+    if (teamMembers.length === 0) {
+        list.innerHTML = `<li class="category-empty">Belum ada anggota tim.</li>`;
+        return;
+    }
+    list.innerHTML = teamMembers.map(m => `
+        <li class="category-item member-item${m.active === false ? ' is-inactive' : ''}">
+            <span class="category-item__name">
+                <strong>${escapeHtml(m.name)}</strong>
+                ${m.jobTitle ? `<span class="member-item__job">${escapeHtml(m.jobTitle)}</span>` : ''}
+                ${m.active === false ? '<span class="member-item__off">Nonaktif</span>' : ''}
+            </span>
+            ${canEdit ? `<span class="row-actions row-actions--labeled">
+                <button class="btn btn-secondary btn-sm" onclick="toggleTeamMember('${escapeHtml(m.id)}')">
+                    ${m.active === false ? 'Aktifkan' : 'Nonaktifkan'}
+                </button>
+                <button class="btn btn-secondary btn-sm row-actions__icon" title="Hapus anggota" aria-label="Hapus ${escapeHtml(m.name)}"
+                        onclick="deleteTeamMember('${escapeHtml(m.id)}')">
+                    <i class="fas fa-trash" style="color:var(--danger)"></i>
+                </button>
+            </span>` : ''}
+        </li>`).join('');
+}
+
+function addTeamMember(event) {
+    event.preventDefault();
+    if (!requireEdit('team')) return;
+    const nameEl = document.getElementById('newMemberName');
+    const jobEl = document.getElementById('newMemberJob');
+    const name = (nameEl.value || '').trim();
+    const jobTitle = (jobEl.value || '').trim();
+    if (!name) { showToast('Nama anggota tidak boleh kosong', 'warning'); return; }
+    if (teamMembers.some(m => (m.name || '').toLowerCase() === name.toLowerCase())) {
+        showToast(`Anggota "${name}" sudah ada`, 'warning');
+        return;
+    }
+    const rec = { id: generateMemberId(), name, jobTitle, active: true, createdAt: Date.now() };
+    window.cloud.saveTeamMember(rec).then(() => {
+        logEvent({ action: 'create', unitName: `[Tim] ${name}`, field: 'Anggota', before: '', after: jobTitle || name });
+        showToast(`Anggota "${name}" ditambahkan`, 'success');
+    }).catch(err => {
+        console.error('[team] member save failed:', err);
+        if (err && err.code === 'permission-denied') showTeamRulesBanner();
+        showToast('Gagal menyimpan anggota', 'error');
+    });
+    nameEl.value = '';
+    jobEl.value = '';
+    nameEl.focus();
+}
+
+function toggleTeamMember(id) {
+    if (!requireEdit('team')) return;
+    const m = memberById(id);
+    if (!m) return;
+    const nextActive = m.active === false;
+    window.cloud.saveTeamMember({ ...m, active: nextActive, updatedAt: Date.now() }).then(() => {
+        logEvent({
+            action: 'update', unitName: `[Tim] ${m.name}`, field: 'Status anggota',
+            before: m.active === false ? 'Nonaktif' : 'Aktif',
+            after: nextActive ? 'Aktif' : 'Nonaktif'
+        });
+    }).catch(err => {
+        console.error('[team] member toggle failed:', err);
+        showToast('Gagal mengubah status anggota', 'error');
+    });
+}
+
+function deleteTeamMember(id) {
+    if (!requireEdit('team')) return;
+    const m = memberById(id);
+    if (!m) return;
+    const shiftCount = teamShifts.filter(s => s.memberId === id).length;
+    const logCount = workLogs.filter(w => w.memberId === id).length;
+    const warn = (shiftCount || logCount)
+        ? `\n\n${shiftCount} jadwal shift dan ${logCount} laporan harian miliknya akan tetap tersimpan, tetapi namanya akan tampil sebagai "(anggota dihapus)". Untuk sekadar mengeluarkannya dari jadwal, pakai Nonaktifkan.`
+        : '';
+    if (!confirm(`Hapus anggota "${m.name}"?${warn}`)) return;
+
+    window.cloud.deleteTeamMember(id).then(() => {
+        logEvent({ action: 'delete', unitName: `[Tim] ${m.name}`, field: 'Anggota', before: m.jobTitle || m.name, after: '' });
+        showToast(`Anggota "${m.name}" dihapus`, 'success');
+    }).catch(err => {
+        console.error('[team] member delete failed:', err);
+        showToast('Gagal menghapus anggota', 'error');
+    });
+}
+
+// ============================================================
+// DAILY WORK LOGS
+// ============================================================
+
+// "HH:MM" → minutes since midnight, or null when unparseable.
+function parseHHMM(v) {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(v || '').trim());
+    if (!m) return null;
+    const h = +m[1], mi = +m[2];
+    if (h > 23 || mi > 59) return null;
+    return h * 60 + mi;
+}
+
+// Duration in minutes. An end time earlier than the start is read as crossing
+// midnight (the night shift runs 23:00–07:00), not as a negative duration.
+function workLogMinutes(log) {
+    const s = parseHHMM(log && log.start);
+    const e = parseHHMM(log && log.end);
+    if (s == null || e == null) return 0;
+    const diff = e - s;
+    return diff < 0 ? diff + 24 * 60 : diff;
+}
+
+function formatMinutes(min) {
+    if (!min) return '0j';
+    const h = Math.floor(min / 60), m = min % 60;
+    if (!h) return `${m}m`;
+    return m ? `${h}j ${m}m` : `${h}j`;
+}
+
+function populateWorkLogFilters() {
+    const sel = document.getElementById('wlMemberFilter');
+    if (sel) {
+        const keep = sel.value;
+        sel.innerHTML = '<option value="">Semua Anggota</option>' +
+            teamMembers.map(m =>
+                `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}</option>`).join('');
+        if (keep && sel.querySelector(`option[value="${CSS.escape(keep)}"]`)) sel.value = keep;
+    }
+    const formSel = document.getElementById('wlMember');
+    if (formSel) {
+        const keep = formSel.value;
+        formSel.innerHTML = '<option value="">— Pilih anggota —</option>' +
+            activeMembers().map(m =>
+                `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}</option>`).join('');
+        if (keep && formSel.querySelector(`option[value="${CSS.escape(keep)}"]`)) formSel.value = keep;
+    }
+    const list = document.getElementById('wlUnitList');
+    if (list) {
+        list.innerHTML = [...globalData]
+            .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+            .map(u => `<option value="${escapeHtml(damageUnitLabel(u))}"></option>`).join('');
+    }
+}
+
+function getFilteredWorkLogs() {
+    const from = (document.getElementById('wlFrom')?.value || '').trim();
+    const to = (document.getElementById('wlTo')?.value || '').trim();
+    const member = (document.getElementById('wlMemberFilter')?.value || '');
+    const q = (document.getElementById('wlSearch')?.value || '').toLowerCase().trim();
+
+    return workLogs.filter(w => {
+        if (from && String(w.date || '') < from) return false;
+        if (to && String(w.date || '') > to) return false;
+        if (member && w.memberId !== member) return false;
+        if (q) {
+            const hay = [memberNameOf(w), w.unitName, w.task, w.issue]
+                .join(' ').toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
+}
+
+function renderWorkLogTable() {
+    const rows = getFilteredWorkLogs();
+    const tbody = document.getElementById('workLogBody');
+    if (!tbody) return;
+
+    // KPI strip
+    const totalMin = rows.reduce((a, w) => a + workLogMinutes(w), 0);
+    const today = toISODate();
+    const reportedToday = new Set(
+        workLogs.filter(w => w.date === today && w.memberId).map(w => w.memberId)
+    ).size;
+    const activeCount = activeMembers().length;
+
+    const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    setText('wlKpiCount', rows.length);
+    setText('wlKpiHours', formatMinutes(totalMin));
+    setText('wlKpiToday', `${reportedToday} / ${activeCount}`);
+    setText('workLogCount', `${rows.length} laporan`);
+
+    const canEdit = hasAccess('team', 'edit');
+    const hasFilter = (document.getElementById('wlFrom')?.value || '') ||
+                      (document.getElementById('wlTo')?.value || '') ||
+                      (document.getElementById('wlMemberFilter')?.value || '') ||
+                      (document.getElementById('wlSearch')?.value || '');
+
+    if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+            hasFilter ? 'Tidak ada laporan yang cocok dengan filter'
+                      : 'Belum ada laporan harian. Klik <strong>Tambah Laporan</strong> untuk mulai.'
+        }</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = rows.map((w, i) => {
+        const lu = liveUnitFor(w);
+        const unitName = lu ? (lu.name || '') : (w.unitName || '');
+        const task = w.task || '';
+        const taskShort = task.length > 60 ? task.slice(0, 60) + '…' : task;
+        const issue = w.issue || '';
+        const issueShort = issue.length > 40 ? issue.slice(0, 40) + '…' : issue;
+        const jam = (w.start || w.end) ? `${escapeHtml(w.start || '?')}–${escapeHtml(w.end || '?')}` : '—';
+        return `
+        <tr>
+            <td>${i + 1}</td>
+            <td data-label="Tanggal" style="white-space:nowrap">${escapeHtml(w.date || '')}</td>
+            <td data-label="Anggota"><strong>${escapeHtml(memberNameOf(w))}</strong></td>
+            <td data-label="Jam" style="white-space:nowrap;font-variant-numeric:tabular-nums">${jam}</td>
+            <td data-label="Durasi" style="white-space:nowrap">${escapeHtml(formatMinutes(workLogMinutes(w)))}</td>
+            <td data-label="Unit">${unitName
+                ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(unitName)}</span>`
+                : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
+            <td data-label="Uraian" style="max-width:260px;font-size:12px" title="${escapeHtml(task)}">${escapeHtml(taskShort)}</td>
+            <td data-label="Kendala" style="max-width:200px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(issue)}">${
+                issueShort ? escapeHtml(issueShort) : '<span style="color:var(--text-light)">—</span>'}</td>
+            <td class="col-actions">
+                ${canEdit ? `<div class="row-actions">
+                    <button class="btn btn-secondary" title="Edit" aria-label="Edit laporan" onclick="editWorkLog('${escapeHtml(w.id)}')"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Hapus" aria-label="Hapus laporan" onclick="deleteWorkLog('${escapeHtml(w.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                </div>` : ''}
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function clearWorkLogFilter() {
+    ['wlFrom', 'wlTo', 'wlSearch'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    const sel = document.getElementById('wlMemberFilter');
+    if (sel) sel.value = '';
+    renderWorkLogTable();
+}
+
+function showAddWorkLogForm() {
+    if (!requireEdit('team')) return;
+    if (activeMembers().length === 0) {
+        showToast('Tambahkan anggota tim dulu lewat Kelola Anggota', 'warning');
+        return;
+    }
+    document.getElementById('workLogModalTitle').textContent = 'Tambah Laporan Harian';
+    document.getElementById('editWorkLogId').value = '';
+    document.getElementById('workLogForm').reset();
+    populateWorkLogFilters();
+    document.getElementById('wlDate').value = toISODate();
+    document.getElementById('workLogModal').classList.add('open');
+}
+
+function editWorkLog(id) {
+    if (!requireEdit('team')) return;
+    const w = workLogs.find(x => x.id === id);
+    if (!w) return;
+    document.getElementById('workLogModalTitle').textContent = 'Edit Laporan Harian';
+    document.getElementById('editWorkLogId').value = w.id;
+    populateWorkLogFilters();
+    document.getElementById('wlDate').value = w.date || '';
+    document.getElementById('wlMember').value = w.memberId || '';
+    document.getElementById('wlStart').value = w.start || '';
+    document.getElementById('wlEnd').value = w.end || '';
+    const lu = liveUnitFor(w);
+    document.getElementById('wlUnit').value = lu ? damageUnitLabel(lu) : (w.unitName || '');
+    document.getElementById('wlTask').value = w.task || '';
+    document.getElementById('wlIssue').value = w.issue || '';
+    document.getElementById('workLogModal').classList.add('open');
+}
+
+function closeWorkLogModal() {
+    document.getElementById('workLogModal').classList.remove('open');
+}
+
+function saveWorkLog(event) {
+    event.preventDefault();
+    if (!requireEdit('team')) return;
+
+    const id = document.getElementById('editWorkLogId').value;
+    const memberId = document.getElementById('wlMember').value;
+    const member = memberById(memberId);
+    if (!member) { showToast('Pilih anggota tim dulu', 'warning'); return; }
+
+    const date = document.getElementById('wlDate').value;
+    const start = document.getElementById('wlStart').value;
+    const end = document.getElementById('wlEnd').value;
+    const task = (document.getElementById('wlTask').value || '').trim();
+    if (!task) { showToast('Uraian pekerjaan tidak boleh kosong', 'warning'); return; }
+
+    const unitRaw = (document.getElementById('wlUnit').value || '').trim();
+    const unit = unitRaw ? resolveDamageUnit(unitRaw) : null;
+    if (unitRaw && !unit) {
+        showToast(`Unit "${unitRaw}" tidak ditemukan — kosongkan atau pilih dari daftar`, 'warning');
+        return;
+    }
+
+    const existing = id ? workLogs.find(w => w.id === id) : null;
+    const rec = {
+        id: id || generateWorkLogId(),
+        date,
+        memberId,
+        memberName: member.name,
+        start, end,
+        unitId: unit ? unit.id : '',
+        unitName: unit ? (unit.name || '') : '',
+        sn: unit ? (unit.sn || '') : '',
+        task,
+        issue: (document.getElementById('wlIssue').value || '').trim(),
+        createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),
+        updatedAt: Date.now()
+    };
+
+    window.cloud.saveWorkLog(rec).then(() => {
+        logEvent({
+            action: existing ? 'update' : 'create',
+            unitId: rec.unitId,
+            unitName: `[Laporan] ${member.name}`,
+            field: `Laporan ${rec.date}`,
+            before: existing ? (existing.task || '') : '',
+            after: rec.task
+        });
+        showToast(existing ? 'Laporan diperbarui' : 'Laporan harian ditambahkan', 'success');
+    }).catch(err => {
+        console.error('[team] work log save failed:', err);
+        if (err && err.code === 'permission-denied') showTeamRulesBanner();
+        showToast('Gagal menyimpan laporan', 'error');
+    });
+
+    closeWorkLogModal();
+}
+
+function deleteWorkLog(id) {
+    if (!requireEdit('team')) return;
+    const w = workLogs.find(x => x.id === id);
+    if (!w) return;
+    if (!confirm(`Hapus laporan ${memberNameOf(w)} tanggal ${w.date}?`)) return;
+    window.cloud.deleteWorkLog(id).then(() => {
+        logEvent({
+            action: 'delete', unitId: w.unitId || '',
+            unitName: `[Laporan] ${memberNameOf(w)}`,
+            field: `Laporan ${w.date}`, before: w.task || '', after: ''
+        });
+        showToast('Laporan dihapus', 'success');
+    }).catch(err => {
+        console.error('[team] work log delete failed:', err);
+        showToast('Gagal menghapus laporan', 'error');
+    });
+}
+
+function exportWorkLogCSV() {
+    if (!canCsv('export')) return;
+    const rows = getFilteredWorkLogs();
+    if (rows.length === 0) { showToast('Tidak ada laporan untuk diexport', 'warning'); return; }
+    const headers = ['No', 'Tanggal', 'Anggota', 'Jabatan', 'Mulai', 'Selesai', 'Durasi (jam)', 'Unit', 'Serial Number', 'Uraian Pekerjaan', 'Kendala'];
+    const dataRows = rows.map((w, i) => {
+        const m = w.memberId ? memberById(w.memberId) : null;
+        const lu = liveUnitFor(w);
+        return [
+            i + 1, w.date || '', memberNameOf(w), m ? (m.jobTitle || '') : '',
+            w.start || '', w.end || '',
+            (workLogMinutes(w) / 60).toFixed(2),
+            lu ? (lu.name || '') : (w.unitName || ''),
+            lu ? (lu.sn || '') : (w.sn || ''),
+            w.task || '', w.issue || ''
+        ];
+    });
+    const csv = toCSV(headers, dataRows);
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `laporan_harian_${toISODate()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Export ${rows.length} laporan ke CSV`, 'success');
+}
+
+// Work logs attached to one unit, newest first — used by the unit profile so
+// "who has worked on this machine" is answerable from the unit's own page.
+function workLogsForUnit(unitId, sn) {
+    const snLc = (sn || '').toLowerCase();
+    return workLogs.filter(w =>
+        (unitId && w.unitId === unitId) ||
+        (snLc && (w.sn || '').toLowerCase() === snLc)
+    );
 }
 
 if (window.cloudReady) {

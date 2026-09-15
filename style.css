@@ -2507,7 +2507,8 @@ body[data-ro-editunits] .inline-edit { background: transparent !important; }
 body[data-ro-editunits]  .editonly--editunits,
 body[data-ro-implements] .editonly--implements,
 body[data-ro-damage]     .editonly--damage,
-body[data-ro-license]    .editonly--license { display: none !important; }
+body[data-ro-license]    .editonly--license,
+body[data-ro-team]       .editonly--team { display: none !important; }
 
 /* CSV export/import capability: hide buttons the user isn't allowed to use */
 body[data-nocsvexport] .csv-export { display: none !important; }
@@ -2545,3 +2546,177 @@ body[data-nocsvimport] .csv-import { display: none !important; }
     cursor: pointer;
 }
 .bulk-row > .form-input, .bulk-row > .form-select { flex: 1; }
+
+/* ============================================================
+   TEAM OPERATIONS — shift schedule + daily work logs
+   ============================================================ */
+
+.team-tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+}
+.team-tab {
+    padding: 10px 18px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: none;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 6px 6px 0 0;
+}
+.team-tab:hover { background: var(--bg); color: var(--text); }
+.team-tab.active {
+    color: var(--accent-text);
+    border-bottom-color: var(--primary);
+    background: var(--card);
+}
+
+.week-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+/* The arrows are icon-only, so they need their own floor to stay tappable. */
+.week-nav > .btn { min-width: 34px; }
+.week-nav__label {
+    min-width: 170px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text);
+}
+
+/* ---- Shift grid ---- */
+/* Fixed layout so all 7 days fit a desktop wrapper without clipping Sunday;
+   min-width keeps the cells readable on a phone, where the wrapper scrolls. */
+.shift-grid {
+    width: 100%;
+    table-layout: fixed;
+    min-width: 720px;
+}
+.shift-grid th,
+.shift-grid td {
+    text-align: center;
+    vertical-align: middle;
+    padding: 8px 6px;
+}
+.shift-grid .shift-grid__member {
+    text-align: left;
+    width: 150px;
+    padding-left: 14px;
+    background: var(--card);
+    font-weight: 600;
+}
+.shift-grid__job {
+    display: block;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-light);
+}
+.shift-grid th.is-today,
+.shift-grid td.is-today { background: var(--bg); }
+.shift-grid thead th.is-today { color: var(--accent-text); }
+
+.shift-select {
+    width: 100%;
+    min-width: 0;
+    padding: 5px 4px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--card);
+    font-family: inherit;
+    font-size: 12px;
+    color: var(--text);
+    cursor: pointer;
+}
+.shift-select--pagi   { background: var(--success-bg); color: var(--success); }
+.shift-select--siang  { background: var(--warning-bg); color: var(--warning); }
+.shift-select--malam  { background: var(--info-bg);    color: var(--info); }
+.shift-select--libur  { background: var(--bg);         color: var(--text-light); }
+
+.shift-badge {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 11px;
+    font-size: 11px;
+    font-weight: 600;
+}
+.shift-badge--pagi  { background: var(--success-bg); color: var(--success); }
+.shift-badge--siang { background: var(--warning-bg); color: var(--warning); }
+.shift-badge--malam { background: var(--info-bg);    color: var(--info); }
+.shift-badge--libur { background: var(--bg);         color: var(--text-light); }
+.shift-empty { color: var(--text-light); }
+
+.shift-grid tfoot td,
+.shift-grid tfoot th {
+    border-top: 2px solid var(--border);
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.shift-foot__detail {
+    display: block;
+    font-size: 10.5px;
+    color: var(--text-light);
+}
+
+/* ---- Work log filters ---- */
+.wl-filter-date {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.wl-filter-date .form-input {
+    width: auto;
+    padding: 5px 8px;
+    font-size: 12px;
+}
+
+/* ---- Team member list ---- */
+.member-item__job {
+    margin-left: 8px;
+    font-size: 12px;
+    color: var(--text-light);
+}
+.member-item__off {
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    font-size: 10.5px;
+    color: var(--text-light);
+}
+.member-item.is-inactive .category-item__name strong { color: var(--text-light); }
+.team-add-form { flex-wrap: wrap; }
+.team-add-form #newMemberName { flex: 2 1 160px; }
+.team-add-form #newMemberJob  { flex: 1 1 120px; }
+
+@media (max-width: 700px) {
+    .team-tab { flex: 1; padding: 10px 8px; font-size: 13px; }
+    .week-nav__label { min-width: 0; flex: 1; font-size: 13px; }
+    .wl-filter-date { flex: 1 1 100%; }
+    .wl-filter-date .form-input { flex: 1; }
+    .shift-grid .shift-grid__member { width: 110px; padding-left: 10px; }
+    .shift-foot__detail { display: none; }
+}
+
+/* Shown in place of a chart when the Chart.js CDN could not be reached. */
+.chart-unavailable {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+    padding: 20px;
+    text-align: center;
+    color: var(--text-light);
+    font-size: 13px;
+    font-style: italic;
+}

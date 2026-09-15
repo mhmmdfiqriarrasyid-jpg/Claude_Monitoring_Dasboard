@@ -11,7 +11,7 @@ rules_version = '2';
 //   role   : 'owner' | 'team' | 'viewer'   (on /users/{uid})
 //   access : optional per-area override map, e.g.
 //            { editUnits:'edit', implements:'view', damage:'edit',
-//              licenseStock:'none', history:'view', csv:'export' }
+//              licenseStock:'none', team:'edit', history:'view', csv:'export' }
 //   Missing override  → role default (owner/team = edit, viewer = none).
 //   Owner is always a superuser and can never be locked out.
 // ============================================================
@@ -42,7 +42,8 @@ service cloud.firestore {
         lvl('editUnits')    == 'edit' ||
         lvl('implements')   == 'edit' ||
         lvl('damage')       == 'edit' ||
-        lvl('licenseStock') == 'edit'
+        lvl('licenseStock') == 'edit' ||
+        lvl('team')         == 'edit'
       );
     }
 
@@ -57,6 +58,18 @@ service cloud.firestore {
     // the damage form — so each follows its own area.
     match /userCategories/{catId} { allow read: if isActive(); allow write: if canEditArea('editUnits'); }
     match /damageComponents/{id}  { allow read: if isActive(); allow write: if canEditArea('damage'); }
+
+    // ---- Team operations (one area for all three) ----
+    // Everyone active can read the roster, the schedule and the work logs, so
+    // people can see who is on duty. Writing needs edit on 'team'.
+    //
+    // Work logs are deliberately NOT restricted to their own author: the team
+    // decided an office admin should be able to file reports on behalf of
+    // field operators who have no login. Every write is still attributed in
+    // /history, so who filed what stays traceable.
+    match /teamMembers/{id} { allow read: if isActive(); allow write: if canEditArea('team'); }
+    match /shifts/{id}      { allow read: if isActive(); allow write: if canEditArea('team'); }
+    match /workLogs/{id}    { allow read: if isActive(); allow write: if canEditArea('team'); }
 
     // ---- Accounts ----
     // Sign-up may only ever create a PENDING VIEWER. Without this, any signed-in

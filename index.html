@@ -145,6 +145,9 @@
             <a class="nav__link" data-view="licenseStock" onclick="navigateTo('licenseStock')">
                 <i class="fas fa-key"></i> Stok Lisensi
             </a>
+            <a class="nav__link" data-view="team" onclick="navigateTo('team')">
+                <i class="fas fa-user-clock"></i> Tim
+            </a>
             <a class="nav__link" id="navHistory" onclick="showHistory()" title="Change History">
                 <i class="fas fa-clock-rotate-left"></i> History
             </a>
@@ -776,6 +779,138 @@
 
     </div><!-- /viewLicenseStock -->
 
+    <!-- ==================== TEAM VIEW ==================== -->
+    <div id="viewTeam" class="view" style="display:none;">
+
+        <div class="team-rules-slot"></div>
+
+        <div class="team-tabs" role="tablist" aria-label="Bagian operasional tim">
+            <button class="team-tab active" data-tab="shift" role="tab" aria-selected="true"
+                    aria-controls="teamShiftPanel" onclick="switchTeamTab('shift')">
+                <i class="fas fa-calendar-days"></i> Jadwal Shift
+            </button>
+            <button class="team-tab" data-tab="worklog" role="tab" aria-selected="false"
+                    aria-controls="teamWorkLogPanel" onclick="switchTeamTab('worklog')">
+                <i class="fas fa-clipboard-list"></i> Laporan Harian
+            </button>
+        </div>
+
+        <!-- ---------- Shift schedule ---------- -->
+        <div id="teamShiftPanel" role="tabpanel" aria-label="Jadwal Shift">
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <div class="week-nav">
+                        <button class="btn btn-secondary btn-sm" aria-label="Minggu sebelumnya" title="Minggu sebelumnya"
+                                onclick="shiftWeekShift(-1)"><i class="fas fa-chevron-left"></i></button>
+                        <span id="shiftWeekLabel" class="week-nav__label">—</span>
+                        <button class="btn btn-secondary btn-sm" aria-label="Minggu berikutnya" title="Minggu berikutnya"
+                                onclick="shiftWeekShift(1)"><i class="fas fa-chevron-right"></i></button>
+                        <button class="btn btn-secondary btn-sm" onclick="shiftWeekToday()">Minggu Ini</button>
+                    </div>
+                </div>
+                <div class="edit-toolbar__right">
+                    <button class="btn btn-secondary editonly editonly--team" onclick="openTeamMembersModal()">
+                        <i class="fas fa-user-group"></i> Kelola Anggota
+                    </button>
+                    <button class="btn btn-secondary csv-export" onclick="exportShiftCSV()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-calendar-days"></i> Jadwal Shift Mingguan</div>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table shift-grid" id="shiftTable">
+                        <thead id="shiftHead"></thead>
+                        <tbody id="shiftBody"></tbody>
+                        <tfoot id="shiftFoot"></tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ---------- Daily work logs ---------- -->
+        <div id="teamWorkLogPanel" role="tabpanel" aria-label="Laporan Harian" style="display:none">
+            <div class="downtime-kpis" style="margin-bottom:16px">
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Jumlah Laporan</div>
+                    <div class="downtime-kpi__value" id="wlKpiCount">0</div>
+                    <div class="downtime-kpi__sub">Sesuai filter aktif</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Total Jam Kerja</div>
+                    <div class="downtime-kpi__value" id="wlKpiHours">0j</div>
+                    <div class="downtime-kpi__sub">Dijumlah dari jam mulai–selesai</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Lapor Hari Ini</div>
+                    <div class="downtime-kpi__value" id="wlKpiToday">0 / 0</div>
+                    <div class="downtime-kpi__sub">Anggota aktif yang sudah melapor</div>
+                </div>
+            </div>
+
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <button class="btn btn-success editonly editonly--team" onclick="showAddWorkLogForm()">
+                        <i class="fas fa-plus"></i> Tambah Laporan
+                    </button>
+                    <button class="btn btn-secondary csv-export" onclick="exportWorkLogCSV()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+                <div class="edit-toolbar__right">
+                    <label class="wl-filter-date">
+                        <span>Dari</span>
+                        <input type="date" id="wlFrom" class="form-input" onchange="renderWorkLogTable()">
+                    </label>
+                    <label class="wl-filter-date">
+                        <span>Sampai</span>
+                        <input type="date" id="wlTo" class="form-input" onchange="renderWorkLogTable()">
+                    </label>
+                    <select id="wlMemberFilter" aria-label="Filter anggota" class="btn btn-secondary btn-sm"
+                            onchange="renderWorkLogTable()">
+                        <option value="">Semua Anggota</option>
+                    </select>
+                    <div class="edit-search">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="wlSearch" aria-label="Cari laporan" placeholder="Cari laporan..."
+                               oninput="renderWorkLogTable()">
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onclick="clearWorkLogFilter()">Reset</button>
+                    <span id="workLogCount">0 laporan</span>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-clipboard-list"></i> Laporan Harian Kerja</div>
+                </div>
+                <div class="table-wrapper" style="max-height:600px;">
+                    <table class="data-table table--cardable" id="workLogTable">
+                        <thead>
+                            <tr>
+                                <th>No</th>
+                                <th>Tanggal</th>
+                                <th>Anggota</th>
+                                <th>Jam</th>
+                                <th>Durasi</th>
+                                <th>Unit</th>
+                                <th>Uraian Pekerjaan</th>
+                                <th>Kendala</th>
+                                <th class="col-actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="workLogBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /viewTeam -->
+
     <!-- ==================== USERS VIEW (Owner only) ==================== -->
     <div id="viewUsers" class="view" style="display:none;">
         <div class="edit-toolbar">
@@ -1226,6 +1361,89 @@
 </div>
 
 <!-- ===== MANAGE DAMAGE COMPONENTS MODAL ===== -->
+<!-- ==================== TEAM MEMBERS MODAL ==================== -->
+<div class="modal-overlay" id="teamMembersModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3><i class="fas fa-user-group"></i> Kelola Anggota Tim</h3>
+            <button class="btn-icon" onclick="closeTeamMembersModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+                Daftar ini terpisah dari akun login, jadi rekan yang tidak pernah membuka aplikasi
+                tetap bisa dijadwalkan dan dilaporkan. <strong>Nonaktifkan</strong> mengeluarkan orang
+                dari jadwal dan form laporan tanpa menghapus riwayatnya.
+            </p>
+            <ul class="categories-list" id="teamMembersList"></ul>
+            <form class="category-add-form team-add-form editonly editonly--team" onsubmit="addTeamMember(event)">
+                <input type="text" class="form-input" id="newMemberName" aria-label="Nama anggota baru"
+                       placeholder="Nama anggota…" maxlength="60" autocomplete="off">
+                <input type="text" class="form-input" id="newMemberJob" aria-label="Jabatan anggota baru"
+                       placeholder="Jabatan (opsional)…" maxlength="40" autocomplete="off">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> Tambah</button>
+            </form>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeTeamMembersModal()">Tutup</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== WORK LOG MODAL ==================== -->
+<div class="modal-overlay" id="workLogModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="workLogModalTitle"><i class="fas fa-clipboard-list"></i> Tambah Laporan Harian</h3>
+            <button class="btn-icon" onclick="closeWorkLogModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form id="workLogForm" onsubmit="saveWorkLog(event)">
+            <input type="hidden" id="editWorkLogId">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="wlDate">Tanggal</label>
+                        <input type="date" class="form-input" id="wlDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="wlMember">Anggota</label>
+                        <select class="form-select" id="wlMember" required>
+                            <option value="">— Pilih anggota —</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="wlStart">Jam Mulai</label>
+                        <input type="time" class="form-input" id="wlStart">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="wlEnd">Jam Selesai</label>
+                        <input type="time" class="form-input" id="wlEnd">
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="wlUnit">Unit yang Dikerjakan <span class="form-optional">(opsional)</span></label>
+                        <input class="form-input" id="wlUnit" list="wlUnitList" autocomplete="off"
+                               placeholder="Ketik nama atau SN unit…">
+                        <datalist id="wlUnitList"></datalist>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="wlTask">Uraian Pekerjaan</label>
+                        <textarea class="form-input form-textarea" id="wlTask" rows="3" required
+                                  placeholder="Apa yang dikerjakan hari ini…"></textarea>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="wlIssue">Kendala <span class="form-optional">(opsional)</span></label>
+                        <textarea class="form-input form-textarea" id="wlIssue" rows="2"
+                                  placeholder="Hambatan, kekurangan alat, atau catatan lain…"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeWorkLogModal()">Batal</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="modal-overlay" id="damageComponentsModal">
     <div class="modal-card">
         <div class="modal-header">
