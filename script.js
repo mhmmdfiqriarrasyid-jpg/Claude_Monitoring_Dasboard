@@ -70,7 +70,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v90';
+const APP_VERSION = 'v91';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -6970,6 +6970,51 @@ function activeMembers() {
     return teamMembers.filter(m => m.active !== false);
 }
 
+// ---- Companies ----
+// Free text on the member record with suggestions, rather than a fixed list:
+// a third company can be added by typing it, without a code change.
+const DEFAULT_COMPANIES = ['PT. Global Papua Abadi', 'PT. Murni Nusantara Mandiri'];
+const NO_COMPANY = '(Tanpa perusahaan)';
+
+function companyOf(m) {
+    return ((m && m.company) || '').trim();
+}
+
+// The two seeded names plus anything already typed, de-duplicated
+// case-insensitively so "PT. Global" and "pt. global" do not split a group.
+function allCompanies() {
+    const seen = new Map();
+    DEFAULT_COMPANIES.forEach(c => seen.set(c.toLowerCase(), c));
+    teamMembers.forEach(m => {
+        const c = companyOf(m);
+        if (c && !seen.has(c.toLowerCase())) seen.set(c.toLowerCase(), c);
+    });
+    return [...seen.values()].sort((a, b) => a.localeCompare(b));
+}
+
+// Active members grouped by company, named companies first (alphabetical) and
+// anyone without one collected at the end rather than silently hidden.
+function membersByCompany() {
+    const groups = new Map();
+    activeMembers().forEach(m => {
+        const key = companyOf(m) || NO_COMPANY;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(m);
+    });
+    return [...groups.entries()].sort((a, b) => {
+        if (a[0] === NO_COMPANY) return 1;
+        if (b[0] === NO_COMPANY) return -1;
+        return a[0].localeCompare(b[0]);
+    });
+}
+
+// Company for a work log: the member's current one, falling back to the value
+// stored on the record so rows survive a member being deleted or moved.
+function companyOfRecord(rec) {
+    const m = rec && rec.memberId ? memberById(rec.memberId) : null;
+    return m ? companyOf(m) : ((rec && rec.company) || '').trim();
+}
+
 function memberById(id) {
     return teamMembers.find(m => m.id === id) || null;
 }
@@ -6985,7 +7030,9 @@ function memberNameOf(rec) {
 function applyCloudTeamMembersSnapshot(list) {
     teamMembers = (list || []).slice().sort((a, b) =>
         (a.name || '').localeCompare(b.name || ''));
-    if (currentView === 'team') renderTeamView();
+    // Company suggestions and the report filter are derived from the roster,
+    // so they have to be rebuilt whenever it changes.
+    if (currentView === 'team') { populateWorkLogFilters(); renderTeamView(); }
     const modal = document.getElementById('teamMembersModal');
     if (modal && modal.classList.contains('open')) renderTeamMembersList();
 }
@@ -7110,7 +7157,18 @@ function renderShiftGrid() {
         return;
     }
 
-    body.innerHTML = members.map(m => {
+    // Per-day duty counts for a set of members; 'libur' is time off, not duty.
+    const dutyCells = (list, extraClass) => dates.map(d => {
+        const counts = SHIFT_TYPES.filter(s => s.key !== 'libur')
+            .map(s => ({ s, n: list.filter(m => shiftFor(m.id, d) === s.key).length }));
+        const working = counts.reduce((a, c) => a + c.n, 0);
+        const detail = counts.map(c => `${c.s.label} ${c.n}`).join(' · ');
+        return `<td class="${extraClass}${d === today ? ' is-today' : ''}" title="${escapeHtml(detail)}">
+            <strong>${working}</strong> <span class="shift-foot__detail">${escapeHtml(detail)}</span>
+        </td>`;
+    }).join('');
+
+    const memberRow = m => {
         const cells = dates.map(d => {
             const cur = shiftFor(m.id, d);
             const cls = `shift-cell${cur ? ' shift-cell--' + cur : ''}${d === today ? ' is-today' : ''}`;
@@ -7135,19 +7193,22 @@ function renderShiftGrid() {
                 ${m.jobTitle ? `<span class="shift-grid__job" title="${escapeHtml(m.jobTitle)}">${escapeHtml(m.jobTitle)}</span>` : ''}
             </th>${cells}
         </tr>`;
-    }).join('');
+    };
+
+    // One block per company: a heading row carrying that company's own duty
+    // counts, then its members.
+    body.innerHTML = membersByCompany().map(([company, list]) => `
+        <tr class="shift-group">
+            <th scope="row" class="shift-grid__member shift-group__name">
+                ${escapeHtml(company)}
+                <span class="shift-group__count">${list.length} orang</span>
+            </th>${dutyCells(list, 'shift-group__cell')}
+        </tr>
+        ${list.map(memberRow).join('')}`).join('');
 
     if (foot) {
-        foot.innerHTML = `<tr><th scope="row" class="shift-grid__member">Bertugas</th>${
-            dates.map(d => {
-                const counts = SHIFT_TYPES.filter(s => s.key !== 'libur')
-                    .map(s => ({ s, n: members.filter(m => shiftFor(m.id, d) === s.key).length }));
-                const working = counts.reduce((a, c) => a + c.n, 0);
-                const detail = counts.map(c => `${c.s.label} ${c.n}`).join(' · ');
-                return `<td class="${d === today ? 'is-today' : ''}" title="${escapeHtml(detail)}">
-                    <strong>${working}</strong> <span class="shift-foot__detail">${escapeHtml(detail)}</span>
-                </td>`;
-            }).join('')
+        foot.innerHTML = `<tr><th scope="row" class="shift-grid__member">Total bertugas</th>${
+            dutyCells(members, '')
         }</tr>`;
     }
 }
@@ -7207,14 +7268,17 @@ function exportShiftCSV() {
     const members = activeMembers();
     if (members.length === 0) { showToast('Belum ada anggota tim untuk diexport', 'warning'); return; }
     const dates = weekDates(teamWeekStart || startOfWeekISO(toISODate()));
-    const headers = ['Anggota', 'Jabatan', ...dates.map(d => `${dayLabel(d)} (${d})`)];
-    const rows = members.map(m => [
+    const headers = ['Perusahaan', 'Anggota', 'Jabatan', ...dates.map(d => `${dayLabel(d)} (${d})`)];
+    // Exported in the same company order the grid shows, so the file reads the
+    // same way as the screen.
+    const rows = membersByCompany().flatMap(([company, list]) => list.map(m => [
+        company === NO_COMPANY ? '' : company,
         m.name || '', m.jobTitle || '',
         ...dates.map(d => {
             const s = shiftFor(m.id, d);
             return s ? (SHIFT_LABEL[s] || s) : '';
         })
-    ]);
+    ]));
     const csv = toCSV(headers, rows);
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -7243,6 +7307,10 @@ function renderTeamMembersList() {
     const list = document.getElementById('teamMembersList');
     if (!list) return;
     const canEdit = hasAccess('teamMembers', 'edit');
+    // Keep the shared company suggestions current — a company typed on one row
+    // should be offered on the next.
+    const dl = document.getElementById('companyList');
+    if (dl) dl.innerHTML = allCompanies().map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
     if (teamMembers.length === 0) {
         list.innerHTML = `<li class="category-empty">Belum ada anggota tim.</li>`;
         return;
@@ -7255,6 +7323,12 @@ function renderTeamMembersList() {
                     ${m.jobTitle ? `<span class="member-item__job" title="${escapeHtml(m.jobTitle)}">${escapeHtml(m.jobTitle)}</span>` : ''}
                     ${m.active === false ? '<span class="member-item__off">Nonaktif</span>' : ''}
                 </span>` : ''}
+                ${canEdit
+                    ? `<input class="form-input member-item__company" list="companyList"
+                              value="${escapeHtml(companyOf(m))}" placeholder="Perusahaan…" maxlength="80"
+                              aria-label="Perusahaan ${escapeHtml(m.name)}"
+                              onchange="setMemberCompany('${escapeHtml(m.id)}', this.value)">`
+                    : `<span class="member-item__job">${escapeHtml(companyOf(m) || NO_COMPANY)}</span>`}
             </span>
             ${canEdit ? `<span class="row-actions row-actions--labeled">
                 <button class="btn btn-secondary btn-sm" onclick="toggleTeamMember('${escapeHtml(m.id)}')">
@@ -7268,19 +7342,58 @@ function renderTeamMembersList() {
         </li>`).join('');
 }
 
+// Change one member's company from the roster list. Company is the only field
+// editable in place — it is the one that has to be set for people who were
+// added before companies existed, and retyping a name would orphan their
+// shifts, which are keyed by member id.
+function setMemberCompany(id, value) {
+    if (!requireEdit('teamMembers')) { renderTeamMembersList(); return; }
+    const m = memberById(id);
+    if (!m) return;
+    const company = (value || '').trim();
+    const before = companyOf(m);
+    if (before === company) return;
+
+    // Optimistic, like setShift: replace the record rather than mutate it, so
+    // the rollback snapshot stays a valid earlier state. Without this the grid
+    // and the company suggestions would lag until the Firestore snapshot lands,
+    // and a second edit would compare against a stale value.
+    const snapshot = teamMembers.slice();
+    const rec = { ...m, company, updatedAt: Date.now() };
+    teamMembers = teamMembers.map(x => (x.id === id ? rec : x));
+    renderTeamMembersList();
+    if (currentView === 'team') renderTeamView();
+
+    window.cloud.saveTeamMember(rec).then(() => {
+        logEvent({
+            action: 'update', unitName: `[Tim] ${m.name}`, field: 'Perusahaan',
+            before: before || '—', after: company || '—'
+        });
+    }).catch(err => {
+        console.error('[team] company save failed:', err);
+        teamMembers = snapshot;
+        renderTeamMembersList();
+        if (currentView === 'team') renderTeamView();
+        if (err && err.code === 'permission-denied') showTeamRulesBanner();
+        showToast('Gagal menyimpan perusahaan — perubahan dikembalikan', 'error');
+    });
+}
+
 function addTeamMember(event) {
     event.preventDefault();
     if (!requireEdit('teamMembers')) return;
     const nameEl = document.getElementById('newMemberName');
     const jobEl = document.getElementById('newMemberJob');
+    const compEl = document.getElementById('newMemberCompany');
     const name = (nameEl.value || '').trim();
     const jobTitle = (jobEl.value || '').trim();
+    const company = ((compEl && compEl.value) || '').trim();
     if (!name) { showToast('Nama anggota tidak boleh kosong', 'warning'); return; }
     if (teamMembers.some(m => (m.name || '').toLowerCase() === name.toLowerCase())) {
         showToast(`Anggota "${name}" sudah ada`, 'warning');
         return;
     }
-    const rec = { id: generateMemberId(), name, jobTitle, active: true, createdAt: Date.now() };
+    const rec = { id: generateMemberId(), name, jobTitle, company, active: true, createdAt: Date.now() };
     window.cloud.saveTeamMember(rec).then(() => {
         logEvent({ action: 'create', unitName: `[Tim] ${name}`, field: 'Anggota', before: '', after: jobTitle || name });
         showToast(`Anggota "${name}" ditambahkan`, 'success');
@@ -7291,6 +7404,8 @@ function addTeamMember(event) {
     });
     nameEl.value = '';
     jobEl.value = '';
+    // The company is deliberately kept: several people from the same company
+    // are usually added in a row.
     nameEl.focus();
 }
 
@@ -7384,20 +7499,37 @@ function populateWorkLogFilters() {
             .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
             .map(u => `<option value="${escapeHtml(damageUnitLabel(u))}"></option>`).join('');
     }
+    // Company suggestions, shared by the roster modal and the report filter.
+    const comps = allCompanies();
+    const dl = document.getElementById('companyList');
+    if (dl) dl.innerHTML = comps.map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
+    const compFilter = document.getElementById('wlCompanyFilter');
+    if (compFilter) {
+        const keep = compFilter.value;
+        compFilter.innerHTML = '<option value="">Semua Perusahaan</option>' +
+            comps.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('') +
+            `<option value="__none__">${escapeHtml(NO_COMPANY)}</option>`;
+        if (keep && compFilter.querySelector(`option[value="${CSS.escape(keep)}"]`)) compFilter.value = keep;
+    }
 }
 
 function getFilteredWorkLogs() {
     const from = (document.getElementById('wlFrom')?.value || '').trim();
     const to = (document.getElementById('wlTo')?.value || '').trim();
     const member = (document.getElementById('wlMemberFilter')?.value || '');
+    const company = (document.getElementById('wlCompanyFilter')?.value || '');
     const q = (document.getElementById('wlSearch')?.value || '').toLowerCase().trim();
 
     return workLogs.filter(w => {
         if (from && String(w.date || '') < from) return false;
         if (to && String(w.date || '') > to) return false;
         if (member && w.memberId !== member) return false;
+        if (company) {
+            const c = companyOfRecord(w);
+            if (company === '__none__' ? !!c : c !== company) return false;
+        }
         if (q) {
-            const hay = [memberNameOf(w), w.unitName, w.task, w.issue]
+            const hay = [memberNameOf(w), companyOfRecord(w), w.unitName, w.task, w.issue]
                 .join(' ').toLowerCase();
             if (!hay.includes(q)) return false;
         }
@@ -7428,10 +7560,11 @@ function renderWorkLogTable() {
     const hasFilter = (document.getElementById('wlFrom')?.value || '') ||
                       (document.getElementById('wlTo')?.value || '') ||
                       (document.getElementById('wlMemberFilter')?.value || '') ||
+                      (document.getElementById('wlCompanyFilter')?.value || '') ||
                       (document.getElementById('wlSearch')?.value || '');
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-secondary)">${
             hasFilter ? 'Tidak ada laporan yang cocok dengan filter'
                       : 'Belum ada laporan harian. Klik <strong>Tambah Laporan</strong> untuk mulai.'
         }</td></tr>`;
@@ -7451,13 +7584,17 @@ function renderWorkLogTable() {
             <td>${i + 1}</td>
             <td data-label="Tanggal" style="white-space:nowrap">${escapeHtml(w.date || '')}</td>
             <td data-label="Anggota"><strong>${escapeHtml(memberNameOf(w))}</strong></td>
+            <td data-label="Perusahaan" style="font-size:12px">${(() => {
+                const c = companyOfRecord(w);
+                return c ? escapeHtml(c) : '<span style="color:var(--text-light)">—</span>';
+            })()}</td>
             <td data-label="Jam" style="white-space:nowrap;font-variant-numeric:tabular-nums">${jam}</td>
             <td data-label="Durasi" style="white-space:nowrap">${escapeHtml(formatMinutes(workLogMinutes(w)))}</td>
             <td data-label="Unit">${unitName
                 ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(unitName)}</span>`
                 : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
-            <td data-label="Uraian" style="max-width:260px;font-size:12px" title="${escapeHtml(task)}">${escapeHtml(taskShort)}</td>
-            <td data-label="Kendala" style="max-width:200px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(issue)}">${
+            <td data-label="Uraian" style="max-width:220px;font-size:12px" title="${escapeHtml(task)}">${escapeHtml(taskShort)}</td>
+            <td data-label="Kendala" style="max-width:160px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(issue)}">${
                 issueShort ? escapeHtml(issueShort) : '<span style="color:var(--text-light)">—</span>'}</td>
             <td class="col-actions">
                 ${canEdit ? `<div class="row-actions">
@@ -7474,8 +7611,10 @@ function clearWorkLogFilter() {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });
-    const sel = document.getElementById('wlMemberFilter');
-    if (sel) sel.value = '';
+    ['wlMemberFilter', 'wlCompanyFilter'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (sel) sel.value = '';
+    });
     renderWorkLogTable();
 }
 
@@ -7543,6 +7682,7 @@ function saveWorkLog(event) {
         date,
         memberId,
         memberName: member.name,
+        company: companyOf(member),
         start, end,
         unitId: unit ? unit.id : '',
         unitName: unit ? (unit.name || '') : '',
@@ -7594,12 +7734,12 @@ function exportWorkLogCSV() {
     if (!canCsv('export')) return;
     const rows = getFilteredWorkLogs();
     if (rows.length === 0) { showToast('Tidak ada laporan untuk diexport', 'warning'); return; }
-    const headers = ['No', 'Tanggal', 'Anggota', 'Jabatan', 'Mulai', 'Selesai', 'Durasi (jam)', 'Unit', 'Serial Number', 'Uraian Pekerjaan', 'Kendala'];
+    const headers = ['No', 'Tanggal', 'Perusahaan', 'Anggota', 'Jabatan', 'Mulai', 'Selesai', 'Durasi (jam)', 'Unit', 'Serial Number', 'Uraian Pekerjaan', 'Kendala'];
     const dataRows = rows.map((w, i) => {
         const m = w.memberId ? memberById(w.memberId) : null;
         const lu = liveUnitFor(w);
         return [
-            i + 1, w.date || '', memberNameOf(w), m ? (m.jobTitle || '') : '',
+            i + 1, w.date || '', companyOfRecord(w), memberNameOf(w), m ? (m.jobTitle || '') : '',
             w.start || '', w.end || '',
             (workLogMinutes(w) / 60).toFixed(2),
             lu ? (lu.name || '') : (w.unitName || ''),

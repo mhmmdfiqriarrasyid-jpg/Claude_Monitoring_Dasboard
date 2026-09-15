@@ -831,7 +831,7 @@
                 <div class="table-card__header">
                     <div class="table-card__title"><i class="fas fa-calendar-days"></i> Jadwal Shift Mingguan</div>
                 </div>
-                <div class="table-wrapper">
+                <div class="table-wrapper shift-grid-wrapper">
                     <table class="data-table shift-grid" id="shiftTable">
                         <thead id="shiftHead"></thead>
                         <tbody id="shiftBody"></tbody>
@@ -879,6 +879,10 @@
                         <span>Sampai</span>
                         <input type="date" id="wlTo" class="form-input" onchange="renderWorkLogTable()">
                     </label>
+                    <select id="wlCompanyFilter" aria-label="Filter perusahaan" class="btn btn-secondary btn-sm"
+                            onchange="renderWorkLogTable()">
+                        <option value="">Semua Perusahaan</option>
+                    </select>
                     <select id="wlMemberFilter" aria-label="Filter anggota" class="btn btn-secondary btn-sm"
                             onchange="renderWorkLogTable()">
                         <option value="">Semua Anggota</option>
@@ -904,6 +908,7 @@
                                 <th>No</th>
                                 <th>Tanggal</th>
                                 <th>Anggota</th>
+                                <th>Perusahaan</th>
                                 <th>Jam</th>
                                 <th>Durasi</th>
                                 <th>Unit</th>
@@ -1383,12 +1388,16 @@
                 tetap bisa dijadwalkan dan dilaporkan. <strong>Nonaktifkan</strong> mengeluarkan orang
                 dari jadwal dan form laporan tanpa menghapus riwayatnya.
             </p>
+            <datalist id="companyList"></datalist>
             <ul class="categories-list" id="teamMembersList"></ul>
             <form class="category-add-form team-add-form editonly editonly--teammembers" onsubmit="addTeamMember(event)">
                 <input type="text" class="form-input" id="newMemberName" aria-label="Nama anggota baru"
                        placeholder="Nama anggota…" maxlength="60" autocomplete="off">
                 <input type="text" class="form-input" id="newMemberJob" aria-label="Jabatan anggota baru"
                        placeholder="Jabatan (opsional)…" maxlength="40" autocomplete="off">
+                <input type="text" class="form-input" id="newMemberCompany" list="companyList"
+                       aria-label="Perusahaan anggota baru"
+                       placeholder="Perusahaan…" maxlength="80" autocomplete="off">
                 <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> Tambah</button>
             </form>
         </div>
