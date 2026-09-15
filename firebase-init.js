@@ -69,6 +69,8 @@ const USERS_COL = 'users';
 const HISTORY_COL = 'history';
 const USER_CATEGORIES_COL = 'userCategories';
 const DAMAGE_COMPONENTS_COL = 'damageComponents';
+const DEVICES_COL = 'devices';
+const STOCK_ITEMS_COL = 'stockItems';
 const TEAM_MEMBERS_COL = 'teamMembers';
 const SHIFTS_COL = 'shifts';
 const WORK_LOGS_COL = 'workLogs';
@@ -415,6 +417,50 @@ window.cloud = {
             snap => callback(snap.docs.map(d => d.data())),
             err => {
                 console.error('[cloud] damageComponents subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
+    },
+
+    // ---- Warehouse: devices tracked one by one, by serial number ----
+    async saveDevice(rec) {
+        await setDoc(doc(db, DEVICES_COL, rec.id), rec, { merge: true });
+    },
+    async deleteDevice(id) {
+        await deleteDoc(doc(db, DEVICES_COL, id));
+    },
+    async getAllDevices() {
+        const snap = await getDocs(collection(db, DEVICES_COL));
+        return snap.docs.map(d => d.data());
+    },
+    subscribeDevices(callback, errorCallback) {
+        return onSnapshot(
+            collection(db, DEVICES_COL),
+            snap => callback(snap.docs.map(d => d.data())),
+            err => {
+                console.error('[cloud] devices subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
+    },
+
+    // ---- Warehouse: consumables counted by quantity (IN/OUT ledger) ----
+    async saveStockItem(rec) {
+        await setDoc(doc(db, STOCK_ITEMS_COL, rec.id), rec, { merge: true });
+    },
+    async deleteStockItem(id) {
+        await deleteDoc(doc(db, STOCK_ITEMS_COL, id));
+    },
+    async getAllStockItems() {
+        const snap = await getDocs(collection(db, STOCK_ITEMS_COL));
+        return snap.docs.map(d => d.data());
+    },
+    subscribeStockItems(callback, errorCallback) {
+        return onSnapshot(
+            query(collection(db, STOCK_ITEMS_COL), orderBy('date', 'desc')),
+            snap => callback(snap.docs.map(d => d.data())),
+            err => {
+                console.error('[cloud] stockItems subscription error:', err);
                 if (errorCallback) errorCallback(err);
             }
         );

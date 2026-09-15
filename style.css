@@ -2522,7 +2522,8 @@ body[data-ro-damage]     .editonly--damage,
 body[data-ro-license]     .editonly--license,
 body[data-ro-teamshift]   .editonly--teamshift,
 body[data-ro-teamlog]     .editonly--teamlog,
-body[data-ro-teammembers] .editonly--teammembers { display: none !important; }
+body[data-ro-teammembers] .editonly--teammembers,
+body[data-ro-warehouse]   .editonly--warehouse { display: none !important; }
 
 /* CSV export/import capability: hide buttons the user isn't allowed to use */
 body[data-nocsvexport] .csv-export { display: none !important; }
@@ -3034,4 +3035,103 @@ body[data-nocsvimport] .csv-import { display: none !important; }
 #workLogTable td[data-label="Kendala"] {
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* ============================================================
+   WAREHOUSE — device status pills, stock summary chips
+   ============================================================ */
+.wh-status {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 11px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.wh-status--warehouse { background: var(--info-bg);    color: var(--info); }
+.wh-status--installed { background: var(--success-bg); color: var(--success); }
+.wh-status--damaged   { background: var(--danger-bg);  color: var(--danger); }
+.wh-status--repair    { background: var(--warning-bg); color: var(--warning); }
+.wh-status--retired   { background: var(--bg);         color: var(--text-light); }
+
+.wh-txn {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.wh-txn--in  { background: var(--success-bg); color: var(--success); }
+.wh-txn--out { background: var(--warning-bg); color: var(--warning); }
+
+.wh-install-hint {
+    margin: 0 0 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.stock-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 16px;
+}
+.stock-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg);
+    font-size: 13px;
+}
+.stock-chip__name { color: var(--text); }
+.stock-chip__qty {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+}
+/* Running low, and gone — the two states worth noticing at a glance. */
+.stock-chip--low {
+    background: var(--warning-bg);
+    border-color: var(--warning-border);
+}
+.stock-chip--low .stock-chip__name,
+.stock-chip--low .stock-chip__qty { color: var(--warning); }
+.stock-chip--out {
+    background: var(--danger-bg);
+    border-color: var(--danger-border);
+}
+.stock-chip--out .stock-chip__name,
+.stock-chip--out .stock-chip__qty { color: var(--danger); }
+.stock-empty {
+    padding: 4px;
+    font-size: 13px;
+    font-style: italic;
+    color: var(--text-light);
+}
+
+/* Nine columns; the same treatment the daily report needed. */
+#deviceTable th,
+#deviceTable td {
+    padding-left: 8px;
+    padding-right: 8px;
+}
+#deviceTable td[data-label="Catatan"],
+#deviceTable td[data-label="Posisi"] {
+    white-space: normal;
+    overflow-wrap: break-word;
+    max-width: 140px;
+}
+/* Five device statuses, not four — otherwise the fifth drops to its own row
+   and leaves three empty cells beside it. */
+#whDevicePanel .downtime-kpis { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 900px) {
+    #whDevicePanel .downtime-kpis { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 560px) {
+    #whDevicePanel .downtime-kpis { grid-template-columns: 1fr; }
 }

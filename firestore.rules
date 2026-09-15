@@ -13,7 +13,8 @@ rules_version = '2';
 //   access : per-area override map, e.g.
 //            { editUnits:'edit', implements:'view', damage:'edit',
 //              licenseStock:'none', teamShift:'view', teamLog:'edit',
-//              teamMembers:'none', history:'view', csv:'export' }
+//              teamMembers:'none', warehouse:'edit', history:'view',
+//              csv:'export' }
 //   Missing override → role default. Only 'owner' (everything) and the legacy
 //   'team' (edit) carry defaults; staff/pbt/khl/viewer grant nothing on their
 //   own, so every area is granted explicitly in the app's Akses dialog.
@@ -53,7 +54,8 @@ service cloud.firestore {
         lvl('licenseStock') == 'edit' ||
         lvl('teamShift')    == 'edit' ||
         lvl('teamLog')      == 'edit' ||
-        lvl('teamMembers')  == 'edit'
+        lvl('teamMembers')  == 'edit' ||
+        lvl('warehouse')    == 'edit'
       );
     }
 
@@ -80,6 +82,13 @@ service cloud.firestore {
     match /teamMembers/{id} { allow read: if isActive(); allow write: if canEditArea('teamMembers'); }
     match /shifts/{id}      { allow read: if isActive(); allow write: if canEditArea('teamShift'); }
     match /workLogs/{id}    { allow read: if isActive(); allow write: if canEditArea('teamLog'); }
+
+    // ---- Warehouse ----
+    // One area covers both shapes: devices followed by serial number, and
+    // consumables counted by quantity. Reads stay open to any active user so
+    // anyone can check what is in stock before driving to the warehouse.
+    match /devices/{id}    { allow read: if isActive(); allow write: if canEditArea('warehouse'); }
+    match /stockItems/{id} { allow read: if isActive(); allow write: if canEditArea('warehouse'); }
 
     // ---- Accounts ----
     // Sign-up may only ever create a PENDING VIEWER. Without this, any signed-in

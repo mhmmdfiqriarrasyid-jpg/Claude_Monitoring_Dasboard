@@ -52,6 +52,12 @@ let cloudShiftsUnsub = null;
 let teamShifts = [];                 // [{ id:`${date}_${memberId}`, date, memberId, shift }]
 let cloudWorkLogsUnsub = null;
 let workLogs = [];                   // [{ id, date, memberId, start, end, unitId, task, issue }]
+
+// ---- Warehouse (cloud-only, same pattern as the team collections) ----
+let cloudDevicesUnsub = null;
+let warehouseDevices = [];           // serial-tracked devices
+let cloudStockUnsub = null;
+let stockLedger = [];                // IN/OUT rows for quantity-counted items
 let suppressCloudWrites = false; // true while applying a cloud snapshot — prevents loops
 let _cloudReadyFired = false;
 let _localDataLoaded = false;
@@ -70,7 +76,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v93';
+const APP_VERSION = 'v94';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -595,6 +601,8 @@ function navigateTo(view) {
     if (licenseView) licenseView.style.display = (view === 'licenseStock') ? 'block' : 'none';
     const teamView = document.getElementById('viewTeam');
     if (teamView) teamView.style.display = (view === 'team') ? 'block' : 'none';
+    const whView = document.getElementById('viewWarehouse');
+    if (whView) whView.style.display = (view === 'warehouse') ? 'block' : 'none';
     const usersView = document.getElementById('viewUsers');
     if (usersView) usersView.style.display = (view === 'users') ? 'block' : 'none';
 
@@ -644,6 +652,11 @@ function navigateTo(view) {
     if (view === 'team') {
         populateWorkLogFilters();
         renderTeamView();
+    }
+
+    if (view === 'warehouse') {
+        populateWarehouseFilters();
+        renderWarehouseView();
     }
 
     if (view === 'users') {
@@ -3704,6 +3717,16 @@ function showUnitProfile(id) {
         </div>`).join('')
         : '<div class="profile-empty">Belum ada laporan kerja untuk unit ini.</div>';
 
+    // Devices from the warehouse currently fitted to this machine.
+    const fitted = devicesForUnit(u.id);
+    const fittedHtml = fitted.length ? fitted.map(d => `
+        <div class="profile-item">
+            <span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.type || 'Perangkat')}</span>
+            <span style="font-family:monospace;font-size:12px">${escapeHtml(d.sn || '')}</span>
+            ${d.note ? `<span class="profile-item__text" title="${escapeHtml(d.note)}">${escapeHtml(d.note.slice(0, 30))}</span>` : ''}
+        </div>`).join('')
+        : '<div class="profile-empty">Tidak ada perangkat gudang terdaftar di unit ini.</div>';
+
     document.getElementById('unitProfileBody').innerHTML = `
         <div class="profile-grid">
             <div class="profile-section">
@@ -3738,6 +3761,10 @@ function showUnitProfile(id) {
             <div class="profile-section">
                 <div class="profile-section__title">Pekerjaan Tim (${work.length})</div>
                 <div class="profile-list">${workHtml}</div>
+            </div>
+            <div class="profile-section">
+                <div class="profile-section__title">Perangkat Terpasang (${fitted.length})</div>
+                <div class="profile-list">${fittedHtml}</div>
             </div>
         </div>`;
 
@@ -5716,6 +5743,24 @@ function initCloudSync() {
                 }
             );
         }
+        if (window.cloud.subscribeDevices) {
+            cloudDevicesUnsub = window.cloud.subscribeDevices(
+                applyCloudDevicesSnapshot,
+                err => {
+                    console.warn('[cloud] devices offline:', err && err.code);
+                    if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+                }
+            );
+        }
+        if (window.cloud.subscribeStockItems) {
+            cloudStockUnsub = window.cloud.subscribeStockItems(
+                applyCloudStockSnapshot,
+                err => {
+                    console.warn('[cloud] stockItems offline:', err && err.code);
+                    if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+                }
+            );
+        }
         if (window.cloud.subscribeTeamMembers) {
             cloudTeamMembersUnsub = window.cloud.subscribeTeamMembers(
                 applyCloudTeamMembersSnapshot,
@@ -5849,6 +5894,10 @@ function tearDownCloudSync() {
     if (cloudHistoryUnsub) { try { cloudHistoryUnsub(); } catch (_) {} cloudHistoryUnsub = null; }
     if (cloudUserCategoriesUnsub) { try { cloudUserCategoriesUnsub(); } catch (_) {} cloudUserCategoriesUnsub = null; }
     if (cloudDamageComponentsUnsub) { try { cloudDamageComponentsUnsub(); } catch (_) {} cloudDamageComponentsUnsub = null; }
+    if (cloudDevicesUnsub) { try { cloudDevicesUnsub(); } catch (_) {} cloudDevicesUnsub = null; }
+    if (cloudStockUnsub) { try { cloudStockUnsub(); } catch (_) {} cloudStockUnsub = null; }
+    warehouseDevices = [];
+    stockLedger = [];
     if (cloudTeamMembersUnsub) { try { cloudTeamMembersUnsub(); } catch (_) {} cloudTeamMembersUnsub = null; }
     if (cloudShiftsUnsub) { try { cloudShiftsUnsub(); } catch (_) {} cloudShiftsUnsub = null; }
     if (cloudWorkLogsUnsub) { try { cloudWorkLogsUnsub(); } catch (_) {} cloudWorkLogsUnsub = null; }
@@ -6201,6 +6250,7 @@ const ACCESS_AREAS = [
     { key: 'teamShift',    label: 'Jadwal Shift',   levels: ['none', 'view', 'edit'] },
     { key: 'teamLog',      label: 'Laporan Harian', levels: ['none', 'view', 'edit'] },
     { key: 'teamMembers',  label: 'Daftar Anggota', levels: ['none', 'view', 'edit'] },
+    { key: 'warehouse',    label: 'Gudang',         levels: ['none', 'view', 'edit'] },
     { key: 'history',      label: 'History',        levels: ['none', 'view'] }
 ];
 
@@ -6213,7 +6263,8 @@ const VIEW_AREAS = {
     implements:   ['implements'],
     damage:       ['damage'],
     licenseStock: ['licenseStock'],
-    team:         ['teamShift', 'teamLog', 'teamMembers']
+    team:         ['teamShift', 'teamLog', 'teamMembers'],
+    warehouse:    ['warehouse']
 };
 const GATED_VIEWS = Object.keys(VIEW_AREAS);
 // Every area that holds data (i.e. everything except the read-only audit log).
@@ -6222,7 +6273,7 @@ const DATA_AREAS = ACCESS_AREAS.filter(a => a.key !== 'history').map(a => a.key)
 const RO_FLAGS = {
     editUnits: 'roEditunits', implements: 'roImplements', damage: 'roDamage',
     licenseStock: 'roLicense', teamShift: 'roTeamshift', teamLog: 'roTeamlog',
-    teamMembers: 'roTeammembers'
+    teamMembers: 'roTeammembers', warehouse: 'roWarehouse'
 };
 const _LVL_RANK = { none: 0, view: 1, edit: 2 };
 
@@ -8098,6 +8149,649 @@ function workLogsForUnit(unitId, sn) {
     return workLogs.filter(w => workLogUnits(w).some(u =>
         (unitId && u.id === unitId) || (snLc && (u.sn || '').toLowerCase() === snLc)
     ));
+}
+
+// ============================================================
+// WAREHOUSE — serial-tracked devices + quantity-counted stock
+// ------------------------------------------------------------
+// Two shapes, because the fleet needs both. A GPS receiver is worth
+// following one by one: which serial number, and where it is right now.
+// A box of filters is not — only how many are left matters.
+//
+// Both collections are cloud-only, like the team ones, and both sit behind
+// the single 'warehouse' access area.
+// ============================================================
+
+const DEVICE_STATUSES = [
+    { key: 'warehouse', label: 'Di Gudang',  tone: 'info' },
+    { key: 'installed', label: 'Terpasang',  tone: 'success' },
+    { key: 'damaged',   label: 'Rusak',      tone: 'danger' },
+    { key: 'repair',    label: 'Perbaikan',  tone: 'warning' },
+    { key: 'retired',   label: 'Afkir',      tone: 'muted' }
+];
+const DEVICE_STATUS_LABEL = DEVICE_STATUSES.reduce((m, s) => { m[s.key] = s.label; return m; }, {});
+const DEFAULT_DEVICE_TYPES = ['GPS / StarFire', 'Display', 'Steering Sensor', 'JDLink', 'Weather Station'];
+const STOCK_LOW_THRESHOLD = 5;   // "sisa" at or below this is flagged
+
+let warehouseTab = 'devices';    // 'devices' | 'stock'
+
+function generateDeviceId() {
+    return 'dev_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+}
+function generateStockId() {
+    return 'stk_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+}
+
+// ---- Suggestion lists, gathered from what is already in use ----
+function _mergeSuggestions(defaults, values) {
+    const seen = new Map();
+    (defaults || []).forEach(v => seen.set(v.toLowerCase(), v));
+    (values || []).forEach(raw => {
+        const v = (raw || '').trim();
+        if (v && !seen.has(v.toLowerCase())) seen.set(v.toLowerCase(), v);
+    });
+    return [...seen.values()].sort((a, b) => a.localeCompare(b));
+}
+function allDeviceTypes() {
+    return _mergeSuggestions(DEFAULT_DEVICE_TYPES, warehouseDevices.map(d => d.type));
+}
+function allWarehouseLocations() {
+    return _mergeSuggestions([], [
+        ...warehouseDevices.map(d => d.location),
+        ...stockLedger.map(r => r.location)
+    ]);
+}
+function allStockItemNames() {
+    return _mergeSuggestions([], stockLedger.map(r => r.itemName));
+}
+
+// ---- Cloud snapshots ----
+function applyCloudDevicesSnapshot(list) {
+    warehouseDevices = (list || []).slice().sort((a, b) =>
+        (a.type || '').localeCompare(b.type || '') || (a.sn || '').localeCompare(b.sn || ''));
+    if (currentView === 'warehouse') { populateWarehouseFilters(); renderWarehouseView(); }
+}
+
+function applyCloudStockSnapshot(list) {
+    stockLedger = (list || []).slice().sort((a, b) =>
+        String(b.date || '').localeCompare(String(a.date || '')) ||
+        ((b.createdAt || 0) - (a.createdAt || 0)));
+    if (currentView === 'warehouse') { populateWarehouseFilters(); renderWarehouseView(); }
+}
+
+function showWarehouseRulesBanner() {
+    const slot = document.querySelector('.warehouse-rules-slot');
+    if (!slot || slot.querySelector('.category-rules-banner')) return;
+    const banner = document.createElement('div');
+    banner.className = 'category-rules-banner';
+    banner.innerHTML = `
+        <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules memblokir data Gudang.</strong>
+        <p>Rules proyek Anda belum mengizinkan akses ke koleksi <code>devices</code> dan
+        <code>stockItems</code>. Publish ulang file <code>firestore.rules</code> dari repo ini di
+        <em>Firebase Console → Firestore → Rules</em>, lalu muat ulang halaman.</p>`;
+    slot.appendChild(banner);
+}
+
+// ---- View shell ----
+function switchWarehouseTab(tab) {
+    warehouseTab = (tab === 'stock') ? 'stock' : 'devices';
+    renderWarehouseView();
+}
+
+function renderWarehouseView() {
+    document.querySelectorAll('.wh-tab').forEach(btn => {
+        const on = btn.dataset.tab === warehouseTab;
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    const devPanel = document.getElementById('whDevicePanel');
+    const stkPanel = document.getElementById('whStockPanel');
+    if (devPanel) devPanel.style.display = (warehouseTab === 'devices') ? '' : 'none';
+    if (stkPanel) stkPanel.style.display = (warehouseTab === 'stock') ? '' : 'none';
+
+    if (warehouseTab === 'devices') renderDeviceTable();
+    else renderStockView();
+}
+
+function populateWarehouseFilters() {
+    const fill = (id, values, allLabel) => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        const keep = sel.value;
+        sel.innerHTML = `<option value="">${escapeHtml(allLabel)}</option>` +
+            values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+        if (keep && sel.querySelector(`option[value="${CSS.escape(keep)}"]`)) sel.value = keep;
+    };
+    fill('devTypeFilter', allDeviceTypes(), 'Semua Jenis');
+    fill('devLocationFilter', allWarehouseLocations(), 'Semua Lokasi');
+    fill('stkLocationFilter', allWarehouseLocations(), 'Semua Lokasi');
+    fill('stkItemFilter', allStockItemNames(), 'Semua Barang');
+
+    const dl = (id, values) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = values.map(v => `<option value="${escapeHtml(v)}"></option>`).join('');
+    };
+    dl('deviceTypeList', allDeviceTypes());
+    dl('warehouseLocationList', allWarehouseLocations());
+    dl('stockItemList', allStockItemNames());
+
+    const unitOpts = [...globalData]
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+        .map(u => `<option value="${escapeHtml(damageUnitLabel(u))}"></option>`).join('');
+    dl('devUnitList', []);
+    const du = document.getElementById('devUnitList');
+    if (du) du.innerHTML = unitOpts;
+    const su = document.getElementById('stkUnitList');
+    if (su) su.innerHTML = unitOpts;
+}
+
+// ============================================================
+// DEVICES (serial-tracked)
+// ============================================================
+
+// Where a device physically is, in one readable phrase.
+function deviceWhere(d) {
+    if (!d) return '—';
+    if (d.status === 'installed') {
+        if (d.unitId) {
+            const live = globalData.find(u => u.id === d.unitId);
+            return live ? (live.name || d.unitName || '—') : (d.unitName || '—');
+        }
+        return d.siteName || 'Terpasang (lokasi belum diisi)';
+    }
+    return d.location || '—';
+}
+
+// X/Y are free text so UTM easting/northing works as well as decimal
+// degrees. Only when both look like real lat/long is a map link offered —
+// UTM values fall outside these ranges, so they never produce a wrong pin.
+function deviceMapLink(d) {
+    const x = parseFloat(d && d.posX), y = parseFloat(d && d.posY);
+    if (!isFinite(x) || !isFinite(y)) return '';
+    if (Math.abs(y) > 90 || Math.abs(x) > 180) return '';
+    if (x === 0 && y === 0) return '';
+    return `https://www.google.com/maps?q=${y},${x}`;
+}
+
+function getFilteredDevices() {
+    const status = document.getElementById('devStatusFilter')?.value || '';
+    const type = document.getElementById('devTypeFilter')?.value || '';
+    const loc = document.getElementById('devLocationFilter')?.value || '';
+    const q = (document.getElementById('devSearch')?.value || '').toLowerCase().trim();
+    return warehouseDevices.filter(d => {
+        if (status && d.status !== status) return false;
+        if (type && d.type !== type) return false;
+        if (loc && (d.location || '') !== loc) return false;
+        if (q) {
+            const hay = [d.sn, d.type, d.brand, d.model, d.location, d.siteName,
+                         deviceWhere(d), d.note].join(' ').toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
+}
+
+function renderDeviceTable() {
+    const rows = getFilteredDevices();
+    const tbody = document.getElementById('deviceBody');
+    if (!tbody) return;
+
+    // KPI strip counts the whole warehouse, not the filtered slice — it is a
+    // standing summary, not a reflection of the filters.
+    const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    DEVICE_STATUSES.forEach(s => {
+        setText('devKpi_' + s.key, warehouseDevices.filter(d => d.status === s.key).length);
+    });
+    setText('deviceCount', `${rows.length} perangkat`);
+
+    const canEdit = hasAccess('warehouse', 'edit');
+    const hasFilter = (document.getElementById('devStatusFilter')?.value || '') ||
+                      (document.getElementById('devTypeFilter')?.value || '') ||
+                      (document.getElementById('devLocationFilter')?.value || '') ||
+                      (document.getElementById('devSearch')?.value || '');
+
+    if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+            hasFilter ? 'Tidak ada perangkat yang cocok dengan filter'
+                      : 'Belum ada perangkat. Klik <strong>Tambah Perangkat</strong> untuk mulai.'
+        }</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = rows.map((d, i) => {
+        const st = DEVICE_STATUSES.find(s => s.key === d.status) || DEVICE_STATUSES[0];
+        const map = deviceMapLink(d);
+        const pos = (d.posX || d.posY)
+            ? `${escapeHtml(d.posX || '—')}, ${escapeHtml(d.posY || '—')}${
+                map ? ` <a href="${map}" target="_blank" rel="noopener" title="Buka di peta"><i class="fas fa-map-location-dot"></i></a>` : ''}`
+            : '<span style="color:var(--text-light)">—</span>';
+        return `
+        <tr>
+            <td>${i + 1}</td>
+            <td data-label="Serial Number" style="font-family:monospace;font-size:12px">${escapeHtml(d.sn || '')}</td>
+            <td data-label="Jenis">${d.type ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.type)}</span>` : '<span style="color:var(--text-light)">—</span>'}</td>
+            <td data-label="Merek / Model" style="font-size:12px">${escapeHtml([d.brand, d.model].filter(Boolean).join(' ')) || '<span style="color:var(--text-light)">—</span>'}</td>
+            <td data-label="Status"><span class="wh-status wh-status--${st.key}">${escapeHtml(st.label)}</span></td>
+            <td data-label="Posisi" style="font-size:12px">${escapeHtml(deviceWhere(d))}</td>
+            <td data-label="Koordinat" style="font-size:12px;white-space:nowrap">${pos}</td>
+            <td data-label="Catatan" style="max-width:130px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(d.note || '')}">${
+                d.note ? escapeHtml(d.note) : '<span style="color:var(--text-light)">—</span>'}</td>
+            <td class="col-actions">
+                ${canEdit ? `<div class="row-actions">
+                    <button class="btn btn-secondary" title="Edit" aria-label="Edit perangkat" onclick="editDevice('${escapeHtml(d.id)}')"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Hapus" aria-label="Hapus perangkat" onclick="deleteDevice('${escapeHtml(d.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                </div>` : ''}
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function clearDeviceFilter() {
+    ['devStatusFilter', 'devTypeFilter', 'devLocationFilter'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.value = '';
+    });
+    const s = document.getElementById('devSearch'); if (s) s.value = '';
+    renderDeviceTable();
+}
+
+// Which fields the form shows depends on the status: a device in the
+// warehouse needs a shelf, an installed one needs a unit or a map position.
+function onDeviceStatusChange() {
+    const status = document.getElementById('devStatus').value;
+    const installed = status === 'installed';
+    const locGroup = document.getElementById('devLocationGroup');
+    const instGroup = document.getElementById('devInstallGroup');
+    if (locGroup) locGroup.style.display = installed ? 'none' : '';
+    if (instGroup) instGroup.style.display = installed ? '' : 'none';
+}
+
+function showAddDeviceForm() {
+    if (!requireEdit('warehouse')) return;
+    document.getElementById('deviceModalTitle').textContent = 'Tambah Perangkat';
+    document.getElementById('editDeviceId').value = '';
+    document.getElementById('deviceForm').reset();
+    document.getElementById('devStatus').value = 'warehouse';
+    populateWarehouseFilters();
+    onDeviceStatusChange();
+    document.getElementById('deviceModal').classList.add('open');
+}
+
+function editDevice(id) {
+    if (!requireEdit('warehouse')) return;
+    const d = warehouseDevices.find(x => x.id === id);
+    if (!d) return;
+    document.getElementById('deviceModalTitle').textContent = 'Edit Perangkat';
+    document.getElementById('editDeviceId').value = d.id;
+    populateWarehouseFilters();
+    document.getElementById('devSn').value = d.sn || '';
+    document.getElementById('devType').value = d.type || '';
+    document.getElementById('devBrand').value = d.brand || '';
+    document.getElementById('devModel').value = d.model || '';
+    document.getElementById('devStatus').value = d.status || 'warehouse';
+    document.getElementById('devLocation').value = d.location || '';
+    const live = d.unitId ? globalData.find(u => u.id === d.unitId) : null;
+    document.getElementById('devUnit').value = live ? damageUnitLabel(live) : (d.unitName || '');
+    document.getElementById('devSite').value = d.siteName || '';
+    document.getElementById('devPosX').value = d.posX || '';
+    document.getElementById('devPosY').value = d.posY || '';
+    document.getElementById('devNote').value = d.note || '';
+    onDeviceStatusChange();
+    document.getElementById('deviceModal').classList.add('open');
+}
+
+function closeDeviceModal() {
+    document.getElementById('deviceModal').classList.remove('open');
+}
+
+function saveDevice(event) {
+    event.preventDefault();
+    if (!requireEdit('warehouse')) return;
+
+    const id = document.getElementById('editDeviceId').value;
+    const sn = (document.getElementById('devSn').value || '').trim();
+    if (!sn) { showToast('Serial number tidak boleh kosong', 'warning'); return; }
+    // The serial number is the identity here, so a duplicate would make
+    // "where is this device" unanswerable.
+    const clash = warehouseDevices.find(d =>
+        d.id !== id && (d.sn || '').toLowerCase() === sn.toLowerCase());
+    if (clash) { showToast(`SN "${sn}" sudah terdaftar`, 'warning'); return; }
+
+    const status = document.getElementById('devStatus').value || 'warehouse';
+    const installed = status === 'installed';
+
+    let unit = null;
+    const unitRaw = (document.getElementById('devUnit').value || '').trim();
+    if (installed && unitRaw) {
+        unit = resolveDamageUnit(unitRaw);
+        if (!unit) {
+            showToast(`Unit "${unitRaw}" tidak ditemukan — pilih dari daftar`, 'warning');
+            return;
+        }
+    }
+    const siteName = installed ? (document.getElementById('devSite').value || '').trim() : '';
+    if (installed && !unit && !siteName) {
+        showToast('Perangkat terpasang: isi unit atau nama lokasi pemasangan', 'warning');
+        return;
+    }
+
+    const existing = id ? warehouseDevices.find(d => d.id === id) : null;
+    const rec = {
+        id: id || generateDeviceId(),
+        sn,
+        type: (document.getElementById('devType').value || '').trim(),
+        brand: (document.getElementById('devBrand').value || '').trim(),
+        model: (document.getElementById('devModel').value || '').trim(),
+        status,
+        location: installed ? '' : (document.getElementById('devLocation').value || '').trim(),
+        unitId: unit ? unit.id : '',
+        unitName: unit ? (unit.name || '') : '',
+        siteName,
+        posX: installed ? (document.getElementById('devPosX').value || '').trim() : '',
+        posY: installed ? (document.getElementById('devPosY').value || '').trim() : '',
+        note: (document.getElementById('devNote').value || '').trim(),
+        createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),
+        updatedAt: Date.now()
+    };
+
+    window.cloud.saveDevice(rec).then(() => {
+        logEvent({
+            action: existing ? 'update' : 'create',
+            unitId: rec.unitId,
+            unitName: `[Gudang] ${rec.type || 'Perangkat'} ${rec.sn}`,
+            field: 'Perangkat',
+            before: existing ? `${DEVICE_STATUS_LABEL[existing.status] || existing.status} · ${deviceWhere(existing)}` : '',
+            after: `${DEVICE_STATUS_LABEL[rec.status] || rec.status} · ${deviceWhere(rec)}`
+        });
+        showToast(existing ? 'Perangkat diperbarui' : 'Perangkat ditambahkan', 'success');
+    }).catch(err => {
+        console.error('[warehouse] device save failed:', err);
+        if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+        showToast('Gagal menyimpan perangkat', 'error');
+    });
+
+    closeDeviceModal();
+}
+
+function deleteDevice(id) {
+    if (!requireEdit('warehouse')) return;
+    const d = warehouseDevices.find(x => x.id === id);
+    if (!d) return;
+    if (!confirm(`Hapus perangkat ${d.type || ''} SN ${d.sn}?\n\nRiwayatnya di audit log tetap tersimpan.`)) return;
+    window.cloud.deleteDevice(id).then(() => {
+        logEvent({
+            action: 'delete',
+            unitName: `[Gudang] ${d.type || 'Perangkat'} ${d.sn}`,
+            field: 'Perangkat',
+            before: `${DEVICE_STATUS_LABEL[d.status] || d.status} · ${deviceWhere(d)}`,
+            after: ''
+        });
+        showToast('Perangkat dihapus', 'success');
+    }).catch(err => {
+        console.error('[warehouse] device delete failed:', err);
+        showToast('Gagal menghapus perangkat', 'error');
+    });
+}
+
+function exportDeviceCSV() {
+    if (!canCsv('export')) return;
+    const rows = getFilteredDevices();
+    if (rows.length === 0) { showToast('Tidak ada perangkat untuk diexport', 'warning'); return; }
+    const headers = ['No', 'Serial Number', 'Jenis', 'Merek', 'Model', 'Status',
+                     'Lokasi Gudang', 'Terpasang di Unit', 'Lokasi Pemasangan', 'Posisi X', 'Posisi Y', 'Catatan'];
+    const dataRows = rows.map((d, i) => [
+        i + 1, d.sn || '', d.type || '', d.brand || '', d.model || '',
+        DEVICE_STATUS_LABEL[d.status] || d.status || '',
+        d.location || '',
+        d.unitId ? deviceWhere(d) : '',
+        d.siteName || '', d.posX || '', d.posY || '', d.note || ''
+    ]);
+    const csv = toCSV(headers, dataRows);
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `perangkat_gudang_${toISODate()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Export ${rows.length} perangkat ke CSV`, 'success');
+}
+
+// Devices fitted to one tractor — surfaced on the unit profile.
+function devicesForUnit(unitId) {
+    if (!unitId) return [];
+    return warehouseDevices.filter(d => d.status === 'installed' && d.unitId === unitId);
+}
+
+// ============================================================
+// STOCK (counted by quantity)
+// ============================================================
+
+// Remaining per item, optionally within one location. IN adds, OUT removes.
+function stockSummary(location) {
+    const totals = new Map();
+    stockLedger.forEach(r => {
+        if (location && (r.location || '') !== location) return;
+        const name = (r.itemName || '').trim();
+        if (!name) return;
+        const key = name.toLowerCase();
+        const qty = (Number(r.qty) || 0) * (r.txnType === 'OUT' ? -1 : 1);
+        const cur = totals.get(key) || { name, qty: 0 };
+        cur.qty += qty;
+        totals.set(key, cur);
+    });
+    return [...totals.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function getFilteredStock() {
+    const from = (document.getElementById('stkFrom')?.value || '').trim();
+    const to = (document.getElementById('stkTo')?.value || '').trim();
+    const item = document.getElementById('stkItemFilter')?.value || '';
+    const loc = document.getElementById('stkLocationFilter')?.value || '';
+    const type = document.getElementById('stkTypeFilter')?.value || '';
+    const q = (document.getElementById('stkSearch')?.value || '').toLowerCase().trim();
+    return stockLedger.filter(r => {
+        if (from && String(r.date || '') < from) return false;
+        if (to && String(r.date || '') > to) return false;
+        if (item && (r.itemName || '') !== item) return false;
+        if (loc && (r.location || '') !== loc) return false;
+        if (type && r.txnType !== type) return false;
+        if (q) {
+            const hay = [r.itemName, r.location, r.unitName, r.note].join(' ').toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
+}
+
+function renderStockView() {
+    const loc = document.getElementById('stkLocationFilter')?.value || '';
+    const summary = stockSummary(loc);
+    const sumEl = document.getElementById('stockSummary');
+    if (sumEl) {
+        sumEl.innerHTML = summary.length
+            ? summary.map(s => `
+                <div class="stock-chip${s.qty <= 0 ? ' stock-chip--out' : (s.qty <= STOCK_LOW_THRESHOLD ? ' stock-chip--low' : '')}">
+                    <span class="stock-chip__name">${escapeHtml(s.name)}</span>
+                    <span class="stock-chip__qty">${s.qty}</span>
+                </div>`).join('')
+            : '<div class="stock-empty">Belum ada barang tercatat.</div>';
+    }
+
+    const rows = getFilteredStock();
+    const tbody = document.getElementById('stockBody');
+    if (!tbody) return;
+    const countEl = document.getElementById('stockCount');
+    if (countEl) countEl.textContent = `${rows.length} transaksi`;
+
+    const canEdit = hasAccess('warehouse', 'edit');
+    if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-secondary)">
+            Belum ada transaksi stok. Klik <strong>Catat Masuk/Keluar</strong> untuk mulai.
+        </td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = rows.map((r, i) => `
+        <tr>
+            <td>${i + 1}</td>
+            <td data-label="Tanggal" style="white-space:nowrap">${escapeHtml(r.date || '')}</td>
+            <td data-label="Jenis"><span class="wh-txn wh-txn--${r.txnType === 'OUT' ? 'out' : 'in'}">${r.txnType === 'OUT' ? 'Keluar' : 'Masuk'}</span></td>
+            <td data-label="Barang"><strong>${escapeHtml(r.itemName || '')}</strong></td>
+            <td data-label="Jumlah" style="white-space:nowrap">${Number(r.qty) || 0}</td>
+            <td data-label="Lokasi" style="font-size:12px">${escapeHtml(r.location || '') || '<span style="color:var(--text-light)">—</span>'}</td>
+            <td data-label="Untuk Unit" style="font-size:12px">${escapeHtml(r.unitName || '') || '<span style="color:var(--text-light)">—</span>'}</td>
+            <td class="col-actions">
+                ${canEdit ? `<div class="row-actions">
+                    <button class="btn btn-secondary" title="Edit" aria-label="Edit transaksi" onclick="editStockItem('${escapeHtml(r.id)}')"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Hapus" aria-label="Hapus transaksi" onclick="deleteStockItem('${escapeHtml(r.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                </div>` : ''}
+            </td>
+        </tr>`).join('');
+}
+
+function clearStockFilter() {
+    ['stkFrom', 'stkTo', 'stkSearch'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.value = '';
+    });
+    ['stkItemFilter', 'stkLocationFilter', 'stkTypeFilter'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.value = '';
+    });
+    renderStockView();
+}
+
+function onStockTxnChange() {
+    const isOut = document.getElementById('stkTxnType').value === 'OUT';
+    const g = document.getElementById('stkUnitGroup');
+    if (g) g.style.display = isOut ? '' : 'none';
+}
+
+function showAddStockForm() {
+    if (!requireEdit('warehouse')) return;
+    document.getElementById('stockModalTitle').textContent = 'Catat Stok Masuk/Keluar';
+    document.getElementById('editStockId').value = '';
+    document.getElementById('stockForm').reset();
+    populateWarehouseFilters();
+    document.getElementById('stkDate').value = toISODate();
+    document.getElementById('stkTxnType').value = 'IN';
+    onStockTxnChange();
+    document.getElementById('stockModal').classList.add('open');
+}
+
+function editStockItem(id) {
+    if (!requireEdit('warehouse')) return;
+    const r = stockLedger.find(x => x.id === id);
+    if (!r) return;
+    document.getElementById('stockModalTitle').textContent = 'Edit Transaksi Stok';
+    document.getElementById('editStockId').value = r.id;
+    populateWarehouseFilters();
+    document.getElementById('stkDate').value = r.date || '';
+    document.getElementById('stkTxnType').value = r.txnType || 'IN';
+    document.getElementById('stkItem').value = r.itemName || '';
+    document.getElementById('stkQty').value = Number(r.qty) || 1;
+    document.getElementById('stkLocation').value = r.location || '';
+    const live = r.unitId ? globalData.find(u => u.id === r.unitId) : null;
+    document.getElementById('stkUnit').value = live ? damageUnitLabel(live) : (r.unitName || '');
+    document.getElementById('stkNote').value = r.note || '';
+    onStockTxnChange();
+    document.getElementById('stockModal').classList.add('open');
+}
+
+function closeStockModal() {
+    document.getElementById('stockModal').classList.remove('open');
+}
+
+function saveStockItem(event) {
+    event.preventDefault();
+    if (!requireEdit('warehouse')) return;
+
+    const id = document.getElementById('editStockId').value;
+    const itemName = (document.getElementById('stkItem').value || '').trim();
+    if (!itemName) { showToast('Isi nama barang', 'warning'); return; }
+    const qty = Math.max(1, parseInt(document.getElementById('stkQty').value, 10) || 1);
+    const txnType = document.getElementById('stkTxnType').value === 'OUT' ? 'OUT' : 'IN';
+
+    let unit = null;
+    const unitRaw = (document.getElementById('stkUnit').value || '').trim();
+    if (txnType === 'OUT' && unitRaw) {
+        unit = resolveDamageUnit(unitRaw);
+        if (!unit) {
+            showToast(`Unit "${unitRaw}" tidak ditemukan — kosongkan atau pilih dari daftar`, 'warning');
+            return;
+        }
+    }
+
+    const existing = id ? stockLedger.find(r => r.id === id) : null;
+    const rec = {
+        id: id || generateStockId(),
+        date: document.getElementById('stkDate').value,
+        txnType,
+        itemName,
+        qty,
+        location: (document.getElementById('stkLocation').value || '').trim(),
+        unitId: unit ? unit.id : '',
+        unitName: unit ? (unit.name || '') : '',
+        note: (document.getElementById('stkNote').value || '').trim(),
+        createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),
+        updatedAt: Date.now()
+    };
+
+    window.cloud.saveStockItem(rec).then(() => {
+        logEvent({
+            action: existing ? 'update' : 'create',
+            unitId: rec.unitId,
+            unitName: `[Gudang] ${rec.itemName}`,
+            field: txnType === 'OUT' ? 'Stok keluar' : 'Stok masuk',
+            before: existing ? `${existing.txnType} ${existing.qty}` : '',
+            after: `${txnType} ${qty}${rec.location ? ' @ ' + rec.location : ''}`
+        });
+        showToast(existing ? 'Transaksi diperbarui' : 'Transaksi dicatat', 'success');
+    }).catch(err => {
+        console.error('[warehouse] stock save failed:', err);
+        if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+        showToast('Gagal menyimpan transaksi', 'error');
+    });
+
+    closeStockModal();
+}
+
+function deleteStockItem(id) {
+    if (!requireEdit('warehouse')) return;
+    const r = stockLedger.find(x => x.id === id);
+    if (!r) return;
+    if (!confirm(`Hapus transaksi ${r.txnType === 'OUT' ? 'keluar' : 'masuk'} ${r.qty} ${r.itemName} (${r.date})?`)) return;
+    window.cloud.deleteStockItem(id).then(() => {
+        logEvent({
+            action: 'delete',
+            unitName: `[Gudang] ${r.itemName}`,
+            field: 'Transaksi stok',
+            before: `${r.txnType} ${r.qty}`,
+            after: ''
+        });
+        showToast('Transaksi dihapus', 'success');
+    }).catch(err => {
+        console.error('[warehouse] stock delete failed:', err);
+        showToast('Gagal menghapus transaksi', 'error');
+    });
+}
+
+function exportStockCSV() {
+    if (!canCsv('export')) return;
+    const rows = getFilteredStock();
+    if (rows.length === 0) { showToast('Tidak ada transaksi untuk diexport', 'warning'); return; }
+    const headers = ['No', 'Tanggal', 'Jenis', 'Barang', 'Jumlah', 'Lokasi', 'Untuk Unit', 'Catatan'];
+    const dataRows = rows.map((r, i) => [
+        i + 1, r.date || '', r.txnType === 'OUT' ? 'Keluar' : 'Masuk',
+        r.itemName || '', Number(r.qty) || 0, r.location || '', r.unitName || '', r.note || ''
+    ]);
+    const csv = toCSV(headers, dataRows);
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `stok_gudang_${toISODate()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Export ${rows.length} transaksi ke CSV`, 'success');
 }
 
 if (window.cloudReady) {

@@ -152,6 +152,12 @@
                 <i class="fas fa-clock-rotate-left"></i> History
             </a>
         </div>
+        <div class="nav-group">
+            <div class="nav-group__label">Warehouse</div>
+            <a class="nav__link" data-view="warehouse" onclick="navigateTo('warehouse')">
+                <i class="fas fa-warehouse"></i> Gudang
+            </a>
+        </div>
         <div class="nav-group" data-owner-only style="display:none">
             <div class="nav-group__label">Admin</div>
             <a class="nav__link" data-view="users" onclick="navigateTo('users')">
@@ -926,6 +932,185 @@
 
     </div><!-- /viewTeam -->
 
+    <!-- ==================== WAREHOUSE VIEW ==================== -->
+    <div id="viewWarehouse" class="view" style="display:none;">
+
+        <div class="warehouse-rules-slot"></div>
+
+        <div class="team-tabbar">
+            <div class="team-tabs" role="tablist" aria-label="Bagian gudang">
+                <button class="team-tab wh-tab active" data-tab="devices" role="tab" aria-selected="true"
+                        aria-controls="whDevicePanel" onclick="switchWarehouseTab('devices')">
+                    <i class="fas fa-microchip"></i> Perangkat
+                </button>
+                <button class="team-tab wh-tab" data-tab="stock" role="tab" aria-selected="false"
+                        aria-controls="whStockPanel" onclick="switchWarehouseTab('stock')">
+                    <i class="fas fa-boxes-stacked"></i> Stok Barang
+                </button>
+            </div>
+        </div>
+
+        <!-- ---------- Devices, tracked by serial number ---------- -->
+        <div id="whDevicePanel" role="tabpanel" aria-label="Perangkat">
+            <div class="downtime-kpis" style="margin-bottom:16px">
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Di Gudang</div>
+                    <div class="downtime-kpi__value" id="devKpi_warehouse">0</div>
+                    <div class="downtime-kpi__sub">Siap dipasang</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Terpasang</div>
+                    <div class="downtime-kpi__value" id="devKpi_installed">0</div>
+                    <div class="downtime-kpi__sub">Di unit atau di lapangan</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Rusak</div>
+                    <div class="downtime-kpi__value" id="devKpi_damaged">0</div>
+                    <div class="downtime-kpi__sub">Belum ditangani</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Perbaikan</div>
+                    <div class="downtime-kpi__value" id="devKpi_repair">0</div>
+                    <div class="downtime-kpi__sub">Sedang diperbaiki</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Afkir</div>
+                    <div class="downtime-kpi__value" id="devKpi_retired">0</div>
+                    <div class="downtime-kpi__sub">Tidak dipakai lagi</div>
+                </div>
+            </div>
+
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <button class="btn btn-success editonly editonly--warehouse" onclick="showAddDeviceForm()">
+                        <i class="fas fa-plus"></i> Tambah Perangkat
+                    </button>
+                    <button class="btn btn-secondary csv-export" onclick="exportDeviceCSV()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+                <div class="edit-toolbar__right">
+                    <select id="devStatusFilter" aria-label="Filter status perangkat" class="btn btn-secondary btn-sm" onchange="renderDeviceTable()">
+                        <option value="">Semua Status</option>
+                        <option value="warehouse">Di Gudang</option>
+                        <option value="installed">Terpasang</option>
+                        <option value="damaged">Rusak</option>
+                        <option value="repair">Perbaikan</option>
+                        <option value="retired">Afkir</option>
+                    </select>
+                    <select id="devTypeFilter" aria-label="Filter jenis perangkat" class="btn btn-secondary btn-sm" onchange="renderDeviceTable()">
+                        <option value="">Semua Jenis</option>
+                    </select>
+                    <select id="devLocationFilter" aria-label="Filter lokasi gudang" class="btn btn-secondary btn-sm" onchange="renderDeviceTable()">
+                        <option value="">Semua Lokasi</option>
+                    </select>
+                    <div class="edit-search">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="devSearch" aria-label="Cari perangkat" placeholder="Cari SN / jenis..." oninput="renderDeviceTable()">
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onclick="clearDeviceFilter()">Reset</button>
+                    <span id="deviceCount">0 perangkat</span>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-microchip"></i> Daftar Perangkat</div>
+                </div>
+                <div class="table-wrapper" style="max-height:600px;">
+                    <table class="data-table table--cardable" id="deviceTable">
+                        <thead>
+                            <tr>
+                                <th>No</th>
+                                <th>Serial Number</th>
+                                <th>Jenis</th>
+                                <th>Merek / Model</th>
+                                <th>Status</th>
+                                <th>Posisi</th>
+                                <th>Koordinat</th>
+                                <th>Catatan</th>
+                                <th class="col-actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="deviceBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ---------- Stock counted by quantity ---------- -->
+        <div id="whStockPanel" role="tabpanel" aria-label="Stok Barang" style="display:none">
+            <div class="table-card" style="margin-bottom:16px">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-layer-group"></i> Sisa Stok</div>
+                </div>
+                <div class="stock-summary" id="stockSummary"></div>
+            </div>
+
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <button class="btn btn-success editonly editonly--warehouse" onclick="showAddStockForm()">
+                        <i class="fas fa-plus"></i> Catat Masuk/Keluar
+                    </button>
+                    <button class="btn btn-secondary csv-export" onclick="exportStockCSV()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+                <div class="edit-toolbar__right">
+                    <label class="wl-filter-date">
+                        <span>Dari</span>
+                        <input type="date" id="stkFrom" class="form-input" onchange="renderStockView()">
+                    </label>
+                    <label class="wl-filter-date">
+                        <span>Sampai</span>
+                        <input type="date" id="stkTo" class="form-input" onchange="renderStockView()">
+                    </label>
+                    <select id="stkTypeFilter" aria-label="Filter jenis transaksi" class="btn btn-secondary btn-sm" onchange="renderStockView()">
+                        <option value="">Masuk &amp; Keluar</option>
+                        <option value="IN">Masuk saja</option>
+                        <option value="OUT">Keluar saja</option>
+                    </select>
+                    <select id="stkItemFilter" aria-label="Filter barang" class="btn btn-secondary btn-sm" onchange="renderStockView()">
+                        <option value="">Semua Barang</option>
+                    </select>
+                    <select id="stkLocationFilter" aria-label="Filter lokasi" class="btn btn-secondary btn-sm" onchange="renderStockView()">
+                        <option value="">Semua Lokasi</option>
+                    </select>
+                    <div class="edit-search">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="stkSearch" aria-label="Cari transaksi stok" placeholder="Cari barang..." oninput="renderStockView()">
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onclick="clearStockFilter()">Reset</button>
+                    <span id="stockCount">0 transaksi</span>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-right-left"></i> Riwayat Masuk/Keluar</div>
+                </div>
+                <div class="table-wrapper" style="max-height:600px;">
+                    <table class="data-table table--cardable" id="stockTable">
+                        <thead>
+                            <tr>
+                                <th>No</th>
+                                <th>Tanggal</th>
+                                <th>Jenis</th>
+                                <th>Barang</th>
+                                <th>Jumlah</th>
+                                <th>Lokasi</th>
+                                <th>Untuk Unit</th>
+                                <th class="col-actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stockBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /viewWarehouse -->
+
     <!-- ==================== USERS VIEW (Owner only) ==================== -->
     <div id="viewUsers" class="view" style="display:none;">
         <div class="edit-toolbar">
@@ -1376,6 +1561,161 @@
 </div>
 
 <!-- ===== MANAGE DAMAGE COMPONENTS MODAL ===== -->
+<!-- ==================== DEVICE MODAL ==================== -->
+<div class="modal-overlay" id="deviceModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="deviceModalTitle"><i class="fas fa-microchip"></i> Tambah Perangkat</h3>
+            <button class="btn-icon" onclick="closeDeviceModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form id="deviceForm" onsubmit="saveDevice(event)">
+            <input type="hidden" id="editDeviceId">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="devSn">Serial Number</label>
+                        <input class="form-input" id="devSn" required maxlength="60" autocomplete="off"
+                               placeholder="SN perangkat…">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="devType">Jenis Perangkat</label>
+                        <input class="form-input" id="devType" list="deviceTypeList" maxlength="60" autocomplete="off"
+                               placeholder="GPS / Display / Weather Station…">
+                        <datalist id="deviceTypeList"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="devBrand">Merek <span class="form-optional">(opsional)</span></label>
+                        <input class="form-input" id="devBrand" maxlength="40" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="devModel">Model <span class="form-optional">(opsional)</span></label>
+                        <input class="form-input" id="devModel" maxlength="40" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="devStatus">Status</label>
+                        <select class="form-select" id="devStatus" onchange="onDeviceStatusChange()">
+                            <option value="warehouse">Di Gudang</option>
+                            <option value="installed">Terpasang</option>
+                            <option value="damaged">Rusak</option>
+                            <option value="repair">Perbaikan</option>
+                            <option value="retired">Afkir</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="devLocationGroup">
+                        <label class="form-label" for="devLocation">Lokasi Gudang</label>
+                        <input class="form-input" id="devLocation" list="warehouseLocationList" maxlength="60" autocomplete="off"
+                               placeholder="Gudang pusat / gudang site…">
+                        <datalist id="warehouseLocationList"></datalist>
+                    </div>
+                </div>
+
+                <!-- Only relevant once the device is installed somewhere. -->
+                <div id="devInstallGroup" style="display:none">
+                    <p class="wh-install-hint">
+                        Isi <strong>salah satu</strong>: terpasang pada unit traktor, atau terpasang di
+                        satu titik tetap di lapangan — seperti weather station.
+                    </p>
+                    <div class="form-grid">
+                        <div class="form-group full-width">
+                            <label class="form-label" for="devUnit">Terpasang di Unit <span class="form-optional">(opsional)</span></label>
+                            <input class="form-input" id="devUnit" list="devUnitList" autocomplete="off"
+                                   placeholder="Ketik nama atau SN unit…">
+                            <datalist id="devUnitList"></datalist>
+                        </div>
+                        <div class="form-group full-width">
+                            <label class="form-label" for="devSite">Lokasi Pemasangan di Lapangan <span class="form-optional">(opsional)</span></label>
+                            <input class="form-input" id="devSite" maxlength="80" autocomplete="off"
+                                   placeholder="Contoh: Weather Station Blok C…">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="devPosX">Posisi X <span class="form-optional">(bujur / easting)</span></label>
+                            <input class="form-input" id="devPosX" maxlength="30" autocomplete="off" placeholder="mis. 136.8901">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="devPosY">Posisi Y <span class="form-optional">(lintang / northing)</span></label>
+                            <input class="form-input" id="devPosY" maxlength="30" autocomplete="off" placeholder="mis. -4.5432">
+                        </div>
+                        <div class="form-group full-width">
+                            <p class="wh-install-hint">Boleh derajat desimal atau UTM. Kalau nilainya terbaca
+                            sebagai bujur/lintang, tautan peta muncul otomatis di tabel.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-grid">
+                    <div class="form-group full-width">
+                        <label class="form-label" for="devNote">Catatan <span class="form-optional">(opsional)</span></label>
+                        <textarea class="form-input form-textarea" id="devNote" rows="2"
+                                  placeholder="Kondisi, garansi, nomor tiket servis…"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeDeviceModal()">Batal</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ==================== STOCK MODAL ==================== -->
+<div class="modal-overlay" id="stockModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="stockModalTitle"><i class="fas fa-boxes-stacked"></i> Catat Stok Masuk/Keluar</h3>
+            <button class="btn-icon" onclick="closeStockModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form id="stockForm" onsubmit="saveStockItem(event)">
+            <input type="hidden" id="editStockId">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="stkDate">Tanggal</label>
+                        <input type="date" class="form-input" id="stkDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="stkTxnType">Jenis Transaksi</label>
+                        <select class="form-select" id="stkTxnType" onchange="onStockTxnChange()">
+                            <option value="IN">Masuk</option>
+                            <option value="OUT">Keluar</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="stkItem">Nama Barang</label>
+                        <input class="form-input" id="stkItem" list="stockItemList" required maxlength="60" autocomplete="off"
+                               placeholder="Filter oli, selang hidrolik…">
+                        <datalist id="stockItemList"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="stkQty">Jumlah</label>
+                        <input type="number" class="form-input" id="stkQty" min="1" step="1" value="1" required>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="stkLocation">Lokasi Gudang</label>
+                        <input class="form-input" id="stkLocation" list="warehouseLocationList" maxlength="60" autocomplete="off"
+                               placeholder="Gudang pusat / gudang site…">
+                    </div>
+                    <div class="form-group full-width" id="stkUnitGroup" style="display:none">
+                        <label class="form-label" for="stkUnit">Untuk Unit <span class="form-optional">(opsional)</span></label>
+                        <input class="form-input" id="stkUnit" list="stkUnitList" autocomplete="off"
+                               placeholder="Ketik nama atau SN unit…">
+                        <datalist id="stkUnitList"></datalist>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="stkNote">Catatan <span class="form-optional">(opsional)</span></label>
+                        <textarea class="form-input form-textarea" id="stkNote" rows="2"
+                                  placeholder="Nomor surat jalan, pemasok, keperluan…"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeStockModal()">Batal</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- ==================== TEAM MEMBERS MODAL ==================== -->
 <div class="modal-overlay" id="teamMembersModal">
     <div class="modal-card">
