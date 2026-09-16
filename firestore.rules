@@ -55,6 +55,7 @@ service cloud.firestore {
         lvl('teamShift')    == 'edit' ||
         lvl('teamLog')      == 'edit' ||
         lvl('teamMembers')  == 'edit' ||
+        lvl('teamLogApprove') == 'edit' ||
         lvl('warehouse')    == 'edit'
       );
     }
@@ -81,7 +82,24 @@ service cloud.firestore {
     // write is still attributed in /history, so who filed what stays traceable.
     match /teamMembers/{id} { allow read: if isActive(); allow write: if canEditArea('teamMembers'); }
     match /shifts/{id}      { allow read: if isActive(); allow write: if canEditArea('teamShift'); }
-    match /workLogs/{id}    { allow read: if isActive(); allow write: if canEditArea('teamLog'); }
+
+    // Work logs are written by whoever may edit them, and approved by whoever
+    // holds 'teamLogApprove' — a separate grant, so a checker need not be able
+    // to rewrite the report they are checking. affectedKeys().hasOnly() is what
+    // enforces that: an approver's write may touch the approval fields and
+    // nothing else, so they cannot quietly change the hours or the description
+    // on their way past. Creating and deleting stay with the editors.
+    match /workLogs/{id} {
+      allow read:   if isActive();
+      allow create: if canEditArea('teamLog');
+      allow delete: if canEditArea('teamLog');
+      allow update: if canEditArea('teamLog')
+                    || (canEditArea('teamLogApprove')
+                        && request.resource.data.diff(resource.data).affectedKeys()
+                             .hasOnly(['approval', 'approvedBy', 'approvedByEmail',
+                                       'approvedAt', 'revisionNote',
+                                       'reviewedBy', 'reviewedAt', 'updatedAt']));
+    }
 
     // ---- Warehouse ----
     // One area covers both shapes: devices followed by serial number, and

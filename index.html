@@ -865,6 +865,11 @@
                     <div class="downtime-kpi__value" id="wlKpiToday">0 / 0</div>
                     <div class="downtime-kpi__sub">Anggota aktif yang sudah melapor</div>
                 </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Menunggu Persetujuan</div>
+                    <div class="downtime-kpi__value" id="wlKpiPending">0</div>
+                    <div class="downtime-kpi__sub">Belum diperiksa siapa pun</div>
+                </div>
             </div>
 
             <div class="edit-toolbar">
@@ -885,6 +890,13 @@
                         <span>Sampai</span>
                         <input type="date" id="wlTo" class="form-input" onchange="renderWorkLogTable()">
                     </label>
+                    <select id="wlApprovalFilter" aria-label="Filter persetujuan" class="btn btn-secondary btn-sm"
+                            onchange="renderWorkLogTable()">
+                        <option value="">Semua Persetujuan</option>
+                        <option value="pending">Menunggu</option>
+                        <option value="approved">Disetujui</option>
+                        <option value="revision">Perlu Revisi</option>
+                    </select>
                     <select id="wlCompanyFilter" aria-label="Filter perusahaan" class="btn btn-secondary btn-sm"
                             onchange="renderWorkLogTable()">
                         <option value="">Semua Perusahaan</option>
@@ -920,6 +932,7 @@
                                 <th>Paddock</th>
                                 <th>Uraian Pekerjaan</th>
                                 <th>Kendala</th>
+                                <th>Persetujuan</th>
                                 <th>Dokumentasi</th>
                                 <th class="col-actions">Actions</th>
                             </tr>

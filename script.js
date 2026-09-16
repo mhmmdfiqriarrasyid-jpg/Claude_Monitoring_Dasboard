@@ -76,7 +76,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v94';
+const APP_VERSION = 'v95';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -3898,7 +3898,7 @@ function renderDamageTable() {
                       (document.getElementById('damageTypeFilter')?.value || '');
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+        tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;padding:24px;color:var(--text-secondary)">${
             hasFilter ? 'Tidak ada kerusakan yang cocok dengan filter'
                       : 'Belum ada catatan kerusakan. Klik <strong>Tambah Kerusakan</strong> untuk mulai.'
         }</td></tr>`;
@@ -6250,6 +6250,9 @@ const ACCESS_AREAS = [
     { key: 'teamShift',    label: 'Jadwal Shift',   levels: ['none', 'view', 'edit'] },
     { key: 'teamLog',      label: 'Laporan Harian', levels: ['none', 'view', 'edit'] },
     { key: 'teamMembers',  label: 'Daftar Anggota', levels: ['none', 'view', 'edit'] },
+    // Separate from teamLog on purpose: a checker should be able to approve a
+    // report without being able to rewrite the thing they are checking.
+    { key: 'teamLogApprove', label: 'Persetujuan Laporan', levels: ['none', 'edit'] },
     { key: 'warehouse',    label: 'Gudang',         levels: ['none', 'view', 'edit'] },
     { key: 'history',      label: 'History',        levels: ['none', 'view'] }
 ];
@@ -6263,7 +6266,7 @@ const VIEW_AREAS = {
     implements:   ['implements'],
     damage:       ['damage'],
     licenseStock: ['licenseStock'],
-    team:         ['teamShift', 'teamLog', 'teamMembers'],
+    team:         ['teamShift', 'teamLog', 'teamMembers', 'teamLogApprove'],
     warehouse:    ['warehouse']
 };
 const GATED_VIEWS = Object.keys(VIEW_AREAS);
@@ -6273,7 +6276,8 @@ const DATA_AREAS = ACCESS_AREAS.filter(a => a.key !== 'history').map(a => a.key)
 const RO_FLAGS = {
     editUnits: 'roEditunits', implements: 'roImplements', damage: 'roDamage',
     licenseStock: 'roLicense', teamShift: 'roTeamshift', teamLog: 'roTeamlog',
-    teamMembers: 'roTeammembers', warehouse: 'roWarehouse'
+    teamMembers: 'roTeammembers', teamLogApprove: 'roTeamapprove',
+    warehouse: 'roWarehouse'
 };
 const _LVL_RANK = { none: 0, view: 1, edit: 2 };
 
@@ -7214,6 +7218,36 @@ function workLogUnitNames(rec) {
     }).filter(Boolean);
 }
 
+// ---- Report approval ----
+// Three states, because two would leave a rejected report with nowhere to go:
+// the person who filed it would never learn what to fix.
+const APPROVAL_STATES = {
+    pending:  { label: 'Menunggu',     tone: 'warning' },
+    approved: { label: 'Disetujui',    tone: 'success' },
+    revision: { label: 'Perlu Revisi', tone: 'danger'  }
+};
+
+// Reports written before approval existed carry no field; they have genuinely
+// never been checked, so they read as pending rather than as approved.
+function workLogApproval(w) {
+    const a = w && w.approval;
+    return APPROVAL_STATES[a] ? a : 'pending';
+}
+
+function canApproveWorkLogs() {
+    return hasAccess('teamLogApprove', 'edit');
+}
+
+// Checking your own work is not a check. Blocked on the account that filed the
+// report, not on the team member it is about — an admin may legitimately file
+// on someone else's behalf. Owners are exempt so a one-person setup is not
+// deadlocked, and older reports have no author recorded, so they pass.
+function canApproveThisLog(w) {
+    if (!canApproveWorkLogs()) return false;
+    if (isOwner()) return true;
+    return !(w && w.createdByUid && currentUser && w.createdByUid === currentUser.uid);
+}
+
 // ---- Paddock area ----
 // Free text with suggestions gathered from what has already been entered, the
 // same approach as company names.
@@ -7780,6 +7814,7 @@ function getFilteredWorkLogs() {
     const to = (document.getElementById('wlTo')?.value || '').trim();
     const member = (document.getElementById('wlMemberFilter')?.value || '');
     const company = (document.getElementById('wlCompanyFilter')?.value || '');
+    const approval = (document.getElementById('wlApprovalFilter')?.value || '');
     const q = (document.getElementById('wlSearch')?.value || '').toLowerCase().trim();
 
     return workLogs.filter(w => {
@@ -7790,6 +7825,7 @@ function getFilteredWorkLogs() {
             const c = companyOfRecord(w);
             if (company === '__none__' ? !!c : c !== company) return false;
         }
+        if (approval && workLogApproval(w) !== approval) return false;
         if (q) {
             const hay = [memberNameOf(w), companyOfRecord(w), w.paddock,
                          ...workLogUnitNames(w), w.task, w.issue]
@@ -7817,6 +7853,9 @@ function renderWorkLogTable() {
     setText('wlKpiCount', rows.length);
     setText('wlKpiHours', formatMinutes(totalMin));
     setText('wlKpiToday', `${reportedToday} / ${activeCount}`);
+    // Counts the whole log, not the filtered slice: a backlog you have filtered
+    // out of sight is exactly the backlog worth showing.
+    setText('wlKpiPending', workLogs.filter(w => workLogApproval(w) === 'pending').length);
     setText('workLogCount', `${rows.length} laporan`);
 
     const canEdit = hasAccess('teamLog', 'edit');
@@ -7824,6 +7863,7 @@ function renderWorkLogTable() {
                       (document.getElementById('wlTo')?.value || '') ||
                       (document.getElementById('wlMemberFilter')?.value || '') ||
                       (document.getElementById('wlCompanyFilter')?.value || '') ||
+                      (document.getElementById('wlApprovalFilter')?.value || '') ||
                       (document.getElementById('wlSearch')?.value || '');
 
     if (rows.length === 0) {
@@ -7859,9 +7899,22 @@ function renderWorkLogTable() {
             <td data-label="Paddock" style="font-size:12px">${w.paddock
                 ? escapeHtml(w.paddock)
                 : '<span style="color:var(--text-light)">—</span>'}</td>
-            <td data-label="Uraian" style="max-width:170px;font-size:12px" title="${escapeHtml(task)}">${escapeHtml(taskShort)}</td>
+            <td data-label="Uraian" style="max-width:150px;font-size:12px" title="${escapeHtml(task)}">${escapeHtml(taskShort)}</td>
             <td data-label="Kendala" style="max-width:110px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(issue)}">${
                 issueShort ? escapeHtml(issueShort) : '<span style="color:var(--text-light)">—</span>'}</td>
+            <td data-label="Persetujuan">${(() => {
+                const st = workLogApproval(w);
+                const meta = st === 'approved'
+                    ? `Disetujui ${w.approvedBy || ''}${w.approvedAt ? ' · ' + formatUserTime(w.approvedAt) : ''}`
+                    : (st === 'revision' ? (w.revisionNote || 'Perlu revisi') : 'Belum diperiksa');
+                const badge = `<span class="appr appr--${st}" title="${escapeHtml(meta)}">${escapeHtml(APPROVAL_STATES[st].label)}</span>`;
+                if (!canApproveThisLog(w)) return badge;
+                const btns = `<span class="appr-actions">
+                    ${st !== 'approved' ? `<button class="btn btn-secondary appr-btn" title="Setujui laporan" aria-label="Setujui laporan" onclick="approveWorkLog('${escapeHtml(w.id)}')"><i class="fas fa-check"></i></button>` : ''}
+                    ${st !== 'revision' ? `<button class="btn btn-secondary appr-btn" title="Minta revisi" aria-label="Minta revisi" onclick="reviseWorkLog('${escapeHtml(w.id)}')"><i class="fas fa-rotate-left"></i></button>` : ''}
+                </span>`;
+                return badge + btns;
+            })()}</td>
             <td data-label="Dokumentasi">${photos.length
                 ? photos.map((p, k) => `<img class="dmg-thumb" src="${p}" alt="Dokumentasi ${k + 1}" onclick="openPhotoLightbox(this.src)">`).join('')
                 : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
@@ -7880,7 +7933,7 @@ function clearWorkLogFilter() {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });
-    ['wlMemberFilter', 'wlCompanyFilter'].forEach(id => {
+    ['wlMemberFilter', 'wlCompanyFilter', 'wlApprovalFilter'].forEach(id => {
         const sel = document.getElementById(id);
         if (sel) sel.value = '';
     });
@@ -8068,8 +8121,17 @@ function saveWorkLog(event) {
         task,
         issue: (document.getElementById('wlIssue').value || '').trim(),
         createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
+        // Who filed it — needed so an approver cannot sign off their own work.
+        createdByUid: existing ? (existing.createdByUid || '') : ((currentUser && currentUser.uid) || ''),
+        createdByEmail: existing ? (existing.createdByEmail || '') : ((currentUser && currentUser.email) || ''),
+        // Editing sends the report back for checking. Without this, someone
+        // could get a report approved and then change what it says.
+        approval: 'pending',
+        approvedBy: '', approvedByEmail: '', approvedAt: 0,
+        revisionNote: ''
     };
+    const wasApproved = existing && workLogApproval(existing) === 'approved';
 
     window.cloud.saveWorkLog(rec).then(() => {
         logEvent({
@@ -8080,7 +8142,9 @@ function saveWorkLog(event) {
             before: existing ? (existing.task || '') : '',
             after: rec.task
         });
-        showToast(existing ? 'Laporan diperbarui' : 'Laporan harian ditambahkan', 'success');
+        showToast(wasApproved
+            ? 'Laporan diperbarui — persetujuan dibatalkan, perlu diperiksa ulang'
+            : (existing ? 'Laporan diperbarui' : 'Laporan harian ditambahkan'), 'success');
     }).catch(err => {
         console.error('[team] work log save failed:', err);
         if (err && err.code === 'permission-denied') showTeamRulesBanner();
@@ -8108,12 +8172,94 @@ function deleteWorkLog(id) {
     });
 }
 
+function approveWorkLog(id) {
+    const w = workLogs.find(x => x.id === id);
+    if (!w) return;
+    if (!canApproveWorkLogs()) {
+        showToast('Anda tidak punya hak menyetujui laporan', 'warning');
+        return;
+    }
+    if (!canApproveThisLog(w)) {
+        showToast('Laporan yang Anda buat sendiri harus disetujui orang lain', 'warning');
+        return;
+    }
+    if (workLogApproval(w) === 'approved') return;
+
+    const rec = {
+        ...w,
+        approval: 'approved',
+        approvedBy: (currentUserDoc && currentUserDoc.displayName) || (currentUser && currentUser.email) || '',
+        approvedByEmail: (currentUser && currentUser.email) || '',
+        approvedAt: Date.now(),
+        revisionNote: '',
+        updatedAt: Date.now()
+    };
+    window.cloud.saveWorkLog(rec).then(() => {
+        logEvent({
+            action: 'update', unitId: rec.unitId || '',
+            unitName: `[Laporan] ${memberNameOf(rec)}`,
+            field: `Persetujuan ${rec.date}`,
+            before: APPROVAL_STATES[workLogApproval(w)].label,
+            after: 'Disetujui'
+        });
+        showToast('Laporan disetujui', 'success');
+    }).catch(err => {
+        console.error('[team] approve failed:', err);
+        if (err && err.code === 'permission-denied') showTeamRulesBanner();
+        showToast('Gagal menyetujui laporan', 'error');
+    });
+}
+
+function reviseWorkLog(id) {
+    const w = workLogs.find(x => x.id === id);
+    if (!w) return;
+    if (!canApproveWorkLogs()) {
+        showToast('Anda tidak punya hak menyetujui laporan', 'warning');
+        return;
+    }
+    if (!canApproveThisLog(w)) {
+        showToast('Laporan yang Anda buat sendiri harus diperiksa orang lain', 'warning');
+        return;
+    }
+    // The note is the whole point of this state — without it the person is
+    // told "wrong" and nothing else.
+    const note = prompt(`Apa yang perlu diperbaiki pada laporan ${memberNameOf(w)} (${w.date})?`,
+        w.revisionNote || '');
+    if (note === null) return;
+    if (!note.trim()) { showToast('Tulis alasannya supaya bisa diperbaiki', 'warning'); return; }
+
+    const rec = {
+        ...w,
+        approval: 'revision',
+        revisionNote: note.trim(),
+        approvedBy: '', approvedByEmail: '', approvedAt: 0,
+        reviewedBy: (currentUserDoc && currentUserDoc.displayName) || (currentUser && currentUser.email) || '',
+        reviewedAt: Date.now(),
+        updatedAt: Date.now()
+    };
+    window.cloud.saveWorkLog(rec).then(() => {
+        logEvent({
+            action: 'update', unitId: rec.unitId || '',
+            unitName: `[Laporan] ${memberNameOf(rec)}`,
+            field: `Persetujuan ${rec.date}`,
+            before: APPROVAL_STATES[workLogApproval(w)].label,
+            after: `Perlu Revisi — ${rec.revisionNote}`
+        });
+        showToast('Laporan ditandai perlu revisi', 'success');
+    }).catch(err => {
+        console.error('[team] revise failed:', err);
+        if (err && err.code === 'permission-denied') showTeamRulesBanner();
+        showToast('Gagal menandai laporan', 'error');
+    });
+}
+
 function exportWorkLogCSV() {
     if (!canCsv('export')) return;
     const rows = getFilteredWorkLogs();
     if (rows.length === 0) { showToast('Tidak ada laporan untuk diexport', 'warning'); return; }
     const headers = ['No', 'Tanggal', 'Perusahaan', 'Anggota', 'Jabatan', 'Mulai', 'Selesai', 'Durasi (jam)',
-                     'Paddock Area', 'Unit', 'Serial Number', 'Jumlah Foto', 'Uraian Pekerjaan', 'Kendala'];
+                     'Paddock Area', 'Unit', 'Serial Number', 'Jumlah Foto', 'Uraian Pekerjaan', 'Kendala',
+                     'Persetujuan', 'Disetujui Oleh', 'Catatan Revisi'];
     const dataRows = rows.map((w, i) => {
         const m = w.memberId ? memberById(w.memberId) : null;
         const us = workLogUnits(w);
@@ -8126,7 +8272,9 @@ function exportWorkLogCSV() {
             workLogUnitNames(w).join(' | '),
             us.map(u => u.sn || '').filter(Boolean).join(' | '),
             Array.isArray(w.photos) ? w.photos.length : 0,
-            w.task || '', w.issue || ''
+            w.task || '', w.issue || '',
+            APPROVAL_STATES[workLogApproval(w)].label,
+            w.approvedBy || '', w.revisionNote || ''
         ];
     });
     const csv = toCSV(headers, dataRows);
