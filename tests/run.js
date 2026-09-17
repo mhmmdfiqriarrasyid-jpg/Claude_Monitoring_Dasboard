@@ -10,7 +10,8 @@ const ROOT = path.join(__dirname, '..');
 const PORT = Number(process.env.PORT) || 8765;
 const SUITES = [
     'team_logic', 'roles_test', 'company_test', 'adjust_test',
-    'session_test', 'warehouse_test', 'approval_test', 'leader_test', 'recap_test', 'regress'
+    'session_test', 'warehouse_test', 'approval_test', 'leader_test', 'recap_test',
+    'photos_test', 'regress'
 ];
 
 const TYPES = {

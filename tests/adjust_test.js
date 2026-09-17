@@ -10,12 +10,15 @@ const { launch, BASE_URL } = require('./_env');
 
     await page.addScriptTag({ content: `(() => { try {
         const T = []; const t = (n, g, w) => T.push({ n, g, w, pass: JSON.stringify(g) === JSON.stringify(w) });
-        const saved = [];
+        const saved = []; const photoWrites = [];
         window.cloud = { isReady: true,
             saveShift:()=>Promise.resolve(), deleteShift:()=>Promise.resolve(),
             saveTeamMember:()=>Promise.resolve(), deleteTeamMember:()=>Promise.resolve(),
             saveWorkLog: r => { saved.push(r); return Promise.resolve(); },
-            deleteWorkLog:()=>Promise.resolve() };
+            deleteWorkLog:()=>Promise.resolve(),
+            getWorkLogPhotos:()=>Promise.resolve([]),
+            saveWorkLogPhotos:(id,ph)=>{ photoWrites.push({id,ph}); return Promise.resolve(); },
+            deleteWorkLogPhotos:id=>{ photoWrites.push({id,ph:null}); return Promise.resolve(); } };
         currentUser = { uid:'u1', email:'o@x.id' };
         currentUserDoc = { role:'owner', status:'active', email:'o@x.id' };
         hideAuthGates(); applyRoleGating();
@@ -71,7 +74,11 @@ const { launch, BASE_URL } = require('./_env');
         const rowNew = [...document.querySelectorAll('#workLogBody tr')].find(tr => tr.textContent.includes('Servis baru'));
         t('dua badge unit di satu baris', rowNew.querySelectorAll('td[data-label="Unit"] .badge').length, 2);
         t('paddock tampil', rowNew.querySelector('td[data-label="Paddock"]').textContent.trim(), 'Paddock B-12');
-        t('dua thumbnail dokumentasi', rowNew.querySelectorAll('td[data-label="Dokumentasi"] img').length, 2);
+        // Foto tidak lagi dirender inline di tabel — hanya tombol berisi jumlahnya,
+        // supaya membuka halaman ini tidak menarik satu pun gambar.
+        t('tidak ada gambar inline di tabel', rowNew.querySelectorAll('td[data-label="Dokumentasi"] img').length, 0);
+        t('tombol foto menampilkan jumlah',
+          rowNew.querySelector('td[data-label="Dokumentasi"] .wl-photo-btn').textContent.trim(), '2');
         const jamCell = rowNew.querySelector('td[data-label="Jam Kerja"]');
         t('rentang jam di kolom Jam Kerja',
           jamCell.firstChild.textContent.trim(), '08:00–12:00');
@@ -126,7 +133,12 @@ const { launch, BASE_URL } = require('./_env');
         const rec = saved[saved.length-1];
         t('unit yang lupa ditambahkan ikut tersimpan', rec.units.map(u=>u.id), ['u_2','u_3']);
         t('paddock tersimpan', rec.paddock, 'Paddock C-3');
-        t('foto tersimpan', rec.photos, ['data:image/jpeg;base64,Y']);
+        t('jumlah foto tersimpan di laporan', rec.photoCount, 1);
+        t('foto tidak lagi ikut di dokumen laporan', rec.photos, []);
+        t('foto ditulis ke koleksi terpisah',
+          photoWrites[photoWrites.length-1].ph, ['data:image/jpeg;base64,Y']);
+        t('id dokumen foto sama dengan id laporan',
+          photoWrites[photoWrites.length-1].id, rec.id);
         t('unit pertama dicerminkan ke field lama', [rec.unitId, rec.sn], ['u_2','SN222']);
 
         // Unit yang tidak dikenal harus MEMBATALKAN simpan, bukan diam-diam hilang.

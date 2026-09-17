@@ -74,6 +74,9 @@ const STOCK_ITEMS_COL = 'stockItems';
 const TEAM_MEMBERS_COL = 'teamMembers';
 const SHIFTS_COL = 'shifts';
 const WORK_LOGS_COL = 'workLogs';
+// Field documentation lives in its own collection, one document per work
+// log, and is deliberately never subscribed — see getWorkLogPhotos below.
+const WORK_LOG_PHOTOS_COL = 'workLogPhotos';
 
 function batchInChunks(items, fn, chunkSize = 400) {
     // Firestore allows up to 500 ops per batch; 400 is a safe cap.
@@ -532,6 +535,27 @@ window.cloud = {
                 if (errorCallback) errorCallback(err);
             }
         );
+    },
+
+    // ---- Field documentation photos ----
+    // These live apart from the work log on purpose. Photos are stored as data
+    // URLs, and subscribeWorkLogs above streams the WHOLE collection with no
+    // limit() — so while the photos sat inside the log document, every device
+    // re-downloaded every photo ever taken on every app open. Split out, they
+    // are fetched one document at a time, only when someone actually opens
+    // them. There is no subscription here, and there must not be one.
+    async getWorkLogPhotos(id) {
+        const snap = await getDoc(doc(db, WORK_LOG_PHOTOS_COL, id));
+        if (!snap.exists()) return [];
+        const data = snap.data();
+        return Array.isArray(data.photos) ? data.photos : [];
+    },
+    async saveWorkLogPhotos(id, photos) {
+        await setDoc(doc(db, WORK_LOG_PHOTOS_COL, id),
+                     { id, photos, updatedAt: Date.now() });
+    },
+    async deleteWorkLogPhotos(id) {
+        await deleteDoc(doc(db, WORK_LOG_PHOTOS_COL, id));
     }
 };
 

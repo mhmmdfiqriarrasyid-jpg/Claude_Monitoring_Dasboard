@@ -2214,6 +2214,67 @@ body[data-ro-editunits] .inline-edit { background: transparent !important; }
     border-radius: var(--radius);
     box-shadow: 0 8px 40px rgba(0,0,0,0.5);
 }
+/* Paging controls — hidden by script when there is only one photo. */
+.photo-lightbox__nav {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    margin: 0 8px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+}
+.photo-lightbox__nav:hover { background: rgba(255,255,255,0.3); }
+.photo-lightbox__count {
+    position: absolute;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #fff;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    background: rgba(0,0,0,0.5);
+    border-radius: 999px;
+    padding: 4px 12px;
+}
+@media (max-width: 640px) {
+    .photo-lightbox { padding: 12px; }
+    .photo-lightbox__nav { width: 36px; height: 36px; margin: 0 4px; font-size: 16px; }
+    .photo-lightbox img { max-width: calc(100vw - 112px); }
+}
+
+/* Work log documentation: a count button, not the images themselves. The
+   photos are fetched only when this is clicked — see openWorkLogPhotos(). */
+.wl-photo-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text-secondary);
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+}
+.wl-photo-btn:hover:not(:disabled) {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+.wl-photo-btn:disabled { opacity: 0.6; cursor: default; }
+.wl-photo__loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding: 6px 0;
+}
 
 /* ===== License stock summary ===== */
 .license-summary {

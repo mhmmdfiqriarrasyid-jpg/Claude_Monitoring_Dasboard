@@ -127,6 +127,14 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Cloud Storage. Batas dokumen Firestore 1 MB, jadi foto dikecilkan dan
   dibatasi jumlahnya sebelum disimpan. Kalau data sudah banyak, ini yang
   pertama perlu dipindahkan ke Cloud Storage.
+- **Foto laporan harian ada di koleksi terpisah `workLogPhotos/{idLaporan}`,
+  dan koleksi itu tidak pernah di-`onSnapshot`.** Dokumen laporannya hanya
+  menyimpan `photoCount`. Ini disengaja: `subscribeWorkLogs` berlangganan
+  seluruh koleksi tanpa `limit()`, jadi selama foto ada di dalam dokumen
+  laporan, setiap perangkat mengunduh ulang semua foto setiap kali aplikasi
+  dibuka. Jangan tambahkan langganan ke `workLogPhotos` — ambil per dokumen
+  lewat `loadWorkLogPhotos(id)`. Foto kerusakan masih inline dan menunggu
+  perlakuan yang sama.
 - **Tulisan cloud lewat `cloudWrite()`.** Jangan panggil `logEvent()` di dalam
   `.then()` sebuah tulisan Firestore: offline, promise-nya tidak pernah selesai
   dan jejak auditnya hilang.

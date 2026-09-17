@@ -76,7 +76,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v98';
+const APP_VERSION = 'v99';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -114,6 +114,7 @@ const AUDIT_LOG_MAX = 500;
 const BACKUP_RING_KEY = 'tractorUnits_autobackup';
 const BACKUP_RING_SIZE = 3;
 const LICENSE_DEFAULTS_KEY = 'tractorLicenseDefaultsApplied';
+const WL_PHOTOS_SPLIT_KEY = 'tractorWorkLogPhotosSplit';
 const LICENSE_DATES_KEY = 'tractorLicenseDatesApplied_v2';
 const USER_CATEGORIES_SEED_KEY = 'tractorUserCategoriesSeeded_v1';
 const DEFAULT_USER_CATEGORIES = [
@@ -3661,19 +3662,58 @@ function removeDamagePhoto() {
 }
 
 // ---- Lightbox (view full-size photo) ----
-function openPhotoLightbox(src) {
-    if (!src) return;
+// Takes one photo or a whole set. A work log can hold four, and they are now
+// fetched together, so paging through them beats opening each separately.
+let _lightboxPhotos = [];
+let _lightboxIndex = 0;
+
+function openPhotoLightbox(src, index) {
+    const list = Array.isArray(src) ? src.filter(Boolean) : (src ? [src] : []);
+    if (!list.length) return;
     const box = document.getElementById('photoLightbox');
-    const img = document.getElementById('photoLightboxImg');
-    if (!box || !img) return;
-    img.src = src;
+    if (!box) return;
+    _lightboxPhotos = list;
+    _lightboxIndex = Math.min(Math.max(Number(index) || 0, 0), list.length - 1);
+    renderPhotoLightbox();
     box.classList.add('open');
+}
+
+function renderPhotoLightbox() {
+    const img = document.getElementById('photoLightboxImg');
+    if (img) img.src = _lightboxPhotos[_lightboxIndex] || '';
+    const many = _lightboxPhotos.length > 1;
+    ['photoLightboxPrev', 'photoLightboxNext'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = many ? '' : 'none';
+    });
+    const count = document.getElementById('photoLightboxCount');
+    if (count) {
+        count.style.display = many ? '' : 'none';
+        count.textContent = `${_lightboxIndex + 1} / ${_lightboxPhotos.length}`;
+    }
+}
+
+// Wraps around, so holding one arrow never dead-ends.
+function stepPhotoLightbox(delta) {
+    if (_lightboxPhotos.length < 2) return;
+    const n = _lightboxPhotos.length;
+    _lightboxIndex = (_lightboxIndex + delta + n) % n;
+    renderPhotoLightbox();
 }
 
 function closePhotoLightbox() {
     const box = document.getElementById('photoLightbox');
     if (box) box.classList.remove('open');
+    _lightboxPhotos = [];
 }
+
+document.addEventListener('keydown', e => {
+    const box = document.getElementById('photoLightbox');
+    if (!box || !box.classList.contains('open')) return;
+    if (e.key === 'Escape')     { closePhotoLightbox(); }
+    if (e.key === 'ArrowLeft')  { stepPhotoLightbox(-1); }
+    if (e.key === 'ArrowRight') { stepPhotoLightbox(1); }
+});
 
 // ============================================================
 // UNIT PROFILE (Profil Unit) — one panel with everything about a unit
@@ -7312,6 +7352,38 @@ const WORKLOG_PHOTO_MAX = 4;
 const WORKLOG_PHOTO_OPTS = { maxDim: 1024, maxBytes: 200 * 1024, quality: 0.7 };
 const WORKLOG_PHOTOS_TOTAL_BYTES = 800 * 1024;
 
+// Photos live in their own collection, one document per report, fetched only
+// when somebody opens them. They used to sit inside the work log itself — and
+// since subscribeWorkLogs streams the whole collection with no limit(), that
+// meant every device re-downloaded every photo ever taken, on every app open.
+// Measured: one field photo compresses to ~96KB, so an eight-person team was
+// pulling roughly 33MB a month back down the wire for nothing.
+//
+// The report keeps only photoCount, so the table can still show how many there
+// are without loading a single byte of image.
+const _wlPhotoCache = new Map();   // logId -> data URLs
+
+function workLogPhotoCount(rec) {
+    if (!rec) return 0;
+    // Reports written before the split still carry their photos inline.
+    // An empty array means the inline copy was cleared on migration, so fall
+    // through to photoCount rather than reporting zero.
+    if (Array.isArray(rec.photos) && rec.photos.length) return rec.photos.length;
+    return Number(rec.photoCount) || 0;
+}
+
+// Inline (old shape) → cache → one getDoc. Rejects when offline and the
+// document was never cached; callers surface that rather than spinning.
+async function loadWorkLogPhotos(id) {
+    const rec = workLogs.find(w => w.id === id);
+    if (rec && Array.isArray(rec.photos) && rec.photos.length) return rec.photos.slice();
+    if (_wlPhotoCache.has(id)) return _wlPhotoCache.get(id).slice();
+    if (!window.cloud || !window.cloud.getWorkLogPhotos) return [];
+    const photos = await window.cloud.getWorkLogPhotos(id);
+    _wlPhotoCache.set(id, photos);
+    return photos.slice();
+}
+
 // ---- Multiple units per report ----
 // Reports used to carry one unit (unitId/unitName/sn). They now carry a list,
 // and this reads either shape so existing rows keep working.
@@ -7457,6 +7529,66 @@ function applyCloudWorkLogsSnapshot(list) {
         if (teamTab === 'worklog') renderWorkLogTable();
     }
     scheduleDecisionRefresh();
+    migrateWorkLogPhotosIfNeeded();
+}
+
+// One-shot migration: move photos that still sit inside a work log out to
+// workLogPhotos/{id}. Same shape as applyDefaultLicensesIfNeeded() above —
+// owner only, guarded by a localStorage flag so it never runs twice.
+//
+// Order matters: the photo document is written FIRST and the inline copy is
+// cleared only after that write is acknowledged. Interrupted halfway, the
+// worst case is a report that has its photos in both places — which reads
+// correctly either way — never one that has them in neither.
+//
+// Done now, while the feature is days old and the data is small. Every month
+// this waits, the migration gets more expensive and the daily waste gets
+// bigger.
+let _wlPhotoMigrationRunning = false;
+function migrateWorkLogPhotosIfNeeded() {
+    if (_wlPhotoMigrationRunning) return;
+    if (!isOwner || !isOwner()) return;
+    if (localStorage.getItem(WL_PHOTOS_SPLIT_KEY) === '1') return;
+    if (!window.cloud || !window.cloud.saveWorkLogPhotos) return;
+    if (!Array.isArray(workLogs) || workLogs.length === 0) return;
+
+    const pending = workLogs.filter(w => Array.isArray(w.photos) && w.photos.length);
+    if (pending.length === 0) {
+        localStorage.setItem(WL_PHOTOS_SPLIT_KEY, '1');
+        return;
+    }
+    if (!navigator.onLine) return;   // retried on the next snapshot
+
+    _wlPhotoMigrationRunning = true;
+    console.log(`[wl-photos] moving photos out of ${pending.length} work logs...`);
+    (async () => {
+        let moved = 0;
+        for (const w of pending) {
+            const photos = w.photos.slice();
+            await window.cloud.saveWorkLogPhotos(w.id, photos);
+            _wlPhotoCache.set(w.id, photos);
+            await window.cloud.saveWorkLog({ ...w, photos: [], photoCount: photos.length });
+            moved++;
+        }
+        return moved;
+    })().then(moved => {
+        localStorage.setItem(WL_PHOTOS_SPLIT_KEY, '1');
+        try {
+            logEvent({
+                action: 'migrate',
+                unitName: '-',
+                field: 'foto laporan',
+                after: `${moved} laporan dipindah ke koleksi workLogPhotos`
+            });
+        } catch (e) {}
+        console.log(`[wl-photos] done — ${moved} work logs migrated`);
+    }).catch(err => {
+        // No flag set, so the next snapshot tries again from where it stopped.
+        console.error('[wl-photos] migration failed:', err);
+        if (err && err.code === 'permission-denied') showTeamRulesBanner();
+    }).finally(() => {
+        _wlPhotoMigrationRunning = false;
+    });
 }
 
 function showTeamRulesBanner() {
@@ -7992,7 +8124,7 @@ function renderWorkLogTable() {
 
     tbody.innerHTML = rows.map((w, i) => {
         const names = workLogUnitNames(w);
-        const photos = Array.isArray(w.photos) ? w.photos : [];
+        const photoCount = workLogPhotoCount(w);
         const task = w.task || '';
         const taskShort = task.length > 60 ? task.slice(0, 60) + '…' : task;
         const issue = w.issue || '';
@@ -8031,8 +8163,10 @@ function renderWorkLogTable() {
                 </span>`;
                 return badge + btns;
             })()}</td>
-            <td data-label="Dokumentasi">${photos.length
-                ? photos.map((p, k) => `<img class="dmg-thumb" src="${p}" alt="Dokumentasi ${k + 1}" onclick="openPhotoLightbox(this.src)">`).join('')
+            <td data-label="Dokumentasi">${photoCount
+                ? `<button type="button" class="wl-photo-btn" title="Lihat ${photoCount} foto dokumentasi"
+                        aria-label="Lihat ${photoCount} foto dokumentasi"
+                        onclick="openWorkLogPhotos('${escapeHtml(w.id)}', this)"><i class="fas fa-image"></i> ${photoCount}</button>`
                 : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td class="col-actions">
                 ${canEdit ? `<div class="row-actions">
@@ -8060,6 +8194,11 @@ function clearWorkLogFilter() {
 // Held outside the DOM while the modal is open, like _dmgPhotoData.
 let _wlUnits = [];   // [{ id, name, sn }]
 let _wlPhotos = [];  // data URLs
+// Set only when a photo is actually added or removed. saveWorkLog writes the
+// photo document only then — so editing just the description never rewrites
+// (or, worse, wipes) photos that may not even have finished loading yet.
+let _wlPhotosDirty = false;
+let _wlPhotosLoading = false;
 
 function renderWorkLogUnitChips() {
     const wrap = document.getElementById('wlUnitChips');
@@ -8105,9 +8244,13 @@ function renderWorkLogPhotos() {
     const count = document.getElementById('wlPhotoCount');
     if (count) count.textContent = `${_wlPhotos.length}/${WORKLOG_PHOTO_MAX}`;
     if (!wrap) return;
+    if (_wlPhotosLoading && !_wlPhotos.length) {
+        wrap.innerHTML = '<span class="wl-photo__loading"><i class="fas fa-spinner fa-spin"></i> Memuat foto…</span>';
+        return;
+    }
     wrap.innerHTML = _wlPhotos.map((src, i) => `
         <div class="wl-photo">
-            <img src="${src}" alt="Dokumentasi ${i + 1}" onclick="openPhotoLightbox(this.src)">
+            <img src="${src}" alt="Dokumentasi ${i + 1}" onclick="openPhotoLightbox(_wlPhotos, ${i})">
             <button type="button" class="wl-photo__x" aria-label="Hapus dokumentasi ${i + 1}"
                     title="Hapus foto" onclick="removeWorkLogPhoto(${i})">&times;</button>
         </div>`).join('');
@@ -8137,6 +8280,7 @@ async function handleWorkLogPhotoChange(event) {
                 break;
             }
             _wlPhotos.push(data);
+            _wlPhotosDirty = true;
         } catch (err) {
             showToast(err.message || `Gagal memproses "${file.name}"`, 'error');
         }
@@ -8146,7 +8290,29 @@ async function handleWorkLogPhotoChange(event) {
 
 function removeWorkLogPhoto(index) {
     _wlPhotos.splice(index, 1);
+    _wlPhotosDirty = true;
     renderWorkLogPhotos();
+}
+
+// ---- Opening documentation from the table ----
+// One fetch per report, then cached for the session. Offline against a report
+// whose photos were never cached, this fails — and says so plainly instead of
+// leaving a button spinning forever.
+async function openWorkLogPhotos(id, btn) {
+    const original = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+    try {
+        const photos = await loadWorkLogPhotos(id);
+        if (!photos.length) { showToast('Foto tidak ditemukan', 'warning'); return; }
+        openPhotoLightbox(photos);
+    } catch (err) {
+        console.error('[team] work log photos load failed:', err);
+        showToast(navigator.onLine
+            ? 'Gagal memuat foto dokumentasi'
+            : 'Foto perlu sinyal untuk dimuat', 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = original; }
+    }
 }
 
 function showAddWorkLogForm() {
@@ -8160,6 +8326,8 @@ function showAddWorkLogForm() {
     document.getElementById('workLogForm').reset();
     _wlUnits = [];
     _wlPhotos = [];
+    _wlPhotosDirty = false;
+    _wlPhotosLoading = false;
     populateWorkLogFilters();
     renderWorkLogUnitChips();
     renderWorkLogPhotos();
@@ -8180,7 +8348,11 @@ function editWorkLog(id) {
     document.getElementById('wlEnd').value = w.end || '';
     // Copies, so cancelling the modal leaves the stored record untouched.
     _wlUnits = workLogUnits(w).map(u => ({ ...u }));
-    _wlPhotos = Array.isArray(w.photos) ? w.photos.slice() : [];
+    _wlPhotos = [];
+    _wlPhotosDirty = false;
+    // Photos arrive separately; until they do the strip shows a placeholder.
+    // Nothing is lost if they never arrive — see _wlPhotosDirty in saveWorkLog.
+    _wlPhotosLoading = workLogPhotoCount(w) > 0;
     document.getElementById('wlUnit').value = '';
     document.getElementById('wlPaddock').value = w.paddock || '';
     renderWorkLogUnitChips();
@@ -8188,6 +8360,26 @@ function editWorkLog(id) {
     document.getElementById('wlTask').value = w.task || '';
     document.getElementById('wlIssue').value = w.issue || '';
     document.getElementById('workLogModal').classList.add('open');
+
+    if (_wlPhotosLoading) {
+        loadWorkLogPhotos(id).then(photos => {
+            // The modal may have been closed or reopened on another report
+            // while the fetch was in flight — only fill what still applies.
+            if (document.getElementById('editWorkLogId').value !== id) return;
+            if (_wlPhotosDirty) return;   // user already changed the photos
+            _wlPhotos = photos;
+            _wlPhotosLoading = false;
+            renderWorkLogPhotos();
+        }).catch(err => {
+            console.error('[team] work log photos load failed:', err);
+            if (document.getElementById('editWorkLogId').value !== id) return;
+            _wlPhotosLoading = false;
+            renderWorkLogPhotos();
+            showToast(navigator.onLine
+                ? 'Foto lama gagal dimuat — foto lama tetap tersimpan'
+                : 'Foto lama perlu sinyal untuk dimuat — foto lama tetap tersimpan', 'warning');
+        });
+    }
 }
 
 function closeWorkLogModal() {
@@ -8233,7 +8425,8 @@ function saveWorkLog(event) {
         unitName: units.length ? (units[0].name || '') : '',
         sn: units.length ? (units[0].sn || '') : '',
         paddock: (document.getElementById('wlPaddock').value || '').trim(),
-        photos: _wlPhotos.slice(),
+        // Only the count lives on the report; the images go to workLogPhotos.
+        photoCount: _wlPhotosDirty ? _wlPhotos.length : workLogPhotoCount(existing),
         task,
         issue: (document.getElementById('wlIssue').value || '').trim(),
         createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),
@@ -8247,6 +8440,13 @@ function saveWorkLog(event) {
         approvedBy: '', approvedByEmail: '', approvedAt: 0,
         revisionNote: ''
     };
+    // Untouched photos are left exactly as they are — not re-read, not
+    // rewritten, not cleared. That is what makes it safe to save while the
+    // photos are still loading, and it keeps a description fix from costing a
+    // 800KB write. The inline copy on an older report is cleared only when the
+    // user actually changes the photos, or by migrateWorkLogPhotos().
+    if (_wlPhotosDirty) rec.photos = [];
+
     const wasApproved = existing && workLogApproval(existing) === 'approved';
 
     cloudWrite(
@@ -8269,6 +8469,27 @@ function saveWorkLog(event) {
         }
     );
 
+    if (_wlPhotosDirty) {
+        const photos = _wlPhotos.slice();
+        _wlPhotoCache.set(rec.id, photos);
+        // Offline, the service worker can still be serving a firebase-init.js
+        // from before this collection existed. Say so rather than throwing
+        // halfway through a save that otherwise looks like it worked.
+        if (!window.cloud.saveWorkLogPhotos) {
+            showToast('Muat ulang halaman — versi lama masih aktif, foto belum terkirim', 'warning');
+            closeWorkLogModal();
+            return;
+        }
+        const write = photos.length
+            ? window.cloud.saveWorkLogPhotos(rec.id, photos)
+            : window.cloud.deleteWorkLogPhotos(rec.id);
+        write.catch(err => {
+            console.error('[team] work log photos save failed:', err);
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+            showToast('Laporan tersimpan, tetapi foto gagal dikirim', 'error');
+        });
+    }
+
     closeWorkLogModal();
 }
 
@@ -8277,6 +8498,13 @@ function deleteWorkLog(id) {
     const w = workLogs.find(x => x.id === id);
     if (!w) return;
     if (!confirm(`Hapus laporan ${memberNameOf(w)} tanggal ${w.date}?`)) return;
+    // Otherwise the photo document is orphaned: invisible, but still billed for
+    // and still downloaded by anyone who happens to request that id.
+    if (workLogPhotoCount(w) > 0 && window.cloud.deleteWorkLogPhotos) {
+        _wlPhotoCache.delete(id);
+        window.cloud.deleteWorkLogPhotos(id).catch(err =>
+            console.error('[team] work log photos delete failed:', err));
+    }
     cloudWrite(
         { action: 'delete', unitId: w.unitId || '',
           unitName: `[Laporan] ${memberNameOf(w)}`,
@@ -8389,7 +8617,7 @@ function exportWorkLogCSV() {
             // Several units share one cell, separated so the column stays readable.
             workLogUnitNames(w).join(' | '),
             us.map(u => u.sn || '').filter(Boolean).join(' | '),
-            Array.isArray(w.photos) ? w.photos.length : 0,
+            workLogPhotoCount(w),
             w.task || '', w.issue || '',
             APPROVAL_STATES[workLogApproval(w)].label,
             w.approvedBy || '', w.revisionNote || ''

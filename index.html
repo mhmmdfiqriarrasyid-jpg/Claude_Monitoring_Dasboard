@@ -2054,7 +2054,14 @@
 
 <!-- ===== PHOTO LIGHTBOX ===== -->
 <div class="photo-lightbox" id="photoLightbox" onclick="closePhotoLightbox()">
-    <img id="photoLightboxImg" alt="Foto kerusakan">
+    <button type="button" class="photo-lightbox__nav" id="photoLightboxPrev"
+            aria-label="Foto sebelumnya" title="Foto sebelumnya"
+            onclick="event.stopPropagation();stepPhotoLightbox(-1)">&#10094;</button>
+    <img id="photoLightboxImg" alt="Foto">
+    <button type="button" class="photo-lightbox__nav" id="photoLightboxNext"
+            aria-label="Foto berikutnya" title="Foto berikutnya"
+            onclick="event.stopPropagation();stepPhotoLightbox(1)">&#10095;</button>
+    <span class="photo-lightbox__count" id="photoLightboxCount"></span>
 </div>
 
 <!-- ===== LICENSE STOCK MODAL ===== -->
