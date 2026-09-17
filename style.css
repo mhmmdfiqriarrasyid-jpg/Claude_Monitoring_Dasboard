@@ -3168,3 +3168,170 @@ body[data-nocsvimport] .csv-import { display: none !important; }
 /* The four KPIs of the report tab; the shared grid is four across already, so
    this only pins it against the five-column warehouse override. */
 #teamWorkLogPanel .downtime-kpis { grid-template-columns: repeat(4, 1fr); }
+
+/* ============================================================
+   KOTAK KEPUTUSAN — one place for everything awaiting a decision
+   ============================================================ */
+.nav__badge {
+    margin-left: auto;
+    min-width: 20px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+.nav__link { display: flex; align-items: center; gap: 10px; }
+
+.decision-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+}
+.decision-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    /* The left edge carries the severity, so the card reads at a glance
+       without colouring the whole surface. */
+    border-left: 4px solid var(--border);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+}
+.decision-card--danger  { border-left-color: var(--danger); }
+.decision-card--warning { border-left-color: var(--warning); }
+.decision-card--info    { border-left-color: var(--info); }
+
+.decision-card__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+.decision-card__title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.35;
+}
+.decision-card__count {
+    flex-shrink: 0;
+    min-width: 26px;
+    padding: 2px 8px;
+    border-radius: 11px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    font-size: 13px;
+    font-weight: 700;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+.decision-card--danger  .decision-card__count { background: var(--danger-bg);  color: var(--danger); }
+.decision-card--warning .decision-card__count { background: var(--warning-bg); color: var(--warning); }
+.decision-card--info    .decision-card__count { background: var(--info-bg);    color: var(--info); }
+
+.decision-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    flex: 1;
+}
+.decision-list li {
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-light);
+    font-size: 12.5px;
+}
+.decision-list li:last-child { border-bottom: none; }
+.decision-list__text { display: block; color: var(--text); }
+.decision-list__sub {
+    display: block;
+    margin-top: 2px;
+    font-size: 11.5px;
+    color: var(--text-light);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.decision-list__more { color: var(--text-light); font-style: italic; }
+.decision-card .btn { align-self: flex-start; }
+
+.decision-clear {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 28px;
+    background: var(--success-bg);
+    border: 1px solid var(--success-border);
+    border-radius: 8px;
+    color: var(--success);
+}
+.decision-clear i { font-size: 26px; }
+.decision-clear p { margin: 6px 0 0; font-size: 13px; color: var(--text-secondary); }
+
+/* ============================================================
+   CETAK — what actually belongs on paper
+   ============================================================ */
+.print-header { display: none; }
+
+@media print {
+    /* Navigation, toolbars and anything clickable are useless on paper. */
+    .sidebar,
+    .topbar,
+    .footer,
+    .edit-toolbar,
+    .nav__badge,
+    #toastContainer,
+    .modal-overlay,
+    .decision-card .btn { display: none !important; }
+
+    /* Containers only. .view must NOT be forced visible here: the hidden views
+       carry an inline display:none, and overriding it printed every page of
+       the app instead of the one on screen. */
+    .app-shell,
+    .app-body,
+    main {
+        margin: 0 !important;
+        padding: 0 !important;
+        display: block !important;
+    }
+    .view { margin: 0 !important; padding: 0 !important; }
+
+    body {
+        background: #fff;
+        font-size: 11pt;
+    }
+
+    .print-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 12px;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #000;
+        font-size: 12pt;
+    }
+    .print-header span { font-size: 9pt; color: #444; }
+
+    /* Two columns fit an A4 width; a card split across a page break is
+       unreadable, so cards are kept whole. */
+    .decision-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .decision-card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+        box-shadow: none;
+        border: 1px solid #999;
+        border-left-width: 3px;
+    }
+    .decision-list__sub { white-space: normal; }
+
+    /* The count tiles read as a summary line rather than three big boxes. */
+    .downtime-kpis { grid-template-columns: 1fr !important; }
+    .downtime-kpi { box-shadow: none; border: 1px solid #999; }
+}

@@ -76,7 +76,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v96';
+const APP_VERSION = 'v97';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -604,6 +604,8 @@ function navigateTo(view) {
     if (teamView) teamView.style.display = (view === 'team') ? 'block' : 'none';
     const whView = document.getElementById('viewWarehouse');
     if (whView) whView.style.display = (view === 'warehouse') ? 'block' : 'none';
+    const leaderView = document.getElementById('viewLeader');
+    if (leaderView) leaderView.style.display = (view === 'leader') ? 'block' : 'none';
     const usersView = document.getElementById('viewUsers');
     if (usersView) usersView.style.display = (view === 'users') ? 'block' : 'none';
 
@@ -658,6 +660,12 @@ function navigateTo(view) {
     if (view === 'warehouse') {
         populateWarehouseFilters();
         renderWarehouseView();
+    }
+
+    if (view === 'leader') {
+        // Pending sign-ups only load once the owner's user subscription runs.
+        if (isOwner()) ensureUsersSubscription();
+        renderDecisionInbox();
     }
 
     if (view === 'users') {
@@ -1788,6 +1796,7 @@ function onDataLoaded() {
     updateConnectionLabel();
 
     updateEditCount();
+    scheduleDecisionRefresh();
 
     // Persist any premium licence that has expired into its fallback tier.
     scheduleExpiredLicenseDowngrades();
@@ -6349,6 +6358,8 @@ const ACCESS_AREAS = [
     // report without being able to rewrite the thing they are checking.
     { key: 'teamLogApprove', label: 'Persetujuan Laporan', levels: ['none', 'edit'] },
     { key: 'warehouse',    label: 'Gudang',         levels: ['none', 'view', 'edit'] },
+    // Read-only by nature: it shows what other areas already allow, nothing more.
+    { key: 'leader',       label: 'Kotak Keputusan', levels: ['none', 'view'] },
     { key: 'history',      label: 'History',        levels: ['none', 'view'] }
 ];
 
@@ -6362,11 +6373,16 @@ const VIEW_AREAS = {
     damage:       ['damage'],
     licenseStock: ['licenseStock'],
     team:         ['teamShift', 'teamLog', 'teamMembers', 'teamLogApprove'],
-    warehouse:    ['warehouse']
+    warehouse:    ['warehouse'],
+    leader:       ['leader']
 };
 const GATED_VIEWS = Object.keys(VIEW_AREAS);
 // Every area that holds data (i.e. everything except the read-only audit log).
-const DATA_AREAS = ACCESS_AREAS.filter(a => a.key !== 'history').map(a => a.key);
+// 'leader' is view-only and 'history' is the audit log: neither is a place
+// where data is edited, so neither counts towards "can this person edit".
+const DATA_AREAS = ACCESS_AREAS
+    .filter(a => a.key !== 'history' && a.key !== 'leader')
+    .map(a => a.key);
 // area key → <body> dataset flag used by the editonly--* CSS rules.
 const RO_FLAGS = {
     editUnits: 'roEditunits', implements: 'roImplements', damage: 'roDamage',
@@ -6490,6 +6506,7 @@ function applyAccessVisibility() {
             el.style.display = canViewView(v) ? '' : 'none';
         }
     });
+    updateDecisionBadge();
     const navHistory = document.getElementById('navHistory');
     if (navHistory) navHistory.style.display = hasAccess('history', 'view') ? '' : 'none';
 
@@ -7439,6 +7456,7 @@ function applyCloudWorkLogsSnapshot(list) {
         populateWorkLogFilters();
         if (teamTab === 'worklog') renderWorkLogTable();
     }
+    scheduleDecisionRefresh();
 }
 
 function showTeamRulesBanner() {
@@ -8458,6 +8476,7 @@ function applyCloudDevicesSnapshot(list) {
     warehouseDevices = (list || []).slice().sort((a, b) =>
         (a.type || '').localeCompare(b.type || '') || (a.sn || '').localeCompare(b.sn || ''));
     if (currentView === 'warehouse') { populateWarehouseFilters(); renderWarehouseView(); }
+    scheduleDecisionRefresh();
 }
 
 function applyCloudStockSnapshot(list) {
@@ -8465,6 +8484,7 @@ function applyCloudStockSnapshot(list) {
         String(b.date || '').localeCompare(String(a.date || '')) ||
         ((b.createdAt || 0) - (a.createdAt || 0)));
     if (currentView === 'warehouse') { populateWarehouseFilters(); renderWarehouseView(); }
+    scheduleDecisionRefresh();
 }
 
 function showWarehouseRulesBanner() {
@@ -9044,6 +9064,275 @@ function exportStockCSV() {
     a.click();
     URL.revokeObjectURL(url);
     showToast(`Export ${rows.length} transaksi ke CSV`, 'success');
+}
+
+
+// ============================================================
+// KOTAK KEPUTUSAN — everything waiting on the person in charge
+// ------------------------------------------------------------
+// Nothing here is newly computed: the licence alerts, the low-stock lists and
+// the downtime clocks already existed, each on its own page. What was missing
+// was one place that answers "what needs me today", so a backlog on a page
+// nobody opened stayed invisible.
+//
+// Every group is gated by the area it reads from, so this page never becomes a
+// way around the access model.
+// ============================================================
+
+const LEADER_BREAKDOWN_DAYS = 3;   // a unit down longer than this needs a call
+
+function _daysSince(ms) {
+    if (!ms) return 0;
+    return Math.floor((Date.now() - ms) / 86400000);
+}
+
+// Returns [{ key, title, icon, tone, total, items:[{text, sub}], goto }]
+// Only non-empty groups come back — an empty inbox should look empty.
+function decisionGroups() {
+    const groups = [];
+    const add = g => { if (g.total > 0) groups.push(g); };
+
+    // ---- Laporan harian menunggu diperiksa ----
+    if (hasAccess('teamLog', 'view') || hasAccess('teamLogApprove', 'edit')) {
+        const pending = workLogs.filter(w => workLogApproval(w) === 'pending');
+        add({
+            key: 'approval', icon: 'clipboard-check', tone: 'warning',
+            title: 'Laporan menunggu persetujuan',
+            total: pending.length,
+            items: pending.slice(0, 6).map(w => ({
+                text: `${memberNameOf(w)} · ${w.date}`,
+                sub: (w.task || '').slice(0, 70)
+            })),
+            goto: 'approval'
+        });
+
+        const revision = workLogs.filter(w => workLogApproval(w) === 'revision');
+        add({
+            key: 'revision', icon: 'rotate-left', tone: 'danger',
+            title: 'Laporan diminta revisi, belum diperbaiki',
+            total: revision.length,
+            items: revision.slice(0, 6).map(w => ({
+                text: `${memberNameOf(w)} · ${w.date}`,
+                sub: w.revisionNote || ''
+            })),
+            goto: 'revision'
+        });
+    }
+
+    // ---- Lisensi habis / segera habis ----
+    if (hasAccess('editUnits', 'view')) {
+        const alerts = _buildAlertList();
+        add({
+            key: 'license', icon: 'key', tone: alerts.expiredCount ? 'danger' : 'warning',
+            title: alerts.expiredCount
+                ? `Lisensi kedaluwarsa (${alerts.expiredCount}) dan segera habis (${alerts.soonCount})`
+                : 'Lisensi segera habis',
+            total: alerts.total,
+            // _buildAlertList already sorts soonest-first and formats each line.
+            items: alerts.lines.slice(0, 6).map(line => {
+                const p = line.split(' | ');
+                return { text: `${p[1] || '-'} · ${p[4] || '-'}`, sub: `${p[6] || ''} — ${p[7] || ''}` };
+            }),
+            goto: 'editUnits'
+        });
+
+        // ---- Unit breakdown terlalu lama ----
+        const stuck = globalData
+            .filter(u => u.breakdownStartedAt && _daysSince(u.breakdownStartedAt) >= LEADER_BREAKDOWN_DAYS)
+            .sort((a, b) => a.breakdownStartedAt - b.breakdownStartedAt);
+        add({
+            key: 'breakdown', icon: 'triangle-exclamation', tone: 'danger',
+            title: `Unit breakdown lebih dari ${LEADER_BREAKDOWN_DAYS} hari`,
+            total: stuck.length,
+            items: stuck.slice(0, 6).map(u => ({
+                text: u.name || u.sn || '(tanpa nama)',
+                sub: `${_daysSince(u.breakdownStartedAt)} hari · ${u.site || '-'}${u.breakdownReason ? ' · ' + u.breakdownReason : ''}`
+            })),
+            goto: 'dashboard'
+        });
+    }
+
+    // ---- Stok lisensi menipis ----
+    if (hasAccess('licenseStock', 'view')) {
+        const low = _lowStockList();
+        add({
+            key: 'licenseStock', icon: 'layer-group', tone: 'warning',
+            title: 'Stok lisensi menipis',
+            total: low.length,
+            items: low.slice(0, 6).map(l => ({ text: l.type, sub: `sisa ${l.sisa}` })),
+            goto: 'licenseStock'
+        });
+    }
+
+    // ---- Gudang: barang habis, dan perangkat yang tidak sehat ----
+    if (hasAccess('warehouse', 'view')) {
+        const low = stockSummary('').filter(s => s.qty <= STOCK_LOW_THRESHOLD);
+        add({
+            key: 'stock', icon: 'boxes-stacked',
+            tone: low.some(s => s.qty <= 0) ? 'danger' : 'warning',
+            title: 'Stok barang habis atau menipis',
+            total: low.length,
+            items: low.slice(0, 6).map(s => ({
+                text: s.name,
+                sub: s.qty <= 0 ? 'habis' : `sisa ${s.qty}`
+            })),
+            goto: 'warehouseStock'
+        });
+
+        const unwell = warehouseDevices.filter(d => d.status === 'damaged' || d.status === 'repair');
+        add({
+            key: 'devices', icon: 'microchip', tone: 'warning',
+            title: 'Perangkat rusak atau sedang diperbaiki',
+            total: unwell.length,
+            items: unwell.slice(0, 6).map(d => ({
+                text: `${d.type || 'Perangkat'} · ${d.sn || ''}`,
+                sub: `${DEVICE_STATUS_LABEL[d.status] || d.status}${d.note ? ' · ' + d.note.slice(0, 40) : ''}`
+            })),
+            goto: 'warehouseDevices'
+        });
+    }
+
+    // ---- Pendaftar menunggu disetujui ----
+    if (isOwner()) {
+        const pendingUsers = allUsers.filter(u => u.status !== 'active');
+        add({
+            key: 'users', icon: 'user-plus', tone: 'info',
+            title: 'Pendaftar menunggu persetujuan',
+            total: pendingUsers.length,
+            items: pendingUsers.slice(0, 6).map(u => ({
+                text: u.displayName || u.email || '(tanpa nama)',
+                sub: u.email || ''
+            })),
+            goto: 'users'
+        });
+
+        // An approved account with no area granted cannot do anything; that is
+        // a half-finished action, so it belongs here too.
+        const noAccess = allUsers.filter(u =>
+            u.status === 'active' && u.role !== 'owner' &&
+            ACCESS_AREAS.every(a => effectiveAccess(a.key, u) === 'none'));
+        add({
+            key: 'noaccess', icon: 'user-lock', tone: 'warning',
+            title: 'Akun aktif tapi belum diberi akses',
+            total: noAccess.length,
+            items: noAccess.slice(0, 6).map(u => ({
+                text: u.displayName || u.email || '(tanpa nama)',
+                sub: `${roleLabel(u.role)} — belum bisa membuka apa pun`
+            })),
+            goto: 'users'
+        });
+    }
+
+    return groups;
+}
+
+function decisionTotal() {
+    return decisionGroups().reduce((n, g) => n + g.total, 0);
+}
+
+// Each group knows where its work actually lives; landing on the right tab with
+// the right filter already applied is the difference between a list and a tool.
+function goDecision(target) {
+    switch (target) {
+        case 'approval':
+        case 'revision': {
+            navigateTo('team');
+            switchTeamTab('worklog');
+            const f = document.getElementById('wlApprovalFilter');
+            if (f) { f.value = target === 'approval' ? 'pending' : 'revision'; renderWorkLogTable(); }
+            break;
+        }
+        case 'warehouseStock':
+            navigateTo('warehouse');
+            switchWarehouseTab('stock');
+            break;
+        case 'warehouseDevices':
+            navigateTo('warehouse');
+            switchWarehouseTab('devices');
+            break;
+        default:
+            navigateTo(target);
+    }
+}
+
+function renderDecisionInbox() {
+    const wrap = document.getElementById('decisionGroups');
+    if (!wrap) return;
+    const groups = decisionGroups();
+    const total = groups.reduce((n, g) => n + g.total, 0);
+    // Handling something here changes the count, so the badge has to follow —
+    // otherwise it keeps advertising work that is already done.
+    updateDecisionBadge();
+
+    const stamp = document.getElementById('printStamp');
+    if (stamp) stamp.textContent = `Dicetak ${formatUserTime(Date.now())}`;
+
+    const countEl = document.getElementById('decisionTotal');
+    if (countEl) countEl.textContent = total;
+    const subEl = document.getElementById('decisionTotalSub');
+    if (subEl) {
+        subEl.textContent = total === 0
+            ? 'Tidak ada yang menunggu keputusan Anda'
+            : `Tersebar di ${groups.length} bagian`;
+    }
+
+    if (groups.length === 0) {
+        wrap.innerHTML = `<div class="decision-clear">
+            <i class="fas fa-circle-check"></i>
+            <div>
+                <strong>Tidak ada yang menunggu.</strong>
+                <p>Semua laporan sudah diperiksa, tidak ada lisensi atau stok yang perlu ditindak,
+                dan tidak ada unit yang terlalu lama berhenti.</p>
+            </div>
+        </div>`;
+        return;
+    }
+
+    wrap.innerHTML = groups.map(g => `
+        <div class="decision-card decision-card--${g.tone}">
+            <div class="decision-card__head">
+                <span class="decision-card__title">
+                    <i class="fas fa-${g.icon}"></i> ${escapeHtml(g.title)}
+                </span>
+                <span class="decision-card__count">${g.total}</span>
+            </div>
+            <ul class="decision-list">
+                ${g.items.map(it => `
+                    <li>
+                        <span class="decision-list__text">${escapeHtml(it.text)}</span>
+                        ${it.sub ? `<span class="decision-list__sub">${escapeHtml(it.sub)}</span>` : ''}
+                    </li>`).join('')}
+                ${g.total > g.items.length
+                    ? `<li class="decision-list__more">…dan ${g.total - g.items.length} lagi</li>`
+                    : ''}
+            </ul>
+            <button class="btn btn-secondary btn-sm" onclick="goDecision('${g.goto}')">
+                Tangani <i class="fas fa-arrow-right"></i>
+            </button>
+        </div>`).join('');
+}
+
+// Snapshots arrive in bursts at sign-in, and the inbox reads every collection,
+// so recomputing per snapshot would be wasteful. One pass once the dust
+// settles is enough.
+let _decisionTimer = null;
+function scheduleDecisionRefresh() {
+    if (_decisionTimer) return;
+    _decisionTimer = setTimeout(() => {
+        _decisionTimer = null;
+        updateDecisionBadge();
+        if (currentView === 'leader') renderDecisionInbox();
+    }, 250);
+}
+
+// The sidebar badge is what makes this page get opened at all.
+function updateDecisionBadge() {
+    const el = document.getElementById('decisionBadge');
+    if (!el) return;
+    if (!canViewView('leader')) { el.style.display = 'none'; return; }
+    const n = decisionTotal();
+    el.textContent = n > 99 ? '99+' : String(n);
+    el.style.display = n > 0 ? '' : 'none';
 }
 
 if (window.cloudReady) {

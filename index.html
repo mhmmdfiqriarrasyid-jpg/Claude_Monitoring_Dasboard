@@ -126,6 +126,13 @@
     </div>
     <nav class="sidebar__nav" onclick="if(event.target.closest('.nav__link'))document.getElementById('appShell').classList.remove('nav-open')">
         <div class="nav-group">
+            <div class="nav-group__label">Pimpinan</div>
+            <a class="nav__link" data-view="leader" onclick="navigateTo('leader')">
+                <i class="fas fa-inbox"></i> Kotak Keputusan
+                <span class="nav__badge" id="decisionBadge" style="display:none">0</span>
+            </a>
+        </div>
+        <div class="nav-group">
             <div class="nav-group__label">General</div>
             <a class="nav__link active" data-view="dashboard" onclick="navigateTo('dashboard')">
                 <i class="fas fa-chart-line"></i> Dashboard
@@ -944,6 +951,41 @@
         </div>
 
     </div><!-- /viewTeam -->
+
+    <!-- ==================== LEADER: DECISION INBOX ==================== -->
+    <div id="viewLeader" class="view" style="display:none;">
+        <div class="edit-toolbar">
+            <div class="edit-toolbar__left">
+                <h2 style="margin:0;font-size:18px;font-weight:600;color:var(--accent-text)">
+                    <i class="fas fa-inbox"></i> Kotak Keputusan
+                </h2>
+            </div>
+            <div class="edit-toolbar__right">
+                <button class="btn btn-secondary btn-sm" onclick="renderDecisionInbox()">
+                    <i class="fas fa-rotate"></i> Segarkan
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="window.print()">
+                    <i class="fas fa-print"></i> Cetak
+                </button>
+            </div>
+        </div>
+
+        <!-- Only appears on paper: a printout has no sidebar to say what it is. -->
+        <div class="print-header">
+            <strong>OT Monitoring — Kotak Keputusan</strong>
+            <span id="printStamp"></span>
+        </div>
+
+        <div class="downtime-kpis" style="grid-template-columns:1fr;margin-bottom:16px">
+            <div class="downtime-kpi">
+                <div class="downtime-kpi__label">Menunggu Keputusan Anda</div>
+                <div class="downtime-kpi__value" id="decisionTotal">0</div>
+                <div class="downtime-kpi__sub" id="decisionTotalSub">—</div>
+            </div>
+        </div>
+
+        <div class="decision-grid" id="decisionGroups"></div>
+    </div><!-- /viewLeader -->
 
     <!-- ==================== WAREHOUSE VIEW ==================== -->
     <div id="viewWarehouse" class="view" style="display:none;">
