@@ -13,8 +13,8 @@ rules_version = '2';
 //   access : per-area override map, e.g.
 //            { editUnits:'edit', implements:'view', damage:'edit',
 //              licenseStock:'none', teamShift:'view', teamLog:'edit',
-//              teamMembers:'none', warehouse:'edit', history:'view',
-//              csv:'export' }
+//              teamMembers:'none', teamLogApprove:'edit', warehouse:'edit',
+//              history:'view', csv:'export' }
 //   Missing override → role default. Only 'owner' (everything) and the legacy
 //   'team' (edit) carry defaults; staff/pbt/khl/viewer grant nothing on their
 //   own, so every area is granted explicitly in the app's Akses dialog.
