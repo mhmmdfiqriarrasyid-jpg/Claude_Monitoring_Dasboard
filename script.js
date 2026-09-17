@@ -76,7 +76,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v95';
+const APP_VERSION = 'v96';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -272,6 +272,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     setupKeyboardShortcuts();
     showAppVersion();
+    watchConnection();
     registerServiceWorker();
 
     loadImplements();
@@ -1047,6 +1048,90 @@ function bulkUpdateUnitsFromCSV(parsedUnits) {
 
     return { updated, unchanged, failed };
 }
+// ============================================================
+// OFFLINE-SAFE WRITES
+// ------------------------------------------------------------
+// Firestore queues writes made offline and replays them later, but the promise
+// setDoc() returns only settles once the SERVER confirms. Offline it stays
+// pending forever, so anything inside .then() never runs. That is why these two
+// helpers exist: the audit entry and the user's confirmation must not depend on
+// a promise that will not settle until the signal comes back.
+// ============================================================
+
+// Records the failure of a change that was already logged as done. Called from
+// .catch(), so the trail says "attempted, then rejected" rather than implying
+// the change stuck.
+function logEventFailed(entry, err) {
+    logEvent({
+        ...entry,
+        action: 'error',
+        before: entry.after != null ? String(entry.after) : '',
+        after: `GAGAL (${(err && err.code) || 'error'}) — perubahan tidak tersimpan`
+    });
+}
+
+// Wraps a cloud write so the user always hears something. Online, the success
+// toast waits for the server as before. Offline — or if the server is simply
+// slow — it says the change is held on the device, which is the truth.
+function saveWithFeedback(promise, successMsg, onError) {
+    let settled = false;
+    // Offline we know immediately; online we give the server a fair chance
+    // before claiming anything.
+    const delay = navigator.onLine ? 8000 : 0;
+    const timer = setTimeout(() => {
+        if (settled) return;
+        showToast('Tersimpan di perangkat — akan terkirim saat sinyal kembali', 'info');
+    }, delay);
+    return promise.then(value => {
+        settled = true;
+        clearTimeout(timer);
+        if (successMsg) showToast(successMsg, 'success');
+        return value;
+    }).catch(err => {
+        settled = true;
+        clearTimeout(timer);
+        if (onError) return onError(err);
+        throw err;
+    });
+}
+
+// One place where a cloud write, its audit entry and its user feedback are put
+// in the right order for offline. The audit entry is recorded FIRST — logEvent
+// writes to the local cache and queues its own cloud push, so it survives a
+// signal drop — and only a genuine rejection adds the cancelling entry.
+function cloudWrite(auditEntry, promise, successMsg, onError) {
+    if (auditEntry) logEvent(auditEntry);
+    return saveWithFeedback(promise, successMsg, err => {
+        if (auditEntry) logEventFailed(auditEntry, err);
+        if (onError) onError(err);
+    });
+}
+
+// The status pill in the topbar doubles as the offline indicator: without it a
+// field operator has no way to tell a queued save from a finished one.
+function updateConnectionLabel() {
+    const el = document.getElementById('connectionLabel');
+    if (!el) return;
+    if (navigator.onLine) {
+        delete document.body.dataset.offline;
+        el.textContent = `${globalData.length} Units`;
+    } else {
+        document.body.dataset.offline = '1';
+        el.textContent = 'Offline — perubahan tersimpan di perangkat';
+    }
+}
+
+function watchConnection() {
+    window.addEventListener('online', () => {
+        updateConnectionLabel();
+        showToast('Kembali online — perubahan yang tertunda sedang dikirim', 'success');
+    });
+    window.addEventListener('offline', () => {
+        updateConnectionLabel();
+        showToast('Sinyal hilang — perubahan tetap bisa disimpan di perangkat', 'warning');
+    });
+    updateConnectionLabel();
+}
 
 function deleteUnits(ids) {
     const idSet = new Set(ids);
@@ -1700,7 +1785,7 @@ function onDataLoaded() {
     document.getElementById('lastUpdated').textContent = `Updated: ${now}`;
 
     document.getElementById('connectionDot').classList.add('connected');
-    document.getElementById('connectionLabel').textContent = `${globalData.length} Units`;
+    updateConnectionLabel();
 
     updateEditCount();
 
@@ -5461,11 +5546,14 @@ function addCategory(event) {
         name,
         createdAt: Date.now()
     };
-    window.cloud.saveUserCategory(cat).then(() => {
-        input.value = '';
-        showToast(`Kategori "${name}" ditambahkan`, 'success');
-        logEvent({ action: 'add', unitName: '-', field: 'user category', after: name });
-    }).catch(err => {
+    // Input dikosongkan langsung: tulisannya sudah terantre, jadi menunggu
+    // konfirmasi server hanya akan membuat form terasa macet saat sinyal buruk.
+    input.value = '';
+    cloudWrite(
+        { action: 'add', unitName: '-', field: 'user category', after: name },
+        window.cloud.saveUserCategory(cat),
+        `Kategori "${name}" ditambahkan`,
+        err => {
         console.error('[user-categories] save failed:', err);
         const code = (err && err.code) || 'unknown';
         if (code === 'permission-denied') {
@@ -5474,7 +5562,8 @@ function addCategory(event) {
         } else {
             showToast(`Gagal menyimpan kategori (${code})`, 'error');
         }
-    });
+        }
+    );
 }
 
 function deleteCategory(id) {
@@ -5487,10 +5576,11 @@ function deleteCategory(id) {
         ? `Delete category "${cat.name}"?\n${inUse} unit(s) still reference it — their value will be cleared.`
         : `Delete category "${cat.name}"?`;
     if (!confirm(prompt)) return;
-    window.cloud.deleteUserCategory(id).then(() => {
-        showToast(`Category "${cat.name}" deleted`, 'success');
-        logEvent({ action: 'delete', unitName: '-', field: 'user category', before: cat.name });
-    }).catch(err => {
+    cloudWrite(
+        { action: 'delete', unitName: '-', field: 'user category', before: cat.name },
+        window.cloud.deleteUserCategory(id),
+        `Kategori "${cat.name}" dihapus`,
+        err => {
         console.error('[user-categories] delete failed:', err);
         const code = (err && err.code) || 'unknown';
         if (code === 'permission-denied') {
@@ -5499,7 +5589,8 @@ function deleteCategory(id) {
         } else {
             showToast(`Gagal menghapus kategori (${code})`, 'error');
         }
-    });
+        }
+    );
 }
 
 // ============================================================
@@ -5639,11 +5730,12 @@ function addDamageComponent(event) {
         unitField: DAMAGE_COMPONENT_FIELD[name] || '',
         createdAt: Date.now()
     };
-    window.cloud.saveDamageComponent(comp).then(() => {
-        input.value = '';
-        showToast(`Komponen "${name}" ditambahkan`, 'success');
-        logEvent({ action: 'add', unitName: '-', field: 'komponen kerusakan', after: name });
-    }).catch(err => {
+    input.value = '';
+    cloudWrite(
+        { action: 'add', unitName: '-', field: 'komponen kerusakan', after: name },
+        window.cloud.saveDamageComponent(comp),
+        `Komponen "${name}" ditambahkan`,
+        err => {
         console.error('[damage-components] save failed:', err);
         const code = (err && err.code) || 'unknown';
         if (code === 'permission-denied') {
@@ -5652,7 +5744,8 @@ function addDamageComponent(event) {
         } else {
             showToast(`Gagal menyimpan komponen (${code})`, 'error');
         }
-    });
+        }
+    );
 }
 
 function deleteDamageComponent(id) {
@@ -5664,10 +5757,11 @@ function deleteDamageComponent(id) {
         ? `Hapus komponen "${comp.name}"?\n${inUse} catatan kerusakan memakainya (data lama tetap tersimpan).`
         : `Hapus komponen "${comp.name}"?`;
     if (!confirm(prompt)) return;
-    window.cloud.deleteDamageComponent(id).then(() => {
-        showToast(`Komponen "${comp.name}" dihapus`, 'success');
-        logEvent({ action: 'delete', unitName: '-', field: 'komponen kerusakan', before: comp.name });
-    }).catch(err => {
+    cloudWrite(
+        { action: 'delete', unitName: '-', field: 'komponen kerusakan', before: comp.name },
+        window.cloud.deleteDamageComponent(id),
+        `Komponen "${comp.name}" dihapus`,
+        err => {
         console.error('[damage-components] delete failed:', err);
         const code = (err && err.code) || 'unknown';
         if (code === 'permission-denied') {
@@ -5676,7 +5770,8 @@ function deleteDamageComponent(id) {
         } else {
             showToast(`Gagal menghapus komponen (${code})`, 'error');
         }
-    });
+        }
+    );
 }
 
 function initCloudSync() {
@@ -7540,21 +7635,18 @@ function setShift(memberId, date, shiftKey) {
         return;
     }
 
-    const op = rec ? window.cloud.saveShift(rec) : window.cloud.deleteShift(id);
-    op.then(() => {
-        logEvent({
-            action: 'update',
-            unitName: `[Tim] ${m.name}`,
-            field: `Shift ${date}`,
-            before, after
-        });
-    }).catch(err => {
-        console.error('[team] shift save failed:', err);
-        teamShifts = snapshot;
-        renderShiftGrid();
-        if (err && err.code === 'permission-denied') showTeamRulesBanner();
-        showToast('Gagal menyimpan shift — perubahan dikembalikan', 'error');
-    });
+    cloudWrite(
+        { action: 'update', unitName: `[Tim] ${m.name}`, field: `Shift ${date}`, before, after },
+        rec ? window.cloud.saveShift(rec) : window.cloud.deleteShift(id),
+        null,
+        err => {
+            console.error('[team] shift save failed:', err);
+            teamShifts = snapshot;
+            renderShiftGrid();
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+            showToast('Gagal menyimpan shift — perubahan dikembalikan', 'error');
+        }
+    );
 }
 
 function exportShiftCSV() {
@@ -7658,19 +7750,20 @@ function setMemberCompany(id, value) {
     renderTeamMembersList();
     if (currentView === 'team') renderTeamView();
 
-    window.cloud.saveTeamMember(rec).then(() => {
-        logEvent({
-            action: 'update', unitName: `[Tim] ${m.name}`, field: 'Perusahaan',
-            before: before || '—', after: company || '—'
-        });
-    }).catch(err => {
-        console.error('[team] company save failed:', err);
-        teamMembers = snapshot;
-        renderTeamMembersList();
-        if (currentView === 'team') renderTeamView();
-        if (err && err.code === 'permission-denied') showTeamRulesBanner();
-        showToast('Gagal menyimpan perusahaan — perubahan dikembalikan', 'error');
-    });
+    cloudWrite(
+        { action: 'update', unitName: `[Tim] ${m.name}`, field: 'Perusahaan',
+          before: before || '—', after: company || '—' },
+        window.cloud.saveTeamMember(rec),
+        null,
+        err => {
+            console.error('[team] company save failed:', err);
+            teamMembers = snapshot;
+            renderTeamMembersList();
+            if (currentView === 'team') renderTeamView();
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+            showToast('Gagal menyimpan perusahaan — perubahan dikembalikan', 'error');
+        }
+    );
 }
 
 function addTeamMember(event) {
@@ -7688,14 +7781,16 @@ function addTeamMember(event) {
         return;
     }
     const rec = { id: generateMemberId(), name, jobTitle, company, active: true, createdAt: Date.now() };
-    window.cloud.saveTeamMember(rec).then(() => {
-        logEvent({ action: 'create', unitName: `[Tim] ${name}`, field: 'Anggota', before: '', after: jobTitle || name });
-        showToast(`Anggota "${name}" ditambahkan`, 'success');
-    }).catch(err => {
-        console.error('[team] member save failed:', err);
-        if (err && err.code === 'permission-denied') showTeamRulesBanner();
-        showToast('Gagal menyimpan anggota', 'error');
-    });
+    cloudWrite(
+        { action: 'create', unitName: `[Tim] ${name}`, field: 'Anggota', before: '', after: jobTitle || name },
+        window.cloud.saveTeamMember(rec),
+        `Anggota "${name}" ditambahkan`,
+        err => {
+            console.error('[team] member save failed:', err);
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+            showToast('Gagal menyimpan anggota', 'error');
+        }
+    );
     nameEl.value = '';
     jobEl.value = '';
     // The company is deliberately kept: several people from the same company
@@ -7708,16 +7803,17 @@ function toggleTeamMember(id) {
     const m = memberById(id);
     if (!m) return;
     const nextActive = m.active === false;
-    window.cloud.saveTeamMember({ ...m, active: nextActive, updatedAt: Date.now() }).then(() => {
-        logEvent({
-            action: 'update', unitName: `[Tim] ${m.name}`, field: 'Status anggota',
-            before: m.active === false ? 'Nonaktif' : 'Aktif',
-            after: nextActive ? 'Aktif' : 'Nonaktif'
-        });
-    }).catch(err => {
-        console.error('[team] member toggle failed:', err);
-        showToast('Gagal mengubah status anggota', 'error');
-    });
+    cloudWrite(
+        { action: 'update', unitName: `[Tim] ${m.name}`, field: 'Status anggota',
+          before: m.active === false ? 'Nonaktif' : 'Aktif',
+          after: nextActive ? 'Aktif' : 'Nonaktif' },
+        window.cloud.saveTeamMember({ ...m, active: nextActive, updatedAt: Date.now() }),
+        null,
+        err => {
+            console.error('[team] member toggle failed:', err);
+            showToast('Gagal mengubah status anggota', 'error');
+        }
+    );
 }
 
 function deleteTeamMember(id) {
@@ -7731,13 +7827,15 @@ function deleteTeamMember(id) {
         : '';
     if (!confirm(`Hapus anggota "${m.name}"?${warn}`)) return;
 
-    window.cloud.deleteTeamMember(id).then(() => {
-        logEvent({ action: 'delete', unitName: `[Tim] ${m.name}`, field: 'Anggota', before: m.jobTitle || m.name, after: '' });
-        showToast(`Anggota "${m.name}" dihapus`, 'success');
-    }).catch(err => {
-        console.error('[team] member delete failed:', err);
-        showToast('Gagal menghapus anggota', 'error');
-    });
+    cloudWrite(
+        { action: 'delete', unitName: `[Tim] ${m.name}`, field: 'Anggota', before: m.jobTitle || m.name, after: '' },
+        window.cloud.deleteTeamMember(id),
+        `Anggota "${m.name}" dihapus`,
+        err => {
+            console.error('[team] member delete failed:', err);
+            showToast('Gagal menghapus anggota', 'error');
+        }
+    );
 }
 
 // ============================================================
@@ -8133,23 +8231,25 @@ function saveWorkLog(event) {
     };
     const wasApproved = existing && workLogApproval(existing) === 'approved';
 
-    window.cloud.saveWorkLog(rec).then(() => {
-        logEvent({
+    cloudWrite(
+        {
             action: existing ? 'update' : 'create',
             unitId: rec.unitId,
             unitName: `[Laporan] ${member.name}`,
             field: `Laporan ${rec.date}`,
             before: existing ? (existing.task || '') : '',
             after: rec.task
-        });
-        showToast(wasApproved
+        },
+        window.cloud.saveWorkLog(rec),
+        wasApproved
             ? 'Laporan diperbarui — persetujuan dibatalkan, perlu diperiksa ulang'
-            : (existing ? 'Laporan diperbarui' : 'Laporan harian ditambahkan'), 'success');
-    }).catch(err => {
-        console.error('[team] work log save failed:', err);
-        if (err && err.code === 'permission-denied') showTeamRulesBanner();
-        showToast('Gagal menyimpan laporan', 'error');
-    });
+            : (existing ? 'Laporan diperbarui' : 'Laporan harian ditambahkan'),
+        err => {
+            console.error('[team] work log save failed:', err);
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+            showToast('Gagal menyimpan laporan', 'error');
+        }
+    );
 
     closeWorkLogModal();
 }
@@ -8159,17 +8259,17 @@ function deleteWorkLog(id) {
     const w = workLogs.find(x => x.id === id);
     if (!w) return;
     if (!confirm(`Hapus laporan ${memberNameOf(w)} tanggal ${w.date}?`)) return;
-    window.cloud.deleteWorkLog(id).then(() => {
-        logEvent({
-            action: 'delete', unitId: w.unitId || '',
-            unitName: `[Laporan] ${memberNameOf(w)}`,
-            field: `Laporan ${w.date}`, before: w.task || '', after: ''
-        });
-        showToast('Laporan dihapus', 'success');
-    }).catch(err => {
-        console.error('[team] work log delete failed:', err);
-        showToast('Gagal menghapus laporan', 'error');
-    });
+    cloudWrite(
+        { action: 'delete', unitId: w.unitId || '',
+          unitName: `[Laporan] ${memberNameOf(w)}`,
+          field: `Laporan ${w.date}`, before: w.task || '', after: '' },
+        window.cloud.deleteWorkLog(id),
+        'Laporan dihapus',
+        err => {
+            console.error('[team] work log delete failed:', err);
+            showToast('Gagal menghapus laporan', 'error');
+        }
+    );
 }
 
 function approveWorkLog(id) {
@@ -8194,20 +8294,20 @@ function approveWorkLog(id) {
         revisionNote: '',
         updatedAt: Date.now()
     };
-    window.cloud.saveWorkLog(rec).then(() => {
-        logEvent({
-            action: 'update', unitId: rec.unitId || '',
-            unitName: `[Laporan] ${memberNameOf(rec)}`,
-            field: `Persetujuan ${rec.date}`,
-            before: APPROVAL_STATES[workLogApproval(w)].label,
-            after: 'Disetujui'
-        });
-        showToast('Laporan disetujui', 'success');
-    }).catch(err => {
-        console.error('[team] approve failed:', err);
-        if (err && err.code === 'permission-denied') showTeamRulesBanner();
-        showToast('Gagal menyetujui laporan', 'error');
-    });
+    cloudWrite(
+        { action: 'update', unitId: rec.unitId || '',
+          unitName: `[Laporan] ${memberNameOf(rec)}`,
+          field: `Persetujuan ${rec.date}`,
+          before: APPROVAL_STATES[workLogApproval(w)].label,
+          after: 'Disetujui' },
+        window.cloud.saveWorkLog(rec),
+        'Laporan disetujui',
+        err => {
+            console.error('[team] approve failed:', err);
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+            showToast('Gagal menyetujui laporan', 'error');
+        }
+    );
 }
 
 function reviseWorkLog(id) {
@@ -8237,20 +8337,20 @@ function reviseWorkLog(id) {
         reviewedAt: Date.now(),
         updatedAt: Date.now()
     };
-    window.cloud.saveWorkLog(rec).then(() => {
-        logEvent({
-            action: 'update', unitId: rec.unitId || '',
-            unitName: `[Laporan] ${memberNameOf(rec)}`,
-            field: `Persetujuan ${rec.date}`,
-            before: APPROVAL_STATES[workLogApproval(w)].label,
-            after: `Perlu Revisi — ${rec.revisionNote}`
-        });
-        showToast('Laporan ditandai perlu revisi', 'success');
-    }).catch(err => {
-        console.error('[team] revise failed:', err);
-        if (err && err.code === 'permission-denied') showTeamRulesBanner();
-        showToast('Gagal menandai laporan', 'error');
-    });
+    cloudWrite(
+        { action: 'update', unitId: rec.unitId || '',
+          unitName: `[Laporan] ${memberNameOf(rec)}`,
+          field: `Persetujuan ${rec.date}`,
+          before: APPROVAL_STATES[workLogApproval(w)].label,
+          after: `Perlu Revisi — ${rec.revisionNote}` },
+        window.cloud.saveWorkLog(rec),
+        'Laporan ditandai perlu revisi',
+        err => {
+            console.error('[team] revise failed:', err);
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+            showToast('Gagal menandai laporan', 'error');
+        }
+    );
 }
 
 function exportWorkLogCSV() {
@@ -8641,21 +8741,23 @@ function saveDevice(event) {
         updatedAt: Date.now()
     };
 
-    window.cloud.saveDevice(rec).then(() => {
-        logEvent({
+    cloudWrite(
+        {
             action: existing ? 'update' : 'create',
             unitId: rec.unitId,
             unitName: `[Gudang] ${rec.type || 'Perangkat'} ${rec.sn}`,
             field: 'Perangkat',
             before: existing ? `${DEVICE_STATUS_LABEL[existing.status] || existing.status} · ${deviceWhere(existing)}` : '',
             after: `${DEVICE_STATUS_LABEL[rec.status] || rec.status} · ${deviceWhere(rec)}`
-        });
-        showToast(existing ? 'Perangkat diperbarui' : 'Perangkat ditambahkan', 'success');
-    }).catch(err => {
-        console.error('[warehouse] device save failed:', err);
-        if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
-        showToast('Gagal menyimpan perangkat', 'error');
-    });
+        },
+        window.cloud.saveDevice(rec),
+        existing ? 'Perangkat diperbarui' : 'Perangkat ditambahkan',
+        err => {
+            console.error('[warehouse] device save failed:', err);
+            if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+            showToast('Gagal menyimpan perangkat', 'error');
+        }
+    );
 
     closeDeviceModal();
 }
@@ -8665,19 +8767,19 @@ function deleteDevice(id) {
     const d = warehouseDevices.find(x => x.id === id);
     if (!d) return;
     if (!confirm(`Hapus perangkat ${d.type || ''} SN ${d.sn}?\n\nRiwayatnya di audit log tetap tersimpan.`)) return;
-    window.cloud.deleteDevice(id).then(() => {
-        logEvent({
-            action: 'delete',
-            unitName: `[Gudang] ${d.type || 'Perangkat'} ${d.sn}`,
-            field: 'Perangkat',
-            before: `${DEVICE_STATUS_LABEL[d.status] || d.status} · ${deviceWhere(d)}`,
-            after: ''
-        });
-        showToast('Perangkat dihapus', 'success');
-    }).catch(err => {
-        console.error('[warehouse] device delete failed:', err);
-        showToast('Gagal menghapus perangkat', 'error');
-    });
+    cloudWrite(
+        { action: 'delete',
+          unitName: `[Gudang] ${d.type || 'Perangkat'} ${d.sn}`,
+          field: 'Perangkat',
+          before: `${DEVICE_STATUS_LABEL[d.status] || d.status} · ${deviceWhere(d)}`,
+          after: '' },
+        window.cloud.deleteDevice(id),
+        'Perangkat dihapus',
+        err => {
+            console.error('[warehouse] device delete failed:', err);
+            showToast('Gagal menghapus perangkat', 'error');
+        }
+    );
 }
 
 function exportDeviceCSV() {
@@ -8883,21 +8985,23 @@ function saveStockItem(event) {
         updatedAt: Date.now()
     };
 
-    window.cloud.saveStockItem(rec).then(() => {
-        logEvent({
+    cloudWrite(
+        {
             action: existing ? 'update' : 'create',
             unitId: rec.unitId,
             unitName: `[Gudang] ${rec.itemName}`,
             field: txnType === 'OUT' ? 'Stok keluar' : 'Stok masuk',
             before: existing ? `${existing.txnType} ${existing.qty}` : '',
             after: `${txnType} ${qty}${rec.location ? ' @ ' + rec.location : ''}`
-        });
-        showToast(existing ? 'Transaksi diperbarui' : 'Transaksi dicatat', 'success');
-    }).catch(err => {
-        console.error('[warehouse] stock save failed:', err);
-        if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
-        showToast('Gagal menyimpan transaksi', 'error');
-    });
+        },
+        window.cloud.saveStockItem(rec),
+        existing ? 'Transaksi diperbarui' : 'Transaksi dicatat',
+        err => {
+            console.error('[warehouse] stock save failed:', err);
+            if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+            showToast('Gagal menyimpan transaksi', 'error');
+        }
+    );
 
     closeStockModal();
 }
@@ -8907,19 +9011,19 @@ function deleteStockItem(id) {
     const r = stockLedger.find(x => x.id === id);
     if (!r) return;
     if (!confirm(`Hapus transaksi ${r.txnType === 'OUT' ? 'keluar' : 'masuk'} ${r.qty} ${r.itemName} (${r.date})?`)) return;
-    window.cloud.deleteStockItem(id).then(() => {
-        logEvent({
-            action: 'delete',
-            unitName: `[Gudang] ${r.itemName}`,
-            field: 'Transaksi stok',
-            before: `${r.txnType} ${r.qty}`,
-            after: ''
-        });
-        showToast('Transaksi dihapus', 'success');
-    }).catch(err => {
-        console.error('[warehouse] stock delete failed:', err);
-        showToast('Gagal menghapus transaksi', 'error');
-    });
+    cloudWrite(
+        { action: 'delete',
+          unitName: `[Gudang] ${r.itemName}`,
+          field: 'Transaksi stok',
+          before: `${r.txnType} ${r.qty}`,
+          after: '' },
+        window.cloud.deleteStockItem(id),
+        'Transaksi dihapus',
+        err => {
+            console.error('[warehouse] stock delete failed:', err);
+            showToast('Gagal menghapus transaksi', 'error');
+        }
+    );
 }
 
 function exportStockCSV() {
