@@ -89,16 +89,6 @@ service cloud.firestore {
     // enforces that: an approver's write may touch the approval fields and
     // nothing else, so they cannot quietly change the hours or the description
     // on their way past. Creating and deleting stay with the editors.
-    // Field documentation photos, one document per report. Split out of the
-    // work log itself because workLogs is subscribed whole, with no limit —
-    // inline photos meant every device re-downloaded every photo on every app
-    // open. Same area as the report: whoever may edit a report may edit its
-    // photos, so there is no new permission to hand out per person.
-    match /workLogPhotos/{id} {
-      allow read:  if isActive();
-      allow write: if canEditArea('teamLog');
-    }
-
     match /workLogs/{id} {
       allow read:   if isActive();
       allow create: if canEditArea('teamLog');
@@ -109,6 +99,16 @@ service cloud.firestore {
                              .hasOnly(['approval', 'approvedBy', 'approvedByEmail',
                                        'approvedAt', 'revisionNote',
                                        'reviewedBy', 'reviewedAt', 'updatedAt']));
+    }
+
+    // Field documentation photos, one document per report. Split out of the
+    // work log itself because workLogs is subscribed whole, with no limit —
+    // inline photos meant every device re-downloaded every photo on every app
+    // open. Same area as the report: whoever may edit a report may edit its
+    // photos, so there is no new permission to hand out per person.
+    match /workLogPhotos/{id} {
+      allow read:  if isActive();
+      allow write: if canEditArea('teamLog');
     }
 
     // ---- Warehouse ----
