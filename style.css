@@ -3335,3 +3335,68 @@ body[data-nocsvimport] .csv-import { display: none !important; }
     .downtime-kpis { grid-template-columns: 1fr !important; }
     .downtime-kpi { box-shadow: none; border: 1px solid #999; }
 }
+
+/* ---- Ringkasan mingguan ---- */
+.week-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+}
+.week-metric {
+    padding: 14px 16px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+}
+.week-metric__label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+}
+.week-metric__value {
+    margin: 4px 0 6px;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+.week-metric__delta {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-light);
+}
+/* Direction alone does not say whether a number is good news — fewer
+   breakdowns is an improvement, fewer reports is not — so the colour comes
+   from the metric, not from the sign. */
+.week-metric__delta--good { color: var(--success); }
+.week-metric__delta--bad  { color: var(--danger); }
+.week-metric__prev {
+    display: block;
+    margin-top: 2px;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-light);
+}
+.week-health {
+    margin-top: 16px;
+    padding: 14px 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+#recapTable tfoot td,
+#recapTable tfoot th {
+    border-top: 2px solid var(--border);
+    background: var(--bg);
+    font-weight: 600;
+}
+@media print {
+    .team-tabbar { display: none !important; }
+    .week-grid { grid-template-columns: repeat(3, 1fr); }
+    .week-metric { box-shadow: none; border: 1px solid #999; break-inside: avoid; }
+}

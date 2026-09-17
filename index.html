@@ -954,21 +954,27 @@
 
     <!-- ==================== LEADER: DECISION INBOX ==================== -->
     <div id="viewLeader" class="view" style="display:none;">
-        <div class="edit-toolbar">
-            <div class="edit-toolbar__left">
-                <h2 style="margin:0;font-size:18px;font-weight:600;color:var(--accent-text)">
+        <div class="team-tabbar">
+            <div class="team-tabs" role="tablist" aria-label="Halaman pimpinan">
+                <button class="team-tab leader-tab active" data-tab="inbox" role="tab" aria-selected="true"
+                        aria-controls="leaderInboxPanel" onclick="switchLeaderTab('inbox')">
                     <i class="fas fa-inbox"></i> Kotak Keputusan
-                </h2>
-            </div>
-            <div class="edit-toolbar__right">
-                <button class="btn btn-secondary btn-sm" onclick="renderDecisionInbox()">
-                    <i class="fas fa-rotate"></i> Segarkan
                 </button>
-                <button class="btn btn-secondary btn-sm" onclick="window.print()">
-                    <i class="fas fa-print"></i> Cetak
+                <button class="team-tab leader-tab" data-tab="company" role="tab" aria-selected="false"
+                        aria-controls="leaderCompanyPanel" onclick="switchLeaderTab('company')">
+                    <i class="fas fa-building"></i> Rekap Perusahaan
+                </button>
+                <button class="team-tab leader-tab" data-tab="week" role="tab" aria-selected="false"
+                        aria-controls="leaderWeekPanel" onclick="switchLeaderTab('week')">
+                    <i class="fas fa-chart-line"></i> Ringkasan Mingguan
                 </button>
             </div>
+            <button class="btn btn-secondary btn-sm" onclick="window.print()" style="margin-bottom:8px">
+                <i class="fas fa-print"></i> Cetak
+            </button>
         </div>
+
+        <div id="leaderInboxPanel" role="tabpanel" aria-label="Kotak Keputusan">
 
         <!-- Only appears on paper: a printout has no sidebar to say what it is. -->
         <div class="print-header">
@@ -985,6 +991,76 @@
         </div>
 
         <div class="decision-grid" id="decisionGroups"></div>
+        </div><!-- /leaderInboxPanel -->
+
+        <!-- ---------- Rekap per perusahaan ---------- -->
+        <div id="leaderCompanyPanel" role="tabpanel" aria-label="Rekap Perusahaan" style="display:none">
+            <div class="print-header">
+                <strong>OT Monitoring — Rekap per Perusahaan</strong>
+                <span id="recapMonthLabel"></span>
+            </div>
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <div class="week-nav">
+                        <button class="btn btn-secondary btn-sm" aria-label="Bulan sebelumnya" title="Bulan sebelumnya"
+                                onclick="shiftRecapMonth(-1)"><i class="fas fa-chevron-left"></i></button>
+                        <input type="month" id="recapMonth" class="form-input" aria-label="Pilih bulan"
+                               onchange="onRecapMonthChange()" style="width:auto">
+                        <button class="btn btn-secondary btn-sm" aria-label="Bulan berikutnya" title="Bulan berikutnya"
+                                onclick="shiftRecapMonth(1)"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                </div>
+                <div class="edit-toolbar__right">
+                    <button class="btn btn-secondary csv-export" onclick="exportRecapCSV()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+            </div>
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-building"></i> Jam Kerja per Perusahaan</div>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table table--cardable" id="recapTable">
+                        <thead>
+                            <tr>
+                                <th>No</th>
+                                <th>Perusahaan</th>
+                                <th>Anggota</th>
+                                <th>Laporan</th>
+                                <th>Total Jam</th>
+                                <th>Unit Ditangani</th>
+                                <th>Disetujui</th>
+                                <th>Belum Selesai</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recapBody"></tbody>
+                        <tfoot id="recapFoot"></tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ---------- Ringkasan mingguan ---------- -->
+        <div id="leaderWeekPanel" role="tabpanel" aria-label="Ringkasan Mingguan" style="display:none">
+            <div class="print-header">
+                <strong>OT Monitoring — Ringkasan Mingguan</strong>
+                <span id="weekSummaryPrev"></span>
+            </div>
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <div class="week-nav">
+                        <button class="btn btn-secondary btn-sm" aria-label="Minggu sebelumnya" title="Minggu sebelumnya"
+                                onclick="shiftSummaryWeek(-1)"><i class="fas fa-chevron-left"></i></button>
+                        <span id="weekSummaryLabel" class="week-nav__label">—</span>
+                        <button class="btn btn-secondary btn-sm" aria-label="Minggu berikutnya" title="Minggu berikutnya"
+                                onclick="shiftSummaryWeek(1)"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                </div>
+            </div>
+            <div class="week-grid" id="weekSummaryGrid"></div>
+            <div class="week-health" id="weekHealth"></div>
+        </div>
     </div><!-- /viewLeader -->
 
     <!-- ==================== WAREHOUSE VIEW ==================== -->

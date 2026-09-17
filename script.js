@@ -76,7 +76,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v97';
+const APP_VERSION = 'v98';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -665,7 +665,7 @@ function navigateTo(view) {
     if (view === 'leader') {
         // Pending sign-ups only load once the owner's user subscription runs.
         if (isOwner()) ensureUsersSubscription();
-        renderDecisionInbox();
+        renderLeaderView();
     }
 
     if (view === 'users') {
@@ -9333,6 +9333,260 @@ function updateDecisionBadge() {
     const n = decisionTotal();
     el.textContent = n > 99 ? '99+' : String(n);
     el.style.display = n > 0 ? '' : 'none';
+}
+
+
+// ============================================================
+// REKAP PER PERUSAHAAN + RINGKASAN MINGGUAN
+// ------------------------------------------------------------
+// Both read only what the daily reports already carry. The company recap
+// exists because the hours are billable between two PTs and nothing was ever
+// adding them up; the weekly summary exists because "how did this week go"
+// should not require opening five pages.
+// ============================================================
+
+let leaderTab = 'inbox';        // 'inbox' | 'company' | 'week'
+let recapMonth = '';            // 'YYYY-MM'
+let weekAnchor = '';            // ISO date inside the week being shown
+
+function currentMonthISO() {
+    return toISODate().slice(0, 7);
+}
+
+function monthLabel(iso) {
+    const m = /^(\d{4})-(\d{2})$/.exec(iso || '');
+    if (!m) return iso || '';
+    return `${MONTH_NAMES[+m[2] - 1]} ${m[1]}`;
+}
+
+// ---- B2: per-company recap ----
+// One row per company for the chosen month. Reports whose member has no
+// company yet are grouped rather than dropped, so the totals always add up to
+// the month's real figures.
+function companyRecap(monthISO) {
+    const rows = new Map();
+    workLogs.forEach(w => {
+        const d = String(w.date || '');
+        if (monthISO && d.slice(0, 7) !== monthISO) return;
+        const key = companyOfRecord(w) || NO_COMPANY;
+        const cur = rows.get(key) || {
+            company: key, minutes: 0, reports: 0,
+            approved: 0, pending: 0, revision: 0,
+            units: new Set(), members: new Set()
+        };
+        cur.minutes += workLogMinutes(w);
+        cur.reports += 1;
+        cur[workLogApproval(w)] += 1;
+        workLogUnits(w).forEach(u => cur.units.add(u.id || u.sn || ''));
+        if (w.memberId) cur.members.add(w.memberId);
+        rows.set(key, cur);
+    });
+    return [...rows.values()]
+        .map(r => ({ ...r, units: r.units.size, members: r.members.size }))
+        .sort((a, b) => b.minutes - a.minutes);
+}
+
+function renderCompanyRecap() {
+    if (!recapMonth) recapMonth = currentMonthISO();
+    const picker = document.getElementById('recapMonth');
+    if (picker && picker.value !== recapMonth) picker.value = recapMonth;
+    const label = document.getElementById('recapMonthLabel');
+    if (label) label.textContent = monthLabel(recapMonth);
+
+    const rows = companyRecap(recapMonth);
+    const tbody = document.getElementById('recapBody');
+    if (!tbody) return;
+
+    if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-secondary)">
+            Belum ada laporan harian pada ${escapeHtml(monthLabel(recapMonth))}.
+        </td></tr>`;
+        const f = document.getElementById('recapFoot');
+        if (f) f.innerHTML = '';
+        return;
+    }
+
+    tbody.innerHTML = rows.map((r, i) => `
+        <tr>
+            <td>${i + 1}</td>
+            <td data-label="Perusahaan"><strong>${escapeHtml(r.company)}</strong></td>
+            <td data-label="Anggota">${r.members}</td>
+            <td data-label="Laporan">${r.reports}</td>
+            <td data-label="Total Jam" style="white-space:nowrap"><strong>${escapeHtml(formatMinutes(r.minutes))}</strong></td>
+            <td data-label="Unit Ditangani">${r.units}</td>
+            <td data-label="Disetujui"><span class="appr appr--approved">${r.approved}</span></td>
+            <td data-label="Belum Selesai">
+                ${r.pending ? `<span class="appr appr--pending">${r.pending} menunggu</span> ` : ''}
+                ${r.revision ? `<span class="appr appr--revision">${r.revision} revisi</span>` : ''}
+                ${(!r.pending && !r.revision) ? '<span style="color:var(--text-light)">—</span>' : ''}
+            </td>
+        </tr>`).join('');
+
+    // A totals row is what makes this usable for invoicing: the figure at the
+    // bottom is the one that goes on the sheet.
+    const tot = rows.reduce((a, r) => ({
+        members: a.members + r.members, reports: a.reports + r.reports,
+        minutes: a.minutes + r.minutes, units: a.units + r.units,
+        approved: a.approved + r.approved
+    }), { members: 0, reports: 0, minutes: 0, units: 0, approved: 0 });
+    const foot = document.getElementById('recapFoot');
+    if (foot) {
+        foot.innerHTML = `<tr>
+            <th scope="row" colspan="2">Total</th>
+            <td>${tot.members}</td>
+            <td>${tot.reports}</td>
+            <td style="white-space:nowrap"><strong>${escapeHtml(formatMinutes(tot.minutes))}</strong></td>
+            <td>${tot.units}</td>
+            <td>${tot.approved}</td>
+            <td></td>
+        </tr>`;
+    }
+}
+
+function shiftRecapMonth(delta) {
+    if (!recapMonth) recapMonth = currentMonthISO();
+    const [y, m] = recapMonth.split('-').map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    recapMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    renderCompanyRecap();
+}
+
+function onRecapMonthChange() {
+    const el = document.getElementById('recapMonth');
+    if (el && el.value) recapMonth = el.value;
+    renderCompanyRecap();
+}
+
+function exportRecapCSV() {
+    if (!canCsv('export')) return;
+    const rows = companyRecap(recapMonth);
+    if (rows.length === 0) { showToast('Tidak ada data untuk diexport', 'warning'); return; }
+    const headers = ['Perusahaan', 'Bulan', 'Jumlah Anggota', 'Jumlah Laporan', 'Total Jam',
+                     'Total Jam (desimal)', 'Unit Ditangani', 'Disetujui', 'Menunggu', 'Perlu Revisi'];
+    const dataRows = rows.map(r => [
+        r.company, monthLabel(recapMonth), r.members, r.reports,
+        formatMinutes(r.minutes), (r.minutes / 60).toFixed(2),
+        r.units, r.approved, r.pending, r.revision
+    ]);
+    const csv = toCSV(headers, dataRows);
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `rekap_perusahaan_${recapMonth}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Export rekap ${monthLabel(recapMonth)}`, 'success');
+}
+
+// ---- B3: this week against last week ----
+function weekStats(weekStartISO) {
+    const days = weekDates(weekStartISO);
+    const inWeek = v => days.includes(String(v || '').slice(0, 10));
+    const logs = workLogs.filter(w => inWeek(w.date));
+    return {
+        reports: logs.length,
+        minutes: logs.reduce((n, w) => n + workLogMinutes(w), 0),
+        people: new Set(logs.map(w => w.memberId).filter(Boolean)).size,
+        damages: globalDamages.filter(d => inWeek(d.date)).length,
+        resolved: globalDamages.filter(d => d.resolved && inWeek(d.resolvedAt)).length,
+        onDuty: teamShifts.filter(s => inWeek(s.date) && s.shift && s.shift !== 'libur').length,
+        stockOut: stockLedger
+            .filter(r => r.txnType === 'OUT' && inWeek(r.date))
+            .reduce((n, r) => n + (Number(r.qty) || 0), 0)
+    };
+}
+
+function renderWeekSummary() {
+    if (!weekAnchor) weekAnchor = startOfWeekISO(toISODate());
+    const thisStart = startOfWeekISO(weekAnchor);
+    const lastStart = addDaysISO(thisStart, -7);
+    const now = weekStats(thisStart);
+    const prev = weekStats(lastStart);
+
+    const label = document.getElementById('weekSummaryLabel');
+    if (label) label.textContent = weekRangeLabel(thisStart);
+    const prevLabel = document.getElementById('weekSummaryPrev');
+    if (prevLabel) prevLabel.textContent = `dibanding ${weekRangeLabel(lastStart)}`;
+
+    // Fewer breakdowns is good, more hours is good — direction is not the same
+    // for every row, so each one says which way is better.
+    const metrics = [
+        { key: 'reports',  label: 'Laporan harian',    fmt: v => String(v),        better: 'up' },
+        { key: 'minutes',  label: 'Jam kerja tercatat', fmt: v => formatMinutes(v), better: 'up' },
+        { key: 'people',   label: 'Anggota melapor',    fmt: v => String(v),        better: 'up' },
+        { key: 'onDuty',   label: 'Hari-orang bertugas', fmt: v => String(v),       better: 'up' },
+        { key: 'damages',  label: 'Kerusakan baru',     fmt: v => String(v),        better: 'down' },
+        { key: 'resolved', label: 'Kerusakan selesai',  fmt: v => String(v),        better: 'up' },
+        { key: 'stockOut', label: 'Barang keluar gudang', fmt: v => String(v),      better: 'flat' }
+    ];
+
+    const wrap = document.getElementById('weekSummaryGrid');
+    if (!wrap) return;
+    wrap.innerHTML = metrics.map(m => {
+        const a = now[m.key], b = prev[m.key];
+        const diff = a - b;
+        let tone = 'flat', arrow = '→';
+        if (diff !== 0 && m.better !== 'flat') {
+            const good = m.better === 'up' ? diff > 0 : diff < 0;
+            tone = good ? 'good' : 'bad';
+            arrow = diff > 0 ? '▲' : '▼';
+        } else if (diff !== 0) {
+            arrow = diff > 0 ? '▲' : '▼';
+        }
+        const deltaText = diff === 0
+            ? 'sama'
+            : `${arrow} ${m.key === 'minutes' ? formatMinutes(Math.abs(diff)) : Math.abs(diff)}`;
+        return `
+        <div class="week-metric">
+            <div class="week-metric__label">${escapeHtml(m.label)}</div>
+            <div class="week-metric__value">${escapeHtml(m.fmt(a))}</div>
+            <div class="week-metric__delta week-metric__delta--${tone}">
+                ${escapeHtml(deltaText)}
+                <span class="week-metric__prev">minggu lalu ${escapeHtml(m.fmt(b))}</span>
+            </div>
+        </div>`;
+    }).join('');
+
+    // Fleet health has no weekly history to compare against — the app stores
+    // current status, not snapshots — so it is shown as a plain "right now"
+    // figure rather than a fake trend.
+    const good = globalData.filter(u => isGood(u.status)).length;
+    const health = document.getElementById('weekHealth');
+    if (health) {
+        health.innerHTML = globalData.length
+            ? `<strong>${pct(good, globalData.length)}%</strong> unit sehat saat ini
+               (${good} dari ${globalData.length}) — angka sekarang, bukan perbandingan mingguan`
+            : 'Belum ada data unit.';
+    }
+}
+
+function shiftSummaryWeek(delta) {
+    if (!weekAnchor) weekAnchor = startOfWeekISO(toISODate());
+    weekAnchor = addDaysISO(startOfWeekISO(weekAnchor), delta * 7);
+    renderWeekSummary();
+}
+
+// ---- tabs ----
+function switchLeaderTab(tab) {
+    leaderTab = ['company', 'week'].includes(tab) ? tab : 'inbox';
+    renderLeaderView();
+}
+
+function renderLeaderView() {
+    document.querySelectorAll('.leader-tab').forEach(btn => {
+        const on = btn.dataset.tab === leaderTab;
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    const panels = { inbox: 'leaderInboxPanel', company: 'leaderCompanyPanel', week: 'leaderWeekPanel' };
+    Object.entries(panels).forEach(([key, id]) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = (key === leaderTab) ? '' : 'none';
+    });
+    if (leaderTab === 'inbox') renderDecisionInbox();
+    else if (leaderTab === 'company') renderCompanyRecap();
+    else renderWeekSummary();
 }
 
 if (window.cloudReady) {
