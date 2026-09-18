@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-308 pemeriksaan di delapan suite, menggerakkan Chromium sungguhan terhadap
+480 pemeriksaan di tiga belas suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -103,7 +103,8 @@ CHROME_PATH=/jalur/ke/chrome npm test
 ```
 
 Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
-`session_test`, `warehouse_test`, `approval_test`, `regress`.
+`session_test`, `warehouse_test`, `approval_test`, `leader_test`, `recap_test`,
+`photos_test`, `migration_test`, `history_scan_test`, `regress`.
 
 ---
 
@@ -138,6 +139,27 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 - **Tulisan cloud lewat `cloudWrite()`.** Jangan panggil `logEvent()` di dalam
   `.then()` sebuah tulisan Firestore: offline, promise-nya tidak pernah selesai
   dan jejak auditnya hilang.
+- **⚠️ Jangan pernah menulis migrasi data yang dijaga hanya penanda
+  `localStorage`.** Penanda itu per-browser, bukan per-database: ganti
+  perangkat, hapus data situs, atau install ulang PWA, dan migrasinya jalan
+  lagi. Empat migrasi seperti itu pernah ada di sini (nickname, lisensi ×2,
+  site) dan menimpa 366 field dengan data Excel Mei 2026 setiap kali seseorang
+  membukanya di browser baru — termasuk mengembalikan unit ke PT yang salah.
+  Semuanya sudah dihapus. Kalau memang perlu migrasi, tiru
+  `applyDefaultLicensesIfNeeded()` (`script.js`): `isOwner()` **dan** hanya
+  mengisi yang kosong (`if (!unit.gpsLicense)`), bukan menimpa yang berbeda.
+- **Catatan riwayat bisa berbohong, dan ada alat untuk itu.** `logEvent()`
+  menulis sebelum server menjawab, jadi tulisan yang ditolak tetap
+  meninggalkan barisnya. `/history` diizinkan oleh `canEditAnything()` — edit
+  di area **mana pun** — sementara tiap koleksi dijaga areanya sendiri, jadi
+  catatan bisa lolos walau datanya ditolak. Tombol **Periksa** di modal History
+  (khusus owner) memindai seluruh koleksi dan menawarkan menghapus baris yang
+  nilainya terbukti tidak pernah bergerak. Sengaja dibuat sempit: hanya update
+  field unit, hanya baris terbaru per unit+field, dan hanya kalau nilainya
+  masih persis seperti sebelum perubahan.
+- **Semua penulis `units` mengunci dirinya sendiri** lewat `canWriteUnits()`,
+  bukan hanya di pemanggil. Pemanggil baru tidak boleh mewarisi nol
+  perlindungan seperti dulu.
 - **Data yang disalin** (nama anggota, nama unit, perusahaan) selalu punya
   jalur baca yang mengutamakan data hidup dan jatuh ke salinan hanya kalau
   aslinya sudah terhapus.

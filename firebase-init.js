@@ -368,6 +368,14 @@ window.cloud = {
         if (snap.empty) return;
         await batchInChunks(snap.docs, (batch, d) => batch.delete(d.ref));
     },
+    // Targeted removal, for entries describing a change the server refused.
+    // clearHistoryCloud is all-or-nothing; this takes the ids the scanner
+    // picked. Owner-only, same as clearHistoryCloud — firestore.rules gates
+    // history deletes per document, so no rules change is needed for this.
+    async deleteHistoryEvents(ids) {
+        if (!ids || !ids.length) return;
+        await batchInChunks(ids, (batch, id) => batch.delete(doc(db, HISTORY_COL, id)));
+    },
 
     // ---- User categories (dynamic dropdown source) ----
     async saveUserCategory(cat) {

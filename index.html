@@ -1478,6 +1478,7 @@
             <h3 id="historyTitle">Change History</h3>
             <div style="display:flex;gap:8px;align-items:center">
                 <button class="btn btn-secondary btn-sm csv-export" onclick="exportHistory()"><i class="fas fa-download"></i> Export</button>
+                <button class="btn btn-secondary btn-sm" data-owner-only style="display:none" onclick="scanPhantomHistory()" title="Cari catatan perubahan unit yang ternyata ditolak server"><i class="fas fa-magnifying-glass"></i> Periksa</button>
                 <button class="btn btn-secondary btn-sm" onclick="clearHistory()"><i class="fas fa-eraser"></i> Clear</button>
                 <button class="btn-icon" onclick="closeHistory()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
             </div>
@@ -1518,6 +1519,40 @@
         </div>
         <div class="form-actions">
             <button class="btn btn-primary" onclick="closeImportReport()">OK</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== PHANTOM HISTORY REPORT MODAL ===== -->
+<div class="modal-overlay" id="phantomHistoryModal">
+    <div class="modal-card modal-card--wide">
+        <div class="modal-header">
+            <h3>Catatan perubahan yang tidak pernah terjadi</h3>
+            <button class="btn-icon" onclick="closePhantomHistory()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+                <strong id="phantomHistorySummary"></strong>
+            </p>
+            <p style="margin-bottom:12px;font-size:12px;color:var(--text-secondary)">
+                Baris di bawah ini mencatat perubahan pada unit, tetapi unit itu
+                sekarang <em>masih persis seperti sebelum perubahan</em> — nilainya
+                tidak pernah bergerak, artinya tulisannya ditolak server dan tidak
+                pernah tersimpan. Hanya baris terbaru per unit dan per field yang
+                dinilai; perubahan lama dalam satu rantai sengaja tidak disentuh.
+                Bandingkan kolom <strong>Sebelum</strong> dan
+                <strong>Nilai sekarang</strong> sebelum menghapus.
+            </p>
+            <div class="table-wrapper" style="max-height:45vh">
+                <table class="data-table table--cardable">
+                    <thead><tr><th>Waktu</th><th>Oleh</th><th>Unit</th><th>Field</th><th>Sebelum</th><th>Tercatat jadi</th><th>Nilai sekarang</th></tr></thead>
+                    <tbody id="phantomHistoryBody"></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-secondary" onclick="closePhantomHistory()">Batal</button>
+            <button class="btn btn-danger" id="phantomHistoryDeleteBtn" onclick="deletePhantomHistory()"><i class="fas fa-trash"></i> Hapus baris ini</button>
         </div>
     </div>
 </div>

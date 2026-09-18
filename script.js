@@ -76,7 +76,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v99';
+const APP_VERSION = 'v100';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -905,7 +905,38 @@ function renderAttachCell(d) {
     return html;
 }
 
+// Compare two field values the way the audit log will store them. logEvent
+// coerces both sides through String(), so 2020 and '2020' land as the same
+// entry — a strict !== here records a "change" whose Sebelum and Sesudah
+// columns read identically on screen. Values arrive as strings from forms and
+// CSV but as numbers from a JSON backup, so this is not hypothetical.
+function sameStoredValue(a, b) {
+    return String(a == null ? '' : a).trim() === String(b == null ? '' : b).trim();
+}
+
+// Last-resort client-side gate on every write to the units collection.
+//
+// Every other guard in this file sits at the call site, so a new caller
+// inherits no protection at all. That is exactly how four automatic
+// migrations came to rewrite unit names, licences and site assignments under
+// accounts that had no edit rights: the rules rejected the writes, but
+// logEvent had already recorded them, so the history filled with changes that
+// never happened. Guarding the writers themselves means a future caller has to
+// opt out deliberately instead of merely forgetting.
+//
+// Silent by design. Legitimate callers already went through
+// requireEdit('editUnits'), which shows the message; a loop over hundreds of
+// units must not raise hundreds of toasts.
+function canWriteUnits(what) {
+    if (hasAccess('editUnits', 'edit')) return true;
+    console.warn(`[access] ${what} blocked — no edit rights on units`);
+    return false;
+}
+
 function addUnits(newUnits) {
+    if (!canWriteUnits('addUnits')) {
+        return { added: 0, skipped: (newUnits || []).length, skippedDetails: [] };
+    }
     const existingSNs = new Set(globalData.map(d => (d.sn || '').toLowerCase()));
     const toAdd = [];
     const skippedDetails = [];
@@ -940,6 +971,7 @@ function addUnits(newUnits) {
 }
 
 function updateUnit(id, fields) {
+    if (!canWriteUnits('updateUnit')) return false;
     const idx = globalData.findIndex(d => d.id === id);
     if (idx === -1) return false;
 
@@ -959,7 +991,7 @@ function updateUnit(id, fields) {
     // Log each field change
     Object.keys(fields).forEach(field => {
         if (field === 'id' || field === 'downtimeHistory' || field === 'breakdownStartedAt') return;
-        if (before[field] !== fields[field]) {
+        if (!sameStoredValue(before[field], fields[field])) {
             logEvent({
                 action: 'update',
                 unitId: id,
@@ -985,6 +1017,9 @@ const CSV_UPDATABLE_FIELDS = [
 ];
 
 function bulkUpdateUnitsFromCSV(parsedUnits) {
+    if (!canWriteUnits('bulkUpdateUnitsFromCSV')) {
+        return { updated: 0, unchanged: 0, failed: [] };
+    }
     const bySN = new Map();
     globalData.forEach(d => { const k = (d.sn || '').toLowerCase(); if (k) bySN.set(k, d); });
 
@@ -1009,7 +1044,8 @@ function bulkUpdateUnitsFromCSV(parsedUnits) {
         const fields = {};
         CSV_UPDATABLE_FIELDS.forEach(f => {
             const val = p[f];
-            if (val !== undefined && val !== null && String(val).trim() !== '' && val !== before[f]) {
+            if (val !== undefined && val !== null && String(val).trim() !== '' &&
+                !sameStoredValue(val, before[f])) {
                 fields[f] = val;
             }
         });
@@ -1024,7 +1060,8 @@ function bulkUpdateUnitsFromCSV(parsedUnits) {
         // already guards against. Keep a real reason if one is already on the
         // unit, otherwise record where it came from.
         if (fields.status !== undefined && !isGood(fields.status) && !fields.breakdownReason) {
-            if (!(!isGood(before.status) && before.breakdownReason)) {
+            if (!(!isGood(before.status) && before.breakdownReason) &&
+                !sameStoredValue('Diset via impor CSV', before.breakdownReason)) {
                 fields.breakdownReason = 'Diset via impor CSV';
             }
         }
@@ -1109,12 +1146,62 @@ function saveWithFeedback(promise, successMsg, onError) {
 // writes to the local cache and queues its own cloud push, so it survives a
 // signal drop — and only a genuine rejection adds the cancelling entry.
 function cloudWrite(auditEntry, promise, successMsg, onError) {
-    if (auditEntry) logEvent(auditEntry);
+    // An array is allowed because one action can change several fields, and
+    // each field gets its own row — updateUnit is the usual case.
+    const entries = Array.isArray(auditEntry) ? auditEntry.filter(Boolean)
+                  : auditEntry ? [auditEntry] : [];
+    entries.forEach(logEvent);
     return saveWithFeedback(promise, successMsg, err => {
-        if (auditEntry) logEventFailed(auditEntry, err);
+        entries.forEach(e => logEventFailed(e, err));
         if (onError) onError(err);
     });
 }
+
+// The four oldest modules — units, implements, damage, licenseStock — write
+// through the cloudPush*/cloudDelete* helpers rather than cloudWrite. Those
+// helpers used to swallow a rejection into a console line and a toast reading
+// "perubahan tersimpan lokal", which was not true: the change existed only on
+// that device and the audit entry had already been written as if it stuck.
+// That is how the history filled with changes the server had refused.
+//
+// Three things happen on a rejection now:
+//   1. a cancelling audit entry, so the trail says the change did not stick;
+//   2. a re-read from the server, because a rejected write produces no
+//      snapshot of its own — without this the screen keeps showing a value
+//      that exists nowhere else, until some unrelated change triggers a sync;
+//   3. a toast that names a rules rejection as a rules rejection.
+//
+// Offline is deliberately NOT this path: Firestore never settles the promise
+// while offline, so .catch does not run and the queued write still lands.
+function cloudWriteFailed(err, opts) {
+    const code = (err && err.code) || 'error';
+    console.error(`[cloud] ${opts.what} write failed:`, err);
+
+    logEvent({
+        action: 'error',
+        unitId: opts.unitId || '',
+        unitName: opts.label || '-',
+        field: opts.what,
+        after: `GAGAL (${code}) — perubahan tidak tersimpan`
+    });
+
+    if (opts.resync && navigator.onLine) {
+        Promise.resolve().then(opts.resync)
+            .catch(e => console.error('[cloud] resync failed:', e));
+    }
+
+    showToast(code === 'permission-denied'
+        ? `Ditolak server — ${opts.what} dikembalikan. Akses Anda tidak mengizinkan perubahan ini.`
+        : `Gagal menyimpan ${opts.what} ke cloud — perubahan dikembalikan`, 'error');
+}
+
+// Pull the server's copy back over the local one after a rejected write. Each
+// reuses the same snapshot applier the live subscription uses, so there is no
+// second code path that could drift from it.
+function resyncUnits()      { return window.cloud.getAllUnits().then(applyCloudUnitsSnapshot); }
+function resyncImplements() { return window.cloud.getAllImplements().then(applyCloudImplementsSnapshot); }
+function resyncDamages()    { return window.cloud.getAllDamages().then(applyCloudDamagesSnapshot); }
+function resyncLicenses()   { return window.cloud.getAllLicenses().then(applyCloudLicenseSnapshot); }
 
 // The status pill in the topbar doubles as the offline indicator: without it a
 // field operator has no way to tell a queued save from a finished one.
@@ -1143,6 +1230,7 @@ function watchConnection() {
 }
 
 function deleteUnits(ids) {
+    if (!canWriteUnits('deleteUnits')) return { count: 0, removed: [] };
     const idSet = new Set(ids);
     const removed = globalData.filter(d => idSet.has(d.id));
     const count = removed.length;
@@ -1206,7 +1294,18 @@ function logEvent(entry) {
         window.cloud.addHistoryEvents(batch).catch(err => {
             console.error('[cloud] history push failed:', err);
             if (err && err.code === 'permission-denied') {
+                // The rules will keep refusing this batch, so putting it back
+                // would only cost the next one too. The local cache still has
+                // these rows; they just never become shared.
                 showHistoryRulesBanner();
+                return;
+            }
+            // Transient failure. splice(0) above already emptied the queue, so
+            // without this the batch is simply gone — the next flush carries
+            // it instead. Capped, because a queue that never drains is a leak
+            // and the local cache is the durable copy either way.
+            if (_historyPushQueue.length + batch.length <= AUDIT_LOG_MAX) {
+                _historyPushQueue.unshift(...batch);
             }
         });
     }, 80);
@@ -1286,6 +1385,165 @@ function clearHistory() {
         showHistory();
         showToast('Riwayat dihapus', 'success');
     }
+}
+
+// ============================================================
+// PHANTOM HISTORY — entries for changes the server refused
+// ------------------------------------------------------------
+// A history entry is written the moment an action is taken, before the server
+// answers. When the server then refuses the data write — wrong access area,
+// rules not published — the entry stays behind describing a change that never
+// happened. It lands because /history is gated on canEditAnything(), edit on
+// ANY area, while each data collection is gated on its own area.
+//
+// Deliberately narrow. It judges only unit field updates, because units are
+// the one module whose entries carry a real document id in unitId; every other
+// module reuses that field for something else, or has no pointer at all. And
+// it judges only the NEWEST entry per unit and field, because an older entry
+// in a chain cannot be told apart from one that applied and was later changed
+// again. Everything it cannot be sure about it leaves alone — this deletes
+// audit data, so under-reaching is the safe direction.
+// ============================================================
+
+const PHANTOM_SKIP_FIELDS = new Set(['id', 'downtimeHistory', 'breakdownStartedAt']);
+let _phantomHistoryFound = [];
+
+function findPhantomUnitHistory(log) {
+    const byUnit = new Map(globalData.map(u => [u.id, u]));
+    const newest = new Map();
+
+    log.forEach(e => {
+        if (!e || e.action !== 'update' || !e.unitId || !e.field) return;
+        if (PHANTOM_SKIP_FIELDS.has(e.field)) return;
+        // Other modules prefix unitName with [Tim], [Gudang], [Lisensi]… and
+        // put something that is not a unit document id into unitId.
+        if (String(e.unitName || '').startsWith('[')) return;
+        // Unit is gone: a deleted unit leaves nothing to compare against, and
+        // the entry may well be a true record of a change made before deletion.
+        if (!byUnit.has(e.unitId)) return;
+
+        const key = `${e.unitId}::${e.field}`;
+        const prev = newest.get(key);
+        if (!prev || (e.timestamp || 0) > (prev.timestamp || 0)) newest.set(key, e);
+    });
+
+    const found = [];
+    newest.forEach(e => {
+        const unit = byUnit.get(e.unitId);
+        // Field not part of the record any more — nothing to compare.
+        if (!(e.field in unit)) return;
+        const now = unit[e.field];
+        // Two conditions, and the second is what keeps this safe. The value
+        // must not be what the entry claims it became, AND it must still be
+        // exactly what the entry was changing away FROM — the value never
+        // moved at all. Requiring only the first would mean that deleting a
+        // phantom row exposes the older row beneath it to the next scan, and
+        // repeated scans would eat backwards through a legitimate chain.
+        if (sameStoredValue(now, e.after)) return;
+        if (!sameStoredValue(now, e.before)) return;
+        found.push({ entry: e, current: now });
+    });
+    found.sort((a, b) => (b.entry.timestamp || 0) - (a.entry.timestamp || 0));
+    return found;
+}
+
+async function scanPhantomHistory() {
+    if (!isOwner || !isOwner()) {
+        showToast('Hanya owner yang bisa memeriksa riwayat bersama', 'warning');
+        return;
+    }
+    if (!window.cloud?.getAllHistory) {
+        showToast('Perlu koneksi ke cloud untuk memeriksa riwayat', 'warning');
+        return;
+    }
+    showLoading(true);
+    try {
+        // The whole collection, not getAuditLog() — that is capped at 500 twice
+        // over, and the rows we are hunting are mostly older than that.
+        const log = await window.cloud.getAllHistory();
+        _phantomHistoryFound = findPhantomUnitHistory(log);
+
+        if (_phantomHistoryFound.length === 0) {
+            showToast(`Diperiksa ${log.length} catatan — tidak ada yang mencurigakan`, 'success');
+            return;
+        }
+        renderPhantomHistory(log.length);
+    } catch (err) {
+        console.error('[audit] phantom scan failed:', err);
+        showToast('Gagal memeriksa riwayat — periksa console', 'error');
+    } finally {
+        showLoading(false);
+    }
+}
+
+function renderPhantomHistory(scanned) {
+    const actors = new Set(_phantomHistoryFound.map(f => f.entry.actorName || '-'));
+    document.getElementById('phantomHistorySummary').textContent =
+        `${_phantomHistoryFound.length} dari ${scanned} catatan tidak cocok dengan data unit sekarang · ${actors.size} pelaku`;
+
+    document.getElementById('phantomHistoryBody').innerHTML = _phantomHistoryFound.map(f => {
+        const e = f.entry;
+        return `<tr>
+            <td data-label="Waktu" style="white-space:nowrap">${formatUserTime(e.timestamp)}</td>
+            <td data-label="Oleh">${escapeHtml(e.actorName || '-')}</td>
+            <td data-label="Unit">${escapeHtml(e.unitName || '-')}</td>
+            <td data-label="Field">${escapeHtml(e.field)}</td>
+            <td data-label="Sebelum">${escapeHtml(e.before != null && e.before !== '' ? String(e.before) : '(kosong)')}</td>
+            <td data-label="Tercatat jadi">${escapeHtml(e.after != null ? String(e.after) : '-')}</td>
+            <td data-label="Nilai sekarang"><strong>${escapeHtml(f.current != null && f.current !== '' ? String(f.current) : '(kosong)')}</strong></td>
+        </tr>`;
+    }).join('');
+
+    document.getElementById('phantomHistoryDeleteBtn').textContent =
+        `Hapus ${_phantomHistoryFound.length} baris ini`;
+    document.getElementById('phantomHistoryModal').classList.add('open');
+}
+
+function closePhantomHistory() {
+    document.getElementById('phantomHistoryModal').classList.remove('open');
+    _phantomHistoryFound = [];
+}
+
+async function deletePhantomHistory() {
+    if (!isOwner || !isOwner()) return;
+    if (_phantomHistoryFound.length === 0) return;
+    // The service worker can still be serving a firebase-init.js from before
+    // this function existed; without the check the delete silently does
+    // nothing while the toast says it worked.
+    if (!window.cloud?.deleteHistoryEvents) {
+        showToast('Muat ulang halaman — versi lama masih aktif', 'warning');
+        return;
+    }
+    const n = _phantomHistoryFound.length;
+    if (!confirm(`Hapus ${n} catatan riwayat ini untuk seluruh tim? Tindakan ini tidak bisa dibatalkan.`)) return;
+
+    const ids = _phantomHistoryFound.map(f => f.entry.id).filter(Boolean);
+    showLoading(true);
+    try {
+        await window.cloud.deleteHistoryEvents(ids);
+        // getAuditLog() merges the local cache back over the cloud list, so
+        // rows deleted only in Firestore reappear on the next render. Prune
+        // both or the work is undone the moment the modal closes.
+        pruneLocalAuditByIds(ids);
+        const gone = new Set(ids);
+        cloudHistory = cloudHistory.filter(e => !gone.has(e.id));
+        closePhantomHistory();
+        showHistory();
+        showToast(`${n} catatan palsu dihapus`, 'success');
+    } catch (err) {
+        console.error('[audit] phantom delete failed:', err);
+        showToast('Gagal menghapus — periksa console', 'error');
+    } finally {
+        showLoading(false);
+    }
+}
+
+function pruneLocalAuditByIds(ids) {
+    const gone = new Set(ids);
+    try {
+        const log = JSON.parse(localStorage.getItem(AUDIT_LOG_KEY) || '[]');
+        localStorage.setItem(AUDIT_LOG_KEY, JSON.stringify(log.filter(e => e && !gone.has(e.id))));
+    } catch (e) { /* ignore */ }
 }
 
 // The History view is fed by a capped live subscription (newest 500), so
@@ -2865,6 +3123,7 @@ function showUndoToast(message, units) {
 
 function undoDelete() {
     if (!lastDeletedUnits || lastDeletedUnits.length === 0) return;
+    if (!requireEdit('editUnits')) return;
     _pendingAttachPurge = [];
     const restored = lastDeletedUnits;
     globalData = [...globalData, ...restored];
@@ -3018,6 +3277,7 @@ function saveUnit(event) {
 }
 
 function _commitSaveUnit(id, fields) {
+    if (!requireEdit('editUnits')) return;
     if (id) {
         updateUnit(id, fields);
         showToast(`Unit "${fields.name}" updated`, 'success');
@@ -3076,6 +3336,14 @@ function effectiveLicense(unit, kind) {
     const premium  = kind === 'display' ? 'G5 Advance' : 'SF-RTK';
     const fallback = kind === 'display' ? 'G5 Basic'   : 'SF-1';
     const downgraded = rawType === premium && status.kind === 'expired';
+    // Already written down to the fallback tier by applyExpiredLicenseDowngrades:
+    // rawType and end carry no trace of that any more, so the archived expiry is
+    // what says it happened. Requiring an empty end date keeps a unit that was
+    // simply issued a fresh fallback licence from being mislabelled.
+    const archived = kind === 'display' ? unit.displayLicenseExpiredAt : unit.gpsLicenseExpiredAt;
+    if (!downgraded && rawType === fallback && archived && !end) {
+        return { type: fallback, rawType, premium, fallback, downgraded: true, status, end: archived };
+    }
     return { type: downgraded ? fallback : rawType, rawType, premium, fallback, downgraded, status, end };
 }
 
@@ -3103,6 +3371,11 @@ function applyExpiredLicenseDowngrades() {
         if (u.gpsLicense === 'SF-RTK' &&
             getExpiryStatus(getLicenseEndDate(u, 'gps')).kind === 'expired') {
             fields.gpsLicense = 'SF-1';
+            // Keep the expiry that caused the downgrade. Blanking it outright
+            // destroyed the only record of when the premium tier ran out, and
+            // the only way to tell a unit that was downgraded from one that
+            // never held a premium licence at all.
+            fields.gpsLicenseExpiredAt = getLicenseEndDate(u, 'gps');
             fields.gpsLicenseEndDate = '';
             // getLicenseEndDate falls back to the legacy field, so clear it too.
             if (u.licenseEndDate) fields.licenseEndDate = '';
@@ -3110,6 +3383,7 @@ function applyExpiredLicenseDowngrades() {
         if (u.licenseDisplay === 'G5 Advance' &&
             getExpiryStatus(getLicenseEndDate(u, 'display')).kind === 'expired') {
             fields.licenseDisplay = 'G5 Basic';
+            fields.displayLicenseExpiredAt = getLicenseEndDate(u, 'display');
             fields.displayLicenseEndDate = '';
         }
         if (Object.keys(fields).length && updateUnit(u.id, fields)) n++;
@@ -4375,17 +4649,21 @@ function exportDamageCSV() {
 // ---- Cloud ----
 function cloudPushDamage(rec) {
     if (suppressCloudWrites || !window.cloud?.isReady || !rec) return;
-    window.cloud.saveDamage(rec).catch(err => {
-        console.error('[cloud] push damage failed:', err);
-        showToast('Sinkronisasi cloud gagal — perubahan tersimpan lokal', 'warning');
-    });
+    window.cloud.saveDamage(rec).catch(err => cloudWriteFailed(err, {
+        what: 'kerusakan',
+        label: `[Kerusakan] ${rec.unitName || '-'}`,
+        unitId: rec.unitId || '',
+        resync: resyncDamages
+    }));
 }
 
 function cloudDeleteDamage(id) {
     if (suppressCloudWrites || !window.cloud?.isReady || !id) return;
-    window.cloud.deleteDamage(id).catch(err => {
-        console.error('[cloud] delete damage failed:', err);
-    });
+    window.cloud.deleteDamage(id).catch(err => cloudWriteFailed(err, {
+        what: 'hapus kerusakan',
+        label: '[Kerusakan] -',
+        resync: resyncDamages
+    }));
 }
 
 function applyCloudDamagesSnapshot(items) {
@@ -5054,17 +5332,21 @@ function handleLicenseCSVImport(file) {
 // ---- Cloud ----
 function cloudPushLicense(rec) {
     if (suppressCloudWrites || !window.cloud?.isReady || !rec) return;
-    window.cloud.saveLicense(rec).catch(err => {
-        console.error('[cloud] push license failed:', err);
-        showToast('Sinkronisasi cloud gagal — perubahan tersimpan lokal', 'warning');
-    });
+    window.cloud.saveLicense(rec).catch(err => cloudWriteFailed(err, {
+        what: 'stok lisensi',
+        label: `[Lisensi] ${rec.licenseType || '-'}`,
+        unitId: rec.unitId || '',
+        resync: resyncLicenses
+    }));
 }
 
 function cloudDeleteLicense(id) {
     if (suppressCloudWrites || !window.cloud?.isReady || !id) return;
-    window.cloud.deleteLicense(id).catch(err => {
-        console.error('[cloud] delete license failed:', err);
-    });
+    window.cloud.deleteLicense(id).catch(err => cloudWriteFailed(err, {
+        what: 'hapus stok lisensi',
+        label: '[Lisensi] -',
+        resync: resyncLicenses
+    }));
 }
 
 function applyCloudLicenseSnapshot(items) {
@@ -5122,36 +5404,51 @@ function showLicenseRulesBanner() {
 
 function cloudPushUnits(units) {
     if (suppressCloudWrites || !window.cloud?.isReady || !units?.length) return;
-    window.cloud.saveUnits(units).catch(err => {
-        console.error('[cloud] push units failed:', err);
-        showToast('Sinkronisasi cloud gagal — perubahan tersimpan lokal', 'warning');
-    });
+    if (!canWriteUnits('cloudPushUnits')) return;
+    window.cloud.saveUnits(units).catch(err => cloudWriteFailed(err, {
+        what: 'unit',
+        label: units.length === 1 ? (units[0].name || '-') : `${units.length} unit`,
+        unitId: units.length === 1 ? units[0].id : '',
+        resync: resyncUnits
+    }));
 }
 
 function cloudDeleteUnits(ids) {
     if (suppressCloudWrites || !window.cloud?.isReady || !ids?.length) return;
-    window.cloud.deleteUnits(ids).catch(err => {
-        console.error('[cloud] delete units failed:', err);
-        showToast('Hapus di cloud gagal — perubahan tersimpan lokal', 'warning');
-    });
+    if (!canWriteUnits('cloudDeleteUnits')) return;
+    window.cloud.deleteUnits(ids).catch(err => cloudWriteFailed(err, {
+        what: 'hapus unit',
+        label: `${ids.length} unit`,
+        unitId: ids.length === 1 ? ids[0] : '',
+        resync: resyncUnits
+    }));
 }
 
 function cloudPushImplement(imp) {
     if (suppressCloudWrites || !window.cloud?.isReady || !imp) return;
-    window.cloud.saveImplement(imp).catch(err => {
-        console.error('[cloud] push implement failed:', err);
-        showToast('Sinkronisasi cloud gagal — perubahan tersimpan lokal', 'warning');
-    });
+    window.cloud.saveImplement(imp).catch(err => cloudWriteFailed(err, {
+        what: 'implement',
+        label: `[Implement] ${imp.profileName || imp.equipmentType || '-'}`,
+        unitId: imp.id || '',
+        resync: resyncImplements
+    }));
 }
 
 function cloudDeleteImplement(id) {
     if (suppressCloudWrites || !window.cloud?.isReady || !id) return;
-    window.cloud.deleteImplement(id).catch(err => {
-        console.error('[cloud] delete implement failed:', err);
-    });
+    window.cloud.deleteImplement(id).catch(err => cloudWriteFailed(err, {
+        what: 'hapus implement',
+        label: '[Implement] -',
+        unitId: id,
+        resync: resyncImplements
+    }));
 }
 
 async function migrateLocalToCloudIfNeeded() {
+    // Owner-only, checked here rather than only at the call site (script.js
+    // ~5862): this uploads the whole local cache into four collections, so a
+    // caller that forgets the check would refill them from stale data.
+    if (!isOwner || !isOwner()) return;
     try {
         // Units
         const cloudUnits = await window.cloud.getAllUnits();
@@ -5247,10 +5544,6 @@ function applyCloudUnitsSnapshot(units) {
     // that has units, gated by a localStorage flag so it never repeats.
     applyDefaultLicensesIfNeeded();
     applyLicenseDatesIfNeeded();
-    migrateNicknamesFromExcel();
-    migrateLicenseDataBatch1();
-    migrateLicenseDataBatch2();
-    migrateSiteData20260525();
 }
 
 function applyCloudImplementsSnapshot(items) {
@@ -5986,6 +6279,9 @@ function setupAuth() {
         if (!checkDailySession()) return;
 
         currentUser = user;
+        // Before anything in this session logs or renders: a shared browser may
+        // still hold unsynced audit rows belonging to whoever signed in last.
+        pruneForeignLocalAudit(user.uid);
 
         // Look up (or create) the Firestore profile document for this user.
         let profile;
@@ -6053,7 +6349,31 @@ function tearDownCloudSync() {
     _firstUserCategoriesSnapshot = true;
     damageComponents = [];
     _firstDamageComponentsSnapshot = true;
+    // Entries queued but not yet pushed still carry the outgoing user's
+    // actorUid. Firestore requires actorUid == request.auth.uid, so sending
+    // them after the next person signs in gets the whole batch refused — and
+    // the outgoing user's real actions vanish along with it. Drop them here;
+    // logEvent has already written them to the local cache.
+    if (_historyFlushTimer) { clearTimeout(_historyFlushTimer); _historyFlushTimer = null; }
+    _historyPushQueue.length = 0;
     cloudInitialized = false;
+}
+
+// The local audit cache lives in the browser, and getAuditLog() merges it into
+// whatever the signed-in user sees. On a shared device that meant the next
+// person read the previous person's unsynced rows, rendered under the previous
+// person's name and indistinguishable from real ones. Anything belonging to
+// somebody else is dropped as soon as we know who is signing in; the user's
+// own rows survive a sign-out and come back.
+function pruneForeignLocalAudit(uid) {
+    try {
+        const log = JSON.parse(localStorage.getItem(AUDIT_LOG_KEY) || '[]');
+        const mine = log.filter(e => e && e.actorUid === uid);
+        if (mine.length !== log.length) {
+            localStorage.setItem(AUDIT_LOG_KEY, JSON.stringify(mine));
+            console.log(`[audit] dropped ${log.length - mine.length} cached entries from another account`);
+        }
+    } catch (e) { /* ignore */ }
 }
 
 function showAuthGate(tab) {
@@ -6946,337 +7266,6 @@ function maybeInitCloudSync() {
         initCloudSync();
         ensureUsersSubscription();
     }
-}
-
-// One-shot nickname migration from Excel data (May 2026)
-function migrateNicknamesFromExcel() {
-    const FLAG = 'nickname_migration_v1_done';
-    if (localStorage.getItem(FLAG)) return;
-    if (!globalData.length) return;
-
-    const map = {"1T8C570HKST250056":"GGCH001G","1BM7230CVS3001122":"GGTR063G_LSL","1BM7230CKS3001133":"GGTR064G_BRG","1BM7230CJS3001134":"GGTR065G_TTW","1BM7230CPS3001115":"GGTR068G","1BM7230CKS3001147":"GGTR069G_HBT","1BM7230CLS3001141":"GGTR070G_FBG","1BM7230CCS3001113":"GGTR071G_FBG","1BM7230CHS3001125":"GGTR072G_","1BM7230CHS3001139":"GGTR073G_FBG","1BM7230CKS3001150":"GGTR074G_SGD","1BM7230CLS3001107":"GGTR077G","1BM7230CCS3001118":"GGTR079G_BRG","1BM7230CES3001143":"GGTR080G_BRI","1BM7230CCS3001149":"GGTR081G_TTW","1BM7230CCS3001127":"GGTR083G_BRI","1BM7230CTS3001128":"GGTR084G_LSL","1BM7230CES3001045":"GGTR087G_BRI","1BM7230CKS3001049":"GGTR089G_HBT","1BM7230CCS3001077":"GGTR090G","1BM7230CKS3001083":"GGTR091G_BRI","1BM7230CES3001076":"GGTR092G_SGD","1BM7230CJS3001084":"GGTR094G_TTW","1BM7230CCS3001104":"GGTR095G_BRG","1BM7230CAS3001090":"GGTR096G_HBT","1BM7230CAS3001087":"GGTR097G_BRI","1BM7230CES3001093":"GGTR099G_TTW","1BM7230CLS3001088":"GGTR100G_SGD","1BM7230CKS3001102":"GGTR101G_HBT","1BM7230CHS3001108":"GGTR103G_SGG","1BM7230CES3001112":"GGTR105G_FCI","1BM7230CJS3001036":"GGTR107G_SGG","1BM7230CLS3001057":"GGTR108G_LSS","1BM7230CLS3001026":"GGTR110G_FCI","1BM7230CCS3001071":"GGTR111G_HN","1BM7230CCS3001068":"GGTR113G_SGD","1BM7230CKS3001066":"GGTR115G_FCI","1BM7230CHS3001075":"GGTR116G_BPH","1BM7230CAS3001073":"GGTR117G_BPH","1BM7230CJS3001053":"GGTR119G_BPH","1BM7230CPS3001051":"GGTR120G_HBT","1BM7230CCS3001054":"GGTR121G_HBT","1BM7230CKS3001052":"GGTR122G_BRI","1BM7230CVS3001069":"GGTR123G_LS","1BM7230CVS3001072":"GGTR125G_SGD","1BM7230CJS3001067":"GGTR128G_BSS","1RW8310DCSA260870":"GGTR130G_PLJ","1RW8310DLSA260881":"GGTR131G_OHZ","1RW8310DESB260912":"GGTR134G_OHB","1RW8310DPSB261028":"GGTR135G_HD","1RW8310DCSB261180":"GGTR136G_OHB","1RW8310DASB261036":"GGTR137G_OHB","1RW8310DLSB261152":"GGTR138G_SCL","1RW8310DPSB260929":"GGTR139G_SCL","1RW8310DCSB261222":"GGTR140G_SCL","1RW8310DPSB260963":"GGTR141G_OHB","1RW8310DASB260937":"GGTR142G_OHB","1RW8310DHSB260973":"GGTR143G_PL","1RW8310DPSB261126":"GGTR144G_SCL","1RW8310DCSB261205":"GGTR145G_SCL","1RW8310DHSB261010":"GGTR147G_SCL","1RW8310DPSB260946":"GGTR148G_OHB","1RW8310DPSB261000":"GGTR149G_PLJ","1RW8310DVSB261200":"GGTR152G_OHB","1RW8310DCSB261096":"GGTR153G_PLJ","1BM7230CTS3001095":"GGTR154G_SGD","1NW4025MKS0250246":"GGTS003G","1NW4025MCS0250248":"GGTS004G","1NW4025MVS0250249":"GGTS005G","1BM7230CPS3001132":"GMTR066G_TTW","1BM7230CES3001126":"GMTR067G_ZRW","1BM7230CJS3001117":"GMTR075G_SGD","1BM7230CLS3001124":"GMTR076G_PLJ","1BM7230CAS3001137":"GMTR078G_LSL","1BM7230CPS3001129":"GMTR082G_BSS","1BM7230CCS3001080":"GMTR085G_BPH","1BM7230CTS3001050":"GMTR086G_OHB","1BM7230CPS3001065":"GMTR088G_ZRP","1BM7230CJS3001098":"GMTR093G_FBG","1BM7230CPS3001101":"GMTR098G_BRI","1BM7230CCS3001135":"GMTR102G_ZRP","1BM7230CCS3001121":"GMTR104G_OHB","1BM7230CLS3001110":"GMTR106G_FBG","1BM7230CES3001028":"GMTR109G_OHB","1BM7230CCS3001063":"GMTR112G_ZR","1BM7230CTS3001047":"GMTR118G_","1BM7230CPS3001082":"GMTR124G_LSL","1BM7230CTS3001078":"GMTR126G_BRI","1BM7230CLS3001060":"GMTR127G_ZR","1RW8310DKSA260873":"GMTR129G_SCL","1RW8310DCSA260853":"GMTR132G_SCL","1RW8310DLSB260910":"GMTR133G_OHB","1BM7230CTS3001114":"GMTR146G_SGD","1RW8310DPSA260905":"GMTR150G_OHZ","1RW8310DHSB261105":"GMTR151G_TTW","1NW4025MJS0250247":"GMTS001G","1NW4025MPS0250245":"GMTS002G","1T8C570HHST260045":"MGCH001M","1T8C570HEST260046":"MGCH002M","1T8C570HTST260048":"MGCH004M","1T8C570HPST260049":"MGCH005M","1BM7230CKS3002332":"MGTR040M_BPT","1BM7230CPS3002331":"MGTR042M_HBM","1BM7230CCS3002320":"MGTR043M_HBA","1BM7230CHS3002324":"MGTR048M_HBM","1BM7230CCS3002334":"MGTR051M_HBA","1BM7230CHS3002355":"MGTR052M_HBA","1BM7230CKS3002346":"MGTR060M_HBM","1BM7230CVS3002349":"MGTR061M_HBA","1BM7230CJS3002350":"MGTR062_HBM","1BM7230CCS3002348":"MGTR063M_HBM","1BM7230CCS3002351":"MGTR070M_BPA","1BM7230CPS3002345":"MGTR071M_BPA","1BM7230CAS3002353":"MGTR072M_BPH","1BM7230CTS3002344":"MGTR073M_","1BM7230CLS3002340":"MGTR074M_","1BM7230CAT3002368":"MGTR075M_HBA","1BM7230CTT3002376":"MGTR076M_HBA","1BM7230CET3002374":"MGTR077M_HBA","1BM7230CKT3002378":"MGTR078M_HBA","1BM7230CTT3002359":"MGTR079M_HBA","1BM7230CET3002360":"MGTR080M_HBA","1BM7230CHT3002390":"MGTR081M_HBA","1BM7230CET3002388":"MGTR082M_HBA","1T8C570HCST260047":"MMCH003M","1T8C570HETT260050":"MMCH006M","1BM7230CKS3002329":"MMTR039M_BPT","1BM7230CCS3002326":"MMTR041M_HBM","1BM7230CES3002325":"MMTR044M_HBM","1BM7230CTS3002330":"MMTR045M_HBM","1BM7230CAS3002322":"MMTR046M_HBM","1BM7230CHS3002338":"MMTR047M_HBM","1BM7230CLS3002323":"MMTR049M_HBM","1BM7230CLS3002337":"MMTR050M_HBM","1BM7230CVS3002352":"MMTR053M_HBA","1BM7230CHS3002341":"MMTR054M_HBM","1BM7230CES3002339":"MMTR055M_HBA","1BM7230CJS3002347":"MMTR056M_HBM","1BM7230CES3002342":"MMTR057M_BPT","1BM7230CCS3002343":"MMTR058M_BPT","1BM7230CES3002356":"MMTR059M_HBA","1BM7230CKT3002381":"MMTR083M_BPA","1BM7230CCT3002389":"MMTR084M_BPA","1BM7230CCT3002361":"MMTR085M_BPA","1BM7230CJT3002379":"MMTR086M_BPA","1BM7230CAT3002371":"MMTR087M_HBT","1BM7230CCT3002383":"MMTR088M_PLJ","1BM7230CVT3002370":"MMTR089M_HBT","1BM7230CHT3002387":"MMTR090M_HBT","1BM7230CVT3002384":"MMTR091M_HBT","1BM7230CAT3002385":"MMTR092M_HBT","1BM7230CCT3002375":"MMTR093M_HBT","1BM7230CPT3002363":"MMTR094M_HBT","1BM7230CCT3002366":"MMTR095M_HBT","1BM7230CLT3002386":"MMTR096M_HBT","1BM7230CHS3001061":"TR114M_PL"};
-
-    let updated = 0, skipped = 0;
-    globalData.forEach(unit => {
-        const sn = (unit.sn || '').trim();
-        if (!sn || !map[sn]) return;
-        const newName = map[sn];
-        if (unit.name === newName) { skipped++; return; }
-        updateUnit(unit.id, { name: newName });
-        updated++;
-    });
-
-    localStorage.setItem(FLAG, '1');
-    if (updated > 0) {
-        showToast(`Nickname migration: ${updated} unit(s) updated, ${skipped} already correct`, 'success');
-        if (currentView === 'dashboard') { filteredData = [...globalData]; onDataLoaded(); }
-        else if (currentView === 'editUnits') renderEditTable();
-    }
-    console.log(`[migration] nicknames: ${updated} updated, ${skipped} skipped`);
-}
-
-// One-shot license data migration — batch 1 (Autotrac/JDLink install monitoring)
-function migrateLicenseDataBatch1() {
-    const FLAG = 'license_batch1_migration_done';
-    if (localStorage.getItem(FLAG)) return;
-    if (!globalData.length) return;
-
-    const data = [
-        {sn:"1BM7230CHS3002338",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-04-29",gpsLicenseEndDate:"2027-04-29"},
-        {sn:"1BM7230CTS3002330",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-04-29",gpsLicenseEndDate:"2027-04-29"},
-        {sn:"1BM7230CAS3002322",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-04-29",gpsLicenseEndDate:"2027-04-29"},
-        {sn:"1BM7230CES3002325",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-04-29",gpsLicenseEndDate:"2027-04-29"},
-        {sn:"1BM7230CKS3002329",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-05",gpsLicenseEndDate:"2027-05-05"},
-        {sn:"1BM7230CKS3002332",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-04",gpsLicenseEndDate:"2027-05-04"},
-        {sn:"1BM7230CCS3002320",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-05",gpsLicenseEndDate:"2027-05-05"},
-        {sn:"1BM7230CHS3002324",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-05",gpsLicenseEndDate:"2027-05-05"},
-        {sn:"1BM7230CLS3002337",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-04",gpsLicenseEndDate:"2027-05-04"},
-        {sn:"1BM7230CCS3002334",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-05",gpsLicenseEndDate:"2027-05-05"},
-        {sn:"1BM7230CHS3002355",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-05",gpsLicenseEndDate:"2027-05-05"},
-        {sn:"1BM7230CVS3002352",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-01",gpsLicenseEndDate:"2027-05-01"},
-        {sn:"1BM7230CHS3002341",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-04",gpsLicenseEndDate:"2027-05-04"},
-        {sn:"1BM7230CES3002339",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-04",gpsLicenseEndDate:"2027-05-04"},
-        {sn:"1BM7230CES3002342",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-03",gpsLicenseEndDate:"2027-05-03"},
-        {sn:"1BM7230CES3002356",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-04",gpsLicenseEndDate:"2027-05-04"},
-        {sn:"1BM7230CKS3002346",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-05",gpsLicenseEndDate:"2027-05-05"},
-        {sn:"1BM7230CJS3002350",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-05",gpsLicenseEndDate:"2027-05-05"},
-        {sn:"1BM7230CCS3002348",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-01",gpsLicenseEndDate:"2027-05-01"},
-        {sn:"1T8C570HHST260045",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-08",gpsLicenseEndDate:"2027-05-08"},
-        {sn:"1T8C570HEST260046",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-04",gpsLicenseEndDate:"2027-05-04"},
-        {sn:"1T8C570HCST260047",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-04",gpsLicenseEndDate:"2027-05-04"},
-        {sn:"1T8C570HTST260048",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-08",gpsLicenseEndDate:"2027-05-08"},
-        {sn:"1T8C570HPST260049",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-04",gpsLicenseEndDate:"2027-05-04"},
-        {sn:"1T8C570HETT260050",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-04",gpsLicenseEndDate:"2027-05-04"}
-    ];
-
-    let updated = 0;
-    data.forEach(entry => {
-        const unit = globalData.find(u => (u.sn || '').trim() === entry.sn);
-        if (!unit) return;
-        const fields = {};
-        if (unit.gpsLicense !== entry.gpsLicense) fields.gpsLicense = entry.gpsLicense;
-        if (unit.licenseDisplay !== entry.licenseDisplay) fields.licenseDisplay = entry.licenseDisplay;
-        if (unit.gpsLicenseStartDate !== entry.gpsLicenseStartDate) fields.gpsLicenseStartDate = entry.gpsLicenseStartDate;
-        if (unit.gpsLicenseEndDate !== entry.gpsLicenseEndDate) fields.gpsLicenseEndDate = entry.gpsLicenseEndDate;
-        if (Object.keys(fields).length > 0) {
-            updateUnit(unit.id, fields);
-            updated++;
-        }
-    });
-
-    localStorage.setItem(FLAG, '1');
-    if (updated > 0) {
-        showToast(`License migration (batch 1): ${updated} unit(s) updated`, 'success');
-        if (currentView === 'dashboard') { filteredData = [...globalData]; onDataLoaded(); }
-        else if (currentView === 'editUnits') renderEditTable();
-    }
-    console.log(`[migration] license batch 1: ${updated} updated out of ${data.length}`);
-}
-
-// One-shot license data migration — batch 2
-function migrateLicenseDataBatch2() {
-    const FLAG = 'license_batch2_migration_done';
-    if (localStorage.getItem(FLAG)) return;
-    if (!globalData.length) return;
-
-    const data = [
-        {sn:"1BM7230CCS3002351",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-10",gpsLicenseEndDate:"2027-05-10"},
-        {sn:"1BM7230CPS3002345",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CAS3002353",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-14",gpsLicenseEndDate:"2027-05-14"},
-        {sn:"1BM7230CTS3002344",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-10",gpsLicenseEndDate:"2027-05-10"},
-        {sn:"1BM7230CLS3002340",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CAT3002368",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CTT3002376",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CET3002374",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CKT3002378",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CTT3002359",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CET3002360",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CHT3002390",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CET3002388",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-14",gpsLicenseEndDate:"2027-05-14"},
-        {sn:"1BM7230CKT3002381",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CCT3002389",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CCT3002361",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-14",gpsLicenseEndDate:"2027-05-14"},
-        {sn:"1BM7230CJT3002379",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CAT3002371",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CCT3002383",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CVT3002370",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CHT3002387",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-10",gpsLicenseEndDate:"2027-05-10"},
-        {sn:"1BM7230CVT3002384",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CAT3002385",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CCT3002375",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CPT3002363",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-12",gpsLicenseEndDate:"2027-05-12"},
-        {sn:"1BM7230CCT3002366",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-10",gpsLicenseEndDate:"2027-05-10"},
-        {sn:"1BM7230CLT3002386",gpsLicense:"SF-RTK",licenseDisplay:"G5 Advance",gpsLicenseStartDate:"2027-05-10",gpsLicenseEndDate:"2027-05-10"}
-    ];
-
-    let updated = 0;
-    data.forEach(entry => {
-        const unit = globalData.find(u => (u.sn || '').trim() === entry.sn);
-        if (!unit) return;
-        const fields = {};
-        if (unit.gpsLicense !== entry.gpsLicense) fields.gpsLicense = entry.gpsLicense;
-        if (unit.licenseDisplay !== entry.licenseDisplay) fields.licenseDisplay = entry.licenseDisplay;
-        if (unit.gpsLicenseStartDate !== entry.gpsLicenseStartDate) fields.gpsLicenseStartDate = entry.gpsLicenseStartDate;
-        if (unit.gpsLicenseEndDate !== entry.gpsLicenseEndDate) fields.gpsLicenseEndDate = entry.gpsLicenseEndDate;
-        if (Object.keys(fields).length > 0) {
-            updateUnit(unit.id, fields);
-            updated++;
-        }
-    });
-
-    localStorage.setItem(FLAG, '1');
-    if (updated > 0) {
-        showToast(`License migration (batch 2): ${updated} unit(s) updated`, 'success');
-        if (currentView === 'dashboard') { filteredData = [...globalData]; onDataLoaded(); }
-        else if (currentView === 'editUnits') renderEditTable();
-    }
-    console.log(`[migration] license batch 2: ${updated} updated out of ${data.length}`);
-}
-
-// One-shot site assignment migration — 2025-05-25
-function migrateSiteData20260525() {
-    const FLAG = 'site_migration_20260525_done';
-    if (localStorage.getItem(FLAG)) return;
-    if (!globalData.length) return;
-
-    const data = [
-        {sn:"1T8C570HKST250056",site:"PT. GPA"},
-        {sn:"1YR6150BASU540056",site:"PT. GPA"},
-        {sn:"1YR6150BCSU540068",site:"PT. GPA"},
-        {sn:"1YR6150BVSU540055",site:"PT. GPA"},
-        {sn:"1BM7230CVS3001122",site:"PT. GPA"},
-        {sn:"1BM7230CKS3001133",site:"PT. GPA"},
-        {sn:"1BM7230CJS3001134",site:"PT. GPA"},
-        {sn:"1BM7230CPS3001115",site:"PT. GPA"},
-        {sn:"1BM7230CKS3001147",site:"PT. GPA"},
-        {sn:"1BM7230CLS3001141",site:"PT. GPA"},
-        {sn:"1BM7230CCS3001113",site:"PT. GPA"},
-        {sn:"1BM7230CHS3001125",site:"PT. GPA"},
-        {sn:"1BM7230CHS3001139",site:"PT. GPA"},
-        {sn:"1BM7230CKS3001150",site:"PT. GPA"},
-        {sn:"1BM7230CLS3001107",site:"PT. GPA"},
-        {sn:"1BM7230CCS3001118",site:"PT. GPA"},
-        {sn:"1BM7230CES3001143",site:"PT. GPA"},
-        {sn:"1BM7230CCS3001149",site:"PT. GPA"},
-        {sn:"1BM7230CCS3001127",site:"PT. GPA"},
-        {sn:"1BM7230CTS3001128",site:"PT. GPA"},
-        {sn:"1BM7230CES3001045",site:"PT. GPA"},
-        {sn:"1BM7230CKS3001049",site:"PT. GPA"},
-        {sn:"1BM7230CCS3001077",site:"PT. GPA"},
-        {sn:"1BM7230CKS3001083",site:"PT. GPA"},
-        {sn:"1BM7230CES3001076",site:"PT. GPA"},
-        {sn:"1BM7230CJS3001084",site:"PT. GPA"},
-        {sn:"1BM7230CCS3001104",site:"PT. GPA"},
-        {sn:"1BM7230CAS3001090",site:"PT. GPA"},
-        {sn:"1BM7230CAS3001087",site:"PT. GPA"},
-        {sn:"1BM7230CES3001093",site:"PT. GPA"},
-        {sn:"1BM7230CLS3001088",site:"PT. GPA"},
-        {sn:"1BM7230CKS3001102",site:"PT. GPA"},
-        {sn:"1BM7230CHS3001108",site:"PT. GPA"},
-        {sn:"1BM7230CES3001112",site:"PT. GPA"},
-        {sn:"1BM7230CJS3001036",site:"PT. GPA"},
-        {sn:"1BM7230CLS3001057",site:"PT. GPA"},
-        {sn:"1BM7230CLS3001026",site:"PT. GPA"},
-        {sn:"1BM7230CCS3001071",site:"PT. GPA"},
-        {sn:"1BM7230CCS3001068",site:"PT. GPA"},
-        {sn:"1BM7230CKS3001066",site:"PT. GPA"},
-        {sn:"1BM7230CHS3001075",site:"PT. GPA"},
-        {sn:"1BM7230CAS3001073",site:"PT. GPA"},
-        {sn:"1BM7230CJS3001053",site:"PT. GPA"},
-        {sn:"1BM7230CPS3001051",site:"PT. GPA"},
-        {sn:"1BM7230CCS3001054",site:"PT. GPA"},
-        {sn:"1BM7230CKS3001052",site:"PT. GPA"},
-        {sn:"1BM7230CVS3001069",site:"PT. GPA"},
-        {sn:"1BM7230CVS3001072",site:"PT. GPA"},
-        {sn:"1BM7230CJS3001067",site:"PT. GPA"},
-        {sn:"1RW8310DCSA260870",site:"PT. GPA"},
-        {sn:"1RW8310DLSA260881",site:"PT. GPA"},
-        {sn:"1RW8310DESB260912",site:"PT. GPA"},
-        {sn:"1RW8310DPSB261028",site:"PT. GPA"},
-        {sn:"1RW8310DCSB261180",site:"PT. GPA"},
-        {sn:"1RW8310DASB261036",site:"PT. GPA"},
-        {sn:"1RW8310DLSB261152",site:"PT. GPA"},
-        {sn:"1RW8310DPSB260929",site:"PT. GPA"},
-        {sn:"1RW8310DCSB261222",site:"PT. GPA"},
-        {sn:"1RW8310DPSB260963",site:"PT. GPA"},
-        {sn:"1RW8310DASB260937",site:"PT. GPA"},
-        {sn:"1RW8310DHSB260973",site:"PT. GPA"},
-        {sn:"1RW8310DPSB261126",site:"PT. GPA"},
-        {sn:"1RW8310DCSB261205",site:"PT. GPA"},
-        {sn:"1RW8310DHSB261010",site:"PT. GPA"},
-        {sn:"1RW8310DPSB260946",site:"PT. GPA"},
-        {sn:"1RW8310DPSB261000",site:"PT. GPA"},
-        {sn:"1RW8310DVSB261200",site:"PT. GPA"},
-        {sn:"1RW8310DCSB261096",site:"PT. GPA"},
-        {sn:"1BM7230CTS3001095",site:"PT. GPA"},
-        {sn:"1NW4025MKS0250246",site:"PT. GPA"},
-        {sn:"1NW4025MCS0250248",site:"PT. GPA"},
-        {sn:"1NW4025MVS0250249",site:"PT. GPA"},
-        {sn:"1T8C570HHST260045",site:"PT. GPA"},
-        {sn:"1T8C570HEST260046",site:"PT. GPA"},
-        {sn:"1T8C570HTST260048",site:"PT. GPA"},
-        {sn:"1T8C570HPST260049",site:"PT. GPA"},
-        {sn:"1BM7230CKS3002332",site:"PT. GPA"},
-        {sn:"1BM7230CPS3002331",site:"PT. GPA"},
-        {sn:"1BM7230CCS3002320",site:"PT. GPA"},
-        {sn:"1BM7230CHS3002324",site:"PT. GPA"},
-        {sn:"1BM7230CCS3002334",site:"PT. GPA"},
-        {sn:"1BM7230CHS3002355",site:"PT. GPA"},
-        {sn:"1BM7230CKS3002346",site:"PT. GPA"},
-        {sn:"1BM7230CVS3002349",site:"PT. GPA"},
-        {sn:"1BM7230CJS3002350",site:"PT. GPA"},
-        {sn:"1BM7230CCS3002348",site:"PT. GPA"},
-        {sn:"1BM7230CCS3002351",site:"PT. GPA"},
-        {sn:"1BM7230CPS3002345",site:"PT. GPA"},
-        {sn:"1BM7230CAS3002353",site:"PT. GPA"},
-        {sn:"1BM7230CTS3002344",site:"PT. GPA"},
-        {sn:"1BM7230CLS3002340",site:"PT. GPA"},
-        {sn:"1BM7230CAT3002368",site:"PT. GPA"},
-        {sn:"1BM7230CTT3002376",site:"PT. GPA"},
-        {sn:"1BM7230CET3002374",site:"PT. GPA"},
-        {sn:"1BM7230CKT3002378",site:"PT. GPA"},
-        {sn:"1BM7230CTT3002359",site:"PT. GPA"},
-        {sn:"1BM7230CET3002360",site:"PT. GPA"},
-        {sn:"1BM7230CHT3002390",site:"PT. GPA"},
-        {sn:"1BM7230CET3002388",site:"PT. GPA"},
-        {sn:"1BM7230CPS3001132",site:"PT. MNM"},
-        {sn:"1BM7230CES3001126",site:"PT. MNM"},
-        {sn:"1BM7230CJS3001117",site:"PT. MNM"},
-        {sn:"1BM7230CLS3001124",site:"PT. MNM"},
-        {sn:"1BM7230CAS3001137",site:"PT. MNM"},
-        {sn:"1BM7230CPS3001129",site:"PT. MNM"},
-        {sn:"1BM7230CCS3001080",site:"PT. MNM"},
-        {sn:"1BM7230CTS3001050",site:"PT. MNM"},
-        {sn:"1BM7230CPS3001065",site:"PT. MNM"},
-        {sn:"1BM7230CJS3001098",site:"PT. MNM"},
-        {sn:"1BM7230CPS3001101",site:"PT. MNM"},
-        {sn:"1BM7230CCS3001135",site:"PT. MNM"},
-        {sn:"1BM7230CCS3001121",site:"PT. MNM"},
-        {sn:"1BM7230CLS3001110",site:"PT. MNM"},
-        {sn:"1BM7230CES3001028",site:"PT. MNM"},
-        {sn:"1BM7230CCS3001063",site:"PT. MNM"},
-        {sn:"1BM7230CTS3001047",site:"PT. MNM"},
-        {sn:"1BM7230CPS3001082",site:"PT. MNM"},
-        {sn:"1BM7230CTS3001078",site:"PT. MNM"},
-        {sn:"1BM7230CLS3001060",site:"PT. MNM"},
-        {sn:"1RW8310DKSA260873",site:"PT. MNM"},
-        {sn:"1RW8310DCSA260853",site:"PT. MNM"},
-        {sn:"1RW8310DLSB260910",site:"PT. MNM"},
-        {sn:"1BM7230CTS3001114",site:"PT. MNM"},
-        {sn:"1RW8310DPSA260905",site:"PT. MNM"},
-        {sn:"1RW8310DHSB261105",site:"PT. MNM"},
-        {sn:"1NW4025MJS0250247",site:"PT. MNM"},
-        {sn:"1NW4025MPS0250245",site:"PT. MNM"},
-        {sn:"1T8C570HCST260047",site:"PT. MNM"},
-        {sn:"1T8C570HETT260050",site:"PT. MNM"},
-        {sn:"1BM7230CKS3002329",site:"PT. MNM"},
-        {sn:"1BM7230CCS3002326",site:"PT. MNM"},
-        {sn:"1BM7230CES3002325",site:"PT. MNM"},
-        {sn:"1BM7230CTS3002330",site:"PT. MNM"},
-        {sn:"1BM7230CAS3002322",site:"PT. MNM"},
-        {sn:"1BM7230CHS3002338",site:"PT. MNM"},
-        {sn:"1BM7230CLS3002323",site:"PT. MNM"},
-        {sn:"1BM7230CLS3002337",site:"PT. MNM"},
-        {sn:"1BM7230CVS3002352",site:"PT. MNM"},
-        {sn:"1BM7230CHS3002341",site:"PT. MNM"},
-        {sn:"1BM7230CES3002339",site:"PT. MNM"},
-        {sn:"1BM7230CJS3002347",site:"PT. MNM"},
-        {sn:"1BM7230CES3002342",site:"PT. MNM"},
-        {sn:"1BM7230CCS3002343",site:"PT. MNM"},
-        {sn:"1BM7230CES3002356",site:"PT. MNM"},
-        {sn:"1BM7230CKT3002381",site:"PT. MNM"},
-        {sn:"1BM7230CCT3002389",site:"PT. MNM"},
-        {sn:"1BM7230CCT3002361",site:"PT. MNM"},
-        {sn:"1BM7230CJT3002379",site:"PT. MNM"},
-        {sn:"1BM7230CAT3002371",site:"PT. MNM"},
-        {sn:"1BM7230CCT3002383",site:"PT. MNM"},
-        {sn:"1BM7230CVT3002370",site:"PT. MNM"},
-        {sn:"1BM7230CHT3002387",site:"PT. MNM"},
-        {sn:"1BM7230CVT3002384",site:"PT. MNM"},
-        {sn:"1BM7230CAT3002385",site:"PT. MNM"},
-        {sn:"1BM7230CCT3002375",site:"PT. MNM"},
-        {sn:"1BM7230CPT3002363",site:"PT. MNM"},
-        {sn:"1BM7230CCT3002366",site:"PT. MNM"},
-        {sn:"1BM7230CLT3002386",site:"PT. MNM"}
-    ];
-
-    let updated = 0;
-    data.forEach(entry => {
-        const unit = globalData.find(u => (u.sn || '').trim() === entry.sn);
-        if (!unit) return;
-        if (unit.site !== entry.site) {
-            updateUnit(unit.id, { site: entry.site });
-            updated++;
-        }
-    });
-
-    localStorage.setItem(FLAG, '1');
-    if (updated > 0) {
-        showToast(`Site migration: ${updated} unit(s) updated`, 'success');
-        if (currentView === 'dashboard') { filteredData = [...globalData]; onDataLoaded(); }
-        else if (currentView === 'editUnits') renderEditTable();
-    }
-    console.log(`[migration] site assignment: ${updated} updated out of ${data.length}`);
 }
 
 // ============================================================
