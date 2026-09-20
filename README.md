@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-480 pemeriksaan di tiga belas suite, menggerakkan Chromium sungguhan terhadap
+554 pemeriksaan di lima belas suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -104,7 +104,8 @@ CHROME_PATH=/jalur/ke/chrome npm test
 
 Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 `session_test`, `warehouse_test`, `approval_test`, `leader_test`, `recap_test`,
-`photos_test`, `migration_test`, `history_scan_test`, `regress`.
+`photos_test`, `migration_test`, `history_scan_test`, `validation_test`,
+`datacheck_test`, `regress`.
 
 ---
 
@@ -160,6 +161,23 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 - **Semua penulis `units` mengunci dirinya sendiri** lewat `canWriteUnits()`,
   bukan hanya di pemanggil. Pemanggil baru tidak boleh mewarisi nol
   perlindungan seperti dulu.
+- **Validasi ada di fungsi simpan, bukan hanya di atribut HTML.**
+  `checkWorkLogHours`, `checkUnitFields`, `checkStockBalance`. Polanya: yang
+  pasti salah **ditolak**, yang mungkin benar **dikonfirmasi**. Shift malam 23
+  jam itu mencurigakan tetapi sah, jadi ia ditanya — bukan dilarang.
+- **Halaman Leader → Periksa Data** mencari data yang sudah terlanjur kotor:
+  SN kembar, karakter tak terlihat, ejaan PT yang beda tipis, jam laporan tidak
+  wajar, tanggal masa depan, lisensi yang mulai dan habis di hari yang sama
+  (tanda tangan migrasi Excel yang dihapus di v100), kerusakan tanpa unit, stok
+  minus. Tiap pemeriksaan satu fungsi murni `dc*()` — tambah yang baru dengan
+  mendaftarkannya di `DATA_CHECKS`. **Hanya perapian spasi yang boleh otomatis**;
+  itu satu-satunya perbaikan yang tidak bisa mengubah arti sebuah nilai.
+- **Jangan mencetak blok `firestore.rules` ke dalam UI.** Lima spanduk dulu
+  melakukannya dengan aturan yang sudah usang, dan menyuruh owner
+  menempelkannya — yang akan memutus semua akun non-owner. Pakai
+  `renderRulesBanner()`: ia menunjuk ke berkas di repo, menyesuaikan pesannya
+  untuk owner vs bukan, dan dibersihkan `clearRulesBanner()` begitu datanya
+  mengalir lagi.
 - **Data yang disalin** (nama anggota, nama unit, perusahaan) selalu punya
   jalur baca yang mengutamakan data hidup dan jatuh ke salinan hanya kalau
   aslinya sudah terhapus.

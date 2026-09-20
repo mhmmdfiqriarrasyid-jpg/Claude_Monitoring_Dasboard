@@ -3449,6 +3449,25 @@ body[data-nocsvimport] .csv-import { display: none !important; }
     font-weight: 400;
     color: var(--text-light);
 }
+/* ===== Periksa Data ===== */
+.datacheck-group { margin-bottom: 22px; }
+.datacheck-group h4 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 8px;
+    font-size: 13px;
+    font-weight: 700;
+}
+.datacheck-count {
+    background: var(--warning-bg);
+    color: var(--warning);
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+
 .week-health {
     margin-top: 16px;
     padding: 14px 16px;

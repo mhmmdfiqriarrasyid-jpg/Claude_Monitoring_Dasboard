@@ -76,7 +76,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v101';
+const APP_VERSION = 'v102';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -9578,6 +9578,10 @@ function goDecision(target) {
             if (f) { f.value = target === 'approval' ? 'pending' : 'revision'; renderWorkLogTable(); }
             break;
         }
+        case 'teamLog':
+            navigateTo('team');
+            switchTeamTab('worklog');
+            break;
         case 'warehouseStock':
             navigateTo('warehouse');
             switchWarehouseTab('stock');
@@ -9904,8 +9908,286 @@ function shiftSummaryWeek(delta) {
 }
 
 // ---- tabs ----
+// ============================================================
+// PERIKSA DATA — finds records that are already wrong
+// ------------------------------------------------------------
+// Validation stops new mistakes; this finds the ones already stored. Each
+// check is a small pure function returning findings, so each can be tested on
+// its own and a wrong one can be removed without touching the others.
+//
+// Nothing here writes except the whitespace tidy-up, which is the only fix
+// that cannot change what a value means. Everything else points at the record
+// and leaves the judgement to a person.
+// ============================================================
+
+// Characters that survive .trim() and make two identical-looking strings
+// different to a computer. This is not hypothetical: a unit name carrying one
+// of these is what made a migration rewrite a record that already matched.
+const INVISIBLE_RE = /[ ​-‍﻿]/;
+
+function dc(kind, label, detail, goTo, extra) {
+    return { kind, label, detail, goTo, ...(extra || {}) };
+}
+
+// Two records claiming the same serial number. Worse than untidy: SN is the
+// key a CSV import matches on, so a duplicate makes every later import
+// ambiguous about which record it is updating.
+function dcDuplicateSerials() {
+    const out = [];
+    const scan = (list, what, goTo) => {
+        const seen = new Map();
+        (list || []).forEach(r => {
+            const sn = (r.sn || '').trim().toLowerCase();
+            if (!sn) return;
+            if (seen.has(sn)) {
+                out.push(dc('sn-ganda', `${what}: ${r.sn}`,
+                    `Dipakai "${seen.get(sn)}" dan "${r.name || r.type || '-'}"`, goTo));
+            } else {
+                seen.set(sn, r.name || r.type || '-');
+            }
+        });
+    };
+    scan(globalData, 'Unit', 'editUnits');
+    scan(warehouseDevices, 'Perangkat', 'warehouseDevices');
+    return out;
+}
+
+function dcInvisibleCharacters() {
+    const out = [];
+    globalData.forEach(u => {
+        ['name', 'sn', 'site'].forEach(f => {
+            const v = u[f];
+            if (typeof v !== 'string' || !v) return;
+            if (INVISIBLE_RE.test(v) || v !== v.trim()) {
+                out.push(dc('spasi', `Unit ${u.name || u.sn || u.id}`,
+                    `Field "${f}" punya spasi atau karakter tak terlihat`, 'editUnits',
+                    { unitId: u.id, field: f, fixable: true }));
+            }
+        });
+    });
+    return out;
+}
+
+// "PT. GPA" and "PT GPA" split one company into two rows in the recap, and
+// nothing on screen shows why the totals look wrong. Grouped by a key that
+// ignores case, punctuation and spacing.
+function dcSiteVariants() {
+    const groups = new Map();
+    globalData.forEach(u => {
+        const raw = (u.site || '').trim();
+        if (!raw) return;
+        const key = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (!key) return;
+        const g = groups.get(key) || new Map();
+        g.set(raw, (g.get(raw) || 0) + 1);
+        groups.set(key, g);
+    });
+    const out = [];
+    groups.forEach(variants => {
+        if (variants.size < 2) return;
+        const parts = [...variants.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .map(([v, n]) => `"${v}" (${n})`);
+        out.push(dc('site-beda-tipis', 'Nama site ditulis beberapa cara',
+            parts.join(' · '), 'editUnits'));
+    });
+    return out;
+}
+
+// A member with no company, or a unit with no site, silently drops out of the
+// per-company recap — the numbers simply come up short with no row to explain it.
+function dcMissingCompany() {
+    const out = [];
+    (teamMembers || []).forEach(m => {
+        if (m.active === false) return;
+        if (!(companyOf(m) || '').trim()) {
+            out.push(dc('tanpa-perusahaan', `Anggota: ${m.name}`,
+                'Belum punya perusahaan — jamnya tidak masuk rekap mana pun', 'team'));
+        }
+    });
+    globalData.forEach(u => {
+        if (!(u.site || '').trim()) {
+            out.push(dc('tanpa-site', `Unit: ${u.name || u.sn || u.id}`,
+                'Belum punya site — tidak terhitung di pembagian PT', 'editUnits',
+                { unitId: u.id }));
+        }
+    });
+    return out;
+}
+
+// Leftovers from before the hours were validated on save.
+function dcWorkLogHours() {
+    const out = [];
+    (workLogs || []).forEach(w => {
+        const s = parseHHMM(w.start), e = parseHHMM(w.end);
+        const who = `${memberNameOf(w)} · ${w.date}`;
+        if ((s == null) !== (e == null)) {
+            out.push(dc('jam-sebelah', `Laporan: ${who}`, 'Hanya satu jam yang terisi', 'teamLog'));
+            return;
+        }
+        if (s == null) return;
+        const mins = workLogMinutes(w);
+        if (mins === 0) {
+            out.push(dc('jam-nol', `Laporan: ${who}`, 'Terhitung 0 jam', 'teamLog'));
+        } else if (mins >= WORKLOG_LONG_SHIFT_MIN) {
+            out.push(dc('jam-panjang', `Laporan: ${who}`,
+                `Terhitung ${formatMinutes(mins)} — kemungkinan jamnya tertukar`, 'teamLog'));
+        }
+    });
+    return out;
+}
+
+function dcFutureDates() {
+    const today = toISODate();
+    const out = [];
+    const scan = (list, what, goTo) => (list || []).forEach(r => {
+        if (r.date && r.date > today) {
+            out.push(dc('tanggal-depan', `${what}: ${r.date}`,
+                'Tanggal di masa depan — kemungkinan salah ketik tahun', goTo));
+        }
+    });
+    scan(workLogs, 'Laporan', 'teamLog');
+    scan(globalDamages, 'Kerusakan', 'damage');
+    scan(stockLedger, 'Stok', 'warehouseStock');
+    scan(globalLicenseStock, 'Lisensi', 'licenseStock');
+    return out;
+}
+
+// A licence that starts and expires on the same day is not a real record. It
+// is the signature of the Excel migrations that were removed in v100 — all 52
+// rows of their payload had start == end — so this is how to tell whether they
+// ever managed to run somewhere before they were deleted.
+function dcLicenceDates() {
+    const out = [];
+    globalData.forEach(u => {
+        const pairs = [
+            ['GPS', u.gpsLicenseStartDate, u.gpsLicenseEndDate],
+            ['Display', u.displayLicenseStartDate, u.displayLicenseEndDate]
+        ];
+        pairs.forEach(([label, from, to]) => {
+            if (!from || !to) return;
+            const name = u.name || u.sn || u.id;
+            if (from === to) {
+                out.push(dc('lisensi-sehari', `Unit: ${name}`,
+                    `Lisensi ${label} mulai dan habis di hari yang sama (${from})`, 'editUnits',
+                    { unitId: u.id }));
+            } else if (to < from) {
+                out.push(dc('lisensi-terbalik', `Unit: ${name}`,
+                    `Lisensi ${label} habis (${to}) sebelum mulai (${from})`, 'editUnits',
+                    { unitId: u.id }));
+            }
+        });
+    });
+    return out;
+}
+
+function dcOrphanDamage() {
+    const ids = new Set(globalData.map(u => u.id));
+    const sns = new Set(globalData.map(u => (u.sn || '').toLowerCase()).filter(Boolean));
+    return (globalDamages || []).filter(d => {
+        if (d.unitId && ids.has(d.unitId)) return false;
+        if (d.sn && sns.has(String(d.sn).toLowerCase())) return false;
+        return true;
+    }).map(d => dc('kerusakan-yatim', `Kerusakan: ${d.unitName || d.sn || '-'}`,
+        'Unitnya sudah tidak ada — catatan ini tidak bisa ditelusuri', 'damage'));
+}
+
+function dcNegativeStock() {
+    return stockSummary().filter(s => s.qty < 0).map(s =>
+        dc('stok-minus', `Stok: ${s.name}`,
+            `Saldo ${s.qty} — biasanya nama barangnya beda tipis dari yang sudah ada`,
+            'warehouseStock'));
+}
+
+const DATA_CHECKS = [
+    { key: 'sn',       label: 'Nomor seri duplikat',        run: dcDuplicateSerials },
+    { key: 'spasi',    label: 'Spasi / karakter tak terlihat', run: dcInvisibleCharacters },
+    { key: 'site',     label: 'Nama site ditulis beda-beda', run: dcSiteVariants },
+    { key: 'kosong',   label: 'Perusahaan / site belum diisi', run: dcMissingCompany },
+    { key: 'jam',      label: 'Jam laporan tidak wajar',    run: dcWorkLogHours },
+    { key: 'tanggal',  label: 'Tanggal di masa depan',      run: dcFutureDates },
+    { key: 'lisensi',  label: 'Tanggal lisensi janggal',    run: dcLicenceDates },
+    { key: 'yatim',    label: 'Kerusakan tanpa unit',       run: dcOrphanDamage },
+    { key: 'stok',     label: 'Saldo stok minus',           run: dcNegativeStock }
+];
+
+function runDataChecks() {
+    return DATA_CHECKS.map(c => {
+        let items = [];
+        // One broken check must not take the whole page down with it.
+        try { items = c.run() || []; }
+        catch (err) { console.error(`[periksa] ${c.key} gagal:`, err); }
+        return { ...c, items };
+    });
+}
+
+function renderDataCheck() {
+    const host = document.getElementById('dataCheckBody');
+    if (!host) return;
+    const groups = runDataChecks();
+    const total = groups.reduce((n, g) => n + g.items.length, 0);
+    const fixable = groups.reduce((n, g) => n + g.items.filter(i => i.fixable).length, 0);
+
+    const summary = document.getElementById('dataCheckSummary');
+    if (summary) {
+        summary.textContent = total === 0
+            ? 'Tidak ada yang mencurigakan — data Anda bersih.'
+            : `${total} hal perlu dilihat, di ${groups.filter(g => g.items.length).length} kelompok.`;
+    }
+    const fixBtn = document.getElementById('dataCheckFixBtn');
+    if (fixBtn) {
+        fixBtn.style.display = fixable ? '' : 'none';
+        fixBtn.textContent = `Rapikan ${fixable} spasi tersembunyi`;
+    }
+
+    if (total === 0) { host.innerHTML = ''; return; }
+
+    host.innerHTML = groups.filter(g => g.items.length).map(g => `
+        <div class="datacheck-group">
+            <h4>${escapeHtml(g.label)} <span class="datacheck-count">${g.items.length}</span></h4>
+            <table class="data-table table--cardable">
+                <thead><tr><th>Apa</th><th>Keterangan</th><th></th></tr></thead>
+                <tbody>${g.items.map(i => `<tr>
+                    <td data-label="Apa">${escapeHtml(i.label)}</td>
+                    <td data-label="Keterangan">${escapeHtml(i.detail)}</td>
+                    <td data-label="" style="white-space:nowrap"><button type="button" class="btn btn-secondary btn-sm"
+                        onclick="goDecision('${escapeHtml(i.goTo)}')">Buka</button></td>
+                </tr>`).join('')}</tbody>
+            </table>
+        </div>`).join('');
+}
+
+// The one automatic fix. Trimming whitespace and stripping zero-width
+// characters cannot change what a value means, which is why it is safe to do
+// in bulk; every other finding needs a person to decide. Writes go through
+// updateUnit, so they are gated by canWriteUnits() and land in the history
+// like any other edit.
+function fixInvisibleCharacters() {
+    if (!requireEdit('editUnits')) return;
+    const found = dcInvisibleCharacters().filter(i => i.fixable);
+    if (!found.length) { showToast('Tidak ada yang perlu dirapikan', 'info'); return; }
+    if (!confirm(`Rapikan ${found.length} nilai yang punya spasi atau karakter tak terlihat?\n\n`
+        + 'Tulisannya tidak berubah — hanya karakter tersembunyinya yang dibuang.')) return;
+
+    const byUnit = new Map();
+    found.forEach(i => {
+        const u = globalData.find(x => x.id === i.unitId);
+        if (!u) return;
+        const cleaned = String(u[i.field]).replace(new RegExp(INVISIBLE_RE.source, 'g'), '').trim();
+        if (cleaned === u[i.field]) return;
+        const fields = byUnit.get(i.unitId) || {};
+        fields[i.field] = cleaned;
+        byUnit.set(i.unitId, fields);
+    });
+
+    let n = 0;
+    byUnit.forEach((fields, id) => { if (updateUnit(id, fields)) n++; });
+    showToast(n ? `${n} unit dirapikan` : 'Tidak ada yang berubah', n ? 'success' : 'info');
+    renderDataCheck();
+}
+
 function switchLeaderTab(tab) {
-    leaderTab = ['company', 'week'].includes(tab) ? tab : 'inbox';
+    leaderTab = ['company', 'week', 'check'].includes(tab) ? tab : 'inbox';
     renderLeaderView();
 }
 
@@ -9915,13 +10197,15 @@ function renderLeaderView() {
         btn.classList.toggle('active', on);
         btn.setAttribute('aria-selected', on ? 'true' : 'false');
     });
-    const panels = { inbox: 'leaderInboxPanel', company: 'leaderCompanyPanel', week: 'leaderWeekPanel' };
+    const panels = { inbox: 'leaderInboxPanel', company: 'leaderCompanyPanel',
+                     week: 'leaderWeekPanel', check: 'leaderCheckPanel' };
     Object.entries(panels).forEach(([key, id]) => {
         const el = document.getElementById(id);
         if (el) el.style.display = (key === leaderTab) ? '' : 'none';
     });
     if (leaderTab === 'inbox') renderDecisionInbox();
     else if (leaderTab === 'company') renderCompanyRecap();
+    else if (leaderTab === 'check') renderDataCheck();
     else renderWeekSummary();
 }
 
