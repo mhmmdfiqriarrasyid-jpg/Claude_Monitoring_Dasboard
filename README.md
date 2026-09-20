@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-554 pemeriksaan di lima belas suite, menggerakkan Chromium sungguhan terhadap
+589 pemeriksaan di enam belas suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -105,7 +105,7 @@ CHROME_PATH=/jalur/ke/chrome npm test
 Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 `session_test`, `warehouse_test`, `approval_test`, `leader_test`, `recap_test`,
 `photos_test`, `migration_test`, `history_scan_test`, `validation_test`,
-`datacheck_test`, `regress`.
+`datacheck_test`, `damagephotos_test`, `regress`.
 
 ---
 
@@ -125,18 +125,23 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 
 ## Catatan untuk yang melanjutkan
 
-- **Foto disimpan sebagai data URL di dalam dokumen Firestore**, bukan di
-  Cloud Storage. Batas dokumen Firestore 1 MB, jadi foto dikecilkan dan
-  dibatasi jumlahnya sebelum disimpan. Kalau data sudah banyak, ini yang
-  pertama perlu dipindahkan ke Cloud Storage.
+- **Foto disimpan sebagai data URL, bukan di Cloud Storage** — tetapi di
+  koleksinya sendiri, bukan di dalam dokumen yang dilanggan. Semuanya
+  dikecilkan dulu (1024px / 200 KB) dan dibatasi jumlahnya. Kalau suatu hari
+  pindah ke Cloud Storage, dua koleksi di bawah ini yang diganti.
 - **Foto laporan harian ada di koleksi terpisah `workLogPhotos/{idLaporan}`,
   dan koleksi itu tidak pernah di-`onSnapshot`.** Dokumen laporannya hanya
   menyimpan `photoCount`. Ini disengaja: `subscribeWorkLogs` berlangganan
   seluruh koleksi tanpa `limit()`, jadi selama foto ada di dalam dokumen
   laporan, setiap perangkat mengunduh ulang semua foto setiap kali aplikasi
   dibuka. Jangan tambahkan langganan ke `workLogPhotos` — ambil per dokumen
-  lewat `loadWorkLogPhotos(id)`. Foto kerusakan masih inline dan menunggu
-  perlakuan yang sama.
+  lewat `loadWorkLogPhotos(id)`.
+- **Foto kerusakan ada di `damagePhotos/{idCatatan}`**, dengan pengaturan yang
+  sama persis dan alasan yang sama: `damageRecords` juga dilanggan utuh tanpa
+  `limit()`. Catatannya hanya menyimpan `hasPhoto`; ambil lewat
+  `loadDamagePhoto(id)`. Jangan pernah melanggan koleksi ini.
+  **Tidak ada lagi data URL yang disimpan di dalam dokumen Firestore** —
+  kalau Anda hendak menambahkan satu, pisahkan sejak awal.
 - **Tulisan cloud lewat `cloudWrite()`.** Jangan panggil `logEvent()` di dalam
   `.then()` sebuah tulisan Firestore: offline, promise-nya tidak pernah selesai
   dan jejak auditnya hilang.

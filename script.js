@@ -16,6 +16,11 @@ let selectedImplementIds = new Set();
 let globalDamages = [];
 let selectedDamageIds = new Set();
 let _dmgPhotoData = '';   // data URL of the photo for the damage modal currently open
+// Set only when a photo is actually added or removed. saveDamage writes the
+// photo document only then — so correcting a description never rewrites (or,
+// worse, wipes) a photo that may not even have finished loading yet.
+let _dmgPhotoDirty = false;
+let _dmgPhotoLoading = false;
 let globalLicenseStock = [];
 let selectedLicenseIds = new Set();
 
@@ -76,7 +81,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v102';
+const APP_VERSION = 'v103';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -102,9 +107,15 @@ function componentUnitField(name) {
     if (c) return c.unitField || null;
     return DAMAGE_COMPONENT_FIELD[name] || null;
 }
-const DAMAGE_PHOTO_MAX_DIM = 1280;     // longest-side px after resize
+// Matched to WORKLOG_PHOTO_OPTS. The old budget was 1280px / 900KB — 1.5x the
+// pixels and 4.5x the bytes of a work-log photo, for no reason anyone recorded,
+// and with no cap on how many records could carry one. A field photo of a
+// broken part is legible at 1024px, and every byte here used to be re-read by
+// every device on every app open.
+const DAMAGE_PHOTO_MAX_DIM = 1024;     // longest-side px after resize
 const DAMAGE_PHOTO_QUALITY = 0.7;      // initial JPEG quality
-const DAMAGE_PHOTO_MAX_BYTES = 900 * 1024; // keep data URL under Firestore 1MB doc limit
+const DAMAGE_PHOTO_MAX_BYTES = 200 * 1024;
+const DAMAGE_PHOTOS_SPLIT_KEY = 'tractorDamagePhotosSplit';
 const LICENSE_STORAGE_KEY = 'tractorLicenseStock';
 const LICENSE_TYPE_DEFAULTS = ['SF-RTK', 'SF-1', 'G5 Basic', 'G5 Advance'];
 const LICENSE_LOW_STOCK_THRESHOLD = 5; // "sisa" at or below this → dashboard warning
@@ -698,7 +709,18 @@ function writeAutoBackup(data) {
         ring.push({ at: Date.now(), count: data.length, units: data });
         while (ring.length > BACKUP_RING_SIZE) ring.shift();
         localStorage.setItem(BACKUP_RING_KEY, JSON.stringify(ring));
-    } catch (e) { /* ignore quota issues on backup */ }
+        _autoBackupFailed = false;
+    } catch (e) {
+        // This used to be swallowed in silence, which is the worst possible
+        // place for silence: the ring quietly stopped updating while the owner
+        // went on believing they had three rollback points. Said once per
+        // failure run so a full disk does not become a wall of toasts.
+        console.error('[backup] auto backup failed:', e);
+        if (!_autoBackupFailed) {
+            _autoBackupFailed = true;
+            showToast('Cadangan otomatis berhenti — penyimpanan browser penuh. Export Backup sekarang.', 'error');
+        }
+    }
 }
 
 function loadFromStorage() {
@@ -1685,8 +1707,10 @@ async function exportBackup() {
 // ---- localStorage usage guard ----
 // Damage photos (base64) are the main storage driver; warn before the ~5MB
 // quota is hit so the user can export a backup / prune old photos in time.
-let _storageWarned = false;
+let _storageWarnedAt = 0;
+let _autoBackupFailed = false;
 const STORAGE_WARN_BYTES = 4.5 * 1024 * 1024;
+const STORAGE_WARN_REPEAT_MS = 10 * 60 * 1000;
 
 function estimateLocalStorageBytes() {
     let total = 0;
@@ -1699,13 +1723,17 @@ function estimateLocalStorageBytes() {
     return total;
 }
 
+// Warns again every STORAGE_WARN_REPEAT_MS while the problem persists. It used
+// to latch on a module-level flag, so a user who missed or dismissed the single
+// toast got no further signal as writes began failing — and the toast is the
+// only indication that anything is wrong until data stops saving.
 function checkStorageUsage() {
-    if (_storageWarned) return;
     const used = estimateLocalStorageBytes();
-    if (used > STORAGE_WARN_BYTES) {
-        _storageWarned = true;
-        showToast(`Penyimpanan browser hampir penuh (${(used / 1048576).toFixed(1)} MB terpakai) — export Backup sekarang & pertimbangkan menghapus foto kerusakan lama`, 'warning');
-    }
+    if (used <= STORAGE_WARN_BYTES) { _storageWarnedAt = 0; return; }
+    const now = Date.now();
+    if (_storageWarnedAt && now - _storageWarnedAt < STORAGE_WARN_REPEAT_MS) return;
+    _storageWarnedAt = now;
+    showToast(`Penyimpanan browser hampir penuh (${(used / 1048576).toFixed(1)} MB terpakai) — export Backup sekarang`, 'warning');
 }
 
 function triggerRestore() {
@@ -3995,6 +4023,7 @@ async function handleDamagePhotoChange(event) {
     }
     try {
         _dmgPhotoData = await compressImageToDataURL(file);
+        _dmgPhotoDirty = true;
         setDamagePhotoPreview();
     } catch (err) {
         showToast(err.message || 'Gagal memproses foto', 'error');
@@ -4005,6 +4034,8 @@ function setDamagePhotoPreview() {
     const wrap = document.getElementById('dmgPhotoPreviewWrap');
     const img = document.getElementById('dmgPhotoPreview');
     if (!wrap || !img) return;
+    const loading = document.getElementById('dmgPhotoLoading');
+    if (loading) loading.style.display = (_dmgPhotoLoading && !_dmgPhotoData) ? '' : 'none';
     if (_dmgPhotoData) {
         img.src = _dmgPhotoData;
         wrap.style.display = '';
@@ -4016,9 +4047,129 @@ function setDamagePhotoPreview() {
 
 function removeDamagePhoto() {
     _dmgPhotoData = '';
+    _dmgPhotoDirty = true;
     const input = document.getElementById('dmgPhotoInput');
     if (input) input.value = '';
     setDamagePhotoPreview();
+}
+
+// ============================================================
+// DAMAGE PHOTOS — stored apart from the record, fetched on demand
+// ------------------------------------------------------------
+// Same arrangement as work-log photos, for the same reason and with the same
+// three rules. damageRecords is subscribed whole with no limit(), so an inline
+// data URL was pulled down by every device on every app open — roughly 150 KB
+// per photo, never expiring. It also rode along into localStorage through
+// saveDamages(), where a few dozen photos exhausted the ~5 MB origin quota and
+// took unit saves and the automatic backup ring down with it.
+//
+// The record keeps only hasPhoto. The image lives in damagePhotos/{recordId}
+// and is read one document at a time, when somebody opens it. This collection
+// must never be subscribed.
+// ============================================================
+
+const _dmgPhotoCache = new Map();   // damage record id -> data URL
+
+function damageHasPhoto(rec) {
+    if (!rec) return false;
+    // Records written before the split still carry the image inline. An empty
+    // string means the inline copy was cleared on migration, so fall through to
+    // hasPhoto rather than reporting none.
+    if (rec.photo) return true;
+    return !!rec.hasPhoto;
+}
+
+async function loadDamagePhoto(id) {
+    const rec = globalDamages.find(d => d.id === id);
+    if (rec && rec.photo) return rec.photo;
+    if (_dmgPhotoCache.has(id)) return _dmgPhotoCache.get(id);
+    if (!window.cloud || !window.cloud.getDamagePhoto) return '';
+    const photo = await window.cloud.getDamagePhoto(id);
+    _dmgPhotoCache.set(id, photo);
+    return photo;
+}
+
+async function openDamagePhoto(id, btn) {
+    const original = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+    try {
+        const photo = await loadDamagePhoto(id);
+        if (!photo) { showToast('Foto tidak ditemukan', 'warning'); return; }
+        openPhotoLightbox(photo);
+    } catch (err) {
+        console.error('[damage] photo load failed:', err);
+        showToast(navigator.onLine
+            ? 'Gagal memuat foto kerusakan'
+            : 'Foto perlu sinyal untuk dimuat', 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = original; }
+    }
+}
+
+// One-shot move of inline photos into damagePhotos, mirroring the work-log
+// migration that has already run in production.
+//
+// Order matters and is deliberate: the photo document is written FIRST and the
+// inline copy cleared only after that write is confirmed. Interrupted halfway,
+// the photo exists in two places — never in none. The flag is only set once the
+// whole pass succeeds, so a failure simply retries on the next snapshot instead
+// of leaving records stranded.
+let _dmgPhotoMigrationRunning = false;
+function migrateDamagePhotosIfNeeded() {
+    if (_dmgPhotoMigrationRunning) return;
+    if (!isOwner || !isOwner()) return;
+    if (localStorage.getItem(DAMAGE_PHOTOS_SPLIT_KEY) === '1') return;
+    if (!window.cloud || !window.cloud.saveDamagePhoto) return;
+    if (!Array.isArray(globalDamages) || globalDamages.length === 0) return;
+
+    const pending = globalDamages.filter(d => d.photo);
+    if (pending.length === 0) {
+        localStorage.setItem(DAMAGE_PHOTOS_SPLIT_KEY, '1');
+        return;
+    }
+    if (!navigator.onLine) return;   // retried on the next snapshot
+
+    _dmgPhotoMigrationRunning = true;
+    console.log(`[dmg-photos] moving photos out of ${pending.length} damage records...`);
+    (async () => {
+        let moved = 0;
+        for (const d of pending) {
+            const photo = d.photo;
+            await window.cloud.saveDamagePhoto(d.id, photo);
+            _dmgPhotoCache.set(d.id, photo);
+            await window.cloud.saveDamage({ ...d, photo: '', hasPhoto: true });
+            moved++;
+        }
+        return moved;
+    })().then(moved => {
+        localStorage.setItem(DAMAGE_PHOTOS_SPLIT_KEY, '1');
+        try {
+            logEvent({
+                action: 'migrate',
+                unitName: '-',
+                field: 'foto kerusakan',
+                after: `${moved} catatan dipindah ke koleksi damagePhotos`
+            });
+        } catch (e) {}
+        console.log(`[dmg-photos] done — ${moved} damage records migrated`);
+    }).catch(err => {
+        console.error('[dmg-photos] migration failed:', err);
+        if (err && err.code === 'permission-denied') showDamageRulesBanner();
+    }).finally(() => {
+        _dmgPhotoMigrationRunning = false;
+    });
+}
+
+// Renders the cell for a damage record's photo: a button carrying the fetch,
+// never an <img> holding the image itself.
+function damagePhotoButton(rec) {
+    if (!damageHasPhoto(rec)) return '<span style="color:var(--text-light);font-size:11px">—</span>';
+    // Carries a word, not just the icon: a one-glyph button is a poor tap
+    // target on a phone, and it disappears entirely if the icon font does not
+    // load — which is exactly when a field device is on a bad connection.
+    return `<button type="button" class="wl-photo-btn" title="Lihat foto kerusakan"
+            aria-label="Lihat foto kerusakan"
+            onclick="event.stopPropagation();openDamagePhoto('${escapeHtml(rec.id)}', this)"><i class="fas fa-image"></i> Foto</button>`;
 }
 
 // ---- Lightbox (view full-size photo) ----
@@ -4176,7 +4327,7 @@ function showUnitProfile(id) {
             <span class="badge badge-breakdown" style="font-size:10px">${escapeHtml(r.damageType || '')}</span>
             ${r.component ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(r.component)}</span>` : ''}
             <span class="profile-item__text" title="${escapeHtml(r.description || '')}">${escapeHtml((r.description || '').slice(0, 60))}</span>
-            ${r.photo ? `<img class="dmg-thumb" src="${r.photo}" alt="foto" onclick="openPhotoLightbox(this.src)">` : ''}
+            ${damageHasPhoto(r) ? damagePhotoButton(r) : ''}
         </div>`).join('')
         : '<div class="profile-empty">Belum ada catatan kerusakan.</div>';
 
@@ -4420,8 +4571,8 @@ function renderDamageTable() {
             <td data-label="Tipe"><span class="badge badge-breakdown" style="font-size:10px">${escapeHtml(d.damageType || '')}</span></td>
             <td data-label="Komponen">${comp}</td>
             <td data-label="Deskripsi" style="max-width:240px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(desc)}">${escapeHtml(descShort) || '<span style="color:var(--text-light)">—</span>'}</td>
-            <td data-label="Foto">${d.photo
-                ? `<img class="dmg-thumb" src="${d.photo}" alt="foto" onclick="openPhotoLightbox(this.src)">`
+            <td data-label="Foto">${damageHasPhoto(d)
+                ? damagePhotoButton(d)
                 : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td data-label="Perbaikan" style="white-space:nowrap">${d.resolved
                 ? `<span class="badge badge-good" style="font-size:10px" title="Selesai diperbaiki"><i class="fas fa-check"></i> Selesai${d.resolvedAt ? ' ' + escapeHtml(d.resolvedAt) : ''}</span>`
@@ -4472,6 +4623,8 @@ function showAddDamageForm() {
     renderDamageComponentOptions();
     onDamageTypeChange();
     _dmgPhotoData = '';
+    _dmgPhotoDirty = false;
+    _dmgPhotoLoading = false;
     setDamagePhotoPreview();
     const bdGroup = document.getElementById('dmgSetBreakdownGroup');
     if (bdGroup) bdGroup.style.display = '';
@@ -4505,11 +4658,32 @@ function editDamage(id) {
     document.getElementById('dmgDescription').value = rec.description || '';
     onDamageTypeChange();
     _dmgPhotoData = rec.photo || '';
+    _dmgPhotoDirty = false;
+    _dmgPhotoLoading = !_dmgPhotoData && damageHasPhoto(rec);
     setDamagePhotoPreview();
     // Status linkage only applies when recording a NEW damage, not when editing.
     const bdGroup = document.getElementById('dmgSetBreakdownGroup');
     if (bdGroup) bdGroup.style.display = 'none';
     document.getElementById('damageModal').classList.add('open');
+
+    // The photo lives in its own document now, so it arrives after the form
+    // does. Bail out if the user has moved on to another record or has already
+    // changed the photo themselves — their choice must not be overwritten by a
+    // fetch they started before making it.
+    if (_dmgPhotoLoading) {
+        loadDamagePhoto(id).then(photo => {
+            if (document.getElementById('editDamageId').value !== id) return;
+            if (_dmgPhotoDirty) return;
+            _dmgPhotoData = photo;
+            _dmgPhotoLoading = false;
+            setDamagePhotoPreview();
+        }).catch(err => {
+            console.error('[damage] photo load failed:', err);
+            _dmgPhotoLoading = false;
+            setDamagePhotoPreview();
+            showToast('Foto lama gagal dimuat — foto lama tetap tersimpan', 'warning');
+        });
+    }
 }
 
 function saveDamage(event) {
@@ -4530,9 +4704,17 @@ function saveDamage(event) {
         damageType: type,
         component: document.getElementById('dmgComponent').value,
         description: document.getElementById('dmgDescription').value.trim(),
-        photo: _dmgPhotoData || ''
+        // Only the flag lives on the record; the image goes to damagePhotos.
+        hasPhoto: _dmgPhotoDirty ? !!_dmgPhotoData
+                                 : damageHasPhoto(globalDamages.find(d => d.id === id))
     };
+    // Untouched photos are left exactly as they are — not re-read, not
+    // rewritten, not cleared. Writing photo:'' unconditionally would wipe a
+    // legacy inline photo that has not been migrated yet, on a save that only
+    // meant to fix a typo.
+    if (_dmgPhotoDirty) data.photo = '';
 
+    let savedId = id;
     if (id) {
         const idx = globalDamages.findIndex(d => d.id === id);
         if (idx !== -1) {
@@ -4550,6 +4732,7 @@ function saveDamage(event) {
         }
     } else {
         const newRec = { id: generateDamageId(), ...data, resolved: false, resolvedAt: '', createdAt: Date.now(), updatedAt: Date.now() };
+        savedId = newRec.id;
         globalDamages.push(newRec);
         saveDamages();
         cloudPushDamage(newRec);
@@ -4567,6 +4750,27 @@ function saveDamage(event) {
         if (document.getElementById('dmgSetBreakdown')?.checked) {
             const target = _applyDamageBreakdown(unit.id, data.damageType, data.component, data.description);
             if (target) showToast(`${target} "${unit.name}" di-set Breakdown`, 'info');
+        }
+    }
+
+    if (_dmgPhotoDirty && savedId) {
+        const recId = savedId;
+        const photo = _dmgPhotoData || '';
+        _dmgPhotoCache.set(recId, photo);
+        // Offline, the service worker can still be serving a firebase-init.js
+        // from before this collection existed. Say so rather than failing
+        // silently on a save that otherwise looks like it worked.
+        if (!window.cloud.saveDamagePhoto) {
+            showToast('Muat ulang halaman — versi lama masih aktif, foto belum terkirim', 'warning');
+        } else {
+            const write = photo
+                ? window.cloud.saveDamagePhoto(recId, photo)
+                : window.cloud.deleteDamagePhoto(recId);
+            write.catch(err => {
+                console.error('[damage] photo save failed:', err);
+                if (err && err.code === 'permission-denied') showDamageRulesBanner();
+                showToast('Catatan tersimpan, tetapi foto gagal dikirim', 'error');
+            });
         }
     }
 
@@ -4672,6 +4876,11 @@ function deleteDamage(id) {
     globalDamages = globalDamages.filter(d => d.id !== id);
     saveDamages();
     cloudDeleteDamage(id);
+    if (damageHasPhoto(rec) && window.cloud?.deleteDamagePhoto) {
+        _dmgPhotoCache.delete(id);
+        window.cloud.deleteDamagePhoto(id).catch(err =>
+            console.error('[damage] photo delete failed:', err));
+    }
     logEvent({
         action: 'delete',
         unitId: rec.unitId,
@@ -4693,6 +4902,14 @@ function deleteSelectedDamages() {
     globalDamages = globalDamages.filter(d => !idSet.has(d.id));
     saveDamages();
     removed.forEach(rec => cloudDeleteDamage(rec.id));
+    // Leaving these behind would orphan them: nothing else ever reads or
+    // removes a photo whose record is gone.
+    removed.forEach(rec => {
+        if (!damageHasPhoto(rec) || !window.cloud?.deleteDamagePhoto) return;
+        _dmgPhotoCache.delete(rec.id);
+        window.cloud.deleteDamagePhoto(rec.id).catch(err =>
+            console.error('[damage] photo delete failed:', err));
+    });
     removed.forEach(rec => logEvent({
         action: 'delete',
         unitId: rec.unitId,
@@ -4716,7 +4933,7 @@ function exportDamageCSV() {
             lu ? (lu.name || '') : (d.unitName || ''),
             lu ? (lu.sn || '') : (d.sn || ''),
             lu ? (lu.site || '') : (d.site || ''),
-            d.damageType || '', d.component || '', d.description || '', d.photo ? 'Ada' : '',
+            d.damageType || '', d.component || '', d.description || '', damageHasPhoto(d) ? 'Ada' : '',
             d.resolved ? `Selesai ${d.resolvedAt || ''}`.trim() : 'Open'
         ];
     });
@@ -4778,6 +4995,10 @@ function applyCloudDamagesSnapshot(items) {
     } finally {
         suppressCloudWrites = false;
     }
+
+    // Outside the suppress window on purpose: the migration's writes must
+    // actually reach Firestore.
+    migrateDamagePhotosIfNeeded();
 }
 
 // ============================================================

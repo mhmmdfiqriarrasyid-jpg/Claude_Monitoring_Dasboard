@@ -111,6 +111,18 @@ service cloud.firestore {
       allow write: if canEditArea('teamLog');
     }
 
+    // Damage photos, one document per record. Split out for the same reason as
+    // workLogPhotos: damageRecords is subscribed whole, with no limit, so an
+    // inline photo was re-downloaded by every device on every app open — and it
+    // rode along into localStorage, where a few dozen of them filled the origin
+    // quota and silently stopped unit saves and the automatic backup. Same area
+    // as the record: whoever may edit a damage record may edit its photo, so
+    // there is no new permission to hand out per person.
+    match /damagePhotos/{id} {
+      allow read:  if isActive();
+      allow write: if canEditArea('damage');
+    }
+
     // ---- Warehouse ----
     // One area covers both shapes: devices followed by serial number, and
     // consumables counted by quantity. Reads stay open to any active user so

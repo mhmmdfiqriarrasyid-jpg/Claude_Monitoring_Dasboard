@@ -2269,6 +2269,11 @@ body[data-ro-editunits] .inline-edit { background: transparent !important; }
     font-size: 12px;
     font-variant-numeric: tabular-nums;
     cursor: pointer;
+    /* Stays tappable even when the label is short and the icon font has not
+       loaded — the case a field device hits on a bad connection. */
+    min-height: 28px;
+    min-width: 44px;
+    justify-content: center;
 }
 .wl-photo-btn:hover:not(:disabled) {
     border-color: var(--primary);

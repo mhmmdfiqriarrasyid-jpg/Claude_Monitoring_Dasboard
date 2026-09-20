@@ -77,6 +77,8 @@ const WORK_LOGS_COL = 'workLogs';
 // Field documentation lives in its own collection, one document per work
 // log, and is deliberately never subscribed — see getWorkLogPhotos below.
 const WORK_LOG_PHOTOS_COL = 'workLogPhotos';
+// Same again for damage records — one document per record, never subscribed.
+const DAMAGE_PHOTOS_COL = 'damagePhotos';
 
 function batchInChunks(items, fn, chunkSize = 400) {
     // Firestore allows up to 500 ops per batch; 400 is a safe cap.
@@ -564,6 +566,23 @@ window.cloud = {
     },
     async deleteWorkLogPhotos(id) {
         await deleteDoc(doc(db, WORK_LOG_PHOTOS_COL, id));
+    },
+
+    // Damage photos, same arrangement and for the same reason: damageRecords is
+    // subscribed whole with no limit(), so an inline photo was re-downloaded by
+    // every device on every app open. Never subscribe this collection either.
+    async getDamagePhoto(id) {
+        const snap = await getDoc(doc(db, DAMAGE_PHOTOS_COL, id));
+        if (!snap.exists()) return '';
+        const data = snap.data();
+        return typeof data.photo === 'string' ? data.photo : '';
+    },
+    async saveDamagePhoto(id, photo) {
+        await setDoc(doc(db, DAMAGE_PHOTOS_COL, id),
+                     { id, photo, updatedAt: Date.now() });
+    },
+    async deleteDamagePhoto(id) {
+        await deleteDoc(doc(db, DAMAGE_PHOTOS_COL, id));
     }
 };
 

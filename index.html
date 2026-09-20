@@ -1733,6 +1733,9 @@
                             <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('dmgPhotoInput').click()">
                                 <i class="fas fa-camera"></i> Pilih Foto
                             </button>
+                            <span id="dmgPhotoLoading" class="wl-photo__loading" style="display:none">
+                                <i class="fas fa-spinner fa-spin"></i> Memuat foto…
+                            </span>
                             <div id="dmgPhotoPreviewWrap" class="dmg-photo-preview" style="display:none">
                                 <img id="dmgPhotoPreview" alt="Preview foto" onclick="openPhotoLightbox(this.src)">
                                 <button type="button" class="btn btn-secondary btn-sm" id="dmgPhotoRemove" onclick="removeDamagePhoto()">

@@ -11,7 +11,7 @@ const PORT = Number(process.env.PORT) || 8765;
 const SUITES = [
     'team_logic', 'roles_test', 'company_test', 'adjust_test',
     'session_test', 'warehouse_test', 'approval_test', 'leader_test', 'recap_test',
-    'photos_test', 'migration_test', 'history_scan_test', 'validation_test', 'datacheck_test', 'regress'
+    'photos_test', 'migration_test', 'history_scan_test', 'validation_test', 'datacheck_test', 'damagephotos_test', 'regress'
 ];
 
 const TYPES = {
