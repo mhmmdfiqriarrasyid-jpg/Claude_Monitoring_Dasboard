@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-589 pemeriksaan di enam belas suite, menggerakkan Chromium sungguhan terhadap
+606 pemeriksaan di tujuh belas suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -105,7 +105,7 @@ CHROME_PATH=/jalur/ke/chrome npm test
 Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 `session_test`, `warehouse_test`, `approval_test`, `leader_test`, `recap_test`,
 `photos_test`, `migration_test`, `history_scan_test`, `validation_test`,
-`datacheck_test`, `damagephotos_test`, `regress`.
+`datacheck_test`, `damagephotos_test`, `mobile_test`, `regress`.
 
 ---
 
@@ -166,6 +166,15 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 - **Semua penulis `units` mengunci dirinya sendiri** lewat `canWriteUnits()`,
   bukan hanya di pemanggil. Pemanggil baru tidak boleh mewarisi nol
   perlindungan seperti dulu.
+- **Ukuran untuk ponsel ada di satu blok di ujung `style.css`**
+  (`@media (max-width: 700px)`), dan dijaga `tests/mobile_test.js`. Aturan yang
+  tidak boleh dilanggar: **setiap field form minimal `16px`.** Safari iPhone
+  nge-zoom halaman tiap kali field di bawah 16px difokuskan dan tidak pernah
+  kembali — satu field 13px membuat seluruh aplikasi membesar sampai pengguna
+  reload. Sisanya soal ukuran sentuh: kontrol ≥40px, tombol ≥44px.
+  Desktop sengaja tidak ikut berubah, dan itu juga diuji.
+- **`.btn-sm` didefinisikan dua kali di `style.css`** dan yang kedua menang di
+  semua lebar. Sunting yang kedua; yang pertama tidak berpengaruh apa-apa.
 - **Validasi ada di fungsi simpan, bukan hanya di atribut HTML.**
   `checkWorkLogHours`, `checkUnitFields`, `checkStockBalance`. Polanya: yang
   pasti salah **ditolak**, yang mungkin benar **dikonfirmasi**. Shift malam 23

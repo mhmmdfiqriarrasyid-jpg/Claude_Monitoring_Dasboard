@@ -2022,6 +2022,10 @@ body.auth-blocked .footer { filter: blur(2px); pointer-events: none; }
 }
 .btn-success:hover { background: var(--success); border-color: var(--success); }
 
+/* NOTE: this is the SECOND .btn-sm in this file — the first is near the top
+   with the other button styles, and this one silently overrides it at every
+   width. Edit this one. The phone block at the end of the file overrides both
+   below 700px, where 11px/4px is too small to tap. */
 .btn-sm {
     padding: 4px 10px;
     font-size: 11px;
@@ -3492,4 +3496,134 @@ body[data-nocsvimport] .csv-import { display: none !important; }
     .team-tabbar { display: none !important; }
     .week-grid { grid-template-columns: repeat(3, 1fr); }
     .week-metric { box-shadow: none; border: 1px solid #999; break-inside: avoid; }
+}
+
+/* ============================================================
+   PHONE — touch sizing and readability
+   ------------------------------------------------------------
+   Measured in Chromium at 360x740, every view, with real data. What this
+   fixes, in order of how much it hurts:
+
+   1. Every form control was 13px. Safari on iPhone zooms the page whenever a
+      field smaller than 16px takes focus, and does not zoom back — so filling
+      in one damage report left the whole app magnified and scrolling
+      sideways. 16px is the threshold, not a preference.
+   2. .btn-sm rendered 22px tall. That is the height of "Tandai selesai",
+      "Kelola Anggota", "Minggu Ini", "Cetak", "Tangani", "Reset" — the main
+      action on most pages. Checkboxes measured 12px.
+   3. Labels and badges at 10-10.5px.
+
+   44px is the usual touch guidance. In a dense table that would push half the
+   rows off screen, so controls inside tables settle at 40px and standalone
+   ones at 44px. Everything here is still far better than 22.
+   ============================================================ */
+@media (max-width: 700px) {
+    /* --- 1. No more iOS zoom-on-focus --- */
+    .form-input,
+    .form-select,
+    textarea.form-input,
+    input[type="text"], input[type="email"], input[type="password"],
+    input[type="number"], input[type="date"], input[type="time"],
+    input[type="search"], input[type="month"], select, textarea {
+        font-size: 16px;
+    }
+    .form-input, .form-select, select, textarea.form-input,
+    .global-search input {
+        min-height: 44px;
+        padding: 10px 12px;
+    }
+    textarea.form-input { min-height: 88px; }
+
+    /* --- 2. Touchable controls --- */
+    /* min-width matters as much as height: several buttons carry only an icon,
+       and measured 30px wide however tall they were. */
+    .btn { min-height: 44px; min-width: 44px; }
+    .btn-sm {
+        min-height: 40px;
+        min-width: 40px;
+        padding: 8px 14px;
+        font-size: 13px;
+    }
+    .btn-icon { width: 44px; height: 44px; }
+    .wl-photo-btn { min-height: 40px; padding: 8px 14px; }
+
+    /* A checkbox cannot grow much without looking wrong, so the label around
+       it carries the rest of the tap area — every one of them is wrapped in a
+       <label>, so tapping the words already works. */
+    input[type="checkbox"], input[type="radio"] {
+        width: 22px;
+        height: 22px;
+        flex-shrink: 0;
+    }
+    .form-group label:has(input[type="checkbox"]),
+    .bulk-field label:has(input[type="checkbox"]) { min-height: 40px; }
+
+    /* The burger is the only way back to the menu; it needs a real hit area
+       even when the icon font has not loaded. */
+    .topbar__burger {
+        min-width: 44px;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* Inline editing happens cell by cell, so these stay a little tighter than
+       a standalone control — but not 29px. */
+    .inline-edit { display: inline-block; min-height: 36px; padding: 8px 4px; }
+
+    /* --- 3. Readable text --- */
+    .nav-group__label,
+    .shift-group__count,
+    .downtime-kpi__label,
+    .audit-badge,
+    .data-table th { font-size: 12px; }
+
+    /* Badges carry an inline font-size:10px set in script.js — deliberate for
+       desktop density, unreadable on a phone. Overriding it here keeps the
+       twenty call sites alone; an inline style is the one thing !important is
+       actually for. */
+    .badge { font-size: 12px !important; }
+
+    /* --- Empty states stop forcing a sideways scroll ---
+       .data-table td is nowrap, and the "Belum ada unit…" message is a long
+       sentence in a colspan cell — so an empty or fully-filtered table pushed
+       the page 80px wider than the screen. Hits on a fresh install and on any
+       filter that matches nothing. */
+    .data-table td[colspan] {
+        white-space: normal;
+        word-break: break-word;
+    }
+
+    /* --- Weekly shift grid ---
+       Eight columns need 720px and the phone has 360, so it scrolls sideways —
+       and once it did, the name column scrolled away with it and every row
+       became an anonymous line of dropdowns. A seven-day grid does not
+       usefully become cards either: stacked, one person would be 300px tall.
+
+       So: keep the week, pin the name. The member column stays put while the
+       days scroll under it, with a shadow on its edge so it is obvious there
+       is more to the right. Day columns tighten to fit more of the week on
+       screen at once. */
+    .shift-grid { min-width: 540px; }
+    .shift-grid th,
+    .shift-grid td { padding: 8px 3px; }
+
+    .shift-grid .shift-grid__member {
+        position: sticky;
+        left: 0;
+        z-index: 5;
+        width: 116px;
+        padding-left: 10px;
+        box-shadow: 2px 0 4px -2px rgb(0 0 0 / 0.18);
+    }
+    /* thead is already sticky-top; the corner cell has to outrank both. */
+    .shift-grid thead .shift-grid__member { z-index: 11; }
+    .shift-grid tbody .shift-grid__member { background: var(--card); }
+    .shift-grid tfoot .shift-grid__member { background: var(--bg); }
+
+    /* Tall enough to tap, narrow enough that the week still fits the scroll. */
+    .shift-select { min-height: 40px; font-size: 13px; padding: 6px 2px; }
+
+    .shift-grid-wrapper { -webkit-overflow-scrolling: touch; }
 }
