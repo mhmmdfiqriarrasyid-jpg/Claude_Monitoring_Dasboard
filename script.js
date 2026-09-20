@@ -76,7 +76,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v100';
+const APP_VERSION = 'v101';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -412,10 +412,14 @@ function setupKeyboardShortcuts() {
         const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable;
 
         if (e.key === 'Escape') {
+            // Leave the field first, and leave the modal alone. Escape is the
+            // reflex for dismissing a datalist suggestion, and closing the unit
+            // form on that keystroke threw away everything typed into it — no
+            // confirmation, no undo. Closing stays on the X and Batal buttons.
+            if (isTyping) { e.target.blur(); return; }
             closeModal();
             closeHistory();
             closeImportReport();
-            if (isTyping) e.target.blur();
             return;
         }
 
@@ -1337,9 +1341,28 @@ function showHistory(unitId) {
     // Stash filter so live snapshots can re-render with the same scope.
     modal.dataset.unitId = unitId || '';
 
+    // This view is fed by a subscription capped at the newest 500 and then
+    // capped again on merge, with nothing on screen saying so. Someone looking
+    // for an old change scrolled to the bottom of an ordinary-looking list and
+    // concluded it was not there. Say it plainly, and point at Export, which
+    // is the only path that reads the whole collection.
+    const truncated = filtered.length >= AUDIT_LOG_MAX;
+    const countEl = document.getElementById('historyCount');
+    if (countEl) {
+        countEl.textContent = truncated
+            ? `Menampilkan ${filtered.length} terbaru — riwayat lengkap ada di tombol Export`
+            : `${filtered.length} kejadian`;
+    }
+
     const tbody = document.getElementById('historyBody');
     if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-secondary)">Belum ada riwayat</td></tr>';
+        // 'Belum ada riwayat' would be a lie for a unit whose events exist but
+        // fall outside the capped window, so separate the two cases.
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+            unitId
+                ? 'Tidak ada riwayat unit ini di dalam 500 kejadian terbaru — coba Export untuk riwayat lengkap'
+                : 'Belum ada riwayat'
+        }</td></tr>`;
     } else {
         tbody.innerHTML = filtered.map(e => {
             const who = e.actorName
@@ -1571,11 +1594,17 @@ async function exportHistory() {
     }
 
     if (log.length === 0) { showToast('Tidak ada riwayat untuk diekspor', 'warning'); return; }
-    const headers = ['Timestamp', 'Action', 'Unit', 'Field', 'Before', 'After'];
+    // The actor columns matter more here than anywhere else in the app: this
+    // export is the only path that sees the whole collection rather than the
+    // newest 500, so it is the tool you reach for to answer "who changed this"
+    // — and it used to be the one place that dropped the answer.
+    const headers = ['Waktu', 'Aksi', 'Objek', 'Field', 'Sebelum', 'Sesudah',
+                     'Oleh', 'Email', 'Peran', 'ID'];
     const rows = log.map(e => [
         new Date(e.timestamp).toISOString(),
         e.action, e.unitName || '', e.field || '',
-        e.before != null ? e.before : '', e.after != null ? e.after : ''
+        e.before != null ? e.before : '', e.after != null ? e.after : '',
+        e.actorName || '', e.actorEmail || '', e.actorRole || '', e.id || ''
     ]);
     const csv = [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -1754,7 +1783,9 @@ function importBackup(file) {
                 globalImplements = _restoreCollection(data.implements, before, merge);
                 saveImplements();
                 _cloudDeleteRemoved(before, globalImplements, cloudDeleteImplement);
-                if (window.cloud?.isReady) window.cloud.saveImplements(globalImplements).catch(() => {});
+                if (window.cloud?.isReady) window.cloud.saveImplements(globalImplements)
+                    .catch(err => cloudWriteFailed(err, { what: 'implement (restore)',
+                        label: '[Implement] restore', resync: resyncImplements }));
                 extras.push(`${data.implements.length} implements`);
             }
             if (Array.isArray(data.damages)) {
@@ -1762,7 +1793,9 @@ function importBackup(file) {
                 globalDamages = _restoreCollection(data.damages, before, merge);
                 saveDamages();
                 _cloudDeleteRemoved(before, globalDamages, cloudDeleteDamage);
-                if (window.cloud?.isReady) window.cloud.saveDamages(globalDamages).catch(() => {});
+                if (window.cloud?.isReady) window.cloud.saveDamages(globalDamages)
+                    .catch(err => cloudWriteFailed(err, { what: 'kerusakan (restore)',
+                        label: '[Kerusakan] restore', resync: resyncDamages }));
                 extras.push(`${data.damages.length} kerusakan`);
             }
             if (Array.isArray(data.licenseStock)) {
@@ -1770,9 +1803,16 @@ function importBackup(file) {
                 globalLicenseStock = _restoreCollection(data.licenseStock, before, merge);
                 saveLicenseStockLocal();
                 _cloudDeleteRemoved(before, globalLicenseStock, cloudDeleteLicense);
-                if (window.cloud?.isReady) window.cloud.saveLicenses(globalLicenseStock).catch(() => {});
+                if (window.cloud?.isReady) window.cloud.saveLicenses(globalLicenseStock)
+                    .catch(err => cloudWriteFailed(err, { what: 'stok lisensi (restore)',
+                        label: '[Lisensi] restore', resync: resyncLicenses }));
                 extras.push(`${data.licenseStock.length} transaksi lisensi`);
             }
+            // Reported as queued, not as landed: these three writes used to
+            // swallow their rejection entirely and then claim success, leaving
+            // local storage holding data no other device would ever see. Any
+            // genuine refusal now arrives as its own error toast and audit row
+            // from cloudWriteFailed above.
             if (extras.length) showToast(`Ikut direstore: ${extras.join(', ')}`, 'success');
 
             if (Array.isArray(data.attachments) && data.attachments.length > 0) {
@@ -2039,9 +2079,21 @@ function countIssues(data) {
 // DASHBOARD RENDERING
 // ============================================================
 
+// A date that records when something happened cannot be in the future, and a
+// mistyped year (2026 → 2062) is the common way it ends up there. Such a row
+// then sorts to the top of every table and falls outside every date-range
+// filter. Licence dates are deliberately NOT capped — those are meant to be
+// in the future. Refreshed rather than hardcoded so a session running past
+// midnight still gets the right ceiling.
+function capEventDatesToToday() {
+    const today = toISODate();
+    document.querySelectorAll('input[data-nofuture]').forEach(el => { el.max = today; });
+}
+
 function onDataLoaded() {
     document.getElementById('emptyState').style.display = 'none';
     document.getElementById('dashboardContent').style.display = 'block';
+    capEventDatesToToday();
 
     populateFilters();
     populateEditFilters();
@@ -3234,6 +3286,38 @@ function editUnit(id) {
     document.getElementById('unitModal').classList.add('open');
 }
 
+// Checked on the form, not inside updateUnit, so the message appears once and
+// a bulk CSV import is not stopped row by row.
+//
+// addUnits has always rejected a duplicate serial number; updateUnit never
+// looked at it, so the edit form could quietly create a second unit with the
+// same SN. That matters more than it sounds: SN is the key a CSV import
+// matches on, so a duplicate makes every later import ambiguous about which
+// unit it is updating. saveDevice already does this correctly.
+function checkUnitFields(id, fields) {
+    const sn = (fields.sn || '').trim();
+    if (sn) {
+        const clash = globalData.find(u => u.id !== id && (u.sn || '').toLowerCase() === sn.toLowerCase());
+        if (clash) {
+            showToast(`SN "${sn}" sudah dipakai unit "${clash.name || '-'}"`, 'warning');
+            return false;
+        }
+    }
+    // An end date before its start date leaves the unit reading "expired" while
+    // its licence has not begun — and applyExpiredLicenseDowngrades acts on it.
+    const ranges = [
+        ['GPS', fields.gpsLicenseStartDate, fields.gpsLicenseEndDate],
+        ['Display', fields.displayLicenseStartDate, fields.displayLicenseEndDate]
+    ];
+    for (const [label, from, to] of ranges) {
+        if (from && to && to < from) {
+            showToast(`Tanggal habis lisensi ${label} lebih awal dari tanggal mulainya`, 'warning');
+            return false;
+        }
+    }
+    return true;
+}
+
 function saveUnit(event) {
     event.preventDefault();
     if (!requireEdit('editUnits')) return;
@@ -3260,6 +3344,8 @@ function saveUnit(event) {
         displayLicenseEndDate:   document.getElementById('formDisplayLicenseEnd').value   || '',
         remarks: document.getElementById('formRemarks').value.trim()
     };
+
+    if (!checkUnitFields(id, fields)) return;
 
     // If status is changing TO Breakdown, prompt for a reason first.
     if (!isGood(fields.status)) {
@@ -4667,6 +4753,7 @@ function cloudDeleteDamage(id) {
 }
 
 function applyCloudDamagesSnapshot(items) {
+    clearRulesBanner('damageRecords');
     console.log(`[cloud] damage snapshot received — ${items.length} docs`);
 
     if (_firstDamageSnapshot && items.length === 0 && globalDamages.length > 0) {
@@ -5350,6 +5437,7 @@ function cloudDeleteLicense(id) {
 }
 
 function applyCloudLicenseSnapshot(items) {
+    clearRulesBanner('licenseStock');
     console.log(`[cloud] license snapshot received — ${items.length} docs`);
 
     if (_firstLicenseSnapshot && items.length === 0 && globalLicenseStock.length > 0) {
@@ -5379,23 +5467,49 @@ function applyCloudLicenseSnapshot(items) {
 }
 
 // Firestore rules banner for the licenseStock collection (mirrors damage/history).
-function showLicenseRulesBanner() {
-    const slot = document.querySelector('#viewLicenseStock .license-rules-slot');
-    if (!slot || slot.querySelector('.category-rules-banner')) return;
+// One shape for every "the server refused" banner, replacing five that were
+// each wrong in the same three ways.
+//
+// They printed a rules block keyed on `role in ['owner','team']` and told the
+// reader to paste it. That is the model from before per-area access existed,
+// so following the instruction would have cut off every staff/pbt/khl account
+// holding an area grant — destructive advice, shown most often to the people
+// most likely to act on it.
+//
+// They also fired from READ failures, but every one of these collections is
+// `allow read: if isActive()`, so a read refusal means the account is not
+// active — not that rules are missing. An ordinary member whose account was
+// just disabled was being told to open the Firebase Console.
+//
+// And they never cleared, so the warning outlived the problem.
+function renderRulesBanner(host, key, label, collections, opts) {
+    if (!host || host.querySelector('.category-rules-banner')) return;
     const banner = document.createElement('div');
     banner.className = 'category-rules-banner';
-    banner.innerHTML = `
-        <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules are blocking license stock.</strong>
-        <p>Security rules project Anda tidak mengizinkan akun ini membaca atau menulis <code>licenseStock</code> collection yet — that's why license stock won't sync across devices. Paste the block below into <em>Firebase Console → Firestore → Rules</em>, then hard-refresh:</p>
-        <pre>match /licenseStock/{id} {
-  allow read:  if request.auth != null
-               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
-  allow write: if request.auth != null
-               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['owner', 'team']
-               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
-}</pre>
-    `;
-    slot.appendChild(banner);
+    banner.dataset.rulesFor = key;
+    const cols = collections.map(c => `<code>${escapeHtml(c)}</code>`).join(', ');
+    banner.innerHTML = (isOwner && isOwner())
+        ? `<strong><i class="fas fa-triangle-exclamation"></i> Firestore rules memblokir ${escapeHtml(label)}.</strong>
+           <p>Rules proyek Anda belum mengizinkan akses ke koleksi ${cols}. Publish ulang file
+           <code>firestore.rules</code> dari repo ini di
+           <em>Firebase Console → Firestore → Rules</em>, lalu muat ulang halaman.</p>`
+        : `<strong><i class="fas fa-triangle-exclamation"></i> Tidak bisa membuka ${escapeHtml(label)}.</strong>
+           <p>Biasanya ini berarti akun Anda belum diaktifkan, atau belum diberi akses ke
+           bagian ini. Minta owner memeriksanya, lalu muat ulang halaman.</p>`;
+    if (opts && opts.prepend) host.insertBefore(banner, host.firstChild);
+    else host.appendChild(banner);
+}
+
+// Called from the snapshot handlers: once data flows again the warning is
+// stale, and a banner that outlives its cause teaches people to ignore banners.
+function clearRulesBanner(key) {
+    document.querySelectorAll(`.category-rules-banner[data-rules-for="${key}"]`)
+        .forEach(b => b.remove());
+}
+
+function showLicenseRulesBanner() {
+    renderRulesBanner(document.querySelector('#viewLicenseStock .license-rules-slot'),
+        'licenseStock', 'stok lisensi', ['licenseStock']);
 }
 
 // ============================================================
@@ -5708,6 +5822,7 @@ function applyLicenseDatesIfNeeded() {
 // ============================================================
 
 function applyCloudUserCategoriesSnapshot(cats) {
+    clearRulesBanner('userCategories');
     // Sort alphabetically for a stable UI
     userCategories = (cats || []).slice().sort((a, b) =>
         (a.name || '').localeCompare(b.name || '')
@@ -5748,80 +5863,21 @@ function seedDefaultUserCategoriesIfOwner() {
 }
 
 // Surfaces a clear, actionable banner inside the Manage Categories modal
-// when Firestore rejects writes to userCategories. The most common cause
-// is that the owner hasn't added rules for the new collection yet.
 function showCategoryRulesBanner() {
     const modal = document.getElementById('categoriesModal');
-    if (!modal) return;
-    // Only inject once per open
-    if (modal.querySelector('.category-rules-banner')) return;
-    const body = modal.querySelector('.modal-body');
-    if (!body) return;
-    const banner = document.createElement('div');
-    banner.className = 'category-rules-banner';
-    banner.innerHTML = `
-        <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules are blocking this write.</strong>
-        <p>Security rules project Anda tidak mengizinkan siapa pun menulis ke <code>userCategories</code> collection yet.
-        Paste the block below into <em>Firebase Console → Firestore → Rules</em>, then try again:</p>
-        <pre>match /userCategories/{catId} {
-  allow read:  if request.auth != null
-               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
-  allow write: if request.auth != null
-               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['owner', 'team']
-               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
-}</pre>
-    `;
-    body.insertBefore(banner, body.firstChild);
+    renderRulesBanner(modal && modal.querySelector('.modal-body'),
+        'userCategories', 'kategori pengguna', ['userCategories'], { prepend: true });
 }
 
-// Surfaces the exact Firestore rules that need to be pasted into the Firebase
-// Console when the `history` collection rejects reads or writes. Without this
-// the team-visibility failure is invisible to the user — they just see an empty
-// History modal with no clue why.
 function showHistoryRulesBanner() {
     const modal = document.getElementById('historyModal');
-    if (!modal) return;
-    const slot = modal.querySelector('.history-rules-slot');
-    if (!slot || slot.querySelector('.category-rules-banner')) return;
-    const banner = document.createElement('div');
-    banner.className = 'category-rules-banner';
-    banner.innerHTML = `
-        <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules are blocking change history.</strong>
-        <p>Security rules project Anda tidak mengizinkan akun ini membaca atau menulis <code>history</code> collection yet — that's why you can't see edits from other team members. Paste the block below into <em>Firebase Console → Firestore → Rules</em>, then hard-refresh:</p>
-        <pre>match /history/{eventId} {
-  allow read:   if request.auth != null
-                &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
-  allow create: if request.auth != null
-                &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['owner', 'team']
-                &amp;&amp; request.resource.data.actorUid == request.auth.uid;
-  allow delete: if request.auth != null
-                &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner';
-  allow update: if false;
-}</pre>
-    `;
-    slot.appendChild(banner);
+    renderRulesBanner(modal && modal.querySelector('.history-rules-slot'),
+        'history', 'riwayat perubahan', ['history']);
 }
 
-// Surfaces the exact Firestore rules for the `damageRecords` collection when it
-// rejects reads/writes. Shown inside the Kerusakan view so the user knows why
-// damage records aren't syncing across devices.
 function showDamageRulesBanner() {
-    const slot = document.querySelector('#viewDamage .damage-rules-slot');
-    if (!slot || slot.querySelector('.category-rules-banner')) return;
-    const banner = document.createElement('div');
-    banner.className = 'category-rules-banner';
-    banner.innerHTML = `
-        <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules are blocking damage records.</strong>
-        <p>Security rules project Anda tidak mengizinkan akun ini membaca atau menulis <code>damageRecords</code> collection yet — that's why damage records won't sync across devices. Paste the block below into <em>Firebase Console → Firestore → Rules</em>, then hard-refresh:</p>
-        <pre>match /damageRecords/{docId} {
-  allow read:  if request.auth != null
-               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
-  allow write: if request.auth != null
-               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['owner', 'team']
-               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
-}</pre>
-    `;
-    slot.appendChild(banner);
+    renderRulesBanner(document.querySelector('#viewDamage .damage-rules-slot'),
+        'damageRecords', 'catatan kerusakan', ['damageRecords']);
 }
 
 function renderUserCategoryOptions() {
@@ -5940,6 +5996,7 @@ function deleteCategory(id) {
 // ============================================================
 
 function applyCloudDamageComponentsSnapshot(comps) {
+    clearRulesBanner('damageComponents');
     damageComponents = (comps || []).slice().sort((a, b) =>
         (a.name || '').localeCompare(b.name || '')
     );
@@ -5977,25 +6034,8 @@ function seedDefaultDamageComponentsIfOwner() {
 
 function showDamageComponentRulesBanner() {
     const modal = document.getElementById('damageComponentsModal');
-    if (!modal) return;
-    if (modal.querySelector('.category-rules-banner')) return;
-    const body = modal.querySelector('.modal-body');
-    if (!body) return;
-    const banner = document.createElement('div');
-    banner.className = 'category-rules-banner';
-    banner.innerHTML = `
-        <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules memblokir penyimpanan.</strong>
-        <p>Rules proyek Anda belum mengizinkan tulis ke koleksi <code>damageComponents</code>.
-        Paste blok di bawah ke <em>Firebase Console → Firestore → Rules</em>, lalu coba lagi:</p>
-        <pre>match /damageComponents/{id} {
-  allow read:  if request.auth != null
-               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
-  allow write: if request.auth != null
-               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['owner', 'team']
-               &amp;&amp; get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
-}</pre>
-    `;
-    body.insertBefore(banner, body.firstChild);
+    renderRulesBanner(modal && modal.querySelector('.modal-body'),
+        'damageComponents', 'komponen kerusakan', ['damageComponents'], { prepend: true });
 }
 
 // Fill the damage modal's component <select> from the managed list.
@@ -6156,6 +6196,7 @@ function initCloudSync() {
         if (window.cloud.subscribeHistory) {
             cloudHistoryUnsub = window.cloud.subscribeHistory(events => {
                 cloudHistory = events || [];
+                clearRulesBanner('history');
                 // Re-render the history modal live if it's currently open
                 const modal = document.getElementById('historyModal');
                 if (modal && modal.classList.contains('open')) {
@@ -7141,7 +7182,7 @@ async function rejectUser(uid) {
     if (!isOwner()) return;
     const user = allUsers.find(u => u.uid === uid);
     if (!user) return;
-    if (!confirm(`Reject and remove ${user.email}? Their auth account will remain in Firebase but lose dashboard access.`)) return;
+    if (!confirm(`Tolak dan hapus ${user.email}?\n\nAkun Firebase-nya tetap ada, tetapi ia kehilangan akses ke dashboard.`)) return;
     try {
         await window.cloud.deleteUserDoc(uid);
         logEvent({
@@ -7239,7 +7280,7 @@ async function removeUser(uid) {
     const user = allUsers.find(u => u.uid === uid);
     if (!user) return;
     if (user.role === 'owner') { showToast('Owner tidak bisa dihapus', 'warning'); return; }
-    if (!confirm(`Remove ${user.email} from the dashboard? Their auth account stays in Firebase but they lose all access.`)) return;
+    if (!confirm(`Hapus ${user.email} dari dashboard?\n\nAkun Firebase-nya tetap ada, tetapi ia kehilangan seluruh akses.`)) return;
     try {
         await window.cloud.deleteUserDoc(uid);
         logEvent({
@@ -7339,6 +7380,11 @@ function generateWorkLogId() {
 // under the 1MB document limit even with a long description alongside.
 const WORKLOG_PHOTO_MAX = 4;
 const WORKLOG_PHOTO_OPTS = { maxDim: 1024, maxBytes: 200 * 1024, quality: 0.7 };
+
+// Above this, a shift that wraps past midnight is more likely a typo than a
+// real night shift, so we ask. Not a hard limit — a genuine long shift must
+// still be recordable.
+const WORKLOG_LONG_SHIFT_MIN = 16 * 60;
 const WORKLOG_PHOTOS_TOTAL_BYTES = 800 * 1024;
 
 // Photos live in their own collection, one document per report, fetched only
@@ -7982,6 +8028,38 @@ function deleteTeamMember(id) {
 // ============================================================
 
 // "HH:MM" → minutes since midnight, or null when unparseable.
+// Guards the two ways the hours on a daily report go wrong in the field.
+//
+// workLogMinutes wraps a negative difference to +24h so a night shift counts
+// correctly — which means typing 08:00–07:00 instead of 07:00–08:00 records
+// TWENTY-THREE hours, silently, straight into the "Total Jam Kerja" KPI and the
+// monthly per-company recap. And filling only one of the two times records zero
+// minutes while the report still looks filed.
+//
+// A wrap is asked about rather than refused: a real night shift has to stay
+// recordable. Returns false when the save should stop.
+function checkWorkLogHours(start, end) {
+    const s = parseHHMM(start);
+    const e = parseHHMM(end);
+
+    if ((s == null) !== (e == null)) {
+        showToast('Isi jam mulai dan jam selesai dua-duanya, atau kosongkan dua-duanya', 'warning');
+        return false;
+    }
+    if (s == null) return true;          // both blank — allowed on purpose
+
+    if (s === e) {
+        return confirm('Jam mulai dan jam selesai sama, jadi laporan ini terhitung 0 jam. Tetap simpan?');
+    }
+    const mins = e - s < 0 ? e - s + 24 * 60 : e - s;
+    if (e - s < 0 && mins >= WORKLOG_LONG_SHIFT_MIN) {
+        return confirm(`Jam kerja terbaca ${formatMinutes(mins)} karena jam selesai lebih awal dari jam mulai.\n\n`
+            + 'Kalau ini shift malam yang melewati tengah malam, tekan OK.\n'
+            + 'Kalau jamnya tertukar, tekan Batal lalu betulkan.');
+    }
+    return true;
+}
+
 function parseHHMM(v) {
     const m = /^(\d{1,2}):(\d{2})$/.exec(String(v || '').trim());
     if (!m) return null;
@@ -8371,7 +8449,15 @@ function editWorkLog(id) {
     }
 }
 
-function closeWorkLogModal() {
+function closeWorkLogModal(force) {
+    // Photos are compressed on the device and exist nowhere else until the
+    // report is saved, so closing after shooting four of them in the field is
+    // the most expensive discard in the app. saveWorkLog passes force.
+    if (!force && _wlPhotosDirty && _wlPhotos.length &&
+        !confirm(`${_wlPhotos.length} foto belum tersimpan dan akan hilang. Tutup saja?`)) {
+        return;
+    }
+    _wlPhotosDirty = false;
     document.getElementById('workLogModal').classList.remove('open');
 }
 
@@ -8389,6 +8475,13 @@ function saveWorkLog(event) {
     const end = document.getElementById('wlEnd').value;
     const task = (document.getElementById('wlTask').value || '').trim();
     if (!task) { showToast('Uraian pekerjaan tidak boleh kosong', 'warning'); return; }
+    if (!checkWorkLogHours(start, end)) return;
+    // The native max= is the first line of defence, but a report filed decades
+    // out skews the monthly recap badly enough to be worth a second one.
+    if (date && date > toISODate()) {
+        showToast('Tanggal laporan tidak boleh di masa depan — periksa tahunnya', 'warning');
+        return;
+    }
 
     // A unit left typed but not added is an easy mistake to make, so fold it in
     // rather than dropping it silently.
@@ -8466,7 +8559,7 @@ function saveWorkLog(event) {
         // halfway through a save that otherwise looks like it worked.
         if (!window.cloud.saveWorkLogPhotos) {
             showToast('Muat ulang halaman — versi lama masih aktif, foto belum terkirim', 'warning');
-            closeWorkLogModal();
+            closeWorkLogModal(true);
             return;
         }
         const write = photos.length
@@ -8479,7 +8572,7 @@ function saveWorkLog(event) {
         });
     }
 
-    closeWorkLogModal();
+    closeWorkLogModal(true);
 }
 
 function deleteWorkLog(id) {
@@ -9054,6 +9147,24 @@ function devicesForUnit(unitId) {
 // ============================================================
 
 // Remaining per item, optionally within one location. IN adds, OUT removes.
+// Warns, but lets the owner through: a stocktake can legitimately find the
+// ledger behind reality. Editing an existing OUT adds its old quantity back to
+// what is available, or the edit would warn about a shortage it is itself
+// creating.
+function checkStockBalance(itemName, qty, existing) {
+    const key = (itemName || '').trim().toLowerCase();
+    const row = stockSummary().find(s => s.name.toLowerCase() === key);
+    let available = row ? row.qty : 0;
+    if (existing && existing.txnType === 'OUT' &&
+        (existing.itemName || '').trim().toLowerCase() === key) {
+        available += Number(existing.qty) || 0;
+    }
+    if (qty <= available) return true;
+    return confirm(`Stok "${itemName}" tinggal ${available}, tetapi keluar ${qty}.\n\n`
+        + 'Saldo akan jadi minus. Biasanya ini karena nama barangnya beda tipis '
+        + 'dari yang sudah ada.\n\nTetap simpan?');
+}
+
 function stockSummary(location) {
     const totals = new Map();
     stockLedger.forEach(r => {
@@ -9208,6 +9319,14 @@ function saveStockItem(event) {
     }
 
     const existing = id ? stockLedger.find(r => r.id === id) : null;
+
+    // Taking out more than the ledger holds means either a miscount or, more
+    // often, a typo in the item name that created a phantom item whose real
+    // counterpart never gets decremented. The licence ledger already warns
+    // like this (saveLicenseStock); the warehouse one did not, and
+    // stockSummary would happily render a negative balance.
+    if (txnType === 'OUT' && !checkStockBalance(itemName, qty, existing)) return;
+
     const rec = {
         id: id || generateStockId(),
         date: document.getElementById('stkDate').value,

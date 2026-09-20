@@ -1512,6 +1512,14 @@ body {
 .audit-delete { background: var(--danger-bg); color: var(--danger); }
 .audit-restore { background: var(--primary-lighter); color: var(--accent-text); }
 .audit-migrate { background: var(--warning-bg); color: var(--warning); }
+/* The marker for a write the server refused. Without a colour it read exactly
+   like an ordinary row, which is the opposite of what it is for. */
+.audit-error { background: var(--danger-bg); color: var(--danger); }
+.audit-create { background: var(--success-bg); color: var(--success); }
+.audit-approve { background: var(--success-bg); color: var(--success); }
+.audit-reject { background: var(--danger-bg); color: var(--danger); }
+.audit-remove { background: var(--danger-bg); color: var(--danger); }
+.audit-role-change { background: var(--warning-bg); color: var(--warning); }
 
 .audit-actor { font-weight: 600; }
 .audit-actor em {
