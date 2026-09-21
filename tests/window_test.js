@@ -116,6 +116,48 @@ const { launch, BASE_URL } = require('./_env');
         ensureShiftWindowCovers('2019-01-07');
         t('tanpa langganan aktif, tidak ada langganan liar', subs.length, setelahBongkar);
 
+        // ---------- bootstrap awal tidak lagi mengunduh empat koleksi ----------
+        // Dulu ia memanggil getAll* hanya untuk membaca .length — 288 dokumen
+        // tiap owner login, demi empat jawaban ya/tidak.
+        const dipanggil = [];
+        const cloudLama = window.cloud;
+        globalData = [{ id:'u_1', name:'A', sn:'S1' }];
+        globalImplements = []; globalDamages = []; globalLicenseStock = [];
+        window.cloud = { isReady: true,
+            isCollectionEmpty: w => { dipanggil.push('cek:' + w); return Promise.resolve(false); },
+            getAllUnits: () => { dipanggil.push('UNDUH-SEMUA:units'); return Promise.resolve([]); },
+            getAllImplements: () => { dipanggil.push('UNDUH-SEMUA:implements'); return Promise.resolve([]); },
+            getAllDamages: () => { dipanggil.push('UNDUH-SEMUA:damages'); return Promise.resolve([]); },
+            getAllLicenses: () => { dipanggil.push('UNDUH-SEMUA:licenses'); return Promise.resolve([]); },
+            saveUnits: () => Promise.resolve(), saveImplements: () => Promise.resolve(),
+            saveDamages: () => Promise.resolve(), saveLicenses: () => Promise.resolve(),
+            getAllTeamMembers: () => Promise.resolve([]) };
+        await migrateLocalToCloudIfNeeded();
+        t('memakai pemeriksaan murah, bukan unduh seluruh koleksi',
+          dipanggil.filter(x => x.startsWith('UNDUH-SEMUA')), []);
+        t('dan memang memeriksa keempatnya',
+          dipanggil.filter(x => x.startsWith('cek:')).length, 4);
+
+        // Kalau service worker masih menyajikan firebase-init.js lama, jangan
+        // diam-diam melewati bootstrap — pakai jalur lama.
+        dipanggil.length = 0;
+        window.cloud = { ...window.cloud };
+        delete window.cloud.isCollectionEmpty;
+        await migrateLocalToCloudIfNeeded();
+        t('versi lama tetap jalan lewat jalur lama',
+          dipanggil.filter(x => x.startsWith('UNDUH-SEMUA')).length > 0, true);
+
+        // Dan saat cloud memang kosong, unggahannya tetap terjadi.
+        let diunggah = 0;
+        window.cloud = { isReady: true,
+            isCollectionEmpty: () => Promise.resolve(true),
+            saveUnits: () => { diunggah++; return Promise.resolve(); },
+            saveImplements: () => Promise.resolve(), saveDamages: () => Promise.resolve(),
+            saveLicenses: () => Promise.resolve(), getAllTeamMembers: () => Promise.resolve([]) };
+        await migrateLocalToCloudIfNeeded();
+        t('cloud kosong tetap memicu unggahan awal', diunggah, 1);
+        window.cloud = cloudLama;
+
         window.__T = T;
     } catch (e) { window.__T = [{n:'THREW: '+e.message+' | '+(e.stack||'').split('\\n')[1], g:1, w:0, pass:false}]; }
     })();` });

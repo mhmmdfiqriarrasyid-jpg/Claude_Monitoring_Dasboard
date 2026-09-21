@@ -628,6 +628,26 @@ window.cloud = {
     },
     async deleteDamagePhoto(id) {
         await deleteDoc(doc(db, DAMAGE_PHOTOS_COL, id));
+    },
+
+    // "Is this collection empty?" without downloading it.
+    //
+    // The first-run bootstrap used to answer this with getAllUnits() and
+    // friends and then read only .length — 288 documents fetched on every
+    // owner sign-in to decide four yes/no questions. limit(1) answers the same
+    // question in one read.
+    //
+    // Names come from a fixed map rather than a raw string, so this cannot
+    // become a way to reach an arbitrary collection from script.js.
+    async isCollectionEmpty(which) {
+        const cols = {
+            units: UNITS_COL, implements: IMPL_COL,
+            damages: DAMAGE_COL, licenses: LICENSE_COL
+        };
+        const name = cols[which];
+        if (!name) throw new Error(`unknown collection: ${which}`);
+        const snap = await getDocs(query(collection(db, name), limit(1)));
+        return snap.empty;
     }
 };
 

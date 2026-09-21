@@ -81,7 +81,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v105';
+const APP_VERSION = 'v106';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -5784,28 +5784,33 @@ async function migrateLocalToCloudIfNeeded() {
     // ~5862): this uploads the whole local cache into four collections, so a
     // caller that forgets the check would refill them from stale data.
     if (!isOwner || !isOwner()) return;
+    // Each of these used to answer "is the cloud copy empty?" by downloading
+    // the entire collection and reading .length — 288 documents on every owner
+    // sign-in, for four yes/no answers. isCollectionEmpty asks with limit(1).
+    // Older cached firebase-init.js may not have it, so fall back rather than
+    // skipping the bootstrap silently.
+    const isEmpty = async (which, getAll) => {
+        if (window.cloud.isCollectionEmpty) return window.cloud.isCollectionEmpty(which);
+        const all = getAll ? await getAll() : [];
+        return all.length === 0;
+    };
+
     try {
         // Units
-        const cloudUnits = await window.cloud.getAllUnits();
-        console.log(`[cloud] check: cloud has ${cloudUnits.length} units, local has ${globalData.length} units`);
-        if (cloudUnits.length === 0 && globalData.length > 0) {
+        if (await isEmpty('units', window.cloud.getAllUnits) && globalData.length > 0) {
             console.log(`[cloud] migrating ${globalData.length} local units to Firestore...`);
             await window.cloud.saveUnits(globalData);
             showToast(`${globalData.length} unit diunggah ke cloud`, 'success');
         }
         // Implements
-        const cloudImpls = await window.cloud.getAllImplements();
-        console.log(`[cloud] check: cloud has ${cloudImpls.length} implements, local has ${globalImplements.length} implements`);
-        if (cloudImpls.length === 0 && globalImplements.length > 0) {
+        if (await isEmpty('implements', window.cloud.getAllImplements) && globalImplements.length > 0) {
             console.log(`[cloud] migrating ${globalImplements.length} local implements to Firestore...`);
             await window.cloud.saveImplements(globalImplements);
-            showToast(`Uploaded ${globalImplements.length} implements to cloud`, 'success');
+            showToast(`${globalImplements.length} implement diunggah ke cloud`, 'success');
         }
         // Damage records
         if (window.cloud.getAllDamages) {
-            const cloudDamages = await window.cloud.getAllDamages();
-            console.log(`[cloud] check: cloud has ${cloudDamages.length} damage records, local has ${globalDamages.length}`);
-            if (cloudDamages.length === 0 && globalDamages.length > 0) {
+            if (await isEmpty('damages', window.cloud.getAllDamages) && globalDamages.length > 0) {
                 console.log(`[cloud] migrating ${globalDamages.length} local damage records to Firestore...`);
                 await window.cloud.saveDamages(globalDamages);
                 showToast(`${globalDamages.length} catatan kerusakan diunggah ke cloud`, 'success');
@@ -5813,9 +5818,7 @@ async function migrateLocalToCloudIfNeeded() {
         }
         // License stock
         if (window.cloud.getAllLicenses) {
-            const cloudLicenses = await window.cloud.getAllLicenses();
-            console.log(`[cloud] check: cloud has ${cloudLicenses.length} license records, local has ${globalLicenseStock.length}`);
-            if (cloudLicenses.length === 0 && globalLicenseStock.length > 0) {
+            if (await isEmpty('licenses', window.cloud.getAllLicenses) && globalLicenseStock.length > 0) {
                 console.log(`[cloud] migrating ${globalLicenseStock.length} local license records to Firestore...`);
                 await window.cloud.saveLicenses(globalLicenseStock);
                 showToast(`${globalLicenseStock.length} catatan lisensi diunggah ke cloud`, 'success');
