@@ -13,11 +13,16 @@ import {
     getDocs,
     onSnapshot,
     writeBatch,
-    enableIndexedDbPersistence,
     query,
     orderBy,
-    limit
+    limit,
+    where
 } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
+// Namespace import of the SAME module (the browser already has it cached) so
+// the newer cache API can be feature-detected. A named import of something the
+// SDK does not export is a link error that takes the whole app down; reading a
+// missing property off a namespace is just undefined.
+import * as FS from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 import {
     getAuth,
     onAuthStateChanged,
@@ -40,7 +45,40 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+
+// Offline cache. This is what decides whether reopening the app costs a full
+// re-read of every collection or almost nothing: with a warm cache Firestore
+// resumes each listener from where it left off and fetches only what changed.
+//
+// It used to use enableIndexedDbPersistence, which is deprecated and — by its
+// own documentation — gives up entirely as soon as a second tab is open. An
+// office admin with two tabs therefore had NO cache at all, and every reload
+// re-read the whole database. persistentMultipleTabManager is the fix: the
+// tabs share one cache instead of fighting over it.
+//
+// Feature-detected rather than assumed, and the outcome is recorded instead of
+// swallowed, so a silent fallback to no-cache is visible in the console and to
+// anyone who asks window.cloud.cacheMode.
+let db = null;
+let cacheMode = 'memory';
+if (FS.initializeFirestore && FS.persistentLocalCache && FS.persistentMultipleTabManager) {
+    try {
+        db = FS.initializeFirestore(app, {
+            localCache: FS.persistentLocalCache({
+                tabManager: FS.persistentMultipleTabManager()
+            })
+        });
+        cacheMode = 'persistent-multitab';
+    } catch (e) {
+        console.warn('[cloud] multi-tab cache unavailable:', e && e.code);
+    }
+}
+if (!db) {
+    db = getFirestore(app);
+    console.warn('[cloud] running without a persistent cache — every reload re-reads everything');
+}
+console.log(`[cloud] offline cache: ${cacheMode}`);
+
 const auth = getAuth(app);
 
 // Owner allowlist — any account that signs up with one of these emails is
@@ -52,14 +90,6 @@ const OWNER_EMAILS = ['mhmmdfiqriarrasyid@gmail.com'];
 setPersistence(auth, browserLocalPersistence).catch(err => {
     console.warn('[auth] persistence not enabled:', err.code);
 });
-
-// Best-effort offline persistence — works in single-tab Chrome, may fail
-// in multi-tab or private mode; we just log and continue.
-try {
-    enableIndexedDbPersistence(db).catch(err => {
-        console.warn('[cloud] offline persistence not enabled:', err.code);
-    });
-} catch (e) { /* ignore */ }
 
 const UNITS_COL = 'units';
 const IMPL_COL = 'implements';
@@ -94,6 +124,10 @@ function batchInChunks(items, fn, chunkSize = 400) {
 
 window.cloud = {
     isReady: true,
+    // 'persistent-multitab' when reopening the app is cheap, 'memory' when
+    // every reload re-reads everything. Worth checking before blaming the
+    // network for a slow start.
+    cacheMode,
     OWNER_EMAILS,
 
     // ---- Units ----
@@ -514,9 +548,20 @@ window.cloud = {
         const snap = await getDocs(collection(db, SHIFTS_COL));
         return snap.docs.map(d => d.data());
     },
-    subscribeShifts(callback, errorCallback) {
+    // Bounded by date, because this collection grows by one document per
+    // person per day and never stops — a year of eight people is ~2,900
+    // documents pulled to render one week. `date` is an ISO string, so a
+    // lexicographic >= is a correct date comparison, and a single-field range
+    // needs no composite index.
+    //
+    // sinceDate is the caller's window; script.js widens it and resubscribes
+    // when someone pages back past it.
+    subscribeShifts(callback, errorCallback, sinceDate) {
+        const q = sinceDate
+            ? query(collection(db, SHIFTS_COL), where('date', '>=', sinceDate))
+            : query(collection(db, SHIFTS_COL));
         return onSnapshot(
-            collection(db, SHIFTS_COL),
+            q,
             snap => callback(snap.docs.map(d => d.data())),
             err => {
                 console.error('[cloud] shifts subscription error:', err);

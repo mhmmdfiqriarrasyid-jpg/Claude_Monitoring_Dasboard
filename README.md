@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-606 pemeriksaan di tujuh belas suite, menggerakkan Chromium sungguhan terhadap
+621 pemeriksaan di delapan belas suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -105,7 +105,7 @@ CHROME_PATH=/jalur/ke/chrome npm test
 Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 `session_test`, `warehouse_test`, `approval_test`, `leader_test`, `recap_test`,
 `photos_test`, `migration_test`, `history_scan_test`, `validation_test`,
-`datacheck_test`, `damagephotos_test`, `mobile_test`, `regress`.
+`datacheck_test`, `damagephotos_test`, `mobile_test`, `window_test`, `regress`.
 
 ---
 
@@ -166,6 +166,23 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 - **Semua penulis `units` mengunci dirinya sendiri** lewat `canWriteUnits()`,
   bukan hanya di pemanggil. Pemanggil baru tidak boleh mewarisi nol
   perlindungan seperti dulu.
+- **Cache offline menentukan mahal-murahnya membuka aplikasi.** Dengan cache
+  hangat, Firestore melanjutkan tiap langganan dari posisi terakhir dan hanya
+  menarik yang berubah. `firebase-init.js` memakai `persistentLocalCache` +
+  `persistentMultipleTabManager`; API lama `enableIndexedDbPersistence`
+  **menyerah total begitu ada tab kedua**, jadi admin yang membuka dua tab dulu
+  tidak punya cache sama sekali. Cek `window.cloud.cacheMode` di console —
+  `persistent-multitab` berarti sehat, `memory` berarti tiap reload menarik
+  ulang semuanya.
+- **Langganan `shifts` dibatasi jendela tanggal** (`SHIFT_WINDOW_DAYS`,
+  ±4 bulan), karena koleksi itu bertambah satu dokumen per orang per hari
+  selamanya. Mundur melewati jendela **melebarkan** langganannya lewat
+  `ensureShiftWindowCovers()` — jangan pernah menggantinya dengan sekadar
+  menyembunyikan data. Dijaga `tests/window_test.js`.
+  `workLogs` sengaja **tidak** dibatasi: enam tempat membacanya di luar jendela
+  mana pun (Kotak Keputusan untuk laporan tertunda umur berapa pun, profil
+  unit, Periksa Data, rekap bulan lama, ekspor CSV, daftar paddock), jadi
+  penghematannya kecil sementara peluang data hilang diam-diam besar.
 - **Ukuran untuk ponsel ada di satu blok di ujung `style.css`**
   (`@media (max-width: 700px)`), dan dijaga `tests/mobile_test.js`. Aturan yang
   tidak boleh dilanggar: **setiap field form minimal `16px`.** Safari iPhone

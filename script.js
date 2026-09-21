@@ -81,7 +81,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v104';
+const APP_VERSION = 'v105';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -6469,15 +6469,7 @@ function initCloudSync() {
                 }
             );
         }
-        if (window.cloud.subscribeShifts) {
-            cloudShiftsUnsub = window.cloud.subscribeShifts(
-                applyCloudShiftsSnapshot,
-                err => {
-                    console.warn('[cloud] shifts offline:', err && err.code);
-                    if (err && err.code === 'permission-denied') showTeamRulesBanner();
-                }
-            );
-        }
+        if (window.cloud.subscribeShifts) startShiftsSubscription();
         if (window.cloud.subscribeWorkLogs) {
             cloudWorkLogsUnsub = window.cloud.subscribeWorkLogs(
                 applyCloudWorkLogsSnapshot,
@@ -6602,6 +6594,7 @@ function tearDownCloudSync() {
     stockLedger = [];
     if (cloudTeamMembersUnsub) { try { cloudTeamMembersUnsub(); } catch (_) {} cloudTeamMembersUnsub = null; }
     if (cloudShiftsUnsub) { try { cloudShiftsUnsub(); } catch (_) {} cloudShiftsUnsub = null; }
+    _shiftWindowStart = '';
     if (cloudWorkLogsUnsub) { try { cloudWorkLogsUnsub(); } catch (_) {} cloudWorkLogsUnsub = null; }
     teamMembers = [];
     teamShifts = [];
@@ -7912,9 +7905,49 @@ function shiftFor(memberId, date) {
     return rec ? rec.shift : '';
 }
 
+// ---- Shift subscription window ----
+// One document per person per day, forever: eight people make ~2,900 a year,
+// ~8,800 by year three, and every one of them was pulled down to draw a single
+// week. The listener now covers a rolling window instead, and widens itself if
+// somebody pages back past the edge — so the schedule still works however far
+// back they go, it just fetches that range when they ask for it.
+const SHIFT_WINDOW_DAYS = 120;   // roughly four months back
+let _shiftWindowStart = '';
+
+function shiftWindowFor(weekStart) {
+    const byToday = addDaysISO(toISODate(), -SHIFT_WINDOW_DAYS);
+    const byWeek = addDaysISO(weekStart || toISODate(), -28);
+    return byWeek < byToday ? byWeek : byToday;
+}
+
+function startShiftsSubscription(weekStart) {
+    if (!window.cloud || !window.cloud.subscribeShifts) return;
+    _shiftWindowStart = shiftWindowFor(weekStart || teamWeekStart);
+    if (cloudShiftsUnsub) { try { cloudShiftsUnsub(); } catch (_) {} cloudShiftsUnsub = null; }
+    cloudShiftsUnsub = window.cloud.subscribeShifts(
+        applyCloudShiftsSnapshot,
+        err => {
+            console.warn('[cloud] shifts offline:', err && err.code);
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+        },
+        _shiftWindowStart
+    );
+}
+
+// Called before rendering a week: if it falls outside what the listener
+// covers, widen and resubscribe. Without this the grid would quietly render
+// an empty week that actually has shifts in it.
+function ensureShiftWindowCovers(weekStart) {
+    if (!_shiftWindowStart || !weekStart) return;
+    if (weekStart >= _shiftWindowStart) return;
+    console.log(`[shifts] widening window back to cover ${weekStart}`);
+    startShiftsSubscription(weekStart);
+}
+
 function shiftWeekShift(delta) {
     if (!teamWeekStart) teamWeekStart = startOfWeekISO(toISODate());
     teamWeekStart = addDaysISO(teamWeekStart, delta * 7);
+    ensureShiftWindowCovers(teamWeekStart);
     renderShiftGrid();
 }
 
@@ -8226,10 +8259,13 @@ function deleteTeamMember(id) {
     if (!requireEdit('teamMembers')) return;
     const m = memberById(id);
     if (!m) return;
-    const shiftCount = teamShifts.filter(s => s.memberId === id).length;
+    // teamShifts only holds the subscribed window now, so counting it would
+    // understate the real number — say what happens instead of a figure that
+    // would be wrong. Work logs are still loaded in full, so that count stands.
+    const hasShifts = teamShifts.some(s => s.memberId === id);
     const logCount = workLogs.filter(w => w.memberId === id).length;
-    const warn = (shiftCount || logCount)
-        ? `\n\n${shiftCount} jadwal shift dan ${logCount} laporan harian miliknya akan tetap tersimpan, tetapi namanya akan tampil sebagai "(anggota dihapus)". Untuk sekadar mengeluarkannya dari jadwal, pakai Nonaktifkan.`
+    const warn = (hasShifts || logCount)
+        ? `\n\nJadwal shift${logCount ? ` dan ${logCount} laporan harian` : ''} miliknya akan tetap tersimpan, tetapi namanya akan tampil sebagai "(anggota dihapus)". Untuk sekadar mengeluarkannya dari jadwal, pakai Nonaktifkan.`
         : '';
     if (!confirm(`Hapus anggota "${m.name}"?${warn}`)) return;
 
@@ -10125,6 +10161,9 @@ function renderWeekSummary() {
 function shiftSummaryWeek(delta) {
     if (!weekAnchor) weekAnchor = startOfWeekISO(toISODate());
     weekAnchor = addDaysISO(startOfWeekISO(weekAnchor), delta * 7);
+    // The summary compares against the week BEFORE the one shown, so the
+    // listener has to reach a week further back than the label says.
+    ensureShiftWindowCovers(addDaysISO(startOfWeekISO(weekAnchor), -7));
     renderWeekSummary();
 }
 
