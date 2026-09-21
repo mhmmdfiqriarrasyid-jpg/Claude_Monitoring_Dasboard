@@ -153,6 +153,59 @@ const { launch, BASE_URL } = require('./_env');
         t('unit fallback biasa tidak ditandai turun',
           effectiveLicense(mkUnit('N', { gpsLicense: 'SF-1' }), 'gps').downgraded, false);
 
+        // ---------- impor CSV berhenti kehilangan data diam-diam ----------
+        // Dulu penolakan cloud hanya jadi baris console dan toast
+        // "data tersimpan lokal" — tidak benar: barisnya ada di perangkat itu
+        // saja, tampil seperti implement biasa, lalu lenyap saat snapshot
+        // berikutnya tanpa penjelasan.
+        const pesanImpor = [];
+        const toastLama2 = window.showToast;
+        window.showToast = m => { pesanImpor.push(String(m)); };
+
+        let tolakImpor = true;
+        window.cloud = { isReady: true,
+            saveImplements: () => tolakImpor
+                ? Promise.reject(Object.assign(new Error('nope'), { code: 'permission-denied' }))
+                : Promise.resolve(),
+            getAllImplements: () => Promise.resolve([{ id: 'srv1', profileName: 'DariServer' }]),
+            addHistoryEvents: () => Promise.resolve(), subscribeUsers: () => () => {} };
+        currentUser = { uid: 'uO', email: 'o@x.id' };
+        currentUserDoc = { role: 'owner', status: 'active' };
+        applyRoleGating();
+
+        // Papa Parse datang dari CDN yang diblokir di sandbox ini, jadi yang
+        // diuji adalah jalur SESUDAH parsing — tempat cacatnya berada.
+        window.Papa = { parse: (file, opts) => opts.complete({
+            data: [{ 'Profile Name': 'Plough Baru', 'Brand': 'Deere' }] }) };
+
+        globalImplements = [{ id: 'lama1', profileName: 'Sudah Ada' }];
+        const csv = 'x';
+        await new Promise(res => {
+            handleImplementCSVImport(new File([csv], 'i.csv', { type: 'text/csv' }));
+            setTimeout(res, 600);
+        });
+        t('baris yang ditolak server tidak tertinggal di layar',
+          globalImplements.filter(o => o.profileName === 'Plough Baru').length, 0);
+        t('yang sudah ada sebelumnya tidak ikut hilang',
+          globalImplements.some(o => o.id === 'lama1' || o.id === 'srv1'), true);
+        t('penolakan meninggalkan baris audit GAGAL',
+          getAuditLog().some(e => e.action === 'error' && /GAGAL/.test(e.after || '')), true);
+        t('dan toastnya tidak lagi berbunyi "tersimpan lokal"',
+          pesanImpor.some(m => /tersimpan lokal/i.test(m)), false);
+        t('melainkan mengatakan perubahannya dikembalikan',
+          pesanImpor.some(m => /dikembalikan/i.test(m)), true);
+
+        // Dan kalau cloudnya menerima, barisnya memang harus tinggal.
+        tolakImpor = false;
+        globalImplements = [];
+        await new Promise(res => {
+            handleImplementCSVImport(new File([csv], 'i.csv', { type: 'text/csv' }));
+            setTimeout(res, 600);
+        });
+        t('impor yang diterima tetap tersimpan',
+          globalImplements.filter(o => o.profileName === 'Plough Baru').length, 1);
+        window.showToast = toastLama2;
+
         window.__T = T;
     } catch (e) { window.__T = [{n:'THREW: '+e.message+' | '+(e.stack||'').split('\\n')[1], g:1, w:0, pass:false}]; }
     })();` });

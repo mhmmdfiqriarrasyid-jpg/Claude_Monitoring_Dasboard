@@ -473,6 +473,10 @@ window.cloud = {
     async saveDevice(rec) {
         await setDoc(doc(db, DEVICES_COL, rec.id), rec, { merge: true });
     },
+    async saveDevices(items) {
+        if (!items || !items.length) return;
+        await batchInChunks(items, (batch, r) => batch.set(doc(db, DEVICES_COL, r.id), r, { merge: true }));
+    },
     async deleteDevice(id) {
         await deleteDoc(doc(db, DEVICES_COL, id));
     },
@@ -495,6 +499,10 @@ window.cloud = {
     async saveStockItem(rec) {
         await setDoc(doc(db, STOCK_ITEMS_COL, rec.id), rec, { merge: true });
     },
+    async saveStockItems(items) {
+        if (!items || !items.length) return;
+        await batchInChunks(items, (batch, r) => batch.set(doc(db, STOCK_ITEMS_COL, r.id), r, { merge: true }));
+    },
     async deleteStockItem(id) {
         await deleteDoc(doc(db, STOCK_ITEMS_COL, id));
     },
@@ -516,6 +524,13 @@ window.cloud = {
     // ---- Team members (people, including those without a login account) ----
     async saveTeamMember(member) {
         await setDoc(doc(db, TEAM_MEMBERS_COL, member.id), member, { merge: true });
+    },
+    // Bulk upsert for restore. A backup can carry hundreds of rows and the
+    // single-document savers would fire one request each; batchInChunks is the
+    // same 400-per-batch path saveUnits already uses.
+    async saveTeamMembers(items) {
+        if (!items || !items.length) return;
+        await batchInChunks(items, (batch, m) => batch.set(doc(db, TEAM_MEMBERS_COL, m.id), m, { merge: true }));
     },
     async deleteTeamMember(id) {
         await deleteDoc(doc(db, TEAM_MEMBERS_COL, id));
@@ -540,6 +555,10 @@ window.cloud = {
     // one shift on a given day — the id itself enforces it, no dedupe needed.
     async saveShift(shift) {
         await setDoc(doc(db, SHIFTS_COL, shift.id), shift, { merge: true });
+    },
+    async saveShifts(items) {
+        if (!items || !items.length) return;
+        await batchInChunks(items, (batch, r) => batch.set(doc(db, SHIFTS_COL, r.id), r, { merge: true }));
     },
     async deleteShift(id) {
         await deleteDoc(doc(db, SHIFTS_COL, id));
@@ -573,6 +592,10 @@ window.cloud = {
     // ---- Daily work logs ----
     async saveWorkLog(log) {
         await setDoc(doc(db, WORK_LOGS_COL, log.id), log, { merge: true });
+    },
+    async saveWorkLogs(items) {
+        if (!items || !items.length) return;
+        await batchInChunks(items, (batch, r) => batch.set(doc(db, WORK_LOGS_COL, r.id), r, { merge: true }));
     },
     async deleteWorkLog(id) {
         await deleteDoc(doc(db, WORK_LOGS_COL, id));

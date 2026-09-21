@@ -162,7 +162,51 @@ const { launch, BASE_URL } = require('./_env');
         t('viewer: setShift ditolak', writes.length, before);
         currentUserDoc = { role: 'owner', status: 'active' };
 
-        
+
+        // ---------- tabrakan jadwal shift tidak lagi senyap ----------
+        // Id dokumennya tanggal + id anggota, jadi dua supervisor yang
+        // mengisi orang dan hari yang sama menulis dokumen yang sama dan yang
+        // belakangan menang. Masing-masing melihat nilainya sendiri
+        // dikonfirmasi, lalu grid yang kalah berubah sendiri tanpa penjelasan.
+        const pesanShift = [];
+        const toastLama = window.showToast;
+        window.showToast = m => { pesanShift.push(String(m)); };
+        currentUser = { uid: 'uAku', email: 'aku@x.id' };
+
+        _shiftPendingWrites.clear();
+        setShift('m1', '2026-09-17', 'pagi');
+        t('tulisan sendiri dicatat sebagai klaim', _shiftPendingWrites.has('2026-09-17_m1'), true);
+        t('dan dokumennya membawa siapa yang menulis',
+          !!teamShifts.find(s => s.id === '2026-09-17_m1').updatedByUid, true);
+
+        // Snapshot mengembalikan nilai yang sama: itu tulisan kita sendiri yang
+        // mendarat, tidak perlu memberi tahu apa pun.
+        pesanShift.length = 0;
+        applyCloudShiftsSnapshot([{ id:'2026-09-17_m1', date:'2026-09-17', memberId:'m1',
+            shift:'pagi', updatedBy:'Aku', updatedByUid:'uAku' }]);
+        t('tulisan sendiri yang mendarat tidak memicu peringatan', pesanShift.length, 0);
+        t('dan klaimnya dilepas', _shiftPendingWrites.has('2026-09-17_m1'), false);
+
+        // Sekarang orang lain menimpanya.
+        _shiftPendingWrites.clear();
+        setShift('m1', '2026-09-18', 'pagi');
+        pesanShift.length = 0;
+        applyCloudShiftsSnapshot([{ id:'2026-09-18_m1', date:'2026-09-18', memberId:'m1',
+            shift:'malam', updatedBy:'Budi', updatedByUid:'uBudi' }]);
+        t('ditimpa orang lain memunculkan peringatan', pesanShift.length, 1);
+        t('peringatannya menyebut siapa', /Budi/.test(pesanShift[0]), true);
+        t('dan menyebut jadi apa', /Malam|malam/.test(pesanShift[0]), true);
+
+        // Nilai berbeda TANPA pemilik lain berarti tulisan kita belum mendarat.
+        // Memperingatkan di situ akan jadi alarm palsu tiap sinyal lambat.
+        _shiftPendingWrites.clear();
+        setShift('m1', '2026-09-19', 'pagi');
+        pesanShift.length = 0;
+        applyCloudShiftsSnapshot([]);
+        t('tulisan yang belum mendarat bukan alasan memperingatkan', pesanShift.length, 0);
+        t('klaimnya ditahan sampai jelas', _shiftPendingWrites.has('2026-09-19_m1'), true);
+        window.showToast = toastLama;
+
         window.__T = T;
   } catch (e) { window.__T = [{name:'THREW: '+e.message+' | '+(e.stack||'').split('\\n')[1], got:1, want:0, pass:false}]; }
     })();` });

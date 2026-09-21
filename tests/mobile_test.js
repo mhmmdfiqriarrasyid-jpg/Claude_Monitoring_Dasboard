@@ -130,6 +130,56 @@ async function run(page, width, body) {
     t('tabel kosong tidak memaksa halaman menggeser', kosong.geser, false);
     t('pesan tabel kosong boleh membungkus', kosong.bungkus, 'normal');
 
+    // Sel tanpa data-label itu display:none di mode kartu — jadi kolom yang
+    // lupa dilabeli tidak terlihat rusak, ia cuma HILANG di ponsel. Selama ini
+    // 15 dari 21 kolom Edit Units hilang dengan cara itu.
+    const label = await phone.evaluate(`(() => {
+        // navigateTo DULU: ia memanggil load*() yang menimpa global dari
+        // localStorage, jadi menyemai sebelum berpindah tidak ada gunanya.
+        navigateTo('editUnits');
+        globalData = [{ id:'u_1', name:'A', model:'M', sn:'S1', implement:'Imp',
+            status:'Good', display:'Good', gps:'Good', steering:'Good', jdlink:'Good',
+            site:'PT. GPA', yearReceived:'2021', userCategory:'Operator',
+            gpsLicense:'SF-RTK', licenseDisplay:'G5 Advance', remarks:'catatan' }];
+        filteredData = [...globalData];
+        renderEditTable();
+        const tds = [...document.querySelectorAll('#editBody tr td')];
+        const tanpaLabel = tds.filter(td =>
+            !td.hasAttribute('data-label') && !td.classList.contains('col-actions'));
+        const terlihat = n => {
+            const td = document.querySelector(\`#editBody td[data-label="\${n}"]\`);
+            return !!td && td.offsetParent !== null;
+        };
+        return {
+            tanpaLabel: tanpaLabel.map(td => td.className || '(polos)'),
+            gps: terlihat('GPS'),
+            lisensi: terlihat('GPS Expiry'),
+            remarks: terlihat('Remarks'),
+            tahun: terlihat('Tahun Penerimaan')
+        };
+    })()`);
+    // Dua yang sengaja tanpa label: nomor baris dan kotak centang.
+    t('hanya dua sel yang sengaja tanpa label', label.tanpaLabel.length, 2);
+    t('kolom GPS terlihat di ponsel', label.gps, true);
+    t('kolom masa berlaku lisensi terlihat di ponsel', label.lisensi, true);
+    t('kolom Remarks terlihat di ponsel', label.remarks, true);
+    t('kolom Tahun Penerimaan terlihat di ponsel', label.tahun, true);
+
+    // Filter yang tidak cocok dulu menghasilkan tabel kosong tanpa satu kata
+    // penjelasan — di ponsel itu berarti layar kosong tanpa sebab.
+    const nihil = await phone.evaluate(`(() => {
+        navigateTo('dashboard');
+        globalData = [{ id:'u_1', name:'A', model:'M', sn:'S1', status:'Good', site:'X' }];
+        document.getElementById('searchInput').value = 'tidakada';
+        applyFilter();
+        const pesan = document.querySelector('#detailBody td[colspan]');
+        return { ada: !!pesan, teks: pesan ? pesan.textContent.replace(/\\s+/g, ' ').trim() : '',
+                 adaTombol: !!(pesan && pesan.querySelector('button')) };
+    })()`);
+    t('filter nihil memberi penjelasan, bukan tabel kosong', nihil.ada, true);
+    t('penjelasannya menyebut filter', /filter/i.test(nihil.teks), true);
+    t('dan menyediakan jalan keluar', nihil.adaTombol, true);
+
     // Jadwal shift: satu-satunya yang memang menggeser, jadi nama harus menempel.
     const shift = await phone.evaluate(`(async () => {
         teamMembers = [{ id:'m1', name:'Yulianus Mop Anggawen', jobTitle:'Mekanik',

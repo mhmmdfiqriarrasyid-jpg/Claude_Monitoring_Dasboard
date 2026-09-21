@@ -116,6 +116,66 @@ const { launch, BASE_URL } = require('./_env');
         ensureShiftWindowCovers('2019-01-07');
         t('tanpa langganan aktif, tidak ada langganan liar', subs.length, setelahBongkar);
 
+        // ---------- klien basi tidak lagi melempar diam-diam ----------
+        // Service worker menyajikan firebase-init.js network-first, tapi jatuh
+        // ke cache saat fetch gagal — yaitu persis saat sinyal buruk, yaitu
+        // persis saat orang menyimpan. Panggilan telanjang ke fungsi yang belum
+        // ada melempar TypeError keluar dari handler klik: tanpa toast, tanpa
+        // baris audit, dan modalnya tetap terbuka di atas simpan yang tidak
+        // pernah terjadi.
+        const pesan = [];
+        const toastAsli = window.showToast;
+        window.showToast = m => { pesan.push(String(m)); };
+
+        window.cloud = { isReady: true, saveDevice: () => Promise.resolve('ok') };
+        t('cloudFn mengembalikan fungsinya kalau ada',
+          typeof cloudFn('saveDevice'), 'function');
+        pesan.length = 0;
+        t('cloudFn mengembalikan null kalau tidak ada', cloudFn('saveDeviceBaru'), null);
+        t('dan menyuruh muat ulang', /[Mm]uat ulang/.test(pesan.join(' ')), true);
+
+        // cloudCall dipakai di posisi ARGUMEN cloudWrite(...), tempat lemparan
+        // terjadi sebelum cloudWrite sempat berbuat apa pun. Jadi ia harus
+        // menolak, bukan melempar.
+        let lemparan = null, tolakan = null;
+        try { tolakan = await cloudCall('tidakAda', 1).catch(e => e); }
+        catch (e) { lemparan = e; }
+        t('cloudCall tidak melempar', lemparan, null);
+        t('melainkan menolak dengan kode yang bisa dikenali',
+          tolakan && tolakan.code, 'stale-client');
+        t('cloudCall meneruskan panggilan yang memang ada',
+          await cloudCall('saveDevice', {}), 'ok');
+        window.showToast = toastAsli;
+
+        // ---------- riwayat audit tidak lagi dikirim ke yang tidak berhak ----------
+        // Dulu subscribeHistory jalan untuk semua orang saat login: 500 dokumen
+        // berisi nama dan email pelaku, termasuk ke akun yang menu History-nya
+        // memang disembunyikan.
+        let langganRiwayat = 0;
+        window.cloud = { isReady: true,
+            subscribeHistory: () => { langganRiwayat++; return () => {}; },
+            addHistoryEvents: () => Promise.resolve() };
+        cloudHistoryUnsub = null; cloudHistory = [];
+
+        currentUserDoc = { role: 'khl', status: 'active', access: { history: 'none' } };
+        startHistorySubscription();
+        t('tanpa akses history, tidak ada langganan sama sekali', langganRiwayat, 0);
+
+        currentUserDoc = { role: 'owner', status: 'active' };
+        startHistorySubscription();
+        t('dengan akses, langganan dimulai', langganRiwayat, 1);
+        startHistorySubscription();
+        t('membukanya lagi tidak melangganan ulang', langganRiwayat, 1);
+
+        // Akses bisa dicabut di tengah sesi; aliran datanya harus ikut putus.
+        cloudHistory = [{ id: 'h1', timestamp: 1, action: 'edit' }];
+        currentUserDoc = { role: 'khl', status: 'active', access: { history: 'none' } };
+        applyRoleGating();
+        t('akses dicabut memutus langganan', cloudHistoryUnsub, null);
+        t('dan membuang baris yang sudah terlanjur diterima', cloudHistory.length, 0);
+        currentUserDoc = { role:'owner', status:'active' };
+        applyRoleGating();
+
         // ---------- bootstrap awal tidak lagi mengunduh empat koleksi ----------
         // Dulu ia memanggil getAll* hanya untuk membaca .length — 288 dokumen
         // tiap owner login, demi empat jawaban ya/tidak.

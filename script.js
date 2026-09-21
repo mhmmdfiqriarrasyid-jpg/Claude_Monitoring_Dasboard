@@ -81,7 +81,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v106';
+const APP_VERSION = 'v107';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -417,7 +417,145 @@ function setupEventListeners() {
     });
 }
 
+// Escape used to reach exactly three of the eighteen modals, even though every
+// one of them already has a close function. The rest trapped the keyboard: the
+// only way out was the mouse. One map, so a new modal is one line here rather
+// than an edit to the key handler.
+//
+// The value is a function NAME, not the function: most of these are defined
+// further down this file and would be undefined at this point.
+const MODAL_CLOSERS = {
+    unitModal:            'closeModal',
+    historyModal:         'closeHistory',
+    importReportModal:    'closeImportReport',
+    phantomHistoryModal:  'closePhantomHistory',
+    emailSettingsModal:   'closeEmailSettingsModal',
+    bulkEditModal:        'closeBulkEdit',
+    implementModal:       'closeImplementModal',
+    unitProfileModal:     'closeUnitProfile',
+    damageModal:          'closeDamageModal',
+    licenseModal:         'closeLicenseModal',
+    categoriesModal:      'closeCategoriesModal',
+    damageComponentsModal:'closeDamageComponentsModal',
+    accessModal:          'closeAccessModal',
+    teamMembersModal:     'closeTeamMembersModal',
+    workLogModal:         'closeWorkLogModal',
+    deviceModal:          'closeDeviceModal',
+    stockModal:           'closeStockModal',
+    // Not a plain dismissal: an abandoned breakdown reason has to put the
+    // inline cell back, or the grid shows a status that was never saved.
+    restoreReportModal:   'closeRestoreReport',
+    autoBackupModal:      'closeAutoBackups',
+    breakdownReasonModal: 'cancelBreakdownReason'
+};
+
+// Closes the topmost open modal only. Closing all of them at once would
+// dismiss the page behind a confirmation dialog the user is still reading.
+// The lightbox has its own handler (with arrow-key navigation) and sits above
+// everything, so it is checked first.
+function closeTopModal() {
+    const lightbox = document.getElementById('photoLightbox');
+    if (lightbox && lightbox.classList.contains('open')) { closePhotoLightbox(); return true; }
+
+    const open = Array.from(document.querySelectorAll('.modal-overlay.open'));
+    if (open.length === 0) return false;
+    const top = open[open.length - 1];
+    const fn = window[MODAL_CLOSERS[top.id]];
+    if (typeof fn === 'function') {
+        // closeWorkLogModal(force) must be called WITHOUT force, so the
+        // unsaved-photo guard still gets to ask.
+        fn();
+        return true;
+    }
+    // A modal with no registered closer is a bug, but stranding the keyboard
+    // is worse than closing it bluntly.
+    console.warn(`[ui] ${top.id} belum terdaftar di MODAL_CLOSERS`);
+    top.classList.remove('open');
+    return true;
+}
+
+// Focus goes back where it came from when a modal closes. Without this, Tab
+// after closing restarts at the top of the document and the place the person
+// was working is lost — the reason keyboard users avoid modals.
+let _focusBeforeModal = null;
+
+function rememberFocus() {
+    const el = document.activeElement;
+    _focusBeforeModal = (el && el !== document.body) ? el : null;
+}
+
+function restoreFocus() {
+    const el = _focusBeforeModal;
+    _focusBeforeModal = null;
+    if (el && document.contains(el) && typeof el.focus === 'function') {
+        try { el.focus(); } catch (_) {}
+    }
+}
+
+// Wiring remember/restore into all eighteen open and close functions would be
+// thirty-six edits that the next modal would forget to repeat. Watch the class
+// instead: every modal in this app opens and closes by toggling .open.
+function watchModalFocus() {
+    const overlays = document.querySelectorAll('.modal-overlay');
+    if (!overlays.length || typeof MutationObserver !== 'function') return;
+    const anyOpen = () => !!document.querySelector('.modal-overlay.open');
+    let wasOpen = anyOpen();
+
+    const obs = new MutationObserver(() => {
+        const isOpen = anyOpen();
+        if (isOpen === wasOpen) return;
+        wasOpen = isOpen;
+        if (isOpen) return;      // remembered on the way in, below
+        restoreFocus();
+    });
+
+    overlays.forEach(el => {
+        obs.observe(el, { attributes: true, attributeFilter: ['class'] });
+    });
+
+    // Remember before the modal opens, while the trigger still has focus —
+    // by the time the class lands, focus may already have moved.
+    document.addEventListener('mousedown', () => { if (!anyOpen()) rememberFocus(); }, true);
+    document.addEventListener('keydown', e => {
+        if ((e.key === 'Enter' || e.key === ' ') && !anyOpen()) rememberFocus();
+    }, true);
+}
+
+// The 34 sortable headers are styled as controls and carry an onclick, but had
+// no tabindex, no role and no aria-sort: unreachable by keyboard and silent to
+// a screen reader. index.html now gives them tabindex/role; this makes the keys
+// work, and marks which column is sorted.
+//
+// Delegated rather than 34 inline onkeydown attributes, so a new sortable
+// column needs nothing but the two attributes.
+function setupSortableHeaders() {
+    document.addEventListener('keydown', e => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const th = e.target.closest && e.target.closest('th[role="button"]');
+        if (!th) return;
+        e.preventDefault();          // Space would scroll the page
+        th.click();
+    });
+}
+
+// Mark the sorted column. This also lights the .sort-icon: style.css:678 has
+// styled th.sorted since the beginning, but nothing ever added the class, so
+// the arrow never turned on.
+function markSortedHeader(theadSelector, key, asc) {
+    const head = document.querySelector(theadSelector);
+    if (!head) return;
+    head.querySelectorAll('th[role="button"]').forEach(th => {
+        const onclick = th.getAttribute('onclick') || '';
+        const isThis = key && onclick.includes(`'${key}'`);
+        th.classList.toggle('sorted', !!isThis);
+        if (isThis) th.setAttribute('aria-sort', asc ? 'ascending' : 'descending');
+        else th.removeAttribute('aria-sort');
+    });
+}
+
 function setupKeyboardShortcuts() {
+    watchModalFocus();
+    setupSortableHeaders();
     document.addEventListener('keydown', e => {
         const tag = e.target.tagName;
         const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable;
@@ -428,9 +566,7 @@ function setupKeyboardShortcuts() {
             // form on that keystroke threw away everything typed into it — no
             // confirmation, no undo. Closing stays on the X and Batal buttons.
             if (isTyping) { e.target.blur(); return; }
-            closeModal();
-            closeHistory();
-            closeImportReport();
+            closeTopModal();
             return;
         }
 
@@ -1162,6 +1298,11 @@ function saveWithFeedback(promise, successMsg, onError) {
     }).catch(err => {
         settled = true;
         clearTimeout(timer);
+        // A stale service-worker bundle is not a server refusal, and the
+        // caller's own "gagal menyimpan" toast does not tell anyone what to
+        // do about it. Say the one thing that fixes it, then let the caller
+        // roll back exactly as it would for any other rejection.
+        if (err && err.code === 'stale-client') showToast(STALE_CLIENT_MSG, 'warning');
         if (onError) return onError(err);
         throw err;
     });
@@ -1181,6 +1322,42 @@ function cloudWrite(auditEntry, promise, successMsg, onError) {
         entries.forEach(e => logEventFailed(e, err));
         if (onError) onError(err);
     });
+}
+
+const STALE_CLIENT_MSG = 'Muat ulang halaman — versi lama masih aktif, perubahan belum terkirim';
+
+// The service worker serves firebase-init.js network-first but falls back to
+// the cache when the fetch fails — which on a bad signal is exactly when
+// people are saving. A device can therefore be running today's script.js
+// against a firebase-init.js from before a function existed, and a bare
+// window.cloud.saveDevice(...) then throws a TypeError out of the click
+// handler: no toast, no audit row, and the modal stays open over a save that
+// never happened. saveWorkLog already guarded this by hand (see the
+// saveWorkLogPhotos check); this is that guard, once, for everyone.
+//
+// Returns null when the method is missing, so callers read:
+//     const fn = cloudFn('saveDevice'); if (!fn) return;
+function cloudFn(name) {
+    const fn = window.cloud && window.cloud[name];
+    if (typeof fn === 'function') return fn.bind(window.cloud);
+    console.warn(`[cloud] ${name} tidak ada — firebase-init.js lama masih disajikan`);
+    showToast(STALE_CLIENT_MSG, 'warning');
+    return null;
+}
+
+// The same guard for the cloudWrite(...) call sites. There the call is an
+// ARGUMENT — cloudWrite(entry, window.cloud.saveDevice(rec), …) — so a missing
+// method throws while the arguments are being evaluated, before cloudWrite can
+// do anything about it. Returning a rejected promise instead keeps the whole
+// existing failure path intact: the cancelling audit row, the rollback, the
+// banner. saveWithFeedback recognises the code and explains what to do.
+function cloudCall(name, ...args) {
+    const fn = window.cloud && window.cloud[name];
+    if (typeof fn === 'function') return fn.apply(window.cloud, args);
+    console.warn(`[cloud] ${name} tidak ada — firebase-init.js lama masih disajikan`);
+    const err = new Error(`window.cloud.${name} tidak tersedia`);
+    err.code = 'stale-client';
+    return Promise.reject(err);
 }
 
 // The four oldest modules — units, implements, damage, licenseStock — write
@@ -1350,8 +1527,49 @@ function getAuditLog() {
     return merged.slice(0, AUDIT_LOG_MAX);
 }
 
+// The audit log used to be subscribed for everyone the moment they signed in:
+// 500 documents, roughly 150 KB, on every app open — for a modal most people
+// never open. Worse, the History page is gated on hasAccess('history','view')
+// (see below) while the subscription was not, so an account whose History menu
+// is hidden still pulled down 500 audit rows complete with every actor's name
+// and e-mail. That is not merely wasteful.
+//
+// So it starts on the first open instead, and only for someone allowed to read
+// it. Idempotent: reopening the modal does not resubscribe. tearDownCloudSync
+// clears cloudHistoryUnsub, so a new session starts clean.
+function startHistorySubscription() {
+    if (cloudHistoryUnsub) return;
+    if (!window.cloud?.isReady || !window.cloud.subscribeHistory) return;
+    if (!hasAccess('history', 'view')) return;
+    cloudHistoryUnsub = window.cloud.subscribeHistory(events => {
+        cloudHistory = events || [];
+        clearRulesBanner('history');
+        // Re-render the history modal live if it's currently open
+        const modal = document.getElementById('historyModal');
+        if (modal && modal.classList.contains('open')) {
+            showHistory(modal.dataset.unitId || undefined);
+        }
+    }, err => {
+        console.warn('[cloud] history offline:', err && err.code);
+        if (err && err.code === 'permission-denied') {
+            showHistoryRulesBanner();
+            showToast('History diblokir Firestore rules — lihat pesan di panel History', 'warning');
+        }
+    });
+}
+
+// Access can be revoked mid-session. Drop the stream and the cached rows with
+// it, or a demoted account keeps the audit trail it was just cut off from.
+function stopHistorySubscription() {
+    if (!cloudHistoryUnsub) return;
+    try { cloudHistoryUnsub(); } catch (_) {}
+    cloudHistoryUnsub = null;
+    cloudHistory = [];
+}
+
 function showHistory(unitId) {
     if (!hasAccess('history', 'view')) { showToast('Anda tidak punya akses ke History', 'warning'); return; }
+    startHistorySubscription();
     const log = getAuditLog();
     const filtered = unitId ? log.filter(e => e.unitId === unitId) : log;
     const title = unitId
@@ -1646,6 +1864,79 @@ async function exportHistory() {
 // BACKUP & RESTORE
 // ============================================================
 
+// ============================================================
+// BACKUP — what a backup actually contains
+// ============================================================
+// For three versions this file exported four collections out of fifteen while
+// the button read "Download full JSON backup". Everything the Team and
+// Warehouse modules hold — people, shift schedules, daily reports, devices,
+// stock movements — had no backup at all. One table now drives both the export
+// and the restore, so a collection cannot be added to the app and forgotten
+// here: adding it is one row.
+//
+// `read` is the in-memory array. `fullRead` exists for collections whose
+// in-memory copy is deliberately incomplete — shifts hold only the subscribed
+// 120-day window, so backing up that array would produce a file that looks
+// whole and is not, and a REPLACE restore computed against it would delete
+// every shift outside the window.
+const BACKUP_PARTS = [
+    { key: 'implements', label: 'Implement', area: 'implements',
+      read: () => globalImplements, write: l => { globalImplements = l; },
+      saveLocal: () => saveImplements(), bulk: 'saveImplements',
+      deleteOne: id => cloudDeleteImplement(id), resync: () => resyncImplements() },
+
+    { key: 'damages', label: 'Kerusakan', area: 'damage',
+      read: () => globalDamages, write: l => { globalDamages = l; },
+      saveLocal: () => saveDamages(), bulk: 'saveDamages',
+      deleteOne: id => cloudDeleteDamage(id), resync: () => resyncDamages() },
+
+    { key: 'licenseStock', label: 'Stok Lisensi', area: 'licenseStock',
+      read: () => globalLicenseStock, write: l => { globalLicenseStock = l; },
+      saveLocal: () => saveLicenseStockLocal(), bulk: 'saveLicenses',
+      deleteOne: id => cloudDeleteLicense(id), resync: () => resyncLicenses() },
+
+    { key: 'userCategories', label: 'Kategori User', area: 'editUnits',
+      read: () => userCategories, write: l => { userCategories = l; },
+      bulk: 'saveUserCategories', deleteOne: id => window.cloud.deleteUserCategory(id) },
+
+    { key: 'damageComponents', label: 'Komponen Kerusakan', area: 'damage',
+      read: () => damageComponents, write: l => { damageComponents = l; },
+      bulk: 'saveDamageComponents', deleteOne: id => window.cloud.deleteDamageComponent(id) },
+
+    { key: 'teamMembers', label: 'Anggota Tim', area: 'teamMembers',
+      read: () => teamMembers, write: l => { teamMembers = l; },
+      bulk: 'saveTeamMembers', deleteOne: id => window.cloud.deleteTeamMember(id) },
+
+    { key: 'shifts', label: 'Jadwal Shift', area: 'teamShift',
+      read: () => teamShifts, write: l => { teamShifts = l; },
+      // The subscription is windowed; the backup must not be.
+      fullRead: () => window.cloud.getAllShifts(),
+      bulk: 'saveShifts', deleteOne: id => window.cloud.deleteShift(id) },
+
+    { key: 'workLogs', label: 'Laporan Harian', area: 'teamLog',
+      read: () => workLogs, write: l => { workLogs = l; },
+      bulk: 'saveWorkLogs', deleteOne: id => window.cloud.deleteWorkLog(id) },
+
+    { key: 'devices', label: 'Perangkat Gudang', area: 'warehouse',
+      read: () => warehouseDevices, write: l => { warehouseDevices = l; },
+      bulk: 'saveDevices', deleteOne: id => window.cloud.deleteDevice(id) },
+
+    { key: 'stockItems', label: 'Stok Barang', area: 'warehouse',
+      read: () => stockLedger, write: l => { stockLedger = l; },
+      bulk: 'saveStockItems', deleteOne: id => window.cloud.deleteStockItem(id) }
+];
+
+// Two collections are left out on purpose, and the UI says so rather than
+// leaving it a mystery:
+//   users   — role and per-area access. Restoring it would rewrite people's
+//             permissions from a file. Accounts belong on the Users page.
+//   history — the audit log has its own Export button, reads the whole
+//             collection, and has no size limit worth putting in every backup.
+const BACKUP_EXCLUDED = [
+    { label: 'Akun & Akses', why: 'diatur di halaman Users, bukan lewat berkas' },
+    { label: 'Riwayat Audit', why: 'punya tombol Export sendiri di halaman History' }
+];
+
 async function exportBackup() {
     // A backup is a full-dataset export, so it needs the export privilege AND
     // read access to every area it contains — otherwise it is a way around
@@ -1662,15 +1953,44 @@ async function exportBackup() {
         && confirm('Sertakan file lampiran dalam backup? (ukuran file bisa besar)');
 
     const payload = {
-        version: 3,
+        version: 4,
         exportedAt: new Date().toISOString(),
         count: globalData.length,
         units: globalData,
-        // v3: the full dataset, not just units.
-        implements: globalImplements,
-        damages: globalDamages,
-        licenseStock: globalLicenseStock
+        // Everything else comes from BACKUP_PARTS, so a new collection is one
+        // row there instead of an edit in two places that drift apart.
+        omitted: []
     };
+    const included = [];
+
+    showLoading(true);
+    try {
+        for (const part of BACKUP_PARTS) {
+            // A backup must not become a way around per-area 'none'. Skip what
+            // this account may not read — and record it, so the file says what
+            // it is missing instead of looking complete.
+            if (!hasAccess(part.area, 'view')) {
+                payload.omitted.push({ key: part.key, label: part.label, why: 'tanpa akses' });
+                continue;
+            }
+            let rows = part.read() || [];
+            if (part.fullRead && window.cloud?.isReady) {
+                try {
+                    const all = await part.fullRead();
+                    if (Array.isArray(all)) rows = all;
+                } catch (err) {
+                    // Better a short backup that admits it than a short backup
+                    // that does not.
+                    console.warn(`[backup] ${part.key} full read failed:`, err);
+                    payload.omitted.push({ key: part.key, label: part.label, why: 'gagal dibaca lengkap' });
+                }
+            }
+            payload[part.key] = rows;
+            included.push(`${rows.length} ${part.label.toLowerCase()}`);
+        }
+    } finally {
+        showLoading(false);
+    }
 
     if (includeFiles) {
         const attachArr = [];
@@ -1701,7 +2021,13 @@ async function exportBackup() {
     a.download = `tractor_backup_${toISODate()}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`Backup exported: ${globalData.length} units, ${globalImplements.length} implements, ${globalDamages.length} kerusakan, ${globalLicenseStock.length} transaksi lisensi`, 'success');
+    // Say what it holds AND what it does not. The old toast named the four
+    // collections it saved, which read as a complete list when eleven others
+    // were missing.
+    const missing = payload.omitted.map(o => o.label);
+    showToast(`Backup tersimpan: ${globalData.length} unit, ${included.join(', ')}`
+        + (missing.length ? ` · TIDAK termasuk: ${missing.join(', ')}` : ''),
+        missing.length ? 'warning' : 'success');
 }
 
 // ---- localStorage usage guard ----
@@ -1765,10 +2091,12 @@ function _cloudDeleteRemoved(previous, kept, deleteOne) {
 // damage records and licence stock.
 function importBackup(file) {
     if (!canCsv('full')) return;
-    const areas = { editUnits: 'Unit', implements: 'Implement', damage: 'Kerusakan', licenseStock: 'Stok Lisensi' };
-    const blocked = Object.keys(areas).filter(a => !hasAccess(a, 'edit'));
-    if (blocked.length) {
-        showToast(`Restore butuh hak edit di semua data — Anda belum punya: ${blocked.map(a => areas[a]).join(', ')}`, 'warning');
+    // Units are non-negotiable: every backup carries them and the units path
+    // below writes unconditionally. The rest are checked per collection as
+    // they are restored, so someone with partial rights restores what they may
+    // and is told plainly what was left alone.
+    if (!hasAccess('editUnits', 'edit')) {
+        showToast('Restore butuh hak edit pada data Unit', 'warning');
         return;
     }
     const reader = new FileReader();
@@ -1780,9 +2108,10 @@ function importBackup(file) {
                 return;
             }
             const merge = confirm(
-                `Backup contains ${data.units.length} units.\n\n` +
-                `OK  = MERGE (add new, keep existing)\n` +
-                `Cancel = REPLACE (wipe current, load backup)`
+                `Backup berisi ${data.units.length} unit.\n\n` +
+                `OK    = GABUNG (tambahkan yang baru, pertahankan yang ada)\n` +
+                `Batal = GANTI (hapus data sekarang, muat isi backup)\n\n` +
+                `Pilihan ini berlaku untuk SEMUA koleksi di dalam berkas, bukan unit saja.`
             );
             if (merge) {
                 const result = addUnits(data.units);
@@ -1803,45 +2132,68 @@ function importBackup(file) {
                 showToast(`${data.units.length} unit dipulihkan dari backup`, 'success');
             }
 
-            // v3 backups carry the other collections too — restore them with
-            // the same mode (merge / replace) the user chose for units.
-            const extras = [];
-            if (Array.isArray(data.implements)) {
-                const before = globalImplements;
-                globalImplements = _restoreCollection(data.implements, before, merge);
-                saveImplements();
-                _cloudDeleteRemoved(before, globalImplements, cloudDeleteImplement);
-                if (window.cloud?.isReady) window.cloud.saveImplements(globalImplements)
-                    .catch(err => cloudWriteFailed(err, { what: 'implement (restore)',
-                        label: '[Implement] restore', resync: resyncImplements }));
-                extras.push(`${data.implements.length} implements`);
+            // Every other collection goes through BACKUP_PARTS, in the same
+            // mode (merge / replace) the user chose for units. The report
+            // afterwards names three different outcomes, and the third is the
+            // one that used to be silent: a collection that is simply NOT IN
+            // THE FILE. A v3 backup has no Team or Warehouse data at all, and
+            // the person restoring it has to know that rather than assume the
+            // restore covered everything.
+            const report = [];
+            for (const part of BACKUP_PARTS) {
+                const rows = data[part.key];
+                if (!Array.isArray(rows)) {
+                    report.push({ label: part.label, count: '—', note: 'tidak ada di berkas ini' });
+                    continue;
+                }
+                if (!hasAccess(part.area, 'edit')) {
+                    report.push({ label: part.label, count: rows.length, note: 'dilewati — Anda tidak punya hak edit' });
+                    continue;
+                }
+                const bulk = cloudFn(part.bulk);
+                if (window.cloud?.isReady && !bulk) {
+                    report.push({ label: part.label, count: rows.length, note: 'dilewati — versi lama masih aktif, muat ulang halaman' });
+                    continue;
+                }
+
+                // REPLACE has to be computed against what the SERVER holds, not
+                // against the in-memory array: shifts only keep the subscribed
+                // window, so diffing the array would delete every shift outside
+                // it. fullRead gives the real "before".
+                let before = part.read() || [];
+                if (!merge && part.fullRead && window.cloud?.isReady) {
+                    try {
+                        const all = await part.fullRead();
+                        if (Array.isArray(all)) before = all;
+                    } catch (err) {
+                        // Without a trustworthy "before" a REPLACE could delete
+                        // rows it cannot see. Upsert only, and say so.
+                        console.warn(`[restore] ${part.key} full read failed:`, err);
+                        report.push({ label: part.label, count: rows.length,
+                                      note: 'hanya ditambahkan — daftar lama gagal dibaca, tidak ada yang dihapus' });
+                        part.write(_restoreCollection(rows, part.read() || [], true));
+                        if (part.saveLocal) part.saveLocal();
+                        if (bulk) bulk(part.read()).catch(e => cloudWriteFailed(e, {
+                            what: `${part.label.toLowerCase()} (restore)`,
+                            label: `[${part.label}] restore`, resync: part.resync }));
+                        continue;
+                    }
+                }
+
+                const next = _restoreCollection(rows, before, merge);
+                part.write(next);
+                if (part.saveLocal) part.saveLocal();
+                _cloudDeleteRemoved(before, next, part.deleteOne);
+                if (bulk) {
+                    bulk(next).catch(err => cloudWriteFailed(err, {
+                        what: `${part.label.toLowerCase()} (restore)`,
+                        label: `[${part.label}] restore`,
+                        resync: part.resync
+                    }));
+                }
+                report.push({ label: part.label, count: rows.length, note: merge ? 'digabung' : 'diganti' });
             }
-            if (Array.isArray(data.damages)) {
-                const before = globalDamages;
-                globalDamages = _restoreCollection(data.damages, before, merge);
-                saveDamages();
-                _cloudDeleteRemoved(before, globalDamages, cloudDeleteDamage);
-                if (window.cloud?.isReady) window.cloud.saveDamages(globalDamages)
-                    .catch(err => cloudWriteFailed(err, { what: 'kerusakan (restore)',
-                        label: '[Kerusakan] restore', resync: resyncDamages }));
-                extras.push(`${data.damages.length} kerusakan`);
-            }
-            if (Array.isArray(data.licenseStock)) {
-                const before = globalLicenseStock;
-                globalLicenseStock = _restoreCollection(data.licenseStock, before, merge);
-                saveLicenseStockLocal();
-                _cloudDeleteRemoved(before, globalLicenseStock, cloudDeleteLicense);
-                if (window.cloud?.isReady) window.cloud.saveLicenses(globalLicenseStock)
-                    .catch(err => cloudWriteFailed(err, { what: 'stok lisensi (restore)',
-                        label: '[Lisensi] restore', resync: resyncLicenses }));
-                extras.push(`${data.licenseStock.length} transaksi lisensi`);
-            }
-            // Reported as queued, not as landed: these three writes used to
-            // swallow their rejection entirely and then claim success, leaving
-            // local storage holding data no other device would ever see. Any
-            // genuine refusal now arrives as its own error toast and audit row
-            // from cloudWriteFailed above.
-            if (extras.length) showToast(`Ikut direstore: ${extras.join(', ')}`, 'success');
+            showRestoreReport(report, data.version || 0, merge);
 
             if (Array.isArray(data.attachments) && data.attachments.length > 0) {
                 let restored = 0;
@@ -1861,12 +2213,20 @@ function importBackup(file) {
 
             // Refresh every surface, not just the units table — a restore can
             // be triggered from any view and replaces four collections.
+            // Every surface, not just units: a restore can be triggered from
+            // any view and now replaces up to eleven collections.
             renderEditTable();
             renderImplementsTable();
             populateLicenseTypeList();
             renderLicenseSummary();
             renderLicenseStockTable();
             renderDamageTable();
+            renderUserCategoryOptions();
+            renderDamageComponentsList();
+            if (typeof renderTeamView === 'function') renderTeamView();
+            if (typeof renderDeviceTable === 'function') renderDeviceTable();
+            if (typeof renderStockView === 'function') renderStockView();
+            scheduleDecisionRefresh();
             updateDashboard(globalData);
         } catch (err) {
             showToast('Gagal membaca backup: ' + err.message, 'error');
@@ -2501,8 +2861,29 @@ function renderComponentHealth(data) {
 }
 
 // ---- Detail Table ----
+// True when anything is narrowing the dashboard list. Used to tell "there is
+// no data" apart from "your filter matched nothing" — the second needs a way
+// back out, the first does not.
+function dashboardFilterActive() {
+    const val = id => (document.getElementById(id) || {}).value || '';
+    return !!(val('searchInput') || val('statusFilter') || val('siteFilter') || val('componentFilter'));
+}
+
 function renderTable(data) {
     const tbody = document.getElementById('detailBody');
+    // An empty tbody under a 17-column header used to be the whole answer when
+    // a filter matched nothing: no row, no message, and #emptyState does not
+    // help because it is gated on globalData.length, not on the filtered list.
+    if (!data || data.length === 0) {
+        tbody.innerHTML = dashboardFilterActive()
+            ? `<tr><td colspan="17" style="text-align:center;padding:24px;color:var(--text-secondary)">
+                   Tidak ada unit yang cocok dengan filter.
+                   <button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="clearFilter()">
+                       <i class="fas fa-filter-circle-xmark"></i> Hapus filter</button>
+               </td></tr>`
+            : `<tr><td colspan="17" style="text-align:center;padding:24px;color:var(--text-secondary)">Belum ada unit.</td></tr>`;
+        return;
+    }
     tbody.innerHTML = data.map((d, i) => {
         const isBD = !isGood(d.status);
         return `
@@ -2549,6 +2930,7 @@ function sortTable(key) {
             return 0;
         });
     }
+    markSortedHeader('#detailTable thead', sortState.key, sortState.asc);
     renderTable(filteredData);
     updateFilterCount(filteredData);
 }
@@ -2661,7 +3043,20 @@ function renderRepair() {
     // Repair Table
     let repairRows = globalData.filter(d => detectIssues(d).length > 0);
     if (issueFilterVal) repairRows = repairRows.filter(d => detectIssues(d).includes(issueFilterVal));
-    document.getElementById('repairBody').innerHTML = repairRows.map((d, i) => `
+    const repairBody = document.getElementById('repairBody');
+    if (repairRows.length === 0) {
+        repairBody.innerHTML = issueFilterVal
+            ? `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-secondary)">
+                   Tidak ada unit dengan masalah <strong>${escapeHtml(issueFilterVal)}</strong>.
+                   <button class="btn btn-secondary btn-sm" style="margin-left:8px"
+                           onclick="document.getElementById('issueFilter').value='';renderRepair()">
+                       <i class="fas fa-filter-circle-xmark"></i> Tampilkan semua</button>
+               </td></tr>`
+            : `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-secondary)">
+                   Tidak ada unit bermasalah. Semua komponen terbaca normal.</td></tr>`;
+        return;
+    }
+    repairBody.innerHTML = repairRows.map((d, i) => `
         <tr>
             <td>${i + 1}</td>
             <td><strong>${escapeHtml(d.name)}</strong></td>
@@ -2867,6 +3262,110 @@ function showImportReport({ total, added, skipped, skippedDetails, rejected, upd
     document.getElementById('importReportModal').classList.add('open');
 }
 
+// A restore used to end with one toast naming the collections it had written.
+// Anything absent from the file produced no line at all, so a v3 backup looked
+// like a complete restore. This lists every collection the app knows about,
+// including the ones that were not in the file and the ones skipped for lack
+// of rights — the two outcomes people most need to see.
+function showRestoreReport(rows, version, merge) {
+    const missing = rows.filter(r => r.note === 'tidak ada di berkas ini').length;
+    const done = rows.filter(r => r.note === 'digabung' || r.note === 'diganti').length;
+    const summary = `${done} koleksi ${merge ? 'digabung' : 'diganti'}`
+        + (missing ? ` · ${missing} koleksi tidak ada di berkas ini` : '');
+
+    const excluded = BACKUP_EXCLUDED.map(e =>
+        `<tr><td>${escapeHtml(e.label)}</td><td>—</td><td>tidak pernah dicadangkan — ${escapeHtml(e.why)}</td></tr>`).join('');
+    const body = rows.map(r =>
+        `<tr><td data-label="Koleksi">${escapeHtml(r.label)}</td>`
+        + `<td data-label="Jumlah">${escapeHtml(String(r.count))}</td>`
+        + `<td data-label="Keterangan">${escapeHtml(r.note)}</td></tr>`).join('');
+
+    const note = document.getElementById('restoreReportNote');
+    if (note) {
+        note.innerHTML = version < 4
+            ? `<strong>Cadangan lama (v${version || '?'}).</strong> Berkas ini dibuat sebelum data Tim dan Gudang ikut dicadangkan, jadi data itu tidak ada di dalamnya dan tidak diubah sama sekali.`
+            : '';
+        note.style.display = version < 4 ? '' : 'none';
+    }
+    const sum = document.getElementById('restoreReportSummary');
+    if (sum) sum.textContent = summary;
+    const tbody = document.getElementById('restoreReportBody');
+    if (tbody) tbody.innerHTML = body + excluded;
+    const modal = document.getElementById('restoreReportModal');
+    if (modal) modal.classList.add('open');
+    else showToast(summary, missing ? 'warning' : 'success');
+}
+
+// ---- Auto backup ring ----
+// writeAutoBackup() has pushed a full copy of the units array into
+// localStorage on every save since the first version, keeping three. Nothing
+// in the repo ever read it: the quota — the same quota the damage photos were
+// moved out of — was paying for three rollback points nobody could reach.
+// These three functions are that missing half.
+function readAutoBackups() {
+    try {
+        const ring = JSON.parse(localStorage.getItem(BACKUP_RING_KEY) || '[]');
+        return Array.isArray(ring) ? ring.slice().reverse() : [];   // newest first
+    } catch (e) { return []; }
+}
+
+function showAutoBackups() {
+    if (!isOwner || !isOwner()) { showToast('Hanya owner yang bisa memulihkan cadangan otomatis', 'warning'); return; }
+    const ring = readAutoBackups();
+    const list = document.getElementById('autoBackupList');
+    if (list) {
+        list.innerHTML = ring.length === 0
+            ? '<li style="color:var(--text-secondary);padding:8px 0">Belum ada cadangan otomatis di perangkat ini.</li>'
+            : ring.map((b, i) => {
+                const when = b.at ? new Date(b.at).toLocaleString('id-ID',
+                    { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+                return `<li>
+                    <span><strong>${escapeHtml(when)}</strong>
+                        <span style="color:var(--text-secondary)"> · ${Number(b.count) || 0} unit</span></span>
+                    <button class="btn btn-secondary btn-sm" onclick="restoreAutoBackup(${i})">
+                        <i class="fas fa-rotate-left"></i> Pulihkan</button>
+                </li>`;
+            }).join('');
+    }
+    document.getElementById('autoBackupModal').classList.add('open');
+}
+
+function closeAutoBackups() {
+    document.getElementById('autoBackupModal').classList.remove('open');
+}
+
+// Goes through the same cloud-mirrored replace as a file restore. A local-only
+// rollback would be undone by the next units snapshot, and the units it
+// removed would come straight back.
+function restoreAutoBackup(index) {
+    if (!isOwner || !isOwner()) return;
+    if (!canWriteUnits('restore cadangan otomatis')) return;
+    const ring = readAutoBackups();
+    const entry = ring[index];
+    if (!entry || !Array.isArray(entry.units)) { showToast('Cadangan itu tidak terbaca', 'error'); return; }
+
+    const when = entry.at ? new Date(entry.at).toLocaleString('id-ID') : 'waktu tidak diketahui';
+    if (!confirm(`Kembalikan ${entry.units.length} unit ke keadaan ${when}?\n\n`
+        + `${globalData.length} unit yang ada sekarang akan diganti. Data lain (kerusakan, lisensi, tim, gudang) tidak ikut berubah.`)) return;
+
+    const previousIds = globalData.map(u => u.id);
+    globalData = entry.units.map(u => ({ ...u, id: u.id || generateId() }));
+    const keptIds = new Set(globalData.map(u => u.id));
+    saveToStorage(globalData);
+    cloudDeleteUnits(previousIds.filter(id => !keptIds.has(id)));
+    cloudPushUnits(globalData);
+    logEvent({ action: 'restore', unitName: '-', after: `${globalData.length} unit dikembalikan dari cadangan otomatis (${when})` });
+    closeAutoBackups();
+    renderEditTable();
+    updateDashboard(globalData);
+    showToast(`${globalData.length} unit dikembalikan ke keadaan ${when}`, 'success');
+}
+
+function closeRestoreReport() {
+    const m = document.getElementById('restoreReportModal');
+    if (m) m.classList.remove('open');
+}
+
 function closeImportReport() {
     document.getElementById('importReportModal').classList.remove('open');
 }
@@ -2932,6 +3431,12 @@ function renderEditTable() {
     tbody.innerHTML = rows.map((d, i) => {
         const remarks = d.remarks || '';
         const remarksShort = remarks.length > 40 ? remarks.slice(0, 40) + '…' : remarks;
+        // A cell without data-label is display:none in card mode
+        // (style.css). Two here stay unlabelled on purpose: the row number
+        // means nothing once rows are stacked as cards, and bulk-select is a
+        // desktop action — a checkbox column on a phone mostly produces
+        // accidental selections. Everything else must carry a label, or the
+        // column silently vanishes on the device the field team actually uses.
         return `
         <tr>
             <td class="col-check"><input type="checkbox" class="unit-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedCount()"></td>
@@ -2939,21 +3444,21 @@ function renderEditTable() {
             <td data-label="Nickname"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="name" onblur="saveInlineEdit(this)">${escapeHtml(d.name)}</span></td>
             <td data-label="Model"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="model" onblur="saveInlineEdit(this)">${escapeHtml(d.model)}</span></td>
             <td data-label="SN" style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
-            <td><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="implement" onblur="saveInlineEdit(this)">${escapeHtml(d.implement || '')}</span></td>
+            <td data-label="Implement"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="implement" onblur="saveInlineEdit(this)">${escapeHtml(d.implement || '')}</span></td>
             <td data-label="Status"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="status" onblur="saveInlineEdit(this)">${escapeHtml(d.status)}</span></td>
-            <td><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="display" onblur="saveInlineEdit(this)">${escapeHtml(d.display)}</span></td>
-            <td><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="gps" onblur="saveInlineEdit(this)">${escapeHtml(d.gps)}</span></td>
-            <td><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="steering" onblur="saveInlineEdit(this)">${escapeHtml(d.steering)}</span></td>
-            <td><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="jdlink" onblur="saveInlineEdit(this)">${escapeHtml(d.jdlink)}</span></td>
+            <td data-label="Display"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="display" onblur="saveInlineEdit(this)">${escapeHtml(d.display)}</span></td>
+            <td data-label="GPS"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="gps" onblur="saveInlineEdit(this)">${escapeHtml(d.gps)}</span></td>
+            <td data-label="Steering"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="steering" onblur="saveInlineEdit(this)">${escapeHtml(d.steering)}</span></td>
+            <td data-label="JDLink"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="jdlink" onblur="saveInlineEdit(this)">${escapeHtml(d.jdlink)}</span></td>
             <td data-label="Site"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="site" onblur="saveInlineEdit(this)">${escapeHtml(d.site)}</span></td>
-            <td><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="yearReceived" onblur="saveInlineEdit(this)">${escapeHtml(d.yearReceived || '')}</span></td>
-            <td>${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
-            <td>${licenseTypeBadge(d, 'gps')}</td>
-            <td>${licenseBadgeFor(d, 'gps')}</td>
-            <td>${licenseTypeBadge(d, 'display')}</td>
-            <td>${licenseBadgeFor(d, 'display')}</td>
-            <td style="max-width:180px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(remarks)}">${escapeHtml(remarksShort) || '<span style="color:var(--text-light)">—</span>'}</td>
-            <td class="col-attach">${renderAttachCell(d)}</td>
+            <td data-label="Tahun Penerimaan"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="yearReceived" onblur="saveInlineEdit(this)">${escapeHtml(d.yearReceived || '')}</span></td>
+            <td data-label="User Category">${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
+            <td data-label="GPS License">${licenseTypeBadge(d, 'gps')}</td>
+            <td data-label="GPS Expiry">${licenseBadgeFor(d, 'gps')}</td>
+            <td data-label="Display License">${licenseTypeBadge(d, 'display')}</td>
+            <td data-label="Display Expiry">${licenseBadgeFor(d, 'display')}</td>
+            <td data-label="Remarks" style="max-width:180px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(remarks)}">${escapeHtml(remarksShort) || '<span style="color:var(--text-light)">—</span>'}</td>
+            <td class="col-attach" data-label="Attachments">${renderAttachCell(d)}</td>
             <td class="col-actions">
                 <div class="row-actions">
                     <button class="btn btn-secondary" title="Profil" onclick="showUnitProfile('${escapeHtml(d.id)}')"><i class="fas fa-eye"></i></button>
@@ -2969,6 +3474,7 @@ function sortEditTable(key) {
     if (key === 'no') { editSortState.key = null; }
     else if (editSortState.key === key) { editSortState.asc = !editSortState.asc; }
     else { editSortState.key = key; editSortState.asc = true; }
+    markSortedHeader('#editTable thead', editSortState.key, editSortState.asc);
     renderEditTable();
 }
 
@@ -3948,9 +4454,20 @@ function handleImplementCSVImport(file) {
                 globalImplements.push(...added);
                 saveImplements();
                 if (!suppressCloudWrites && window.cloud?.isReady) {
+                    // A rejected import used to survive only on the importer's
+                    // device: the rows rendered as normal implements, existed
+                    // nowhere else, and vanished on the next snapshot with no
+                    // explanation. Roll the rows back out and say so instead.
+                    const addedIds = new Set(added.map(o => o.id));
                     window.cloud.saveImplements(added).catch(err => {
-                        console.error('[cloud] import implements failed:', err);
-                        showToast('Cloud sync gagal — data tersimpan lokal', 'warning');
+                        globalImplements = globalImplements.filter(o => !addedIds.has(o.id));
+                        saveImplements();
+                        renderImplementsTable();
+                        cloudWriteFailed(err, {
+                            what: `impor ${added.length} implement`,
+                            label: '[Implement] Import CSV',
+                            resync: resyncImplements
+                        });
                     });
                 }
                 logEvent({ action: 'add', unitName: '[Implement] Import CSV', after: `${added.length} implement` });
@@ -5615,9 +6132,19 @@ function handleLicenseCSVImport(file) {
                 globalLicenseStock.push(...added);
                 saveLicenseStockLocal();
                 if (!suppressCloudWrites && window.cloud?.isReady) {
+                    // Same rollback as the implements import above: a refused
+                    // batch must not keep rendering as if it had landed.
+                    const addedIds = new Set(added.map(o => o.id));
                     window.cloud.saveLicenses(added).catch(err => {
-                        console.error('[cloud] import licenses failed:', err);
-                        showToast('Cloud sync gagal — data tersimpan lokal', 'warning');
+                        globalLicenseStock = globalLicenseStock.filter(o => !addedIds.has(o.id));
+                        saveLicenseStockLocal();
+                        renderLicenseSummary();
+                        renderLicenseStockTable();
+                        cloudWriteFailed(err, {
+                            what: `impor ${added.length} transaksi lisensi`,
+                            label: '[Lisensi] Import CSV',
+                            resync: resyncLicenses
+                        });
                     });
                 }
                 logEvent({ action: 'add', unitName: '[Lisensi] Import CSV', after: `${added.length} transaksi` });
@@ -6074,6 +6601,10 @@ function seedDefaultUserCategoriesIfOwner() {
         name,
         createdAt: now
     }));
+    // Automatic background seed: guard without a toast, unlike the
+    // user-triggered paths. Nobody asked for this write, so nobody should be
+    // told it was skipped.
+    if (!window.cloud || !window.cloud.saveUserCategories) return;
     console.log('[user-categories] seeding 3 default categories...');
     window.cloud.saveUserCategories(defaults).then(() => {
         localStorage.setItem(USER_CATEGORIES_SEED_KEY, '1');
@@ -6173,7 +6704,7 @@ function addCategory(event) {
     input.value = '';
     cloudWrite(
         { action: 'add', unitName: '-', field: 'user category', after: name },
-        window.cloud.saveUserCategory(cat),
+        cloudCall('saveUserCategory', cat),
         `Kategori "${name}" ditambahkan`,
         err => {
         console.error('[user-categories] save failed:', err);
@@ -6200,7 +6731,7 @@ function deleteCategory(id) {
     if (!confirm(prompt)) return;
     cloudWrite(
         { action: 'delete', unitName: '-', field: 'user category', before: cat.name },
-        window.cloud.deleteUserCategory(id),
+        cloudCall('deleteUserCategory', id),
         `Kategori "${cat.name}" dihapus`,
         err => {
         console.error('[user-categories] delete failed:', err);
@@ -6248,6 +6779,7 @@ function seedDefaultDamageComponentsIfOwner() {
         createdAt: now
     }));
     console.log('[damage-components] seeding 4 default components...');
+    if (!window.cloud || !window.cloud.saveDamageComponents) return;
     window.cloud.saveDamageComponents(defaults).then(() => {
         localStorage.setItem(DAMAGE_COMPONENTS_SEED_KEY, '1');
     }).catch(err => {
@@ -6339,7 +6871,7 @@ function addDamageComponent(event) {
     input.value = '';
     cloudWrite(
         { action: 'add', unitName: '-', field: 'komponen kerusakan', after: name },
-        window.cloud.saveDamageComponent(comp),
+        cloudCall('saveDamageComponent', comp),
         `Komponen "${name}" ditambahkan`,
         err => {
         console.error('[damage-components] save failed:', err);
@@ -6365,7 +6897,7 @@ function deleteDamageComponent(id) {
     if (!confirm(prompt)) return;
     cloudWrite(
         { action: 'delete', unitName: '-', field: 'komponen kerusakan', before: comp.name },
-        window.cloud.deleteDamageComponent(id),
+        cloudCall('deleteDamageComponent', id),
         `Komponen "${comp.name}" dihapus`,
         err => {
         console.error('[damage-components] delete failed:', err);
@@ -6417,23 +6949,8 @@ function initCloudSync() {
                 }
             });
         }
-        if (window.cloud.subscribeHistory) {
-            cloudHistoryUnsub = window.cloud.subscribeHistory(events => {
-                cloudHistory = events || [];
-                clearRulesBanner('history');
-                // Re-render the history modal live if it's currently open
-                const modal = document.getElementById('historyModal');
-                if (modal && modal.classList.contains('open')) {
-                    showHistory(modal.dataset.unitId || undefined);
-                }
-            }, err => {
-                console.warn('[cloud] history offline:', err && err.code);
-                if (err && err.code === 'permission-denied') {
-                    showHistoryRulesBanner();
-                    showToast('History diblokir Firestore rules — buka History untuk perbaikan', 'warning');
-                }
-            });
-        }
+        // History is deliberately NOT subscribed here. See
+        // startHistorySubscription() for why.
         if (window.cloud.subscribeDamageComponents) {
             cloudDamageComponentsUnsub = window.cloud.subscribeDamageComponents(
                 applyCloudDamageComponentsSnapshot,
@@ -6589,6 +7106,9 @@ function tearDownCloudSync() {
     if (cloudLicenseUnsub) { try { cloudLicenseUnsub(); } catch (_) {} cloudLicenseUnsub = null; }
     if (cloudUsersUnsub) { try { cloudUsersUnsub(); } catch (_) {} cloudUsersUnsub = null; }
     if (cloudHistoryUnsub) { try { cloudHistoryUnsub(); } catch (_) {} cloudHistoryUnsub = null; }
+    // Claims belong to the session that made them; a new sign-in must not
+    // inherit them and warn about its own writes.
+    _shiftPendingWrites.clear();
     if (cloudUserCategoriesUnsub) { try { cloudUserCategoriesUnsub(); } catch (_) {} cloudUserCategoriesUnsub = null; }
     if (cloudDamageComponentsUnsub) { try { cloudDamageComponentsUnsub(); } catch (_) {} cloudDamageComponentsUnsub = null; }
     if (cloudDevicesUnsub) { try { cloudDevicesUnsub(); } catch (_) {} cloudDevicesUnsub = null; }
@@ -7127,6 +7647,9 @@ function applyAccessVisibility() {
     updateDecisionBadge();
     const navHistory = document.getElementById('navHistory');
     if (navHistory) navHistory.style.display = hasAccess('history', 'view') ? '' : 'none';
+    // The owner can change someone's access while they are signed in. Hiding
+    // the menu is not enough — the stream has to stop too.
+    if (!hasAccess('history', 'view')) stopHistorySubscription();
 
     // data-ro-<area>="1" whenever the user may NOT edit that area — including
     // no access at all, so the edit controls stay hidden even if the section
@@ -7160,6 +7683,11 @@ function requireEdit(area) {
 function ensureUsersSubscription() {
     if (!isOwner()) return;
     if (cloudUsersUnsub) return;
+    if (!window.cloud || !window.cloud.subscribeUsers) {
+        console.warn('[users] subscribeUsers tidak ada — firebase-init.js lama masih disajikan');
+        showToast(STALE_CLIENT_MSG, 'warning');
+        return;
+    }
     cloudUsersUnsub = window.cloud.subscribeUsers(users => {
         allUsers = users;
         if (currentView === 'users') renderUsersView();
@@ -7347,7 +7875,9 @@ async function saveAccess() {
         access[sel.dataset.area] = sel.value;
     });
     try {
-        await window.cloud.updateUserAccess(uid, access, currentUserDoc.email);
+        const fn = cloudFn('updateUserAccess');
+        if (!fn) return;
+        await fn(uid, access, currentUserDoc.email);
         logEvent({
             action: 'update',
             unitId: uid,
@@ -7477,7 +8007,9 @@ async function forceSignOutUser(uid) {
     const where = (sess && sess.device) ? `\n\nPerangkat aktif: ${sess.device}` : '';
     if (!confirm(`Keluarkan ${user.email} dari semua perangkat?${where}\n\nMereka harus masuk lagi. Data mereka tidak terhapus.`)) return;
     try {
-        await window.cloud.revokeUserSession(uid, currentUserDoc.email);
+        const fn = cloudFn('revokeUserSession');
+        if (!fn) return;
+        await fn(uid, currentUserDoc.email);
         logEvent({
             action: 'update',
             unitId: uid,
@@ -7768,6 +8300,7 @@ function applyCloudTeamMembersSnapshot(list) {
 }
 
 function applyCloudShiftsSnapshot(list) {
+    reportShiftOverwrites(list);
     teamShifts = list || [];
     if (currentView === 'team' && teamTab === 'shift') renderShiftGrid();
 }
@@ -7908,6 +8441,17 @@ function shiftFor(memberId, date) {
     return rec ? rec.shift : '';
 }
 
+// "Diisi Budi · 14 Sep 09:12" for the cell tooltip. Two people can edit the
+// same cell and the last one wins, so who set it is worth being able to see
+// without opening History.
+function shiftSetByLabel(memberId, date) {
+    const rec = teamShifts.find(s => s.id === `${date}_${memberId}`);
+    if (!rec || !rec.updatedBy) return '';
+    const when = rec.updatedAt ? new Date(rec.updatedAt).toLocaleString('id-ID',
+        { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+    return `Diisi ${rec.updatedBy}${when ? ' · ' + when : ''}`;
+}
+
 // ---- Shift subscription window ----
 // One document per person per day, forever: eight people make ~2,900 a year,
 // ~8,800 by year three, and every one of them was pulled down to draw a single
@@ -8003,8 +8547,10 @@ function renderShiftGrid() {
         const cells = dates.map(d => {
             const cur = shiftFor(m.id, d);
             const cls = `shift-cell${cur ? ' shift-cell--' + cur : ''}${d === today ? ' is-today' : ''}`;
+            const by = shiftSetByLabel(m.id, d);
+            const byAttr = by ? ` title="${escapeHtml(by)}"` : '';
             if (!canEdit) {
-                return `<td class="${cls}">${cur
+                return `<td class="${cls}"${byAttr}>${cur
                     ? `<span class="shift-badge shift-badge--${cur}">${escapeHtml(SHIFT_LABEL[cur] || cur)}</span>`
                     : '<span class="shift-empty">—</span>'}</td>`;
             }
@@ -8012,7 +8558,7 @@ function renderShiftGrid() {
                 SHIFT_TYPES.map(s =>
                     `<option value="${s.key}"${s.key === cur ? ' selected' : ''}>${escapeHtml(s.label)}</option>`)
             ).join('');
-            return `<td class="${cls}">
+            return `<td class="${cls}"${byAttr}>
                 <select class="shift-select shift-select--${cur || 'none'}"
                         aria-label="Shift ${escapeHtml(m.name)} tanggal ${escapeHtml(d)}"
                         onchange="setShift('${escapeHtml(m.id)}','${escapeHtml(d)}',this.value)">${opts}</select>
@@ -8044,6 +8590,44 @@ function renderShiftGrid() {
     }
 }
 
+// Cells this device has written and not yet seen confirmed. See setShift.
+const _shiftPendingWrites = new Map();
+const SHIFT_CLAIM_MS = 60000;
+
+function shiftActorName() {
+    if (!currentUser) return '';
+    return (currentUserDoc && currentUserDoc.displayName)
+        || currentUser.displayName
+        || (currentUser.email || '').split('@')[0]
+        || '';
+}
+
+// Compare the snapshot against what we just wrote. Anything that came back
+// different, from somebody else, is an overwrite the person needs to be told
+// about — silently flipping the grid under them is how a supervisor ends up
+// believing a shift is set when it is not.
+function reportShiftOverwrites(list) {
+    if (_shiftPendingWrites.size === 0) return;
+    const now = Date.now();
+    const byId = new Map((list || []).map(s => [s.id, s]));
+    const myUid = (currentUser && currentUser.uid) || '';
+    _shiftPendingWrites.forEach((mine, id) => {
+        if (now - mine.at > SHIFT_CLAIM_MS) { _shiftPendingWrites.delete(id); return; }
+        if (!byId.has(id) && mine.shift === '') { _shiftPendingWrites.delete(id); return; }
+        const server = byId.get(id);
+        const serverShift = server ? (server.shift || '') : '';
+        if (serverShift === mine.shift) { _shiftPendingWrites.delete(id); return; }
+        // Different value — but only shout if somebody else put it there.
+        // Our own pending write simply has not landed yet.
+        if (server && server.updatedByUid && server.updatedByUid !== myUid) {
+            const who = server.updatedBy || 'orang lain';
+            const label = serverShift ? (SHIFT_LABEL[serverShift] || serverShift) : 'kosong';
+            showToast(`Jadwal ${mine.memberName} ${mine.date} baru diubah ${who} menjadi ${label}`, 'warning');
+            _shiftPendingWrites.delete(id);
+        }
+    });
+}
+
 function setShift(memberId, date, shiftKey) {
     if (!requireEdit('teamShift')) { renderShiftGrid(); return; }
     const m = memberById(memberId);
@@ -8065,9 +8649,22 @@ function setShift(memberId, date, shiftKey) {
         memberName: m.name,
         shift: shiftKey,
         createdAt: prev ? (prev.createdAt || Date.now()) : Date.now(),
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
+        // Who last touched this cell. The shift document id is deterministic
+        // (`${date}_${memberId}`), so two supervisors editing the same person
+        // on the same day write the same document and the later one wins with
+        // no warning to either. A real merge needs transactions and is bigger
+        // than the problem; knowing you were overwritten is what was missing.
+        updatedBy: shiftActorName(),
+        updatedByUid: (currentUser && currentUser.uid) || ''
     } : null;
     if (rec) teamShifts.push(rec);
+    // Remember what we just sent, so the snapshot coming back can be compared
+    // against it. Cleared as soon as it is checked, or after SHIFT_CLAIM_MS.
+    _shiftPendingWrites.set(id, {
+        shift: shiftKey || '', at: Date.now(),
+        memberName: m.name, date
+    });
     renderShiftGrid();
 
     if (!window.cloud || !window.cloud.saveShift) {
@@ -8079,10 +8676,11 @@ function setShift(memberId, date, shiftKey) {
 
     cloudWrite(
         { action: 'update', unitName: `[Tim] ${m.name}`, field: `Shift ${date}`, before, after },
-        rec ? window.cloud.saveShift(rec) : window.cloud.deleteShift(id),
+        rec ? cloudCall('saveShift', rec) : cloudCall('deleteShift', id),
         null,
         err => {
             console.error('[team] shift save failed:', err);
+            _shiftPendingWrites.delete(id);
             teamShifts = snapshot;
             renderShiftGrid();
             if (err && err.code === 'permission-denied') showTeamRulesBanner();
@@ -8195,7 +8793,7 @@ function setMemberCompany(id, value) {
     cloudWrite(
         { action: 'update', unitName: `[Tim] ${m.name}`, field: 'Perusahaan',
           before: before || '—', after: company || '—' },
-        window.cloud.saveTeamMember(rec),
+        cloudCall('saveTeamMember', rec),
         null,
         err => {
             console.error('[team] company save failed:', err);
@@ -8225,7 +8823,7 @@ function addTeamMember(event) {
     const rec = { id: generateMemberId(), name, jobTitle, company, active: true, createdAt: Date.now() };
     cloudWrite(
         { action: 'create', unitName: `[Tim] ${name}`, field: 'Anggota', before: '', after: jobTitle || name },
-        window.cloud.saveTeamMember(rec),
+        cloudCall('saveTeamMember', rec),
         `Anggota "${name}" ditambahkan`,
         err => {
             console.error('[team] member save failed:', err);
@@ -8249,7 +8847,7 @@ function toggleTeamMember(id) {
         { action: 'update', unitName: `[Tim] ${m.name}`, field: 'Status anggota',
           before: m.active === false ? 'Nonaktif' : 'Aktif',
           after: nextActive ? 'Aktif' : 'Nonaktif' },
-        window.cloud.saveTeamMember({ ...m, active: nextActive, updatedAt: Date.now() }),
+        cloudCall('saveTeamMember', { ...m, active: nextActive, updatedAt: Date.now() }),
         null,
         err => {
             console.error('[team] member toggle failed:', err);
@@ -8274,7 +8872,7 @@ function deleteTeamMember(id) {
 
     cloudWrite(
         { action: 'delete', unitName: `[Tim] ${m.name}`, field: 'Anggota', before: m.jobTitle || m.name, after: '' },
-        window.cloud.deleteTeamMember(id),
+        cloudCall('deleteTeamMember', id),
         `Anggota "${m.name}" dihapus`,
         err => {
             console.error('[team] member delete failed:', err);
@@ -8800,7 +9398,7 @@ function saveWorkLog(event) {
             before: existing ? (existing.task || '') : '',
             after: rec.task
         },
-        window.cloud.saveWorkLog(rec),
+        cloudCall('saveWorkLog', rec),
         wasApproved
             ? 'Laporan diperbarui — persetujuan dibatalkan, perlu diperiksa ulang'
             : (existing ? 'Laporan diperbarui' : 'Laporan harian ditambahkan'),
@@ -8851,7 +9449,7 @@ function deleteWorkLog(id) {
         { action: 'delete', unitId: w.unitId || '',
           unitName: `[Laporan] ${memberNameOf(w)}`,
           field: `Laporan ${w.date}`, before: w.task || '', after: '' },
-        window.cloud.deleteWorkLog(id),
+        cloudCall('deleteWorkLog', id),
         'Laporan dihapus',
         err => {
             console.error('[team] work log delete failed:', err);
@@ -8888,7 +9486,7 @@ function approveWorkLog(id) {
           field: `Persetujuan ${rec.date}`,
           before: APPROVAL_STATES[workLogApproval(w)].label,
           after: 'Disetujui' },
-        window.cloud.saveWorkLog(rec),
+        cloudCall('saveWorkLog', rec),
         'Laporan disetujui',
         err => {
             console.error('[team] approve failed:', err);
@@ -8931,7 +9529,7 @@ function reviseWorkLog(id) {
           field: `Persetujuan ${rec.date}`,
           before: APPROVAL_STATES[workLogApproval(w)].label,
           after: `Perlu Revisi — ${rec.revisionNote}` },
-        window.cloud.saveWorkLog(rec),
+        cloudCall('saveWorkLog', rec),
         'Laporan ditandai perlu revisi',
         err => {
             console.error('[team] revise failed:', err);
@@ -9340,7 +9938,7 @@ function saveDevice(event) {
             before: existing ? `${DEVICE_STATUS_LABEL[existing.status] || existing.status} · ${deviceWhere(existing)}` : '',
             after: `${DEVICE_STATUS_LABEL[rec.status] || rec.status} · ${deviceWhere(rec)}`
         },
-        window.cloud.saveDevice(rec),
+        cloudCall('saveDevice', rec),
         existing ? 'Perangkat diperbarui' : 'Perangkat ditambahkan',
         err => {
             console.error('[warehouse] device save failed:', err);
@@ -9363,7 +9961,7 @@ function deleteDevice(id) {
           field: 'Perangkat',
           before: `${DEVICE_STATUS_LABEL[d.status] || d.status} · ${deviceWhere(d)}`,
           after: '' },
-        window.cloud.deleteDevice(id),
+        cloudCall('deleteDevice', id),
         'Perangkat dihapus',
         err => {
             console.error('[warehouse] device delete failed:', err);
@@ -9610,7 +10208,7 @@ function saveStockItem(event) {
             before: existing ? `${existing.txnType} ${existing.qty}` : '',
             after: `${txnType} ${qty}${rec.location ? ' @ ' + rec.location : ''}`
         },
-        window.cloud.saveStockItem(rec),
+        cloudCall('saveStockItem', rec),
         existing ? 'Transaksi diperbarui' : 'Transaksi dicatat',
         err => {
             console.error('[warehouse] stock save failed:', err);
@@ -9633,7 +10231,7 @@ function deleteStockItem(id) {
           field: 'Transaksi stok',
           before: `${r.txnType} ${r.qty}`,
           after: '' },
-        window.cloud.deleteStockItem(id),
+        cloudCall('deleteStockItem', id),
         'Transaksi dihapus',
         err => {
             console.error('[warehouse] stock delete failed:', err);

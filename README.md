@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-625 pemeriksaan di delapan belas suite, menggerakkan Chromium sungguhan terhadap
+716 pemeriksaan di dua puluh suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -105,7 +105,8 @@ CHROME_PATH=/jalur/ke/chrome npm test
 Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 `session_test`, `warehouse_test`, `approval_test`, `leader_test`, `recap_test`,
 `photos_test`, `migration_test`, `history_scan_test`, `validation_test`,
-`datacheck_test`, `damagephotos_test`, `mobile_test`, `window_test`, `regress`.
+`datacheck_test`, `damagephotos_test`, `mobile_test`, `window_test`,
+`backup_test`, `keyboard_test`, `regress`.
 
 ---
 
@@ -212,3 +213,48 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 - **Data yang disalin** (nama anggota, nama unit, perusahaan) selalu punya
   jalur baca yang mengutamakan data hidup dan jatuh ke salinan hanya kalau
   aslinya sudah terhapus.
+- **Cadangan itu satu tabel, bukan daftar yang ditulis dua kali.** `BACKUP_PARTS`
+  (`script.js`) menggerakkan ekspor **dan** restore sekaligus. Koleksi baru =
+  satu baris di sana. Jangan pernah menambah koleksi ke `exportBackup` saja:
+  selama tiga versi berkasnya berisi empat koleksi dari lima belas sementara
+  tombolnya berjudul *"full JSON backup"*, dan seluruh modul Tim dan Gudang
+  tidak punya cadangan sama sekali.
+  - `fullRead` ada untuk koleksi yang salinan di memorinya **sengaja tidak
+    lengkap**. `shifts` hanya memuat jendela 120 hari, jadi mencadangkannya
+    dari `teamShifts` menghasilkan berkas yang terlihat utuh dan tidak — dan
+    restore mode GANTI yang dihitung dari larik itu akan menghapus setiap shift
+    di luar jendela.
+  - `users` dan `history` **sengaja** tidak ikut. Lihat `BACKUP_EXCLUDED`;
+    alasannya ikut ditampilkan di laporan restore supaya tidak jadi misteri.
+  - Laporan restore wajib menyebut koleksi yang **tidak ada di berkas**. Itu
+    baris yang paling penting: restore yang diam-diam mencakup lebih sedikit
+    dari yang disangka orang adalah kegagalan yang modal itu ada untuk dicegah.
+- **Jangan memanggil `window.cloud.X()` telanjang.** Service worker menyajikan
+  `firebase-init.js` network-first tapi jatuh ke cache saat fetch gagal —
+  yaitu saat sinyal buruk, yaitu saat orang menyimpan. Pakai `cloudFn('X')`
+  (mengembalikan `null` + toast) atau, di posisi argumen `cloudWrite(...)`,
+  `cloudCall('X', ...)` yang menolak dengan `code: 'stale-client'` alih-alih
+  melempar `TypeError` keluar dari handler klik.
+- **Sel tabel tanpa `data-label` itu `display:none` di ponsel.** Di tabel
+  `table--cardable`, `style.css` menyembunyikan setiap `<td>` yang tidak
+  membawanya. Kolom yang lupa dilabeli tidak terlihat rusak — ia hanya **hilang**
+  di perangkat yang justru dipakai tim lapangan. Dua sel di Edit Units sengaja
+  tanpa label (nomor baris dan kotak centang); sisanya wajib. Ada ujinya di
+  `mobile_test`.
+- **Modal baru wajib didaftarkan di `MODAL_CLOSERS`.** Escape menutup modal
+  paling atas lewat peta itu; `keyboard_test` gagal kalau ada modal yang lupa.
+  Header tabel yang bisa diurut butuh `tabindex="0" role="button"` — penangan
+  Enter/Spasi-nya sudah terdelegasi, jadi tidak perlu `onkeydown` per header.
+- **Riwayat audit dilanggan malas dan digerbang.** `startHistorySubscription()`
+  baru jalan saat History dibuka, dan hanya untuk `hasAccess('history','view')`.
+  Dulu ia jalan untuk semua orang saat login: 500 dokumen berisi nama dan email
+  pelaku, termasuk ke akun yang menu History-nya memang disembunyikan.
+- **Id dokumen shift itu deterministik** (`tanggal_anggota`), jadi dua orang
+  bisa saling menimpa. Tidak ada merge — yang ada adalah `updatedBy` di
+  dokumennya dan `_shiftPendingWrites`, supaya yang kalah **diberi tahu**
+  alih-alih melihat gridnya berubah sendiri.
+- **Cadangan otomatis (`BACKUP_RING_KEY`) sekarang ada yang membacanya.**
+  Isinya **hanya unit** dan **hanya perangkat ini** — bukan pengganti tombol
+  Backup. Pemulihannya lewat jalur yang sama dengan restore berkas, termasuk
+  `cloudPushUnits`, karena rollback lokal saja akan dibatalkan snapshot
+  berikutnya.
