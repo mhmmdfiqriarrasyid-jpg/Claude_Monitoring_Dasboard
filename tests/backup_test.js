@@ -62,6 +62,8 @@ const { launch, BASE_URL } = require('./_env');
             saveImplements: mk('implements'), saveDamages: mk('damages'), saveLicenses: mk('licenses'),
             saveUserCategories: mk('userCategories'), saveDamageComponents: mk('damageComponents'),
             saveTeamMembers: mk('teamMembers'), saveShifts: mk('shifts'),
+            saveLeaveRequests: mk('leaveRequests'),
+            deleteLeaveRequest: id => { deleted.push('lv:' + id); return Promise.resolve(); },
             saveWorkLogs: mk('workLogs'), saveDevices: mk('devices'), saveStockItems: mk('stockItems'),
             deleteImplement: id => { deleted.push('impl:' + id); return Promise.resolve(); },
             deleteShift: id => { deleted.push('shift:' + id); return Promise.resolve(); },
@@ -84,6 +86,8 @@ const { launch, BASE_URL } = require('./_env');
         teamMembers       = [{ id: 'm1', name: 'Andi', company: 'PT. GPA', active: true }];
         teamShifts        = [serverShifts[1]];          // hanya yang di dalam jendela
         workLogs          = [{ id: 'w1', date: '2026-09-14', memberId: 'm1', task: 'x' }];
+        leaveRequests     = [{ id: 'lv1', memberId: 'm1', type: 'izin',
+                               dateFrom: '2026-09-15', dateTo: '2026-09-15', days: 1, approval: 'pending' }];
         warehouseDevices  = [{ id: 'dev1', sn: 'D1', status: 'warehouse' }];
         stockLedger       = [{ id: 'st1', itemName: 'Oli', txnType: 'IN', qty: 5 }];
 
@@ -101,6 +105,7 @@ const { launch, BASE_URL } = require('./_env');
         t('komponen kerusakan ikut', isi('damageComponents'), 1);
         t('anggota tim ikut', isi('teamMembers'), 1);
         t('laporan harian ikut', isi('workLogs'), 1);
+        t('izin / sakit ikut', isi('leaveRequests'), 1);
         t('perangkat gudang ikut', isi('devices'), 1);
         t('stok barang ikut', isi('stockItems'), 1);
 
@@ -129,7 +134,7 @@ const { launch, BASE_URL } = require('./_env');
         t('tanpa akses tim, koleksi tim tidak ikut', 'teamMembers' in exported, false);
         t('dan berkasnya mengakui apa yang tidak ada di dalamnya',
           exported.omitted.map(o => o.key).sort(),
-          ['devices', 'shifts', 'stockItems', 'teamMembers', 'workLogs']);
+          ['devices', 'leaveRequests', 'shifts', 'stockItems', 'teamMembers', 'workLogs']);
         t('toastnya menyebut yang tidak termasuk',
           toasts.some(m => /TIDAK termasuk/.test(m)), true);
 
@@ -153,7 +158,7 @@ const { launch, BASE_URL } = require('./_env');
         // v3 hanya membawa implement, kerusakan, dan stok lisensi — tujuh
         // koleksi lainnya tidak ada di dalamnya, dan ketujuhnya harus tertulis.
         t('koleksi yang tidak ada di berkas DILAPORKAN, bukan didiamkan',
-          barisLaporan.filter(x => /tidak ada di berkas ini/.test(x)).length, 7);
+          barisLaporan.filter(x => /tidak ada di berkas ini/.test(x)).length, 8);
         t('anggota tim termasuk yang dilaporkan hilang',
           barisLaporan.some(x => /Anggota Tim.*tidak ada di berkas ini/.test(x)), true);
         t('peringatan cadangan lama tampil',
@@ -175,6 +180,8 @@ const { launch, BASE_URL } = require('./_env');
         v4.teamMembers = [{ id: 'm1', name: 'Andi', company: 'PT. GPA', active: true }];
         v4.shifts = serverShifts.slice();
         v4.workLogs = [{ id: 'w1', date: '2026-09-14', memberId: 'm1', task: 'x' }];
+        v4.leaveRequests = [{ id: 'lv1', memberId: 'm1', type: 'izin',
+                              dateFrom: '2026-09-15', dateTo: '2026-09-15', days: 1, approval: 'pending' }];
         v4.devices = [{ id: 'dev1', sn: 'D1', status: 'warehouse' }];
         v4.stockItems = [{ id: 'st1', itemName: 'Oli', txnType: 'IN', qty: 5 }];
         v4.userCategories = [{ id: 'c1', name: 'Harvest' }];
@@ -196,6 +203,8 @@ const { launch, BASE_URL } = require('./_env');
           (written.shifts || []).length, 2);
         t('gudang benar-benar ditulis ke cloud',
           [(written.devices || []).length, (written.stockItems || []).length], [1, 1]);
+        t('izin / sakit benar-benar ditulis ke cloud',
+          (written.leaveRequests || []).length, 1);
         const barisV4 = [...document.querySelectorAll('#restoreReportBody tr')]
             .map(tr => tr.textContent.replace(/\\s+/g, ' ').trim());
         t('tidak ada lagi koleksi yang hilang dari berkas v4',

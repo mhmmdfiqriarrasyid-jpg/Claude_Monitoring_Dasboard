@@ -107,6 +107,11 @@ const WORK_LOGS_COL = 'workLogs';
 // Field documentation lives in its own collection, one document per work
 // log, and is deliberately never subscribed — see getWorkLogPhotos below.
 const WORK_LOG_PHOTOS_COL = 'workLogPhotos';
+// Leave / sick-day requests. A separate collection from workLogs on purpose:
+// a leave record has a date RANGE and an approval of its own, and folding it
+// into the work log would pollute every work-log figure — total hours, "who
+// reported today", the CSV, the decision inbox.
+const LEAVE_COL = 'leaveRequests';
 // Same again for damage records — one document per record, never subscribed.
 const DAMAGE_PHOTOS_COL = 'damagePhotos';
 
@@ -615,6 +620,39 @@ window.cloud = {
         );
     },
 
+    // ---- Leave / sick-day requests ----
+    // Subscribed whole, with no date window, and that is deliberate. A request
+    // waiting for approval can be any age, so a window would hide exactly the
+    // rows the decision inbox exists to surface. The volume is also a different
+    // class from shifts: eight people filing a few requests a month is roughly
+    // 200 documents a year, about 25x smaller than workLogs, which is already
+    // subscribed whole. Revisit past ~2,000 documents and window it the way
+    // subscribeShifts does.
+    async saveLeaveRequest(rec) {
+        await setDoc(doc(db, LEAVE_COL, rec.id), rec, { merge: true });
+    },
+    async saveLeaveRequests(items) {
+        if (!items || !items.length) return;
+        await batchInChunks(items, (batch, r) => batch.set(doc(db, LEAVE_COL, r.id), r, { merge: true }));
+    },
+    async deleteLeaveRequest(id) {
+        await deleteDoc(doc(db, LEAVE_COL, id));
+    },
+    async getAllLeaveRequests() {
+        const snap = await getDocs(collection(db, LEAVE_COL));
+        return snap.docs.map(d => d.data());
+    },
+    subscribeLeaveRequests(callback, errorCallback) {
+        return onSnapshot(
+            query(collection(db, LEAVE_COL), orderBy('dateFrom', 'desc')),
+            snap => callback(snap.docs.map(d => d.data())),
+            err => {
+                console.error('[cloud] leaveRequests subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
+    },
+
     // ---- Field documentation photos ----
     // These live apart from the work log on purpose. Photos are stored as data
     // URLs, and subscribeWorkLogs above streams the WHOLE collection with no
@@ -635,6 +673,19 @@ window.cloud = {
     async deleteWorkLogPhotos(id) {
         await deleteDoc(doc(db, WORK_LOG_PHOTOS_COL, id));
     },
+
+    // Scanned letters attached to a leave request live in the SAME collection.
+    // The name is historical — it predates this feature — but the shape is
+    // identical ({ id, photos[], updatedAt }), the id is the parent record's
+    // id, and the rules on it are already canEditArea('teamLog'), which is
+    // exactly the area a leave request uses. Giving the letters a collection of
+    // their own would have added a fourth path waiting on a rules publish, all
+    // failing with the same indistinguishable permission-denied.
+    //
+    // Ids cannot collide: work logs are wl_..., leave requests are lv_...
+    async getTeamDocs(id)         { return this.getWorkLogPhotos(id); },
+    async saveTeamDocs(id, pages) { return this.saveWorkLogPhotos(id, pages); },
+    async deleteTeamDocs(id)      { return this.deleteWorkLogPhotos(id); },
 
     // Damage photos, same arrangement and for the same reason: damageRecords is
     // subscribed whole with no limit(), so an inline photo was re-downloaded by

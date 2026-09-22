@@ -57,6 +57,8 @@ let cloudShiftsUnsub = null;
 let teamShifts = [];                 // [{ id:`${date}_${memberId}`, date, memberId, shift }]
 let cloudWorkLogsUnsub = null;
 let workLogs = [];                   // [{ id, date, memberId, start, end, unitId, task, issue }]
+let cloudLeaveUnsub = null;
+let leaveRequests = [];              // [{ id, memberId, type, dateFrom, dateTo, days, reason, approval }]
 
 // ---- Warehouse (cloud-only, same pattern as the team collections) ----
 let cloudDevicesUnsub = null;
@@ -81,7 +83,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v107';
+const APP_VERSION = 'v108';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -440,6 +442,7 @@ const MODAL_CLOSERS = {
     accessModal:          'closeAccessModal',
     teamMembersModal:     'closeTeamMembersModal',
     workLogModal:         'closeWorkLogModal',
+    leaveModal:           'closeLeaveModal',
     deviceModal:          'closeDeviceModal',
     stockModal:           'closeStockModal',
     // Not a plain dismissal: an abandoned breakdown reason has to put the
@@ -1916,6 +1919,10 @@ const BACKUP_PARTS = [
     { key: 'workLogs', label: 'Laporan Harian', area: 'teamLog',
       read: () => workLogs, write: l => { workLogs = l; },
       bulk: 'saveWorkLogs', deleteOne: id => window.cloud.deleteWorkLog(id) },
+
+    { key: 'leaveRequests', label: 'Izin / Sakit', area: 'teamLog',
+      read: () => leaveRequests, write: l => { leaveRequests = l; },
+      bulk: 'saveLeaveRequests', deleteOne: id => window.cloud.deleteLeaveRequest(id) },
 
     { key: 'devices', label: 'Perangkat Gudang', area: 'warehouse',
       read: () => warehouseDevices, write: l => { warehouseDevices = l; },
@@ -6999,6 +7006,15 @@ function initCloudSync() {
                 }
             );
         }
+        if (window.cloud.subscribeLeaveRequests) {
+            cloudLeaveUnsub = window.cloud.subscribeLeaveRequests(
+                applyCloudLeaveSnapshot,
+                err => {
+                    console.warn('[cloud] leaveRequests offline:', err && err.code);
+                    if (err && err.code === 'permission-denied') showTeamRulesBanner();
+                }
+            );
+        }
         if (window.cloud.subscribeUserCategories) {
             cloudUserCategoriesUnsub = window.cloud.subscribeUserCategories(
                 applyCloudUserCategoriesSnapshot,
@@ -7119,9 +7135,12 @@ function tearDownCloudSync() {
     if (cloudShiftsUnsub) { try { cloudShiftsUnsub(); } catch (_) {} cloudShiftsUnsub = null; }
     _shiftWindowStart = '';
     if (cloudWorkLogsUnsub) { try { cloudWorkLogsUnsub(); } catch (_) {} cloudWorkLogsUnsub = null; }
+    if (cloudLeaveUnsub) { try { cloudLeaveUnsub(); } catch (_) {} cloudLeaveUnsub = null; }
     teamMembers = [];
     teamShifts = [];
     workLogs = [];
+    leaveRequests = [];
+    _leaveDocCache.clear();
     cloudHistory = [];
     userCategories = [];
     _firstUserCategoriesSnapshot = true;
@@ -8391,25 +8410,40 @@ function showTeamRulesBanner() {
 }
 
 // ---- View shell ----
+// One map instead of the ternary that used to be here. That ternary read
+// `tab === 'shift' ? canShift : canLog`, so anything that was not 'shift' fell
+// through to canLog — correct by accident for two tabs, and silently wrong for
+// the next one.
+const TEAM_TABS = {
+    shift:   { area: 'teamShift', panel: 'teamShiftPanel',   render: () => renderShiftGrid() },
+    worklog: { area: 'teamLog',   panel: 'teamWorkLogPanel', render: () => renderWorkLogTable() },
+    leave:   { area: 'teamLog',   panel: 'teamLeavePanel',   render: () => renderLeaveTable() }
+};
+
 function switchTeamTab(tab) {
-    teamTab = (tab === 'worklog') ? 'worklog' : 'shift';
+    teamTab = TEAM_TABS[tab] ? tab : 'shift';
     renderTeamView();
 }
 
 function renderTeamView() {
-    const canShift = hasAccess('teamShift', 'view');
-    const canLog = hasAccess('teamLog', 'view');
+    const canTab = key => {
+        const t = TEAM_TABS[key];
+        return !!t && hasAccess(t.area, 'view');
+    };
     const canMembers = hasAccess('teamMembers', 'view');
+    const anyTab = Object.keys(TEAM_TABS).some(canTab);
 
     // Land on a tab the user can actually open — the page is reachable through
-    // any one of the three areas, so the stored tab may not be permitted.
-    if (teamTab === 'shift' && !canShift && canLog) teamTab = 'worklog';
-    if (teamTab === 'worklog' && !canLog && canShift) teamTab = 'shift';
+    // any one of the areas, so the stored tab may not be permitted.
+    if (!canTab(teamTab)) {
+        teamTab = Object.keys(TEAM_TABS).find(canTab) || teamTab;
+    }
 
     document.querySelectorAll('.team-tab').forEach(btn => {
-        const allowed = btn.dataset.tab === 'shift' ? canShift : canLog;
+        const key = btn.dataset.tab;
+        const allowed = canTab(key);
         btn.style.display = allowed ? '' : 'none';
-        const on = allowed && btn.dataset.tab === teamTab;
+        const on = allowed && key === teamTab;
         btn.classList.toggle('active', on);
         btn.setAttribute('aria-selected', on ? 'true' : 'false');
     });
@@ -8417,19 +8451,18 @@ function renderTeamView() {
     const membersBtn = document.getElementById('btnTeamMembers');
     if (membersBtn) membersBtn.style.display = canMembers ? '' : 'none';
 
-    const shiftPanel = document.getElementById('teamShiftPanel');
-    const logPanel = document.getElementById('teamWorkLogPanel');
-    const emptyPanel = document.getElementById('teamNoPanel');
-    const showShift = canShift && teamTab === 'shift';
-    const showLog = canLog && teamTab === 'worklog';
-    if (shiftPanel) shiftPanel.style.display = showShift ? '' : 'none';
-    if (logPanel) logPanel.style.display = showLog ? '' : 'none';
-    // Reachable via Daftar Anggota alone — neither tab is permitted, so say so
-    // instead of showing two blank panels.
-    if (emptyPanel) emptyPanel.style.display = (!canShift && !canLog) ? '' : 'none';
+    Object.entries(TEAM_TABS).forEach(([key, t]) => {
+        const panel = document.getElementById(t.panel);
+        if (panel) panel.style.display = (canTab(key) && key === teamTab) ? '' : 'none';
+    });
 
-    if (showShift) renderShiftGrid();
-    if (showLog) renderWorkLogTable();
+    // Reachable via Daftar Anggota alone — no tab is permitted, so say so
+    // instead of showing blank panels.
+    const emptyPanel = document.getElementById('teamNoPanel');
+    if (emptyPanel) emptyPanel.style.display = anyTab ? 'none' : '';
+
+    const active = TEAM_TABS[teamTab];
+    if (active && canTab(teamTab)) active.render();
 }
 
 // ============================================================
@@ -8548,9 +8581,22 @@ function renderShiftGrid() {
             const cur = shiftFor(m.id, d);
             const cls = `shift-cell${cur ? ' shift-cell--' + cur : ''}${d === today ? ' is-today' : ''}`;
             const by = shiftSetByLabel(m.id, d);
-            const byAttr = by ? ` title="${escapeHtml(by)}"` : '';
+            // Izin/sakit yang sudah disetujui ditandai DI SAMPING pilihan
+            // shift, tidak menggantikannya. Menulis otomatis ke koleksi shifts
+            // akan menimpa jadwal yang sudah diisi — dan koleksi itu berjendela
+            // 120 hari, jadi izin yang lebih lama tidak punya sel untuk ditulisi
+            // sama sekali. Jadwalnya tetap milik penyusun jadwal.
+            const lv = leaveOn(m.id, d);
+            const lvBadge = lv
+                ? `<span class="shift-leave shift-leave--${escapeHtml(lv.type || 'izin')}">${escapeHtml(leaveTypeLabel(lv))}</span>`
+                : '';
+            const lvNote = lv
+                ? `${leaveTypeLabel(lv)} ${leaveRangeLabel(lv)}${lv.reason ? ' — ' + lv.reason : ''}`
+                : '';
+            const tip = [by, lvNote].filter(Boolean).join(' · ');
+            const byAttr = tip ? ` title="${escapeHtml(tip)}"` : '';
             if (!canEdit) {
-                return `<td class="${cls}"${byAttr}>${cur
+                return `<td class="${cls}"${byAttr}>${lvBadge}${cur
                     ? `<span class="shift-badge shift-badge--${cur}">${escapeHtml(SHIFT_LABEL[cur] || cur)}</span>`
                     : '<span class="shift-empty">—</span>'}</td>`;
             }
@@ -8558,7 +8604,7 @@ function renderShiftGrid() {
                 SHIFT_TYPES.map(s =>
                     `<option value="${s.key}"${s.key === cur ? ' selected' : ''}>${escapeHtml(s.label)}</option>`)
             ).join('');
-            return `<td class="${cls}"${byAttr}>
+            return `<td class="${cls}"${byAttr}>${lvBadge}
                 <select class="shift-select shift-select--${cur || 'none'}"
                         aria-label="Shift ${escapeHtml(m.name)} tanggal ${escapeHtml(d)}"
                         onchange="setShift('${escapeHtml(m.id)}','${escapeHtml(d)}',this.value)">${opts}</select>
@@ -9025,7 +9071,19 @@ function renderWorkLogTable() {
     const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     setText('wlKpiCount', rows.length);
     setText('wlKpiHours', formatMinutes(totalMin));
-    setText('wlKpiToday', `${reportedToday} / ${activeCount}`);
+    // Orang yang izin/sakitnya sudah disetujui hari ini dikeluarkan dari
+    // penyebutnya. Sebelumnya mereka terbaca sebagai orang yang lalai melapor,
+    // padahal ketidakhadirannya justru sudah dicatat dan disetujui.
+    const onLeaveToday = [...membersOnLeave(today)]
+        .filter(id => activeMembers().some(m => m.id === id)).length;
+    const expected = Math.max(0, activeCount - onLeaveToday);
+    setText('wlKpiToday', `${reportedToday} / ${expected}`);
+    const todaySub = document.getElementById('wlKpiTodaySub');
+    if (todaySub) {
+        todaySub.textContent = onLeaveToday
+            ? `Anggota aktif yang sudah melapor · ${onLeaveToday} izin/sakit`
+            : 'Anggota aktif yang sudah melapor';
+    }
     // Counts the whole log, not the filtered slice: a backlog you have filtered
     // out of sight is exactly the backlog worth showing.
     setText('wlKpiPending', workLogs.filter(w => workLogApproval(w) === 'pending').length);
@@ -9040,7 +9098,7 @@ function renderWorkLogTable() {
                       (document.getElementById('wlSearch')?.value || '');
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--text-secondary)">${
             hasFilter ? 'Tidak ada laporan yang cocok dengan filter'
                       : 'Belum ada laporan harian. Klik <strong>Tambah Laporan</strong> untuk mulai.'
         }</td></tr>`;
@@ -9583,6 +9641,650 @@ function workLogsForUnit(unitId, sn) {
     return workLogs.filter(w => workLogUnits(w).some(u =>
         (unitId && u.id === unitId) || (snLc && (u.sn || '').toLowerCase() === snLc)
     ));
+}
+
+// ============================================================
+// IZIN / SAKIT — leave and sick-day requests
+// ------------------------------------------------------------
+// A third team record, alongside the shift schedule and the daily report.
+// It exists because the schedule's 'libur' cell cannot answer the questions
+// that matter here: it has no date range, no scanned letter, no note and no
+// approval — it is one enum value on one day.
+//
+// Access rides on the SAME two areas as the daily report: teamLog to file one,
+// teamLogApprove to approve one. The people are the same people and the
+// approver is the same approver, so there is no new permission to hand out.
+//
+// Scanned letters go to the workLogPhotos collection (see the getTeamDocs
+// aliases in firebase-init.js) — same shape, same area, and no fourth path
+// waiting on a rules publish.
+// ============================================================
+
+// Stored as KEYS, never as the label. Translating or rewording a label must
+// not rewrite what is in the database — the Good/Breakdown values elsewhere in
+// this app are the cautionary example.
+const LEAVE_TYPES = [
+    { key: 'izin',  label: 'Izin',                   tone: 'info',    needsDoc: true  },
+    { key: 'sakit', label: 'Sakit',                  tone: 'warning', needsDoc: true  },
+    { key: 'alpa',  label: 'Alpa (tanpa keterangan)', tone: 'danger', needsDoc: false }
+];
+const LEAVE_LABEL = LEAVE_TYPES.reduce((m, t) => { m[t.key] = t.label; return m; }, {});
+const LEAVE_DOC_MAX = 4;                       // lembar surat per pengajuan
+const LEAVE_LONG_DAYS = 30;                    // di atas ini, minta konfirmasi
+
+function generateLeaveId() {
+    return 'lv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+}
+
+function leaveTypeLabel(rec) {
+    return LEAVE_LABEL[rec && rec.type] || (rec && rec.type) || '-';
+}
+
+function leaveTypeTone(rec) {
+    const t = LEAVE_TYPES.find(x => x.key === (rec && rec.type));
+    return t ? t.tone : 'info';
+}
+
+// Both ends inclusive: a request for the 5th to the 5th is one day, not zero.
+function leaveDays(from, to) {
+    const a = parseLocalDate(from);
+    const b = parseLocalDate(to || from);
+    if (!a || !b) return 0;
+    const n = Math.round((b - a) / 86400000) + 1;
+    return n > 0 ? n : 0;
+}
+
+function leaveCovers(rec, date) {
+    if (!rec || !rec.dateFrom || !date) return false;
+    return date >= rec.dateFrom && date <= (rec.dateTo || rec.dateFrom);
+}
+
+// Only APPROVED requests count as being away. A pending one is a claim, not a
+// fact, and letting it mark the schedule would let anyone empty the roster by
+// filing a request nobody has looked at yet.
+function leaveOn(memberId, date) {
+    return leaveRequests.find(r =>
+        r.memberId === memberId &&
+        workLogApproval(r) === 'approved' &&
+        leaveCovers(r, date)) || null;
+}
+
+function membersOnLeave(date) {
+    const d = date || toISODate();
+    return new Set(leaveRequests
+        .filter(r => workLogApproval(r) === 'approved' && leaveCovers(r, d))
+        .map(r => r.memberId));
+}
+
+// Anything not yet refused still occupies the days it claims. A request sent
+// back for revision is excluded: it is not standing.
+function overlappingLeave(memberId, from, to, exceptId) {
+    const a = from;
+    const b = to || from;
+    return leaveRequests.filter(r =>
+        r.memberId === memberId &&
+        r.id !== exceptId &&
+        workLogApproval(r) !== 'revision' &&
+        a <= (r.dateTo || r.dateFrom) && b >= r.dateFrom);
+}
+
+function leaveDocCount(rec) {
+    return Number(rec && rec.docCount) || 0;
+}
+
+const _leaveDocCache = new Map();              // leaveId -> data URLs
+
+// Fetched one document at a time, only when someone opens it. The collection
+// this reads is never subscribed; see firebase-init.js.
+async function loadLeaveDocs(id) {
+    if (_leaveDocCache.has(id)) return _leaveDocCache.get(id);
+    const fn = window.cloud && (window.cloud.getTeamDocs || window.cloud.getWorkLogPhotos);
+    if (!fn) return [];
+    const pages = await fn.call(window.cloud, id);
+    const list = Array.isArray(pages) ? pages : [];
+    _leaveDocCache.set(id, list);
+    return list;
+}
+
+function applyCloudLeaveSnapshot(list) {
+    leaveRequests = (list || []).slice().sort((a, b) =>
+        String(b.dateFrom || '').localeCompare(String(a.dateFrom || '')) ||
+        ((b.createdAt || 0) - (a.createdAt || 0)));
+    if (currentView === 'team') {
+        populateLeaveFilters();
+        if (teamTab === 'leave') renderLeaveTable();
+        // An approved request marks the schedule, so the grid has to redraw.
+        if (teamTab === 'shift') renderShiftGrid();
+    }
+    // Without this the pending count never reaches the sidebar badge.
+    scheduleDecisionRefresh();
+}
+
+function populateLeaveFilters() {
+    const memberSel = document.getElementById('lvMemberFilter');
+    if (memberSel) {
+        const keep = memberSel.value;
+        memberSel.innerHTML = '<option value="">Semua Anggota</option>'
+            + teamMembers.map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}</option>`).join('');
+        if (keep && memberSel.querySelector(`option[value="${CSS.escape(keep)}"]`)) memberSel.value = keep;
+    }
+    const formSel = document.getElementById('lvMember');
+    if (formSel) {
+        const keep = formSel.value;
+        formSel.innerHTML = '<option value="">— Pilih anggota —</option>'
+            + activeMembers().map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}</option>`).join('');
+        if (keep && formSel.querySelector(`option[value="${CSS.escape(keep)}"]`)) formSel.value = keep;
+    }
+    const compSel = document.getElementById('lvCompanyFilter');
+    if (compSel) {
+        const keep = compSel.value;
+        const companies = [...new Set(teamMembers.map(m => (m.company || '').trim()).filter(Boolean))].sort();
+        compSel.innerHTML = '<option value="">Semua Perusahaan</option>'
+            + companies.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
+            + '<option value="__none__">(Tanpa perusahaan)</option>';
+        if (keep && compSel.querySelector(`option[value="${CSS.escape(keep)}"]`)) compSel.value = keep;
+    }
+}
+
+// A request OVERLAPPING the from/to window counts, unlike the work log where a
+// record sits on a single day. Someone filtering "September" wants the sick
+// leave that started in August and ran into it.
+function getFilteredLeave() {
+    const from = (document.getElementById('lvFrom')?.value || '').trim();
+    const to = (document.getElementById('lvTo')?.value || '').trim();
+    const member = (document.getElementById('lvMemberFilter')?.value || '');
+    const company = (document.getElementById('lvCompanyFilter')?.value || '');
+    const approval = (document.getElementById('lvApprovalFilter')?.value || '');
+    const type = (document.getElementById('lvTypeFilter')?.value || '');
+    const q = (document.getElementById('lvSearch')?.value || '').toLowerCase().trim();
+
+    return leaveRequests.filter(r => {
+        const a = String(r.dateFrom || '');
+        const b = String(r.dateTo || r.dateFrom || '');
+        if (from && b < from) return false;
+        if (to && a > to) return false;
+        if (member && r.memberId !== member) return false;
+        if (type && r.type !== type) return false;
+        if (company) {
+            const c = companyOfRecord(r);
+            if (company === '__none__' ? !!c : c !== company) return false;
+        }
+        if (approval && workLogApproval(r) !== approval) return false;
+        if (q) {
+            const hay = [memberNameOf(r), companyOfRecord(r), leaveTypeLabel(r), r.reason]
+                .join(' ').toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
+}
+
+function clearLeaveFilter() {
+    ['lvFrom', 'lvTo', 'lvMemberFilter', 'lvCompanyFilter', 'lvApprovalFilter', 'lvTypeFilter', 'lvSearch']
+        .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    renderLeaveTable();
+}
+
+function leaveRangeLabel(r) {
+    const a = r.dateFrom || '-';
+    const b = r.dateTo || r.dateFrom || '';
+    return (!b || b === a) ? a : `${a} → ${b}`;
+}
+
+function renderLeaveTable() {
+    const rows = getFilteredLeave();
+    const tbody = document.getElementById('leaveBody');
+    if (!tbody) return;
+
+    const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    setText('lvKpiCount', rows.length);
+    setText('lvKpiDays', rows.reduce((a, r) => a + (Number(r.days) || leaveDays(r.dateFrom, r.dateTo)), 0));
+    // Pending is counted over EVERY request, not the filtered slice: a filter
+    // must not be able to make the backlog look empty.
+    setText('lvKpiPending', leaveRequests.filter(r => workLogApproval(r) === 'pending').length);
+    setText('lvKpiToday', membersOnLeave().size);
+
+    const counter = document.getElementById('leaveCount');
+    if (counter) counter.textContent = `${rows.length} pengajuan`;
+
+    const canEdit = hasAccess('teamLog', 'edit');
+    const filterOn = ['lvFrom', 'lvTo', 'lvMemberFilter', 'lvCompanyFilter',
+                      'lvApprovalFilter', 'lvTypeFilter', 'lvSearch']
+        .some(id => (document.getElementById(id)?.value || '') !== '');
+
+    if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+            filterOn
+                ? `Tidak ada pengajuan yang cocok dengan filter.
+                   <button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="clearLeaveFilter()">
+                       <i class="fas fa-filter-circle-xmark"></i> Hapus filter</button>`
+                : 'Belum ada pengajuan izin atau sakit.'
+        }</td></tr>`;
+        return;
+    }
+
+    // Every <td> carries data-label except No and col-actions: style.css hides
+    // an unlabelled cell entirely on a phone, so a forgotten label does not
+    // look broken, the column just disappears on the device the team uses.
+    tbody.innerHTML = rows.map((r, i) => {
+        const st = workLogApproval(r);
+        const meta = st === 'approved'
+            ? `Disetujui ${r.approvedBy || '-'}${r.approvedAt ? ' · ' + new Date(r.approvedAt).toLocaleString('id-ID') : ''}`
+            : st === 'revision' ? (r.revisionNote || 'Perlu revisi') : 'Belum diperiksa';
+        const docs = leaveDocCount(r);
+        const days = Number(r.days) || leaveDays(r.dateFrom, r.dateTo);
+        return `
+        <tr>
+            <td>${i + 1}</td>
+            <td data-label="Jenis"><span class="lv-type lv-type--${escapeHtml(r.type || 'izin')}">${escapeHtml(leaveTypeLabel(r))}</span></td>
+            <td data-label="Anggota"><strong>${escapeHtml(memberNameOf(r))}</strong></td>
+            <td data-label="Perusahaan">${escapeHtml(companyOfRecord(r) || '—')}</td>
+            <td data-label="Tanggal">${escapeHtml(leaveRangeLabel(r))}</td>
+            <td data-label="Hari">${days}</td>
+            <td data-label="Catatan" style="max-width:220px;font-size:12px;color:var(--text-secondary)"
+                title="${escapeHtml(r.reason || '')}">${escapeHtml((r.reason || '').slice(0, 60)) || '—'}</td>
+            <td data-label="Surat">${docs
+                ? `<button type="button" class="wl-photo-btn" title="Lihat ${docs} lembar surat"
+                        aria-label="Lihat ${docs} lembar surat"
+                        onclick="openLeaveDocs('${escapeHtml(r.id)}', this)"><i class="fas fa-file-image"></i> ${docs}</button>`
+                : '<span style="color:var(--text-light)">—</span>'}</td>
+            <td data-label="Persetujuan">
+                <span class="appr appr--${st}" title="${escapeHtml(meta)}">${escapeHtml(APPROVAL_STATES[st].label)}</span>
+                ${canApproveThisLog(r) ? `<span class="appr-actions">
+                    ${st !== 'approved' ? `<button class="btn btn-secondary appr-btn" title="Setujui pengajuan" aria-label="Setujui pengajuan" onclick="approveLeave('${escapeHtml(r.id)}')"><i class="fas fa-check"></i></button>` : ''}
+                    ${st !== 'revision' ? `<button class="btn btn-secondary appr-btn" title="Minta revisi" aria-label="Minta revisi" onclick="reviseLeave('${escapeHtml(r.id)}')"><i class="fas fa-rotate-left"></i></button>` : ''}
+                </span>` : ''}
+            </td>
+            <td class="col-actions">
+                ${canEdit ? `<div class="row-actions">
+                    <button class="btn btn-secondary" title="Edit" onclick="editLeave('${escapeHtml(r.id)}')"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Hapus" onclick="deleteLeave('${escapeHtml(r.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                </div>` : ''}
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+// ---- Form ----
+let _lvDocs = [];
+let _lvDocsDirty = false;
+let _lvDocsLoading = false;
+
+function renderLeaveDocs() {
+    const count = document.getElementById('lvDocCount');
+    if (count) count.textContent = `${_lvDocs.length}/${LEAVE_DOC_MAX}`;
+    const wrap = document.getElementById('lvDocPreviews');
+    if (!wrap) return;
+    if (_lvDocsLoading && !_lvDocs.length) {
+        wrap.innerHTML = '<span class="wl-photo__loading"><i class="fas fa-spinner fa-spin"></i> Memuat surat…</span>';
+        return;
+    }
+    wrap.innerHTML = _lvDocs.map((src, i) => `
+        <div class="wl-photo">
+            <img src="${src}" alt="Surat lembar ${i + 1}" onclick="openPhotoLightbox(_lvDocs, ${i})">
+            <button type="button" class="wl-photo__x" aria-label="Hapus surat lembar ${i + 1}"
+                    title="Hapus lembar ini" onclick="removeLeaveDoc(${i})">&times;</button>
+        </div>`).join('');
+}
+
+async function handleLeaveDocChange(event) {
+    const files = [...(event.target.files || [])];
+    event.target.value = '';
+    for (const file of files) {
+        if (_lvDocs.length >= LEAVE_DOC_MAX) {
+            showToast(`Maksimal ${LEAVE_DOC_MAX} lembar surat`, 'warning');
+            break;
+        }
+        // Nothing in this app reads PDFs, so say that rather than failing
+        // silently on a file someone scanned straight from a printer.
+        if (!file.type.startsWith('image/')) {
+            showToast(`"${file.name}" dilewati — surat harus berupa foto atau hasil pindai gambar, bukan PDF`, 'warning');
+            continue;
+        }
+        try {
+            const data = await compressImageToDataURL(file, WORKLOG_PHOTO_OPTS);
+            const total = _lvDocs.reduce((a, d) => a + d.length, 0) + data.length;
+            if (total > WORKLOG_PHOTOS_TOTAL_BYTES) {
+                showToast('Ukuran surat terlalu besar — kurangi jumlah lembarnya', 'warning');
+                break;
+            }
+            _lvDocs.push(data);
+            _lvDocsDirty = true;
+        } catch (err) {
+            showToast(String(err && err.message ? err.message : err), 'error');
+        }
+    }
+    renderLeaveDocs();
+}
+
+function removeLeaveDoc(index) {
+    _lvDocs.splice(index, 1);
+    _lvDocsDirty = true;
+    renderLeaveDocs();
+}
+
+async function openLeaveDocs(id, btn) {
+    const old = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+    try {
+        const pages = await loadLeaveDocs(id);
+        if (!pages.length) { showToast('Surat tidak ditemukan', 'warning'); return; }
+        openPhotoLightbox(pages, 0);
+    } catch (err) {
+        console.error('[izin] gagal memuat surat:', err);
+        showToast(navigator.onLine
+            ? 'Gagal memuat surat'
+            : 'Surat perlu sinyal untuk dimuat', 'warning');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = old; }
+    }
+}
+
+function showAddLeaveForm() {
+    if (!requireEdit('teamLog')) return;
+    populateLeaveFilters();
+    document.getElementById('leaveForm').reset();
+    document.getElementById('editLeaveId').value = '';
+    document.getElementById('leaveModalTitle').innerHTML =
+        '<i class="fas fa-user-clock"></i> Tambah Pengajuan Izin / Sakit';
+    document.getElementById('lvDateFrom').value = toISODate();
+    document.getElementById('lvType').value = 'izin';
+    _lvDocs = []; _lvDocsDirty = false; _lvDocsLoading = false;
+    renderLeaveDocs();
+    rememberFocus();
+    document.getElementById('leaveModal').classList.add('open');
+}
+
+function editLeave(id) {
+    if (!requireEdit('teamLog')) return;
+    const r = leaveRequests.find(x => x.id === id);
+    if (!r) return;
+    populateLeaveFilters();
+    document.getElementById('editLeaveId').value = r.id;
+    document.getElementById('leaveModalTitle').innerHTML =
+        '<i class="fas fa-user-clock"></i> Edit Pengajuan Izin / Sakit';
+    document.getElementById('lvMember').value = r.memberId || '';
+    document.getElementById('lvType').value = r.type || 'izin';
+    document.getElementById('lvDateFrom').value = r.dateFrom || '';
+    document.getElementById('lvDateTo').value = r.dateTo || '';
+    document.getElementById('lvReason').value = r.reason || '';
+
+    _lvDocs = []; _lvDocsDirty = false;
+    _lvDocsLoading = leaveDocCount(r) > 0;
+    renderLeaveDocs();
+    rememberFocus();
+    document.getElementById('leaveModal').classList.add('open');
+    if (_lvDocsLoading) {
+        loadLeaveDocs(r.id)
+            .then(pages => { _lvDocs = pages.slice(); })
+            .catch(() => showToast('Surat gagal dimuat — menyimpan sekarang tidak akan mengubahnya', 'warning'))
+            .finally(() => { _lvDocsLoading = false; renderLeaveDocs(); });
+    }
+}
+
+function closeLeaveModal(force) {
+    if (!force && _lvDocsDirty && _lvDocs.length &&
+        !confirm(`${_lvDocs.length} lembar surat belum tersimpan dan akan hilang. Tutup saja?`)) {
+        return;
+    }
+    _lvDocsDirty = false;
+    document.getElementById('leaveModal').classList.remove('open');
+}
+
+// Rejects with a toast, warns-but-allows with confirm() — the same split the
+// work log validation uses. Refusing too much costs as much as accepting too
+// much: an extended illness and a corrected date really do overlap.
+function checkLeaveRange(memberId, type, from, to, exceptId, docCount) {
+    if (!memberId) { showToast('Pilih anggota dulu', 'warning'); return false; }
+    if (!from) { showToast('Tanggal mulai wajib diisi', 'warning'); return false; }
+    const end = to || from;
+    if (end < from) {
+        showToast('Tanggal selesai lebih awal dari tanggal mulai', 'warning');
+        return false;
+    }
+    const days = leaveDays(from, end);
+    if (days > LEAVE_LONG_DAYS) {
+        if (!confirm(`Pengajuan ini ${days} hari (${from} sampai ${end}).\n\n`
+            + 'Kalau memang selama itu, tekan OK. Kalau tanggalnya salah ketik, tekan Batal lalu betulkan.')) {
+            return false;
+        }
+    }
+    const clash = overlappingLeave(memberId, from, end, exceptId);
+    if (clash.length) {
+        const list = clash.slice(0, 3)
+            .map(c => `· ${leaveTypeLabel(c)} ${leaveRangeLabel(c)} (${APPROVAL_STATES[workLogApproval(c)].label})`)
+            .join('\n');
+        if (!confirm(`Tanggal ini beririsan dengan pengajuan yang sudah ada:\n\n${list}\n\n`
+            + 'Kalau ini perpanjangan yang memang disengaja, tekan OK.')) {
+            return false;
+        }
+    }
+    if (type === 'alpa' && docCount > 0) {
+        if (!confirm('Alpa berarti tidak masuk TANPA keterangan, tetapi ada surat dilampirkan.\n\n'
+            + 'Kalau suratnya memang ada, mungkin jenisnya Izin atau Sakit. Tetap simpan sebagai Alpa?')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function saveLeave(event) {
+    if (event) event.preventDefault();
+    if (!requireEdit('teamLog')) return;
+
+    const id = document.getElementById('editLeaveId').value;
+    const existing = id ? leaveRequests.find(x => x.id === id) : null;
+    const memberId = document.getElementById('lvMember').value;
+    const type = document.getElementById('lvType').value;
+    const from = document.getElementById('lvDateFrom').value;
+    const to = document.getElementById('lvDateTo').value || from;
+    const reason = document.getElementById('lvReason').value.trim();
+
+    const docCount = _lvDocsDirty ? _lvDocs.length : leaveDocCount(existing);
+    if (!checkLeaveRange(memberId, type, from, to, id || null, docCount)) return;
+
+    const member = memberById(memberId);
+    if (!member) { showToast('Anggota tidak ditemukan', 'warning'); return; }
+
+    const rec = {
+        id: id || generateLeaveId(),
+        memberId,
+        memberName: member.name,
+        company: member.company || '',
+        type,
+        dateFrom: from,
+        dateTo: to,
+        days: leaveDays(from, to),
+        reason,
+        docCount,
+        // Editing sends the request back for checking. Without this, someone
+        // could get three days approved and then change which three days.
+        approval: 'pending',
+        approvedBy: '', approvedByEmail: '', approvedAt: 0,
+        revisionNote: '',
+        createdBy: existing ? (existing.createdBy || '') : ((currentUserDoc && currentUserDoc.displayName) || (currentUser && currentUser.email) || ''),
+        createdByUid: existing ? (existing.createdByUid || '') : ((currentUser && currentUser.uid) || ''),
+        createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),
+        updatedAt: Date.now()
+    };
+
+    const wasApproved = existing && workLogApproval(existing) === 'approved';
+
+    cloudWrite(
+        {
+            action: existing ? 'update' : 'create',
+            unitId: '',
+            unitName: `[Izin] ${member.name}`,
+            field: `${leaveTypeLabel(rec)} ${leaveRangeLabel(rec)}`,
+            before: existing ? `${leaveTypeLabel(existing)} ${leaveRangeLabel(existing)}` : '',
+            after: `${rec.days} hari${reason ? ' — ' + reason : ''}`
+        },
+        cloudCall('saveLeaveRequest', rec),
+        wasApproved
+            ? 'Pengajuan diperbarui — persetujuan dibatalkan, perlu diperiksa ulang'
+            : (existing ? 'Pengajuan diperbarui' : 'Pengajuan dicatat'),
+        err => {
+            console.error('[izin] save failed:', err);
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+            showToast('Gagal menyimpan pengajuan', 'error');
+        }
+    );
+
+    if (_lvDocsDirty) {
+        const pages = _lvDocs.slice();
+        _leaveDocCache.set(rec.id, pages);
+        const save = cloudFn('saveTeamDocs') && cloudFn('deleteTeamDocs');
+        if (!save) { closeLeaveModal(true); return; }
+        const write = pages.length
+            ? window.cloud.saveTeamDocs(rec.id, pages)
+            : window.cloud.deleteTeamDocs(rec.id);
+        write.catch(err => {
+            console.error('[izin] surat save failed:', err);
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+            showToast('Pengajuan tersimpan, tetapi surat gagal dikirim', 'error');
+        });
+    }
+
+    closeLeaveModal(true);
+}
+
+function deleteLeave(id) {
+    if (!requireEdit('teamLog')) return;
+    const r = leaveRequests.find(x => x.id === id);
+    if (!r) return;
+    if (!confirm(`Hapus pengajuan ${leaveTypeLabel(r)} ${memberNameOf(r)} (${leaveRangeLabel(r)})?`)) return;
+    // Otherwise the letter document is orphaned: invisible, still billed for.
+    if (leaveDocCount(r) > 0 && window.cloud.deleteTeamDocs) {
+        _leaveDocCache.delete(id);
+        window.cloud.deleteTeamDocs(id).catch(err =>
+            console.error('[izin] surat delete failed:', err));
+    }
+    cloudWrite(
+        { action: 'delete', unitId: '',
+          unitName: `[Izin] ${memberNameOf(r)}`,
+          field: `${leaveTypeLabel(r)} ${leaveRangeLabel(r)}`,
+          before: `${r.days || 0} hari`, after: '' },
+        cloudCall('deleteLeaveRequest', id),
+        'Pengajuan dihapus',
+        err => {
+            console.error('[izin] delete failed:', err);
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+            showToast('Gagal menghapus pengajuan', 'error');
+        }
+    );
+}
+
+// ---- Approval ----
+// Reuses workLogApproval / APPROVAL_STATES / canApproveThisLog wholesale,
+// including the rule that you cannot approve a request you filed yourself
+// unless you are the owner.
+function approveLeave(id) {
+    const r = leaveRequests.find(x => x.id === id);
+    if (!r) return;
+    if (!canApproveWorkLogs()) {
+        showToast('Anda tidak punya hak menyetujui pengajuan', 'warning');
+        return;
+    }
+    if (!canApproveThisLog(r)) {
+        showToast('Pengajuan yang Anda buat sendiri harus disetujui orang lain', 'warning');
+        return;
+    }
+    if (workLogApproval(r) === 'approved') return;
+
+    const rec = {
+        ...r,
+        approval: 'approved',
+        approvedBy: (currentUserDoc && currentUserDoc.displayName) || (currentUser && currentUser.email) || '',
+        approvedByEmail: (currentUser && currentUser.email) || '',
+        approvedAt: Date.now(),
+        revisionNote: '',
+        updatedAt: Date.now()
+    };
+    cloudWrite(
+        { action: 'approve', unitId: '',
+          unitName: `[Izin] ${memberNameOf(rec)}`,
+          field: `Persetujuan ${leaveRangeLabel(rec)}`,
+          before: APPROVAL_STATES[workLogApproval(r)].label,
+          after: 'Disetujui' },
+        cloudCall('saveLeaveRequest', rec),
+        'Pengajuan disetujui',
+        err => {
+            console.error('[izin] approve failed:', err);
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+            showToast('Gagal menyetujui pengajuan', 'error');
+        }
+    );
+}
+
+function reviseLeave(id) {
+    const r = leaveRequests.find(x => x.id === id);
+    if (!r) return;
+    if (!canApproveThisLog(r)) {
+        showToast('Anda tidak punya hak memeriksa pengajuan ini', 'warning');
+        return;
+    }
+    const note = prompt('Apa yang perlu dibetulkan?', r.revisionNote || '');
+    if (note === null) return;
+    if (!note.trim()) {
+        showToast('Tulis dulu apa yang perlu dibetulkan', 'warning');
+        return;
+    }
+    const rec = {
+        ...r,
+        approval: 'revision',
+        revisionNote: note.trim(),
+        approvedBy: '', approvedByEmail: '', approvedAt: 0,
+        reviewedBy: (currentUserDoc && currentUserDoc.displayName) || (currentUser && currentUser.email) || '',
+        reviewedAt: Date.now(),
+        updatedAt: Date.now()
+    };
+    cloudWrite(
+        { action: 'reject', unitId: '',
+          unitName: `[Izin] ${memberNameOf(rec)}`,
+          field: `Persetujuan ${leaveRangeLabel(rec)}`,
+          before: APPROVAL_STATES[workLogApproval(r)].label,
+          after: `Perlu revisi — ${note.trim()}` },
+        cloudCall('saveLeaveRequest', rec),
+        'Pengajuan dikembalikan untuk revisi',
+        err => {
+            console.error('[izin] revise failed:', err);
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+            showToast('Gagal mengirim permintaan revisi', 'error');
+        }
+    );
+}
+
+function exportLeaveCSV() {
+    if (!canCsv('export')) return;
+    const rows = getFilteredLeave();
+    if (rows.length === 0) { showToast('Tidak ada pengajuan untuk diexport', 'warning'); return; }
+    const headers = ['No', 'Jenis', 'Anggota', 'Perusahaan', 'Tanggal Mulai', 'Tanggal Selesai',
+                     'Jumlah Hari', 'Keterangan', 'Lembar Surat', 'Persetujuan', 'Disetujui Oleh',
+                     'Catatan Revisi', 'Dicatat Oleh'];
+    const body = rows.map((r, i) => [
+        i + 1,
+        leaveTypeLabel(r),
+        memberNameOf(r),
+        companyOfRecord(r) || '',
+        r.dateFrom || '',
+        r.dateTo || r.dateFrom || '',
+        Number(r.days) || leaveDays(r.dateFrom, r.dateTo),
+        r.reason || '',
+        leaveDocCount(r),
+        APPROVAL_STATES[workLogApproval(r)].label,
+        r.approvedBy || '',
+        r.revisionNote || '',
+        r.createdBy || ''
+    ]);
+    const csv = toCSV(headers, body);
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `izin_sakit_${toISODate()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Export ${rows.length} pengajuan ke CSV`, 'success');
 }
 
 // ============================================================
@@ -10311,6 +11013,20 @@ function decisionGroups() {
             })),
             goto: 'revision'
         });
+
+        // Izin / sakit menunggu persetujuan. Digerbang sama dengan laporan,
+        // karena areanya memang sama.
+        const izin = leaveRequests.filter(r => workLogApproval(r) === 'pending');
+        add({
+            key: 'leave', icon: 'user-clock', tone: 'warning',
+            title: 'Izin / sakit menunggu persetujuan',
+            total: izin.length,
+            items: izin.slice(0, 6).map(r => ({
+                text: `${memberNameOf(r)} · ${leaveTypeLabel(r)}`,
+                sub: `${leaveRangeLabel(r)} — ${Number(r.days) || leaveDays(r.dateFrom, r.dateTo)} hari`
+            })),
+            goto: 'leave'
+        });
     }
 
     // ---- Lisensi habis / segera habis ----
@@ -10428,6 +11144,13 @@ function decisionTotal() {
 // the right filter already applied is the difference between a list and a tool.
 function goDecision(target) {
     switch (target) {
+        case 'leave': {
+            navigateTo('team');
+            switchTeamTab('leave');
+            const f = document.getElementById('lvApprovalFilter');
+            if (f) { f.value = 'pending'; renderLeaveTable(); }
+            break;
+        }
         case 'approval':
         case 'revision': {
             navigateTo('team');
@@ -10688,7 +11411,14 @@ function weekStats(weekStartISO) {
         people: new Set(logs.map(w => w.memberId).filter(Boolean)).size,
         damages: globalDamages.filter(d => inWeek(d.date)).length,
         resolved: globalDamages.filter(d => d.resolved && inWeek(d.resolvedAt)).length,
-        onDuty: teamShifts.filter(s => inWeek(s.date) && s.shift && s.shift !== 'libur').length,
+        // Seseorang yang shiftnya terisi tetapi izin/sakitnya sudah disetujui
+        // TIDAK bertugas. Tanpa pengurangan ini, orang yang sakit tetap
+        // terhitung masuk — jadwalnya memang tidak dihapus, dan memang tidak
+        // boleh dihapus.
+        onDuty: teamShifts.filter(s =>
+            inWeek(s.date) && s.shift && s.shift !== 'libur' &&
+            !leaveOn(s.memberId, s.date)).length,
+        onLeave: teamShifts.filter(s => inWeek(s.date) && leaveOn(s.memberId, s.date)).length,
         stockOut: stockLedger
             .filter(r => r.txnType === 'OUT' && inWeek(r.date))
             .reduce((n, r) => n + (Number(r.qty) || 0), 0)
@@ -10960,6 +11690,36 @@ function dcNegativeStock() {
             'warehouseStock'));
 }
 
+// Izin dan sakit yang sudah disetujui tetapi tidak ada suratnya. Alpa
+// dikecualikan: alpa memang berarti tanpa keterangan, jadi menandainya akan
+// menghasilkan temuan yang tidak pernah bisa diselesaikan.
+//
+// Ini membaca docCount di record induknya, bukan koleksi suratnya — koleksi itu
+// tidak pernah dilanggan, dan semua pemeriksaan di sini membaca larik di memori
+// secara sinkron.
+function dcLeaveWithoutDoc() {
+    return (leaveRequests || [])
+        .filter(r => r.type !== 'alpa'
+            && workLogApproval(r) === 'approved'
+            && leaveDocCount(r) === 0)
+        .map(r => dc('izin-tanpa-surat',
+            `${leaveTypeLabel(r)}: ${memberNameOf(r)}`,
+            `Disetujui untuk ${leaveRangeLabel(r)} tetapi tidak ada surat yang dilampirkan.`,
+            'leave'));
+}
+
+// Sisa dari data sebelum validasi rentang ada. Tanggal selesai lebih awal dari
+// tanggal mulai membuat jumlah harinya nol dan penanda di grid shift tidak
+// pernah muncul.
+function dcLeaveReversed() {
+    return (leaveRequests || [])
+        .filter(r => r.dateFrom && r.dateTo && r.dateTo < r.dateFrom)
+        .map(r => dc('izin-terbalik',
+            `${leaveTypeLabel(r)}: ${memberNameOf(r)}`,
+            `Tanggal selesai (${r.dateTo}) lebih awal dari tanggal mulai (${r.dateFrom}).`,
+            'leave'));
+}
+
 const DATA_CHECKS = [
     { key: 'sn',       label: 'Nomor seri duplikat',        run: dcDuplicateSerials },
     { key: 'spasi',    label: 'Spasi / karakter tak terlihat', run: dcInvisibleCharacters },
@@ -10969,7 +11729,9 @@ const DATA_CHECKS = [
     { key: 'tanggal',  label: 'Tanggal di masa depan',      run: dcFutureDates },
     { key: 'lisensi',  label: 'Tanggal lisensi janggal',    run: dcLicenceDates },
     { key: 'yatim',    label: 'Kerusakan tanpa unit',       run: dcOrphanDamage },
-    { key: 'stok',     label: 'Saldo stok minus',           run: dcNegativeStock }
+    { key: 'stok',     label: 'Saldo stok minus',           run: dcNegativeStock },
+    { key: 'surat',    label: 'Izin / sakit tanpa surat',    run: dcLeaveWithoutDoc },
+    { key: 'izin-tgl', label: 'Rentang izin terbalik',       run: dcLeaveReversed }
 ];
 
 function runDataChecks() {

@@ -39,6 +39,7 @@ const { launch, BASE_URL } = require('./_env');
         t('dan penutupnya benar-benar ada sebagai fungsi',
           semuaModal.filter(id => typeof window[MODAL_CLOSERS[id]] !== 'function'), []);
         t('jumlah modalnya memang banyak, bukan satu-dua', semuaModal.length >= 18, true);
+        t('modal izin/sakit ikut terdaftar', !!MODAL_CLOSERS.leaveModal, true);
 
         // ---------- Escape menutup yang paling atas saja ----------
         const a = document.getElementById('deviceModal');

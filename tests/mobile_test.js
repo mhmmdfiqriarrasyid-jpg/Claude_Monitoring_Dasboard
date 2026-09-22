@@ -180,6 +180,48 @@ async function run(page, width, body) {
     t('penjelasannya menyebut filter', /filter/i.test(nihil.teks), true);
     t('dan menyediakan jalan keluar', nihil.adaTombol, true);
 
+    // Tabel izin/sakit ikut aturan yang sama: sel tanpa data-label hilang di
+    // ponsel, dan colspan baris kosong harus sama dengan jumlah kolomnya.
+    const izin = await phone.evaluate(`(() => {
+        navigateTo('team');
+        teamMembers = [{ id:'m1', name:'Andi', company:'PT. GPA', active:true }];
+        leaveRequests = [{ id:'lv_1', memberId:'m1', memberName:'Andi', company:'PT. GPA',
+            type:'sakit', dateFrom:'2026-09-21', dateTo:'2026-09-23', days:3,
+            reason:'Demam', docCount:1, approval:'approved' }];
+        switchTeamTab('leave');
+        renderLeaveTable();
+        const tds = [...document.querySelectorAll('#leaveBody td')];
+        const terlihat = n => {
+            const td = document.querySelector(\`#leaveBody td[data-label="\${n}"]\`);
+            return !!td && td.offsetParent !== null;
+        };
+        const kolom = document.querySelectorAll('#leaveTable thead th').length;
+        // Diukur SEKARANG, selagi barisnya masih ada. Membacanya di dalam objek
+        // kembalian akan berjalan setelah tabelnya dikosongkan di bawah.
+        const hasil = {
+            tanpaLabel: tds.filter(td => !td.hasAttribute('data-label')
+                                      && !td.classList.contains('col-actions')).length,
+            tanggal: terlihat('Tanggal'),
+            hari: terlihat('Hari'),
+            surat: terlihat('Surat'),
+            persetujuan: terlihat('Persetujuan'),
+            kolom: String(kolom),
+            geser: document.documentElement.scrollWidth > innerWidth
+        };
+        leaveRequests = [];
+        renderLeaveTable();
+        const kosong = document.querySelector('#leaveBody td[colspan]');
+        hasil.colspan = kosong ? kosong.getAttribute('colspan') : '';
+        return hasil;
+    })()`);
+    t('tabel izin: hanya nomor urut yang tanpa label', izin.tanpaLabel, 1);
+    t('kolom Tanggal terlihat di ponsel', izin.tanggal, true);
+    t('kolom Hari terlihat di ponsel', izin.hari, true);
+    t('kolom Surat terlihat di ponsel', izin.surat, true);
+    t('kolom Persetujuan terlihat di ponsel', izin.persetujuan, true);
+    t('colspan baris kosong sama dengan jumlah kolom', izin.colspan, izin.kolom);
+    t('tabel izin tidak memaksa halaman menggeser', izin.geser, false);
+
     // Jadwal shift: satu-satunya yang memang menggeser, jadi nama harus menempel.
     const shift = await phone.evaluate(`(async () => {
         teamMembers = [{ id:'m1', name:'Yulianus Mop Anggawen', jobTitle:'Mekanik',

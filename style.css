@@ -3239,6 +3239,41 @@ body[data-nocsvimport] .csv-import { display: none !important; }
     font-size: 11px;
     line-height: 1;
 }
+/* Jenis izin. Warnanya membedakan yang berketerangan dari yang tidak —
+   alpa memang harus terlihat berbeda dari izin dan sakit. */
+.lv-type {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10.5px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.lv-type--izin  { background: var(--info-bg);    color: var(--info); }
+.lv-type--sakit { background: var(--warning-bg); color: var(--warning); }
+.lv-type--alpa  { background: var(--danger-bg);  color: var(--danger); }
+
+#leaveTable td[data-label="Persetujuan"] {
+    white-space: normal;
+    max-width: 110px;
+}
+
+/* Penanda izin di grid shift: menempel di samping pilihan shift, tidak
+   menggantikannya. Jadwalnya tetap milik penyusun jadwal. */
+.shift-leave {
+    display: block;
+    margin-top: 3px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+.shift-leave--izin  { background: var(--info-bg);    color: var(--info); }
+.shift-leave--sakit { background: var(--warning-bg); color: var(--warning); }
+.shift-leave--alpa  { background: var(--danger-bg);  color: var(--danger); }
+
 #workLogTable td[data-label="Persetujuan"] {
     white-space: normal;
     max-width: 110px;

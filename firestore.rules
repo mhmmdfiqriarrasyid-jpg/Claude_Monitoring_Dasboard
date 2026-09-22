@@ -101,6 +101,31 @@ service cloud.firestore {
                                        'reviewedBy', 'reviewedAt', 'updatedAt']));
     }
 
+    // Izin / sakit. Areanya sama dengan laporan harian: orang yang mencatat
+    // laporan tim adalah orang yang mencatat izinnya, dan atasan yang
+    // menyetujui laporan adalah atasan yang menyetujui izin. Tidak ada izin
+    // baru yang perlu diatur per orang.
+    //
+    // Klausa hasOnly-nya menahan hal yang sama seperti di workLogs: tanpa itu,
+    // siapa pun yang boleh menyetujui juga bisa diam-diam mengubah tanggal dan
+    // alasannya, lalu menyetujui versi yang sudah ia ubah sendiri.
+    //
+    // Surat sakit / surat izin TIDAK punya koleksi sendiri — ia menumpang
+    // workLogPhotos di bawah ini. Bentuknya sama persis dan areanya sama
+    // persis, jadi memberinya koleksi sendiri hanya akan menambah satu lagi
+    // jalur yang menunggu publish, dengan kegagalan yang tidak bisa dibedakan.
+    match /leaveRequests/{id} {
+      allow read:   if isActive();
+      allow create: if canEditArea('teamLog');
+      allow delete: if canEditArea('teamLog');
+      allow update: if canEditArea('teamLog')
+                    || (canEditArea('teamLogApprove')
+                        && request.resource.data.diff(resource.data).affectedKeys()
+                             .hasOnly(['approval', 'approvedBy', 'approvedByEmail',
+                                       'approvedAt', 'revisionNote',
+                                       'reviewedBy', 'reviewedAt', 'updatedAt']));
+    }
+
     // Field documentation photos, one document per report. Split out of the
     // work log itself because workLogs is subscribed whole, with no limit —
     // inline photos meant every device re-downloaded every photo on every app

@@ -810,6 +810,10 @@
                         aria-controls="teamWorkLogPanel" onclick="switchTeamTab('worklog')">
                     <i class="fas fa-clipboard-list"></i> Laporan Harian
                 </button>
+                <button class="team-tab" data-tab="leave" role="tab" aria-selected="false"
+                        aria-controls="teamLeavePanel" onclick="switchTeamTab('leave')">
+                    <i class="fas fa-user-clock"></i> Izin / Sakit
+                </button>
             </div>
             <button class="btn btn-secondary btn-sm" id="btnTeamMembers" onclick="openTeamMembersModal()">
                 <i class="fas fa-user-group"></i> Kelola Anggota
@@ -873,7 +877,7 @@
                 <div class="downtime-kpi">
                     <div class="downtime-kpi__label">Lapor Hari Ini</div>
                     <div class="downtime-kpi__value" id="wlKpiToday">0 / 0</div>
-                    <div class="downtime-kpi__sub">Anggota aktif yang sudah melapor</div>
+                    <div class="downtime-kpi__sub" id="wlKpiTodaySub">Anggota aktif yang sudah melapor</div>
                 </div>
                 <div class="downtime-kpi">
                     <div class="downtime-kpi__label">Menunggu Persetujuan</div>
@@ -948,6 +952,100 @@
                             </tr>
                         </thead>
                         <tbody id="workLogBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ---------- Leave / sick days ---------- -->
+        <div id="teamLeavePanel" role="tabpanel" aria-label="Izin dan Sakit" style="display:none">
+            <div class="downtime-kpis">
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Jumlah Pengajuan</div>
+                    <div class="downtime-kpi__value" id="lvKpiCount">0</div>
+                    <div class="downtime-kpi__sub">Sesuai filter aktif</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Total Hari</div>
+                    <div class="downtime-kpi__value" id="lvKpiDays">0</div>
+                    <div class="downtime-kpi__sub">Dijumlah dari rentang tanggal</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Tidak Masuk Hari Ini</div>
+                    <div class="downtime-kpi__value" id="lvKpiToday">0</div>
+                    <div class="downtime-kpi__sub">Pengajuan disetujui yang mencakup hari ini</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Menunggu Persetujuan</div>
+                    <div class="downtime-kpi__value" id="lvKpiPending">0</div>
+                    <div class="downtime-kpi__sub">Belum diperiksa siapa pun</div>
+                </div>
+            </div>
+
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <button class="btn btn-success editonly editonly--teamlog" onclick="showAddLeaveForm()">
+                        <i class="fas fa-plus"></i> Tambah Pengajuan
+                    </button>
+                    <button class="btn btn-secondary csv-export" onclick="exportLeaveCSV()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+                <div class="edit-toolbar__right">
+                    <label class="wl-filter-date">
+                        <span>Dari</span>
+                        <input type="date" id="lvFrom" class="form-input" onchange="renderLeaveTable()">
+                    </label>
+                    <label class="wl-filter-date">
+                        <span>Sampai</span>
+                        <input type="date" id="lvTo" class="form-input" onchange="renderLeaveTable()">
+                    </label>
+                    <select id="lvTypeFilter" aria-label="Filter jenis" class="btn btn-secondary btn-sm"
+                            onchange="renderLeaveTable()">
+                        <option value="">Semua Jenis</option>
+                        <option value="izin">Izin</option>
+                        <option value="sakit">Sakit</option>
+                        <option value="alpa">Alpa</option>
+                    </select>
+                    <select id="lvApprovalFilter" aria-label="Filter persetujuan" class="btn btn-secondary btn-sm"
+                            onchange="renderLeaveTable()">
+                        <option value="">Semua Persetujuan</option>
+                        <option value="pending">Menunggu</option>
+                        <option value="approved">Disetujui</option>
+                        <option value="revision">Perlu Revisi</option>
+                    </select>
+                    <select id="lvCompanyFilter" aria-label="Filter perusahaan" class="btn btn-secondary btn-sm"
+                            onchange="renderLeaveTable()">
+                        <option value="">Semua Perusahaan</option>
+                    </select>
+                    <select id="lvMemberFilter" aria-label="Filter anggota" class="btn btn-secondary btn-sm"
+                            onchange="renderLeaveTable()">
+                        <option value="">Semua Anggota</option>
+                    </select>
+                    <div class="edit-search">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="lvSearch" aria-label="Cari pengajuan izin atau sakit"
+                               placeholder="Cari pengajuan..." oninput="renderLeaveTable()">
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onclick="clearLeaveFilter()">Reset</button>
+                    <span id="leaveCount">0 pengajuan</span>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-user-clock"></i> Izin &amp; Sakit</div>
+                </div>
+                <div class="table-wrapper" style="max-height:60vh">
+                    <table class="data-table table--cardable" id="leaveTable">
+                        <thead>
+                            <tr>
+                                <th>No</th><th>Jenis</th><th>Anggota</th><th>Perusahaan</th>
+                                <th>Tanggal</th><th>Hari</th><th>Catatan</th><th>Surat</th>
+                                <th>Persetujuan</th><th class="col-actions">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaveBody"></tbody>
                     </table>
                 </div>
             </div>
@@ -2077,6 +2175,71 @@
             </div>
             <div class="form-actions">
                 <button type="button" class="btn btn-secondary" onclick="closeWorkLogModal()">Batal</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ==================== LEAVE / SICK MODAL ==================== -->
+<div class="modal-overlay" id="leaveModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="leaveModalTitle"><i class="fas fa-user-clock"></i> Tambah Pengajuan Izin / Sakit</h3>
+            <button class="btn-icon" onclick="closeLeaveModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form id="leaveForm" onsubmit="saveLeave(event)">
+            <input type="hidden" id="editLeaveId">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="lvMember">Anggota</label>
+                        <select class="form-select" id="lvMember" required>
+                            <option value="">— Pilih anggota —</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="lvType">Jenis</label>
+                        <select class="form-select" id="lvType" required>
+                            <option value="izin">Izin</option>
+                            <option value="sakit">Sakit</option>
+                            <option value="alpa">Alpa (tanpa keterangan)</option>
+                        </select>
+                    </div>
+                    <!-- Sengaja TANPA data-nofuture: izin yang direncanakan
+                         memang bertanggal di masa depan. Jangan "dibetulkan". -->
+                    <div class="form-group">
+                        <label class="form-label" for="lvDateFrom">Tanggal Mulai</label>
+                        <input type="date" class="form-input" id="lvDateFrom" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="lvDateTo">Tanggal Selesai
+                            <span class="form-optional">(kosongkan kalau hanya satu hari)</span></label>
+                        <input type="date" class="form-input" id="lvDateTo">
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="lvDocInput">Surat Sakit / Surat Izin
+                            <span class="form-optional">(opsional · <span id="lvDocCount">0/4</span>)</span></label>
+                        <input type="file" id="lvDocInput" accept="image/*" multiple style="display:none"
+                               onchange="handleLeaveDocChange(event)">
+                        <div class="wl-photo-row">
+                            <button type="button" class="btn btn-secondary btn-sm"
+                                    onclick="document.getElementById('lvDocInput').click()">
+                                <i class="fas fa-camera"></i> Tambah Surat
+                            </button>
+                            <span class="wl-photo-hint">Foto atau hasil pindai gambar — bukan PDF. Dikecilkan otomatis.</span>
+                        </div>
+                        <div class="wl-photos" id="lvDocPreviews"></div>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="lvReason">Keterangan</label>
+                        <textarea class="form-input form-textarea" id="lvReason" rows="3"
+                                  placeholder="Alasan izin, keterangan dokter, atau catatan lain…"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeLeaveModal()">Batal</button>
                 <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan</button>
             </div>
         </form>

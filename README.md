@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-716 pemeriksaan di dua puluh suite, menggerakkan Chromium sungguhan terhadap
+790 pemeriksaan di dua puluh satu suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -106,7 +106,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 `session_test`, `warehouse_test`, `approval_test`, `leader_test`, `recap_test`,
 `photos_test`, `migration_test`, `history_scan_test`, `validation_test`,
 `datacheck_test`, `damagephotos_test`, `mobile_test`, `window_test`,
-`backup_test`, `keyboard_test`, `regress`.
+`backup_test`, `keyboard_test`, `leave_test`, `regress`.
 
 ---
 
@@ -258,3 +258,35 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Backup. Pemulihannya lewat jalur yang sama dengan restore berkas, termasuk
   `cloudPushUnits`, karena rollback lokal saja akan dibatalkan snapshot
   berikutnya.
+- **Izin / Sakit menumpang area `teamLog`, bukan punya areanya sendiri.**
+  Yang boleh mengisi laporan harian boleh mengisi izin; yang boleh menyetujui
+  laporan boleh menyetujui izin. Area baru akan menyentuh delapan tempat
+  (`ACCESS_AREAS`, `VIEW_AREAS`, `RO_FLAGS`, CSS, `canEditAnything()` di rules,
+  komentar header rules, `roles_test`) **dan** mengharuskan owner memberi izin
+  itu satu per satu ke tiap akun sebelum fiturnya bisa dipakai siapa pun.
+- **Surat sakit / surat izin disimpan di koleksi `workLogPhotos`.** Namanya
+  historis, bukan pembatas isinya: bentuk dokumennya sama persis dan rules-nya
+  sudah `canEditArea('teamLog')`. Pakai alias `getTeamDocs` / `saveTeamDocs` /
+  `deleteTeamDocs` di `firebase-init.js`, jangan panggil nama aslinya. Id tidak
+  mungkin bentrok — laporan `wl_`, izin `lv_`.
+- **Jenis izin disimpan sebagai KUNCI** (`'izin'`, `'sakit'`, `'alpa'`), dengan
+  label terpisah di `LEAVE_TYPES`. Menambah jenis keempat = satu baris di sana.
+  Jangan sekali-kali menyamakan nilai simpan dengan teks yang tampil.
+- **Rentang tanggal izin inklusif dua ujungnya.** `leaveDays('5','5') === 1`.
+  Dan tanggalnya **boleh di masa depan** — izin memang direncanakan, jadi form
+  ini sengaja TIDAK memakai `data-nofuture` seperti form lain.
+- **Hanya izin yang DISETUJUI menandai jadwal shift**, dan penandanya murni
+  tampilan: `renderShiftGrid` tidak pernah menulis ke koleksi `shifts`.
+  Menulis ke sana akan menimpa jadwal yang sudah diisi, dan koleksi itu
+  berjendela 120 hari sehingga izin yang lebih lama tidak punya sel untuk
+  ditulisi sama sekali. Dua hitungan ikut menyesuaikan: `onDuty` di ringkasan
+  mingguan, dan penyebut "Lapor Hari Ini".
+- **`leaveRequests` dilanggan utuh tanpa jendela, dan itu disengaja.**
+  Pengajuan yang menunggu persetujuan bisa berumur berapa pun, jadi jendela
+  tanggal akan menyembunyikan persis baris yang Kotak Keputusan ada untuk
+  memunculkannya. Volumenya ±200 dokumen setahun. **Tinjau ulang di ±2.000
+  dokumen** dan jendelakan seperti `subscribeShifts`.
+- **Lampiran tidak ikut cadangan.** `workLogPhotos` dan `damagePhotos` sudah
+  begitu sejak dipisah, dan surat izin mewarisi celah yang sama karena
+  menumpang koleksi itu. Record izinnya sendiri ikut lewat `BACKUP_PARTS`.
+  Perbaiki untuk ketiganya sekaligus, jangan satu-satu.
