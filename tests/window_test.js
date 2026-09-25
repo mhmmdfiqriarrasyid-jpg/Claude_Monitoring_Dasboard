@@ -1,0 +1,233 @@
+// Langganan jadwal shift dibatasi jendela tanggal.
+//
+// Koleksi `shifts` bertambah satu dokumen per orang per hari dan tidak pernah
+// berhenti — delapan orang menghasilkan ±2.900 dokumen setahun, ±8.800 di tahun
+// ketiga, dan semuanya ditarik hanya untuk menggambar satu minggu.
+//
+// Bahaya dari pembatasan seperti ini adalah data yang hilang diam-diam: minggu
+// lama terlihat kosong padahal jadwalnya ada. Jadi yang paling penting diuji di
+// sini bukan penghematannya, melainkan bahwa **mundur ke minggu lama tetap
+// memuat datanya** — jendelanya melebar, bukan menyembunyikan.
+const { launch, BASE_URL } = require('./_env');
+
+(async () => {
+    const b = await launch();
+    const page = await b.newPage({ viewport: { width: 1440, height: 900 } });
+    const errors = [];
+    page.on('pageerror', e => { if (!/Chart is not defined/.test(e.message)) errors.push(e.message); });
+    await page.goto(BASE_URL + '/index.html', { waitUntil: 'load' });
+    await page.waitForTimeout(1000);
+
+    await page.addScriptTag({ content: `(async () => { try {
+        const T = []; const t = (n, g, w) => T.push({ n, g, w, pass: JSON.stringify(g) === JSON.stringify(w) });
+
+        // Tiap langganan mencatat batas tanggal yang diminta, supaya bisa
+        // dibuktikan kapan ia melebar dan kapan tidak.
+        const subs = [];
+        let unsubCount = 0;
+        window.cloud = { isReady: true,
+            subscribeShifts: (cb, err, since) => { subs.push(since || null);
+                return () => { unsubCount++; }; },
+            saveShift: () => Promise.resolve(), deleteShift: () => Promise.resolve(),
+            saveTeamMember: () => Promise.resolve(), deleteTeamMember: () => Promise.resolve(),
+            saveUnits: () => Promise.resolve(), getAllUnits: () => Promise.resolve([]),
+            addHistoryEvents: () => Promise.resolve(), subscribeUsers: () => () => {} };
+
+        currentUser = { uid:'uO', email:'o@x.id' };
+        currentUserDoc = { role:'owner', status:'active' };
+        hideAuthGates(); applyRoleGating();
+        teamMembers = [{ id:'m1', name:'Andi', company:'PT. GPA', active:true }];
+        teamShifts = []; workLogs = []; globalData = [];
+
+        const iso = d => toISODate(d);
+        const daysBetween = (a, b) => Math.round(
+            (new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
+
+        // ---------- langganan pertama dibatasi ----------
+        teamWeekStart = startOfWeekISO(toISODate());
+        startShiftsSubscription();
+        t('langganan membawa batas tanggal, bukan seluruh koleksi',
+          typeof subs[0], 'string');
+        t('batasnya berbentuk tanggal ISO', /^\\d{4}-\\d{2}-\\d{2}$/.test(subs[0]), true);
+        const back = daysBetween(subs[0], iso(new Date()));
+        t('jendelanya mundur kira-kira empat bulan',
+          back >= SHIFT_WINDOW_DAYS && back <= SHIFT_WINDOW_DAYS + 35, true);
+
+        // ---------- mundur di dalam jendela: tidak perlu langganan baru ----------
+        // Menganti langganan itu mahal; kalau datanya sudah ada, jangan.
+        const sebelum = subs.length;
+        shiftWeekShift(-1);
+        shiftWeekShift(-1);
+        t('mundur dua minggu tidak bikin langganan baru', subs.length, sebelum);
+
+        // ---------- mundur melewati jendela: harus melebar ----------
+        // Ini bagian yang menentukan. Kalau ia TIDAK melebar, minggu lama akan
+        // tampil kosong padahal jadwalnya ada di server — persis kegagalan
+        // senyap yang harus dihindari.
+        const lamaSekali = startOfWeekISO('2020-03-02');
+        teamWeekStart = lamaSekali;
+        ensureShiftWindowCovers(lamaSekali);
+        t('mundur jauh memicu langganan baru', subs.length, sebelum + 1);
+        const batasBaru = subs[subs.length - 1];
+        t('langganan lama dilepas dulu', unsubCount >= 1, true);
+        t('jendela baru mencakup minggu yang diminta', batasBaru <= lamaSekali, true);
+        t('dan masih memberi ruang di belakangnya',
+          daysBetween(batasBaru, lamaSekali) >= 14, true);
+
+        // Sekali melebar, mundur lagi di dalamnya tidak memicu apa-apa.
+        const sesudahLebar = subs.length;
+        ensureShiftWindowCovers(addDaysISO(lamaSekali, 7));
+        t('tidak melebar dua kali untuk minggu yang sudah tercakup',
+          subs.length, sesudahLebar);
+
+        // ---------- ringkasan mingguan mundur satu minggu ekstra ----------
+        // Ia membandingkan dengan minggu SEBELUM yang ditampilkan, jadi
+        // jendelanya harus menjangkau lebih jauh dari labelnya.
+        // Kembalikan ke minggu ini dulu, atau jendelanya masih selebar
+        // pelebaran sebelumnya dan tidak akan melebar lagi.
+        teamWeekStart = startOfWeekISO(toISODate());
+        startShiftsSubscription();               // reset ke jendela normal
+        const patokan = subs.length;
+        weekAnchor = startOfWeekISO(addDaysISO(toISODate(), -(SHIFT_WINDOW_DAYS - 3)));
+        shiftSummaryWeek(0);
+        t('ringkasan ikut melebarkan jendela untuk minggu pembanding',
+          subs.length, patokan + 1);
+
+        // ---------- dialog hapus anggota tidak mengaku jumlah shift ----------
+        // teamShifts sekarang cuma berisi jendela, jadi menghitungnya akan
+        // memberi angka yang lebih kecil dari kenyataan.
+        let ditanya = '';
+        window.confirm = m => { ditanya = String(m); return false; };
+        teamShifts = [{ id:'2026-09-14_m1', date:'2026-09-14', memberId:'m1', shift:'pagi' }];
+        workLogs = [{ id:'w1', date:'2026-09-14', memberId:'m1', memberName:'Andi',
+                      start:'07:00', end:'16:00', task:'x' }];
+        deleteTeamMember('m1');
+        t('tidak menyebut angka jadwal shift', /\\d+ jadwal shift/.test(ditanya), false);
+        t('tetap menyebut jumlah laporan yang memang lengkap',
+          /1 laporan harian/.test(ditanya), true);
+        t('dan tetap menjelaskan akibatnya',
+          /anggota dihapus/.test(ditanya), true);
+
+        // ---------- keluar sesi membersihkan penanda jendela ----------
+        tearDownCloudSync();
+        t('penanda jendela dibersihkan saat sesi dibongkar', _shiftWindowStart, '');
+        // Setelah dibersihkan, pemeriksaan jendela tidak boleh menebak-nebak.
+        const setelahBongkar = subs.length;
+        ensureShiftWindowCovers('2019-01-07');
+        t('tanpa langganan aktif, tidak ada langganan liar', subs.length, setelahBongkar);
+
+        // ---------- klien basi tidak lagi melempar diam-diam ----------
+        // Service worker menyajikan firebase-init.js network-first, tapi jatuh
+        // ke cache saat fetch gagal — yaitu persis saat sinyal buruk, yaitu
+        // persis saat orang menyimpan. Panggilan telanjang ke fungsi yang belum
+        // ada melempar TypeError keluar dari handler klik: tanpa toast, tanpa
+        // baris audit, dan modalnya tetap terbuka di atas simpan yang tidak
+        // pernah terjadi.
+        const pesan = [];
+        const toastAsli = window.showToast;
+        window.showToast = m => { pesan.push(String(m)); };
+
+        window.cloud = { isReady: true, saveDevice: () => Promise.resolve('ok') };
+        t('cloudFn mengembalikan fungsinya kalau ada',
+          typeof cloudFn('saveDevice'), 'function');
+        pesan.length = 0;
+        t('cloudFn mengembalikan null kalau tidak ada', cloudFn('saveDeviceBaru'), null);
+        t('dan menyuruh muat ulang', /[Mm]uat ulang/.test(pesan.join(' ')), true);
+
+        // cloudCall dipakai di posisi ARGUMEN cloudWrite(...), tempat lemparan
+        // terjadi sebelum cloudWrite sempat berbuat apa pun. Jadi ia harus
+        // menolak, bukan melempar.
+        let lemparan = null, tolakan = null;
+        try { tolakan = await cloudCall('tidakAda', 1).catch(e => e); }
+        catch (e) { lemparan = e; }
+        t('cloudCall tidak melempar', lemparan, null);
+        t('melainkan menolak dengan kode yang bisa dikenali',
+          tolakan && tolakan.code, 'stale-client');
+        t('cloudCall meneruskan panggilan yang memang ada',
+          await cloudCall('saveDevice', {}), 'ok');
+        window.showToast = toastAsli;
+
+        // ---------- riwayat audit tidak lagi dikirim ke yang tidak berhak ----------
+        // Dulu subscribeHistory jalan untuk semua orang saat login: 500 dokumen
+        // berisi nama dan email pelaku, termasuk ke akun yang menu History-nya
+        // memang disembunyikan.
+        let langganRiwayat = 0;
+        window.cloud = { isReady: true,
+            subscribeHistory: () => { langganRiwayat++; return () => {}; },
+            addHistoryEvents: () => Promise.resolve() };
+        cloudHistoryUnsub = null; cloudHistory = [];
+
+        currentUserDoc = { role: 'khl', status: 'active', access: { history: 'none' } };
+        startHistorySubscription();
+        t('tanpa akses history, tidak ada langganan sama sekali', langganRiwayat, 0);
+
+        currentUserDoc = { role: 'owner', status: 'active' };
+        startHistorySubscription();
+        t('dengan akses, langganan dimulai', langganRiwayat, 1);
+        startHistorySubscription();
+        t('membukanya lagi tidak melangganan ulang', langganRiwayat, 1);
+
+        // Akses bisa dicabut di tengah sesi; aliran datanya harus ikut putus.
+        cloudHistory = [{ id: 'h1', timestamp: 1, action: 'edit' }];
+        currentUserDoc = { role: 'khl', status: 'active', access: { history: 'none' } };
+        applyRoleGating();
+        t('akses dicabut memutus langganan', cloudHistoryUnsub, null);
+        t('dan membuang baris yang sudah terlanjur diterima', cloudHistory.length, 0);
+        currentUserDoc = { role:'owner', status:'active' };
+        applyRoleGating();
+
+        // ---------- bootstrap awal tidak lagi mengunduh empat koleksi ----------
+        // Dulu ia memanggil getAll* hanya untuk membaca .length — 288 dokumen
+        // tiap owner login, demi empat jawaban ya/tidak.
+        const dipanggil = [];
+        const cloudLama = window.cloud;
+        globalData = [{ id:'u_1', name:'A', sn:'S1' }];
+        globalImplements = []; globalDamages = []; globalLicenseStock = [];
+        window.cloud = { isReady: true,
+            isCollectionEmpty: w => { dipanggil.push('cek:' + w); return Promise.resolve(false); },
+            getAllUnits: () => { dipanggil.push('UNDUH-SEMUA:units'); return Promise.resolve([]); },
+            getAllImplements: () => { dipanggil.push('UNDUH-SEMUA:implements'); return Promise.resolve([]); },
+            getAllDamages: () => { dipanggil.push('UNDUH-SEMUA:damages'); return Promise.resolve([]); },
+            getAllLicenses: () => { dipanggil.push('UNDUH-SEMUA:licenses'); return Promise.resolve([]); },
+            saveUnits: () => Promise.resolve(), saveImplements: () => Promise.resolve(),
+            saveDamages: () => Promise.resolve(), saveLicenses: () => Promise.resolve(),
+            getAllTeamMembers: () => Promise.resolve([]) };
+        await migrateLocalToCloudIfNeeded();
+        t('memakai pemeriksaan murah, bukan unduh seluruh koleksi',
+          dipanggil.filter(x => x.startsWith('UNDUH-SEMUA')), []);
+        t('dan memang memeriksa keempatnya',
+          dipanggil.filter(x => x.startsWith('cek:')).length, 4);
+
+        // Kalau service worker masih menyajikan firebase-init.js lama, jangan
+        // diam-diam melewati bootstrap — pakai jalur lama.
+        dipanggil.length = 0;
+        window.cloud = { ...window.cloud };
+        delete window.cloud.isCollectionEmpty;
+        await migrateLocalToCloudIfNeeded();
+        t('versi lama tetap jalan lewat jalur lama',
+          dipanggil.filter(x => x.startsWith('UNDUH-SEMUA')).length > 0, true);
+
+        // Dan saat cloud memang kosong, unggahannya tetap terjadi.
+        let diunggah = 0;
+        window.cloud = { isReady: true,
+            isCollectionEmpty: () => Promise.resolve(true),
+            saveUnits: () => { diunggah++; return Promise.resolve(); },
+            saveImplements: () => Promise.resolve(), saveDamages: () => Promise.resolve(),
+            saveLicenses: () => Promise.resolve(), getAllTeamMembers: () => Promise.resolve([]) };
+        await migrateLocalToCloudIfNeeded();
+        t('cloud kosong tetap memicu unggahan awal', diunggah, 1);
+        window.cloud = cloudLama;
+
+        window.__T = T;
+    } catch (e) { window.__T = [{n:'THREW: '+e.message+' | '+(e.stack||'').split('\\n')[1], g:1, w:0, pass:false}]; }
+    })();` });
+
+    await page.waitForFunction(() => window.__T, null, { timeout: 25000 });
+    const res = await page.evaluate(() => window.__T);
+    const fail = res.filter(r => !r.pass);
+    res.forEach(r => console.log(`${r.pass ? 'PASS' : 'FAIL'}  ${r.n}${r.pass ? '' : `\n        dapat=${JSON.stringify(r.g)} harap=${JSON.stringify(r.w)}`}`));
+    console.log(`\n${res.length - fail.length}/${res.length} lulus`);
+    console.log('PAGE ERRORS:', errors.length ? errors : 'none');
+    await b.close();
+    process.exit(fail.length ? 1 : 0);
+})();

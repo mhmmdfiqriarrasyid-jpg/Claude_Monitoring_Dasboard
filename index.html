@@ -1,0 +1,2569 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OT Monitoring Tractor and Device</title>
+
+    <!-- Fonts & Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <!-- Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#F0EEE6">
+
+    <!-- Dashboard Styles -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner"></div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ===== AUTH GATE (Login / Sign-up / Pending) ===== -->
+<div class="auth-gate" id="authGate">
+    <div class="auth-card">
+        <div class="auth-card__brand">
+            <img src="./logo.png" alt="OT Monitoring logo" class="brand-logo--lg">
+            <h1>OT Monitoring Tractor and Device</h1>
+            <p>Fleet health, devices &amp; implements — one dashboard.</p>
+        </div>
+
+        <!-- Tabs: Sign In / Create Account -->
+        <div class="auth-tabs">
+            <button class="auth-tab active" id="authTabSignIn" onclick="switchAuthTab('signin')">Sign In</button>
+            <button class="auth-tab" id="authTabSignUp" onclick="switchAuthTab('signup')">Create Account</button>
+        </div>
+
+        <!-- Sign In form -->
+        <form id="signInForm" class="auth-form" onsubmit="handleSignIn(event)">
+            <div class="form-group">
+                <label class="form-label" for="signInEmail">Email</label>
+                <input type="email" class="form-input" id="signInEmail" required autocomplete="email">
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="signInPassword">Password</label>
+                <input type="password" class="form-input" id="signInPassword" required autocomplete="current-password">
+            </div>
+            <div class="auth-error" id="signInError"></div>
+            <button type="submit" class="btn btn-primary auth-submit">
+                <i class="fas fa-right-to-bracket"></i> Sign In
+            </button>
+        </form>
+
+        <!-- Sign Up form -->
+        <form id="signUpForm" class="auth-form" style="display:none" onsubmit="handleSignUp(event)">
+            <div class="form-group">
+                <label class="form-label" for="signUpName">Display Name</label>
+                <input type="text" class="form-input" id="signUpName" placeholder="Your name" autocomplete="name">
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="signUpEmail">Email</label>
+                <input type="email" class="form-input" id="signUpEmail" required autocomplete="email">
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="signUpPassword">Password</label>
+                <input type="password" class="form-input" id="signUpPassword" required minlength="6" autocomplete="new-password">
+            </div>
+            <div class="auth-error" id="signUpError"></div>
+            <div class="auth-hint">
+                <i class="fas fa-info-circle"></i>
+                Akun baru dimulai sebagai <strong>hanya-lihat</strong> dan perlu persetujuan owner sebelum bisa mengedit data.
+            </div>
+            <button type="submit" class="btn btn-primary auth-submit">
+                <i class="fas fa-user-plus"></i> Create Account
+            </button>
+        </form>
+
+        <div class="auth-card__footer">© 2026 OT Monitoring Tractor and Device</div>
+    </div>
+</div>
+
+<!-- ===== PENDING APPROVAL SCREEN (logged in but not approved) ===== -->
+<div class="auth-gate" id="pendingGate" style="display:none">
+    <div class="auth-card">
+        <div class="auth-card__brand">
+            <i class="fas fa-hourglass-half" style="color:#d69e2e"></i>
+            <h1>Menunggu persetujuan</h1>
+            <p id="pendingEmail"></p>
+        </div>
+        <div class="pending-message">
+            <p>Akun Anda sudah dibuat, tetapi owner harus menyetujuinya dulu sebelum Anda bisa membuka dashboard.</p>
+            <p style="margin-top:12px;color:var(--text-secondary);font-size:13px">
+                Setelah disetujui, muat ulang halaman ini atau login lagi. Anda akan mulai dengan akses <strong>hanya-lihat</strong> — owner bisa memberi hak edit kapan saja.
+            </p>
+        </div>
+        <button class="btn btn-secondary auth-submit" onclick="handleSignOut()">
+            <i class="fas fa-right-from-bracket"></i> Sign Out
+        </button>
+    </div>
+</div>
+
+<!-- ===== APP SHELL (sidebar + body) ===== -->
+<div class="app-shell" id="appShell">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar__brand">
+        <img src="./logo.png" alt="OT Monitoring logo" class="brand-logo">
+        <div class="sidebar__brand-text">
+            <div class="sidebar__brand-name">OT Monitoring</div>
+            <div class="sidebar__brand-sub">Tractor &amp; device fleet</div>
+        </div>
+    </div>
+    <nav class="sidebar__nav" onclick="if(event.target.closest('.nav__link'))document.getElementById('appShell').classList.remove('nav-open')">
+        <div class="nav-group">
+            <div class="nav-group__label">Pimpinan</div>
+            <a class="nav__link" data-view="leader" onclick="navigateTo('leader')">
+                <i class="fas fa-inbox"></i> Kotak Keputusan
+                <span class="nav__badge" id="decisionBadge" style="display:none">0</span>
+            </a>
+        </div>
+        <div class="nav-group">
+            <div class="nav-group__label">General</div>
+            <a class="nav__link active" data-view="dashboard" onclick="navigateTo('dashboard')">
+                <i class="fas fa-chart-line"></i> Dashboard
+            </a>
+            <a class="nav__link" data-view="editUnits" onclick="navigateTo('editUnits')">
+                <i class="fas fa-pen-to-square"></i> Edit Units
+            </a>
+            <a class="nav__link" data-view="implements" onclick="navigateTo('implements')">
+                <i class="fas fa-trailer"></i> Implements
+            </a>
+        </div>
+        <div class="nav-group">
+            <div class="nav-group__label">Log report</div>
+            <a class="nav__link" data-view="damage" onclick="navigateTo('damage')">
+                <i class="fas fa-screwdriver-wrench"></i> Kerusakan
+            </a>
+            <a class="nav__link" data-view="licenseStock" onclick="navigateTo('licenseStock')">
+                <i class="fas fa-key"></i> Stok Lisensi
+            </a>
+            <a class="nav__link" data-view="team" onclick="navigateTo('team')">
+                <i class="fas fa-user-clock"></i> Tim
+            </a>
+            <a class="nav__link" id="navHistory" onclick="showHistory()" title="Change History">
+                <i class="fas fa-clock-rotate-left"></i> History
+            </a>
+        </div>
+        <div class="nav-group">
+            <div class="nav-group__label">Warehouse</div>
+            <a class="nav__link" data-view="warehouse" onclick="navigateTo('warehouse')">
+                <i class="fas fa-warehouse"></i> Gudang
+            </a>
+        </div>
+        <div class="nav-group" data-owner-only style="display:none">
+            <div class="nav-group__label">Admin</div>
+            <a class="nav__link" data-view="users" onclick="navigateTo('users')">
+                <i class="fas fa-users-gear"></i> Users
+            </a>
+        </div>
+    </nav>
+  </aside>
+
+  <!-- Body: topbar + main -->
+  <div class="app-body">
+    <div class="topbar">
+        <button class="topbar__burger" title="Menu" onclick="document.getElementById('appShell').classList.toggle('nav-open')">
+            <i class="fas fa-bars"></i>
+        </button>
+        <div class="header__status">
+            <span class="status-dot" id="connectionDot"></span>
+            <span id="connectionLabel">No Data</span>
+        </div>
+        <span id="lastUpdated"></span>
+        <div class="topbar__spacer"></div>
+        <div class="global-search" id="globalSearchWrap">
+            <i class="fas fa-search"></i>
+            <input type="text" id="globalSearch" aria-label="Cari unit di seluruh armada" placeholder="Cari unit… (nama/SN)" autocomplete="off">
+            <div class="global-search__results" id="globalSearchResults"></div>
+        </div>
+        <div class="user-pill" id="userPill" style="display:none" onclick="toggleUserMenu()">
+            <i class="fas fa-user-circle"></i>
+            <span class="user-pill__name" id="userPillName">—</span>
+            <span class="user-pill__role" id="userPillRole">—</span>
+            <i class="fas fa-chevron-down user-pill__chev"></i>
+            <div class="user-menu" id="userMenu">
+                <div class="user-menu__header">
+                    <div class="user-menu__email" id="userMenuEmail">—</div>
+                    <div class="user-menu__role-label" id="userMenuRoleLabel">—</div>
+                </div>
+                <button class="user-menu__item" onclick="handleSignOut(); event.stopPropagation();">
+                    <i class="fas fa-right-from-bracket"></i> Sign out
+                </button>
+            </div>
+        </div>
+    </div>
+
+<!-- ===== MAIN ===== -->
+<main class="main">
+
+    <!-- ==================== DASHBOARD VIEW ==================== -->
+    <div id="viewDashboard" class="view">
+
+        <!-- Change Alert Banner -->
+        <div class="change-banner" id="changeBanner">
+            <div class="change-banner__content">
+                <i class="fas fa-info-circle"></i>
+                <span id="changeBannerText"></span>
+            </div>
+            <button class="btn-icon" onclick="dismissBanner()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+
+        <!-- Empty State (shown when no data) -->
+        <div id="emptyState" class="empty-state">
+            <i class="fas fa-database"></i>
+            <h3>Belum ada unit di database</h3>
+            <p>Buka Edit Units untuk menambah unit traktor manual atau impor dari berkas CSV.</p>
+            <br>
+            <button class="btn btn-primary" onclick="navigateTo('editUnits')">
+                <i class="fas fa-pen-to-square"></i> Manage Units
+            </button>
+        </div>
+
+        <!-- Dashboard Content (hidden until data exists) -->
+        <div id="dashboardContent" style="display:none;">
+
+            <!-- KPI Cards -->
+            <!-- Dashboard scope. Shown only once both groups have units, so a
+                 database with no heavy equipment looks exactly as before. -->
+            <div class="team-tabbar" id="dashGroupBar" style="display:none">
+                <div class="team-tabs" role="tablist" aria-label="Cakupan dashboard">
+                    <button type="button" class="team-tab dash-group-tab" data-group="tractor" role="tab" aria-selected="true" onclick="setDashGroup('tractor')">Pertanian</button>
+                    <button type="button" class="team-tab dash-group-tab" data-group="heavy" role="tab" aria-selected="false" onclick="setDashGroup('heavy')">Alat Berat</button>
+                    <button type="button" class="team-tab dash-group-tab" data-group="all" role="tab" aria-selected="false" onclick="setDashGroup('all')">Semua</button>
+                </div>
+            </div>
+            <!-- Outside the tab bar on purpose: print CSS hides .team-tabbar, and
+                 a printed dashboard must still say which group it covers. -->
+            <p id="dashScopeCaption" class="dash-scope-caption" hidden></p>
+            <p id="dashNarrative" class="dash-narrative" style="display:none"></p>
+
+            <div class="kpi-grid">
+                <div class="kpi-card total">
+                    <div class="kpi-card__header">
+                        <span class="kpi-card__label">Total Units</span>
+                        <div class="kpi-card__icon"><i class="fas fa-boxes-stacked"></i></div>
+                    </div>
+                    <div class="kpi-card__value" id="kpiTotal">0</div>
+                    <div class="kpi-card__sub">Seluruh unit terdaftar</div>
+                </div>
+                <div class="kpi-card good">
+                    <div class="kpi-card__header">
+                        <span class="kpi-card__label">Good</span>
+                        <div class="kpi-card__icon"><i class="fas fa-check-circle"></i></div>
+                    </div>
+                    <div class="kpi-card__value" id="kpiGood">0</div>
+                    <div class="kpi-card__sub" id="kpiGoodPct">0% of total</div>
+                    <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiGoodBar" style="width:0%"></div></div>
+                </div>
+                <div class="kpi-card breakdown">
+                    <div class="kpi-card__header">
+                        <span class="kpi-card__label">Breakdown</span>
+                        <div class="kpi-card__icon"><i class="fas fa-exclamation-triangle"></i></div>
+                    </div>
+                    <div class="kpi-card__value" id="kpiBreakdown">0</div>
+                    <div class="kpi-card__sub" id="kpiBreakdownPct">0% of total</div>
+                    <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiBreakdownBar" style="width:0%"></div></div>
+                </div>
+                <div class="kpi-card issue">
+                    <div class="kpi-card__header">
+                        <span class="kpi-card__label">Units with Issues</span>
+                        <div class="kpi-card__icon"><i class="fas fa-wrench"></i></div>
+                    </div>
+                    <div class="kpi-card__value" id="kpiIssue">0</div>
+                    <div class="kpi-card__sub" id="kpiIssuePct">0% of total</div>
+                    <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiIssueBar" style="width:0%"></div></div>
+                </div>
+                <div class="kpi-card health">
+                    <div class="kpi-card__header">
+                        <span class="kpi-card__label">Health Rate</span>
+                        <div class="kpi-card__icon"><i class="fas fa-heart-pulse"></i></div>
+                    </div>
+                    <div class="kpi-card__value" id="kpiHealth">0%</div>
+                    <div class="kpi-card__sub">Kesehatan armada keseluruhan</div>
+                    <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiHealthBar" style="width:0%"></div></div>
+                </div>
+            </div>
+
+            <!-- Charts Row -->
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <div class="chart-card__title"><i class="fas fa-chart-pie"></i> Unit Status Overview</div>
+                    <div class="chart-container"><canvas id="statusChart"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-card__title"><i class="fas fa-chart-bar"></i> Distribution by Site</div>
+                    <div class="chart-container"><canvas id="siteChart"></canvas></div>
+                </div>
+            </div>
+
+            <!-- License Expiring Soon -->
+            <div class="license-alerts-section" id="licenseAlertsSection" style="display:none">
+                <div class="section-header">
+                    <div class="section-title"><i class="fas fa-bell"></i> License Alerts</div>
+                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                        <div class="license-alerts-summary" id="licenseAlertsSummary"></div>
+                        <button class="btn btn-secondary btn-sm" onclick="sendLicenseAlertEmail()" id="btnEmailAlert">
+                            <i class="fas fa-envelope"></i> Email Report
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="openEmailSettingsModal()" title="Email settings">
+                            <i class="fas fa-gear"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="license-alerts-cards" id="licenseAlertsCards"></div>
+            </div>
+
+            <!-- Low license stock warning -->
+            <div class="stock-alerts-section" id="stockAlertsSection" style="display:none">
+                <div class="section-title" style="margin-bottom:10px"><i class="fas fa-boxes-stacked"></i> Stok Lisensi Menipis</div>
+                <div class="stock-alerts-cards" id="stockAlertsCards"></div>
+            </div>
+
+            <!-- Component Health -->
+            <div class="component-health">
+                <div class="section-header">
+                    <div class="section-title"><i class="fas fa-microchip"></i> Component Health Overview</div>
+                </div>
+                <div class="component-grid" id="componentGrid"></div>
+            </div>
+
+            <!-- Downtime & Reliability Section -->
+            <div class="downtime-section">
+                <div class="section-header">
+                    <div class="section-title"><i class="fas fa-stopwatch"></i> Reliability &amp; Downtime</div>
+                    <span style="font-size:11px;color:var(--text-light)">Dicatat otomatis dari perubahan status</span>
+                </div>
+                <div class="downtime-kpis">
+                    <div class="downtime-kpi">
+                        <div class="downtime-kpi__label">MTBF</div>
+                        <div class="downtime-kpi__value" id="kpiMTBF">-</div>
+                        <div class="downtime-kpi__sub" id="kpiMTBFSub">Rata-rata jarak antar kerusakan</div>
+                    </div>
+                    <div class="downtime-kpi">
+                        <div class="downtime-kpi__label">MTTR</div>
+                        <div class="downtime-kpi__value" id="kpiMTTR">-</div>
+                        <div class="downtime-kpi__sub">Rata-rata waktu perbaikan</div>
+                    </div>
+                    <div class="downtime-kpi">
+                        <div class="downtime-kpi__label">This Month</div>
+                        <div class="downtime-kpi__value" id="kpiMonthDowntime">-</div>
+                        <div class="downtime-kpi__sub">Total downtime</div>
+                    </div>
+                    <div class="downtime-kpi">
+                        <div class="downtime-kpi__label">Failures</div>
+                        <div class="downtime-kpi__value" id="kpiFailures">0</div>
+                        <div class="downtime-kpi__sub">Breakdown tercatat</div>
+                    </div>
+                </div>
+                <div class="downtime-grid">
+                    <div>
+                        <div class="chart-card__title"><i class="fas fa-ranking-star"></i> Top 5 Worst Offenders</div>
+                        <div class="top-offenders" id="topOffendersList"></div>
+                    </div>
+                    <div>
+                        <div class="chart-card__title"><i class="fas fa-chart-bar"></i> Downtime by Unit (Top 10)</div>
+                        <div class="chart-container-sm"><canvas id="downtimeChart"></canvas></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filter Bar -->
+            <div class="filter-bar">
+                <div class="filter-bar__search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="searchInput" aria-label="Cari unit berdasarkan nama, model, atau serial number" placeholder="Search by nickname, model, or serial...">
+                </div>
+                <select id="statusFilter" aria-label="Filter status unit"><option value="">All Status</option></select>
+                <select id="siteFilter" aria-label="Filter site"><option value="">All Sites</option></select>
+                <select id="componentFilter" aria-label="Filter komponen">
+                    <option value="">All Components</option>
+                    <option value="Display">Display Issues</option>
+                    <option value="GPS">GPS Issues</option>
+                    <option value="Steering">Steering Issues</option>
+                    <option value="JDLink">JDLink Issues</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" onclick="clearFilter()"><i class="fas fa-rotate-left"></i> Reset</button>
+                <span class="filter-count" id="filterCount"></span>
+            </div>
+
+            <!-- Detail Table -->
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-table-list"></i> Unit Detail</div>
+                    <div class="table-card__actions">
+                        <button class="btn btn-secondary btn-sm csv-export" onclick="exportCSV()"><i class="fas fa-download"></i> Export CSV</button>
+                        <button class="btn btn-secondary btn-sm" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table" id="detailTable">
+                        <thead>
+                            <tr>
+                                <th tabindex="0" role="button" onclick="sortTable('no')">No <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th tabindex="0" role="button" onclick="sortTable('name')">Nickname <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th tabindex="0" role="button" onclick="sortTable('model')">Model <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th tabindex="0" role="button" onclick="sortTable('sn')">Serial Number <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th tabindex="0" role="button" onclick="sortTable('implement')">Implement <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th tabindex="0" role="button" onclick="sortTable('status')">Status <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th tabindex="0" role="button" onclick="sortTable('display')">Display <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th tabindex="0" role="button" onclick="sortTable('gps')">GPS <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th tabindex="0" role="button" onclick="sortTable('steering')">Steering <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th tabindex="0" role="button" onclick="sortTable('jdlink')">JDLink <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th tabindex="0" role="button" onclick="sortTable('site')">Site <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th tabindex="0" role="button" onclick="sortTable('yearReceived')">Tahun Penerimaan <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th tabindex="0" role="button" onclick="sortTable('userCategory')">User Category <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th tabindex="0" role="button" onclick="sortTable('gpsLicense')">GPS License <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th tabindex="0" role="button" onclick="sortTable('gpsExpiry')">GPS Expiry <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th tabindex="0" role="button" onclick="sortTable('licenseDisplay')">Display License <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                                <th tabindex="0" role="button" onclick="sortTable('displayExpiry')">Display Expiry <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="detailBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Damage Statistics -->
+            <div class="table-card" id="damageStatsSection" style="display:none;margin-bottom:24px;">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-screwdriver-wrench"></i> Statistik Kerusakan</div>
+                    <span id="damageStatsTotal" style="font-size:12.5px;color:var(--text-secondary)"></span>
+                </div>
+                <div class="damage-stats-grid">
+                    <div>
+                        <div class="damage-stats__label">Per Tipe</div>
+                        <div id="damageTypeChips" class="damage-type-chips"></div>
+                    </div>
+                    <div>
+                        <div class="damage-stats__label">Tren 6 Bulan Terakhir</div>
+                        <div class="chart-container-sm"><canvas id="damageTrendChart"></canvas></div>
+                    </div>
+                    <div>
+                        <div class="damage-stats__label">Unit Paling Sering Rusak</div>
+                        <div id="damageTopUnits"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Repair & Maintenance Section -->
+            <div class="repair-section">
+                <div class="repair-header">
+                    <div class="table-card__title"><i class="fas fa-tools"></i> Repair &amp; Maintenance</div>
+                    <div class="table-card__actions">
+                        <select id="issueFilter" aria-label="Filter jenis masalah" class="btn btn-secondary btn-sm" onchange="renderRepair()">
+                            <option value="">All Issues</option>
+                            <option value="Unit">Unit</option>
+                            <option value="Display">Display</option>
+                            <option value="GPS">GPS</option>
+                            <option value="Steering">Steering</option>
+                            <option value="JDLink">JDLink</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="repair-body">
+                    <div class="issue-summary" id="issueSummary"></div>
+                    <div class="repair-grid">
+                        <div>
+                            <div class="chart-card__title"><i class="fas fa-ranking-star"></i> Top Issues</div>
+                            <div class="chart-container-sm"><canvas id="topIssueChart"></canvas></div>
+                        </div>
+                        <div>
+                            <div class="chart-card__title"><i class="fas fa-location-dot"></i> Issues by Site</div>
+                            <div class="chart-container-sm"><canvas id="issueBySiteChart"></canvas></div>
+                        </div>
+                    </div>
+                    <div class="table-wrapper" style="max-height:320px;">
+                        <table class="data-table">
+                            <thead><tr><th>No</th><th>Nickname</th><th>Model</th><th>Serial Number</th><th>Issues</th><th>Site</th></tr></thead>
+                            <tbody id="repairBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /dashboardContent -->
+    </div><!-- /viewDashboard -->
+
+    <!-- ==================== EDIT UNITS VIEW ==================== -->
+    <div id="viewEditUnits" class="view" style="display:none;">
+
+        <!-- Unit groups. Always visible: it is how the first heavy unit gets
+             added. Button text is filled in by renderEditGroupTabs(). -->
+        <div class="team-tabbar" id="editGroupBar">
+            <div class="team-tabs" role="tablist" aria-label="Kelompok unit">
+                <button type="button" class="team-tab eu-tab active" data-group="tractor" role="tab" aria-selected="true"
+                        aria-controls="editTable" onclick="switchEditUnitsGroup('tractor')">Agricultural Equipment</button>
+                <button type="button" class="team-tab eu-tab" data-group="heavy" role="tab" aria-selected="false"
+                        aria-controls="editTable" onclick="switchEditUnitsGroup('heavy')">Heavy Equipment</button>
+            </div>
+        </div>
+
+        <!-- Edit Toolbar -->
+        <div class="edit-toolbar">
+            <div class="edit-toolbar__left">
+                <button class="btn btn-primary" onclick="toggleImportPanel()">
+                    <i class="fas fa-file-import"></i> Import CSV
+                </button>
+                <button class="btn btn-success editonly editonly--editunits" onclick="showAddForm()">
+                    <i class="fas fa-plus"></i> Add Unit
+                </button>
+                <button class="btn btn-secondary csv-export" onclick="exportEditCSV()" title="Export the units shown below to CSV">
+                    <i class="fas fa-file-csv"></i> Export CSV
+                </button>
+                <button class="btn btn-secondary csv-export" onclick="exportBackup()" title="Unduh cadangan JSON: unit, implement, kerusakan, lisensi, kategori, komponen, tim, shift, laporan harian, dan gudang. Akun dan riwayat audit tidak termasuk. (Ctrl+S)">
+                    <i class="fas fa-download"></i> Backup
+                </button>
+                <button class="btn btn-secondary editonly editonly--editunits" onclick="triggerRestore()" title="Pulihkan dari berkas cadangan JSON">
+                    <i class="fas fa-upload"></i> Restore
+                </button>
+                <button class="btn btn-secondary editonly editonly--editunits" data-owner-only style="display:none" onclick="showAutoBackups()" title="Tiga titik pulih otomatis dari perangkat ini — hanya data unit">
+                    <i class="fas fa-clock-rotate-left"></i> Cadangan Otomatis
+                </button>
+                <button class="btn btn-secondary editonly editonly--editunits" id="btnBulkEdit" style="display:none" onclick="openBulkEdit()">
+                    <i class="fas fa-pen-to-square"></i> Bulk Edit (<span id="bulkEditCount">0</span>)
+                </button>
+                <button class="btn btn-danger" id="btnDeleteSelected" style="display:none" onclick="deleteSelected()">
+                    <i class="fas fa-trash"></i> Delete Selected (<span id="selectedCount">0</span>)
+                </button>
+            </div>
+            <div class="edit-toolbar__right">
+                <select class="form-select form-select--sm" id="editStatusFilter" aria-label="Filter status unit" onchange="renderEditTable()">
+                    <option value="">All Status</option>
+                </select>
+                <select class="form-select form-select--sm" id="editSiteFilter" aria-label="Filter site" onchange="renderEditTable()">
+                    <option value="">All Sites</option>
+                </select>
+                <div class="edit-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="editSearch" aria-label="Cari unit" placeholder="Search units... (press /)">
+                </div>
+                <button class="btn btn-secondary" id="compactToggle" onclick="toggleCompactMode()" title="Compact view"><i class="fas fa-compress"></i></button>
+                <span id="editUnitCount">0 units in database</span>
+            </div>
+        </div>
+        <input type="file" id="restoreFileInput" aria-label="Pilih berkas backup untuk direstore" accept=".json" hidden>
+
+        <!-- Import Panel (collapsible) -->
+        <div class="import-panel" id="importPanel">
+            <div class="file-upload-area" id="editDropZone" onclick="document.getElementById('editCsvInput').click()">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <p>Klik untuk mengunggah atau seret & lepas berkas CSV</p>
+                <span class="hint" id="importHint">Unit baru akan ditambahkan. Serial number duplikat dilewati.</span>
+                <input type="file" id="editCsvInput" aria-label="Pilih berkas CSV unit untuk diimpor" accept=".csv" hidden>
+            </div>
+        </div>
+
+        <!-- Edit Table -->
+        <div class="table-card">
+            <div class="table-card__header">
+                <div class="table-card__title"><i class="fas fa-pen-to-square"></i> <span id="editTableTitle">Unit Database</span></div>
+            </div>
+            <div class="table-wrapper" style="max-height:600px;">
+                <table class="data-table table--cardable" id="editTable">
+                    <thead>
+                        <tr>
+                            <th class="col-check"><input type="checkbox" id="selectAll" aria-label="Pilih semua unit" onchange="toggleSelectAll()"></th>
+                            <th tabindex="0" role="button" onclick="sortEditTable('no')">No <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th tabindex="0" role="button" onclick="sortEditTable('name')">Nickname <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th tabindex="0" role="button" onclick="sortEditTable('model')">Model <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th tabindex="0" role="button" onclick="sortEditTable('sn')">Serial Number <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th tabindex="0" role="button" onclick="sortEditTable('implement')">Implement <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th tabindex="0" role="button" onclick="sortEditTable('status')">Status <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th tabindex="0" role="button" onclick="sortEditTable('display')">Display <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th tabindex="0" role="button" onclick="sortEditTable('gps')">GPS <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th tabindex="0" role="button" onclick="sortEditTable('steering')">Steering <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th tabindex="0" role="button" onclick="sortEditTable('jdlink')">JDLink <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th tabindex="0" role="button" onclick="sortEditTable('site')">Site <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th tabindex="0" role="button" onclick="sortEditTable('yearReceived')">Tahun Penerimaan <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th tabindex="0" role="button" onclick="sortEditTable('userCategory')">User Category <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th tabindex="0" role="button" onclick="sortEditTable('gpsLicense')">GPS License <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th tabindex="0" role="button" onclick="sortEditTable('gpsExpiry')">GPS Expiry <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th tabindex="0" role="button" onclick="sortEditTable('licenseDisplay')">Display License <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th tabindex="0" role="button" onclick="sortEditTable('displayExpiry')">Display Expiry <span class="sort-icon"><i class="fas fa-sort"></i></span></th>
+                            <th>Remarks</th>
+                            <th>Attachments</th>
+                            <th class="col-actions">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="editBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+    <!-- Hidden file input for unit attachments -->
+    <input type="file" id="attachFileInput" aria-label="Pilih berkas lampiran" multiple accept=".pdf,.csv,.doc,.docx,.xls,.xlsx" style="display:none">
+
+    </div><!-- /viewEditUnits -->
+
+    <!-- ==================== IMPLEMENTS VIEW ==================== -->
+    <div id="viewImplements" class="view" style="display:none;">
+
+        <!-- Implements Toolbar -->
+        <div class="edit-toolbar">
+            <div class="edit-toolbar__left">
+                <button class="btn btn-success editonly editonly--implements" onclick="showAddImplementForm()">
+                    <i class="fas fa-plus"></i> Add Implement
+                </button>
+                <button class="btn btn-danger" id="btnDeleteSelectedImpl" style="display:none" onclick="deleteSelectedImplements()">
+                    <i class="fas fa-trash"></i> Delete Selected (<span id="selectedImplCount">0</span>)
+                </button>
+                <input type="file" id="implementCsvInput" aria-label="Pilih berkas CSV implement untuk diimpor" accept=".csv" style="display:none">
+                <button class="btn btn-secondary csv-import" onclick="document.getElementById('implementCsvInput').click()">
+                    <i class="fas fa-file-import"></i> Import CSV
+                </button>
+                <button class="btn btn-secondary csv-import" onclick="downloadImplementTemplate()">
+                    <i class="fas fa-file-arrow-down"></i> Template
+                </button>
+                <button class="btn btn-secondary csv-export" onclick="exportImplementsCSV()">
+                    <i class="fas fa-download"></i> Export CSV
+                </button>
+            </div>
+            <div class="edit-toolbar__right">
+                <div class="edit-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="implementSearch" aria-label="Cari implement" placeholder="Search implements...">
+                </div>
+                <span id="implementCount">0 implements in database</span>
+            </div>
+        </div>
+
+        <!-- Implements Table -->
+        <div class="table-card">
+            <div class="table-card__header">
+                <div class="table-card__title"><i class="fas fa-trailer"></i> Implements Database</div>
+            </div>
+            <div class="table-wrapper" style="max-height:600px;">
+                <table class="data-table table--cardable" id="implementTable">
+                    <thead>
+                        <tr>
+                            <th class="col-check"><input type="checkbox" id="selectAllImpl" aria-label="Pilih semua implement" onchange="toggleSelectAllImplements()"></th>
+                            <th>No</th>
+                            <th>Profile Name</th>
+                            <th>Brand</th>
+                            <th>Equipment Type</th>
+                            <th>Code</th>
+                            <th>Working Width</th>
+                            <th>Operation</th>
+                            <th>Connecting Type</th>
+                            <th>Chart of Account</th>
+                            <th class="col-actions">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="implementBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+    </div><!-- /viewImplements -->
+
+    <!-- ==================== DAMAGE (KERUSAKAN) VIEW ==================== -->
+    <div id="viewDamage" class="view" style="display:none;">
+
+        <div class="damage-rules-slot"></div>
+
+        <!-- Damage Toolbar -->
+        <div class="edit-toolbar">
+            <div class="edit-toolbar__left">
+                <button class="btn btn-success editonly editonly--damage" onclick="showAddDamageForm()">
+                    <i class="fas fa-plus"></i> Tambah Kerusakan
+                </button>
+                <button class="btn btn-danger" id="btnDeleteSelectedDamage" style="display:none" onclick="deleteSelectedDamages()">
+                    <i class="fas fa-trash"></i> Delete Selected (<span id="selectedDamageCount">0</span>)
+                </button>
+                <button class="btn btn-secondary csv-export" onclick="exportDamageCSV()">
+                    <i class="fas fa-download"></i> Export CSV
+                </button>
+            </div>
+            <div class="edit-toolbar__right">
+                <select id="damageTypeFilter" aria-label="Filter tipe kerusakan" class="btn btn-secondary btn-sm">
+                    <option value="">Semua Tipe</option>
+                    <option value="Mekanis">Mekanis</option>
+                    <option value="Software">Software</option>
+                    <option value="Device Precision">Device Precision</option>
+                </select>
+                <div class="edit-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="damageSearch" aria-label="Cari kerusakan" placeholder="Cari kerusakan...">
+                </div>
+                <span id="damageCount">0 catatan kerusakan</span>
+            </div>
+        </div>
+
+        <!-- Damage Table -->
+        <div class="table-card">
+            <div class="table-card__header">
+                <div class="table-card__title"><i class="fas fa-screwdriver-wrench"></i> Riwayat Kerusakan</div>
+            </div>
+            <div class="table-wrapper" style="max-height:600px;">
+                <table class="data-table table--cardable" id="damageTable">
+                    <thead>
+                        <tr>
+                            <th class="col-check"><input type="checkbox" id="selectAllDamage" aria-label="Pilih semua catatan kerusakan" onchange="toggleSelectAllDamages()"></th>
+                            <th>No</th>
+                            <th>Tanggal</th>
+                            <th>Unit</th>
+                            <th>Serial Number</th>
+                            <th>Site</th>
+                            <th>Tipe Kerusakan</th>
+                            <th>Komponen</th>
+                            <th>Deskripsi</th>
+                            <th>Foto</th>
+                            <th>Perbaikan</th>
+                            <th class="col-actions">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="damageBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+    </div><!-- /viewDamage -->
+
+    <!-- ==================== LICENSE STOCK VIEW ==================== -->
+    <div id="viewLicenseStock" class="view" style="display:none;">
+
+        <div class="license-rules-slot"></div>
+
+        <!-- Stock summary per license type -->
+        <div class="table-card" style="margin-bottom:16px;">
+            <div class="table-card__header">
+                <div class="table-card__title"><i class="fas fa-boxes-stacked"></i> Ringkasan Stok Lisensi</div>
+            </div>
+            <div id="licenseSummary" class="license-summary"></div>
+        </div>
+
+        <!-- License Stock Toolbar -->
+        <div class="edit-toolbar">
+            <div class="edit-toolbar__left">
+                <button class="btn btn-success editonly editonly--license" onclick="showAddLicenseForm('IN')">
+                    <i class="fas fa-plus"></i> Tambah Stok
+                </button>
+                <button class="btn btn-primary editonly editonly--license" onclick="showAddLicenseForm('OUT')">
+                    <i class="fas fa-share-from-square"></i> Distribusi
+                </button>
+                <button class="btn btn-danger" id="btnDeleteSelectedLicense" style="display:none" onclick="deleteSelectedLicenseStock()">
+                    <i class="fas fa-trash"></i> Delete Selected (<span id="selectedLicenseCount">0</span>)
+                </button>
+                <button class="btn btn-secondary" onclick="syncDistributionsToUnits()" title="Terapkan distribusi terbaru ke lisensi unit">
+                    <i class="fas fa-link"></i> Sync ke Unit
+                </button>
+                <input type="file" id="licenseCsvInput" aria-label="Pilih berkas CSV lisensi untuk diimpor" accept=".csv" style="display:none">
+                <button class="btn btn-secondary csv-import" onclick="document.getElementById('licenseCsvInput').click()">
+                    <i class="fas fa-file-import"></i> Import CSV
+                </button>
+                <button class="btn btn-secondary csv-import" onclick="downloadLicenseTemplate()">
+                    <i class="fas fa-file-arrow-down"></i> Template
+                </button>
+                <button class="btn btn-secondary csv-export" onclick="exportLicenseStockCSV()">
+                    <i class="fas fa-download"></i> Export CSV
+                </button>
+            </div>
+            <div class="edit-toolbar__right">
+                <select id="licenseTxnFilter" aria-label="Filter jenis transaksi" class="btn btn-secondary btn-sm">
+                    <option value="">Semua Transaksi</option>
+                    <option value="IN">Masuk</option>
+                    <option value="OUT">Distribusi</option>
+                </select>
+                <select id="licenseTypeFilter" aria-label="Filter jenis lisensi" class="btn btn-secondary btn-sm">
+                    <option value="">Semua Jenis</option>
+                </select>
+                <div class="edit-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="licenseSearch" aria-label="Cari lisensi atau unit" placeholder="Cari lisensi / unit...">
+                </div>
+                <span id="licenseCount">0 transaksi</span>
+            </div>
+        </div>
+
+        <!-- License Stock Table -->
+        <div class="table-card">
+            <div class="table-card__header">
+                <div class="table-card__title"><i class="fas fa-key"></i> Riwayat Stok Lisensi</div>
+            </div>
+            <div class="table-wrapper" style="max-height:600px;">
+                <table class="data-table table--cardable" id="licenseTable">
+                    <thead>
+                        <tr>
+                            <th class="col-check"><input type="checkbox" id="selectAllLicense" aria-label="Pilih semua transaksi lisensi" onchange="toggleSelectAllLicense()"></th>
+                            <th>No</th>
+                            <th>Tanggal</th>
+                            <th>Jenis</th>
+                            <th>Jenis Lisensi</th>
+                            <th>Jumlah</th>
+                            <th>Unit</th>
+                            <th>Serial Number</th>
+                            <th>Catatan</th>
+                            <th class="col-actions">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="licenseBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+    </div><!-- /viewLicenseStock -->
+
+    <!-- ==================== TEAM VIEW ==================== -->
+    <div id="viewTeam" class="view" style="display:none;">
+
+        <div class="team-rules-slot"></div>
+
+        <div class="team-tabbar">
+            <div class="team-tabs" role="tablist" aria-label="Bagian operasional tim">
+                <button class="team-tab active" data-tab="shift" role="tab" aria-selected="true"
+                        aria-controls="teamShiftPanel" onclick="switchTeamTab('shift')">
+                    <i class="fas fa-calendar-days"></i> Jadwal Shift
+                </button>
+                <button class="team-tab" data-tab="worklog" role="tab" aria-selected="false"
+                        aria-controls="teamWorkLogPanel" onclick="switchTeamTab('worklog')">
+                    <i class="fas fa-clipboard-list"></i> Laporan Harian
+                </button>
+                <button class="team-tab" data-tab="leave" role="tab" aria-selected="false"
+                        aria-controls="teamLeavePanel" onclick="switchTeamTab('leave')">
+                    <i class="fas fa-user-clock"></i> Izin / Sakit
+                </button>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="btnTeamMembers" onclick="openTeamMembersModal()">
+                <i class="fas fa-user-group"></i> Kelola Anggota
+            </button>
+        </div>
+
+        <!-- Shown when the user reaches this page through Daftar Anggota only. -->
+        <div id="teamNoPanel" class="team-no-panel" style="display:none">
+            <i class="fas fa-lock"></i>
+            <p>Anda hanya punya akses ke <strong>Daftar Anggota</strong>. Klik
+            <strong>Kelola Anggota</strong> di atas untuk membukanya.</p>
+        </div>
+
+        <!-- ---------- Shift schedule ---------- -->
+        <div id="teamShiftPanel" role="tabpanel" aria-label="Jadwal Shift">
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <div class="week-nav">
+                        <button class="btn btn-secondary btn-sm" aria-label="Minggu sebelumnya" title="Minggu sebelumnya"
+                                onclick="shiftWeekShift(-1)"><i class="fas fa-chevron-left"></i></button>
+                        <span id="shiftWeekLabel" class="week-nav__label">—</span>
+                        <button class="btn btn-secondary btn-sm" aria-label="Minggu berikutnya" title="Minggu berikutnya"
+                                onclick="shiftWeekShift(1)"><i class="fas fa-chevron-right"></i></button>
+                        <button class="btn btn-secondary btn-sm" onclick="shiftWeekToday()">Minggu Ini</button>
+                    </div>
+                </div>
+                <div class="edit-toolbar__right">
+                    <button class="btn btn-secondary csv-export" onclick="exportShiftCSV()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-calendar-days"></i> Jadwal Shift Mingguan</div>
+                </div>
+                <div class="table-wrapper shift-grid-wrapper">
+                    <table class="data-table shift-grid" id="shiftTable">
+                        <thead id="shiftHead"></thead>
+                        <tbody id="shiftBody"></tbody>
+                        <tfoot id="shiftFoot"></tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ---------- Daily work logs ---------- -->
+        <div id="teamWorkLogPanel" role="tabpanel" aria-label="Laporan Harian" style="display:none">
+            <div class="downtime-kpis" style="margin-bottom:16px">
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Jumlah Laporan</div>
+                    <div class="downtime-kpi__value" id="wlKpiCount">0</div>
+                    <div class="downtime-kpi__sub">Sesuai filter aktif</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Total Jam Kerja</div>
+                    <div class="downtime-kpi__value" id="wlKpiHours">0j</div>
+                    <div class="downtime-kpi__sub">Dijumlah dari jam mulai–selesai</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Lapor Hari Ini</div>
+                    <div class="downtime-kpi__value" id="wlKpiToday">0 / 0</div>
+                    <div class="downtime-kpi__sub" id="wlKpiTodaySub">Anggota aktif yang sudah melapor</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Menunggu Persetujuan</div>
+                    <div class="downtime-kpi__value" id="wlKpiPending">0</div>
+                    <div class="downtime-kpi__sub">Belum diperiksa siapa pun</div>
+                </div>
+            </div>
+
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <button class="btn btn-success editonly editonly--teamlog" onclick="showAddWorkLogForm()">
+                        <i class="fas fa-plus"></i> Tambah Laporan
+                    </button>
+                    <button class="btn btn-secondary csv-export" onclick="exportWorkLogCSV()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+                <div class="edit-toolbar__right">
+                    <label class="wl-filter-date">
+                        <span>Dari</span>
+                        <input type="date" id="wlFrom" class="form-input" onchange="renderWorkLogTable()">
+                    </label>
+                    <label class="wl-filter-date">
+                        <span>Sampai</span>
+                        <input type="date" id="wlTo" class="form-input" onchange="renderWorkLogTable()">
+                    </label>
+                    <select id="wlApprovalFilter" aria-label="Filter persetujuan" class="btn btn-secondary btn-sm"
+                            onchange="renderWorkLogTable()">
+                        <option value="">Semua Persetujuan</option>
+                        <option value="pending">Menunggu</option>
+                        <option value="approved">Disetujui</option>
+                        <option value="revision">Perlu Revisi</option>
+                    </select>
+                    <select id="wlCompanyFilter" aria-label="Filter perusahaan" class="btn btn-secondary btn-sm"
+                            onchange="renderWorkLogTable()">
+                        <option value="">Semua Perusahaan</option>
+                    </select>
+                    <select id="wlMemberFilter" aria-label="Filter anggota" class="btn btn-secondary btn-sm"
+                            onchange="renderWorkLogTable()">
+                        <option value="">Semua Anggota</option>
+                    </select>
+                    <div class="edit-search">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="wlSearch" aria-label="Cari laporan" placeholder="Cari laporan..."
+                               oninput="renderWorkLogTable()">
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onclick="clearWorkLogFilter()">Reset</button>
+                    <span id="workLogCount">0 laporan</span>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-clipboard-list"></i> Laporan Harian Kerja</div>
+                </div>
+                <div class="table-wrapper" style="max-height:600px;">
+                    <table class="data-table table--cardable" id="workLogTable">
+                        <thead>
+                            <tr>
+                                <th>No</th>
+                                <th>Tanggal</th>
+                                <th>Anggota</th>
+                                <th>Perusahaan</th>
+                                <th>Jam Kerja</th>
+                                <th>Unit</th>
+                                <th>Paddock</th>
+                                <th>Uraian Pekerjaan</th>
+                                <th>Kendala</th>
+                                <th>Persetujuan</th>
+                                <th>Dokumentasi</th>
+                                <th class="col-actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="workLogBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ---------- Leave / sick days ---------- -->
+        <div id="teamLeavePanel" role="tabpanel" aria-label="Izin dan Sakit" style="display:none">
+            <div class="downtime-kpis">
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Jumlah Pengajuan</div>
+                    <div class="downtime-kpi__value" id="lvKpiCount">0</div>
+                    <div class="downtime-kpi__sub">Sesuai filter aktif</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Total Hari</div>
+                    <div class="downtime-kpi__value" id="lvKpiDays">0</div>
+                    <div class="downtime-kpi__sub">Dijumlah dari rentang tanggal</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Tidak Masuk Hari Ini</div>
+                    <div class="downtime-kpi__value" id="lvKpiToday">0</div>
+                    <div class="downtime-kpi__sub">Pengajuan disetujui yang mencakup hari ini</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Menunggu Persetujuan</div>
+                    <div class="downtime-kpi__value" id="lvKpiPending">0</div>
+                    <div class="downtime-kpi__sub">Belum diperiksa siapa pun</div>
+                </div>
+            </div>
+
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <button class="btn btn-success editonly editonly--teamlog" onclick="showAddLeaveForm()">
+                        <i class="fas fa-plus"></i> Tambah Pengajuan
+                    </button>
+                    <button class="btn btn-secondary csv-export" onclick="exportLeaveCSV()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+                <div class="edit-toolbar__right">
+                    <label class="wl-filter-date">
+                        <span>Dari</span>
+                        <input type="date" id="lvFrom" class="form-input" onchange="renderLeaveTable()">
+                    </label>
+                    <label class="wl-filter-date">
+                        <span>Sampai</span>
+                        <input type="date" id="lvTo" class="form-input" onchange="renderLeaveTable()">
+                    </label>
+                    <select id="lvTypeFilter" aria-label="Filter jenis" class="btn btn-secondary btn-sm"
+                            onchange="renderLeaveTable()">
+                        <option value="">Semua Jenis</option>
+                        <option value="izin">Izin</option>
+                        <option value="sakit">Sakit</option>
+                        <option value="alpa">Alpa</option>
+                    </select>
+                    <select id="lvApprovalFilter" aria-label="Filter persetujuan" class="btn btn-secondary btn-sm"
+                            onchange="renderLeaveTable()">
+                        <option value="">Semua Persetujuan</option>
+                        <option value="pending">Menunggu</option>
+                        <option value="approved">Disetujui</option>
+                        <option value="revision">Perlu Revisi</option>
+                    </select>
+                    <select id="lvCompanyFilter" aria-label="Filter perusahaan" class="btn btn-secondary btn-sm"
+                            onchange="renderLeaveTable()">
+                        <option value="">Semua Perusahaan</option>
+                    </select>
+                    <select id="lvMemberFilter" aria-label="Filter anggota" class="btn btn-secondary btn-sm"
+                            onchange="renderLeaveTable()">
+                        <option value="">Semua Anggota</option>
+                    </select>
+                    <div class="edit-search">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="lvSearch" aria-label="Cari pengajuan izin atau sakit"
+                               placeholder="Cari pengajuan..." oninput="renderLeaveTable()">
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onclick="clearLeaveFilter()">Reset</button>
+                    <span id="leaveCount">0 pengajuan</span>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-user-clock"></i> Izin &amp; Sakit</div>
+                </div>
+                <div class="table-wrapper" style="max-height:60vh">
+                    <table class="data-table table--cardable" id="leaveTable">
+                        <thead>
+                            <tr>
+                                <th>No</th><th>Jenis</th><th>Anggota</th><th>Perusahaan</th>
+                                <th>Tanggal</th><th>Hari</th><th>Catatan</th><th>Surat</th>
+                                <th>Persetujuan</th><th class="col-actions">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaveBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /viewTeam -->
+
+    <!-- ==================== LEADER: DECISION INBOX ==================== -->
+    <div id="viewLeader" class="view" style="display:none;">
+        <div class="team-tabbar">
+            <div class="team-tabs" role="tablist" aria-label="Halaman pimpinan">
+                <button class="team-tab leader-tab active" data-tab="inbox" role="tab" aria-selected="true"
+                        aria-controls="leaderInboxPanel" onclick="switchLeaderTab('inbox')">
+                    <i class="fas fa-inbox"></i> Kotak Keputusan
+                </button>
+                <button class="team-tab leader-tab" data-tab="company" role="tab" aria-selected="false"
+                        aria-controls="leaderCompanyPanel" onclick="switchLeaderTab('company')">
+                    <i class="fas fa-building"></i> Rekap Perusahaan
+                </button>
+                <button class="team-tab leader-tab" data-tab="week" role="tab" aria-selected="false"
+                        aria-controls="leaderWeekPanel" onclick="switchLeaderTab('week')">
+                    <i class="fas fa-chart-line"></i> Ringkasan Mingguan
+                </button>
+                <button class="team-tab leader-tab" data-tab="check" role="tab" aria-selected="false"
+                        aria-controls="leaderCheckPanel" onclick="switchLeaderTab('check')">
+                    <i class="fas fa-stethoscope"></i> Periksa Data
+                </button>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="window.print()" style="margin-bottom:8px">
+                <i class="fas fa-print"></i> Cetak
+            </button>
+        </div>
+
+        <div id="leaderInboxPanel" role="tabpanel" aria-label="Kotak Keputusan">
+
+        <!-- Only appears on paper: a printout has no sidebar to say what it is. -->
+        <div class="print-header">
+            <strong>OT Monitoring — Kotak Keputusan</strong>
+            <span id="printStamp"></span>
+        </div>
+
+        <div class="downtime-kpis" style="grid-template-columns:1fr;margin-bottom:16px">
+            <div class="downtime-kpi">
+                <div class="downtime-kpi__label">Menunggu Keputusan Anda</div>
+                <div class="downtime-kpi__value" id="decisionTotal">0</div>
+                <div class="downtime-kpi__sub" id="decisionTotalSub">—</div>
+            </div>
+        </div>
+
+        <div class="decision-grid" id="decisionGroups"></div>
+        </div><!-- /leaderInboxPanel -->
+
+        <!-- ---------- Rekap per perusahaan ---------- -->
+        <div id="leaderCompanyPanel" role="tabpanel" aria-label="Rekap Perusahaan" style="display:none">
+            <div class="print-header">
+                <strong>OT Monitoring — Rekap per Perusahaan</strong>
+                <span id="recapMonthLabel"></span>
+            </div>
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <div class="week-nav">
+                        <button class="btn btn-secondary btn-sm" aria-label="Bulan sebelumnya" title="Bulan sebelumnya"
+                                onclick="shiftRecapMonth(-1)"><i class="fas fa-chevron-left"></i></button>
+                        <input type="month" id="recapMonth" class="form-input" aria-label="Pilih bulan"
+                               onchange="onRecapMonthChange()" style="width:auto">
+                        <button class="btn btn-secondary btn-sm" aria-label="Bulan berikutnya" title="Bulan berikutnya"
+                                onclick="shiftRecapMonth(1)"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                </div>
+                <div class="edit-toolbar__right">
+                    <button class="btn btn-secondary csv-export" onclick="exportRecapCSV()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+            </div>
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-building"></i> Jam Kerja per Perusahaan</div>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table table--cardable" id="recapTable">
+                        <thead>
+                            <tr>
+                                <th>No</th>
+                                <th>Perusahaan</th>
+                                <th>Anggota</th>
+                                <th>Laporan</th>
+                                <th>Total Jam</th>
+                                <th>Unit Ditangani</th>
+                                <th>Disetujui</th>
+                                <th>Belum Selesai</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recapBody"></tbody>
+                        <tfoot id="recapFoot"></tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ---------- Ringkasan mingguan ---------- -->
+        <div id="leaderWeekPanel" role="tabpanel" aria-label="Ringkasan Mingguan" style="display:none">
+            <div class="print-header">
+                <strong>OT Monitoring — Ringkasan Mingguan</strong>
+                <span id="weekSummaryPrev"></span>
+            </div>
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <div class="week-nav">
+                        <button class="btn btn-secondary btn-sm" aria-label="Minggu sebelumnya" title="Minggu sebelumnya"
+                                onclick="shiftSummaryWeek(-1)"><i class="fas fa-chevron-left"></i></button>
+                        <span id="weekSummaryLabel" class="week-nav__label">—</span>
+                        <button class="btn btn-secondary btn-sm" aria-label="Minggu berikutnya" title="Minggu berikutnya"
+                                onclick="shiftSummaryWeek(1)"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                </div>
+            </div>
+            <div class="week-grid" id="weekSummaryGrid"></div>
+            <div class="week-health" id="weekHealth"></div>
+        </div>
+
+        <div id="leaderCheckPanel" role="tabpanel" aria-label="Periksa Data" style="display:none">
+            <div class="print-header">
+                <strong>OT Monitoring — Periksa Data</strong>
+            </div>
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <strong id="dataCheckSummary" style="font-size:13px"></strong>
+                </div>
+                <div class="edit-toolbar__right">
+                    <button class="btn btn-secondary btn-sm" onclick="renderDataCheck()">
+                        <i class="fas fa-rotate"></i> Periksa ulang
+                    </button>
+                    <button class="btn btn-primary btn-sm" id="dataCheckFixBtn" style="display:none"
+                            onclick="fixInvisibleCharacters()"></button>
+                    <button class="btn btn-primary btn-sm" id="dataCheckGroupFixBtn" style="display:none"
+                            onclick="fixStrayGroupFields()"></button>
+                </div>
+            </div>
+            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
+                Halaman ini hanya membaca dan menunjukkan. Satu-satunya yang bisa
+                diperbaiki otomatis adalah spasi dan karakter tersembunyi, karena itu
+                tidak mengubah arti tulisannya. Sisanya butuh keputusan Anda.
+            </p>
+            <div id="dataCheckBody"></div>
+        </div>
+    </div><!-- /viewLeader -->
+
+    <!-- ==================== WAREHOUSE VIEW ==================== -->
+    <div id="viewWarehouse" class="view" style="display:none;">
+
+        <div class="warehouse-rules-slot"></div>
+
+        <div class="team-tabbar">
+            <div class="team-tabs" role="tablist" aria-label="Bagian gudang">
+                <button class="team-tab wh-tab active" data-tab="devices" role="tab" aria-selected="true"
+                        aria-controls="whDevicePanel" onclick="switchWarehouseTab('devices')">
+                    <i class="fas fa-microchip"></i> Perangkat
+                </button>
+                <button class="team-tab wh-tab" data-tab="stock" role="tab" aria-selected="false"
+                        aria-controls="whStockPanel" onclick="switchWarehouseTab('stock')">
+                    <i class="fas fa-boxes-stacked"></i> Stok Barang
+                </button>
+            </div>
+        </div>
+
+        <!-- ---------- Devices, tracked by serial number ---------- -->
+        <div id="whDevicePanel" role="tabpanel" aria-label="Perangkat">
+            <div class="downtime-kpis" style="margin-bottom:16px">
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Di Gudang</div>
+                    <div class="downtime-kpi__value" id="devKpi_warehouse">0</div>
+                    <div class="downtime-kpi__sub">Siap dipasang</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Terpasang</div>
+                    <div class="downtime-kpi__value" id="devKpi_installed">0</div>
+                    <div class="downtime-kpi__sub">Di unit atau di lapangan</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Rusak</div>
+                    <div class="downtime-kpi__value" id="devKpi_damaged">0</div>
+                    <div class="downtime-kpi__sub">Belum ditangani</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Perbaikan</div>
+                    <div class="downtime-kpi__value" id="devKpi_repair">0</div>
+                    <div class="downtime-kpi__sub">Sedang diperbaiki</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Afkir</div>
+                    <div class="downtime-kpi__value" id="devKpi_retired">0</div>
+                    <div class="downtime-kpi__sub">Tidak dipakai lagi</div>
+                </div>
+            </div>
+
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <button class="btn btn-success editonly editonly--warehouse" onclick="showAddDeviceForm()">
+                        <i class="fas fa-plus"></i> Tambah Perangkat
+                    </button>
+                    <button class="btn btn-secondary csv-export" onclick="exportDeviceCSV()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+                <div class="edit-toolbar__right">
+                    <select id="devStatusFilter" aria-label="Filter status perangkat" class="btn btn-secondary btn-sm" onchange="renderDeviceTable()">
+                        <option value="">Semua Status</option>
+                        <option value="warehouse">Di Gudang</option>
+                        <option value="installed">Terpasang</option>
+                        <option value="damaged">Rusak</option>
+                        <option value="repair">Perbaikan</option>
+                        <option value="retired">Afkir</option>
+                    </select>
+                    <select id="devTypeFilter" aria-label="Filter jenis perangkat" class="btn btn-secondary btn-sm" onchange="renderDeviceTable()">
+                        <option value="">Semua Jenis</option>
+                    </select>
+                    <select id="devLocationFilter" aria-label="Filter lokasi gudang" class="btn btn-secondary btn-sm" onchange="renderDeviceTable()">
+                        <option value="">Semua Lokasi</option>
+                    </select>
+                    <div class="edit-search">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="devSearch" aria-label="Cari perangkat" placeholder="Cari SN / jenis..." oninput="renderDeviceTable()">
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onclick="clearDeviceFilter()">Reset</button>
+                    <span id="deviceCount">0 perangkat</span>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-microchip"></i> Daftar Perangkat</div>
+                </div>
+                <div class="table-wrapper" style="max-height:600px;">
+                    <table class="data-table table--cardable" id="deviceTable">
+                        <thead>
+                            <tr>
+                                <th>No</th>
+                                <th>Serial Number</th>
+                                <th>Jenis</th>
+                                <th>Merek / Model</th>
+                                <th>Status</th>
+                                <th>Posisi</th>
+                                <th>Koordinat</th>
+                                <th>Catatan</th>
+                                <th class="col-actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="deviceBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ---------- Stock counted by quantity ---------- -->
+        <div id="whStockPanel" role="tabpanel" aria-label="Stok Barang" style="display:none">
+            <div class="table-card" style="margin-bottom:16px">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-layer-group"></i> Sisa Stok</div>
+                </div>
+                <div class="stock-summary" id="stockSummary"></div>
+            </div>
+
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <button class="btn btn-success editonly editonly--warehouse" onclick="showAddStockForm()">
+                        <i class="fas fa-plus"></i> Catat Masuk/Keluar
+                    </button>
+                    <button class="btn btn-secondary csv-export" onclick="exportStockCSV()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+                <div class="edit-toolbar__right">
+                    <label class="wl-filter-date">
+                        <span>Dari</span>
+                        <input type="date" id="stkFrom" class="form-input" onchange="renderStockView()">
+                    </label>
+                    <label class="wl-filter-date">
+                        <span>Sampai</span>
+                        <input type="date" id="stkTo" class="form-input" onchange="renderStockView()">
+                    </label>
+                    <select id="stkTypeFilter" aria-label="Filter jenis transaksi" class="btn btn-secondary btn-sm" onchange="renderStockView()">
+                        <option value="">Masuk &amp; Keluar</option>
+                        <option value="IN">Masuk saja</option>
+                        <option value="OUT">Keluar saja</option>
+                    </select>
+                    <select id="stkItemFilter" aria-label="Filter barang" class="btn btn-secondary btn-sm" onchange="renderStockView()">
+                        <option value="">Semua Barang</option>
+                    </select>
+                    <select id="stkLocationFilter" aria-label="Filter lokasi" class="btn btn-secondary btn-sm" onchange="renderStockView()">
+                        <option value="">Semua Lokasi</option>
+                    </select>
+                    <div class="edit-search">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="stkSearch" aria-label="Cari transaksi stok" placeholder="Cari barang..." oninput="renderStockView()">
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onclick="clearStockFilter()">Reset</button>
+                    <span id="stockCount">0 transaksi</span>
+                </div>
+            </div>
+
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-right-left"></i> Riwayat Masuk/Keluar</div>
+                </div>
+                <div class="table-wrapper" style="max-height:600px;">
+                    <table class="data-table table--cardable" id="stockTable">
+                        <thead>
+                            <tr>
+                                <th>No</th>
+                                <th>Tanggal</th>
+                                <th>Jenis</th>
+                                <th>Barang</th>
+                                <th>Jumlah</th>
+                                <th>Lokasi</th>
+                                <th>Untuk Unit</th>
+                                <th class="col-actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stockBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /viewWarehouse -->
+
+    <!-- ==================== USERS VIEW (Owner only) ==================== -->
+    <div id="viewUsers" class="view" style="display:none;">
+        <div class="edit-toolbar">
+            <div class="edit-toolbar__left">
+                <h2 style="margin:0;font-size:18px;font-weight:600;color:var(--accent-text)">
+                    <i class="fas fa-users-gear"></i> User Management
+                </h2>
+            </div>
+            <div class="edit-toolbar__right">
+                <span id="usersCount">0 user(s)</span>
+            </div>
+        </div>
+
+        <div class="users-summary" id="usersSummary"></div>
+
+        <div class="table-card">
+            <div class="table-card__header">
+                <div class="table-card__title"><i class="fas fa-clock"></i> Pending Approvals</div>
+            </div>
+            <div class="table-wrapper">
+                <table class="data-table table--cardable">
+                    <thead>
+                        <tr>
+                            <th>No</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Waktu daftar</th>
+                            <th class="col-actions">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pendingUsersBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="table-card" style="margin-top:20px">
+            <div class="table-card__header">
+                <div class="table-card__title"><i class="fas fa-user-check"></i> Active Users</div>
+            </div>
+            <div class="table-wrapper">
+                <table class="data-table table--cardable">
+                    <thead>
+                        <tr>
+                            <th>No</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Terakhir diubah</th>
+                            <th>Diubah oleh</th>
+                            <th class="col-actions">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="activeUsersBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div><!-- /viewUsers -->
+
+</main>
+  </div><!-- /app-body -->
+</div><!-- /app-shell -->
+
+<!-- ===== UNIT MODAL (outside views, overlays everything) ===== -->
+<div class="modal-overlay" id="unitModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="modalTitle">Add Unit</h3>
+            <button class="btn-icon" onclick="closeModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <form id="unitForm" onsubmit="saveUnit(event)">
+                <input type="hidden" id="editUnitId">
+                <input type="hidden" id="formUnitGroup">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="formName">Nickname</label>
+                        <input class="form-input" id="formName" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="formModel">Model</label>
+                        <input class="form-input" id="formModel">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="formSN">Serial Number</label>
+                        <input class="form-input" id="formSN" required>
+                    </div>
+                    <div class="form-group" data-group-only="tractor">
+                        <label class="form-label" for="formImplement">Implement</label>
+                        <input class="form-input" id="formImplement" list="implementUnitList" placeholder="Pilih dari Implements atau ketik…" autocomplete="off">
+                        <datalist id="implementUnitList"></datalist>
+                    </div>
+                    <div class="form-group" data-group-only="heavy" style="display:none">
+                        <label class="form-label" for="formMachineType">Jenis Alat</label>
+                        <input class="form-input" id="formMachineType" list="heavyMachineTypeList" placeholder="Excavator, Bulldozer, …" autocomplete="off">
+                    </div>
+                    <div class="form-group" data-group-only="heavy" style="display:none">
+                        <label class="form-label" for="formAssetCode">Nomor Lambung / Kode Aset</label>
+                        <input class="form-input" id="formAssetCode" autocomplete="off">
+                    </div>
+                    <div class="form-group" data-group-only="heavy" style="display:none">
+                        <label class="form-label" for="formWorkTool">Alat Kerja</label>
+                        <input class="form-input" id="formWorkTool" list="heavyWorkToolList" placeholder="Bucket, Ripper, Blade, …" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="formSite">Site</label>
+                        <input class="form-input" id="formSite">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="formYearReceived">Tahun Penerimaan</label>
+                        <input class="form-input" id="formYearReceived" list="yearReceivedList" placeholder="Pilih atau ketik tahun…">
+                        <datalist id="yearReceivedList">
+                            <option value="2024">
+                            <option value="2025">
+                            <option value="2026">
+                            <option value="2027">
+                        </datalist>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="formStatus">Status Unit</label>
+                        <select class="form-select" id="formStatus">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group" data-group-only="tractor">
+                        <label class="form-label" for="formDisplay">Display</label>
+                        <select class="form-select" id="formDisplay">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group" data-group-only="tractor">
+                        <label class="form-label" for="formGPS">GPS</label>
+                        <select class="form-select" id="formGPS">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group" data-group-only="tractor">
+                        <label class="form-label" for="formSteering">Steering</label>
+                        <select class="form-select" id="formSteering">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group" data-group-only="tractor">
+                        <label class="form-label" for="formJDLink">JDLink</label>
+                        <select class="form-select" id="formJDLink">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group" data-group-only="heavy" style="display:none">
+                        <label class="form-label" for="formCameraAi">Camera AI</label>
+                        <select class="form-select" id="formCameraAi">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group" data-group-only="heavy" style="display:none">
+                        <label class="form-label" for="formTelematicBox">Telematic Box</label>
+                        <select class="form-select" id="formTelematicBox">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group" data-group-only="heavy" style="display:none">
+                        <label class="form-label" for="formSwitchLimiter">Switch Limiter</label>
+                        <select class="form-select" id="formSwitchLimiter">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group" data-group-only="heavy" style="display:none">
+                        <label class="form-label" for="formRotaryLamp">Rotary Lamp</label>
+                        <select class="form-select" id="formRotaryLamp">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group full-width" id="breakdownReasonDisplay" style="display:none">
+                        <label class="form-label">Breakdown Reason</label>
+                        <div id="breakdownReasonInfo" class="breakdown-reason-box"></div>
+                    </div>
+                </div>
+
+                <fieldset class="form-section">
+                    <legend id="unitFormLegend">Category, License &amp; Notes</legend>
+                    <div class="form-grid">
+                        <div class="form-group full-width">
+                            <label class="form-label" for="formUserCategory">User Category</label>
+                            <div class="form-category-row">
+                                <select class="form-select" id="formUserCategory">
+                                    <option value="">Select category…</option>
+                                </select>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="openCategoriesModal()" title="Manage categories">
+                                    <i class="fas fa-gear"></i> Manage
+                                </button>
+                            </div>
+                        </div>
+                        <div class="form-group" data-group-only="tractor">
+                            <label class="form-label" for="formGpsLicense">GPS License</label>
+                            <select class="form-select" id="formGpsLicense">
+                                <option value="">—</option>
+                                <option value="SF-RTK">SF-RTK</option>
+                                <option value="SF-1">SF-1</option>
+                            </select>
+                        </div>
+                        <div class="form-group" data-group-only="tractor">
+                            <label class="form-label" for="formLicenseDisplay">License Display</label>
+                            <select class="form-select" id="formLicenseDisplay">
+                                <option value="">—</option>
+                                <option value="G5 Basic">G5 Basic</option>
+                                <option value="G5 Advance">G5 Advance</option>
+                            </select>
+                        </div>
+                        <div class="form-group" data-group-only="tractor">
+                            <label class="form-label" for="formGpsLicenseStart">GPS License Start Date</label>
+                            <input type="date" class="form-input" id="formGpsLicenseStart" onchange="autoFillGpsLicenseEnd()">
+                        </div>
+                        <div class="form-group" data-group-only="tractor">
+                            <label class="form-label" for="formGpsLicenseEnd">GPS License Expiration Date</label>
+                            <input type="date" class="form-input" id="formGpsLicenseEnd">
+                        </div>
+                        <div class="form-group" data-group-only="tractor">
+                            <label class="form-label" for="formDisplayLicenseStart">Display License Start Date</label>
+                            <input type="date" class="form-input" id="formDisplayLicenseStart" onchange="autoFillDisplayLicenseEnd()">
+                        </div>
+                        <div class="form-group" data-group-only="tractor">
+                            <label class="form-label" for="formDisplayLicenseEnd">Display License Expiration Date</label>
+                            <input type="date" class="form-input" id="formDisplayLicenseEnd">
+                        </div>
+                        <div class="form-group full-width">
+                            <label class="form-label" for="formRemarks">Remarks / Notes <span class="form-optional">(optional)</span></label>
+                            <textarea class="form-input form-textarea" id="formRemarks" rows="5" placeholder="Free-text notes about this unit — operator observations, repair history, scheduling notes, etc."></textarea>
+                        </div>
+                    </div>
+                </fieldset>
+                <datalist id="heavyMachineTypeList"></datalist>
+                <datalist id="heavyWorkToolList"></datalist>
+            </form>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" form="unitForm"><i class="fas fa-check"></i> Save Unit</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== MANAGE USER CATEGORIES MODAL ===== -->
+<div class="modal-overlay" id="categoriesModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3><i class="fas fa-tags"></i> Manage User Categories</h3>
+            <button class="btn-icon" onclick="closeCategoriesModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+                Categories appear in the unit edit form. Changes are saved instantly and visible to the whole team.
+            </p>
+            <ul class="categories-list" id="categoriesList"></ul>
+            <form class="category-add-form" onsubmit="addCategory(event)">
+                <input type="text" class="form-input" id="newCategoryName" aria-label="Nama kategori baru" placeholder="New category name…" maxlength="60" autocomplete="off">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> Add</button>
+            </form>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeCategoriesModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== HISTORY MODAL ===== -->
+<div class="modal-overlay" id="historyModal">
+    <div class="modal-card modal-card--wide">
+        <div class="modal-header">
+            <h3 id="historyTitle">Change History</h3>
+            <span id="historyCount" style="font-size:12px;color:var(--text-secondary)"></span>
+            <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-secondary btn-sm csv-export" onclick="exportHistory()"><i class="fas fa-download"></i> Export</button>
+                <button class="btn btn-secondary btn-sm" data-owner-only style="display:none" onclick="scanPhantomHistory()" title="Cari catatan perubahan unit yang ternyata ditolak server"><i class="fas fa-magnifying-glass"></i> Periksa</button>
+                <button class="btn btn-secondary btn-sm" onclick="clearHistory()"><i class="fas fa-eraser"></i> Clear</button>
+                <button class="btn-icon" onclick="closeHistory()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="modal-body" style="padding:0">
+            <div class="history-rules-slot"></div>
+            <div class="table-wrapper" style="max-height:60vh">
+                <table class="data-table table--cardable">
+                    <thead>
+                        <tr>
+                            <th>Waktu</th><th>Aksi</th><th>Oleh</th><th>Unit</th><th>Field</th><th>Sebelum</th><th>Sesudah</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== IMPORT REPORT MODAL ===== -->
+<div class="modal-overlay" id="importReportModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>Import Report</h3>
+            <button class="btn-icon" onclick="closeImportReport()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+                <strong id="importReportSummary"></strong>
+            </p>
+            <div class="table-wrapper" style="max-height:50vh">
+                <table class="data-table">
+                    <thead><tr><th>Unit / Row</th><th>Serial / Ref</th><th>Reason</th></tr></thead>
+                    <tbody id="importReportBody"></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-primary" onclick="closeImportReport()">OK</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== RESTORE REPORT MODAL ===== -->
+<!-- A restore touches up to eleven collections. The point of this table is the
+     rows that say "tidak ada di berkas ini" — a restore that quietly covered
+     less than the person assumed is the failure this modal exists to prevent. -->
+<div class="modal-overlay" id="restoreReportModal">
+    <div class="modal-card modal-card--wide">
+        <div class="modal-header">
+            <h3>Hasil Restore</h3>
+            <button class="btn-icon" onclick="closeRestoreReport()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <div id="restoreReportNote" class="rules-banner" style="display:none;margin-bottom:12px"></div>
+            <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+                <strong id="restoreReportSummary"></strong>
+            </p>
+            <div class="table-wrapper" style="max-height:50vh">
+                <table class="data-table table--cardable">
+                    <thead><tr><th>Koleksi</th><th>Jumlah</th><th>Keterangan</th></tr></thead>
+                    <tbody id="restoreReportBody"></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-primary" onclick="closeRestoreReport()">OK</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== AUTO BACKUP (RING) MODAL ===== -->
+<!-- writeAutoBackup() has been storing three rollback points on every save
+     since the beginning, and nothing ever read them: the quota was being spent
+     on a safety net nobody could reach. This is the reach. -->
+<div class="modal-overlay" id="autoBackupModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>Cadangan Otomatis</h3>
+            <button class="btn-icon" onclick="closeAutoBackups()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+                Disimpan otomatis sebelum tiga penyimpanan terakhir. Berguna untuk membatalkan
+                Bulk Edit atau impor CSV yang salah. <strong>Hanya berisi data unit</strong>,
+                dan hanya ada di perangkat ini — bukan pengganti tombol Backup.
+            </p>
+            <ul class="categories-list" id="autoBackupList"></ul>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-secondary" onclick="closeAutoBackups()">Tutup</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== PHANTOM HISTORY REPORT MODAL ===== -->
+<div class="modal-overlay" id="phantomHistoryModal">
+    <div class="modal-card modal-card--wide">
+        <div class="modal-header">
+            <h3>Catatan perubahan yang tidak pernah terjadi</h3>
+            <button class="btn-icon" onclick="closePhantomHistory()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+                <strong id="phantomHistorySummary"></strong>
+            </p>
+            <p style="margin-bottom:12px;font-size:12px;color:var(--text-secondary)">
+                Baris di bawah ini mencatat perubahan pada unit, tetapi unit itu
+                sekarang <em>masih persis seperti sebelum perubahan</em> — nilainya
+                tidak pernah bergerak, artinya tulisannya ditolak server dan tidak
+                pernah tersimpan. Hanya baris terbaru per unit dan per field yang
+                dinilai; perubahan lama dalam satu rantai sengaja tidak disentuh.
+                Bandingkan kolom <strong>Sebelum</strong> dan
+                <strong>Nilai sekarang</strong> sebelum menghapus.
+            </p>
+            <div class="table-wrapper" style="max-height:45vh">
+                <table class="data-table table--cardable">
+                    <thead><tr><th>Waktu</th><th>Oleh</th><th>Unit</th><th>Field</th><th>Sebelum</th><th>Tercatat jadi</th><th>Nilai sekarang</th></tr></thead>
+                    <tbody id="phantomHistoryBody"></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-secondary" onclick="closePhantomHistory()">Batal</button>
+            <button class="btn btn-danger" id="phantomHistoryDeleteBtn" onclick="deletePhantomHistory()"><i class="fas fa-trash"></i> Hapus baris ini</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== IMPLEMENT MODAL ===== -->
+<div class="modal-overlay" id="implementModal">
+    <div class="modal-card modal-card--wide">
+        <div class="modal-header">
+            <h3 id="implementModalTitle">Add Implement</h3>
+            <button class="btn-icon" onclick="closeImplementModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <form id="implementForm" onsubmit="saveImplement(event)">
+                <input type="hidden" id="editImplementId">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="implProfileName">Profile Name</label>
+                        <input class="form-input" id="implProfileName" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="implBrand">Brand</label>
+                        <input class="form-input" id="implBrand" placeholder="e.g. John Deere, Baldan, Gessner">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="implEquipmentType">Type of Equipment</label>
+                        <input class="form-input" id="implEquipmentType" placeholder="e.g. Plow, Sprayer, Seeder">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="implCode">Code</label>
+                        <input class="form-input" id="implCode" placeholder="e.g. IMP-001">
+                    </div>
+                </div>
+
+                <fieldset class="form-section">
+                    <legend>Dimension</legend>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label" for="implLateralOffset">Lateral Offset</label>
+                            <input class="form-input" id="implLateralOffset" placeholder="e.g. 0 m">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="implCenterOfRotation">Center of Rotation</label>
+                            <input class="form-input" id="implCenterOfRotation" placeholder="e.g. 1.2 m">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="implRearConnection">Rear Connection</label>
+                            <input class="form-input" id="implRearConnection" placeholder="e.g. 0.8 m">
+                        </div>
+                    </div>
+                </fieldset>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="implOperation">Operation</label>
+                        <input class="form-input" id="implOperation" placeholder="e.g. Tillage, Spraying">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="implWorkingWidth">Working Width</label>
+                        <input class="form-input" id="implWorkingWidth" placeholder="e.g. 4.5 m">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="implWorkPoint">Work Point</label>
+                        <input class="form-input" id="implWorkPoint">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="implWorkRecording">Work Recording</label>
+                        <input class="form-input" id="implWorkRecording">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="implConnectingType">Connecting Type</label>
+                        <input class="form-input" id="implConnectingType" placeholder="e.g. 3-Point Hitch, Drawbar">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="implImplementReceiver">Implement Receiver</label>
+                        <input class="form-input" id="implImplementReceiver">
+                    </div>
+                </div>
+
+                <fieldset class="form-section">
+                    <legend>Chart of Account</legend>
+                    <div id="implChartOfAccountsList" class="coa-list"></div>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="addChartOfAccountRow()">
+                        <i class="fas fa-plus"></i> Add Chart of Account
+                    </button>
+                </fieldset>
+            </form>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeImplementModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" form="implementForm"><i class="fas fa-check"></i> Save Implement</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== DAMAGE (KERUSAKAN) MODAL ===== -->
+<div class="modal-overlay" id="damageModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="damageModalTitle">Tambah Kerusakan</h3>
+            <button class="btn-icon" onclick="closeDamageModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <form id="damageForm" onsubmit="saveDamage(event)">
+                <input type="hidden" id="editDamageId">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="dmgDate">Tanggal</label>
+                        <input type="date" class="form-input" id="dmgDate" data-nofuture required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="dmgUnit">Unit</label>
+                        <input class="form-input" id="dmgUnit" list="dmgUnitList" required
+                               placeholder="Ketik nama atau SN unit…" autocomplete="off">
+                        <datalist id="dmgUnitList"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="dmgType">Tipe Kerusakan</label>
+                        <select class="form-select" id="dmgType" onchange="onDamageTypeChange()" required>
+                            <option value="">Pilih tipe…</option>
+                            <option value="Mekanis">Mekanis</option>
+                            <option value="Software">Software</option>
+                            <option value="Device Precision">Device Precision</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="dmgComponentGroup">
+                        <label class="form-label" for="dmgComponent">Komponen <span class="form-optional">(opsional)</span></label>
+                        <div class="form-category-row">
+                            <select class="form-select" id="dmgComponent">
+                                <option value="">Pilih komponen… (opsional)</option>
+                            </select>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="openDamageComponentsModal()" title="Kelola daftar komponen">
+                                <i class="fas fa-gear"></i> Kelola
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-group full-width" id="dmgSetBreakdownGroup">
+                        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+                            <input type="checkbox" id="dmgSetBreakdown" checked>
+                            Set status unit/komponen jadi <strong>Breakdown</strong>
+                        </label>
+                        <div id="dmgBreakdownHint" style="font-size:11.5px;color:var(--text-secondary);margin-top:4px">
+                            Device Precision → komponen terkait (GPS/Display/Steering/JDLink); tipe lain → status unit.
+                        </div>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="dmgPhotoInput">Foto <span class="form-optional">(opsional)</span></label>
+                        <input type="file" id="dmgPhotoInput" accept="image/*" style="display:none" onchange="handleDamagePhotoChange(event)">
+                        <div class="dmg-photo-row">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('dmgPhotoInput').click()">
+                                <i class="fas fa-camera"></i> Pilih Foto
+                            </button>
+                            <span id="dmgPhotoLoading" class="wl-photo__loading" style="display:none">
+                                <i class="fas fa-spinner fa-spin"></i> Memuat foto…
+                            </span>
+                            <div id="dmgPhotoPreviewWrap" class="dmg-photo-preview" style="display:none">
+                                <img id="dmgPhotoPreview" alt="Preview foto" onclick="openPhotoLightbox(this.src)">
+                                <button type="button" class="btn btn-secondary btn-sm" id="dmgPhotoRemove" onclick="removeDamagePhoto()">
+                                    <i class="fas fa-trash" style="color:var(--danger)"></i> Hapus foto
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="dmgDescription">Deskripsi <span class="form-optional">(opsional)</span></label>
+                        <textarea class="form-input form-textarea" id="dmgDescription" rows="4" placeholder="Detail kerusakan, gejala, atau catatan perbaikan…"></textarea>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeDamageModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" form="damageForm"><i class="fas fa-check"></i> Simpan</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== MANAGE DAMAGE COMPONENTS MODAL ===== -->
+<!-- ==================== DEVICE MODAL ==================== -->
+<div class="modal-overlay" id="deviceModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="deviceModalTitle"><i class="fas fa-microchip"></i> Tambah Perangkat</h3>
+            <button class="btn-icon" onclick="closeDeviceModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form id="deviceForm" onsubmit="saveDevice(event)">
+            <input type="hidden" id="editDeviceId">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="devSn">Serial Number</label>
+                        <input class="form-input" id="devSn" required maxlength="60" autocomplete="off"
+                               placeholder="SN perangkat…">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="devType">Jenis Perangkat</label>
+                        <input class="form-input" id="devType" list="deviceTypeList" maxlength="60" autocomplete="off"
+                               placeholder="GPS / Display / Weather Station…">
+                        <datalist id="deviceTypeList"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="devBrand">Merek <span class="form-optional">(opsional)</span></label>
+                        <input class="form-input" id="devBrand" maxlength="40" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="devModel">Model <span class="form-optional">(opsional)</span></label>
+                        <input class="form-input" id="devModel" maxlength="40" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="devStatus">Status</label>
+                        <select class="form-select" id="devStatus" onchange="onDeviceStatusChange()">
+                            <option value="warehouse">Di Gudang</option>
+                            <option value="installed">Terpasang</option>
+                            <option value="damaged">Rusak</option>
+                            <option value="repair">Perbaikan</option>
+                            <option value="retired">Afkir</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="devLocationGroup">
+                        <label class="form-label" for="devLocation">Lokasi Gudang</label>
+                        <input class="form-input" id="devLocation" list="warehouseLocationList" maxlength="60" autocomplete="off"
+                               placeholder="Gudang pusat / gudang site…">
+                        <datalist id="warehouseLocationList"></datalist>
+                    </div>
+                </div>
+
+                <!-- Only relevant once the device is installed somewhere. -->
+                <div id="devInstallGroup" style="display:none">
+                    <p class="wh-install-hint">
+                        Isi <strong>salah satu</strong>: terpasang pada unit traktor, atau terpasang di
+                        satu titik tetap di lapangan — seperti weather station.
+                    </p>
+                    <div class="form-grid">
+                        <div class="form-group full-width">
+                            <label class="form-label" for="devUnit">Terpasang di Unit <span class="form-optional">(opsional)</span></label>
+                            <input class="form-input" id="devUnit" list="devUnitList" autocomplete="off"
+                                   placeholder="Ketik nama atau SN unit…">
+                            <datalist id="devUnitList"></datalist>
+                        </div>
+                        <div class="form-group full-width">
+                            <label class="form-label" for="devSite">Lokasi Pemasangan di Lapangan <span class="form-optional">(opsional)</span></label>
+                            <input class="form-input" id="devSite" maxlength="80" autocomplete="off"
+                                   placeholder="Contoh: Weather Station Blok C…">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="devPosX">Posisi X <span class="form-optional">(bujur / easting)</span></label>
+                            <input class="form-input" id="devPosX" maxlength="30" autocomplete="off" placeholder="mis. 136.8901">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="devPosY">Posisi Y <span class="form-optional">(lintang / northing)</span></label>
+                            <input class="form-input" id="devPosY" maxlength="30" autocomplete="off" placeholder="mis. -4.5432">
+                        </div>
+                        <div class="form-group full-width">
+                            <p class="wh-install-hint">Boleh derajat desimal atau UTM. Kalau nilainya terbaca
+                            sebagai bujur/lintang, tautan peta muncul otomatis di tabel.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-grid">
+                    <div class="form-group full-width">
+                        <label class="form-label" for="devNote">Catatan <span class="form-optional">(opsional)</span></label>
+                        <textarea class="form-input form-textarea" id="devNote" rows="2"
+                                  placeholder="Kondisi, garansi, nomor tiket servis…"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeDeviceModal()">Batal</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ==================== STOCK MODAL ==================== -->
+<div class="modal-overlay" id="stockModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="stockModalTitle"><i class="fas fa-boxes-stacked"></i> Catat Stok Masuk/Keluar</h3>
+            <button class="btn-icon" onclick="closeStockModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form id="stockForm" onsubmit="saveStockItem(event)">
+            <input type="hidden" id="editStockId">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="stkDate">Tanggal</label>
+                        <input type="date" class="form-input" id="stkDate" data-nofuture required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="stkTxnType">Jenis Transaksi</label>
+                        <select class="form-select" id="stkTxnType" onchange="onStockTxnChange()">
+                            <option value="IN">Masuk</option>
+                            <option value="OUT">Keluar</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="stkItem">Nama Barang</label>
+                        <input class="form-input" id="stkItem" list="stockItemList" required maxlength="60" autocomplete="off"
+                               placeholder="Filter oli, selang hidrolik…">
+                        <datalist id="stockItemList"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="stkQty">Jumlah</label>
+                        <input type="number" class="form-input" id="stkQty" min="1" step="1" value="1" required>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="stkLocation">Lokasi Gudang</label>
+                        <input class="form-input" id="stkLocation" list="warehouseLocationList" maxlength="60" autocomplete="off"
+                               placeholder="Gudang pusat / gudang site…">
+                    </div>
+                    <div class="form-group full-width" id="stkUnitGroup" style="display:none">
+                        <label class="form-label" for="stkUnit">Untuk Unit <span class="form-optional">(opsional)</span></label>
+                        <input class="form-input" id="stkUnit" list="stkUnitList" autocomplete="off"
+                               placeholder="Ketik nama atau SN unit…">
+                        <datalist id="stkUnitList"></datalist>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="stkNote">Catatan <span class="form-optional">(opsional)</span></label>
+                        <textarea class="form-input form-textarea" id="stkNote" rows="2"
+                                  placeholder="Nomor surat jalan, pemasok, keperluan…"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeStockModal()">Batal</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ==================== TEAM MEMBERS MODAL ==================== -->
+<div class="modal-overlay" id="teamMembersModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3><i class="fas fa-user-group"></i> Kelola Anggota Tim</h3>
+            <button class="btn-icon" onclick="closeTeamMembersModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+                Daftar ini terpisah dari akun login, jadi rekan yang tidak pernah membuka aplikasi
+                tetap bisa dijadwalkan dan dilaporkan. <strong>Nonaktifkan</strong> mengeluarkan orang
+                dari jadwal dan form laporan tanpa menghapus riwayatnya.
+            </p>
+            <datalist id="companyList"></datalist>
+            <ul class="categories-list" id="teamMembersList"></ul>
+            <form class="category-add-form team-add-form editonly editonly--teammembers" onsubmit="addTeamMember(event)">
+                <input type="text" class="form-input" id="newMemberName" aria-label="Nama anggota baru"
+                       placeholder="Nama anggota…" maxlength="60" autocomplete="off">
+                <input type="text" class="form-input" id="newMemberJob" aria-label="Jabatan anggota baru"
+                       placeholder="Jabatan (opsional)…" maxlength="40" autocomplete="off">
+                <input type="text" class="form-input" id="newMemberCompany" list="companyList"
+                       aria-label="Perusahaan anggota baru"
+                       placeholder="Perusahaan…" maxlength="80" autocomplete="off">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> Tambah</button>
+            </form>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeTeamMembersModal()">Tutup</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== WORK LOG MODAL ==================== -->
+<div class="modal-overlay" id="workLogModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="workLogModalTitle"><i class="fas fa-clipboard-list"></i> Tambah Laporan Harian</h3>
+            <button class="btn-icon" onclick="closeWorkLogModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form id="workLogForm" onsubmit="saveWorkLog(event)">
+            <input type="hidden" id="editWorkLogId">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="wlDate">Tanggal</label>
+                        <input type="date" class="form-input" id="wlDate" data-nofuture required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="wlMember">Anggota</label>
+                        <select class="form-select" id="wlMember" required>
+                            <option value="">— Pilih anggota —</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="wlStart">Jam Mulai</label>
+                        <input type="time" class="form-input" id="wlStart">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="wlEnd">Jam Selesai</label>
+                        <input type="time" class="form-input" id="wlEnd">
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="wlPaddock">Paddock Area <span class="form-optional">(opsional)</span></label>
+                        <input class="form-input" id="wlPaddock" list="paddockList" autocomplete="off"
+                               maxlength="60" placeholder="Nama paddock / blok…">
+                        <datalist id="paddockList"></datalist>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="wlUnit">Unit yang Dikerjakan <span class="form-optional">(boleh lebih dari satu)</span></label>
+                        <div class="wl-unit-add">
+                            <input class="form-input" id="wlUnit" list="wlUnitList" autocomplete="off"
+                                   placeholder="Ketik nama atau SN unit, lalu Tambah…"
+                                   onkeydown="if(event.key==='Enter'){event.preventDefault();addWorkLogUnit();}">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="addWorkLogUnit()">
+                                <i class="fas fa-plus"></i> Tambah
+                            </button>
+                        </div>
+                        <datalist id="wlUnitList"></datalist>
+                        <div class="unit-chips" id="wlUnitChips"></div>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="wlPhotoInput">Dokumentasi Lapangan
+                            <span class="form-optional">(opsional · <span id="wlPhotoCount">0/4</span>)</span></label>
+                        <input type="file" id="wlPhotoInput" accept="image/*" multiple style="display:none"
+                               onchange="handleWorkLogPhotoChange(event)">
+                        <div class="wl-photo-row">
+                            <button type="button" class="btn btn-secondary btn-sm"
+                                    onclick="document.getElementById('wlPhotoInput').click()">
+                                <i class="fas fa-camera"></i> Tambah Foto
+                            </button>
+                            <span class="wl-photo-hint">Foto dikecilkan otomatis sebelum disimpan.</span>
+                        </div>
+                        <div class="wl-photos" id="wlPhotoPreviews"></div>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="wlTask">Uraian Pekerjaan</label>
+                        <textarea class="form-input form-textarea" id="wlTask" rows="3" required
+                                  placeholder="Apa yang dikerjakan hari ini…"></textarea>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="wlIssue">Kendala <span class="form-optional">(opsional)</span></label>
+                        <textarea class="form-input form-textarea" id="wlIssue" rows="2"
+                                  placeholder="Hambatan, kekurangan alat, atau catatan lain…"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeWorkLogModal()">Batal</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ==================== LEAVE / SICK MODAL ==================== -->
+<div class="modal-overlay" id="leaveModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="leaveModalTitle"><i class="fas fa-user-clock"></i> Tambah Pengajuan Izin / Sakit</h3>
+            <button class="btn-icon" onclick="closeLeaveModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form id="leaveForm" onsubmit="saveLeave(event)">
+            <input type="hidden" id="editLeaveId">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="lvMember">Anggota</label>
+                        <select class="form-select" id="lvMember" required>
+                            <option value="">— Pilih anggota —</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="lvType">Jenis</label>
+                        <select class="form-select" id="lvType" required>
+                            <option value="izin">Izin</option>
+                            <option value="sakit">Sakit</option>
+                            <option value="alpa">Alpa (tanpa keterangan)</option>
+                        </select>
+                    </div>
+                    <!-- Sengaja TANPA data-nofuture: izin yang direncanakan
+                         memang bertanggal di masa depan. Jangan "dibetulkan". -->
+                    <div class="form-group">
+                        <label class="form-label" for="lvDateFrom">Tanggal Mulai</label>
+                        <input type="date" class="form-input" id="lvDateFrom" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="lvDateTo">Tanggal Selesai
+                            <span class="form-optional">(kosongkan kalau hanya satu hari)</span></label>
+                        <input type="date" class="form-input" id="lvDateTo">
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="lvDocInput">Surat Sakit / Surat Izin
+                            <span class="form-optional">(opsional · <span id="lvDocCount">0/4</span>)</span></label>
+                        <input type="file" id="lvDocInput" accept="image/*" multiple style="display:none"
+                               onchange="handleLeaveDocChange(event)">
+                        <div class="wl-photo-row">
+                            <button type="button" class="btn btn-secondary btn-sm"
+                                    onclick="document.getElementById('lvDocInput').click()">
+                                <i class="fas fa-camera"></i> Tambah Surat
+                            </button>
+                            <span class="wl-photo-hint">Foto atau hasil pindai gambar — bukan PDF. Dikecilkan otomatis.</span>
+                        </div>
+                        <div class="wl-photos" id="lvDocPreviews"></div>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="lvReason">Keterangan</label>
+                        <textarea class="form-input form-textarea" id="lvReason" rows="3"
+                                  placeholder="Alasan izin, keterangan dokter, atau catatan lain…"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeLeaveModal()">Batal</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal-overlay" id="damageComponentsModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3><i class="fas fa-microchip"></i> Kelola Komponen Kerusakan</h3>
+            <button class="btn-icon" onclick="closeDamageComponentsModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+                Komponen ini muncul di form Tambah/Edit Kerusakan. Perubahan langsung tersimpan dan terlihat oleh seluruh tim.
+                Komponen bawaan (GPS, Display, JDLink, Steering Sensor) terhubung ke status komponen unit;
+                komponen baru akan mengubah <strong>status unit</strong> saat ditandai Breakdown.
+            </p>
+            <ul class="categories-list" id="damageComponentsList"></ul>
+            <form class="category-add-form" onsubmit="addDamageComponent(event)">
+                <input type="text" class="form-input" id="newComponentName" aria-label="Nama komponen baru" placeholder="Nama komponen baru…" maxlength="60" autocomplete="off">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> Tambah</button>
+            </form>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeDamageComponentsModal()">Tutup</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== BULK EDIT UNITS MODAL ===== -->
+<div class="modal-overlay" id="bulkEditModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>Bulk Edit — <span id="bulkEditTitle">0 unit</span></h3>
+            <button class="btn-icon" onclick="closeBulkEdit()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px">
+                Centang field yang mau diubah. Hanya field tercentang yang diterapkan ke semua unit terpilih.
+            </p>
+            <div class="bulk-row">
+                <label><input type="checkbox" id="bulkChkSite"> Site</label>
+                <input class="form-input" id="bulkSite" aria-label="Site baru untuk unit terpilih" placeholder="Site baru…">
+            </div>
+            <div class="bulk-row">
+                <label><input type="checkbox" id="bulkChkStatus"> Status Unit</label>
+                <select class="form-select" id="bulkStatus" aria-label="Status baru untuk unit terpilih">
+                    <option value="Good">Good</option>
+                    <option value="Breakdown">Breakdown</option>
+                </select>
+            </div>
+            <div class="bulk-row">
+                <label><input type="checkbox" id="bulkChkCategory"> User Category</label>
+                <select class="form-select" id="bulkCategory" aria-label="User category baru untuk unit terpilih"><option value="">—</option></select>
+            </div>
+            <div class="bulk-row">
+                <label><input type="checkbox" id="bulkChkYear"> Tahun Penerimaan</label>
+                <input class="form-input" id="bulkYear" aria-label="Tahun penerimaan baru untuk unit terpilih" placeholder="mis. 2026">
+            </div>
+            <div class="bulk-row" id="bulkRowImplement" data-group-only="tractor">
+                <label><input type="checkbox" id="bulkChkImplement"> Implement</label>
+                <input class="form-input" id="bulkImplement" aria-label="Implement baru untuk unit terpilih" list="implementUnitList" placeholder="Pilih/ketik implement…">
+            </div>
+            <div class="bulk-row" id="bulkRowWorkTool" data-group-only="heavy" style="display:none">
+                <label><input type="checkbox" id="bulkChkWorkTool"> Alat Kerja</label>
+                <input class="form-input" id="bulkWorkTool" aria-label="Alat kerja baru untuk unit terpilih" list="heavyWorkToolList" placeholder="Pilih/ketik alat kerja…">
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeBulkEdit()">Batal</button>
+            <button type="button" class="btn btn-primary" onclick="applyBulkEdit()"><i class="fas fa-check"></i> Terapkan</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== USER ACCESS MODAL (owner) ===== -->
+<div class="modal-overlay" id="accessModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>Atur Akses — <span id="accessUserName">—</span></h3>
+            <button class="btn-icon" onclick="closeAccessModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="accessUserUid">
+            <p style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px">
+                Atur per menu: <strong>Tidak ada</strong> (tak bisa buka), <strong>Lihat</strong> (baca saja),
+                atau <strong>Edit</strong> (ubah data). Dashboard selalu bisa diakses.
+            </p>
+            <div id="accessGrid" class="access-grid"></div>
+            <p style="font-size:11.5px;color:var(--text-light);margin-top:14px">
+                Catatan: pengaturan di sini mengatur tampilan. Pengamanan sesungguhnya ada di
+                <code>firestore.rules</code> — publish ulang berkas itu dari repo setiap kali
+                ada area akses atau koleksi baru.
+            </p>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeAccessModal()">Batal</button>
+            <button type="button" class="btn btn-primary" onclick="saveAccess()"><i class="fas fa-check"></i> Simpan Akses</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== PHOTO LIGHTBOX ===== -->
+<div class="photo-lightbox" id="photoLightbox" onclick="closePhotoLightbox()">
+    <button type="button" class="photo-lightbox__nav" id="photoLightboxPrev"
+            aria-label="Foto sebelumnya" title="Foto sebelumnya"
+            onclick="event.stopPropagation();stepPhotoLightbox(-1)">&#10094;</button>
+    <img id="photoLightboxImg" alt="Foto">
+    <button type="button" class="photo-lightbox__nav" id="photoLightboxNext"
+            aria-label="Foto berikutnya" title="Foto berikutnya"
+            onclick="event.stopPropagation();stepPhotoLightbox(1)">&#10095;</button>
+    <span class="photo-lightbox__count" id="photoLightboxCount"></span>
+</div>
+
+<!-- ===== LICENSE STOCK MODAL ===== -->
+<div class="modal-overlay" id="licenseModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="licenseModalTitle">Tambah Stok Lisensi</h3>
+            <button class="btn-icon" onclick="closeLicenseModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <form id="licenseForm" onsubmit="saveLicenseStock(event)">
+                <input type="hidden" id="editLicenseId">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="licTxnType">Jenis Transaksi</label>
+                        <select class="form-select" id="licTxnType" onchange="onLicenseTxnChange()" required>
+                            <option value="IN">Tambah Stok (Masuk)</option>
+                            <option value="OUT">Distribusi ke Unit</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="licDate">Tanggal</label>
+                        <input type="date" class="form-input" id="licDate" data-nofuture required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="licType">Jenis Lisensi</label>
+                        <input class="form-input" id="licType" list="licTypeList" required
+                               placeholder="Pilih atau ketik jenis…" autocomplete="off">
+                        <datalist id="licTypeList"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="licQty">Jumlah</label>
+                        <input type="number" class="form-input" id="licQty" min="1" value="1" required>
+                    </div>
+                    <div class="form-group full-width" id="licUnitGroup" style="display:none">
+                        <label class="form-label" for="licUnit">Unit Tujuan</label>
+                        <input class="form-input" id="licUnit" list="licUnitList"
+                               placeholder="Ketik nama atau SN unit…" autocomplete="off">
+                        <datalist id="licUnitList"></datalist>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="licNote">Catatan <span class="form-optional">(opsional)</span></label>
+                        <textarea class="form-input form-textarea" id="licNote" rows="3" placeholder="Supplier / no. PO untuk stok masuk, atau catatan distribusi…"></textarea>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeLicenseModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" form="licenseForm"><i class="fas fa-check"></i> Simpan</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== UNIT PROFILE MODAL ===== -->
+<div class="modal-overlay" id="unitProfileModal">
+    <div class="modal-card modal-card--wide">
+        <div class="modal-header">
+            <h3 id="unitProfileTitle">Profil Unit</h3>
+            <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-secondary btn-sm" id="unitProfileEditBtn"><i class="fas fa-pen"></i> Edit</button>
+                <button class="btn btn-secondary btn-sm" id="unitProfileHistoryBtn"><i class="fas fa-clock-rotate-left"></i> History</button>
+                <button class="btn-icon" onclick="closeUnitProfile()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="modal-body" id="unitProfileBody"></div>
+    </div>
+</div>
+
+<!-- Footer -->
+<footer class="footer">
+    OT Monitoring Tractor and Device &copy; 2026 &mdash; Data-driven fleet management
+    <span class="footer__version" id="appVersion" title="Versi aplikasi yang sedang berjalan"></span>
+</footer>
+
+<!-- ===== BREAKDOWN REASON MODAL ===== -->
+<div class="modal-overlay" id="breakdownReasonModal">
+    <div class="modal-card" style="max-width:420px">
+        <div class="modal-header">
+            <h3>Breakdown Reason</h3>
+            <button class="btn-icon" onclick="cancelBreakdownReason()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+                Why is this unit breaking down? This will be recorded in the unit's history.
+            </p>
+            <textarea class="form-input form-textarea" id="breakdownReasonText" aria-label="Alasan breakdown" rows="3" placeholder="Enter breakdown reason…"></textarea>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-secondary" onclick="cancelBreakdownReason()">Cancel</button>
+            <button class="btn btn-danger" onclick="confirmBreakdownReason()"><i class="fas fa-check"></i> Confirm Breakdown</button>
+        </div>
+    </div>
+</div>
+
+<!-- Breakdown popover (positioned via JS) -->
+<div id="breakdownPopover" class="breakdown-popover" style="display:none"></div>
+
+<!-- ===== EMAIL SETTINGS MODAL ===== -->
+<div class="modal-overlay" id="emailSettingsModal">
+    <div class="modal-card" style="max-width:480px">
+        <div class="modal-header">
+            <h3><i class="fas fa-envelope-circle-check"></i> Email Alert Settings</h3>
+            <button class="btn-icon" onclick="closeEmailSettingsModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:14px;font-size:13px;color:var(--text-secondary)">
+                Hubungkan dengan <a href="https://www.emailjs.com/" target="_blank" rel="noopener">EmailJS</a> (gratis ~200 email/bulan).
+                Buat akun, lalu isi data di bawah.
+            </p>
+            <div style="display:flex;flex-direction:column;gap:12px">
+                <div class="form-group">
+                    <label class="form-label" for="emailjsPublicKey">Public Key</label>
+                    <input class="form-input" id="emailjsPublicKey" placeholder="Dari EmailJS → Account → API Keys">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="emailjsServiceId">Service ID</label>
+                    <input class="form-input" id="emailjsServiceId" placeholder="Dari EmailJS → Email Services">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="emailjsTemplateId">Template ID</label>
+                    <input class="form-input" id="emailjsTemplateId" placeholder="Dari EmailJS → Email Templates">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="emailjsRecipient">Recipient Email</label>
+                    <input class="form-input" id="emailjsRecipient" type="email" placeholder="your@email.com">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="display:flex;align-items:center;gap:8px">
+                        <input type="checkbox" id="emailjsAutoDaily">
+                        Kirim otomatis sekali sehari saat app dibuka (jika ada alert)
+                    </label>
+                </div>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-secondary" onclick="closeEmailSettingsModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveEmailSettings()"><i class="fas fa-check"></i> Save</button>
+        </div>
+    </div>
+</div>
+
+<script src="script.js"></script>
+<script type="module" src="firebase-init.js"></script>
+</body>
+</html>
