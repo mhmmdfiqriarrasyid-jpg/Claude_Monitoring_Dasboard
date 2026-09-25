@@ -238,6 +238,18 @@
         <div id="dashboardContent" style="display:none;">
 
             <!-- KPI Cards -->
+            <!-- Dashboard scope. Shown only once both groups have units, so a
+                 database with no heavy equipment looks exactly as before. -->
+            <div class="team-tabbar" id="dashGroupBar" style="display:none">
+                <div class="team-tabs" role="tablist" aria-label="Cakupan dashboard">
+                    <button type="button" class="team-tab dash-group-tab" data-group="tractor" role="tab" aria-selected="true" onclick="setDashGroup('tractor')">Pertanian</button>
+                    <button type="button" class="team-tab dash-group-tab" data-group="heavy" role="tab" aria-selected="false" onclick="setDashGroup('heavy')">Alat Berat</button>
+                    <button type="button" class="team-tab dash-group-tab" data-group="all" role="tab" aria-selected="false" onclick="setDashGroup('all')">Semua</button>
+                </div>
+            </div>
+            <!-- Outside the tab bar on purpose: print CSS hides .team-tabbar, and
+                 a printed dashboard must still say which group it covers. -->
+            <p id="dashScopeCaption" class="dash-scope-caption" hidden></p>
             <p id="dashNarrative" class="dash-narrative" style="display:none"></p>
 
             <div class="kpi-grid">
@@ -490,6 +502,17 @@
     <!-- ==================== EDIT UNITS VIEW ==================== -->
     <div id="viewEditUnits" class="view" style="display:none;">
 
+        <!-- Unit groups. Always visible: it is how the first heavy unit gets
+             added. Button text is filled in by renderEditGroupTabs(). -->
+        <div class="team-tabbar" id="editGroupBar">
+            <div class="team-tabs" role="tablist" aria-label="Kelompok unit">
+                <button type="button" class="team-tab eu-tab active" data-group="tractor" role="tab" aria-selected="true"
+                        aria-controls="editTable" onclick="switchEditUnitsGroup('tractor')">Agricultural Equipment</button>
+                <button type="button" class="team-tab eu-tab" data-group="heavy" role="tab" aria-selected="false"
+                        aria-controls="editTable" onclick="switchEditUnitsGroup('heavy')">Heavy Equipment</button>
+            </div>
+        </div>
+
         <!-- Edit Toolbar -->
         <div class="edit-toolbar">
             <div class="edit-toolbar__left">
@@ -540,7 +563,7 @@
             <div class="file-upload-area" id="editDropZone" onclick="document.getElementById('editCsvInput').click()">
                 <i class="fas fa-cloud-upload-alt"></i>
                 <p>Klik untuk mengunggah atau seret & lepas berkas CSV</p>
-                <span class="hint">Unit baru akan ditambahkan. Serial number duplikat dilewati.</span>
+                <span class="hint" id="importHint">Unit baru akan ditambahkan. Serial number duplikat dilewati.</span>
                 <input type="file" id="editCsvInput" aria-label="Pilih berkas CSV unit untuk diimpor" accept=".csv" hidden>
             </div>
         </div>
@@ -548,7 +571,7 @@
         <!-- Edit Table -->
         <div class="table-card">
             <div class="table-card__header">
-                <div class="table-card__title"><i class="fas fa-pen-to-square"></i> Unit Database</div>
+                <div class="table-card__title"><i class="fas fa-pen-to-square"></i> <span id="editTableTitle">Unit Database</span></div>
             </div>
             <div class="table-wrapper" style="max-height:600px;">
                 <table class="data-table table--cardable" id="editTable">
@@ -1181,6 +1204,8 @@
                     </button>
                     <button class="btn btn-primary btn-sm" id="dataCheckFixBtn" style="display:none"
                             onclick="fixInvisibleCharacters()"></button>
+                    <button class="btn btn-primary btn-sm" id="dataCheckGroupFixBtn" style="display:none"
+                            onclick="fixStrayGroupFields()"></button>
                 </div>
             </div>
             <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
@@ -1443,6 +1468,7 @@
         <div class="modal-body">
             <form id="unitForm" onsubmit="saveUnit(event)">
                 <input type="hidden" id="editUnitId">
+                <input type="hidden" id="formUnitGroup">
                 <div class="form-grid">
                     <div class="form-group">
                         <label class="form-label" for="formName">Nickname</label>
@@ -1456,10 +1482,22 @@
                         <label class="form-label" for="formSN">Serial Number</label>
                         <input class="form-input" id="formSN" required>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" data-group-only="tractor">
                         <label class="form-label" for="formImplement">Implement</label>
                         <input class="form-input" id="formImplement" list="implementUnitList" placeholder="Pilih dari Implements atau ketik…" autocomplete="off">
                         <datalist id="implementUnitList"></datalist>
+                    </div>
+                    <div class="form-group" data-group-only="heavy" style="display:none">
+                        <label class="form-label" for="formMachineType">Jenis Alat</label>
+                        <input class="form-input" id="formMachineType" list="heavyMachineTypeList" placeholder="Excavator, Bulldozer, …" autocomplete="off">
+                    </div>
+                    <div class="form-group" data-group-only="heavy" style="display:none">
+                        <label class="form-label" for="formAssetCode">Nomor Lambung / Kode Aset</label>
+                        <input class="form-input" id="formAssetCode" autocomplete="off">
+                    </div>
+                    <div class="form-group" data-group-only="heavy" style="display:none">
+                        <label class="form-label" for="formWorkTool">Alat Kerja</label>
+                        <input class="form-input" id="formWorkTool" list="heavyWorkToolList" placeholder="Bucket, Ripper, Blade, …" autocomplete="off">
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="formSite">Site</label>
@@ -1482,30 +1520,58 @@
                             <option value="Breakdown">Breakdown</option>
                         </select>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" data-group-only="tractor">
                         <label class="form-label" for="formDisplay">Display</label>
                         <select class="form-select" id="formDisplay">
                             <option value="Good">Good</option>
                             <option value="Breakdown">Breakdown</option>
                         </select>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" data-group-only="tractor">
                         <label class="form-label" for="formGPS">GPS</label>
                         <select class="form-select" id="formGPS">
                             <option value="Good">Good</option>
                             <option value="Breakdown">Breakdown</option>
                         </select>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" data-group-only="tractor">
                         <label class="form-label" for="formSteering">Steering</label>
                         <select class="form-select" id="formSteering">
                             <option value="Good">Good</option>
                             <option value="Breakdown">Breakdown</option>
                         </select>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" data-group-only="tractor">
                         <label class="form-label" for="formJDLink">JDLink</label>
                         <select class="form-select" id="formJDLink">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group" data-group-only="heavy" style="display:none">
+                        <label class="form-label" for="formCameraAi">Camera AI</label>
+                        <select class="form-select" id="formCameraAi">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group" data-group-only="heavy" style="display:none">
+                        <label class="form-label" for="formTelematicBox">Telematic Box</label>
+                        <select class="form-select" id="formTelematicBox">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group" data-group-only="heavy" style="display:none">
+                        <label class="form-label" for="formSwitchLimiter">Switch Limiter</label>
+                        <select class="form-select" id="formSwitchLimiter">
+                            <option value="Good">Good</option>
+                            <option value="Breakdown">Breakdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group" data-group-only="heavy" style="display:none">
+                        <label class="form-label" for="formRotaryLamp">Rotary Lamp</label>
+                        <select class="form-select" id="formRotaryLamp">
                             <option value="Good">Good</option>
                             <option value="Breakdown">Breakdown</option>
                         </select>
@@ -1517,7 +1583,7 @@
                 </div>
 
                 <fieldset class="form-section">
-                    <legend>Category, License &amp; Notes</legend>
+                    <legend id="unitFormLegend">Category, License &amp; Notes</legend>
                     <div class="form-grid">
                         <div class="form-group full-width">
                             <label class="form-label" for="formUserCategory">User Category</label>
@@ -1530,7 +1596,7 @@
                                 </button>
                             </div>
                         </div>
-                        <div class="form-group">
+                        <div class="form-group" data-group-only="tractor">
                             <label class="form-label" for="formGpsLicense">GPS License</label>
                             <select class="form-select" id="formGpsLicense">
                                 <option value="">—</option>
@@ -1538,7 +1604,7 @@
                                 <option value="SF-1">SF-1</option>
                             </select>
                         </div>
-                        <div class="form-group">
+                        <div class="form-group" data-group-only="tractor">
                             <label class="form-label" for="formLicenseDisplay">License Display</label>
                             <select class="form-select" id="formLicenseDisplay">
                                 <option value="">—</option>
@@ -1546,19 +1612,19 @@
                                 <option value="G5 Advance">G5 Advance</option>
                             </select>
                         </div>
-                        <div class="form-group">
+                        <div class="form-group" data-group-only="tractor">
                             <label class="form-label" for="formGpsLicenseStart">GPS License Start Date</label>
                             <input type="date" class="form-input" id="formGpsLicenseStart" onchange="autoFillGpsLicenseEnd()">
                         </div>
-                        <div class="form-group">
+                        <div class="form-group" data-group-only="tractor">
                             <label class="form-label" for="formGpsLicenseEnd">GPS License Expiration Date</label>
                             <input type="date" class="form-input" id="formGpsLicenseEnd">
                         </div>
-                        <div class="form-group">
+                        <div class="form-group" data-group-only="tractor">
                             <label class="form-label" for="formDisplayLicenseStart">Display License Start Date</label>
                             <input type="date" class="form-input" id="formDisplayLicenseStart" onchange="autoFillDisplayLicenseEnd()">
                         </div>
-                        <div class="form-group">
+                        <div class="form-group" data-group-only="tractor">
                             <label class="form-label" for="formDisplayLicenseEnd">Display License Expiration Date</label>
                             <input type="date" class="form-input" id="formDisplayLicenseEnd">
                         </div>
@@ -1568,6 +1634,8 @@
                         </div>
                     </div>
                 </fieldset>
+                <datalist id="heavyMachineTypeList"></datalist>
+                <datalist id="heavyWorkToolList"></datalist>
             </form>
         </div>
         <div class="form-actions">
@@ -1875,7 +1943,7 @@
                             <input type="checkbox" id="dmgSetBreakdown" checked>
                             Set status unit/komponen jadi <strong>Breakdown</strong>
                         </label>
-                        <div style="font-size:11.5px;color:var(--text-secondary);margin-top:4px">
+                        <div id="dmgBreakdownHint" style="font-size:11.5px;color:var(--text-secondary);margin-top:4px">
                             Device Precision → komponen terkait (GPS/Display/Steering/JDLink); tipe lain → status unit.
                         </div>
                     </div>
@@ -2300,9 +2368,13 @@
                 <label><input type="checkbox" id="bulkChkYear"> Tahun Penerimaan</label>
                 <input class="form-input" id="bulkYear" aria-label="Tahun penerimaan baru untuk unit terpilih" placeholder="mis. 2026">
             </div>
-            <div class="bulk-row">
+            <div class="bulk-row" id="bulkRowImplement" data-group-only="tractor">
                 <label><input type="checkbox" id="bulkChkImplement"> Implement</label>
                 <input class="form-input" id="bulkImplement" aria-label="Implement baru untuk unit terpilih" list="implementUnitList" placeholder="Pilih/ketik implement…">
+            </div>
+            <div class="bulk-row" id="bulkRowWorkTool" data-group-only="heavy" style="display:none">
+                <label><input type="checkbox" id="bulkChkWorkTool"> Alat Kerja</label>
+                <input class="form-input" id="bulkWorkTool" aria-label="Alat kerja baru untuk unit terpilih" list="heavyWorkToolList" placeholder="Pilih/ketik alat kerja…">
             </div>
         </div>
         <div class="form-actions">

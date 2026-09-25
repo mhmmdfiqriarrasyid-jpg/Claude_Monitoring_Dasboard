@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-790 pemeriksaan di dua puluh satu suite, menggerakkan Chromium sungguhan terhadap
+933 pemeriksaan di dua puluh dua suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -106,7 +106,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 `session_test`, `warehouse_test`, `approval_test`, `leader_test`, `recap_test`,
 `photos_test`, `migration_test`, `history_scan_test`, `validation_test`,
 `datacheck_test`, `damagephotos_test`, `mobile_test`, `window_test`,
-`backup_test`, `keyboard_test`, `leave_test`, `regress`.
+`backup_test`, `keyboard_test`, `leave_test`, `unitgroups_test`, `regress`.
 
 ---
 
@@ -152,9 +152,13 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   lagi. Empat migrasi seperti itu pernah ada di sini (nickname, lisensi ×2,
   site) dan menimpa 366 field dengan data Excel Mei 2026 setiap kali seseorang
   membukanya di browser baru — termasuk mengembalikan unit ke PT yang salah.
-  Semuanya sudah dihapus. Kalau memang perlu migrasi, tiru
-  `applyDefaultLicensesIfNeeded()` (`script.js`): `isOwner()` **dan** hanya
-  mengisi yang kosong (`if (!unit.gpsLicense)`), bukan menimpa yang berbeda.
+  Semuanya sudah dihapus — begitu juga `applyDefaultLicensesIfNeeded()`, yang
+  dulu jadi contoh di sini: bentuknya sama (penanda per-browser) dan begitu ada
+  alat berat ia akan menempelkan lisensi SF-RTK ke excavator. Kalau memang perlu
+  migrasi: `isOwner()`, **hanya mengisi yang kosong**, dan — ini yang dulu
+  terlewat — **hanya untuk field milik kelompok unit itu**
+  (`fieldAllowedForGroup(field, unitGroupOf(u))`). Untuk alat berat, kolom
+  lisensi yang kosong berarti *tidak berlaku*, bukan *belum diisi*.
 - **Catatan riwayat bisa berbohong, dan ada alat untuk itu.** `logEvent()`
   menulis sebelum server menjawab, jadi tulisan yang ditolak tetap
   meninggalkan barisnya. `/history` diizinkan oleh `canEditAnything()` — edit
@@ -290,3 +294,37 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   begitu sejak dipisah, dan surat izin mewarisi celah yang sama karena
   menumpang koleksi itu. Record izinnya sendiri ikut lewat `BACKUP_PARTS`.
   Perbaiki untuk ketiganya sekaligus, jangan satu-satu.
+- **Unit terbagi dua kelompok: Agricultural Equipment dan Heavy Equipment.**
+  Satu koleksi `units`, satu kolom `unitGroup` (`'tractor'` | `'heavy'`).
+  Registrinya `UNIT_GROUPS` (`script.js`): label, komponen yang dipantau, dan
+  kolom milik tiap kelompok. Aturannya:
+  - **190 dokumen lama tidak pernah ditulis ulang.** `unitGroup` yang kosong
+    dibaca `'tractor'` (`unitGroupOf`). Jangan pernah menormalkannya di objek
+    `globalData` — `updateUnit` mengirim seluruh objek, jadi normalisasi di
+    tempat ikut tertulis oleh suntingan berikutnya.
+  - **Hanya penciptaan yang menulis `unitGroup`**, dan kelompok **tidak bisa
+    diubah** sesudahnya. Unit yang salah kelompok dihapus lalu ditambah ulang.
+    Restore GANTI yang akan mengubah kelompok unit hidup ditolak.
+  - **Firewall di `updateUnit` dan `addUnits`** membuang `undefined`, membuang
+    `unitGroup`, dan membuang kolom milik kelompok lain. Satu-satunya
+    pengecualian: Periksa Data mengosongkan kolom silang (`clearStray`).
+  - **Apa pun yang dulu meng-hardcode Display/GPS/Steering/JDLink sekarang
+    bertanya ke kelompok unitnya** (`detectIssues`, `countIssues`, ring
+    komponen, tabel Repair, filter). Komponen alat berat yang kosong dihitung
+    bermasalah, sama seperti traktor.
+  - **Kerusakan**: `damageTargetField(type, component, unit)` punya keadaan
+    ketiga, `DAMAGE_DRIVES_NOTHING`, untuk catatan lama yang menyebut komponen
+    John Deere pada alat berat — tidak ditulis ke unit, tidak dijadikan status.
+  - **Lisensi SF/G5 hanya untuk kelompok pertanian.** Batas tulisnya
+    `applyDistributedLicenseToUnit`.
+  - **CSV**: kolom kelompok **hanya** `Unit Group`. "Kelompok" dan "Group" nama
+    kolom yang wajar di CSV traktor untuk hal lain. Tanpa kolom itu, kelompok
+    disimpulkan hanya dari empat header komponen alat berat vs header JD.
+  - **Label "Alat Kerja", bukan "Attachment"** — unit sudah punya kolom berkas
+    "Attachments", dan keduanya bersebelahan.
+  - **Tanpa satu pun alat berat, tampilan traktor identik byte demi byte** dengan
+    sebelum perubahan ini. Itu diuji terhadap `tests/fixtures/tractor_golden.json`,
+    yang direkam dari kode lama. Jangan merekam ulang golden kecuali memang
+    sengaja mengubah tampilan traktor.
+  - Preferensi tab/cakupan disimpan per perangkat, tapi selama belum ada alat
+    berat, keduanya selalu jatuh ke Pertanian.

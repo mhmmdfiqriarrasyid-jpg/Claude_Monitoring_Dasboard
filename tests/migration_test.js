@@ -54,9 +54,11 @@ const { launch, BASE_URL } = require('./_env');
         t('migrasi lisensi batch 1 tidak ada lagi', typeof window.migrateLicenseDataBatch1, 'undefined');
         t('migrasi lisensi batch 2 tidak ada lagi', typeof window.migrateLicenseDataBatch2, 'undefined');
         t('migrasi site tidak ada lagi', typeof window.migrateSiteData20260525, 'undefined');
-        t('dua migrasi yang aman tetap ada',
-          [typeof applyDefaultLicensesIfNeeded, typeof applyLicenseDatesIfNeeded],
-          ['function', 'function']);
+        // applyDefaultLicensesIfNeeded dihapus dengan alasan yang sama: dijaga
+        // penanda per-browser, dan begitu ada alat berat ia akan menempelkan
+        // lisensi John Deere ke excavator.
+        t('migrasi lisensi default tidak ada lagi', typeof window.applyDefaultLicensesIfNeeded, 'undefined');
+        t('migrasi tanggal lisensi tetap ada', typeof applyLicenseDatesIfNeeded, 'function');
 
         // Snapshot unit tidak boleh lagi memicu tulisan apa pun dari migrasi.
         globalData = [mkUnit('A', { name: 'GGTR147G_OHZ' }), mkUnit('B', { name: 'MGTR074M_HBA' })];

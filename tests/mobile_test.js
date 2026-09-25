@@ -222,6 +222,36 @@ async function run(page, width, body) {
     t('colspan baris kosong sama dengan jumlah kolom', izin.colspan, izin.kolom);
     t('tabel izin tidak memaksa halaman menggeser', izin.geser, false);
 
+    // Tab alat berat di ponsel: kolomnya sendiri, dan setiap selnya berlabel.
+    const berat = await phone.evaluate(`(() => {
+        navigateTo('editUnits');
+        globalData = [{ id:'u_h1', unitGroup:'heavy', name:'EXC01', model:'KOMATSU PC200', sn:'KMT1',
+            machineType:'Excavator', assetCode:'LB-1', workTool:'Bucket', status:'Good', cameraAi:'Good',
+            telematicBox:'Good', switchLimiter:'Good', rotaryLamp:'Good', site:'PT. GPA', yearReceived:'2025' }];
+        switchEditUnitsGroup('heavy');
+        const tds = [...document.querySelectorAll('#editBody tr td')];
+        const terlihat = n => { const td = document.querySelector(\`#editBody td[data-label="\${n}"]\`);
+                                return !!td && td.offsetParent !== null; };
+        const hasil = {
+            tanpaLabel: tds.filter(td => !td.hasAttribute('data-label') && !td.classList.contains('col-actions')).length,
+            camera: terlihat('Camera AI'), lambung: terlihat('Nomor Lambung'),
+            geser: document.documentElement.scrollWidth > innerWidth,
+            tab: Math.round(document.querySelector('.eu-tab').getBoundingClientRect().height)
+        };
+        globalData = [];
+        renderEditTable();
+        const k = document.querySelector('#editBody td[colspan]');
+        hasil.colspan = k ? k.getAttribute('colspan') : '';
+        switchEditUnitsGroup('tractor');
+        return hasil;
+    })()`);
+    t('tab alat berat: hanya nomor & centang tanpa label', berat.tanpaLabel, 2);
+    t('kolom Camera AI terlihat di ponsel', berat.camera, true);
+    t('kolom Nomor Lambung terlihat di ponsel', berat.lambung, true);
+    t('tab alat berat tidak memaksa halaman menggeser', berat.geser, false);
+    t('colspan baris kosong alat berat = 19 kolom', berat.colspan, '19');
+    t('tombol tab kelompok cukup besar disentuh', berat.tab >= 36, true);
+
     // Jadwal shift: satu-satunya yang memang menggeser, jadi nama harus menempel.
     const shift = await phone.evaluate(`(async () => {
         teamMembers = [{ id:'m1', name:'Yulianus Mop Anggawen', jobTitle:'Mekanik',

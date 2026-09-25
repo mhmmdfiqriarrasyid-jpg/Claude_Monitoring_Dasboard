@@ -97,6 +97,17 @@ const { launch, BASE_URL } = require('./_env');
           headerUrut.filter(th => th.getAttribute('role') !== 'button').length, 0);
         t('jumlahnya 34 seperti yang dihitung', headerUrut.length, 34);
 
+        // Tab alat berat membangun header-nya sendiri; semuanya tetap bisa di-tab,
+        // dan kembali ke tab Pertanian mengembalikan header aslinya.
+        navigateTo('editUnits');
+        switchEditUnitsGroup('heavy');
+        const heavyTh = [...document.querySelectorAll('#editTable th[onclick*="sortEditTable"]')];
+        t('tab alat berat: 15 header yang bisa diurut', heavyTh.length, 15);
+        t('dan semuanya bisa di-tab', heavyTh.filter(th => th.getAttribute('tabindex') !== '0' || th.getAttribute('role') !== 'button').length, 0);
+        switchEditUnitsGroup('tractor');
+        t('kembali ke Pertanian: 34 header lagi',
+          document.querySelectorAll('th[onclick*="sortTable"], th[onclick*="sortEditTable"]').length, 34);
+
         // Enter harus benar-benar mengurutkan, bukan sekadar bisa difokus.
         globalData = [
             { id: 'u1', name: 'Zeta', model: 'M', sn: 'S2', status: 'Good' },

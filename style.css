@@ -50,7 +50,11 @@
     --color-display: #886421;   /* ochre */
     --color-gps: #4D6B89;       /* slate blue */
     --color-steering: #4B7453;  /* forest green */
-    --color-jdlink: #403E3A;    /* warm ink */
+    --color-jdlink: #403E3A;
+    --color-camera-ai: #6E5A8A;
+    --color-telematic-box: #3E6F73;
+    --color-switch-limiter: #8A5A3C;
+    --color-rotary-lamp: #A07A2A;    /* warm ink */
 }
 
 /* --- Reset & Base --- */
@@ -731,6 +735,35 @@ body {
 .badge-steering { background: var(--color-steering); }
 .badge-jdlink { background: var(--color-jdlink); }
 .badge-unit { background: var(--danger); }
+/* Heavy-equipment components. */
+.badge-camera-ai { background: var(--color-camera-ai); }
+.badge-telematic-box { background: var(--color-telematic-box); }
+.badge-switch-limiter { background: var(--color-switch-limiter); }
+.badge-rotary-lamp { background: var(--color-rotary-lamp); }
+
+/* Unit groups: the count pill on the group tabs, the group caption when the
+   component grid shows both groups, and the dashboard scope line. */
+.team-tab__count {
+    display: inline-block;
+    min-width: 20px;
+    padding: 0 6px;
+    margin-left: 4px;
+    border-radius: 9px;
+    background: var(--border-light);
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+}
+.component-grid__group {
+    grid-column: 1 / -1;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+.dash-scope-caption { font-size: 12.5px; color: var(--text-secondary); margin: 0 0 10px; }
+.dash-scope-caption[hidden] { display: none; }
 
 /* Cell-level status indicators */
 .cell-good { color: var(--success); font-weight: 600; }

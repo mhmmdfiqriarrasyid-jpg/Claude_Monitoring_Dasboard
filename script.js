@@ -83,7 +83,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v109';
+const APP_VERSION = 'v110';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -126,7 +126,6 @@ const AUDIT_LOG_KEY = 'tractorAuditLog';
 const AUDIT_LOG_MAX = 500;
 const BACKUP_RING_KEY = 'tractorUnits_autobackup';
 const BACKUP_RING_SIZE = 3;
-const LICENSE_DEFAULTS_KEY = 'tractorLicenseDefaultsApplied';
 const WL_PHOTOS_SPLIT_KEY = 'tractorWorkLogPhotosSplit';
 const LICENSE_DATES_KEY = 'tractorLicenseDatesApplied_v2';
 const USER_CATEGORIES_SEED_KEY = 'tractorUserCategoriesSeeded_v1';
@@ -241,8 +240,172 @@ const COMPONENT_COLORS = {
     get display()  { return themeColor('--color-display', '#BC8A2E'); },
     get gps()      { return themeColor('--color-gps', '#5A7DA0'); },
     get steering() { return themeColor('--color-steering', '#4F7B58'); },
-    get jdlink()   { return themeColor('--color-jdlink', '#403E3A'); }
+    get jdlink()   { return themeColor('--color-jdlink', '#403E3A'); },
+    get cameraAi()      { return themeColor('--color-camera-ai', '#6E5A8A'); },
+    get telematicBox()  { return themeColor('--color-telematic-box', '#3E6F73'); },
+    get switchLimiter() { return themeColor('--color-switch-limiter', '#8A5A3C'); },
+    get rotaryLamp()    { return themeColor('--color-rotary-lamp', '#A07A2A'); }
 };
+// Nothing iterates COMPONENT_LABELS; it is a lookup (saveInlineEdit's toast).
+// COMPONENT_KEYS stays tractor-only on purpose: renderComponentHealth reads it
+// to draw the John Deere rings, and must not grow heavy rings by accident.
+Object.assign(COMPONENT_LABELS, {
+    cameraAi: 'Camera AI', telematicBox: 'Telematic Box',
+    switchLimiter: 'Switch Limiter', rotaryLamp: 'Rotary Lamp'
+});
+
+// ============================================================
+// UNIT GROUPS — agricultural equipment and heavy equipment
+// ------------------------------------------------------------
+// Every unit belongs to one group. The original 190 documents have no
+// `unitGroup` field and are NEVER back-filled: a missing value reads as
+// 'tractor', so no existing document changes meaning and nothing is written to
+// them. Only creating a unit writes the field, and it cannot change afterwards.
+//
+// Each group owns its own monitored components and its own extra fields. The
+// app used to assume every unit had Display/GPS/Steering/JDLink and SF/G5
+// licences; a heavy unit read through that assumption looked like four broken
+// components, and editing one wrote 'Breakdown' into all four. Anything that
+// used to hard-code those four now asks the unit's group instead.
+//
+// The internal key stays 'tractor' (nothing stores it yet, and it matches the
+// existing storage names); the LABEL is what people see. The group actually
+// holds tractors, CH570 cane harvesters and sprayers.
+// ============================================================
+const TRACTOR_ONLY_FIELDS = ['implement', 'display', 'gps', 'steering', 'jdlink',
+    'gpsLicense', 'licenseDisplay', 'gpsLicenseStartDate', 'gpsLicenseEndDate',
+    'displayLicenseStartDate', 'displayLicenseEndDate', 'licenseStartDate', 'licenseEndDate',
+    'gpsLicenseExpiredAt', 'displayLicenseExpiredAt'];
+const HEAVY_COMPONENT_KEYS = ['cameraAi', 'telematicBox', 'switchLimiter', 'rotaryLamp'];
+const HEAVY_ONLY_FIELDS = ['machineType', 'assetCode', 'workTool', ...HEAVY_COMPONENT_KEYS];
+const UNIT_GROUPS = {
+    tractor: {
+        key: 'tractor', label: 'Agricultural Equipment', shortLabel: 'Pertanian', icon: 'fa-tractor',
+        hasLicences: true, csvPrefix: 'tractor_monitoring', onlyFields: TRACTOR_ONLY_FIELDS,
+        components: COMPONENT_KEYS.map(k => ({ key: k, label: COMPONENT_LABELS[k],
+                                               badge: 'badge-' + COMPONENT_LABELS[k].toLowerCase() }))
+    },
+    heavy: {
+        key: 'heavy', label: 'Heavy Equipment', shortLabel: 'Alat Berat', icon: 'fa-person-digging',
+        hasLicences: false, csvPrefix: 'alat_berat_monitoring', onlyFields: HEAVY_ONLY_FIELDS,
+        components: [
+            { key: 'cameraAi',      label: 'Camera AI',      badge: 'badge-camera-ai' },
+            { key: 'telematicBox',  label: 'Telematic Box',  badge: 'badge-telematic-box' },
+            { key: 'switchLimiter', label: 'Switch Limiter', badge: 'badge-switch-limiter' },
+            { key: 'rotaryLamp',    label: 'Rotary Lamp',    badge: 'badge-rotary-lamp' }
+        ]
+    }
+};
+const UNIT_GROUP_KEYS = ['tractor', 'heavy'];
+const DASH_GROUP_KEYS = ['tractor', 'heavy', 'all'];
+const HEAVY_MACHINE_TYPES = ['Excavator', 'Bulldozer', 'Motor Grader', 'Wheel Loader'];
+const HEAVY_WORK_TOOLS = ['Bucket', 'Ripper', 'Blade', 'Breaker'];
+const HEAVY_CSV_UPDATABLE_FIELDS = ['name', 'model', 'machineType', 'assetCode', 'workTool', 'status',
+    ...HEAVY_COMPONENT_KEYS, 'site', 'yearReceived', 'userCategory', 'remarks', 'breakdownReason'];
+// "Alat Kerja", never "Attachment": units already have an "Attachments" file
+// column, and the two side by side read as the same thing.
+const UNIT_FIELD_LABELS = { machineType: 'Jenis Alat', assetCode: 'Nomor Lambung', workTool: 'Alat Kerja' };
+
+function normalizeGroupKey(raw) {
+    const v = String(raw == null ? '' : raw).trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!v) return '';
+    for (const k of UNIT_GROUP_KEYS) {
+        const g = UNIT_GROUPS[k];
+        if (v === k || v === g.label.toLowerCase() || v === g.shortLabel.toLowerCase()) return k;
+    }
+    if (['traktor', 'agricultural', 'agricultural tractor'].includes(v)) return 'tractor';
+    if (['alat berat', 'heavy equipment'].includes(v)) return 'heavy';
+    return null;
+}
+function unitGroupOf(u)  { return normalizeGroupKey(u && u.unitGroup) || 'tractor'; }
+function isHeavy(u)      { return !!u && unitGroupOf(u) === 'heavy'; }
+function groupDef(k)     { return UNIT_GROUPS[k] || UNIT_GROUPS.tractor; }
+function otherGroup(k)   { return UNIT_GROUPS[k === 'heavy' ? 'tractor' : 'heavy']; }
+function hasHeavyUnits(list)   { return (list || globalData).some(isHeavy); }
+function hasTractorUnits(list) { return (list || globalData).some(u => !isHeavy(u)); }
+// Always a NEW array. sortTable sorts filteredData in place, so filteredData
+// must never be the same array as globalData.
+function unitsOfGroup(list, sel) {
+    return sel === 'all' ? list.slice() : list.filter(u => unitGroupOf(u) === sel);
+}
+function groupsInScope(sel) { return sel === 'all' ? ['tractor', 'heavy'] : [sel]; }
+function fieldAllowedForGroup(field, g) { return !otherGroup(g).onlyFields.includes(field); }
+// Fields of the OTHER group that carry a value — e.g. an excavator saved from
+// a stale v108 tab with gps:'Breakdown'. Periksa Data reports and clears them.
+function strayGroupFields(u) {
+    const g = unitGroupOf(u);
+    return otherGroup(g).onlyFields
+        .filter(f => !sameStoredValue(u[f], ''))
+        .map(f => ({ field: f, value: u[f] }));
+}
+function heavyComponentField(name) {
+    if (!name) return null;
+    const n = String(name).trim().toLowerCase();
+    const c = UNIT_GROUPS.heavy.components.find(x => x.label.toLowerCase() === n);
+    return c ? c.key : null;
+}
+function tractorComponentOffered(name) {
+    const list = (typeof damageComponents !== 'undefined' && damageComponents.length)
+        ? damageComponents : DEFAULT_DAMAGE_COMPONENTS;
+    const n = String(name || '').toLowerCase();
+    return list.some(c => (c.name || '').toLowerCase() === n);
+}
+// A damage component that belongs to the other group than the unit's.
+function componentGroupConflict(name, unit) {
+    if (!name || !unit) return false;
+    if (isHeavy(unit)) return !heavyComponentField(name) && !!componentUnitField(name);
+    return !!heavyComponentField(name) && !tractorComponentOffered(name);
+}
+function issueBadgeClass(label) {
+    if (label === 'Unit') return 'badge-unit';
+    for (const k of UNIT_GROUP_KEYS) {
+        const c = UNIT_GROUPS[k].components.find(x => x.label === label);
+        if (c) return c.badge;
+    }
+    return 'badge-' + String(label).toLowerCase();
+}
+function readPref(key, allowed, dflt) {
+    try { const v = localStorage.getItem(key); return allowed.includes(v) ? v : dflt; }
+    catch (_) { return dflt; }
+}
+function writePref(key, v) { try { localStorage.setItem(key, v); } catch (_) {} }
+
+// Declared after the consts above on purpose: placing these in the state block
+// at the top of the file would read UNIT_GROUP_KEYS in its temporal dead zone
+// and stop the whole script. Preferences are loaded by loadUnitGroupPrefs(),
+// the first thing setupEventListeners() does.
+let editUnitsGroup = 'tractor';   // Edit Units tab asked for (saved or clicked)
+let _editGroupPicked = false;     // a click this session beats the zero-heavy fallback
+let dashGroupPref = 'tractor';    // dashboard scope asked for
+let _editHeadGroup = 'tractor';
+let _detailHeadGroup = 'tractor';
+const EDIT_HEADS = { tractor: '' };
+const DETAIL_HEADS = { tractor: '' };
+const csvExplicitGroup = new WeakSet();
+
+function loadUnitGroupPrefs() {
+    editUnitsGroup = readPref('editUnitsGroup', UNIT_GROUP_KEYS, 'tractor');
+    dashGroupPref = readPref('dashUnitGroup', DASH_GROUP_KEYS, 'tractor');
+    // Captured from the static markup before anything renders, so the tractor
+    // header is byte-for-byte today's.
+    const eh = document.querySelector('#editTable thead');
+    const dh = document.querySelector('#detailTable thead');
+    if (eh && !EDIT_HEADS.tractor) EDIT_HEADS.tractor = eh.innerHTML;
+    if (dh && !DETAIL_HEADS.tractor) DETAIL_HEADS.tractor = dh.innerHTML;
+}
+// While no heavy unit exists, everything opens exactly as it does today,
+// whatever preference a device saved.
+function effectiveEditGroup() {
+    if (editUnitsGroup === 'heavy' && !_editGroupPicked && !hasHeavyUnits()) return 'tractor';
+    return editUnitsGroup;
+}
+function effectiveDashGroup() {
+    if (!hasHeavyUnits()) return 'tractor';
+    if (!hasTractorUnits()) return 'heavy';
+    return dashGroupPref;
+}
+function scopeDashUnits(list) { return unitsOfGroup(list || globalData, effectiveDashGroup()); }
+function unitEditTarget(u) { return isHeavy(u) ? 'editUnits:heavy' : 'editUnits'; }
 
 // ---- Chart.js Global Config (HD rendering on all screens) ----
 // Chart.js is loaded from a CDN, which can be blocked or simply unreachable in
@@ -304,6 +467,14 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupEventListeners() {
+    loadUnitGroupPrefs();
+    // The damage component list follows the chosen unit's group.
+    const dmgUnitEl = document.getElementById('dmgUnit');
+    if (dmgUnitEl) {
+        let t = null;
+        dmgUnitEl.addEventListener('change', onDamageUnitChanged);
+        dmgUnitEl.addEventListener('input', () => { clearTimeout(t); t = setTimeout(onDamageUnitChanged, 150); });
+    }
     // Global unit search (topbar)
     const gSearch = document.getElementById('globalSearch');
     if (gSearch) {
@@ -775,7 +946,7 @@ function navigateTo(view) {
         if (globalData.length > 0) {
             document.getElementById('emptyState').style.display = 'none';
             document.getElementById('dashboardContent').style.display = 'block';
-            filteredData = [...globalData];
+            filteredData = scopeDashUnits();
             clearFilter();
             checkPendingAlerts();
         } else {
@@ -1107,7 +1278,29 @@ function addUnits(newUnits) {
     const skippedDetails = [];
     let skipped = 0;
 
+    const existingById = new Map(globalData.map(d => [d.id, d]));
     newUnits.forEach(u => {
+        // Group first. addUnits never invents a group — callers that create a
+        // unit stamp it — but it refuses one it cannot read, and refuses an id
+        // that already belongs to a unit of the other group.
+        if ('unitGroup' in u) {
+            const k = normalizeGroupKey(u.unitGroup);
+            if (k === null) {
+                skipped++;
+                skippedDetails.push({ name: u.name, sn: u.sn, reason: `Kelompok "${u.unitGroup}" tidak dikenal` });
+                return;
+            }
+            if (k === '') delete u.unitGroup; else u.unitGroup = k;
+        }
+        if (u.id && existingById.has(u.id) && unitGroupOf(existingById.get(u.id)) !== unitGroupOf(u)) {
+            skipped++;
+            skippedDetails.push({ name: u.name, sn: u.sn, reason: 'ID dipakai unit kelompok lain' });
+            return;
+        }
+        // A unit never carries the other group's fields. Tractor inputs today
+        // carry none, so for them this deletes nothing.
+        otherGroup(unitGroupOf(u)).onlyFields.forEach(f => { delete u[f]; });
+
         if (!u.id) u.id = generateId();
         const snLower = (u.sn || '').toLowerCase();
         if (snLower && existingSNs.has(snLower)) {
@@ -1135,12 +1328,37 @@ function addUnits(newUnits) {
     return { added: toAdd.length, skipped, skippedDetails };
 }
 
-function updateUnit(id, fields) {
+// The write firewall for unit groups. Drops undefined (Firestore here has no
+// ignoreUndefinedProperties), always drops unitGroup (a group is set once, at
+// creation), and drops fields owned by the other group — so no path, however
+// it was reached, can write GPS onto an excavator or Camera AI onto a tractor.
+// The single exception is Periksa Data clearing such a stray field to ''.
+function guardUnitFields(before, fields, opts) {
+    const g = unitGroupOf(before);
+    const out = {};
+    const dropped = [];
+    Object.keys(fields || {}).forEach(k => {
+        const v = fields[k];
+        if (v === undefined) { dropped.push(k); return; }
+        if (k === 'unitGroup') { dropped.push(k); return; }
+        if (!fieldAllowedForGroup(k, g) && !(opts && opts.clearStray && v === '')) { dropped.push(k); return; }
+        out[k] = v;
+    });
+    if (dropped.length) console.warn(`[group] ${dropped.join(', ')} diabaikan untuk unit ${groupDef(g).shortLabel}`);
+    return out;
+}
+
+function updateUnit(id, fields, opts) {
     if (!canWriteUnits('updateUnit')) return false;
     const idx = globalData.findIndex(d => d.id === id);
     if (idx === -1) return false;
 
     const before = { ...globalData[idx] };
+    const guarded = guardUnitFields(before, fields, opts);
+    // Only a payload the guard emptied is refused; updateUnit(id, {}) keeps
+    // today's behaviour.
+    if (Object.keys(fields || {}).length && !Object.keys(guarded).length) return false;
+    fields = guarded;
     const unit = { ...before, ...fields };
 
     // Downtime tracking when status changes
@@ -1206,8 +1424,15 @@ function bulkUpdateUnitsFromCSV(parsedUnits) {
         }
 
         const before = { ...globalData[idx] };
+        const g = unitGroupOf(before);
+        // A row that names a group can only update a unit of that group: a
+        // CSV never moves a unit between groups.
+        if (csvExplicitGroup.has(p) && normalizeGroupKey(p.unitGroup) !== g) {
+            failed.push({ sn: p.sn, reason: 'Kelompok di CSV berbeda dengan unit — tidak dipindah' });
+            return;
+        }
         const fields = {};
-        CSV_UPDATABLE_FIELDS.forEach(f => {
+        (g === 'heavy' ? HEAVY_CSV_UPDATABLE_FIELDS : CSV_UPDATABLE_FIELDS).forEach(f => {
             const val = p[f];
             if (val !== undefined && val !== null && String(val).trim() !== '' &&
                 !sameStoredValue(val, before[f])) {
@@ -2124,7 +2349,10 @@ function importBackup(file) {
                 const result = addUnits(data.units);
                 showToast(`Backup digabung: ${result.added} ditambahkan, ${result.skipped} duplikat dilewati`, 'success');
             } else {
-                if (!confirm(`Ini akan MENGHAPUS seluruh ${globalData.length} unit saat ini dan menggantinya dengan isi backup. Lanjutkan?`)) return;
+                if (_refuseCrossGroupRestore(data.units)) return;
+                const nHeavy = data.units.filter(isHeavy).length;
+                if (!confirm(`Ini akan MENGHAPUS seluruh ${globalData.length} unit saat ini dan menggantinya dengan isi backup`
+                    + (nHeavy ? ` (termasuk ${nHeavy} unit ${UNIT_GROUPS.heavy.shortLabel})` : '') + `. Lanjutkan?`)) return;
                 // Mirror the replace to the cloud, otherwise the next units
                 // snapshot overwrites localStorage and silently undoes the
                 // whole restore (and deleted units come back).
@@ -2234,7 +2462,8 @@ function importBackup(file) {
             if (typeof renderDeviceTable === 'function') renderDeviceTable();
             if (typeof renderStockView === 'function') renderStockView();
             scheduleDecisionRefresh();
-            updateDashboard(globalData);
+            filteredData = scopeDashUnits();
+            updateDashboard(filteredData);
         } catch (err) {
             showToast('Gagal membaca backup: ' + err.message, 'error');
         }
@@ -2285,7 +2514,10 @@ function trackStatusChange(unit, oldStatus, newStatus) {
     }
 }
 
-function computeDowntimeStats() {
+// Takes the units to measure; the default (every unit) keeps the old call
+// sites — the email report and the decision inbox — fleet-wide.
+function computeDowntimeStats(units) {
+    const list = units || globalData;
     const now = Date.now();
     const monthStart = new Date();
     monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
@@ -2302,7 +2534,7 @@ function computeDowntimeStats() {
     // from ~30 days to ~2 days over a year, and hit 0 once total downtime
     // passed 30 days per unit. Measure the real observation window instead.
     let earliestEventMs = Infinity;
-    globalData.forEach(u => {
+    list.forEach(u => {
         (u.downtimeHistory || []).forEach(iv => {
             if (typeof iv.start === 'number' && iv.start < earliestEventMs) earliestEventMs = iv.start;
         });
@@ -2311,7 +2543,7 @@ function computeDowntimeStats() {
         }
     });
 
-    globalData.forEach(u => {
+    list.forEach(u => {
         const history = u.downtimeHistory || [];
         let unitDowntime = 0;
         history.forEach(iv => {
@@ -2341,7 +2573,13 @@ function computeDowntimeStats() {
     const windowMs = earliestEventMs === Infinity
         ? 30 * DAY_MS                       // nothing recorded yet
         : Math.max(DAY_MS, now - earliestEventMs);
-    const fleetOperatingMs = Math.max(1, globalData.length) * windowMs;
+    // When both groups are in the list, each group is credited with its OWN
+    // observation window; one old tractor breakdown must not stretch the
+    // window of excavators registered last week. A single group uses the
+    // original expression verbatim.
+    const fleetOperatingMs = (hasHeavyUnits(list) && hasTractorUnits(list))
+        ? _groupOperatingMs(list, now)
+        : Math.max(1, list.length) * windowMs;
     const uptimeMs = Math.max(0, fleetOperatingMs - totalDowntimeMs);
     const mtbf = totalFailures > 0 ? uptimeMs / totalFailures : 0;
 
@@ -2353,8 +2591,23 @@ function computeDowntimeStats() {
     };
 }
 
-function renderDowntimeKPIs() {
-    const s = computeDowntimeStats();
+function _groupOperatingMs(list, now) {
+    const DAY_MS = 24 * 3600 * 1000;
+    return UNIT_GROUP_KEYS.reduce((sum, g) => {
+        const members = list.filter(u => unitGroupOf(u) === g);
+        if (!members.length) return sum;
+        let earliest = Infinity;
+        members.forEach(u => {
+            (u.downtimeHistory || []).forEach(iv => { if (typeof iv.start === 'number' && iv.start < earliest) earliest = iv.start; });
+            if (typeof u.breakdownStartedAt === 'number' && u.breakdownStartedAt < earliest) earliest = u.breakdownStartedAt;
+        });
+        const win = earliest === Infinity ? 30 * DAY_MS : Math.max(DAY_MS, now - earliest);
+        return sum + members.length * win;
+    }, 0);
+}
+
+function renderDowntimeKPIs(units) {
+    const s = computeDowntimeStats(units || scopeDashUnits());
     document.getElementById('kpiMTBF').textContent = formatDuration(s.mtbf);
     document.getElementById('kpiMTTR').textContent = formatDuration(s.mttr);
     // MTBF only means something against the period it was measured over.
@@ -2407,9 +2660,37 @@ function renderDowntimeKPIs() {
 // DATA PROCESSING
 // ============================================================
 
-function processData(rows) {
+// The group column is ONLY "Unit Group". "Kelompok", "Group" and the like are
+// ordinary column names in a plantation tractor sheet (a crew, a block), and
+// must never be read as a unit group.
+const CSV_HEAVY_COLUMNS = {
+    machineType: ['Jenis Alat', 'Machine Type'],
+    assetCode: ['Nomor Lambung', 'Kode Aset', 'Asset Code'],
+    workTool: ['Alat Kerja', 'Work Tool'],
+    cameraAi: ['Camera AI'], telematicBox: ['Telematic Box'],
+    switchLimiter: ['Switch Limiter'], rotaryLamp: ['Rotary Lamp']
+};
+// Infer the file's group from its headers, using only unambiguous markers: the
+// four heavy component headers on one side, the John Deere headers on the
+// other. 'Nomor Lambung', 'Jenis Alat' and 'Kelompok' are deliberately NOT
+// markers — tractor sheets use them too.
+function inferCsvGroup(fields) {
+    const f = (fields || []).map(x => String(x || '').trim().toLowerCase());
+    const has = list => list.some(h => f.includes(h.toLowerCase()));
+    const heavy = has(['Camera AI', 'Telematic Box', 'Switch Limiter', 'Rotary Lamp']);
+    const tractor = has(['Implement', 'Display', 'GPS', 'Steering', 'JDLink', 'Status Unit Display',
+        'Status Unit GPS', 'Status Unit Steering', 'Status Unit JDLink', 'GPS License', 'License Display', 'Display License']);
+    if (heavy && !tractor) return 'heavy';
+    if (tractor && !heavy) return 'tractor';
+    return null;
+}
+
+function processData(rows, ctx) {
     const valid = [];
     const rejected = [];
+    const groupWarnings = [];
+    const fallback = ctx && ctx.fallbackGroup === 'heavy' ? 'heavy' : 'tractor';
+    const fileGroup = (ctx && ctx.fileGroup) || null;
     rows.forEach((r, idx) => {
         const unit = {
             id: generateId(),
@@ -2438,6 +2719,17 @@ function processData(rows) {
             downtimeHistory: [],
             breakdownStartedAt: null
         };
+        // Heavy columns are attached only when they carry a value, so a
+        // tractor row is exactly today's object.
+        Object.keys(CSV_HEAVY_COLUMNS).forEach(k => {
+            const v = clean(getValAny(r, CSV_HEAVY_COLUMNS[k]));
+            if (v) unit[k] = v;
+        });
+        const raw = clean(getVal(r, 'Unit Group'));
+        const explicit = normalizeGroupKey(raw);
+        if (explicit === null) groupWarnings.push({ row: idx + 2, name: unit.name, sn: unit.sn, value: raw });
+        unit.unitGroup = explicit || fileGroup || fallback;
+        if (explicit) csvExplicitGroup.add(unit);
         if (!unit.sn && !unit.name) {
             rejected.push({ row: idx + 2, reason: 'Missing both nickname and serial number' });
         } else if (!unit.sn) {
@@ -2446,26 +2738,31 @@ function processData(rows) {
             valid.push(unit);
         }
     });
-    return { valid, rejected };
+    return { valid, rejected, groupWarnings };
 }
 
+// 'Unit' when the status is not Good, then the components OF THE UNIT'S GROUP.
+// For a tractor the result is identical, in content and order, to the old
+// hard-coded Display/GPS/Steering/JDLink list; for a heavy unit it reads
+// Camera AI / Telematic Box / Switch Limiter / Rotary Lamp instead of four
+// phantom John Deere faults.
 function detectIssues(d) {
     const issues = [];
     if (!isGood(d.status)) issues.push('Unit');
-    if (!isGood(d.display)) issues.push('Display');
-    if (!isGood(d.gps)) issues.push('GPS');
-    if (!isGood(d.steering)) issues.push('Steering');
-    if (!isGood(d.jdlink)) issues.push('JDLink');
+    groupDef(unitGroupOf(d)).components.forEach(c => { if (!isGood(d[c.key])) issues.push(c.label); });
     return issues;
 }
 
-function countIssues(data) {
-    const counts = { Unit: 0, Display: 0, GPS: 0, Steering: 0, JDLink: 0 };
+// With the default groups (['tractor']) this returns today's object in today's
+// key order.
+function countIssues(data, groups) {
+    const counts = { Unit: 0 };
+    (groups || ['tractor']).forEach(g => groupDef(g).components.forEach(c => { counts[c.label] = 0; }));
     let totalWithIssues = 0;
     data.forEach(d => {
         const issues = detectIssues(d);
         if (issues.length > 0) totalWithIssues++;
-        issues.forEach(i => counts[i]++);
+        issues.forEach(i => { if (i in counts) counts[i]++; });
     });
     return { total: totalWithIssues, counts };
 }
@@ -2492,7 +2789,7 @@ function onDataLoaded() {
 
     populateFilters();
     populateEditFilters();
-    filteredData = [...globalData];
+    filteredData = scopeDashUnits();
     updateDashboard(filteredData);
 
     const now = new Date().toLocaleString();
@@ -2510,7 +2807,79 @@ function onDataLoaded() {
     _tryAutoDailyEmail();
 }
 
+// ---- Dashboard group scope: Pertanian / Alat Berat / Semua ----
+function _issueOptions(scope, withUnit) {
+    const opts = [];
+    const add = (g, grp) => groupDef(g).components.forEach(c => opts.push({ v: c.label, t: c.label, grp }));
+    if (scope === 'all') { add('tractor', UNIT_GROUPS.tractor.shortLabel); add('heavy', UNIT_GROUPS.heavy.shortLabel); }
+    else add(scope, '');
+    return withUnit ? [{ v: 'Unit', t: 'Unit', grp: '' }].concat(opts) : opts;
+}
+// Rebuild a filter <select> only when its option list actually differs, so a
+// database with no heavy equipment never has its static markup rewritten.
+function _syncSelect(sel, allLabel, opts, suffix) {
+    if (!sel) return;
+    const want = [['', allLabel]].concat(opts.map(o => [o.v, o.t + suffix, o.grp]));
+    const have = [...sel.options].map(o => [o.value, o.textContent, o.parentElement.tagName === 'OPTGROUP' ? o.parentElement.label : '']);
+    const same = want.length === have.length && want.every((w, i) => w[0] === have[i][0] && w[1] === have[i][1] && (w[2] || '') === have[i][2]);
+    if (same) return;
+    const cur = sel.value;
+    let html = `<option value="">${escapeHtml(allLabel)}</option>`;
+    let open = '';
+    opts.forEach(o => {
+        if ((o.grp || '') !== open) {
+            if (open) html += '</optgroup>';
+            if (o.grp) html += `<optgroup label="${escapeHtml(o.grp)}">`;
+            open = o.grp || '';
+        }
+        html += `<option value="${escapeHtml(o.v)}">${escapeHtml(o.t + suffix)}</option>`;
+    });
+    if (open) html += '</optgroup>';
+    sel.innerHTML = html;
+    sel.value = opts.some(o => o.v === cur) ? cur : '';
+}
+
+function syncDashGroupUI() {
+    const both = hasHeavyUnits() && hasTractorUnits();
+    const scope = effectiveDashGroup();
+    const bar = document.getElementById('dashGroupBar');
+    if (bar) bar.style.display = both ? '' : 'none';
+    document.querySelectorAll('.dash-group-tab').forEach(btn => {
+        const g = btn.dataset.group;
+        const n = g === 'all' ? globalData.length : unitsOfGroup(globalData, g).length;
+        const label = g === 'all' ? 'Semua' : groupDef(g).shortLabel;
+        btn.style.display = '';
+        btn.classList.toggle('active', g === scope);
+        btn.setAttribute('aria-selected', g === scope ? 'true' : 'false');
+        btn.innerHTML = `${escapeHtml(label)} <span class="team-tab__count">${n}</span>`;
+    });
+    const cap = document.getElementById('dashScopeCaption');
+    if (cap) {
+        cap.hidden = !both;
+        if (both) {
+            const nH = unitsOfGroup(globalData, 'heavy').length;
+            cap.textContent = scope === 'all'
+                ? `Cakupan: semua unit (${globalData.length - nH} ${UNIT_GROUPS.tractor.shortLabel}, ${nH} ${UNIT_GROUPS.heavy.shortLabel})`
+                : `Cakupan: ${groupDef(scope).label}`;
+        }
+    }
+    _syncSelect(document.getElementById('componentFilter'), 'All Components', _issueOptions(scope, false), ' Issues');
+    _syncSelect(document.getElementById('issueFilter'), 'All Issues', _issueOptions(scope, true), '');
+}
+
+function setDashGroup(g, opts) {
+    if (!DASH_GROUP_KEYS.includes(g)) return;
+    dashGroupPref = g;
+    if (!opts || opts.persist !== false) writePref('dashUnitGroup', g);
+    sortState.key = null;
+    ['componentFilter', 'issueFilter'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    populateFilters();
+    filteredData = applyFilterLogic();
+    updateDashboard(filteredData);
+}
+
 function updateDashboard(data) {
+    syncDashGroupUI();
     renderNarrative(data);
     renderKPI(data);
     renderStatusChart(data);
@@ -2535,7 +2904,7 @@ function renderNarrative(data) {
     const sites = [...new Set(data.map(d => d.site).filter(Boolean))].length || 1;
     const breakdown = data.filter(d => !isGood(d.status)).length;
     const issues = data.filter(d => detectIssues(d).length > 0).length;
-    const alerts = _buildAlertList().total;
+    const alerts = _buildAlertList(scopeDashUnits()).total;
 
     const clauses = [
         breakdown === 0 ? 'semua unit beroperasi hari ini' : `${breakdown} unit sedang breakdown`
@@ -2547,7 +2916,16 @@ function renderNarrative(data) {
     if (clauses.length === 1) tail = clauses[0];
     else tail = clauses.slice(0, -1).join(', ') + ', dan ' + clauses[clauses.length - 1];
 
-    el.textContent = `${total} unit di ${sites} site — ${tail}.`;
+    // The noun names the group only when the dashboard is not the plain
+    // agricultural view, so that sentence reads exactly as it always has.
+    const scope = effectiveDashGroup();
+    let noun = 'unit';
+    if (scope === 'heavy') noun = `unit ${UNIT_GROUPS.heavy.shortLabel}`;
+    else if (scope === 'all') {
+        const nH = data.filter(isHeavy).length;
+        noun = `unit (${total - nH} ${UNIT_GROUPS.tractor.shortLabel}, ${nH} ${UNIT_GROUPS.heavy.shortLabel})`;
+    }
+    el.textContent = `${total} ${noun} di ${sites} site — ${tail}.`;
     el.style.display = '';
 }
 
@@ -2641,7 +3019,7 @@ function renderLicenseAlerts(data) {
     const SOON_DAYS = 30;
     const alerts = [];
 
-    data.forEach(unit => {
+    data.filter(u => !isHeavy(u)).forEach(unit => {
         ['gps', 'display'].forEach(kind => {
             const end = getLicenseEndDate(unit, kind);
             if (!end) return;
@@ -2713,6 +3091,9 @@ function renderStockAlerts() {
     const section = document.getElementById('stockAlertsSection');
     const cards = document.getElementById('stockAlertsCards');
     if (!section || !cards) return;
+    // Licence stock is about John Deere licences; nothing to say about it on
+    // a heavy-equipment dashboard.
+    if (effectiveDashGroup() === 'heavy') { section.style.display = 'none'; return; }
     const low = _lowStockList();
     if (!low.length) { section.style.display = 'none'; return; }
     section.style.display = '';
@@ -2758,12 +3139,15 @@ function saveEmailSettings() {
     showToast('Pengaturan email disimpan', 'success');
 }
 
-function _buildAlertList() {
+// SF/G5 licences are John Deere only, so heavy units never produce an alert.
+// Called with no argument (the email report, the decision inbox) it stays
+// fleet-wide.
+function _buildAlertList(units) {
     const SOON_DAYS = 30;
     const lines = [];
     let expiredCount = 0, soonCount = 0;
 
-    globalData.forEach(unit => {
+    (units || globalData).filter(u => !isHeavy(u)).forEach(unit => {
         ['gps', 'display'].forEach(kind => {
             const end = getLicenseEndDate(unit, kind);
             if (!end) return;
@@ -2841,19 +3225,30 @@ function _tryAutoDailyEmail() {
 }
 
 // ---- Component Health ----
+// Each group's rings are measured against that group's own units. The old
+// denominator was every unit, so a single excavator — which has no Display or
+// GPS at all — pulled a fully healthy tractor fleet below 100%.
 function renderComponentHealth(data) {
     const grid = document.getElementById('componentGrid');
-    const total = data.length;
+    const scope = effectiveDashGroup();
+    let groups = scope === 'all'
+        ? UNIT_GROUP_KEYS.filter(g => data.some(u => unitGroupOf(u) === g))
+        : [scope];
+    if (!groups.length) groups = scope === 'all' ? UNIT_GROUP_KEYS.slice() : [scope];
+    const captions = groups.length > 1;
 
-    grid.innerHTML = COMPONENT_KEYS.map(key => {
-        const goodCount = data.filter(d => isGood(d[key])).length;
-        const rate = pct(goodCount, total);
-        const color = COMPONENT_COLORS[key];
-        const circumference = 2 * Math.PI * 28;
-        const offset = circumference - (rate / 100) * circumference;
-        return `
+    grid.innerHTML = groups.map(g => {
+        const members = data.filter(u => unitGroupOf(u) === g);
+        const total = members.length;
+        const rings = groupDef(g).components.map(c => {
+            const goodCount = members.filter(d => isGood(d[c.key])).length;
+            const rate = pct(goodCount, total);
+            const color = COMPONENT_COLORS[c.key];
+            const circumference = 2 * Math.PI * 28;
+            const offset = circumference - (rate / 100) * circumference;
+            return `
         <div class="component-stat">
-            <div class="component-stat__name">${COMPONENT_LABELS[key]}</div>
+            <div class="component-stat__name">${c.label}</div>
             <div class="component-stat__ring">
                 <svg width="72" height="72" viewBox="0 0 72 72">
                     <circle cx="36" cy="36" r="28" fill="none" style="stroke:var(--border-light)" stroke-width="6"/>
@@ -2864,6 +3259,8 @@ function renderComponentHealth(data) {
             </div>
             <div class="component-stat__detail">${goodCount} / ${total} Good</div>
         </div>`;
+        }).join('');
+        return (captions ? `<div class="component-grid__group">${escapeHtml(groupDef(g).label)}</div>` : '') + rings;
     }).join('');
 }
 
@@ -2876,21 +3273,83 @@ function dashboardFilterActive() {
     return !!(val('searchInput') || val('statusFilter') || val('siteFilter') || val('componentFilter'));
 }
 
+// ---- Dashboard table per scope ----
+// Agricultural: today's 17 columns, header captured from the static markup.
+// Heavy: its own 15. "Semua": 10 columns with a Kelompok column and one
+// "Komponen" cell summarising whatever each unit's group monitors.
+const DETAIL_COLSPAN = { tractor: 17, heavy: 15, all: 10 };
+function renderDetailHead(scope) {
+    const head = document.querySelector('#detailTable thead');
+    if (!head || _detailHeadGroup === scope) return;
+    const s = (k, l) => sortTh(k, l, 'sortTable');
+    if (scope === 'tractor') head.innerHTML = DETAIL_HEADS.tractor;
+    else if (scope === 'heavy') head.innerHTML = `<tr>${s('no', 'No')}${s('name', 'Nickname')}${s('model', 'Model')}${s('sn', 'Serial Number')}
+        ${s('machineType', 'Jenis Alat')}${s('assetCode', 'Nomor Lambung')}${s('workTool', 'Alat Kerja')}${s('status', 'Status')}
+        ${UNIT_GROUPS.heavy.components.map(c => s(c.key, c.label)).join('')}
+        ${s('site', 'Site')}${s('yearReceived', 'Tahun Penerimaan')}${s('userCategory', 'User Category')}</tr>`;
+    else head.innerHTML = `<tr>${s('no', 'No')}${s('name', 'Nickname')}${s('unitGroup', 'Kelompok')}${s('model', 'Model')}
+        ${s('sn', 'Serial Number')}${s('status', 'Status')}<th>Komponen</th>
+        ${s('site', 'Site')}${s('yearReceived', 'Tahun Penerimaan')}${s('userCategory', 'User Category')}</tr>`;
+    _detailHeadGroup = scope;
+    markSortedHeader('#detailTable thead', sortState.key, sortState.asc);
+}
+function _statusCell(d) {
+    return !isGood(d.status) && d.breakdownReason
+        ? `<span class="badge badge-breakdown bd-clickable" onclick="showBreakdownPopover(event, '${escapeHtml(d.breakdownReason).replace(/'/g, "\\'")}')"><i class="fas fa-xmark"></i> ${escapeHtml(d.status)}</span>`
+        : `<span class="badge ${isGood(d.status) ? 'badge-good' : 'badge-breakdown'}"><i class="fas fa-${isGood(d.status) ? 'check' : 'xmark'}"></i> ${escapeHtml(d.status)}</span>`;
+}
+function _dash(v) { return escapeHtml(v || '') || '<span style="color:var(--text-light);font-size:11px">—</span>'; }
+function _catCell(d) {
+    return d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>';
+}
+function _detailRowHeavy(d, i) {
+    return `
+        <tr class="${!isGood(d.status) ? 'row-breakdown' : ''}">
+            <td>${i + 1}</td>
+            <td><strong class="unit-link" title="Lihat profil unit" onclick="showUnitProfile('${escapeHtml(d.id)}')">${escapeHtml(d.name)}</strong></td>
+            <td>${escapeHtml(d.model)}</td>
+            <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
+            <td>${_dash(d.machineType)}</td><td>${_dash(d.assetCode)}</td><td>${_dash(d.workTool)}</td>
+            <td>${_statusCell(d)}</td>
+            ${UNIT_GROUPS.heavy.components.map(c => `<td class="${isGood(d[c.key]) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d[c.key] || '') || '—'}</td>`).join('')}
+            <td>${escapeHtml(d.site)}</td><td>${_dash(d.yearReceived)}</td><td>${_catCell(d)}</td>
+        </tr>`;
+}
+function _detailRowAll(d, i) {
+    const comp = detectIssues(d).filter(x => x !== 'Unit');
+    return `
+        <tr class="${!isGood(d.status) ? 'row-breakdown' : ''}">
+            <td>${i + 1}</td>
+            <td><strong class="unit-link" title="Lihat profil unit" onclick="showUnitProfile('${escapeHtml(d.id)}')">${escapeHtml(d.name)}</strong></td>
+            <td>${escapeHtml(groupDef(unitGroupOf(d)).shortLabel)}</td>
+            <td>${escapeHtml(d.model)}</td>
+            <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
+            <td>${_statusCell(d)}</td>
+            <td>${comp.length ? comp.map(x => `<span class="badge-component ${issueBadgeClass(x)}">${escapeHtml(x)}</span>`).join(' ') : '<span class="cell-good">Semua baik</span>'}</td>
+            <td>${escapeHtml(d.site)}</td><td>${_dash(d.yearReceived)}</td><td>${_catCell(d)}</td>
+        </tr>`;
+}
+
 function renderTable(data) {
+    const scope = effectiveDashGroup();
+    renderDetailHead(scope);
     const tbody = document.getElementById('detailBody');
     // An empty tbody under a 17-column header used to be the whole answer when
     // a filter matched nothing: no row, no message, and #emptyState does not
     // help because it is gated on globalData.length, not on the filtered list.
     if (!data || data.length === 0) {
+        const span = DETAIL_COLSPAN[scope];
         tbody.innerHTML = dashboardFilterActive()
-            ? `<tr><td colspan="17" style="text-align:center;padding:24px;color:var(--text-secondary)">
+            ? `<tr><td colspan="${span}" style="text-align:center;padding:24px;color:var(--text-secondary)">
                    Tidak ada unit yang cocok dengan filter.
                    <button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="clearFilter()">
                        <i class="fas fa-filter-circle-xmark"></i> Hapus filter</button>
                </td></tr>`
-            : `<tr><td colspan="17" style="text-align:center;padding:24px;color:var(--text-secondary)">Belum ada unit.</td></tr>`;
+            : `<tr><td colspan="${span}" style="text-align:center;padding:24px;color:var(--text-secondary)">Belum ada unit.</td></tr>`;
         return;
     }
+    if (scope === 'heavy') { tbody.innerHTML = data.map(_detailRowHeavy).join(''); return; }
+    if (scope === 'all') { tbody.innerHTML = data.map(_detailRowAll).join(''); return; }
     tbody.innerHTML = data.map((d, i) => {
         const isBD = !isGood(d.status);
         return `
@@ -2923,6 +3382,7 @@ function renderTable(data) {
 function _resolveSortValue(d, key) {
     if (key === 'gpsExpiry') return getLicenseEndDate(d, 'gps');
     if (key === 'displayExpiry') return getLicenseEndDate(d, 'display');
+    if (key === 'unitGroup') return groupDef(unitGroupOf(d)).shortLabel;
     return d[key] || '';
 }
 
@@ -2944,24 +3404,35 @@ function sortTable(key) {
 
 // ---- Repair & Maintenance ----
 // ---- Damage statistics (dashboard) ----
+// Which group a damage record belongs to: its live unit's group, or — for a
+// record whose unit is gone — the group stamped on the record itself.
+function damageInScope(r) {
+    const scope = effectiveDashGroup();
+    if (scope === 'all') return true;
+    const u = liveUnitFor(r);
+    const g = u ? unitGroupOf(u) : (normalizeGroupKey(r.unitGroup) === 'heavy' ? 'heavy' : 'tractor');
+    return g === scope;
+}
+
 function renderDamageStats() {
+    const recs = globalDamages.filter(damageInScope);
     const section = document.getElementById('damageStatsSection');
     if (!section) return;
-    if (!globalDamages.length) {
+    if (!recs.length) {
         section.style.display = 'none';
         destroyChart('damageTrendChart');
         return;
     }
     section.style.display = '';
 
-    const open = globalDamages.filter(r => !r.resolved).length;
+    const open = recs.filter(r => !r.resolved).length;
     const totalEl = document.getElementById('damageStatsTotal');
-    if (totalEl) totalEl.textContent = `${globalDamages.length} catatan · ${open} belum selesai`;
+    if (totalEl) totalEl.textContent = `${recs.length} catatan · ${open} belum selesai`;
 
     // Counts per damage type
     const typeColors = { 'Mekanis': 'var(--danger)', 'Software': 'var(--info)', 'Device Precision': 'var(--warning)' };
     const counts = {};
-    globalDamages.forEach(r => { const t = r.damageType || 'Lainnya'; counts[t] = (counts[t] || 0) + 1; });
+    recs.forEach(r => { const t = r.damageType || 'Lainnya'; counts[t] = (counts[t] || 0) + 1; });
     const typeOrder = DAMAGE_TYPES.concat(Object.keys(counts).filter(t => !DAMAGE_TYPES.includes(t)));
     document.getElementById('damageTypeChips').innerHTML = typeOrder
         .filter(t => counts[t])
@@ -2978,7 +3449,7 @@ function renderDamageStats() {
             label: d.toLocaleDateString('id-ID', { month: 'short' })
         });
     }
-    const byMonth = months.map(m => globalDamages.filter(r => (r.date || '').startsWith(m.key)).length);
+    const byMonth = months.map(m => recs.filter(r => (r.date || '').startsWith(m.key)).length);
     destroyChart('damageTrendChart');
     charts.damageTrendChart = makeChart('damageTrendChart', {
         type: 'bar',
@@ -2992,7 +3463,7 @@ function renderDamageStats() {
 
     // Top-5 most frequently damaged units (live name via liveUnitFor)
     const perUnit = {};
-    globalDamages.forEach(r => {
+    recs.forEach(r => {
         const lu = liveUnitFor(r);
         const name = (lu ? lu.name : r.unitName) || '(tanpa nama)';
         perUnit[name] = (perUnit[name] || 0) + 1;
@@ -3007,14 +3478,18 @@ function renderDamageStats() {
         </div>`).join('');
 }
 
-function renderRepair() {
+// Reads the dashboard's scope, not every unit: with a group selected, the
+// repair chips, charts and table describe that group only.
+function renderRepair(scope) {
+    const list = scope || scopeDashUnits();
     const issueFilterVal = document.getElementById('issueFilter').value;
-    const issueData = countIssues(globalData);
+    const issueData = countIssues(list, groupsInScope(effectiveDashGroup()));
     const chipColors = {
         Unit: themeColor('--danger', '#BF4D43'), Display: COMPONENT_COLORS.display,
         GPS: COMPONENT_COLORS.gps, Steering: COMPONENT_COLORS.steering,
         JDLink: COMPONENT_COLORS.jdlink
     };
+    UNIT_GROUPS.heavy.components.forEach(c => { chipColors[c.label] = COMPONENT_COLORS[c.key]; });
 
     document.getElementById('issueSummary').innerHTML = Object.entries(issueData.counts).map(([key, count]) => `
         <div class="issue-chip">
@@ -3036,7 +3511,7 @@ function renderRepair() {
 
     // Issues by Site Chart
     const siteCounts = {};
-    globalData.forEach(d => { if (detectIssues(d).length > 0) { const s = d.site || 'Unknown'; siteCounts[s] = (siteCounts[s] || 0) + 1; } });
+    list.forEach(d => { if (detectIssues(d).length > 0) { const s = d.site || 'Unknown'; siteCounts[s] = (siteCounts[s] || 0) + 1; } });
     const siteLabels = Object.keys(siteCounts).sort();
     destroyChart('issueBySiteChart');
     charts.issueBySiteChart = makeChart('issueBySiteChart', {
@@ -3048,7 +3523,7 @@ function renderRepair() {
     });
 
     // Repair Table
-    let repairRows = globalData.filter(d => detectIssues(d).length > 0);
+    let repairRows = list.filter(d => detectIssues(d).length > 0);
     if (issueFilterVal) repairRows = repairRows.filter(d => detectIssues(d).includes(issueFilterVal));
     const repairBody = document.getElementById('repairBody');
     if (repairRows.length === 0) {
@@ -3069,7 +3544,7 @@ function renderRepair() {
             <td><strong>${escapeHtml(d.name)}</strong></td>
             <td>${escapeHtml(d.model)}</td>
             <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
-            <td>${detectIssues(d).map(x => `<span class="badge-component badge-${x.toLowerCase()}">${escapeHtml(x)}</span>`).join(' ')}</td>
+            <td>${detectIssues(d).map(x => `<span class="badge-component ${issueBadgeClass(x)}">${escapeHtml(x)}</span>`).join(' ')}</td>
             <td>${escapeHtml(d.site)}</td>
         </tr>`).join('');
 }
@@ -3078,9 +3553,10 @@ function renderRepair() {
 // FILTERS
 // ============================================================
 
-function populateFilters() {
-    const statuses = [...new Set(globalData.map(d => d.status))].filter(Boolean).sort();
-    const sites = [...new Set(globalData.map(d => d.site))].filter(Boolean).sort();
+function populateFilters(units) {
+    const pool = units || scopeDashUnits();
+    const statuses = [...new Set(pool.map(d => d.status))].filter(Boolean).sort();
+    const sites = [...new Set(pool.map(d => d.site))].filter(Boolean).sort();
     document.getElementById('statusFilter').innerHTML = `<option value="">All Status</option>` + statuses.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
     document.getElementById('siteFilter').innerHTML = `<option value="">All Sites</option>` + sites.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
 }
@@ -3091,10 +3567,13 @@ function applyFilterLogic() {
     const siteVal = document.getElementById('siteFilter').value;
     const compVal = document.getElementById('componentFilter').value;
 
-    return globalData.filter(d => {
+    // The group scope is applied here, inside the filter, so every re-render —
+    // a snapshot, a reset, a restore — keeps the group the user chose.
+    return scopeDashUnits().filter(d => {
         if (statusVal && d.status !== statusVal) return false;
         if (siteVal && d.site !== siteVal) return false;
-        if (keyword && !`${d.name} ${d.model} ${d.sn}`.toLowerCase().includes(keyword)) return false;
+        const hay = isHeavy(d) ? `${d.name} ${d.model} ${d.sn} ${d.machineType || ''} ${d.assetCode || ''}` : `${d.name} ${d.model} ${d.sn}`;
+        if (keyword && !hay.toLowerCase().includes(keyword)) return false;
         if (compVal && !detectIssues(d).includes(compVal)) return false;
         return true;
     });
@@ -3111,14 +3590,14 @@ function clearFilter() {
     document.getElementById('statusFilter').value = '';
     document.getElementById('siteFilter').value = '';
     document.getElementById('componentFilter').value = '';
-    filteredData = [...globalData];
+    filteredData = scopeDashUnits();
     sortState.key = null;
     updateDashboard(filteredData);
 }
 
 function updateFilterCount(data) {
     const el = document.getElementById('filterCount');
-    const total = globalData.length;
+    const total = scopeDashUnits().length;
     el.textContent = data.length === total ? `${total} units` : `${data.length} of ${total} units`;
 }
 
@@ -3130,6 +3609,12 @@ function exportCSV(data) {
     if (!canCsv('export')) return;
     const exportData = Array.isArray(data) ? data : filteredData;
     if (exportData.length === 0) { showToast('No data to export', 'warning'); return; }
+    // Three shapes. No heavy rows: today's file, verbatim. Heavy only: its own
+    // columns. Mixed: today's 21 columns plus the heavy ones. Every shape that
+    // holds heavy rows carries "Unit Group", so exporting and re-importing as
+    // new units keeps each unit in its group.
+    const heavyN = exportData.filter(isHeavy).length;
+    if (heavyN) { exportUnitsCSVGrouped(exportData, heavyN === exportData.length); return; }
     const headers = ['No', 'Nickname', 'Model', 'Serial Number', 'Implement', 'Status', 'Display', 'GPS', 'Steering', 'JDLink', 'Site',
                      'Tahun Penerimaan', 'User Category', 'GPS License', 'Display License',
                      'GPS License Start Date', 'GPS License Expiration Date',
@@ -3149,6 +3634,52 @@ function exportCSV(data) {
     const a = document.createElement('a');
     a.href = url;
     a.download = `tractor_monitoring_${toISODate()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`${exportData.length} unit diekspor ke CSV`, 'success');
+}
+
+function exportUnitsCSVGrouped(exportData, heavyOnly) {
+    const HEAVY_COLS = ['Jenis Alat', 'Nomor Lambung', 'Alat Kerja', ...UNIT_GROUPS.heavy.components.map(c => c.label)];
+    const heavyCells = d => [d.machineType || '', d.assetCode || '', d.workTool || '',
+                             ...UNIT_GROUPS.heavy.components.map(c => d[c.key] || '')];
+    let headers, rows, prefix;
+    if (heavyOnly) {
+        headers = ['No', 'Unit Group', 'Nickname', 'Model', 'Serial Number', 'Jenis Alat', 'Nomor Lambung', 'Alat Kerja', 'Status',
+                   ...UNIT_GROUPS.heavy.components.map(c => c.label),
+                   'Site', 'Tahun Penerimaan', 'User Category', 'Remarks', 'Breakdown Reason'];
+        rows = exportData.map((d, i) => [i + 1, 'heavy', d.name, d.model, d.sn, d.machineType || '', d.assetCode || '', d.workTool || '',
+                   d.status, ...UNIT_GROUPS.heavy.components.map(c => d[c.key] || ''),
+                   d.site, d.yearReceived || '', d.userCategory || '', d.remarks || '',
+                   (!isGood(d.status) && d.breakdownReason) ? d.breakdownReason : '']);
+        prefix = UNIT_GROUPS.heavy.csvPrefix;
+    } else {
+        headers = ['No', 'Nickname', 'Model', 'Serial Number', 'Implement', 'Status', 'Display', 'GPS', 'Steering', 'JDLink', 'Site',
+                   'Tahun Penerimaan', 'User Category', 'GPS License', 'Display License',
+                   'GPS License Start Date', 'GPS License Expiration Date',
+                   'Display License Start Date', 'Display License Expiration Date', 'Remarks', 'Breakdown Reason',
+                   'Unit Group', ...HEAVY_COLS];
+        rows = exportData.map((d, i) => {
+            const h = isHeavy(d);
+            // A row never reads the other group's fields.
+            return [i + 1, d.name, d.model, d.sn, h ? '' : (d.implement || ''), d.status,
+                h ? '' : d.display, h ? '' : d.gps, h ? '' : d.steering, h ? '' : d.jdlink, d.site,
+                d.yearReceived || '', d.userCategory || '',
+                h ? '' : (effectiveLicense(d, 'gps').type || ''), h ? '' : (effectiveLicense(d, 'display').type || ''),
+                h ? '' : (d.gpsLicenseStartDate || d.licenseStartDate || ''),
+                h ? '' : (d.gpsLicenseEndDate || d.licenseEndDate || ''),
+                h ? '' : (d.displayLicenseStartDate || ''), h ? '' : (d.displayLicenseEndDate || ''),
+                d.remarks || '', (!isGood(d.status) && d.breakdownReason) ? d.breakdownReason : '',
+                unitGroupOf(d), ...(h ? heavyCells(d) : HEAVY_COLS.map(() => ''))];
+        });
+        prefix = 'unit_monitoring';
+    }
+    const csv = [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${prefix}_${toISODate()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     showToast(`${exportData.length} unit diekspor ke CSV`, 'success');
@@ -3181,7 +3712,11 @@ function destroyChart(id) {
 
 function updateEditCount() {
     const el = document.getElementById('editUnitCount');
-    if (el) el.textContent = `${globalData.length} unit(s) in database`;
+    if (!el) return;
+    // Unchanged until heavy equipment exists.
+    if (!hasHeavyUnits()) { el.textContent = `${globalData.length} unit(s) in database`; return; }
+    const g = effectiveEditGroup();
+    el.textContent = `${unitsOfGroup(globalData, g).length} ${groupDef(g).label} · ${globalData.length} unit(s) in database`;
 }
 
 function toggleImportPanel() {
@@ -3196,7 +3731,9 @@ function handleEditCSVImport(file) {
         header: true,
         skipEmptyLines: true,
         complete: result => {
-            const { valid, rejected } = processData(result.data);
+            const tab = effectiveEditGroup();
+            const { valid, rejected, groupWarnings } = processData(result.data,
+                { fallbackGroup: tab, fileGroup: inferCsvGroup(result.meta && result.meta.fields) });
 
             // Split rows into brand-new units vs updates to existing SNs
             const existingSNs = new Set(globalData.map(d => (d.sn || '').toLowerCase()).filter(Boolean));
@@ -3206,6 +3743,30 @@ function handleEditCSVImport(file) {
                 if (existingSNs.has((u.sn || '').toLowerCase())) updateCandidates.push(u);
                 else newUnits.push(u);
             });
+
+            // Asked BEFORE anything is written: new units about to land in the
+            // group other than the open tab. Cancel aborts the whole import.
+            const offTab = newUnits.filter(u => u.unitGroup !== tab);
+            if (offTab.length && !confirm(
+                `${offTab.length} unit baru akan ditambahkan sebagai ${groupDef(otherGroup(tab).key).label}, bukan ${groupDef(tab).label}. Lanjutkan?\n\n` +
+                `Batal = batalkan seluruh impor (tidak ada yang ditulis).`)) {
+                showLoading(false);
+                document.getElementById('importPanel').classList.remove('open');
+                showToast('Impor dibatalkan — tidak ada yang ditulis', 'info');
+                return;
+            }
+            const notes = [];
+            groupWarnings.forEach(w => notes.push({ name: w.name, sn: w.sn,
+                reason: `Unit Group "${w.value}" tidak dikenal — dibaca sebagai ${groupDef(tab).label}` }));
+            valid.forEach(u => {
+                const g = unitGroupOf(u);
+                const ignored = otherGroup(g).onlyFields.filter(f => !sameStoredValue(u[f], ''));
+                if (ignored.length) notes.push({ name: u.name, sn: u.sn,
+                    reason: `kolom ${ignored.join(', ')} diabaikan: bukan milik ${groupDef(g).shortLabel}` });
+            });
+            const blank = newUnits.filter(u => u.unitGroup === 'heavy' && HEAVY_COMPONENT_KEYS.every(k => sameStoredValue(u[k], ''))).length;
+            if (blank) notes.push({ name: `${blank} unit`, sn: '-',
+                reason: `${UNIT_GROUPS.heavy.shortLabel} tanpa status komponen — dihitung bermasalah sampai diisi` });
 
             let updateResult = { updated: 0, unchanged: 0, failed: [] };
             let updatesAsSkipped = [];
@@ -3230,7 +3791,8 @@ function handleEditCSVImport(file) {
                 rejected,
                 updated: updateResult.updated,
                 unchanged: updateResult.unchanged,
-                updateFailed: updateResult.failed
+                updateFailed: updateResult.failed,
+                notes
             });
             renderEditTable();
             showLoading(false);
@@ -3243,8 +3805,11 @@ function handleEditCSVImport(file) {
     });
 }
 
-function showImportReport({ total, added, skipped, skippedDetails, rejected, updated = 0, unchanged = 0, updateFailed = [] }) {
-    const hasIssues = skipped > 0 || rejected.length > 0 || updateFailed.length > 0;
+// `notes` carries the unit-group warnings (unknown Unit Group values, columns
+// of the other group that were ignored, heavy units with no component status).
+// A tractor CSV produces none, so its toast and report are unchanged.
+function showImportReport({ total, added, skipped, skippedDetails, rejected, updated = 0, unchanged = 0, updateFailed = [], notes = [] }) {
+    const hasIssues = skipped > 0 || rejected.length > 0 || updateFailed.length > 0 || notes.length > 0;
     const type = (added > 0 || updated > 0) ? (hasIssues ? 'warning' : 'success') : 'warning';
 
     const parts = [`${added} added`];
@@ -3261,7 +3826,8 @@ function showImportReport({ total, added, skipped, skippedDetails, rejected, upd
     const rows = [
         ...skippedDetails.map(d => `<tr><td>${escapeHtml(d.name || '-')}</td><td style="font-family:monospace">${escapeHtml(d.sn || '-')}</td><td>${escapeHtml(d.reason)}</td></tr>`),
         ...updateFailed.map(f => `<tr><td>-</td><td style="font-family:monospace">${escapeHtml(f.sn || '-')}</td><td>${escapeHtml(f.reason)}</td></tr>`),
-        ...rejected.map(r => `<tr><td>${escapeHtml(r.name || '-')}</td><td>Row ${r.row}</td><td>${escapeHtml(r.reason)}</td></tr>`)
+        ...rejected.map(r => `<tr><td>${escapeHtml(r.name || '-')}</td><td>Row ${r.row}</td><td>${escapeHtml(r.reason)}</td></tr>`),
+        ...notes.map(n => `<tr><td>${escapeHtml(n.name || '-')}</td><td style="font-family:monospace">${escapeHtml(n.sn || '-')}</td><td>${escapeHtml(n.reason)}</td></tr>`)
     ].join('');
 
     document.getElementById('importReportBody').innerHTML = rows;
@@ -3344,6 +3910,20 @@ function closeAutoBackups() {
 // Goes through the same cloud-mirrored replace as a file restore. A local-only
 // rollback would be undone by the next units snapshot, and the units it
 // removed would come straight back.
+// A unit's group never changes, so a backup copy and the live copy of the
+// same id always agree on it — unless something went wrong. A REPLACE restore
+// that would change a live unit's group is refused before anything is written:
+// the write is set(merge:true), so the old group would come back alongside
+// fields of the new one.
+function _refuseCrossGroupRestore(units) {
+    const live = new Map(globalData.map(u => [u.id, u]));
+    const conflicts = (units || []).filter(u => u && u.id && live.has(u.id) && unitGroupOf(live.get(u.id)) !== unitGroupOf(u));
+    if (!conflicts.length) return false;
+    showToast(`Pemulihan dibatalkan: ${conflicts.length} unit di cadangan punya kelompok berbeda dengan data sekarang (id sama). `
+        + 'Hapus unit itu dulu, atau pilih GABUNG.', 'error');
+    return true;
+}
+
 function restoreAutoBackup(index) {
     if (!isOwner || !isOwner()) return;
     if (!canWriteUnits('restore cadangan otomatis')) return;
@@ -3351,6 +3931,7 @@ function restoreAutoBackup(index) {
     const entry = ring[index];
     if (!entry || !Array.isArray(entry.units)) { showToast('Cadangan itu tidak terbaca', 'error'); return; }
 
+    if (_refuseCrossGroupRestore(entry.units)) return;
     const when = entry.at ? new Date(entry.at).toLocaleString('id-ID') : 'waktu tidak diketahui';
     if (!confirm(`Kembalikan ${entry.units.length} unit ke keadaan ${when}?\n\n`
         + `${globalData.length} unit yang ada sekarang akan diganti. Data lain (kerusakan, lisensi, tim, gudang) tidak ikut berubah.`)) return;
@@ -3364,7 +3945,8 @@ function restoreAutoBackup(index) {
     logEvent({ action: 'restore', unitName: '-', after: `${globalData.length} unit dikembalikan dari cadangan otomatis (${when})` });
     closeAutoBackups();
     renderEditTable();
-    updateDashboard(globalData);
+    filteredData = scopeDashUnits();
+    updateDashboard(filteredData);
     showToast(`${globalData.length} unit dikembalikan ke keadaan ${when}`, 'success');
 }
 
@@ -3386,8 +3968,11 @@ function getEditTableRows() {
     const statusVal = (document.getElementById('editStatusFilter')?.value || '');
     const siteVal = (document.getElementById('editSiteFilter')?.value || '');
 
-    let rows = [...globalData];
-    if (query) rows = rows.filter(d => `${d.name} ${d.model} ${d.sn} ${d.implement || ''} ${d.site}`.toLowerCase().includes(query));
+    const g = effectiveEditGroup();
+    let rows = unitsOfGroup(globalData, g);
+    if (query) rows = rows.filter(d => (g === 'heavy'
+        ? `${d.name} ${d.model} ${d.sn} ${d.machineType || ''} ${d.assetCode || ''} ${d.workTool || ''} ${d.site}`
+        : `${d.name} ${d.model} ${d.sn} ${d.implement || ''} ${d.site}`).toLowerCase().includes(query));
     if (statusVal) rows = rows.filter(d => d.status === statusVal);
     if (siteVal) rows = rows.filter(d => d.site === siteVal);
 
@@ -3414,7 +3999,102 @@ function toggleCompactMode() {
     }
 }
 
+// ---- Edit Units: one table per group ----
+// The tractor header is captured from the static markup at startup and put
+// back verbatim; only the heavy tab gets a header built here.
+const EDIT_COLSPAN = { tractor: 21, heavy: 19 };
+function sortTh(key, label, fn) {
+    return `<th tabindex="0" role="button" onclick="${fn}('${key}')">${label} <span class="sort-icon"><i class="fas fa-sort"></i></span></th>`;
+}
+function heavyEditHead() {
+    const s = (k, l) => sortTh(k, l, 'sortEditTable');
+    return `<tr>
+        <th class="col-check"><input type="checkbox" id="selectAll" aria-label="Pilih semua unit" onchange="toggleSelectAll()"></th>
+        ${s('no', 'No')}${s('name', 'Nickname')}${s('model', 'Model')}${s('sn', 'Serial Number')}
+        ${s('machineType', 'Jenis Alat')}${s('assetCode', 'Nomor Lambung')}${s('workTool', 'Alat Kerja')}${s('status', 'Status')}
+        ${UNIT_GROUPS.heavy.components.map(c => s(c.key, c.label)).join('')}
+        ${s('site', 'Site')}${s('yearReceived', 'Tahun Penerimaan')}${s('userCategory', 'User Category')}
+        <th>Remarks</th><th>Attachments</th><th class="col-actions">Actions</th>
+    </tr>`;
+}
+function renderEditHead() {
+    const g = effectiveEditGroup();
+    const head = document.querySelector('#editTable thead');
+    if (head && _editHeadGroup !== g) {
+        head.innerHTML = g === 'heavy' ? heavyEditHead() : EDIT_HEADS.tractor;
+        _editHeadGroup = g;
+    }
+    markSortedHeader('#editTable thead', editSortState.key, editSortState.asc);
+}
+
+function renderEditGroupTabs() {
+    const g = effectiveEditGroup();
+    document.querySelectorAll('.eu-tab').forEach(btn => {
+        const key = btn.dataset.group;
+        const def = groupDef(key);
+        const on = key === g;
+        btn.style.display = '';
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-selected', on ? 'true' : 'false');
+        btn.innerHTML = `<i class="fas ${def.icon}"></i> ${escapeHtml(def.label)} <span class="team-tab__count">${unitsOfGroup(globalData, key).length}</span>`;
+    });
+    const title = document.getElementById('editTableTitle');
+    if (title) title.textContent = g === 'heavy' ? `Unit Database — ${UNIT_GROUPS.heavy.shortLabel}` : 'Unit Database';
+    const hint = document.getElementById('importHint');
+    if (hint) {
+        if (!hint.dataset.tractor) hint.dataset.tractor = hint.innerHTML;
+        hint.innerHTML = g === 'heavy'
+            ? `Unit baru masuk ke ${escapeHtml(UNIT_GROUPS.heavy.label)} kecuali kolom "Unit Group" berkata lain. Serial number duplikat dilewati.`
+            : hint.dataset.tractor;
+    }
+}
+
+function switchEditUnitsGroup(g, opts) {
+    if (!UNIT_GROUP_KEYS.includes(g)) return;
+    editUnitsGroup = g;
+    _editGroupPicked = true;
+    if (!opts || opts.persist !== false) writePref('editUnitsGroup', g);
+    editSortState = { key: null, asc: true };
+    ['editSearch', 'editStatusFilter', 'editSiteFilter'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.value = '';
+    });
+    populateEditFilters();
+    renderEditTable();
+}
+
+function _editRowHeavy(d, i, ce) {
+    const remarks = d.remarks || '';
+    const remarksShort = remarks.length > 40 ? remarks.slice(0, 40) + '…' : remarks;
+    const id = escapeHtml(d.id);
+    const cell = (label, field, style) =>
+        `<td data-label="${label}"${style ? ` style="${style}"` : ''}><span class="inline-edit" contenteditable="${ce}" data-id="${id}" data-field="${field}" onblur="saveInlineEdit(this)">${escapeHtml(d[field] == null ? '' : d[field])}</span></td>`;
+    return `
+        <tr>
+            <td class="col-check"><input type="checkbox" class="unit-check" data-id="${id}" onchange="updateSelectedCount()"></td>
+            <td>${i + 1}</td>
+            ${cell('Nickname', 'name')}${cell('Model', 'model')}
+            <td data-label="SN" style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
+            ${cell('Jenis Alat', 'machineType')}${cell('Nomor Lambung', 'assetCode')}${cell('Alat Kerja', 'workTool')}
+            ${cell('Status', 'status')}
+            ${UNIT_GROUPS.heavy.components.map(c => cell(c.label, c.key)).join('')}
+            ${cell('Site', 'site')}${cell('Tahun Penerimaan', 'yearReceived')}
+            <td data-label="User Category">${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
+            <td data-label="Remarks" style="max-width:180px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(remarks)}">${escapeHtml(remarksShort) || '<span style="color:var(--text-light)">—</span>'}</td>
+            <td class="col-attach" data-label="Attachments">${renderAttachCell(d)}</td>
+            <td class="col-actions">
+                <div class="row-actions">
+                    <button class="btn btn-secondary" title="Profil" onclick="showUnitProfile('${id}')"><i class="fas fa-eye"></i></button>
+                    <button class="btn btn-secondary" title="History" onclick="showHistory('${id}')"><i class="fas fa-clock-rotate-left"></i></button>
+                    <button class="btn btn-secondary" title="Edit" onclick="editUnit('${id}')"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Delete" onclick="deleteUnit('${id}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                </div>
+            </td>
+        </tr>`;
+}
+
 function renderEditTable() {
+    renderEditHead();
+    renderEditGroupTabs();
     updateEditCount();
     selectedUnitIds.clear();
     updateSelectedCount();
@@ -3429,12 +4109,20 @@ function renderEditTable() {
     const rows = getEditTableRows();
 
     const tbody = document.getElementById('editBody');
+    const group = effectiveEditGroup();
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="21" style="text-align:center;padding:24px;color:var(--text-secondary)">${(query || statusVal || siteVal) ? 'Tidak ada unit yang cocok dengan filter' : 'Belum ada unit. Klik <strong>Add Unit</strong> atau <strong>Import CSV</strong> untuk memulai.'}</td></tr>`;
+        const empty = group === 'heavy'
+            ? `Belum ada unit ${escapeHtml(UNIT_GROUPS.heavy.label)}. Klik <strong>Add Unit</strong> atau <strong>Import CSV</strong> untuk memulai.`
+            : 'Belum ada unit. Klik <strong>Add Unit</strong> atau <strong>Import CSV</strong> untuk memulai.';
+        tbody.innerHTML = `<tr><td colspan="${EDIT_COLSPAN[group]}" style="text-align:center;padding:24px;color:var(--text-secondary)">${(query || statusVal || siteVal) ? 'Tidak ada unit yang cocok dengan filter' : empty}</td></tr>`;
         return;
     }
 
     const _ceEdit = hasAccess('editUnits', 'edit') ? 'true' : 'false'; // inline editing off for view-only
+    if (group === 'heavy') {
+        tbody.innerHTML = rows.map((d, i) => _editRowHeavy(d, i, _ceEdit)).join('');
+        return;
+    }
     tbody.innerHTML = rows.map((d, i) => {
         const remarks = d.remarks || '';
         const remarksShort = remarks.length > 40 ? remarks.slice(0, 40) + '…' : remarks;
@@ -3486,8 +4174,9 @@ function sortEditTable(key) {
 }
 
 function populateEditFilters() {
-    const statuses = [...new Set(globalData.map(d => d.status))].filter(Boolean).sort();
-    const sites = [...new Set(globalData.map(d => d.site))].filter(Boolean).sort();
+    const pool = unitsOfGroup(globalData, effectiveEditGroup());
+    const statuses = [...new Set(pool.map(d => d.status))].filter(Boolean).sort();
+    const sites = [...new Set(pool.map(d => d.site))].filter(Boolean).sort();
     const sf = document.getElementById('editStatusFilter');
     const sif = document.getElementById('editSiteFilter');
     if (sf) {
@@ -3517,7 +4206,12 @@ function saveInlineEdit(el) {
     const newValue = clean(el.textContent);
     const unit = globalData.find(d => d.id === id);
 
-    if (unit && unit[field] !== newValue) {
+    // Tractor rows keep the strict comparison verbatim — including the writes it
+    // makes today to normalise whitespace or a numeric year. For a heavy unit
+    // an absent field left empty is not a change: comparing undefined !== ''
+    // used to write '' to Firestore and toast "diperbarui" on a mere click.
+    const changed = unit && (isHeavy(unit) ? !sameStoredValue(unit[field], newValue) : unit[field] !== newValue);
+    if (changed) {
         // Intercept status changing TO Breakdown → prompt for reason
         if (field === 'status' && !isGood(newValue) && isGood(unit.status)) {
             _pendingBreakdown = { unitId: id, fields: { status: newValue }, isInline: true, el };
@@ -3525,8 +4219,9 @@ function saveInlineEdit(el) {
             document.getElementById('breakdownReasonModal').classList.add('open');
             return;
         }
-        updateUnit(id, { [field]: newValue });
-        showToast(`${COMPONENT_LABELS[field] || field.charAt(0).toUpperCase() + field.slice(1)} diperbarui`, 'success');
+        if (updateUnit(id, { [field]: newValue })) {
+            showToast(`${COMPONENT_LABELS[field] || UNIT_FIELD_LABELS[field] || field.charAt(0).toUpperCase() + field.slice(1)} diperbarui`, 'success');
+        }
     }
 }
 
@@ -3606,12 +4301,21 @@ function openBulkEdit() {
     if (!requireEdit('editUnits')) return;
     if (selectedUnitIds.size === 0) return;
     document.getElementById('bulkEditTitle').textContent = `${selectedUnitIds.size} unit`;
-    ['bulkChkSite', 'bulkChkStatus', 'bulkChkCategory', 'bulkChkYear', 'bulkChkImplement'].forEach(id => {
-        document.getElementById(id).checked = false;
+    ['bulkChkSite', 'bulkChkStatus', 'bulkChkCategory', 'bulkChkYear', 'bulkChkImplement', 'bulkChkWorkTool'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.checked = false;
     });
     document.getElementById('bulkSite').value = '';
     document.getElementById('bulkYear').value = '';
     document.getElementById('bulkImplement').value = '';
+    const wt = document.getElementById('bulkWorkTool'); if (wt) wt.value = '';
+    // The selection is always one tab's rows (renderEditTable clears it), so
+    // only that group's own field is offered: Implement for agricultural units,
+    // Alat Kerja for heavy equipment.
+    const g = effectiveEditGroup();
+    document.querySelectorAll('#bulkEditModal [data-group-only]').forEach(el => {
+        el.style.display = el.dataset.groupOnly === g ? '' : 'none';
+    });
+    if (g === 'heavy') populateHeavySuggestionLists();
     // Category options
     const cat = document.getElementById('bulkCategory');
     cat.innerHTML = '<option value="">—</option>' +
@@ -3634,7 +4338,9 @@ function applyBulkEdit() {
     if (document.getElementById('bulkChkStatus').checked)   fields.status = document.getElementById('bulkStatus').value;
     if (document.getElementById('bulkChkCategory').checked) fields.userCategory = document.getElementById('bulkCategory').value;
     if (document.getElementById('bulkChkYear').checked)     fields.yearReceived = document.getElementById('bulkYear').value.trim();
-    if (document.getElementById('bulkChkImplement').checked) fields.implement = document.getElementById('bulkImplement').value.trim();
+    const bg = effectiveEditGroup();
+    if (bg !== 'heavy' && document.getElementById('bulkChkImplement').checked) fields.implement = document.getElementById('bulkImplement').value.trim();
+    if (bg === 'heavy' && document.getElementById('bulkChkWorkTool')?.checked) fields.workTool = document.getElementById('bulkWorkTool').value.trim();
 
     if (Object.keys(fields).length === 0) { showToast('Centang minimal satu field untuk diubah', 'warning'); return; }
 
@@ -3642,7 +4348,7 @@ function applyBulkEdit() {
     // and there is no undo, so make the destructive part explicit rather than
     // hiding it behind the generic confirm.
     const labels = { site: 'Site', status: 'Status', userCategory: 'User Category',
-                     yearReceived: 'Tahun Penerimaan', implement: 'Implement' };
+                     yearReceived: 'Tahun Penerimaan', implement: 'Implement', workTool: 'Alat Kerja' };
     const cleared = Object.keys(fields).filter(k => fields[k] === '');
     if (cleared.length) {
         const names = cleared.map(k => labels[k] || k).join(', ');
@@ -3767,11 +4473,49 @@ function matchImplementForUnit(text) {
         (imp.profileName || '').toLowerCase() === t) || null;
 }
 
+// One form, two groups. The other group's sections are hidden AND disabled,
+// so they are neither validated nor read. A heavy unit therefore never reaches
+// the John Deere component selects — whose "isGood(x) ? 'Good' : 'Breakdown'"
+// preselect turned every blank field into 'Breakdown' and wrote it on Save.
+function setUnitFormGroup(g) {
+    document.getElementById('formUnitGroup').value = g;
+    document.querySelectorAll('#unitForm [data-group-only]').forEach(el => {
+        const match = el.dataset.groupOnly === g;
+        el.style.display = match ? '' : 'none';
+        el.querySelectorAll('input, select, textarea').forEach(i => { i.disabled = !match; });
+    });
+    document.querySelectorAll('#unitForm option[data-temp]').forEach(o => o.remove());
+    const legend = document.getElementById('unitFormLegend');
+    if (legend) legend.textContent = g === 'heavy' ? 'Kategori & Catatan' : 'Category, License & Notes';
+    if (g === 'heavy') populateHeavySuggestionLists();
+}
+
+function populateHeavySuggestionLists() {
+    const heavy = globalData.filter(isHeavy);
+    const fill = (id, items) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = items.map(v => `<option value="${escapeHtml(v)}"></option>`).join('');
+    };
+    fill('heavyMachineTypeList', _mergeSuggestions(HEAVY_MACHINE_TYPES, heavy.map(u => u.machineType)));
+    fill('heavyWorkToolList', _mergeSuggestions(HEAVY_WORK_TOOLS, heavy.map(u => u.workTool)));
+}
+
+// A heavy component with no value shows "— belum diisi —" and is not sent,
+// instead of being silently turned into 'Breakdown' (or written as '').
+function setHealthSelect(el, v) {
+    if (isGood(v)) { el.value = 'Good'; return; }
+    if (!sameStoredValue(v, '')) { el.value = 'Breakdown'; return; }
+    el.insertAdjacentHTML('afterbegin', '<option value="" data-temp>— belum diisi —</option>');
+    el.value = '';
+}
+
 function showAddForm() {
     if (!requireEdit('editUnits')) return;
-    document.getElementById('modalTitle').textContent = 'Add Unit';
+    const g = effectiveEditGroup();
+    document.getElementById('modalTitle').textContent = g === 'heavy' ? `Tambah ${UNIT_GROUPS.heavy.shortLabel}` : 'Add Unit';
     document.getElementById('editUnitId').value = '';
     document.getElementById('unitForm').reset();
+    setUnitFormGroup(g);
     renderUserCategoryOptions();
     populateImplementUnitList();
     document.getElementById('unitModal').classList.add('open');
@@ -3781,6 +4525,10 @@ function editUnit(id) {
     if (!requireEdit('editUnits')) return;
     const unit = globalData.find(d => d.id === id);
     if (!unit) return;
+
+    const g = unitGroupOf(unit);
+    setUnitFormGroup(g);
+    if (g === 'heavy') { editHeavyUnit(unit); return; }
 
     document.getElementById('modalTitle').textContent = 'Edit Unit';
     document.getElementById('editUnitId').value = id;
@@ -3827,6 +4575,28 @@ function editUnit(id) {
     document.getElementById('unitModal').classList.add('open');
 }
 
+function editHeavyUnit(unit) {
+    const set = (id, v) => { document.getElementById(id).value = v == null ? '' : v; };
+    document.getElementById('modalTitle').textContent = `Edit ${UNIT_GROUPS.heavy.shortLabel}`;
+    set('editUnitId', unit.id);
+    set('formName', unit.name); set('formModel', unit.model); set('formSN', unit.sn);
+    set('formMachineType', unit.machineType); set('formAssetCode', unit.assetCode); set('formWorkTool', unit.workTool);
+    set('formSite', unit.site); set('formYearReceived', unit.yearReceived);
+    document.getElementById('formStatus').value = isGood(unit.status) ? 'Good' : 'Breakdown';
+    HEAVY_FORM_SELECTS.forEach(([key, elId]) => setHealthSelect(document.getElementById(elId), unit[key]));
+    renderUserCategoryOptions();
+    set('formUserCategory', unit.userCategory);
+    set('formRemarks', unit.remarks);
+    const bdBox = document.getElementById('breakdownReasonDisplay');
+    const bdInfo = document.getElementById('breakdownReasonInfo');
+    const show = !isGood(unit.status) && unit.breakdownReason;
+    bdInfo.textContent = show ? unit.breakdownReason : '';
+    bdBox.style.display = show ? '' : 'none';
+    document.getElementById('unitModal').classList.add('open');
+}
+const HEAVY_FORM_SELECTS = [['cameraAi', 'formCameraAi'], ['telematicBox', 'formTelematicBox'],
+                            ['switchLimiter', 'formSwitchLimiter'], ['rotaryLamp', 'formRotaryLamp']];
+
 // Checked on the form, not inside updateUnit, so the message appears once and
 // a bulk CSV import is not stopped row by row.
 //
@@ -3840,9 +4610,22 @@ function checkUnitFields(id, fields) {
     if (sn) {
         const clash = globalData.find(u => u.id !== id && (u.sn || '').toLowerCase() === sn.toLowerCase());
         if (clash) {
-            showToast(`SN "${sn}" sudah dipakai unit "${clash.name || '-'}"`, 'warning');
+            // Serial numbers are unique across BOTH groups. Name the group only
+            // when the clash is in the other one, so the tractor message is
+            // unchanged.
+            const self = id ? globalData.find(u => u.id === id) : null;
+            const mine = self ? unitGroupOf(self) : normalizeGroupKey(fields.unitGroup) || 'tractor';
+            const where = unitGroupOf(clash) !== mine ? ` (${groupDef(unitGroupOf(clash)).shortLabel})` : '';
+            showToast(`SN "${sn}" sudah dipakai unit "${clash.name || '-'}"${where}`, 'warning');
             return false;
         }
+    }
+    // A duplicate asset code is unusual but not impossible (a re-painted hull),
+    // so it asks rather than refuses.
+    const code = (fields.assetCode || '').trim();
+    if (code) {
+        const dup = globalData.find(u => u.id !== id && isHeavy(u) && (u.assetCode || '').trim().toLowerCase() === code.toLowerCase());
+        if (dup && !confirm(`Nomor lambung "${code}" sudah dipakai "${dup.name || '-'}". Tetap simpan?`)) return false;
     }
     // An end date before its start date leaves the unit reading "expired" while
     // its licence has not begun — and applyExpiredLicenseDowngrades acts on it.
@@ -3859,12 +4642,34 @@ function checkUnitFields(id, fields) {
     return true;
 }
 
+function heavyFormFields() {
+    const val = id => document.getElementById(id).value.trim();
+    const f = {
+        name: val('formName'), model: val('formModel'), sn: val('formSN'),
+        machineType: val('formMachineType'), assetCode: val('formAssetCode'), workTool: val('formWorkTool'),
+        site: val('formSite'), yearReceived: val('formYearReceived'),
+        status: document.getElementById('formStatus').value,
+        userCategory: document.getElementById('formUserCategory').value,
+        remarks: val('formRemarks')
+    };
+    // A component left on "— belum diisi —" is simply not sent.
+    HEAVY_FORM_SELECTS.forEach(([key, elId]) => {
+        const v = document.getElementById(elId).value;
+        if (v !== '') f[key] = v;
+    });
+    return f;
+}
+
 function saveUnit(event) {
     event.preventDefault();
     if (!requireEdit('editUnits')) return;
 
     const id = document.getElementById('editUnitId').value;
-    const fields = {
+    // The group of an existing unit comes from the unit — it cannot change.
+    const existing = id ? globalData.find(d => d.id === id) : null;
+    const g = existing ? unitGroupOf(existing)
+                       : (document.getElementById('formUnitGroup').value === 'heavy' ? 'heavy' : 'tractor');
+    const fields = g === 'heavy' ? heavyFormFields() : {
         name: document.getElementById('formName').value.trim(),
         model: document.getElementById('formModel').value.trim(),
         sn: document.getElementById('formSN').value.trim(),
@@ -3885,6 +4690,10 @@ function saveUnit(event) {
         displayLicenseEndDate:   document.getElementById('formDisplayLicenseEnd').value   || '',
         remarks: document.getElementById('formRemarks').value.trim()
     };
+    // Stamped here — BEFORE the breakdown-reason stash below. A new unit saved
+    // as Breakdown goes through that stash and is committed later from it, so
+    // stamping afterwards would be lost and the unit would land as a tractor.
+    if (!id) fields.unitGroup = g;
 
     if (!checkUnitFields(id, fields)) return;
 
@@ -3906,15 +4715,20 @@ function saveUnit(event) {
 function _commitSaveUnit(id, fields) {
     if (!requireEdit('editUnits')) return;
     if (id) {
-        updateUnit(id, fields);
-        showToast(`Unit "${fields.name}" updated`, 'success');
+        if (updateUnit(id, fields)) showToast(`Unit "${fields.name}" updated`, 'success');
+        else showToast(`Unit "${fields.name}" tidak disimpan — tidak ada perubahan yang boleh ditulis`, 'warning');
     } else {
+        const firstHeavy = fields.unitGroup === 'heavy' && !hasHeavyUnits();
         const newUnit = { id: generateId(), ...fields, downtimeHistory: [], breakdownStartedAt: null };
-        const { added } = addUnits([newUnit]);
+        const { added, skippedDetails } = addUnits([newUnit]);
+        const reason = skippedDetails && skippedDetails[0] && skippedDetails[0].reason;
         if (added > 0) {
             showToast(`Unit "${fields.name}" added`, 'success');
-        } else {
+            if (firstHeavy) showToast(`Alat berat tampil di Dashboard lewat pilihan ${UNIT_GROUPS.heavy.shortLabel} / Semua`, 'info');
+        } else if (!reason || reason === 'Duplicate serial number') {
             showToast(`Duplicate serial number "${fields.sn}" — unit not added`, 'warning');
+        } else {
+            showToast(`${reason} — unit tidak ditambahkan`, 'warning');
         }
     }
 
@@ -3994,6 +4808,7 @@ function applyExpiredLicenseDowngrades() {
     if (!hasAccess('editUnits', 'edit')) return 0;
     let n = 0;
     globalData.slice().forEach(u => {
+        if (isHeavy(u)) return;   // SF/G5 licences are John Deere only
         const fields = {};
         if (u.gpsLicense === 'SF-RTK' &&
             getExpiryStatus(getLicenseEndDate(u, 'gps')).kind === 'expired') {
@@ -4770,8 +5585,9 @@ function renderGlobalSearchResults() {
     if (!input || !box) return;
     const q = input.value.toLowerCase().trim();
     if (!q) { closeGlobalSearch(); return; }
-    const hits = globalData.filter(u =>
-        `${u.name} ${u.sn} ${u.model} ${u.site}`.toLowerCase().includes(q)).slice(0, 8);
+    const hits = globalData.filter(u => (isHeavy(u)
+        ? `${u.name} ${u.sn} ${u.model} ${u.site} ${u.machineType || ''} ${u.assetCode || ''}`
+        : `${u.name} ${u.sn} ${u.model} ${u.site}`).toLowerCase().includes(q)).slice(0, 8);
     if (!hits.length) {
         box.innerHTML = '<div class="global-search__empty">Tidak ada unit yang cocok</div>';
         box.style.display = '';
@@ -4780,7 +5596,7 @@ function renderGlobalSearchResults() {
     box.innerHTML = hits.map(u => `
         <div class="global-search__item" onclick="openUnitFromSearch('${escapeHtml(u.id)}')">
             <span class="global-search__name">${escapeHtml(u.name || '(tanpa nama)')}</span>
-            <span class="global-search__meta"><span class="mono">${escapeHtml(u.sn || '')}</span>${u.site ? ' · ' + escapeHtml(u.site) : ''}</span>
+            <span class="global-search__meta"><span class="mono">${escapeHtml(u.sn || '')}</span>${u.site ? ' · ' + escapeHtml(u.site) : ''}${isHeavy(u) ? ' · ' + escapeHtml(UNIT_GROUPS.heavy.shortLabel) : ''}</span>
         </div>`).join('');
     box.style.display = '';
 }
@@ -4815,25 +5631,43 @@ function showUnitProfile(id) {
         ? `<span style="text-align:right">${escapeHtml(u.implement)}${impDetail ? `<div style="font-size:11px;color:var(--text-light);margin-top:2px">${impDetail}</div>` : ''}</span>`
         : dash;
 
-    const identity = [
+    const heavyUnit = isHeavy(u);
+    const snCell = u.sn ? `<span style="font-family:var(--font-mono);font-size:12px">${escapeHtml(u.sn)}</span>` : dash;
+    const catCell = u.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(u.userCategory)}</span>` : dash;
+    const identity = (heavyUnit ? [
+        ['Kelompok', `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(UNIT_GROUPS.heavy.label)}</span>`],
+        ['Model', val(u.model)],
+        ['Serial Number', snCell],
+        ['Jenis Alat', val(u.machineType)],
+        ['Nomor Lambung', val(u.assetCode)],
+        ['Alat Kerja', val(u.workTool)],
+        ['Site', val(u.site)],
+        ['Tahun Penerimaan', val(u.yearReceived)],
+        ['User Category', catCell]
+    ] : [
         ['Model', val(u.model)],
         ['Serial Number', u.sn ? `<span style="font-family:var(--font-mono);font-size:12px">${escapeHtml(u.sn)}</span>` : dash],
         ['Implement', impVal],
         ['Site', val(u.site)],
         ['Tahun Penerimaan', val(u.yearReceived)],
         ['User Category', u.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(u.userCategory)}</span>` : dash]
-    ].map(([l, v]) => `<div class="profile-row"><span class="profile-row__label">${l}</span><span>${v}</span></div>`).join('');
+    ]).map(([l, v]) => `<div class="profile-row"><span class="profile-row__label">${l}</span><span>${v}</span></div>`).join('');
 
     const statusBadge = isGood(u.status)
         ? '<span class="badge badge-good"><i class="fas fa-check"></i> Good</span>'
         : `<span class="badge badge-breakdown"><i class="fas fa-xmark"></i> ${escapeHtml(u.status || 'Breakdown')}</span>`;
-    const compRow = ['display', 'gps', 'steering', 'jdlink'].map(k => {
-        const label = { display: 'Display', gps: 'GPS', steering: 'Steering', jdlink: 'JDLink' }[k];
-        const good = isGood(u[k]);
+    // The unit's own group's components: an excavator used to show four red
+    // John Deere chips it never had.
+    const compRow = groupDef(unitGroupOf(u)).components.map(c => {
+        const label = c.label;
+        const good = isGood(u[c.key]);
         return `<div class="profile-comp ${good ? 'ok' : 'bad'}"><i class="fas fa-${good ? 'circle-check' : 'circle-xmark'}"></i> ${label}</div>`;
     }).join('');
     const bdReason = (!isGood(u.status) && u.breakdownReason)
         ? `<div class="profile-note"><i class="fas fa-triangle-exclamation"></i> ${escapeHtml(u.breakdownReason)}</div>` : '';
+    const stray = strayGroupFields(u);
+    const strayNote = stray.length
+        ? `<div class="profile-note"><i class="fas fa-triangle-exclamation"></i> Unit ini membawa ${stray.length} field milik kelompok lain — lihat Kotak Keputusan → Periksa Data.</div>` : '';
 
     const licenses = ['gps', 'display'].map(kind => {
         const label = kind === 'gps' ? 'GPS License' : 'Display License';
@@ -4907,18 +5741,18 @@ function showUnitProfile(id) {
                 <div class="profile-section__title">Status</div>
                 <div style="margin-bottom:10px">${statusBadge}</div>
                 <div class="profile-comps">${compRow}</div>
-                ${bdReason}
-                <div class="profile-section__title" style="margin-top:16px">Lisensi</div>
-                ${licenses}
+                ${bdReason}${strayNote}
+                ${heavyUnit ? '' : `<div class="profile-section__title" style="margin-top:16px">Lisensi</div>
+                ${licenses}`}
             </div>
             <div class="profile-section">
                 <div class="profile-section__title">Riwayat Kerusakan (${dmg.length})</div>
                 <div class="profile-list">${dmgHtml}</div>
             </div>
-            <div class="profile-section">
+            ${heavyUnit ? '' : `<div class="profile-section">
                 <div class="profile-section__title">Distribusi Lisensi (${dist.length})</div>
                 <div class="profile-list">${distHtml}</div>
-            </div>
+            </div>`}
             <div class="profile-section">
                 <div class="profile-section__title">Lampiran</div>
                 <div class="profile-attach">${renderAttachCell(u)}</div>
@@ -5218,6 +6052,19 @@ function saveDamage(event) {
     const unit = resolveDamageUnit(document.getElementById('dmgUnit').value);
     if (!unit) { showToast('Pilih unit dari daftar (ketik nama atau SN)', 'warning'); return; }
 
+    // A component of the other group is refused in both directions: GPS on an
+    // excavator would flip a field it does not own, Camera AI on a tractor
+    // would do the same the other way. Editing only the text of a legacy record
+    // that is already like that stays allowed.
+    const comp = document.getElementById('dmgComponent').value;
+    const old = id ? globalDamages.find(d => d.id === id) : null;
+    const moved = !old || comp !== (old.component || '') || ((liveUnitFor(old) || {}).id !== unit.id);
+    if (comp && moved && componentGroupConflict(comp, unit)) {
+        const own = groupDef(unitGroupOf(unit)).shortLabel;
+        showToast(`Komponen "${comp}" bukan milik ${own} — pilih komponen ${own}`, 'warning');
+        return;
+    }
+
     const type = document.getElementById('dmgType').value;
     const data = {
         date: document.getElementById('dmgDate').value,
@@ -5237,6 +6084,10 @@ function saveDamage(event) {
     // legacy inline photo that has not been migrated yet, on a save that only
     // meant to fix a typo.
     if (_dmgPhotoDirty) data.photo = '';
+    // Marked only on heavy-equipment records, so tractor records keep exactly
+    // today's shape; cleared when a record is moved off a heavy unit, because
+    // the merges below would otherwise keep the old value.
+    if (isHeavy(unit) || (old && old.unitGroup)) data.unitGroup = isHeavy(unit) ? 'heavy' : '';
 
     let savedId = id;
     if (id) {
@@ -5307,7 +6158,20 @@ function saveDamage(event) {
 // unit". A Mekanis/Software failure hits the unit itself even when a component
 // is named, so its downtime is tracked and its description is kept as the
 // breakdown reason. Returns a unit field name, or null meaning `status`.
-function damageTargetField(damageType, component) {
+// What a damage record drives on its unit: a component field, null (the unit's
+// status), or DAMAGE_DRIVES_NOTHING. The last one exists for a legacy record
+// that names a John Deere component on a heavy unit — flipping gps on an
+// excavator is exactly the corruption this guards against, and flipping its
+// status instead would claim a breakdown nobody reported.
+// For a tractor the result is today's mapping, verbatim.
+const DAMAGE_DRIVES_NOTHING = '__nothing__';
+function damageTargetField(damageType, component, unit) {
+    if (unit && isHeavy(unit)) {
+        if (damageType !== 'Device Precision') return null;
+        const h = heavyComponentField(component);
+        if (h) return h;
+        return componentUnitField(component) ? DAMAGE_DRIVES_NOTHING : null;
+    }
     const compField = componentUnitField(component);
     return (damageType === 'Device Precision' && compField) ? compField : null;
 }
@@ -5315,7 +6179,8 @@ function damageTargetField(damageType, component) {
 // Put the unit (or the damaged component) into Breakdown.
 // Returns a label describing what was changed, or '' when nothing changed.
 function _applyDamageBreakdown(unitId, damageType, component, description) {
-    const compField = damageTargetField(damageType, component);
+    const compField = damageTargetField(damageType, component, globalData.find(u => u.id === unitId));
+    if (compField === DAMAGE_DRIVES_NOTHING) return '';
     if (compField) {
         updateUnit(unitId, { [compField]: 'Breakdown' });
         return `Komponen ${component} unit`;
@@ -5329,12 +6194,12 @@ function _applyDamageBreakdown(unitId, damageType, component, description) {
 // same place (same component field, or both the unit's status)? If so,
 // resolving this one must not flip that place back to Good.
 function hasOtherOpenDamage(rec, unit, compField) {
-    if (!unit) return false;
+    if (!unit || compField === DAMAGE_DRIVES_NOTHING) return false;
     return globalDamages.some(d => {
         if (d.id === rec.id || d.resolved) return false;
         const u = liveUnitFor(d);
         if (!u || u.id !== unit.id) return false;
-        return damageTargetField(d.damageType, d.component) === compField;
+        return damageTargetField(d.damageType, d.component, u) === compField;
     });
 }
 
@@ -5366,8 +6231,10 @@ function resolveDamage(id) {
     let restored = false;
     let blocked = false;
     if (unit) {
-        const compField = damageTargetField(rec.damageType, rec.component);
-        if (hasOtherOpenDamage(rec, unit, compField)) {
+        const compField = damageTargetField(rec.damageType, rec.component, unit);
+        if (compField === DAMAGE_DRIVES_NOTHING) {
+            // Nothing on the unit to restore — see damageTargetField.
+        } else if (hasOtherOpenDamage(rec, unit, compField)) {
             blocked = true;
         } else if (compField) {
             if (!isGood(unit[compField])) restored = updateUnit(unit.id, { [compField]: 'Good' });
@@ -5752,7 +6619,8 @@ function populateLicenseUnitList(selectedLabel) {
     const input = document.getElementById('licUnit');
     const list = document.getElementById('licUnitList');
     if (!input || !list) return;
-    const units = [...globalData].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    // SF/G5 licences are John Deere only: heavy equipment is never offered.
+    const units = globalData.filter(u => !isHeavy(u)).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     list.innerHTML = units.map(u => `<option value="${escapeHtml(damageUnitLabel(u))}"></option>`).join('');
     input.value = selectedLabel || '';
 }
@@ -5827,7 +6695,9 @@ function applyDistributedLicenseToUnit(rec, force = false) {
     const kind = _licenseKindForType(rec.licenseType);
     if (!kind) return false;
     const unit = globalData.find(u => u.id === rec.unitId);
-    if (!unit) return false;
+    // The write boundary: whatever path reached here, no licence lands on a
+    // heavy unit.
+    if (!unit || isHeavy(unit)) return false;
     const start = rec.date || toISODate();
     const end = addOneYearISO(start);
 
@@ -5852,7 +6722,7 @@ function syncDistributionsToUnits() {
         if (r.txnType !== 'OUT' || !r.unitId) return;
         const kind = _licenseKindForType(r.licenseType);
         if (!kind) return;
-        if (!globalData.some(u => u.id === r.unitId)) return;
+        if (!globalData.some(u => u.id === r.unitId && !isHeavy(u))) return;
         const key = r.unitId + '|' + kind;
         const cur = latest[key];
         // date → createdAt → id. The id tie-break keeps the result stable:
@@ -5913,6 +6783,13 @@ function saveLicenseStock(event) {
     if (txnType === 'OUT') {
         const unit = resolveDamageUnit(document.getElementById('licUnit').value);
         if (!unit) { showToast('Pilih unit tujuan dari daftar (ketik nama atau SN)', 'warning'); return; }
+        // A legacy row that already points at this heavy unit stays editable;
+        // applyDistributedLicenseToUnit still refuses to write to the unit.
+        const legacy = prevRec && prevRec.unitId === unit.id;
+        if (isHeavy(unit) && !legacy) {
+            showToast(`Unit "${unit.name}" adalah Alat Berat — lisensi SF/G5 hanya untuk ${UNIT_GROUPS.tractor.label}`, 'warning');
+            return;
+        }
         data.unitId = unit.id;
         data.unitName = unit.name || '';
         data.sn = unit.sn || '';
@@ -6102,6 +6979,7 @@ function handleLicenseCSVImport(file) {
             const today = toISODate();
             const added = [];
             let rejected = 0;
+            let heavyRejected = 0;
 
             result.data.forEach(row => {
                 const licenseType = (getValAny(row, ['Jenis Lisensi', 'License', 'License Type']) || '').toString().trim();
@@ -6123,9 +7001,21 @@ function handleLicenseCSVImport(file) {
                 if (txnType === 'OUT') {
                     const snCsv = (getValAny(row, ['Serial Number', 'SN']) || '').toString().trim();
                     const nameCsv = (getValAny(row, ['Unit', 'Nickname']) || '').toString().trim();
+                    // Matched against the agricultural units; a row whose SN or
+                    // name belongs to a heavy unit is rejected outright rather
+                    // than stored unlinked — an unlinked row still carries the
+                    // SN, and liveUnitFor would resolve it back to that unit.
+                    const bySn = u => (u.sn || '').toLowerCase() === snCsv.toLowerCase();
+                    const byName = u => (u.name || '').toLowerCase() === nameCsv.toLowerCase();
                     let unit = null;
-                    if (snCsv) unit = globalData.find(u => (u.sn || '').toLowerCase() === snCsv.toLowerCase());
-                    if (!unit && nameCsv) unit = globalData.find(u => (u.name || '').toLowerCase() === nameCsv.toLowerCase());
+                    if (snCsv) {
+                        unit = globalData.find(u => !isHeavy(u) && bySn(u));
+                        if (!unit && globalData.some(u => isHeavy(u) && bySn(u))) { heavyRejected++; return; }
+                    }
+                    if (!unit && nameCsv) {
+                        unit = globalData.find(u => !isHeavy(u) && byName(u));
+                        if (!unit && globalData.some(u => isHeavy(u) && byName(u))) { heavyRejected++; return; }
+                    }
                     if (unit) {
                         rec.unitId = unit.id; rec.unitName = unit.name || ''; rec.sn = unit.sn || '';
                     } else {
@@ -6161,7 +7051,8 @@ function handleLicenseCSVImport(file) {
             }
 
             showLoading(false);
-            const msg = `Import lisensi: ${added.length} ditambahkan` + (rejected ? `, ${rejected} dilewati (jenis lisensi kosong)` : '');
+            const msg = `Import lisensi: ${added.length} ditambahkan` + (rejected ? `, ${rejected} dilewati (jenis lisensi kosong)` : '')
+                + (heavyRejected ? `, ${heavyRejected} dilewati (unit Alat Berat — lisensi SF/G5 hanya untuk ${UNIT_GROUPS.tractor.shortLabel})` : '');
             showToast(msg, added.length ? 'success' : 'warning');
         },
         error: err => {
@@ -6399,7 +7290,7 @@ function applyCloudUnitsSnapshot(units) {
             if (units.length > 0) {
                 if (empty) empty.style.display = 'none';
                 if (content) content.style.display = 'block';
-                filteredData = [...units];
+                filteredData = scopeDashUnits();
                 onDataLoaded();
             } else {
                 if (empty) empty.style.display = '';
@@ -6414,7 +7305,6 @@ function applyCloudUnitsSnapshot(units) {
 
     // One-shot license defaults fill — runs only for owner on first load
     // that has units, gated by a localStorage flag so it never repeats.
-    applyDefaultLicensesIfNeeded();
     applyLicenseDatesIfNeeded();
 }
 
@@ -6447,51 +7337,12 @@ function applyCloudImplementsSnapshot(items) {
     }
 }
 
-// One-shot migration: seed every unit that has blank license fields with
-// sensible defaults (GPS License = SF-RTK, Display License = G5 Basic).
-// Only the owner runs it, and the localStorage flag guarantees it never
-// re-runs after the initial fill. Manually-set values are preserved.
-function applyDefaultLicensesIfNeeded() {
-    if (!isOwner || !isOwner()) return;
-    if (localStorage.getItem(LICENSE_DEFAULTS_KEY) === '1') return;
-    if (!Array.isArray(globalData) || globalData.length === 0) return;
-
-    const updates = [];
-    globalData.forEach(unit => {
-        const patch = {};
-        if (!unit.gpsLicense)     patch.gpsLicense = 'SF-RTK';
-        if (!unit.licenseDisplay) patch.licenseDisplay = 'G5 Basic';
-        if (Object.keys(patch).length > 0) {
-            Object.assign(unit, patch);
-            updates.push(unit);
-        }
-    });
-
-    if (updates.length === 0) {
-        localStorage.setItem(LICENSE_DEFAULTS_KEY, '1');
-        return;
-    }
-
-    console.log(`[license-defaults] seeding defaults on ${updates.length} units...`);
-    try { saveToStorage(globalData); } catch (e) {}
-    window.cloud.saveUnits(updates).then(() => {
-        localStorage.setItem(LICENSE_DEFAULTS_KEY, '1');
-        try {
-            logEvent({
-                action: 'migrate',
-                unitName: '-',
-                field: 'license defaults',
-                after: `GPS=SF-RTK + Display=G5 Basic on ${updates.length} units`
-            });
-        } catch (e) {}
-        showToast(`Lisensi default diterapkan ke ${updates.length} unit`, 'success');
-        if (currentView === 'dashboard') updateDashboard(filteredData);
-        if (currentView === 'editUnits') renderEditTable();
-    }).catch(err => {
-        console.error('[license-defaults] bulk save failed:', err);
-        showToast('Migrasi default lisensi gagal — periksa console', 'error');
-    });
-}
+// applyDefaultLicensesIfNeeded() used to live here: it filled every unit with a
+// blank licence with SF-RTK / G5 Basic, guarded only by a per-browser flag.
+// All 190 units went through it long ago, and the flag meant any new owner
+// browser would run it again — re-filling licences someone had cleared on
+// purpose, and, once heavy equipment exists, stamping John Deere licences onto
+// excavators. Removed for the same reason as the Excel migrations before it.
 
 // One-shot migration: import license start dates from LICENSE_DATES_MAP
 // (serial number → YYYY-MM-DD). Expiration is auto-set to +1 year. Only
@@ -6526,6 +7377,9 @@ function applyLicenseDatesIfNeeded() {
     const matchedKeys = new Set();
 
     globalData.forEach(unit => {
+        // For heavy equipment a missing licence means "not applicable", not
+        // "not yet filled in". Fill-if-empty migrations must never reach it.
+        if (isHeavy(unit)) return;
         const key = normSn(unit.sn);
         if (!key) return;
         const hit = normalizedMap[key];
@@ -6806,9 +7660,18 @@ function renderDamageComponentOptions() {
     const select = document.getElementById('dmgComponent');
     if (!select) return;
     const current = select.value;
-    const list = damageComponents.length
+    const unitEl = document.getElementById('dmgUnit');
+    const unit = unitEl && unitEl.value ? resolveDamageUnit(unitEl.value) : null;
+    const tractorList = damageComponents.length
         ? damageComponents
         : DEFAULT_DAMAGE_COMPONENTS; // pre-sync fallback
+    // A heavy unit is offered its own components, plus the owner's custom
+    // parts that drive the unit's status (Hidrolik, Mesin…). Everything else —
+    // no unit yet, or a tractor — gets today's list exactly.
+    const list = (unit && isHeavy(unit))
+        ? UNIT_GROUPS.heavy.components.map(c => ({ name: c.label }))
+            .concat(tractorList.filter(c => !c.unitField && !heavyComponentField(c.name)))
+        : tractorList;
     const opts = ['<option value="">Pilih komponen… (opsional)</option>'];
     list.forEach(c => {
         opts.push(`<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`);
@@ -6818,11 +7681,42 @@ function renderDamageComponentOptions() {
     // component is missing from the new list (someone deleted it, or it's a
     // legacy value), keep it as an option — otherwise the field silently goes
     // blank mid-edit and the next save writes an empty component.
-    if (current && !list.some(c => c.name === current)) {
+    // ...except a value that belongs to the other group than the chosen unit,
+    // which is dropped — unless it is the saved value of the very record being
+    // edited, on the same unit (a legacy record must stay editable).
+    let dropped = '';
+    if (current && unit && componentGroupConflict(current, unit)) {
+        const editId = (document.getElementById('editDamageId') || {}).value;
+        const rec = editId ? globalDamages.find(d => d.id === editId) : null;
+        const legacyKeep = rec && rec.component === current && (liveUnitFor(rec) || {}).id === unit.id;
+        if (!legacyKeep) dropped = current;
+    }
+    if (current && !dropped && !list.some(c => c.name === current)) {
         select.insertAdjacentHTML('beforeend',
             `<option value="${escapeHtml(current)}">${escapeHtml(current)}</option>`);
     }
-    if (current) select.value = current;
+    if (current && !dropped) select.value = current;
+    renderDamageHint(unit);
+    return dropped;
+}
+
+// The hint under "Set status Breakdown" names the components of the chosen
+// unit's group. Tractor (or no unit): today's wording.
+const DAMAGE_HINT_TRACTOR = 'Device Precision → komponen terkait (GPS/Display/Steering/JDLink); tipe lain → status unit.';
+function renderDamageHint(unit) {
+    const el = document.getElementById('dmgBreakdownHint');
+    if (!el) return;
+    el.textContent = (unit && isHeavy(unit))
+        ? 'Device Precision → komponen terkait (Camera AI/Telematic Box/Switch Limiter/Rotary Lamp); tipe lain → status unit.'
+        : DAMAGE_HINT_TRACTOR;
+}
+
+function onDamageUnitChanged() {
+    const dropped = renderDamageComponentOptions();
+    if (dropped) {
+        const unit = resolveDamageUnit(document.getElementById('dmgUnit').value);
+        showToast(`Komponen "${dropped}" tidak berlaku untuk ${groupDef(unitGroupOf(unit)).shortLabel} — pilih ulang`, 'warning');
+    }
 }
 
 function openDamageComponentsModal() {
@@ -6866,6 +7760,12 @@ function addDamageComponent(event) {
     if (!name) { showToast('Isi nama komponen', 'warning'); return; }
     const exists = damageComponents.some(c => (c.name || '').toLowerCase() === name.toLowerCase());
     if (exists) { showToast(`Komponen "${name}" sudah ada`, 'warning'); return; }
+    // Heavy components are built in and keyed to heavy fields; a custom one of
+    // the same name would put 'Camera AI' in front of every tractor.
+    if (heavyComponentField(name)) {
+        showToast(`"${name}" sudah bawaan Alat Berat — tidak perlu ditambahkan`, 'warning');
+        return;
+    }
 
     const comp = {
         id: `dcmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -8337,7 +9237,7 @@ function applyCloudWorkLogsSnapshot(list) {
 }
 
 // One-shot migration: move photos that still sit inside a work log out to
-// workLogPhotos/{id}. Same shape as applyDefaultLicensesIfNeeded() above —
+// workLogPhotos/{id}. Same shape as applyLicenseDatesIfNeeded() above —
 // owner only, guarded by a localStorage flag so it never runs twice.
 //
 // Order matters: the photo document is written FIRST and the inline copy is
@@ -10333,7 +11233,12 @@ function _mergeSuggestions(defaults, values) {
     return [...seen.values()].sort((a, b) => a.localeCompare(b));
 }
 function allDeviceTypes() {
-    return _mergeSuggestions(DEFAULT_DEVICE_TYPES, warehouseDevices.map(d => d.type));
+    // Camera AI, Telematic Box and the rest are devices too, but only worth
+    // suggesting once heavy equipment exists.
+    const defaults = hasHeavyUnits()
+        ? DEFAULT_DEVICE_TYPES.concat(UNIT_GROUPS.heavy.components.map(c => c.label))
+        : DEFAULT_DEVICE_TYPES;
+    return _mergeSuggestions(defaults, warehouseDevices.map(d => d.type));
 }
 function allWarehouseLocations() {
     return _mergeSuggestions([], [
@@ -11062,9 +11967,11 @@ function decisionGroups() {
             total: stuck.length,
             items: stuck.slice(0, 6).map(u => ({
                 text: u.name || u.sn || '(tanpa nama)',
-                sub: `${_daysSince(u.breakdownStartedAt)} hari · ${u.site || '-'}${u.breakdownReason ? ' · ' + u.breakdownReason : ''}`
+                sub: `${_daysSince(u.breakdownStartedAt)} hari · ${u.site || '-'}${u.breakdownReason ? ' · ' + u.breakdownReason : ''}${isHeavy(u) ? ' · ' + UNIT_GROUPS.heavy.shortLabel : ''}`
             })),
-            goto: 'dashboard'
+            // With a heavy unit in the list, open the dashboard on "Semua" so
+            // the unit is actually on screen when the link lands.
+            goto: stuck.some(isHeavy) ? 'dashboard:all' : 'dashboard'
         });
     }
 
@@ -11149,6 +12056,19 @@ function decisionTotal() {
 // Each group knows where its work actually lives; landing on the right tab with
 // the right filter already applied is the difference between a list and a tool.
 function goDecision(target) {
+    // Group-aware links. They switch the group for this session only — a link
+    // must not change the device's saved default — and do nothing when
+    // navigateTo refused the view for lack of access.
+    if (typeof target === 'string' && target.startsWith('editUnits:')) {
+        navigateTo('editUnits');
+        if (currentView === 'editUnits') switchEditUnitsGroup(target.slice(10), { persist: false });
+        return;
+    }
+    if (typeof target === 'string' && target.startsWith('dashboard:')) {
+        navigateTo('dashboard');
+        if (currentView === 'dashboard') setDashGroup(target.slice(10), { persist: false });
+        return;
+    }
     switch (target) {
         case 'leave': {
             navigateTo('team');
@@ -11538,7 +12458,8 @@ function dcDuplicateSerials() {
             if (!sn) return;
             if (seen.has(sn)) {
                 out.push(dc('sn-ganda', `${what}: ${r.sn}`,
-                    `Dipakai "${seen.get(sn)}" dan "${r.name || r.type || '-'}"`, goTo));
+                    `Dipakai "${seen.get(sn)}" dan "${r.name || r.type || '-'}"`,
+                    goTo === 'editUnits' ? unitEditTarget(r) : goTo));
             } else {
                 seen.set(sn, r.name || r.type || '-');
             }
@@ -11557,7 +12478,7 @@ function dcInvisibleCharacters() {
             if (typeof v !== 'string' || !v) return;
             if (INVISIBLE_RE.test(v) || v !== v.trim()) {
                 out.push(dc('spasi', `Unit ${u.name || u.sn || u.id}`,
-                    `Field "${f}" punya spasi atau karakter tak terlihat`, 'editUnits',
+                    `Field "${f}" punya spasi atau karakter tak terlihat`, unitEditTarget(u),
                     { unitId: u.id, field: f, fixable: true }));
             }
         });
@@ -11605,7 +12526,7 @@ function dcMissingCompany() {
     globalData.forEach(u => {
         if (!(u.site || '').trim()) {
             out.push(dc('tanpa-site', `Unit: ${u.name || u.sn || u.id}`,
-                'Belum punya site — tidak terhitung di pembagian PT', 'editUnits',
+                'Belum punya site — tidak terhitung di pembagian PT', unitEditTarget(u),
                 { unitId: u.id }));
         }
     });
@@ -11726,6 +12647,50 @@ function dcLeaveReversed() {
             'leave'));
 }
 
+// A unit carrying the other group's fields — e.g. an excavator saved from a
+// v108 tab that still thought it was a tractor, with gps:'Breakdown'. The
+// values are never read for the unit's own group, so clearing them cannot
+// change what the unit means; that is why this one is fixable in bulk.
+function dcUnitGroupFields() {
+    const out = [];
+    globalData.forEach(u => {
+        const stray = strayGroupFields(u);
+        if (stray.length) {
+            const g = groupDef(unitGroupOf(u));
+            out.push(dc('kelompok-silang', `${g.shortLabel}: ${u.name || u.sn || u.id}`,
+                `${g.shortLabel} membawa field kelompok lain: ${stray.map(x => `${COMPONENT_LABELS[x.field] || UNIT_FIELD_LABELS[x.field] || x.field}=${x.value}`).join(', ')}`,
+                unitEditTarget(u), { unitId: u.id, fixable: true, stray: stray.map(x => x.field) }));
+        }
+        // Only a value that is set AND unreadable. 'Alat Berat' is not
+        // canonical but reads correctly, so it is not flagged.
+        if (!sameStoredValue(u.unitGroup, '') && normalizeGroupKey(u.unitGroup) === null) {
+            out.push(dc('kelompok-tak-dikenal', `Unit: ${u.name || u.sn || u.id}`,
+                `Kelompok "${u.unitGroup}" tidak dikenal — dibaca sebagai ${UNIT_GROUPS.tractor.label}`, unitEditTarget(u)));
+        }
+    });
+    return out;
+}
+
+// Records elsewhere that point across groups: a licence handed to heavy
+// equipment, or a damage record naming a component the unit does not have.
+function dcGroupReferences() {
+    const out = [];
+    (globalLicenseStock || []).forEach(r => {
+        if (r.txnType !== 'OUT') return;
+        const u = liveUnitFor(r);
+        if (u && isHeavy(u)) out.push(dc('lisensi-alat-berat', `Lisensi: ${u.name || u.sn}`,
+            `${r.licenseType || 'Lisensi'} didistribusikan ke unit ${UNIT_GROUPS.heavy.shortLabel} — lisensi SF/G5 hanya untuk ${UNIT_GROUPS.tractor.shortLabel}`,
+            'licenseStock'));
+    });
+    (globalDamages || []).forEach(r => {
+        const u = liveUnitFor(r);
+        if (u && r.component && componentGroupConflict(r.component, u)) out.push(dc('kerusakan-komponen-silang',
+            `Kerusakan: ${u.name || u.sn}`,
+            `Komponen "${r.component}" bukan milik ${groupDef(unitGroupOf(u)).shortLabel}`, 'damage'));
+    });
+    return out;
+}
+
 const DATA_CHECKS = [
     { key: 'sn',       label: 'Nomor seri duplikat',        run: dcDuplicateSerials },
     { key: 'spasi',    label: 'Spasi / karakter tak terlihat', run: dcInvisibleCharacters },
@@ -11737,7 +12702,9 @@ const DATA_CHECKS = [
     { key: 'yatim',    label: 'Kerusakan tanpa unit',       run: dcOrphanDamage },
     { key: 'stok',     label: 'Saldo stok minus',           run: dcNegativeStock },
     { key: 'surat',    label: 'Izin / sakit tanpa surat',    run: dcLeaveWithoutDoc },
-    { key: 'izin-tgl', label: 'Rentang izin terbalik',       run: dcLeaveReversed }
+    { key: 'izin-tgl', label: 'Rentang izin terbalik',       run: dcLeaveReversed },
+    { key: 'kelompok', label: 'Field kelompok unit tidak cocok', run: dcUnitGroupFields },
+    { key: 'kelompok-ref', label: 'Lisensi / kerusakan salah kelompok', run: dcGroupReferences }
 ];
 
 function runDataChecks() {
@@ -11755,7 +12722,15 @@ function renderDataCheck() {
     if (!host) return;
     const groups = runDataChecks();
     const total = groups.reduce((n, g) => n + g.items.length, 0);
-    const fixable = groups.reduce((n, g) => n + g.items.filter(i => i.fixable).length, 0);
+    // Two fixers, each with its own button: invisible characters, and fields
+    // that belong to the other unit group.
+    const fixable = groups.reduce((n, g) => n + g.items.filter(i => i.fixable && i.kind !== 'kelompok-silang').length, 0);
+    const strayFixable = groups.reduce((n, g) => n + g.items.filter(i => i.kind === 'kelompok-silang').length, 0);
+    const groupFixBtn = document.getElementById('dataCheckGroupFixBtn');
+    if (groupFixBtn) {
+        groupFixBtn.style.display = strayFixable ? '' : 'none';
+        groupFixBtn.textContent = `Bersihkan field kelompok lain di ${strayFixable} unit`;
+    }
 
     const summary = document.getElementById('dataCheckSummary');
     if (summary) {
@@ -11812,6 +12787,25 @@ function fixInvisibleCharacters() {
     let n = 0;
     byUnit.forEach((fields, id) => { if (updateUnit(id, fields)) n++; });
     showToast(n ? `${n} unit dirapikan` : 'Tidak ada yang berubah', n ? 'success' : 'info');
+    renderDataCheck();
+}
+
+// The second safe fix: clearing values a unit's own group never reads. Goes
+// through updateUnit with clearStray, the one case the write firewall lets a
+// field of the other group through — and only as ''.
+function fixStrayGroupFields() {
+    if (!requireEdit('editUnits')) return;
+    const found = dcUnitGroupFields().filter(i => i.kind === 'kelompok-silang');
+    if (!found.length) { showToast('Tidak ada yang perlu dibersihkan', 'info'); return; }
+    if (!confirm(`Kosongkan field milik kelompok lain di ${found.length} unit?\n\n`
+        + 'Nilai itu tidak pernah dibaca untuk kelompok unitnya sendiri, jadi arti unitnya tidak berubah.')) return;
+    let n = 0;
+    found.forEach(i => {
+        const fields = {};
+        i.stray.forEach(f => { fields[f] = ''; });
+        if (updateUnit(i.unitId, fields, { clearStray: true })) n++;
+    });
+    showToast(n ? `${n} unit dibersihkan` : 'Tidak ada yang berubah', n ? 'success' : 'info');
     renderDataCheck();
 }
 
