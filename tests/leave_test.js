@@ -311,6 +311,21 @@ const { launch, BASE_URL } = require('./_env');
         t('dan panelnya tampil',
           document.getElementById('teamLeavePanel').style.display, '');
 
+        // ---------- REGRESI: tab halaman lain tidak ikut disembunyikan ----------
+        // renderTeamView dulu menyapu SEMUA .team-tab di dokumen. Kotak
+        // Keputusan dan Gudang memakai kelas yang sama, jadi begitu Tim dibuka,
+        // tab kedua halaman itu hilang sampai halaman dimuat ulang.
+        currentUserDoc = { role: 'owner', status: 'active' };
+        applyRoleGating();
+        navigateTo('team');
+        navigateTo('leader');
+        t('tab Kotak Keputusan tetap terlihat setelah membuka Tim',
+          [...document.querySelectorAll('.leader-tab')].filter(b => b.style.display === 'none').length, 0);
+        navigateTo('team');
+        navigateTo('warehouse');
+        t('tab Gudang tetap terlihat setelah membuka Tim',
+          [...document.querySelectorAll('.wh-tab')].filter(b => b.style.display === 'none').length, 0);
+
         window.showToast = toastAsli;
         window.__T = T;
     } catch (e) { window.__T = [{n:'THREW: '+e.message+' | '+(e.stack||'').split('\\n')[1], g:1, w:0, pass:false}]; }

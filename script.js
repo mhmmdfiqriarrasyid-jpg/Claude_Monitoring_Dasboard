@@ -83,7 +83,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v108';
+const APP_VERSION = 'v109';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -8439,7 +8439,11 @@ function renderTeamView() {
         teamTab = Object.keys(TEAM_TABS).find(canTab) || teamTab;
     }
 
-    document.querySelectorAll('.team-tab').forEach(btn => {
+    // Scoped to this page. Kotak Keputusan and Gudang reuse the .team-tab
+    // class for styling, and an unscoped sweep hid every one of their tabs the
+    // moment anyone opened Tim — canTab() knows nothing about 'inbox' or
+    // 'devices', so it answered false for all of them.
+    document.querySelectorAll('#viewTeam .team-tab').forEach(btn => {
         const key = btn.dataset.tab;
         const allowed = canTab(key);
         btn.style.display = allowed ? '' : 'none';
@@ -10378,6 +10382,8 @@ function switchWarehouseTab(tab) {
 
 function renderWarehouseView() {
     document.querySelectorAll('.wh-tab').forEach(btn => {
+        // Never trust another page to have left these visible.
+        btn.style.display = '';
         const on = btn.dataset.tab === warehouseTab;
         btn.classList.toggle('active', on);
         btn.setAttribute('aria-selected', on ? 'true' : 'false');
@@ -11816,6 +11822,8 @@ function switchLeaderTab(tab) {
 
 function renderLeaderView() {
     document.querySelectorAll('.leader-tab').forEach(btn => {
+        // Never trust another page to have left these visible.
+        btn.style.display = '';
         const on = btn.dataset.tab === leaderTab;
         btn.classList.toggle('active', on);
         btn.setAttribute('aria-selected', on ? 'true' : 'false');
