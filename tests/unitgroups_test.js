@@ -13,7 +13,14 @@
 //   2. Setiap akar penyebab kerusakan itu benar-benar tertutup.
 const { launch, BASE_URL } = require('./_env');
 const { CAPTURE, FIXED_TIME } = require('./_golden');
-const golden = require('./fixtures/tractor_golden.json');
+const goldenRaw = require('./fixtures/tractor_golden.json');
+// Perubahan markup yang DISENGAJA sesudah golden direkam — dan hanya itu:
+//  - v111: alasan breakdown pindah dari argumen onclick ke data-reason.
+//    Argumen lama bisa keluar dari string JavaScript (escapeHtml mengubah '
+//    menjadi &#39;, yang dikembalikan browser menjadi ' sebelum JS berjalan).
+const golden = JSON.parse(JSON.stringify(goldenRaw).replace(
+    /onclick=\\"showBreakdownPopover\(event, '([^']*)'\)\\"/g,
+    (_, r) => `data-reason=\\"${r}\\" onclick=\\"showBreakdownPopover(event, this.dataset.reason)\\"`));
 
 const T = [];
 const t = (n, g, w) => T.push({ n, g, w, pass: JSON.stringify(g) === JSON.stringify(w) });
@@ -316,11 +323,13 @@ const SETUP = `(() => {
         globalData = [__T('u_t1'), __H('u_h1', { gps: 'Breakdown' }), __H('u_h2', { unitGroup: 'Heavyy' })];
         const f = dcUnitGroupFields();
         r.periksa = f.map(x => x.kind).sort();
-        r.periksaTarget = f.filter(x => x.kind === 'kelompok-silang').map(x => x.goTo);
+        r.periksaTarget = f.slice().sort((a, b) => a.kind.localeCompare(b.kind)).map(x => x.goTo);
         __w.units.length = 0;
         __answer = true;
         fixStrayGroupFields();
         r.afterFix = globalData.find(u => u.id === 'u_h1').gps;
+        const odd = globalData.find(u => u.id === 'u_h2');
+        r.afterFixOdd = [odd.cameraAi, odd.machineType, __w.units.flat().some(u => u.id === 'u_h2')];
         globalData = [__T('u_t1'), __H('u_h1')];
         globalDamages = [];
         r.periksaClean = dcUnitGroupFields().length + dcGroupReferences().length;
@@ -417,13 +426,15 @@ const SETUP = `(() => {
         t('FA1: profil alat berat tanpa Lisensi, tanpa Distribusi, 4 komponennya sendiri',
           R.profile, [false, false, 4, true]);
 
-        // u_h2 berkelompok "Heavyy" — tak dikenal, jadi dibaca Pertanian, dan
-        // kolom alat beratnya pun tercatat sebagai kolom silang. Dua temuan
-        // untuk satu unit itu memang benar.
+        // u_h2 berkelompok "Heavyy" — tak dikenal. Sampai v110 kolom alat
+        // beratnya ikut dilaporkan sebagai "field silang", dan tombol
+        // Bersihkan lalu MENGHAPUSNYA. Sejak v111 unit itu hanya mendapat satu
+        // temuan: kelompoknya yang harus ditetapkan dulu (hardening_test).
         t('Periksa Data menemukan field silang dan kelompok tak dikenal', R.periksa,
-          ['kelompok-silang', 'kelompok-silang', 'kelompok-tak-dikenal']);
+          ['kelompok-silang', 'kelompok-tak-dikenal']);
         t('temuan membuka tab kelompok unitnya', R.periksaTarget, ['editUnits:heavy', 'editUnits']);
         t('perbaikan otomatis mengosongkan field silang', R.afterFix, '');
+        t('perbaikan otomatis TIDAK menyentuh unit berkelompok tak dikenal', R.afterFixOdd, ['Good', 'Excavator', false]);
         t('data bersih: nol temuan kelompok', R.periksaClean, 0);
         t('tautan membuka tab alat berat tanpa mengubah preferensi', R.goEdit, ['editUnits', 'heavy', null]);
 

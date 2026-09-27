@@ -83,7 +83,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v110';
+const APP_VERSION = 'v111';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -318,6 +318,13 @@ function normalizeGroupKey(raw) {
     return null;
 }
 function unitGroupOf(u)  { return normalizeGroupKey(u && u.unitGroup) || 'tractor'; }
+// A group value that is set but means nothing to this version — a hand-edited
+// backup ('Heavy Equip'), or a group a newer version added. Such a unit READS
+// as tractor, but nobody knows that it is one, so nothing may write either
+// group's own fields to it until a person says which group it belongs to.
+function hasUnreadableGroup(u) {
+    return !!u && !sameStoredValue(u.unitGroup, '') && normalizeGroupKey(u.unitGroup) === null;
+}
 function isHeavy(u)      { return !!u && unitGroupOf(u) === 'heavy'; }
 function groupDef(k)     { return UNIT_GROUPS[k] || UNIT_GROUPS.tractor; }
 function otherGroup(k)   { return UNIT_GROUPS[k === 'heavy' ? 'tractor' : 'heavy']; }
@@ -382,6 +389,10 @@ let _detailHeadGroup = 'tractor';
 const EDIT_HEADS = { tractor: '' };
 const DETAIL_HEADS = { tractor: '' };
 const csvExplicitGroup = new WeakSet();
+// Rows whose group came from the FILE's columns (Camera AI… vs Display/GPS…)
+// rather than a Unit Group cell. Just as binding for an update: a sheet of
+// excavator columns never rewrites a tractor that happens to share its SN.
+const csvInferredGroup = new WeakSet();
 
 function loadUnitGroupPrefs() {
     editUnitsGroup = readPref('editUnitsGroup', UNIT_GROUP_KEYS, 'tractor');
@@ -1335,16 +1346,28 @@ function addUnits(newUnits) {
 // The single exception is Periksa Data clearing such a stray field to ''.
 function guardUnitFields(before, fields, opts) {
     const g = unitGroupOf(before);
+    const unreadable = hasUnreadableGroup(before);
     const out = {};
     const dropped = [];
     Object.keys(fields || {}).forEach(k => {
         const v = fields[k];
         if (v === undefined) { dropped.push(k); return; }
-        if (k === 'unitGroup') { dropped.push(k); return; }
+        if (k === 'unitGroup') {
+            // The one way to set a group after creation: Periksa Data naming
+            // the group of a unit whose stored group cannot be read. A
+            // readable group stays immutable.
+            const to = normalizeGroupKey(v);
+            if (opts && opts.setGroup && unreadable && to) { out[k] = to; return; }
+            dropped.push(k); return;
+        }
+        // An unreadable group owns neither group's fields: writing GPS or
+        // Camera AI would be a guess about what the unit is.
+        if (unreadable && (TRACTOR_ONLY_FIELDS.includes(k) || HEAVY_ONLY_FIELDS.includes(k))) { dropped.push(k); return; }
         if (!fieldAllowedForGroup(k, g) && !(opts && opts.clearStray && v === '')) { dropped.push(k); return; }
         out[k] = v;
     });
-    if (dropped.length) console.warn(`[group] ${dropped.join(', ')} diabaikan untuk unit ${groupDef(g).shortLabel}`);
+    if (dropped.length) console.warn(`[group] ${dropped.join(', ')} diabaikan untuk unit `
+        + (unreadable ? `berkelompok "${before.unitGroup}" (tidak dikenal)` : groupDef(g).shortLabel));
     return out;
 }
 
@@ -1425,10 +1448,22 @@ function bulkUpdateUnitsFromCSV(parsedUnits) {
 
         const before = { ...globalData[idx] };
         const g = unitGroupOf(before);
+        if (hasUnreadableGroup(before)) {
+            failed.push({ sn: p.sn, reason: `Kelompok unit "${before.unitGroup}" tidak dikenal — tetapkan dulu lewat Periksa Data` });
+            return;
+        }
         // A row that names a group can only update a unit of that group: a
         // CSV never moves a unit between groups.
         if (csvExplicitGroup.has(p) && normalizeGroupKey(p.unitGroup) !== g) {
             failed.push({ sn: p.sn, reason: 'Kelompok di CSV berbeda dengan unit — tidak dipindah' });
+            return;
+        }
+        // Nor does a file whose columns belong to the other group: its values
+        // for this unit would be dropped and only name/status would land —
+        // on what is most likely the wrong unit.
+        if (csvInferredGroup.has(p) && p.unitGroup !== g) {
+            failed.push({ sn: p.sn, reason: `Kolom berkas ini milik ${groupDef(p.unitGroup).label}, `
+                + `tetapi SN ini milik unit ${groupDef(g).label} — tidak diperbarui` });
             return;
         }
         const fields = {};
@@ -2730,6 +2765,7 @@ function processData(rows, ctx) {
         if (explicit === null) groupWarnings.push({ row: idx + 2, name: unit.name, sn: unit.sn, value: raw });
         unit.unitGroup = explicit || fileGroup || fallback;
         if (explicit) csvExplicitGroup.add(unit);
+        else if (fileGroup) csvInferredGroup.add(unit);
         if (!unit.sn && !unit.name) {
             rejected.push({ row: idx + 2, reason: 'Missing both nickname and serial number' });
         } else if (!unit.sn) {
@@ -3295,7 +3331,7 @@ function renderDetailHead(scope) {
 }
 function _statusCell(d) {
     return !isGood(d.status) && d.breakdownReason
-        ? `<span class="badge badge-breakdown bd-clickable" onclick="showBreakdownPopover(event, '${escapeHtml(d.breakdownReason).replace(/'/g, "\\'")}')"><i class="fas fa-xmark"></i> ${escapeHtml(d.status)}</span>`
+        ? `<span class="badge badge-breakdown bd-clickable" data-reason="${escapeHtml(d.breakdownReason)}" onclick="showBreakdownPopover(event, this.dataset.reason)"><i class="fas fa-xmark"></i> ${escapeHtml(d.status)}</span>`
         : `<span class="badge ${isGood(d.status) ? 'badge-good' : 'badge-breakdown'}"><i class="fas fa-${isGood(d.status) ? 'check' : 'xmark'}"></i> ${escapeHtml(d.status)}</span>`;
 }
 function _dash(v) { return escapeHtml(v || '') || '<span style="color:var(--text-light);font-size:11px">—</span>'; }
@@ -3360,7 +3396,7 @@ function renderTable(data) {
             <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
             <td>${escapeHtml(d.implement || '')}</td>
             <td>${!isGood(d.status) && d.breakdownReason
-                ? `<span class="badge badge-breakdown bd-clickable" onclick="showBreakdownPopover(event, '${escapeHtml(d.breakdownReason).replace(/'/g, "\\'")}')"><i class="fas fa-xmark"></i> ${escapeHtml(d.status)}</span>`
+                ? `<span class="badge badge-breakdown bd-clickable" data-reason="${escapeHtml(d.breakdownReason)}" onclick="showBreakdownPopover(event, this.dataset.reason)"><i class="fas fa-xmark"></i> ${escapeHtml(d.status)}</span>`
                 : `<span class="badge ${isGood(d.status) ? 'badge-good' : 'badge-breakdown'}"><i class="fas fa-${isGood(d.status) ? 'check' : 'xmark'}"></i> ${escapeHtml(d.status)}</span>`
             }</td>
             <td class="${isGood(d.display) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.display)}</td>
@@ -3916,6 +3952,16 @@ function closeAutoBackups() {
 // the write is set(merge:true), so the old group would come back alongside
 // fields of the new one.
 function _refuseCrossGroupRestore(units) {
+    // A group this version cannot read would come back as a tractor that is
+    // not one — and GANTI writes every row, so refuse before anything moves.
+    // GABUNG goes through addUnits, which skips such rows and names them.
+    const unreadable = (units || []).filter(hasUnreadableGroup);
+    if (unreadable.length) {
+        const kinds = [...new Set(unreadable.map(u => String(u.unitGroup)))].slice(0, 3).map(v => `"${v}"`).join(', ');
+        showToast(`Pemulihan dibatalkan: ${unreadable.length} unit di cadangan punya kelompok yang tidak dikenal (${kinds}). `
+            + `Ubah nilainya di berkas menjadi "tractor" atau "heavy", atau pilih GABUNG — unit itu akan dilewati.`, 'error');
+        return true;
+    }
     const live = new Map(globalData.map(u => [u.id, u]));
     const conflicts = (units || []).filter(u => u && u.id && live.has(u.id) && unitGroupOf(live.get(u.id)) !== unitGroupOf(u));
     if (!conflicts.length) return false;
@@ -4211,6 +4257,14 @@ function saveInlineEdit(el) {
     // an absent field left empty is not a change: comparing undefined !== ''
     // used to write '' to Firestore and toast "diperbarui" on a mere click.
     const changed = unit && (isHeavy(unit) ? !sameStoredValue(unit[field], newValue) : unit[field] !== newValue);
+    // Same reason as editUnit: the firewall would drop the write anyway, but
+    // silently, leaving the cell showing a value that was never saved.
+    if (changed && hasUnreadableGroup(unit)
+        && (TRACTOR_ONLY_FIELDS.includes(field) || HEAVY_ONLY_FIELDS.includes(field))) {
+        el.textContent = unit[field] || '';
+        showToast(`Kelompok unit ini ("${unit.unitGroup}") tidak dikenal — tetapkan dulu lewat Periksa Data`, 'warning');
+        return;
+    }
     if (changed) {
         // Intercept status changing TO Breakdown → prompt for reason
         if (field === 'status' && !isGood(newValue) && isGood(unit.status)) {
@@ -4525,6 +4579,12 @@ function editUnit(id) {
     if (!requireEdit('editUnits')) return;
     const unit = globalData.find(d => d.id === id);
     if (!unit) return;
+    // The tractor form would read its absent components as 'Breakdown' and
+    // write them back on Save — the damage the unit's group exists to stop.
+    if (hasUnreadableGroup(unit)) {
+        showToast(`Kelompok unit ini ("${unit.unitGroup}") tidak dikenal. Tetapkan dulu lewat Kotak Keputusan → Periksa Data.`, 'warning');
+        return;
+    }
 
     const g = unitGroupOf(unit);
     setUnitFormGroup(g);
@@ -10086,6 +10146,21 @@ let _wlPhotos = [];  // data URLs
 // (or, worse, wipes) photos that may not even have finished loading yet.
 let _wlPhotosDirty = false;
 let _wlPhotosLoading = false;
+let _wlPhotosFailed = false;   // the stored photos never arrived — see setPhotoAddState
+let _wlPhotosGen = 0;          // bumped each time the form opens or closes
+
+// Stored photos and letters arrive after the form opens. Saving a changed set
+// REPLACES the stored one, so adding a page before the old ones are on screen
+// — or after they failed to arrive — would silently throw the old ones away.
+// The add button therefore waits for them, and stays shut if they never come.
+// Removing needs no guard: until they arrive there is nothing to remove.
+function setPhotoAddState(btnId, loading, failed, what) {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.disabled = !!(loading || failed);
+    btn.title = loading ? `Tunggu ${what.toLowerCase()} lama selesai dimuat`
+        : failed ? `${what} lama gagal dimuat — tutup lalu buka lagi untuk mengubahnya` : '';
+}
 
 function renderWorkLogUnitChips() {
     const wrap = document.getElementById('wlUnitChips');
@@ -10130,9 +10205,15 @@ function renderWorkLogPhotos() {
     const wrap = document.getElementById('wlPhotoPreviews');
     const count = document.getElementById('wlPhotoCount');
     if (count) count.textContent = `${_wlPhotos.length}/${WORKLOG_PHOTO_MAX}`;
+    setPhotoAddState('wlPhotoAddBtn', _wlPhotosLoading, _wlPhotosFailed, 'Foto');
     if (!wrap) return;
     if (_wlPhotosLoading && !_wlPhotos.length) {
         wrap.innerHTML = '<span class="wl-photo__loading"><i class="fas fa-spinner fa-spin"></i> Memuat foto…</span>';
+        return;
+    }
+    if (_wlPhotosFailed) {
+        wrap.innerHTML = '<span class="wl-photo__loading"><i class="fas fa-triangle-exclamation"></i> '
+            + 'Foto lama gagal dimuat dan tetap tersimpan. Tutup lalu buka lagi untuk mengubahnya.</span>';
         return;
     }
     wrap.innerHTML = _wlPhotos.map((src, i) => `
@@ -10147,6 +10228,8 @@ async function handleWorkLogPhotoChange(event) {
     const files = [...(event.target.files || [])];
     event.target.value = '';
     if (!files.length) return;
+    if (_wlPhotosLoading || _wlPhotosFailed) return;
+    const gen = _wlPhotosGen;
 
     for (const file of files) {
         if (_wlPhotos.length >= WORKLOG_PHOTO_MAX) {
@@ -10159,6 +10242,8 @@ async function handleWorkLogPhotoChange(event) {
         }
         try {
             const data = await compressImageToDataURL(file, WORKLOG_PHOTO_OPTS);
+            // Closed, or reopened on another report, while compressing.
+            if (gen !== _wlPhotosGen) return;
             // Firestore rejects a document over 1MB outright, so stop before
             // the write fails rather than after.
             const total = _wlPhotos.reduce((n, p) => n + p.length, 0) + data.length;
@@ -10212,9 +10297,11 @@ function showAddWorkLogForm() {
     document.getElementById('editWorkLogId').value = '';
     document.getElementById('workLogForm').reset();
     _wlUnits = [];
+    _wlPhotosGen++;
     _wlPhotos = [];
     _wlPhotosDirty = false;
     _wlPhotosLoading = false;
+    _wlPhotosFailed = false;
     populateWorkLogFilters();
     renderWorkLogUnitChips();
     renderWorkLogPhotos();
@@ -10235,8 +10322,10 @@ function editWorkLog(id) {
     document.getElementById('wlEnd').value = w.end || '';
     // Copies, so cancelling the modal leaves the stored record untouched.
     _wlUnits = workLogUnits(w).map(u => ({ ...u }));
+    const gen = ++_wlPhotosGen;
     _wlPhotos = [];
     _wlPhotosDirty = false;
+    _wlPhotosFailed = false;
     // Photos arrive separately; until they do the strip shows a placeholder.
     // Nothing is lost if they never arrive — see _wlPhotosDirty in saveWorkLog.
     _wlPhotosLoading = workLogPhotoCount(w) > 0;
@@ -10252,15 +10341,15 @@ function editWorkLog(id) {
         loadWorkLogPhotos(id).then(photos => {
             // The modal may have been closed or reopened on another report
             // while the fetch was in flight — only fill what still applies.
-            if (document.getElementById('editWorkLogId').value !== id) return;
-            if (_wlPhotosDirty) return;   // user already changed the photos
-            _wlPhotos = photos;
+            if (gen !== _wlPhotosGen) return;
+            _wlPhotos = photos.slice();   // a copy: the session cache must not see edits
             _wlPhotosLoading = false;
             renderWorkLogPhotos();
         }).catch(err => {
             console.error('[team] work log photos load failed:', err);
-            if (document.getElementById('editWorkLogId').value !== id) return;
+            if (gen !== _wlPhotosGen) return;
             _wlPhotosLoading = false;
+            _wlPhotosFailed = true;
             renderWorkLogPhotos();
             showToast(navigator.onLine
                 ? 'Foto lama gagal dimuat — foto lama tetap tersimpan'
@@ -10277,6 +10366,7 @@ function closeWorkLogModal(force) {
         !confirm(`${_wlPhotos.length} foto belum tersimpan dan akan hilang. Tutup saja?`)) {
         return;
     }
+    _wlPhotosGen++;
     _wlPhotosDirty = false;
     document.getElementById('workLogModal').classList.remove('open');
 }
@@ -10813,14 +10903,22 @@ function renderLeaveTable() {
 let _lvDocs = [];
 let _lvDocsDirty = false;
 let _lvDocsLoading = false;
+let _lvDocsFailed = false;   // the stored letters never arrived — see setPhotoAddState
+let _lvDocsGen = 0;          // bumped each time the form opens or closes
 
 function renderLeaveDocs() {
     const count = document.getElementById('lvDocCount');
     if (count) count.textContent = `${_lvDocs.length}/${LEAVE_DOC_MAX}`;
+    setPhotoAddState('lvDocAddBtn', _lvDocsLoading, _lvDocsFailed, 'Surat');
     const wrap = document.getElementById('lvDocPreviews');
     if (!wrap) return;
     if (_lvDocsLoading && !_lvDocs.length) {
         wrap.innerHTML = '<span class="wl-photo__loading"><i class="fas fa-spinner fa-spin"></i> Memuat surat…</span>';
+        return;
+    }
+    if (_lvDocsFailed) {
+        wrap.innerHTML = '<span class="wl-photo__loading"><i class="fas fa-triangle-exclamation"></i> '
+            + 'Surat lama gagal dimuat dan tetap tersimpan. Tutup lalu buka lagi untuk mengubahnya.</span>';
         return;
     }
     wrap.innerHTML = _lvDocs.map((src, i) => `
@@ -10834,6 +10932,8 @@ function renderLeaveDocs() {
 async function handleLeaveDocChange(event) {
     const files = [...(event.target.files || [])];
     event.target.value = '';
+    if (_lvDocsLoading || _lvDocsFailed) return;
+    const gen = _lvDocsGen;
     for (const file of files) {
         if (_lvDocs.length >= LEAVE_DOC_MAX) {
             showToast(`Maksimal ${LEAVE_DOC_MAX} lembar surat`, 'warning');
@@ -10847,6 +10947,8 @@ async function handleLeaveDocChange(event) {
         }
         try {
             const data = await compressImageToDataURL(file, WORKLOG_PHOTO_OPTS);
+            // Closed, or reopened on another request, while compressing.
+            if (gen !== _lvDocsGen) return;
             const total = _lvDocs.reduce((a, d) => a + d.length, 0) + data.length;
             if (total > WORKLOG_PHOTOS_TOTAL_BYTES) {
                 showToast('Ukuran surat terlalu besar — kurangi jumlah lembarnya', 'warning');
@@ -10893,7 +10995,8 @@ function showAddLeaveForm() {
         '<i class="fas fa-user-clock"></i> Tambah Pengajuan Izin / Sakit';
     document.getElementById('lvDateFrom').value = toISODate();
     document.getElementById('lvType').value = 'izin';
-    _lvDocs = []; _lvDocsDirty = false; _lvDocsLoading = false;
+    _lvDocsGen++;
+    _lvDocs = []; _lvDocsDirty = false; _lvDocsLoading = false; _lvDocsFailed = false;
     renderLeaveDocs();
     rememberFocus();
     document.getElementById('leaveModal').classList.add('open');
@@ -10913,16 +11016,28 @@ function editLeave(id) {
     document.getElementById('lvDateTo').value = r.dateTo || '';
     document.getElementById('lvReason').value = r.reason || '';
 
-    _lvDocs = []; _lvDocsDirty = false;
+    const gen = ++_lvDocsGen;
+    _lvDocs = []; _lvDocsDirty = false; _lvDocsFailed = false;
     _lvDocsLoading = leaveDocCount(r) > 0;
     renderLeaveDocs();
     rememberFocus();
     document.getElementById('leaveModal').classList.add('open');
     if (_lvDocsLoading) {
-        loadLeaveDocs(r.id)
-            .then(pages => { _lvDocs = pages.slice(); })
-            .catch(() => showToast('Surat gagal dimuat — menyimpan sekarang tidak akan mengubahnya', 'warning'))
-            .finally(() => { _lvDocsLoading = false; renderLeaveDocs(); });
+        loadLeaveDocs(r.id).then(pages => {
+            // The form may have been closed, or reopened on another request,
+            // while the fetch was in flight — only fill the one it was for.
+            if (gen !== _lvDocsGen) return;
+            _lvDocs = pages.slice();
+            _lvDocsLoading = false;
+            renderLeaveDocs();
+        }).catch(err => {
+            if (gen !== _lvDocsGen) return;
+            console.error('[izin] gagal memuat surat:', err);
+            _lvDocsLoading = false;
+            _lvDocsFailed = true;
+            renderLeaveDocs();
+            showToast('Surat lama gagal dimuat — tetap tersimpan, dan menyimpan sekarang tidak mengubahnya', 'warning');
+        });
     }
 }
 
@@ -10931,6 +11046,7 @@ function closeLeaveModal(force) {
         !confirm(`${_lvDocs.length} lembar surat belum tersimpan dan akan hilang. Tutup saja?`)) {
         return;
     }
+    _lvDocsGen++;
     _lvDocsDirty = false;
     document.getElementById('leaveModal').classList.remove('open');
 }
@@ -12654,6 +12770,18 @@ function dcLeaveReversed() {
 function dcUnitGroupFields() {
     const out = [];
     globalData.forEach(u => {
+        // Only a value that is set AND unreadable. 'Alat Berat' is not
+        // canonical but reads correctly, so it is not flagged. Such a unit
+        // gets no "stray fields" finding: which fields are stray depends on
+        // the group nobody knows yet, and clearing them would wipe real data.
+        if (hasUnreadableGroup(u)) {
+            const guess = guessUnitGroup(u);
+            out.push(dc('kelompok-tak-dikenal', `Unit: ${u.name || u.sn || u.id}`,
+                `Kelompok "${u.unitGroup}" tidak dikenal — dibaca sebagai ${UNIT_GROUPS.tractor.label}, dan tidak bisa diedit sampai kelompoknya ditetapkan`
+                + (guess ? `. Isinya cocok dengan ${UNIT_GROUPS[guess].label}.` : '.'),
+                unitEditTarget(u), { unitId: u.id, setGroup: true }));
+            return;
+        }
         const stray = strayGroupFields(u);
         if (stray.length) {
             const g = groupDef(unitGroupOf(u));
@@ -12661,14 +12789,20 @@ function dcUnitGroupFields() {
                 `${g.shortLabel} membawa field kelompok lain: ${stray.map(x => `${COMPONENT_LABELS[x.field] || UNIT_FIELD_LABELS[x.field] || x.field}=${x.value}`).join(', ')}`,
                 unitEditTarget(u), { unitId: u.id, fixable: true, stray: stray.map(x => x.field) }));
         }
-        // Only a value that is set AND unreadable. 'Alat Berat' is not
-        // canonical but reads correctly, so it is not flagged.
-        if (!sameStoredValue(u.unitGroup, '') && normalizeGroupKey(u.unitGroup) === null) {
-            out.push(dc('kelompok-tak-dikenal', `Unit: ${u.name || u.sn || u.id}`,
-                `Kelompok "${u.unitGroup}" tidak dikenal — dibaca sebagai ${UNIT_GROUPS.tractor.label}`, unitEditTarget(u)));
-        }
     });
     return out;
+}
+
+// What a unit of unknown group most likely is, judged by which group's own
+// fields carry a value. null when both or neither do — then only a person can
+// say, and the prompt offers no default.
+function guessUnitGroup(u) {
+    const has = f => !sameStoredValue(u[f], '');
+    const heavy = HEAVY_ONLY_FIELDS.some(has);
+    const tractor = TRACTOR_ONLY_FIELDS.some(has);
+    if (heavy && !tractor) return 'heavy';
+    if (tractor && !heavy) return 'tractor';
+    return null;
 }
 
 // Records elsewhere that point across groups: a licence handed to heavy
@@ -12730,6 +12864,12 @@ function renderDataCheck() {
     if (groupFixBtn) {
         groupFixBtn.style.display = strayFixable ? '' : 'none';
         groupFixBtn.textContent = `Bersihkan field kelompok lain di ${strayFixable} unit`;
+    }
+    const groupUnknown = groups.reduce((n, g) => n + g.items.filter(i => i.setGroup).length, 0);
+    const groupSetBtn = document.getElementById('dataCheckGroupSetBtn');
+    if (groupSetBtn) {
+        groupSetBtn.style.display = groupUnknown ? '' : 'none';
+        groupSetBtn.textContent = `Tetapkan kelompok ${groupUnknown} unit`;
     }
 
     const summary = document.getElementById('dataCheckSummary');
@@ -12793,6 +12933,38 @@ function fixInvisibleCharacters() {
 // The second safe fix: clearing values a unit's own group never reads. Goes
 // through updateUnit with clearStray, the one case the write firewall lets a
 // field of the other group through — and only as ''.
+// Asks, unit by unit, which group a unit of unknown group belongs to, and
+// writes only the answer. Its fields stay as they are: once the group is known,
+// any that belong to the other group show up as "field kelompok lain" and are
+// cleared by the button next to this one — a second, visible step.
+function setUnreadableGroups() {
+    if (!requireEdit('editUnits')) return;
+    const found = dcUnitGroupFields().filter(i => i.setGroup);
+    if (!found.length) { showToast('Tidak ada kelompok yang perlu ditetapkan', 'info'); return; }
+    let n = 0;
+    for (const i of found) {
+        const u = globalData.find(x => x.id === i.unitId);
+        if (!u || !hasUnreadableGroup(u)) continue;
+        const guess = guessUnitGroup(u);
+        const filled = [...HEAVY_ONLY_FIELDS, ...TRACTOR_ONLY_FIELDS]
+            .filter(f => !sameStoredValue(u[f], ''))
+            .slice(0, 6)
+            .map(f => `${COMPONENT_LABELS[f] || UNIT_FIELD_LABELS[f] || f}=${u[f]}`).join(', ');
+        const answer = prompt(`Unit "${u.name || u.sn || u.id}" berkelompok "${u.unitGroup}", yang tidak dikenal.\n`
+            + (filled ? `Isinya: ${filled}\n` : '')
+            + `\nKetik 1 untuk ${UNIT_GROUPS.tractor.label}, 2 untuk ${UNIT_GROUPS.heavy.label}.\n`
+            + 'Kosongkan atau Batal untuk melewati unit ini.',
+            guess === 'heavy' ? '2' : guess === 'tractor' ? '1' : '');
+        const to = String(answer == null ? '' : answer).trim() === '1' ? 'tractor'
+                 : String(answer == null ? '' : answer).trim() === '2' ? 'heavy' : null;
+        if (!to) continue;
+        if (updateUnit(u.id, { unitGroup: to }, { setGroup: true })) n++;
+    }
+    showToast(n ? `Kelompok ${n} unit ditetapkan` : 'Tidak ada yang berubah', n ? 'success' : 'info');
+    renderEditTable();
+    renderDataCheck();
+}
+
 function fixStrayGroupFields() {
     if (!requireEdit('editUnits')) return;
     const found = dcUnitGroupFields().filter(i => i.kind === 'kelompok-silang');

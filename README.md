@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-933 pemeriksaan di dua puluh dua suite, menggerakkan Chromium sungguhan terhadap
+993 pemeriksaan di dua puluh tiga suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -290,6 +290,12 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   tanggal akan menyembunyikan persis baris yang Kotak Keputusan ada untuk
   memunculkannya. Volumenya ±200 dokumen setahun. **Tinjau ulang di ±2.000
   dokumen** dan jendelakan seperti `subscribeShifts`.
+- **Foto dan surat lama dimuat SESUDAH form terbuka**, dan menyimpan set yang
+  diubah MENGGANTI set yang tersimpan. Karena itu tombol Tambah Foto / Tambah
+  Surat menunggu sampai yang lama tiba, dan tetap mati kalau gagal tiba
+  (`setPhotoAddState`). Hasil muat dan kompresi yang terlambat dibuang lewat
+  penghitung generasi (`_lvDocsGen`, `_wlPhotosGen`) — tanpa itu, surat
+  pengajuan A bisa mendarat di form pengajuan B.
 - **Lampiran tidak ikut cadangan.** `workLogPhotos` dan `damagePhotos` sudah
   begitu sejak dipisah, dan surat izin mewarisi celah yang sama karena
   menumpang koleksi itu. Record izinnya sendiri ikut lewat `BACKUP_PARTS`.
@@ -308,6 +314,21 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   - **Firewall di `updateUnit` dan `addUnits`** membuang `undefined`, membuang
     `unitGroup`, dan membuang kolom milik kelompok lain. Satu-satunya
     pengecualian: Periksa Data mengosongkan kolom silang (`clearStray`).
+  - **Kelompok yang tidak terbaca** (`hasUnreadableGroup`: terisi tapi bukan
+    nilai yang dikenal, mis. `"Heavy Equip"` dari cadangan yang disunting
+    tangan, atau kelompok dari versi yang lebih baru) dibaca sebagai traktor,
+    tapi **tidak ada yang boleh menulis kolom milik kelompok mana pun** ke unit
+    itu. Form Edit dan edit sebaris menolak, impor CSV menandainya gagal, dan
+    restore GANTI (juga cadangan otomatis) yang membawanya ditolak sebelum
+    menulis apa pun. Periksa Data tidak melaporkannya sebagai "field kelompok
+    lain" — kolom mana yang silang bergantung pada kelompok yang belum
+    diketahui, dan membersihkannya akan menghapus data asli. Jalan keluarnya
+    tombol **Tetapkan kelompok** (`setUnreadableGroups`), satu-satunya penulis
+    `unitGroup` sesudah penciptaan (`updateUnit(…, { setGroup: true })`), dan
+    hanya untuk kelompok yang tidak terbaca.
+  - **CSV yang kelompoknya disimpulkan dari kolomnya** sama mengikatnya dengan
+    kolom `Unit Group`: berkas berkolom Camera AI tidak memperbarui traktor
+    yang kebetulan ber-SN sama, dan sebaliknya (`csvInferredGroup`).
   - **Apa pun yang dulu meng-hardcode Display/GPS/Steering/JDLink sekarang
     bertanya ke kelompok unitnya** (`detectIssues`, `countIssues`, ring
     komponen, tabel Repair, filter). Komponen alat berat yang kosong dihitung

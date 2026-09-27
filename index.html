@@ -1204,6 +1204,8 @@
                     </button>
                     <button class="btn btn-primary btn-sm" id="dataCheckFixBtn" style="display:none"
                             onclick="fixInvisibleCharacters()"></button>
+                    <button class="btn btn-primary btn-sm" id="dataCheckGroupSetBtn" style="display:none"
+                            onclick="setUnreadableGroups()"></button>
                     <button class="btn btn-primary btn-sm" id="dataCheckGroupFixBtn" style="display:none"
                             onclick="fixStrayGroupFields()"></button>
                 </div>
@@ -2221,7 +2223,7 @@
                         <input type="file" id="wlPhotoInput" accept="image/*" multiple style="display:none"
                                onchange="handleWorkLogPhotoChange(event)">
                         <div class="wl-photo-row">
-                            <button type="button" class="btn btn-secondary btn-sm"
+                            <button type="button" class="btn btn-secondary btn-sm" id="wlPhotoAddBtn"
                                     onclick="document.getElementById('wlPhotoInput').click()">
                                 <i class="fas fa-camera"></i> Tambah Foto
                             </button>
@@ -2291,7 +2293,7 @@
                         <input type="file" id="lvDocInput" accept="image/*" multiple style="display:none"
                                onchange="handleLeaveDocChange(event)">
                         <div class="wl-photo-row">
-                            <button type="button" class="btn btn-secondary btn-sm"
+                            <button type="button" class="btn btn-secondary btn-sm" id="lvDocAddBtn"
                                     onclick="document.getElementById('lvDocInput').click()">
                                 <i class="fas fa-camera"></i> Tambah Surat
                             </button>
