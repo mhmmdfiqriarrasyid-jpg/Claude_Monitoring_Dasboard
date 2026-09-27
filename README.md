@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-993 pemeriksaan di dua puluh tiga suite, menggerakkan Chromium sungguhan terhadap
+1.005 pemeriksaan di dua puluh tiga suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -106,7 +106,8 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 `session_test`, `warehouse_test`, `approval_test`, `leader_test`, `recap_test`,
 `photos_test`, `migration_test`, `history_scan_test`, `validation_test`,
 `datacheck_test`, `damagephotos_test`, `mobile_test`, `window_test`,
-`backup_test`, `keyboard_test`, `leave_test`, `unitgroups_test`, `regress`.
+`backup_test`, `keyboard_test`, `leave_test`, `unitgroups_test`,
+`hardening_test`, `regress`.
 
 ---
 
@@ -308,9 +309,10 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
     dibaca `'tractor'` (`unitGroupOf`). Jangan pernah menormalkannya di objek
     `globalData` — `updateUnit` mengirim seluruh objek, jadi normalisasi di
     tempat ikut tertulis oleh suntingan berikutnya.
-  - **Hanya penciptaan yang menulis `unitGroup`**, dan kelompok **tidak bisa
-    diubah** sesudahnya. Unit yang salah kelompok dihapus lalu ditambah ulang.
-    Restore GANTI yang akan mengubah kelompok unit hidup ditolak.
+  - **Hanya penciptaan yang menulis `unitGroup`**, dan kelompok yang terbaca
+    **tidak bisa diubah** sesudahnya. Unit yang salah kelompok dihapus lalu
+    ditambah ulang. Restore GANTI yang akan mengubah kelompok unit hidup ditolak.
+    Satu-satunya pengecualian: kelompok yang **tidak terbaca** (lihat di bawah).
   - **Firewall di `updateUnit` dan `addUnits`** membuang `undefined`, membuang
     `unitGroup`, dan membuang kolom milik kelompok lain. Satu-satunya
     pengecualian: Periksa Data mengosongkan kolom silang (`clearStray`).
@@ -319,8 +321,11 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
     tangan, atau kelompok dari versi yang lebih baru) dibaca sebagai traktor,
     tapi **tidak ada yang boleh menulis kolom milik kelompok mana pun** ke unit
     itu. Form Edit dan edit sebaris menolak, impor CSV menandainya gagal, dan
-    restore GANTI (juga cadangan otomatis) yang membawanya ditolak sebelum
-    menulis apa pun. Periksa Data tidak melaporkannya sebagai "field kelompok
+    restore GANTI dari berkas yang membawanya ditolak sebelum menulis apa
+    pun. Cadangan otomatis tidak ditolak: isinya salinan data perangkat ini
+    sendiri, jadi menolaknya membuat rollback mustahil selama unit seperti itu
+    ada — dan unit yang kembali dipagari persis seperti yang hidup. Kerusakan
+    "set Breakdown" pada komponen unit seperti itu juga ditolak. Periksa Data tidak melaporkannya sebagai "field kelompok
     lain" — kolom mana yang silang bergantung pada kelompok yang belum
     diketahui, dan membersihkannya akan menghapus data asli. Jalan keluarnya
     tombol **Tetapkan kelompok** (`setUnreadableGroups`), satu-satunya penulis

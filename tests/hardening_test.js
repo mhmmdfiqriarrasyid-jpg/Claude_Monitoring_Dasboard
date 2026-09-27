@@ -31,6 +31,7 @@ const { launch, BASE_URL } = require('./_env');
         const defer = () => { let res, rej; const p = new Promise((a, b) => { res = a; rej = b; }); return { p, res, rej }; };
 
         const toasts = [];
+        const realToast = window.showToast;
         window.showToast = (m, k) => { toasts.push(String(m)); };
         let answer = true;
         window.confirm = () => answer;
@@ -113,6 +114,8 @@ const { launch, BASE_URL } = require('./_env');
         // (a) menambah surat SEBELUM yang lama tiba
         editLeave('lvA');
         t('selama surat lama dimuat, tombol Tambah Surat nonaktif', lvAdd().disabled, true);
+        t('dan input berkasnya juga (labelnya tetap bisa membuka pemilih berkas)',
+          document.getElementById('lvDocInput').disabled, true);
         await addFile(handleLeaveDocChange);
         t('dan menambah lewat input tidak masuk', [_lvDocs.length, _lvDocsDirty], [0, false]);
         saveLeave({ preventDefault() {} });
@@ -129,7 +132,7 @@ const { launch, BASE_URL } = require('./_env');
         t('surat A yang terlambat TIDAK muncul di form B', [_lvDocs.length, _lvDocsLoading], [0, true]);
         docFetch.lvB.res([DOC('B1')]); await tick();
         t('surat B sendiri tetap terisi', _lvDocs, [DOC('B1')]);
-        t('sesudah termuat, tombol Tambah Surat aktif lagi', lvAdd().disabled, false);
+        t('sesudah termuat, tombol Tambah Surat aktif lagi', [lvAdd().disabled, document.getElementById('lvDocInput').disabled], [false, false]);
         await addFile(handleLeaveDocChange);
         saveLeave({ preventDefault() {} });
         t('menambah sesudah termuat MENAMBAH, bukan mengganti',
@@ -267,14 +270,84 @@ const { launch, BASE_URL } = require('./_env');
         answer = true;
         t('restore GANTI dengan kelompok tak terbaca ditolak sebelum menulis', [unitWrites.length, globalData.map(u => u.id)], [0, ['u_t1']]);
         t('dan pesannya menyebut nilainya', /"Heavy Equip"/.test(toasts.join('|')), true);
+        // Cadangan otomatis adalah salinan data perangkat ini sendiri. Menolaknya
+        // membuat rollback mustahil selama satu unit seperti itu ada (setiap
+        // entri membawanya) — jadi ia dipulihkan, dan tetap dipagari.
         const realRead = window.readAutoBackups;
         window.readAutoBackups = () => [{ at: 1, units: [TR('u_t9'), ODD()] }];
+        toasts.length = 0;
         restoreAutoBackup(0);
+        t('cadangan otomatis yang membawa unit tak terbaca TETAP bisa dipulihkan', globalData.map(u => u.id), ['u_t9', 'u_x1']);
+        t('dan unit yang kembali tetap dipagari', [hasUnreadableGroup(globalData[1]), updateUnit('u_x1', { gps: 'Breakdown' })], [true, false]);
+        // Rollback melewati "Tetapkan kelompok" juga tidak terkunci.
+        globalData[1] = { ...globalData[1] };
+        updateUnit('u_x1', { unitGroup: 'heavy' }, { setGroup: true });
+        restoreAutoBackup(0);
+        t('rollback ke sebelum kelompoknya ditetapkan tidak ditolak', globalData.find(u => u.id === 'u_x1').unitGroup, 'Heavy Equip');
+        // Tetapi dua kelompok yang TERBACA dan berbeda tetap ditolak, dengan
+        // saran yang berlaku untuk cadangan otomatis.
+        globalData = [HV('u_x1')]; saveToStorage(globalData);
+        window.readAutoBackups = () => [{ at: 1, units: [TR('u_x1')] }];
+        toasts.length = 0;
+        restoreAutoBackup(0);
+        t('konflik kelompok terbaca tetap ditolak', globalData[0].unitGroup, 'heavy');
+        t('dan sarannya tidak menyebut GABUNG', [/GABUNG/.test(toasts.join('|')), /berkas cadangan/.test(toasts.join('|'))], [false, true]);
         window.readAutoBackups = realRead;
-        t('cadangan otomatis juga ditolak', [unitWrites.length, globalData.map(u => u.id)], [0, ['u_t1']]);
         const merged = addUnits([ODD()]);
         t('GABUNG tetap melewati unit itu dengan alasannya', [merged.added, (merged.skippedDetails[0] || {}).reason],
           [0, 'Kelompok "Heavy Equip" tidak dikenal']);
+
+        // Nilai kelompok yang tak terbaca bisa berisi apa saja, dan showToast
+        // merender HTML. Diuji dengan showToast ASLI.
+        const EVILG = '<img src=x onerror="window.__xssG=(window.__xssG||0)+1">';
+        globalData = [TR('u_t1'), HV('u_x2', { unitGroup: EVILG })]; saveToStorage(globalData);
+        window.showToast = realToast;
+        editUnit('u_x2');
+        const evilCell = document.createElement('td');
+        evilCell.dataset.id = 'u_x2'; evilCell.dataset.field = 'gps'; evilCell.textContent = 'Breakdown';
+        saveInlineEdit(evilCell);
+        answer = false;
+        importBackup(new File([JSON.stringify({ version: 4, units: [HV('u_x3', { unitGroup: EVILG })] })], 'e.json'));
+        await tick(300);
+        answer = true;
+        await tick(50);
+        t('toast kelompok tak terbaca tidak menjalankan kode (edit, sebaris, restore)',
+          [window.__xssG, document.querySelectorAll('#toastContainer img').length], [undefined, 0]);
+        t('dan nilainya tetap terbaca sebagai teks',
+          [...document.querySelectorAll('#toastContainer .toast')].filter(el => el.textContent.includes('<img src=x')).length, 3);
+        document.getElementById('toastContainer').innerHTML = '';
+        window.showToast = (m, k) => { toasts.push(String(m)); };
+
+        // Kerusakan "set Breakdown" pada komponen unit tak terbaca.
+        navigateTo('damage');
+        globalData = [TR('u_t1'), ODD()]; saveToStorage(globalData);
+        globalDamages = [];
+        const fillDamage = (u, comp, setBd) => {
+            showAddDamageForm();
+            document.getElementById('dmgUnit').value = damageUnitLabel(u);
+            document.getElementById('dmgType').value = 'Device Precision';
+            renderDamageComponentOptions();
+            document.getElementById('dmgComponent').value = comp;
+            document.getElementById('dmgDescription').value = 'uji';
+            document.getElementById('dmgSetBreakdown').checked = setBd;
+        };
+        toasts.length = 0; unitWrites.length = 0;
+        fillDamage(globalData[1], 'GPS', true);
+        saveDamage({ preventDefault() {} });
+        t('kerusakan komponen + set Breakdown pada unit tak terbaca ditolak sebelum disimpan',
+          [globalDamages.length, unitWrites.length], [0, 0]);
+        t('tanpa mengaku "di-set Breakdown"', toasts.some(x => /di-set Breakdown/.test(x)), false);
+        fillDamage(globalData[1], 'GPS', false);
+        saveDamage({ preventDefault() {} });
+        t('tanpa centang set Breakdown, catatannya tetap bisa disimpan', globalDamages.length, 1);
+        document.getElementById('damageModal')?.classList.remove('open');
+        t('traktor biasa tidak terpengaruh', _applyDamageBreakdown('u_t1', 'Device Precision', 'GPS', 'x'), 'Komponen GPS unit');
+
+        // Migrasi lisensi tidak menyentuh unit tak terbaca.
+        globalData = [HV('u_x1', { unitGroup: 'Heavy Equip', gpsLicense: 'SF-RTK', gpsLicenseEndDate: '2020-01-01' })];
+        unitWrites.length = 0;
+        applyExpiredLicenseDowngrades();
+        t('penurunan lisensi otomatis melewati unit tak terbaca', [unitWrites.length, globalData[0].gpsLicense], [0, 'SF-RTK']);
 
         // =============== 4. CSV BERKOLOM ALAT BERAT MENIMPA TRAKTOR ===============
         globalData = [TR('u_t1'), HV('u_h1')]; saveToStorage(globalData);

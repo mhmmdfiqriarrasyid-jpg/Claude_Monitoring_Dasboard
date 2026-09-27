@@ -83,7 +83,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v111';
+const APP_VERSION = 'v112';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -1340,10 +1340,12 @@ function addUnits(newUnits) {
 }
 
 // The write firewall for unit groups. Drops undefined (Firestore here has no
-// ignoreUndefinedProperties), always drops unitGroup (a group is set once, at
+// ignoreUndefinedProperties), drops unitGroup (a group is set once, at
 // creation), and drops fields owned by the other group — so no path, however
 // it was reached, can write GPS onto an excavator or Camera AI onto a tractor.
-// The single exception is Periksa Data clearing such a stray field to ''.
+// Two exceptions, both Periksa Data: clearing such a stray field to ''
+// (clearStray), and naming the group of a unit whose stored group is
+// unreadable (setGroup). A readable group can never be changed.
 function guardUnitFields(before, fields, opts) {
     const g = unitGroupOf(before);
     const unreadable = hasUnreadableGroup(before);
@@ -3951,22 +3953,35 @@ function closeAutoBackups() {
 // that would change a live unit's group is refused before anything is written:
 // the write is set(merge:true), so the old group would come back alongside
 // fields of the new one.
-function _refuseCrossGroupRestore(units) {
-    // A group this version cannot read would come back as a tractor that is
-    // not one — and GANTI writes every row, so refuse before anything moves.
-    // GABUNG goes through addUnits, which skips such rows and names them.
-    const unreadable = (units || []).filter(hasUnreadableGroup);
+// opts.auto: the rollback ring, which is this device's own earlier state.
+function _refuseCrossGroupRestore(units, opts) {
+    const auto = !!(opts && opts.auto);
+    // A group this version cannot read, coming in from a FILE, would land as a
+    // tractor that is not one — and GANTI writes every row, so refuse before
+    // anything moves. GABUNG goes through addUnits, which skips such rows and
+    // names them. The rollback ring is exempt: every entry is a copy of what
+    // was live, so refusing it would make rollback impossible for as long as
+    // one such unit exists — and a restored one is fenced exactly like a live
+    // one (guardUnitFields, Periksa Data → Tetapkan kelompok).
+    const unreadable = auto ? [] : (units || []).filter(hasUnreadableGroup);
     if (unreadable.length) {
-        const kinds = [...new Set(unreadable.map(u => String(u.unitGroup)))].slice(0, 3).map(v => `"${v}"`).join(', ');
+        // showToast renders HTML; these values come straight from the file.
+        const kinds = [...new Set(unreadable.map(u => String(u.unitGroup)))].slice(0, 3)
+            .map(v => `"${escapeHtml(v)}"`).join(', ');
         showToast(`Pemulihan dibatalkan: ${unreadable.length} unit di cadangan punya kelompok yang tidak dikenal (${kinds}). `
             + `Ubah nilainya di berkas menjadi "tractor" atau "heavy", atau pilih GABUNG — unit itu akan dilewati.`, 'error');
         return true;
     }
+    // Only two READABLE groups can conflict. A side whose group is unreadable
+    // is not a group to protect: restoring over it (or back to it) changes
+    // nothing the firewall does not already fence.
     const live = new Map(globalData.map(u => [u.id, u]));
-    const conflicts = (units || []).filter(u => u && u.id && live.has(u.id) && unitGroupOf(live.get(u.id)) !== unitGroupOf(u));
+    const conflicts = (units || []).filter(u => u && u.id && live.has(u.id)
+        && !hasUnreadableGroup(u) && !hasUnreadableGroup(live.get(u.id))
+        && unitGroupOf(live.get(u.id)) !== unitGroupOf(u));
     if (!conflicts.length) return false;
     showToast(`Pemulihan dibatalkan: ${conflicts.length} unit di cadangan punya kelompok berbeda dengan data sekarang (id sama). `
-        + 'Hapus unit itu dulu, atau pilih GABUNG.', 'error');
+        + (auto ? 'Hapus unit itu dulu, atau pulihkan dari berkas cadangan.' : 'Hapus unit itu dulu, atau pilih GABUNG.'), 'error');
     return true;
 }
 
@@ -3977,7 +3992,7 @@ function restoreAutoBackup(index) {
     const entry = ring[index];
     if (!entry || !Array.isArray(entry.units)) { showToast('Cadangan itu tidak terbaca', 'error'); return; }
 
-    if (_refuseCrossGroupRestore(entry.units)) return;
+    if (_refuseCrossGroupRestore(entry.units, { auto: true })) return;
     const when = entry.at ? new Date(entry.at).toLocaleString('id-ID') : 'waktu tidak diketahui';
     if (!confirm(`Kembalikan ${entry.units.length} unit ke keadaan ${when}?\n\n`
         + `${globalData.length} unit yang ada sekarang akan diganti. Data lain (kerusakan, lisensi, tim, gudang) tidak ikut berubah.`)) return;
@@ -4262,7 +4277,7 @@ function saveInlineEdit(el) {
     if (changed && hasUnreadableGroup(unit)
         && (TRACTOR_ONLY_FIELDS.includes(field) || HEAVY_ONLY_FIELDS.includes(field))) {
         el.textContent = unit[field] || '';
-        showToast(`Kelompok unit ini ("${unit.unitGroup}") tidak dikenal — tetapkan dulu lewat Periksa Data`, 'warning');
+        showToast(`Kelompok unit ini ("${escapeHtml(unit.unitGroup)}") tidak dikenal — tetapkan dulu lewat Periksa Data`, 'warning');
         return;
     }
     if (changed) {
@@ -4582,7 +4597,9 @@ function editUnit(id) {
     // The tractor form would read its absent components as 'Breakdown' and
     // write them back on Save — the damage the unit's group exists to stop.
     if (hasUnreadableGroup(unit)) {
-        showToast(`Kelompok unit ini ("${unit.unitGroup}") tidak dikenal. Tetapkan dulu lewat Kotak Keputusan → Periksa Data.`, 'warning');
+        // showToast renders HTML, and this value is by definition one nobody
+        // vetted — escape it.
+        showToast(`Kelompok unit ini ("${escapeHtml(unit.unitGroup)}") tidak dikenal. Tetapkan dulu lewat Kotak Keputusan → Periksa Data.`, 'warning');
         return;
     }
 
@@ -4868,7 +4885,9 @@ function applyExpiredLicenseDowngrades() {
     if (!hasAccess('editUnits', 'edit')) return 0;
     let n = 0;
     globalData.slice().forEach(u => {
-        if (isHeavy(u)) return;   // SF/G5 licences are John Deere only
+        // SF/G5 licences are John Deere only — and a unit of unreadable group
+        // is not known to be one.
+        if (isHeavy(u) || hasUnreadableGroup(u)) return;
         const fields = {};
         if (u.gpsLicense === 'SF-RTK' &&
             getExpiryStatus(getLicenseEndDate(u, 'gps')).kind === 'expired') {
@@ -6126,6 +6145,17 @@ function saveDamage(event) {
     }
 
     const type = document.getElementById('dmgType').value;
+    // Setting a COMPONENT to Breakdown needs to know which group's components
+    // the unit has. For a unit whose group is unreadable nobody knows, so
+    // refuse before the record is saved rather than save it half-linked.
+    if (!id && hasUnreadableGroup(unit) && document.getElementById('dmgSetBreakdown')?.checked) {
+        const f = damageTargetField(type, comp, unit);
+        if (f && f !== DAMAGE_DRIVES_NOTHING && (TRACTOR_ONLY_FIELDS.includes(f) || HEAVY_ONLY_FIELDS.includes(f))) {
+            showToast(`Kelompok unit ini ("${escapeHtml(unit.unitGroup)}") tidak dikenal — tetapkan dulu lewat Periksa Data, `
+                + 'atau simpan tanpa mencentang "set Breakdown"', 'warning');
+            return;
+        }
+    }
     const data = {
         date: document.getElementById('dmgDate').value,
         unitId: unit.id,
@@ -6241,13 +6271,14 @@ function damageTargetField(damageType, component, unit) {
 function _applyDamageBreakdown(unitId, damageType, component, description) {
     const compField = damageTargetField(damageType, component, globalData.find(u => u.id === unitId));
     if (compField === DAMAGE_DRIVES_NOTHING) return '';
+    // Report only what was written: updateUnit refuses a component field on a
+    // unit whose group is unreadable, and saying "di-set Breakdown" anyway
+    // would leave an open damage that shows nowhere.
     if (compField) {
-        updateUnit(unitId, { [compField]: 'Breakdown' });
-        return `Komponen ${component} unit`;
+        return updateUnit(unitId, { [compField]: 'Breakdown' }) ? `Komponen ${component} unit` : '';
     }
     const reason = `${damageType}${component ? ' / ' + component : ''}: ${description || '-'}`;
-    updateUnit(unitId, { status: 'Breakdown', breakdownReason: reason });
-    return 'Status unit';
+    return updateUnit(unitId, { status: 'Breakdown', breakdownReason: reason }) ? 'Status unit' : '';
 }
 
 // Is there ANOTHER still-open damage record on the same unit that drives the
@@ -7438,8 +7469,9 @@ function applyLicenseDatesIfNeeded() {
 
     globalData.forEach(unit => {
         // For heavy equipment a missing licence means "not applicable", not
-        // "not yet filled in". Fill-if-empty migrations must never reach it.
-        if (isHeavy(unit)) return;
+        // "not yet filled in". Fill-if-empty migrations must never reach it,
+        // nor a unit whose group is unreadable (not known to be a tractor).
+        if (isHeavy(unit) || hasUnreadableGroup(unit)) return;
         const key = normSn(unit.sn);
         if (!key) return;
         const hit = normalizedMap[key];
@@ -10155,6 +10187,9 @@ let _wlPhotosGen = 0;          // bumped each time the form opens or closes
 // The add button therefore waits for them, and stays shut if they never come.
 // Removing needs no guard: until they arrive there is nothing to remove.
 function setPhotoAddState(btnId, loading, failed, what) {
+    // The input too: its <label> opens the picker even with the button off.
+    const input = document.getElementById(btnId === 'lvDocAddBtn' ? 'lvDocInput' : 'wlPhotoInput');
+    if (input) input.disabled = !!(loading || failed);
     const btn = document.getElementById(btnId);
     if (!btn) return;
     btn.disabled = !!(loading || failed);
@@ -12930,9 +12965,6 @@ function fixInvisibleCharacters() {
     renderDataCheck();
 }
 
-// The second safe fix: clearing values a unit's own group never reads. Goes
-// through updateUnit with clearStray, the one case the write firewall lets a
-// field of the other group through — and only as ''.
 // Asks, unit by unit, which group a unit of unknown group belongs to, and
 // writes only the answer. Its fields stay as they are: once the group is known,
 // any that belong to the other group show up as "field kelompok lain" and are
@@ -12965,6 +12997,9 @@ function setUnreadableGroups() {
     renderDataCheck();
 }
 
+// The second safe fix: clearing values a unit's own group never reads. Goes
+// through updateUnit with clearStray, the one case the write firewall lets a
+// field of the other group through — and only as ''.
 function fixStrayGroupFields() {
     if (!requireEdit('editUnits')) return;
     const found = dcUnitGroupFields().filter(i => i.kind === 'kelompok-silang');
