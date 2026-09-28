@@ -109,7 +109,14 @@ const SETUP = `(() => {
         ['text:kpiTotal','text:kpiGood','text:kpiBreakdown','text:kpiIssue','text:kpiIssuePct','text:kpiHealth',
          'text:dashNarrative','html:componentGrid','html:issueSummary','html:repairBody','html:licenseAlertsCards',
          'html:detailBody','html:detailHead','html:componentFilter','html:issueFilter','alertList','decisionLicense']
-            .forEach(k => t(`dengan 2 alat berat, cakupan Pertanian tetap sama: ${k}`, out[k], golden[k]));
+            .forEach(k => {
+                // v114: dengan dua kelompok, tautan lisensi menyebut tab
+                // Pertanian — tautan polos membuka tab terakhir, yang bisa
+                // saja Alat Berat. Tanpa alat berat (bagian 1) tetap 'editUnits'.
+                const want = k === 'decisionLicense'
+                    ? golden[k].map(g => ({ ...g, goto: 'editUnits:tractor' })) : golden[k];
+                t(`dengan 2 alat berat, cakupan Pertanian tetap sama: ${k}`, out[k], want);
+            });
         const extra = await page.evaluate(() => ({
             bar: document.getElementById('dashGroupBar').style.display,
             mtbf: JSON.stringify(computeDowntimeStats(scopeDashUnits()))
@@ -432,7 +439,7 @@ const SETUP = `(() => {
         // temuan: kelompoknya yang harus ditetapkan dulu (hardening_test).
         t('Periksa Data menemukan field silang dan kelompok tak dikenal', R.periksa,
           ['kelompok-silang', 'kelompok-tak-dikenal']);
-        t('temuan membuka tab kelompok unitnya', R.periksaTarget, ['editUnits:heavy', 'editUnits']);
+        t('temuan membuka tab kelompok unitnya', R.periksaTarget, ['editUnits:heavy', 'editUnits:tractor']);
         t('perbaikan otomatis mengosongkan field silang', R.afterFix, '');
         t('perbaikan otomatis TIDAK menyentuh unit berkelompok tak dikenal', R.afterFixOdd, ['Good', 'Excavator', false]);
         t('data bersih: nol temuan kelompok', R.periksaClean, 0);

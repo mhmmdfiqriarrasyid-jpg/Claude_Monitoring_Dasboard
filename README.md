@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.005 pemeriksaan di dua puluh tiga suite, menggerakkan Chromium sungguhan terhadap
+1.032 pemeriksaan di dua puluh empat suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -107,7 +107,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 `photos_test`, `migration_test`, `history_scan_test`, `validation_test`,
 `datacheck_test`, `damagephotos_test`, `mobile_test`, `window_test`,
 `backup_test`, `keyboard_test`, `leave_test`, `unitgroups_test`,
-`hardening_test`, `regress`.
+`hardening_test`, `followup_test`, `regress`.
 
 ---
 
@@ -297,10 +297,13 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   (`setPhotoAddState`). Hasil muat dan kompresi yang terlambat dibuang lewat
   penghitung generasi (`_lvDocsGen`, `_wlPhotosGen`) — tanpa itu, surat
   pengajuan A bisa mendarat di form pengajuan B.
-- **Lampiran tidak ikut cadangan.** `workLogPhotos` dan `damagePhotos` sudah
-  begitu sejak dipisah, dan surat izin mewarisi celah yang sama karena
-  menumpang koleksi itu. Record izinnya sendiri ikut lewat `BACKUP_PARTS`.
-  Perbaiki untuk ketiganya sekaligus, jangan satu-satu.
+- **Foto kerusakan, foto laporan harian, dan surat izin ikut cadangan kalau
+  diminta** (`BACKUP_PHOTO_KINDS`). Ketiganya satu dokumen per catatan dan harus
+  diunduh satu per satu, jadi Export menanyakannya dulu; kalau ditolak, berkas
+  dan toast-nya mencatatnya di `omitted`. Restore menulisnya kembali hanya untuk
+  catatan yang ikut dipulihkan, dan restore GANTI yang menghapus catatan ikut
+  menghapus dokumen fotonya (`_dropPhotoDoc`) — dokumen itu tidak pernah
+  didaftar, jadi yang tertinggal tidak akan pernah ditemukan lagi.
 - **Unit terbagi dua kelompok: Agricultural Equipment dan Heavy Equipment.**
   Satu koleksi `units`, satu kolom `unitGroup` (`'tractor'` | `'heavy'`).
   Registrinya `UNIT_GROUPS` (`script.js`): label, komponen yang dipantau, dan

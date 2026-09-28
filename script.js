@@ -83,7 +83,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v113';
+const APP_VERSION = 'v114';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -416,7 +416,19 @@ function effectiveDashGroup() {
     return dashGroupPref;
 }
 function scopeDashUnits(list) { return unitsOfGroup(list || globalData, effectiveDashGroup()); }
-function unitEditTarget(u) { return isHeavy(u) ? 'editUnits:heavy' : 'editUnits'; }
+// Names the tab explicitly once both groups exist: a bare 'editUnits' lands on
+// whichever tab was open last, which may not hold the unit at all. With no
+// heavy units there is one tab, and the link stays exactly what it was.
+function unitEditTarget(u) {
+    if (isHeavy(u)) return 'editUnits:heavy';
+    return hasHeavyUnits() ? 'editUnits:tractor' : 'editUnits';
+}
+// Same for the dashboard: the scope that actually shows these units.
+function dashTargetFor(units) {
+    if (!hasHeavyUnits() || !hasTractorUnits()) return 'dashboard';
+    const heavy = units.some(isHeavy), tractor = units.some(u => !isHeavy(u));
+    return heavy && tractor ? 'dashboard:all' : heavy ? 'dashboard:heavy' : 'dashboard:tractor';
+}
 
 // ---- Chart.js Global Config (HD rendering on all screens) ----
 // Chart.js is loaded from a CDN, which can be blocked or simply unreachable in
@@ -2153,7 +2165,8 @@ const BACKUP_PARTS = [
     { key: 'damages', label: 'Kerusakan', area: 'damage',
       read: () => globalDamages, write: l => { globalDamages = l; },
       saveLocal: () => saveDamages(), bulk: 'saveDamages',
-      deleteOne: id => cloudDeleteDamage(id), resync: () => resyncDamages() },
+      deleteOne: (id, r) => { cloudDeleteDamage(id); if (damageHasPhoto(r)) _dropPhotoDoc('deleteDamagePhoto', id); },
+      resync: () => resyncDamages() },
 
     { key: 'licenseStock', label: 'Stok Lisensi', area: 'licenseStock',
       read: () => globalLicenseStock, write: l => { globalLicenseStock = l; },
@@ -2180,11 +2193,13 @@ const BACKUP_PARTS = [
 
     { key: 'workLogs', label: 'Laporan Harian', area: 'teamLog',
       read: () => workLogs, write: l => { workLogs = l; },
-      bulk: 'saveWorkLogs', deleteOne: id => window.cloud.deleteWorkLog(id) },
+      bulk: 'saveWorkLogs',
+      deleteOne: (id, r) => { window.cloud.deleteWorkLog(id); if (workLogPhotoCount(r) > 0) _dropPhotoDoc('deleteWorkLogPhotos', id); } },
 
     { key: 'leaveRequests', label: 'Izin / Sakit', area: 'teamLog',
       read: () => leaveRequests, write: l => { leaveRequests = l; },
-      bulk: 'saveLeaveRequests', deleteOne: id => window.cloud.deleteLeaveRequest(id) },
+      bulk: 'saveLeaveRequests',
+      deleteOne: (id, r) => { window.cloud.deleteLeaveRequest(id); if (leaveDocCount(r) > 0) _dropPhotoDoc('deleteTeamDocs', id); } },
 
     { key: 'devices', label: 'Perangkat Gudang', area: 'warehouse',
       read: () => warehouseDevices, write: l => { warehouseDevices = l; },
@@ -2259,6 +2274,46 @@ async function exportBackup() {
         }
     } finally {
         showLoading(false);
+    }
+
+    // ---- Photos and letters ----
+    const photoJobs = [];
+    BACKUP_PHOTO_KINDS.forEach(k => {
+        (Array.isArray(payload[k.part]) ? payload[k.part] : []).forEach(r => {
+            if (r && r.id && k.has(r)) photoJobs.push({ k, id: r.id });
+        });
+    });
+    const kindsWith = BACKUP_PHOTO_KINDS.filter(k => photoJobs.some(j => j.k === k));
+    const cloudCanRead = window.cloud?.isReady && kindsWith.every(k => typeof window.cloud[k.get] === 'function');
+    const includePhotos = photoJobs.length > 0 && cloudCanRead
+        && confirm(`Sertakan ${photoJobs.length} dokumen foto & surat (${kindsWith.map(k => k.label.toLowerCase()).join(', ')})?\n\n`
+            + 'Tanpa ini, cadangan hanya menyimpan catatannya — fotonya tidak bisa dipulihkan dari berkas ini. '
+            + 'Dengan ini, berkasnya bisa jauh lebih besar dan butuh sinyal untuk mengunduhnya.');
+    if (includePhotos) {
+        showLoading(true);
+        const failed = new Map();
+        try {
+            kindsWith.forEach(k => { payload[k.key] = {}; });
+            await _mapLimit(photoJobs, 4, async ({ k, id }) => {
+                try {
+                    const v = await window.cloud[k.get](id);
+                    if (k.present(v)) payload[k.key][id] = v;
+                } catch (err) {
+                    console.warn(`[backup] ${k.get}(${id}) gagal:`, err);
+                    failed.set(k, (failed.get(k) || 0) + 1);
+                }
+            });
+        } finally {
+            showLoading(false);
+        }
+        kindsWith.forEach(k => {
+            const n = Object.keys(payload[k.key]).length;
+            included.push(`${n} ${k.label.toLowerCase()}`);
+            if (failed.get(k)) payload.omitted.push({ key: k.key, label: k.label, why: `${failed.get(k)} gagal diunduh` });
+        });
+    } else {
+        kindsWith.forEach(k => payload.omitted.push({ key: k.key, label: k.label,
+            why: cloudCanRead ? 'tidak disertakan' : 'hanya bisa diunduh saat online' }));
     }
 
     if (includeFiles) {
@@ -2352,7 +2407,44 @@ function _restoreCollection(items, current, merge) {
 function _cloudDeleteRemoved(previous, kept, deleteOne) {
     if (suppressCloudWrites || !window.cloud?.isReady) return;
     const keptIds = new Set(kept.map(r => r.id));
-    previous.forEach(r => { if (r.id && !keptIds.has(r.id)) deleteOne(r.id); });
+    previous.forEach(r => { if (r.id && !keptIds.has(r.id)) deleteOne(r.id, r); });
+}
+
+// A record's photo or letters live in a document of their own, keyed by the
+// record's id. Deleting only the record left that document behind for good —
+// nothing lists those collections, so nothing would ever find it again.
+function _dropPhotoDoc(fnName, id) {
+    const fn = window.cloud && window.cloud[fnName];
+    if (typeof fn !== 'function') return;
+    Promise.resolve(fn.call(window.cloud, id)).catch(err =>
+        console.warn(`[restore] ${fnName}(${id}) gagal:`, err));
+}
+
+// Photos and letters, one document per record, fetched one at a time — which
+// is why they are optional in a backup and the file says so when they are not
+// in it. 'has' is true only for a record whose image lives OUTSIDE the record
+// (an inline one already travels with the record itself).
+const BACKUP_PHOTO_KINDS = [
+    { key: 'damagePhotos', label: 'Foto kerusakan', part: 'damages', area: 'damage',
+      has: r => !r.photo && !!r.hasPhoto, get: 'getDamagePhoto', save: 'saveDamagePhoto',
+      present: v => typeof v === 'string' && v.length > 0, cache: () => _dmgPhotoCache },
+    { key: 'workLogPhotos', label: 'Foto laporan harian', part: 'workLogs', area: 'teamLog',
+      has: r => !(Array.isArray(r.photos) && r.photos.length) && Number(r.photoCount) > 0,
+      get: 'getWorkLogPhotos', save: 'saveWorkLogPhotos',
+      present: v => Array.isArray(v) && v.length > 0, cache: () => _wlPhotoCache },
+    { key: 'leaveDocs', label: 'Surat izin / sakit', part: 'leaveRequests', area: 'teamLog',
+      has: r => leaveDocCount(r) > 0, get: 'getTeamDocs', save: 'saveTeamDocs',
+      present: v => Array.isArray(v) && v.length > 0, cache: () => _leaveDocCache }
+];
+
+// Runs fn over items, at most n at a time. Photos are fetched one document per
+// record; firing hundreds of getDoc calls at once only makes them all slow.
+async function _mapLimit(items, n, fn) {
+    const out = new Array(items.length);
+    let next = 0;
+    const worker = async () => { while (next < items.length) { const i = next++; out[i] = await fn(items[i], i); } };
+    await Promise.all(Array.from({ length: Math.min(n, items.length) }, worker));
+    return out;
 }
 
 // A restore replaces FOUR collections at once, so it needs edit rights on all
@@ -2464,6 +2556,38 @@ function importBackup(file) {
                     }));
                 }
                 report.push({ label: part.label, count: rows.length, note: merge ? 'digabung' : 'diganti' });
+            }
+            // Photos and letters, for the records this restore actually wrote.
+            for (const k of BACKUP_PHOTO_KINDS) {
+                const rows = data[k.key];
+                const partLabel = (BACKUP_PARTS.find(p => p.key === k.part) || {}).label;
+                const partDone = report.some(r => r.label === partLabel && (r.note === 'digabung' || r.note === 'diganti'));
+                const recs = Array.isArray(data[k.part]) ? data[k.part] : [];
+                if (!rows || typeof rows !== 'object') {
+                    // Only worth a line when the file's records expected one.
+                    if (partDone && recs.some(r => r && k.has(r))) {
+                        report.push({ label: k.label, count: '—', note: 'tidak ada di berkas ini — catatannya ada, fotonya tidak' });
+                    }
+                    continue;
+                }
+                const ids = Object.keys(rows).filter(id => k.present(rows[id]) && recs.some(r => r && r.id === id));
+                if (!partDone) {
+                    report.push({ label: k.label, count: ids.length, note: 'dilewati — catatannya tidak dipulihkan' });
+                    continue;
+                }
+                const save = window.cloud && window.cloud[k.save];
+                if (window.cloud?.isReady && typeof save !== 'function') {
+                    report.push({ label: k.label, count: ids.length, note: 'dilewati — versi lama masih aktif, muat ulang halaman' });
+                    continue;
+                }
+                ids.forEach(id => k.cache().set(id, rows[id]));
+                let failedN = 0;
+                if (window.cloud?.isReady && !suppressCloudWrites) {
+                    await _mapLimit(ids, 4, id => Promise.resolve(save.call(window.cloud, id, rows[id]))
+                        .catch(err => { failedN++; console.warn(`[restore] ${k.save}(${id}) gagal:`, err); }));
+                }
+                report.push({ label: k.label, count: ids.length,
+                    note: failedN ? `${failedN} gagal dikirim` : (merge ? 'digabung' : 'diganti') });
             }
             showRestoreReport(report, data.version || 0, merge);
 
@@ -9423,7 +9547,12 @@ function switchTeamTab(tab) {
 function renderTeamView() {
     const canTab = key => {
         const t = TEAM_TABS[key];
-        return !!t && hasAccess(t.area, 'view');
+        if (!t) return false;
+        // An approver may hold teamLogApprove WITHOUT teamLog — the rules
+        // support exactly that split. Without this the inbox sent them to
+        // approve reports and requests on a tab they could not open.
+        if (t.area === 'teamLog' && hasAccess('teamLogApprove', 'edit')) return true;
+        return hasAccess(t.area, 'view');
     };
     const canMembers = hasAccess('teamMembers', 'view');
     const anyTab = Object.keys(TEAM_TABS).some(canTab);
@@ -9566,8 +9695,10 @@ function renderShiftGrid() {
 
     // Per-day duty counts for a set of members; 'libur' is time off, not duty.
     const dutyCells = (list, extraClass) => dates.map(d => {
+        // Someone on APPROVED leave is not on duty, whatever the schedule says
+        // — the same rule weekStats().onDuty already follows.
         const counts = SHIFT_TYPES.filter(s => s.key !== 'libur')
-            .map(s => ({ s, n: list.filter(m => shiftFor(m.id, d) === s.key).length }));
+            .map(s => ({ s, n: list.filter(m => shiftFor(m.id, d) === s.key && !leaveOn(m.id, d)).length }));
         const working = counts.reduce((a, c) => a + c.n, 0);
         const detail = counts.map(c => `${c.s.label} ${c.n}`).join(' · ');
         return `<td class="${extraClass}${d === today ? ' is-today' : ''}" title="${escapeHtml(detail)}">
@@ -12108,7 +12239,8 @@ function decisionGroups() {
                 const p = line.split(' | ');
                 return { text: `${p[1] || '-'} · ${p[4] || '-'}`, sub: `${p[6] || ''} — ${p[7] || ''}` };
             }),
-            goto: 'editUnits'
+            // Licences are agricultural-only.
+            goto: hasHeavyUnits() ? 'editUnits:tractor' : 'editUnits'
         });
 
         // ---- Unit breakdown terlalu lama ----
@@ -12125,7 +12257,7 @@ function decisionGroups() {
             })),
             // With a heavy unit in the list, open the dashboard on "Semua" so
             // the unit is actually on screen when the link lands.
-            goto: stuck.some(isHeavy) ? 'dashboard:all' : 'dashboard'
+            goto: dashTargetFor(stuck)
         });
     }
 
