@@ -417,7 +417,7 @@ const SETUP = `(() => {
           R.heavyFilterOpts, ['Camera AI', 'Telematic Box', 'Switch Limiter', 'Rotary Lamp']);
         t('WN4: cakupan bertahan melewati snapshot', R.scopeAfterSnapshot, true);
         t('WN4: cakupan bertahan melewati reset filter', R.scopeAfterClear, true);
-        t('cakupan Semua menyebut isinya', R.captionAll, 'Cakupan: semua unit (2 Pertanian, 1 Alat Berat)');
+        t('cakupan Semua menyebut isinya', R.captionAll, 'Cakupan: semua unit (2 Agricultural Equipment, 1 Heavy Equipment)');
         t('tabel cakupan Semua: 10 kolom', R.allHead, 10);
 
         t('UI1: menyentuh sel kosong alat berat tidak menulis apa pun', R.inlineNoWrite, [0, 0, true]);

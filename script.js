@@ -83,7 +83,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v112';
+const APP_VERSION = 'v113';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -2885,11 +2885,14 @@ function syncDashGroupUI() {
     document.querySelectorAll('.dash-group-tab').forEach(btn => {
         const g = btn.dataset.group;
         const n = g === 'all' ? globalData.length : unitsOfGroup(globalData, g).length;
-        const label = g === 'all' ? 'Semua' : groupDef(g).shortLabel;
+        // Same names and icons as the Edit Units tabs, so the two pages read
+        // as one set of groups.
+        const label = g === 'all' ? 'Semua' : groupDef(g).label;
+        const icon = g === 'all' ? 'fa-layer-group' : groupDef(g).icon;
         btn.style.display = '';
         btn.classList.toggle('active', g === scope);
         btn.setAttribute('aria-selected', g === scope ? 'true' : 'false');
-        btn.innerHTML = `${escapeHtml(label)} <span class="team-tab__count">${n}</span>`;
+        btn.innerHTML = `<i class="fas ${icon}"></i> ${escapeHtml(label)} <span class="team-tab__count">${n}</span>`;
     });
     const cap = document.getElementById('dashScopeCaption');
     if (cap) {
@@ -2897,7 +2900,7 @@ function syncDashGroupUI() {
         if (both) {
             const nH = unitsOfGroup(globalData, 'heavy').length;
             cap.textContent = scope === 'all'
-                ? `Cakupan: semua unit (${globalData.length - nH} ${UNIT_GROUPS.tractor.shortLabel}, ${nH} ${UNIT_GROUPS.heavy.shortLabel})`
+                ? `Cakupan: semua unit (${globalData.length - nH} ${UNIT_GROUPS.tractor.label}, ${nH} ${UNIT_GROUPS.heavy.label})`
                 : `Cakupan: ${groupDef(scope).label}`;
         }
     }
