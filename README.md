@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.068 pemeriksaan di dua puluh lima suite, menggerakkan Chromium sungguhan terhadap
+1.084 pemeriksaan di dua puluh lima suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -315,6 +315,18 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   (`distributionTarget`), jadi unit yang sudah turun ke SF-1 terbaca sesuai
   dan tidak dipantulkan kembali ke SF-RTK. Distribusi tanpa tanggal dilewati —
   targetnya akan jadi "hari ini + 1 tahun", berubah setiap hari.
+  - **Yang masuk langsung tersinkron.** Form Distribusi dan Import CSV
+    menerapkan distribusinya ke unit saat itu juga, dengan aturan yang sama
+    (`update` ditulis, `newer` tidak). Impor hanya menulis unit yang
+    diputuskan oleh baris impornya — baris lama yang sudah tidak sinkron
+    sebelumnya dibiarkan untuk pratinjau Sync. Membetulkan tanggal distribusi
+    yang MENENTUKAN lisensi unit boleh memundurkannya (`force`); distribusi
+    lain tidak. Tidak ada sinkron otomatis di latar belakang: itu akan jalan
+    di setiap perangkat, termasuk yang datanya basi.
+  - **Kolom Status Unit** di Riwayat Stok Lisensi: Tersinkron, Belum, Unit
+    lebih baru, Digantikan (distribusi lama yang sudah diganti yang lebih
+    baru), Unit tidak ada, Bukan Pertanian, Tanggal tidak valid
+    (`licenseSyncPlan().recStatus`).
 - **Unit terbagi dua kelompok: Agricultural Equipment dan Heavy Equipment.**
   Satu koleksi `units`, satu kolom `unitGroup` (`'tractor'` | `'heavy'`).
   Registrinya `UNIT_GROUPS` (`script.js`): label, komponen yang dipantau, dan

@@ -129,7 +129,7 @@ const { launch, BASE_URL } = require('./_env');
         t('unit hilang / alat berat / kelompok tak terbaca / tanpa tanggal: dilewati',
           [pl.rows.length, pl.skipped], [0, { noUnit: 1, notTractor: 2, noDate: 1 }]);
         openPreview();
-        t('dan pesannya menyebut alasannya', /1 unitnya tidak ditemukan, 1 tanpa tanggal, 2 ke unit non-Pertanian/.test(toasts.join('|')), true);
+        t('dan pesannya menyebut alasannya', /1 unitnya tidak ditemukan, 1 tanggalnya tidak valid, 2 ke unit non-Pertanian/.test(toasts.join('|')), true);
 
         // =============== 5. FORM DISTRIBUSI (satu catatan) ===============
         seed([U('a', { gpsLicense: 'SF-RTK', gpsLicenseStartDate: '2026-09-01', gpsLicenseEndDate: '2027-09-01' })], []);
@@ -158,6 +158,82 @@ const { launch, BASE_URL } = require('./_env');
         window.logEvent = realLog;
         t('riwayat hanya berisi unit yang benar-benar berubah',
           hist.sort(), ['c:gpsLicense', 'c:gpsLicenseEndDate', 'c:gpsLicenseStartDate']);
+
+        // =============== 8. KOLOM STATUS UNIT ===============
+        seed([U('ok', { gpsLicense: 'SF-RTK', gpsLicenseStartDate: '2026-09-01', gpsLicenseEndDate: '2027-09-01' }),
+              U('todo'), U('renew', { gpsLicense: 'SF-RTK', gpsLicenseStartDate: '2026-09-20', gpsLicenseEndDate: '2027-09-20' }),
+              U('h', { unitGroup: 'heavy' })],
+             [OUT('ok', 'SF-1', '2026-01-01', { id: 'OLD' }), OUT('ok', 'SF-RTK', '2026-09-01', { id: 'OK' }),
+              OUT('todo', 'SF-RTK', '2026-09-15', { id: 'TODO' }), OUT('renew', 'SF-RTK', '2026-03-01', { id: 'NEWER' }),
+              OUT('x', 'SF-RTK', '2026-09-01', { id: 'GONE', sn: 'SNnope' }), OUT('h', 'SF-RTK', '2026-09-01', { id: 'HV' }),
+              OUT('todo', 'G5 Advance', '15/09/2026', { id: 'BADDATE' }),
+              { id: 'IN1', txnType: 'IN', licenseType: 'SF-RTK', qty: 5, date: '2026-01-01' }]);
+        renderLicenseStockTable();
+        const statusOf = id => {
+            const tr = [...document.querySelectorAll('#licenseBody tr')].find(x => x.querySelector('.license-check')?.dataset.id === id);
+            const cell = tr && tr.querySelector('td[data-label="Status Unit"]');
+            return cell ? cell.textContent.trim() : '(tidak ada)';
+        };
+        t('kolom Status Unit ada di tabel', document.querySelectorAll('#licenseTable thead th').length, 11);
+        t('status tiap jenis baris',
+          ['OK', 'OLD', 'TODO', 'NEWER', 'GONE', 'HV', 'BADDATE', 'IN1'].map(statusOf),
+          ['Tersinkron', 'Digantikan', 'Belum', 'Unit lebih baru', 'Unit tidak ada', 'Bukan Pertanian', 'Tanggal tidak valid', '—']);
+        t('tooltip "Digantikan" menyebut distribusi penggantinya',
+          /2026-09-01/.test(([...document.querySelectorAll('#licenseBody .lic-status--muted')].find(x => /Digantikan/.test(x.textContent)) || {}).title), true);
+
+        // =============== 9. MASUK LEWAT FORM = LANGSUNG TERSINKRON ===============
+        const fillForm = (unit, type, date, editId) => {
+            if (editId) editLicenseStock(editId); else showAddLicenseForm('OUT');
+            document.getElementById('licTxnType').value = 'OUT'; onLicenseTxnChange();
+            document.getElementById('licType').value = type;
+            document.getElementById('licDate').value = date;
+            document.getElementById('licQty').value = '1';
+            populateLicenseUnitList(damageUnitLabel(unit));
+            saveLicenseStock({ preventDefault() {} });
+        };
+        seed([U('n')], [{ id: 'IN1', txnType: 'IN', licenseType: 'SF-RTK', qty: 5, date: '2026-01-01' }]);
+        fillForm(globalData[0], 'SF-RTK', '2026-09-29');
+        const newId = globalLicenseStock.find(r => r.txnType === 'OUT').id;
+        t('distribusi baru lewat form: unit langsung diperbarui', [globalData[0].gpsLicense, globalData[0].gpsLicenseEndDate], ['SF-RTK', '2027-09-29']);
+        t('dan kolomnya langsung "Tersinkron"', statusOf(newId), 'Tersinkron');
+        t('tombol Sync tanpa angka', document.getElementById('licSyncCount').hidden, true);
+
+        // Membetulkan tanggal distribusi yang MENENTUKAN lisensi unit: boleh mundur.
+        fillForm(globalData[0], 'SF-RTK', '2025-09-29', newId);
+        t('salah ketik tahun dibetulkan: lisensi unit ikut mundur', globalData[0].gpsLicenseStartDate, '2025-09-29');
+        t('dan tetap "Tersinkron"', statusOf(newId), 'Tersinkron');
+        // Tapi distribusi yang TIDAK menentukan lisensi unit tetap tidak boleh
+        // memundurkannya.
+        seed([U('r', { gpsLicense: 'SF-RTK', gpsLicenseStartDate: '2026-09-20', gpsLicenseEndDate: '2027-09-20' })],
+             [OUT('r', 'SF-RTK', '2026-03-01', { id: 'OLDER' })]);
+        fillForm(globalData[0], 'SF-RTK', '2026-02-01', 'OLDER');
+        t('edit distribusi lama tidak memundurkan unit yang diperpanjang', globalData[0].gpsLicenseEndDate, '2027-09-20');
+        // Dipindah ke unit lain: unit lama diberi tahu, tidak ditebak.
+        seed([U('p'), U('q')], [{ id: 'IN1', txnType: 'IN', licenseType: 'SF-RTK', qty: 5, date: '2026-01-01' }]);
+        fillForm(globalData[0], 'SF-RTK', '2026-09-10');
+        const movId = globalLicenseStock.find(r => r.txnType === 'OUT').id;
+        toasts.length = 0;
+        fillForm(globalData[1], 'SF-RTK', '2026-09-10', movId);
+        t('dipindah ke unit lain: unit baru mendapat lisensinya', globalData[1].gpsLicense, 'SF-RTK');
+        t('unit lama tidak diubah diam-diam', globalData[0].gpsLicense, 'SF-RTK');
+        t('dan ada peringatan tentang unit lama', toasts.some(m => /GGTRp.*masih memegang lisensi/.test(m)), true);
+
+        // =============== 10. IMPOR CSV = LANGSUNG TERSINKRON ===============
+        seed([U('c1'), U('c2', { gpsLicense: 'SF-RTK', gpsLicenseStartDate: '2026-09-20', gpsLicenseEndDate: '2027-09-20' }), U('old')],
+             [OUT('old', 'SF-RTK', '2026-09-01', { id: 'PREEXISTING' })]);
+        const realPapa = window.Papa;
+        window.Papa = { parse: (file, opts) => opts.complete({ data: [
+            { 'Tanggal': '2026-09-28', 'Jenis': 'Distribusi', 'Jenis Lisensi': 'SF-RTK', 'Jumlah': '1', 'Serial Number': 'SNc1' },
+            { 'Tanggal': '2026-03-01', 'Jenis': 'Distribusi', 'Jenis Lisensi': 'SF-RTK', 'Jumlah': '1', 'Serial Number': 'SNc2' }
+        ] }) };
+        handleLicenseCSVImport(new File(['x'], 'l.csv'));
+        window.Papa = realPapa;
+        t('impor CSV: unit dari baris impor langsung diperbarui', [globalData[0].gpsLicense, globalData[0].gpsLicenseEndDate], ['SF-RTK', '2027-09-28']);
+        t('impor CSV: unit yang berlaku lebih lama tidak dimundurkan', globalData[1].gpsLicenseEndDate, '2027-09-20');
+        t('impor CSV: baris lama yang belum sinkron TIDAK ikut ditulis (belum dilihat siapa pun)', globalData[2].gpsLicense, '');
+        const importToast = toasts.find(m => /^Import lisensi/.test(m)) || '';
+        t('dan pesannya menyebut apa yang terjadi', importToast,
+          'Import lisensi: 2 ditambahkan · lisensi 1 unit ikut diperbarui · 1 unit tidak diubah (berlaku lebih lama)');
 
         window.__T = T;
     } catch (e) { window.__T = [{ n: 'EXCEPTION ' + e.message + ' ' + e.stack, pass: false }]; } })();` });

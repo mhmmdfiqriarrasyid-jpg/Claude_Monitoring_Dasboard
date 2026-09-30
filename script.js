@@ -83,7 +83,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v115';
+const APP_VERSION = 'v116';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -6747,9 +6747,35 @@ function getFilteredLicenseStock() {
 }
 
 // ---- Render table ----
+// The Status Unit cell: does the unit's licence match this distribution?
+// Only the latest distribution per unit licence can be "Tersinkron" or
+// "Belum"; earlier ones are history ("Digantikan").
+const LIC_STATUS = {
+    sync:       { cls: 'ok',    icon: 'circle-check',        label: 'Tersinkron',
+                  tip: () => 'Lisensi unit sudah sesuai dengan distribusi ini' },
+    update:     { cls: 'todo',  icon: 'clock',               label: 'Belum',
+                  tip: () => 'Lisensi unit belum sesuai — tekan Sync ke Unit' },
+    newer:      { cls: 'info',  icon: 'arrow-up',            label: 'Unit lebih baru',
+                  tip: i => `Unit berlaku s/d ${i.row.now.end}, lebih lama dari distribusi ini — tidak ditimpa` },
+    superseded: { cls: 'muted', icon: 'clock-rotate-left',   label: 'Digantikan',
+                  tip: i => `Distribusi ${i.by.date} yang lebih baru sudah menentukan lisensi unit ini` },
+    noUnit:     { cls: 'warn',  icon: 'triangle-exclamation', label: 'Unit tidak ada',
+                  tip: () => 'Unitnya tidak ditemukan (id maupun nomor seri)' },
+    notTractor: { cls: 'muted', icon: 'ban',                 label: 'Bukan Pertanian',
+                  tip: () => `Lisensi SF/G5 hanya untuk ${UNIT_GROUPS.tractor.label}` },
+    noDate:     { cls: 'warn',  icon: 'triangle-exclamation', label: 'Tanggal tidak valid',
+                  tip: () => 'Tanggal distribusinya kosong atau tidak terbaca (harus YYYY-MM-DD) — betulkan supaya bisa diterapkan ke unit' }
+};
+function licenseSyncCell(info) {
+    const d = info && LIC_STATUS[info.code];
+    if (!d) return '<span style="color:var(--text-light);font-size:11px">—</span>';
+    return `<span class="lic-status lic-status--${d.cls}" title="${escapeHtml(d.tip(info))}"><i class="fas fa-${d.icon}"></i> ${escapeHtml(d.label)}</span>`;
+}
+
 function renderLicenseStockTable() {
     updateLicenseCount();
-    updateLicenseSyncBadge();
+    const syncPlan = licenseSyncPlan();
+    updateLicenseSyncBadge(syncPlan);
     selectedLicenseIds.clear();
     updateSelectedLicenseCount();
 
@@ -6765,7 +6791,7 @@ function renderLicenseStockTable() {
                       (document.getElementById('licenseTypeFilter')?.value || '');
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+        tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--text-secondary)">${
             hasFilter ? 'Tidak ada transaksi yang cocok dengan filter'
                       : 'Belum ada transaksi stok lisensi. Klik <strong>Tambah Stok</strong> atau <strong>Distribusi</strong>.'
         }</td></tr>`;
@@ -6792,6 +6818,7 @@ function renderLicenseStockTable() {
             <td data-label="Jumlah">${Number(r.qty) || 0}</td>
             <td data-label="Unit">${isOut ? escapeHtml(uName) : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td data-label="SN" style="font-family:monospace;font-size:12px">${isOut ? escapeHtml(uSn) : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
+            <td data-label="Status Unit">${isOut ? licenseSyncCell(syncPlan.recStatus.get(r.id)) : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td data-label="Catatan" style="max-width:200px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(note)}">${escapeHtml(noteShort) || '<span style="color:var(--text-light)">—</span>'}</td>
             <td class="col-actions">
                 <div class="row-actions">
@@ -6984,19 +7011,23 @@ function _licenseSyncRow(rec, unit, kind) {
 function licenseSyncPlan() {
     const latest = new Map();   // `${unit.id}|${kind}` -> { rec, unit, kind }
     const skipped = { noUnit: 0, notTractor: 0, noDate: 0 };
+    // Where each distribution stands, for the Status Unit column: a skip
+    // reason, or the key of the unit licence it competes for.
+    const recStatus = new Map();   // rec.id -> { code, by? }
     globalLicenseStock.forEach(r => {
         if (r.txnType !== 'OUT') return;
         const kind = _licenseKindForType(r.licenseType);
         if (!kind) return;
         const unit = liveUnitFor(r);
-        if (!unit) { skipped.noUnit++; return; }
+        if (!unit) { skipped.noUnit++; recStatus.set(r.id, { code: 'noUnit' }); return; }
         // The write boundary: no licence lands on heavy equipment, nor on a
         // unit whose group nobody can read.
-        if (isHeavy(unit) || hasUnreadableGroup(unit)) { skipped.notTractor++; return; }
+        if (isHeavy(unit) || hasUnreadableGroup(unit)) { skipped.notTractor++; recStatus.set(r.id, { code: 'notTractor' }); return; }
         // Without a date the target would be "today + 1 year" — different
         // every day, so the unit could never read as in sync.
-        if (!r.date || !parseLocalDate(r.date)) { skipped.noDate++; return; }
+        if (!r.date || !parseLocalDate(r.date)) { skipped.noDate++; recStatus.set(r.id, { code: 'noDate' }); return; }
         const key = unit.id + '|' + kind;
+        recStatus.set(r.id, { key });
         const cur = latest.get(key);
         // date → createdAt → id. The id tie-break keeps the result stable:
         // without it two same-day records with the same createdAt resolve by
@@ -7011,7 +7042,16 @@ function licenseSyncPlan() {
     });
     const rows = [...latest.values()].map(x => _licenseSyncRow(x.rec, x.unit, x.kind))
         .sort((a, b) => (a.unit.name || '').localeCompare(b.unit.name || '') || a.kind.localeCompare(b.kind));
-    return { rows, skipped };
+    // Only the LATEST distribution per unit licence decides it; every earlier
+    // one is 'superseded' — correct history, nothing to sync.
+    const rowByKey = new Map(rows.map(r => [r.key, r]));
+    recStatus.forEach((info, id) => {
+        if (!info.key) return;
+        const row = rowByKey.get(info.key);
+        if (row.rec.id === id) { info.code = row.status; info.row = row; }
+        else { info.code = 'superseded'; info.by = row.rec; }
+    });
+    return { rows, skipped, recStatus };
 }
 
 // Writes the chosen rows, one updateUnit per unit (GPS and Display together).
@@ -7030,11 +7070,13 @@ function _applyLicenseSync(keys) {
     return n;
 }
 
-// Apply ONE distribution to its unit — the Distribusi form's path. Refuses to
-// move a licence BACKWARDS, so back-filling an old handover can't expire a
-// unit that has since been renewed. Returns 'applied' | 'unchanged' |
-// 'skipped-older' | false.
-function applyDistributedLicenseToUnit(rec) {
+// Apply ONE distribution to its unit — the Distribusi form's and the CSV
+// import's path. Refuses to move a licence BACKWARDS, so back-filling an old
+// handover can't expire a unit that has since been renewed — unless
+// opts.force, which the form passes only when the unit's licence came from the
+// very record being edited (correcting its date must be able to go back).
+// Returns 'applied' | 'unchanged' | 'skipped-older' | false.
+function applyDistributedLicenseToUnit(rec, opts) {
     if (!rec || rec.txnType !== 'OUT' || !rec.unitId) return false;
     const kind = _licenseKindForType(rec.licenseType);
     if (!kind) return false;
@@ -7045,17 +7087,17 @@ function applyDistributedLicenseToUnit(rec) {
     if (!rec.date || !parseLocalDate(rec.date)) return false;
     const row = _licenseSyncRow(rec, unit, kind);
     if (row.status === 'sync') return 'unchanged';
-    if (row.status === 'newer') return 'skipped-older';
+    if (row.status === 'newer' && !(opts && opts.force)) return 'skipped-older';
     return updateUnit(unit.id, row.fields) ? 'applied' : false;
 }
 
 // Number of unit licences that differ from their latest distribution — shown
 // on the Sync button so nobody has to press it to find out.
-function updateLicenseSyncBadge() {
+function updateLicenseSyncBadge(plan) {
     const el = document.getElementById('licSyncCount');
     if (!el) return;
     let n = 0;
-    try { n = licenseSyncPlan().rows.filter(r => r.status === 'update').length; } catch (_) { n = 0; }
+    try { n = (plan || licenseSyncPlan()).rows.filter(r => r.status === 'update').length; } catch (_) { n = 0; }
     el.textContent = n;
     el.hidden = n === 0;
 }
@@ -7076,7 +7118,7 @@ function syncDistributionsToUnits() {
     const inSync = rows.length - todo.length;
     const skipNote = [
         skipped.noUnit ? `${skipped.noUnit} unitnya tidak ditemukan` : '',
-        skipped.noDate ? `${skipped.noDate} tanpa tanggal` : '',
+        skipped.noDate ? `${skipped.noDate} tanggalnya tidak valid` : '',
         skipped.notTractor ? `${skipped.notTractor} ke unit non-${UNIT_GROUPS.tractor.shortLabel}` : ''
     ].filter(Boolean).join(', ');
     if (!rows.length) {
@@ -7157,6 +7199,14 @@ function saveLicenseStock(event) {
     // Snapshot BEFORE any mutation — used to decide whether this save should
     // touch the unit's own licence at all (editing only the note must not).
     const prevRec = id ? { ...(globalLicenseStock.find(r => r.id === id) || {}) } : null;
+    // Did the unit's licence come from THIS record? Then correcting its date
+    // (a typo'd year) must be able to move the licence back as well, instead
+    // of being refused as "older". Decided before anything is mutated.
+    const prevKind = prevRec && prevRec.txnType === 'OUT' ? _licenseKindForType(prevRec.licenseType) : null;
+    const prevUnit = prevKind ? liveUnitFor(prevRec) : null;
+    const prevDrove = !!(prevUnit && !isHeavy(prevUnit) && !hasUnreadableGroup(prevUnit)
+        && prevRec.date && parseLocalDate(prevRec.date)
+        && _licenseSyncRow(prevRec, prevUnit, prevKind).status === 'sync');
     const txnType = document.getElementById('licTxnType').value;
     const typedType = document.getElementById('licType').value.trim();
     // Snap to the existing spelling so a stray "sf-rtk" doesn't open a second
@@ -7248,8 +7298,10 @@ function saveLicenseStock(event) {
         || (prevRec.licenseType || '') !== licenseType
         || (prevRec.date || '') !== (data.date || '');
     if (txnType === 'OUT' && licenseRelevantChange) {
-        const applied = applyDistributedLicenseToUnit({ txnType, unitId: data.unitId, licenseType, date: data.date });
         const kindKey = _licenseKindForType(licenseType);
+        const sameTarget = prevDrove && prevUnit.id === data.unitId && prevKind === kindKey;
+        const applied = applyDistributedLicenseToUnit({ txnType, unitId: data.unitId, licenseType, date: data.date },
+                                                      { force: sameTarget });
         const kind = kindKey === 'display' ? 'Display' : 'GPS';
         const tgt = kindKey && data.date ? distributionTarget({ licenseType, date: data.date }, kindKey) : null;
         if (applied === 'applied' && tgt && tgt.downgraded) {
@@ -7261,7 +7313,14 @@ function saveLicenseStock(event) {
         } else if (applied === 'skipped-older') {
             showToast(`Lisensi ${kind} unit "${escapeHtml(data.unitName)}" tidak diubah — unit sudah punya masa berlaku yang lebih panjang`, 'warning');
         } else if (!_licenseKindForType(licenseType)) {
-            showToast(`"${licenseType}" bukan lisensi unit standar — hanya dicatat di stok`, 'warning');
+            showToast(`"${escapeHtml(licenseType)}" bukan lisensi unit standar — hanya dicatat di stok`, 'warning');
+        }
+        // Moved to another unit (or another licence kind): the old unit still
+        // holds what this record gave it. Say so rather than guess whether the
+        // licence physically moved or the first unit was a typo.
+        if (prevDrove && !sameTarget) {
+            showToast(`Unit "${escapeHtml(prevUnit.name || prevUnit.sn || '')}" masih memegang lisensi dari distribusi ini — `
+                + 'periksa lewat kolom Status Unit / Sync ke Unit', 'warning');
         }
     }
 
@@ -7383,6 +7442,7 @@ function handleLicenseCSVImport(file) {
             const added = [];
             let rejected = 0;
             let heavyRejected = 0;
+            const importSync = { applied: 0, newer: 0, noAccess: 0 };
 
             result.data.forEach(row => {
                 const licenseType = (getValAny(row, ['Jenis Lisensi', 'License', 'License Type']) || '').toString().trim();
@@ -7448,6 +7508,20 @@ function handleLicenseCSVImport(file) {
                     });
                 }
                 logEvent({ action: 'add', unitName: '[Lisensi] Import CSV', after: `${added.length} transaksi` });
+                // Imported distributions go straight to their units, like the
+                // Distribusi form — but only where an imported row is now the
+                // LATEST for that unit licence and nothing newer is on the
+                // unit. Rows that were already out of sync before the import
+                // are left for the Sync preview: nobody has looked at them.
+                const addedIds = new Set(added.map(o => o.id));
+                const importRows = licenseSyncPlan().rows.filter(r => addedIds.has(r.rec.id));
+                const todo = importRows.filter(r => r.status === 'update');
+                importSync.newer = importRows.filter(r => r.status === 'newer').length;
+                if (todo.length && hasAccess('editUnits', 'edit')) {
+                    importSync.applied = _applyLicenseSync(todo.map(r => r.key));
+                } else if (todo.length) {
+                    importSync.noAccess = todo.length;
+                }
                 populateLicenseTypeList();
                 renderLicenseSummary();
                 renderLicenseStockTable();
@@ -7455,7 +7529,10 @@ function handleLicenseCSVImport(file) {
 
             showLoading(false);
             const msg = `Import lisensi: ${added.length} ditambahkan` + (rejected ? `, ${rejected} dilewati (jenis lisensi kosong)` : '')
-                + (heavyRejected ? `, ${heavyRejected} dilewati (unit Alat Berat — lisensi SF/G5 hanya untuk ${UNIT_GROUPS.tractor.shortLabel})` : '');
+                + (heavyRejected ? `, ${heavyRejected} dilewati (unit Alat Berat — lisensi SF/G5 hanya untuk ${UNIT_GROUPS.tractor.shortLabel})` : '')
+                + (importSync.applied ? ` · lisensi ${importSync.applied} unit ikut diperbarui` : '')
+                + (importSync.newer ? ` · ${importSync.newer} unit tidak diubah (berlaku lebih lama)` : '')
+                + (importSync.noAccess ? ` · ${importSync.noAccess} lisensi unit belum diterapkan (butuh hak edit Unit)` : '');
             showToast(msg, added.length ? 'success' : 'warning');
         },
         error: err => {
