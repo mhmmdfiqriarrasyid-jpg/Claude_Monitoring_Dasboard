@@ -64,6 +64,7 @@ const { launch, BASE_URL } = require('./_env');
         renderLicenseStockTable();
         t('tombol Sync menunjukkan jumlah yang belum sesuai', [document.getElementById('licSyncCount').textContent,
             document.getElementById('licSyncCount').hidden], ['1', false]);
+        t('tombol Sync muncul saat ada yang belum sesuai', document.getElementById('licSyncBtn').style.display, '');
         t('pratinjau terbuka', openPreview(), true);
         t('pratinjau hanya memuat yang berbeda', previewRows().length, 1);
         t('ringkasannya menyebut yang tidak disentuh', /2 sudah sesuai dan tidak disentuh/.test(document.getElementById('licSyncSummary').textContent), true);
@@ -72,6 +73,7 @@ const { launch, BASE_URL } = require('./_env');
         t('unit itu mendapat lisensinya', [globalData[2].gpsLicense, globalData[2].gpsLicenseStartDate, globalData[2].gpsLicenseEndDate],
           ['SF-RTK', '2026-09-15', '2027-09-15']);
         t('sesudahnya tombol tanpa angka', document.getElementById('licSyncCount').hidden, true);
+        t('dan tombol Sync tersembunyi selama tidak ada yang perlu disinkron', document.getElementById('licSyncBtn').style.display, 'none');
         writes.length = 0; toasts.length = 0;
         t('sync kedua kali: tidak ada pratinjau', openPreview(), false);
         t('dan tidak ada tulisan', writes.length, 0);

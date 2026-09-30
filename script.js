@@ -83,7 +83,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v117';
+const APP_VERSION = 'v118';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -7132,6 +7132,10 @@ function updateLicenseSyncBadge(plan) {
     try { n = (plan || licenseSyncPlan()).rows.filter(r => r.status === 'update').length; } catch (_) { n = 0; }
     el.textContent = n;
     el.hidden = n === 0;
+    // Entry already syncs itself (form, CSV import, edits, deletes), so the
+    // button is a repair tool: shown only while something needs repairing.
+    const btn = document.getElementById('licSyncBtn');
+    if (btn) btn.style.display = n === 0 ? 'none' : '';
 }
 
 let _licSyncKeys = [];

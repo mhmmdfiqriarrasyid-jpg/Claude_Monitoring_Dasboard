@@ -759,7 +759,7 @@
                 <button class="btn btn-danger" id="btnDeleteSelectedLicense" style="display:none" onclick="deleteSelectedLicenseStock()">
                     <i class="fas fa-trash"></i> Delete Selected (<span id="selectedLicenseCount">0</span>)
                 </button>
-                <button class="btn btn-secondary" onclick="syncDistributionsToUnits()" title="Lihat dan terapkan lisensi unit yang belum sesuai dengan distribusi terbarunya">
+                <button class="btn btn-secondary" id="licSyncBtn" style="display:none" onclick="syncDistributionsToUnits()" title="Lihat dan terapkan lisensi unit yang belum sesuai dengan distribusi terbarunya">
                     <i class="fas fa-link"></i> Sync ke Unit
                     <span class="btn-count" id="licSyncCount" hidden title="Lisensi unit yang belum sesuai">0</span>
                 </button>

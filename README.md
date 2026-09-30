@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.101 pemeriksaan di dua puluh lima suite, menggerakkan Chromium sungguhan terhadap
+1.103 pemeriksaan di dua puluh lima suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -336,6 +336,9 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
     `_releaseDistributions`): unitnya ditawari kembali ke distribusi
     sebelumnya, atau dikosongkan kalau tidak ada lagi. Satu konfirmasi per
     tindakan; Batal membiarkannya dan mengatakannya.
+  - **Tombol Sync ke Unit hanya muncul kalau ada yang "Belum"** — alat
+    perbaikan, bukan langkah rutin. Baris "Unit lebih baru" tidak
+    memunculkannya: itu keadaan yang disengaja (perpanjangan manual).
   - **Kolom Status Unit** di Riwayat Stok Lisensi: Tersinkron, Belum, Unit
     lebih baru, Digantikan (distribusi lama yang sudah diganti yang lebih
     baru), Unit tidak ada, Bukan Pertanian, Tanggal tidak valid
