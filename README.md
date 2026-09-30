@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.032 pemeriksaan di dua puluh empat suite, menggerakkan Chromium sungguhan terhadap
+1.068 pemeriksaan di dua puluh lima suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -107,7 +107,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 `photos_test`, `migration_test`, `history_scan_test`, `validation_test`,
 `datacheck_test`, `damagephotos_test`, `mobile_test`, `window_test`,
 `backup_test`, `keyboard_test`, `leave_test`, `unitgroups_test`,
-`hardening_test`, `followup_test`, `regress`.
+`hardening_test`, `followup_test`, `licsync_test`, `regress`.
 
 ---
 
@@ -304,6 +304,17 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   catatan yang ikut dipulihkan, dan restore GANTI yang menghapus catatan ikut
   menghapus dokumen fotonya (`_dropPhotoDoc`) — dokumen itu tidak pernah
   didaftar, jadi yang tertinggal tidak akan pernah ditemukan lagi.
+- **Distribusi lisensi → lisensi unit berbasis selisih.** `licenseSyncPlan()`
+  mengambil distribusi TERBARU per unit + jenis (GPS / Display), unitnya
+  dicari lewat id lalu SN (`liveUnitFor`), dan menandai tiap baris `sync`
+  (sudah sesuai — tidak pernah ditulis), `update`, atau `newer` (unit berlaku
+  lebih lama dari distribusi terbarunya — diperpanjang manual, atau
+  distribusinya dihapus). "Sync ke Unit" menampilkan pratinjau dan hanya
+  menulis baris yang dicentang; `newer` tidak dicentang. Distribusi premium
+  yang sudah habis ditulis langsung dalam keadaan akhir turun-otomatisnya
+  (`distributionTarget`), jadi unit yang sudah turun ke SF-1 terbaca sesuai
+  dan tidak dipantulkan kembali ke SF-RTK. Distribusi tanpa tanggal dilewati —
+  targetnya akan jadi "hari ini + 1 tahun", berubah setiap hari.
 - **Unit terbagi dua kelompok: Agricultural Equipment dan Heavy Equipment.**
   Satu koleksi `units`, satu kolom `unitGroup` (`'tractor'` | `'heavy'`).
   Registrinya `UNIT_GROUPS` (`script.js`): label, komponen yang dipantau, dan

@@ -759,8 +759,9 @@
                 <button class="btn btn-danger" id="btnDeleteSelectedLicense" style="display:none" onclick="deleteSelectedLicenseStock()">
                     <i class="fas fa-trash"></i> Delete Selected (<span id="selectedLicenseCount">0</span>)
                 </button>
-                <button class="btn btn-secondary" onclick="syncDistributionsToUnits()" title="Terapkan distribusi terbaru ke lisensi unit">
+                <button class="btn btn-secondary" onclick="syncDistributionsToUnits()" title="Lihat dan terapkan lisensi unit yang belum sesuai dengan distribusi terbarunya">
                     <i class="fas fa-link"></i> Sync ke Unit
+                    <span class="btn-count" id="licSyncCount" hidden title="Lisensi unit yang belum sesuai">0</span>
                 </button>
                 <input type="file" id="licenseCsvInput" aria-label="Pilih berkas CSV lisensi untuk diimpor" accept=".csv" style="display:none">
                 <button class="btn btn-secondary csv-import" onclick="document.getElementById('licenseCsvInput').click()">
@@ -1747,6 +1748,38 @@
         </div>
         <div class="form-actions">
             <button class="btn btn-primary" onclick="closeRestoreReport()">OK</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== LICENCE SYNC PREVIEW ===== -->
+<!-- "Sync ke Unit" used to rewrite every unit that had ever received a
+     distribution, behind a single confirm. This shows only the licences that
+     actually differ from their latest distribution, and writes only the ticked
+     ones. -->
+<div class="modal-overlay" id="licSyncModal">
+    <div class="modal-card modal-card--wide">
+        <div class="modal-header">
+            <h3>Sync Lisensi ke Unit</h3>
+            <button class="btn-icon" onclick="closeLicSyncModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
+                <strong id="licSyncSummary"></strong>
+            </p>
+            <div class="table-wrapper" style="max-height:50vh">
+                <table class="data-table table--cardable">
+                    <thead><tr><th class="col-check"></th><th>Unit</th><th>Lisensi</th><th>Sekarang</th><th>Menjadi</th><th>Keterangan</th></tr></thead>
+                    <tbody id="licSyncBody"></tbody>
+                </table>
+            </div>
+            <p style="margin-top:12px;font-size:12px;color:var(--text-secondary)">
+                Hanya baris yang dicentang yang ditulis. Masa berlaku = tanggal distribusi + 1 tahun.
+            </p>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-secondary" onclick="closeLicSyncModal()">Batal</button>
+            <button class="btn btn-primary" id="licSyncApplyBtn" onclick="applyLicSyncSelection()"><i class="fas fa-link"></i> Terapkan</button>
         </div>
     </div>
 </div>
