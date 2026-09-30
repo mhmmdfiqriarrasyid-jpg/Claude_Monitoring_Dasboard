@@ -87,7 +87,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v121';
+const APP_VERSION = 'v122';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -8672,7 +8672,11 @@ function initCloudSync() {
             );
         }
         if (window.cloud.subscribeShifts) startShiftsSubscription();
-        if (window.cloud.subscribeWorkLogs) {
+        // Reports and leave are read only by the areas firestore.rules lets
+        // read them — subscribing without the right would just fail and put
+        // up a "rules not published" banner that is not true.
+        const canReadLogs = ['teamLog', 'teamLogApprove', 'leader'].some(a => hasAccess(a, 'view'));
+        if (window.cloud.subscribeWorkLogs && canReadLogs) {
             cloudWorkLogsUnsub = window.cloud.subscribeWorkLogs(
                 applyCloudWorkLogsSnapshot,
                 err => {
@@ -8681,7 +8685,7 @@ function initCloudSync() {
                 }
             );
         }
-        if (window.cloud.subscribeLeaveRequests) {
+        if (window.cloud.subscribeLeaveRequests && (canReadLogs || hasAccess('teamShift', 'view'))) {
             cloudLeaveUnsub = window.cloud.subscribeLeaveRequests(
                 applyCloudLeaveSnapshot,
                 err => {
@@ -9029,6 +9033,8 @@ function watchOwnUserDoc(uid) {
         if (JSON.stringify(before.access) !== JSON.stringify(doc.access) || before.role !== doc.role) {
             applyRoleGating();
             renderUserPill();
+            // Which collections this account may read changed: subscribe again.
+            if (cloudInitialized) { tearDownCloudSync(); cloudInitialized = false; maybeInitCloudSync(); }
             showToast('Hak akses Anda diperbarui oleh admin', 'info');
         }
     }, err => console.warn('[session] user doc watch failed:', err && err.code));

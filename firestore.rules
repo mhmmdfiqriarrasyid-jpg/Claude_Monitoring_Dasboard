@@ -35,14 +35,24 @@ service cloud.firestore {
     function isOwner()    { return isActive() && myDoc().data.role == 'owner'; }
 
     // Effective access level for an area: explicit override → role default.
+    // .get() with defaults: reading a key the access map does not have is an
+    // evaluation ERROR in rules, not null — it happened to deny, but only by
+    // accident, and an error inside && / || is easy to get wrong.
     function lvl(area) {
       return isOwner()
         ? 'edit'
-        : (myDoc().data.access != null && myDoc().data.access[area] != null)
-            ? myDoc().data.access[area]
-            : (myDoc().data.role == 'team' ? 'edit' : 'none');
+        : myDoc().data.get('access', {}).get(area, null) != null
+            ? myDoc().data.get('access', {}).get(area, null)
+            : (myDoc().data.get('role', '') == 'team' ? 'edit' : 'none');
     }
     function canEditArea(area) { return isActive() && lvl(area) == 'edit'; }
+    function canViewArea(area) { return isActive() && lvl(area) in ['view', 'edit']; }
+
+    // The stored "id" field, when present, must be the document id: the app
+    // builds edit/delete targets from it.
+    function idMatches(id) {
+      return !('id' in request.resource.data) || request.resource.data.id == id;
+    }
 
     // True if the user may edit ANY data area — used to gate audit-log writes,
     // since every edit action also appends a history event.
@@ -61,10 +71,14 @@ service cloud.firestore {
     }
 
     // ---- Fleet data (one area each) ----
-    match /units/{id}         { allow read: if isActive(); allow write: if canEditArea('editUnits'); }
-    match /implements/{id}    { allow read: if isActive(); allow write: if canEditArea('implements'); }
-    match /damageRecords/{id} { allow read: if isActive(); allow write: if canEditArea('damage'); }
-    match /licenseStock/{id}  { allow read: if isActive(); allow write: if canEditArea('licenseStock'); }
+    match /units/{id}         { allow read: if isActive(); allow delete: if canEditArea('editUnits');
+                                allow create, update: if canEditArea('editUnits') && idMatches(id); }
+    match /implements/{id}    { allow read: if isActive(); allow delete: if canEditArea('implements');
+                                allow create, update: if canEditArea('implements') && idMatches(id); }
+    match /damageRecords/{id} { allow read: if isActive(); allow delete: if canEditArea('damage');
+                                allow create, update: if canEditArea('damage') && idMatches(id); }
+    match /licenseStock/{id}  { allow read: if isActive(); allow delete: if canEditArea('licenseStock');
+                                allow create, update: if canEditArea('licenseStock') && idMatches(id); }
 
     // ---- Managed dropdown sources ----
     // User categories are edited from the unit form; damage components from
@@ -80,8 +94,48 @@ service cloud.firestore {
     // Work logs are deliberately NOT restricted to their own author: an office
     // admin files reports on behalf of field operators who have no login. Every
     // write is still attributed in /history, so who filed what stays traceable.
-    match /teamMembers/{id} { allow read: if isActive(); allow write: if canEditArea('teamMembers'); }
-    match /shifts/{id}      { allow read: if isActive(); allow write: if canEditArea('teamShift'); }
+    match /teamMembers/{id} { allow read: if isActive(); allow delete: if canEditArea('teamMembers');
+                              allow create, update: if canEditArea('teamMembers') && idMatches(id); }
+    match /shifts/{id}      { allow read: if isActive(); allow delete: if canEditArea('teamShift');
+                              allow create, update: if canEditArea('teamShift') && idMatches(id)
+                                && request.resource.data.get('shift', '') in ['pagi', 'siang', 'malam', 'libur', '']; }
+
+    // ---- Approval (work logs and leave requests) ----
+    // Enforced HERE, not only in the app: from the browser console anyone
+    // with teamLog edit could otherwise write approval:'approved' under a
+    // supervisor's name, and an approver could approve their own report.
+    function approvalKeys() {
+      return ['approval', 'approvedBy', 'approvedByEmail', 'approvedAt',
+              'revisionNote', 'reviewedBy', 'reviewedAt', 'updatedAt'];
+    }
+    // An editor may change the record but not its approval — except to send
+    // it back to pending, which is what editing does. The author cannot be
+    // rewritten. (Writes that leave the approval fields alone, like the photo
+    // migration, pass on the first branch.)
+    function editorWrite() {
+      return (!request.resource.data.diff(resource.data).affectedKeys()
+                 .hasAny(['approval', 'approvedBy', 'approvedByEmail', 'approvedAt', 'reviewedBy', 'reviewedAt'])
+              || (request.resource.data.get('approval', 'pending') == 'pending'
+                  && request.resource.data.get('approvedByEmail', '') == ''))
+          && request.resource.data.get('createdByUid', '') == resource.data.get('createdByUid', '');
+    }
+    // An approver touches the approval fields only, signs with their own
+    // e-mail, and never checks their own record.
+    function approverWrite() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(approvalKeys())
+          && request.resource.data.get('approval', 'pending') in ['pending', 'approved', 'revision']
+          && (request.resource.data.get('approval', '') != 'approved'
+              || request.resource.data.get('approvedByEmail', '') == request.auth.token.email)
+          && resource.data.get('createdByUid', '') != request.auth.uid;
+    }
+    function newPendingRecord(id) {
+      return idMatches(id)
+          && request.resource.data.get('approval', 'pending') == 'pending'
+          && request.resource.data.get('createdByUid', request.auth.uid) == request.auth.uid;
+    }
+    function teamLogReader() {
+      return canViewArea('teamLog') || canViewArea('teamLogApprove') || canViewArea('leader');
+    }
 
     // Work logs are written by whoever may edit them, and approved by whoever
     // holds 'teamLogApprove' — a separate grant, so a checker need not be able
@@ -90,15 +144,12 @@ service cloud.firestore {
     // nothing else, so they cannot quietly change the hours or the description
     // on their way past. Creating and deleting stay with the editors.
     match /workLogs/{id} {
-      allow read:   if isActive();
-      allow create: if canEditArea('teamLog');
+      allow read:   if teamLogReader();
+      allow create: if isOwner() || (canEditArea('teamLog') && newPendingRecord(id));
       allow delete: if canEditArea('teamLog');
-      allow update: if canEditArea('teamLog')
-                    || (canEditArea('teamLogApprove')
-                        && request.resource.data.diff(resource.data).affectedKeys()
-                             .hasOnly(['approval', 'approvedBy', 'approvedByEmail',
-                                       'approvedAt', 'revisionNote',
-                                       'reviewedBy', 'reviewedAt', 'updatedAt']));
+      allow update: if isOwner()
+                    || (idMatches(id) && canEditArea('teamLog') && editorWrite())
+                    || (canEditArea('teamLogApprove') && approverWrite());
     }
 
     // Izin / sakit. Areanya sama dengan laporan harian: orang yang mencatat
@@ -114,16 +165,15 @@ service cloud.firestore {
     // workLogPhotos di bawah ini. Bentuknya sama persis dan areanya sama
     // persis, jadi memberinya koleksi sendiri hanya akan menambah satu lagi
     // jalur yang menunggu publish, dengan kegagalan yang tidak bisa dibedakan.
+    // Leave reasons are personal; the shift grid shows approved leave, so
+    // whoever can see the schedule may read them too.
     match /leaveRequests/{id} {
-      allow read:   if isActive();
-      allow create: if canEditArea('teamLog');
+      allow read:   if teamLogReader() || canViewArea('teamShift');
+      allow create: if isOwner() || (canEditArea('teamLog') && newPendingRecord(id));
       allow delete: if canEditArea('teamLog');
-      allow update: if canEditArea('teamLog')
-                    || (canEditArea('teamLogApprove')
-                        && request.resource.data.diff(resource.data).affectedKeys()
-                             .hasOnly(['approval', 'approvedBy', 'approvedByEmail',
-                                       'approvedAt', 'revisionNote',
-                                       'reviewedBy', 'reviewedAt', 'updatedAt']));
+      allow update: if isOwner()
+                    || (idMatches(id) && canEditArea('teamLog') && editorWrite())
+                    || (canEditArea('teamLogApprove') && approverWrite());
     }
 
     // Field documentation photos, one document per report. Split out of the
@@ -131,8 +181,10 @@ service cloud.firestore {
     // inline photos meant every device re-downloaded every photo on every app
     // open. Same area as the report: whoever may edit a report may edit its
     // photos, so there is no new permission to hand out per person.
+    // Holds sick-leave letters — medical data. Only people who work with
+    // reports and leave may read it.
     match /workLogPhotos/{id} {
-      allow read:  if isActive();
+      allow read:  if canViewArea('teamLog') || canViewArea('teamLogApprove');
       allow write: if canEditArea('teamLog');
     }
 
@@ -144,7 +196,7 @@ service cloud.firestore {
     // as the record: whoever may edit a damage record may edit its photo, so
     // there is no new permission to hand out per person.
     match /damagePhotos/{id} {
-      allow read:  if isActive();
+      allow read:  if canViewArea('damage');
       allow write: if canEditArea('damage');
     }
 
@@ -152,8 +204,10 @@ service cloud.firestore {
     // One area covers both shapes: devices followed by serial number, and
     // consumables counted by quantity. Reads stay open to any active user so
     // anyone can check what is in stock before driving to the warehouse.
-    match /devices/{id}    { allow read: if isActive(); allow write: if canEditArea('warehouse'); }
-    match /stockItems/{id} { allow read: if isActive(); allow write: if canEditArea('warehouse'); }
+    match /devices/{id}    { allow read: if isActive(); allow delete: if canEditArea('warehouse');
+                             allow create, update: if canEditArea('warehouse') && idMatches(id); }
+    match /stockItems/{id} { allow read: if isActive(); allow delete: if canEditArea('warehouse');
+                             allow create, update: if canEditArea('warehouse') && idMatches(id); }
 
     // ---- Accounts ----
     // Sign-up may only ever create a PENDING VIEWER. Without this, any signed-in
@@ -179,7 +233,17 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.auth.uid == uid && (
                       (request.resource.data.role == 'viewer'
                        && request.resource.data.status == 'pending'
-                       && !('access' in request.resource.data))
+                       && !('access' in request.resource.data)
+                       // A sign-up describes itself truthfully and briefly:
+                       // its own uid and e-mail (so the owner approves the
+                       // person they think they are approving), no extra
+                       // fields, a short name.
+                       && request.resource.data.get('uid', uid) == uid
+                       && request.resource.data.get('email', '') == request.auth.token.email
+                       && request.resource.data.keys().hasOnly(['uid', 'email', 'displayName', 'role',
+                            'status', 'createdAt', 'updatedAt', 'updatedBy'])
+                       && request.resource.data.get('displayName', '') is string
+                       && request.resource.data.get('displayName', '').size() <= 80)
                       || selfBootstrapsAsOwner()
                     );
 
@@ -196,7 +260,14 @@ service cloud.firestore {
                     || (request.auth.uid == uid && selfBootstrapsAsOwner())
                     || (request.auth.uid == uid
                         && request.resource.data.diff(resource.data)
-                             .affectedKeys().hasOnly(['activeSession']));
+                             .affectedKeys().hasOnly(['activeSession'])
+                        // The session record is shown on the owner's Users
+                        // page: a fixed, small shape.
+                        && request.resource.data.activeSession.keys().hasOnly(['id', 'startedAt', 'device'])
+                        && request.resource.data.activeSession.get('id', '') is string
+                        && request.resource.data.activeSession.get('id', '').size() <= 80
+                        && request.resource.data.activeSession.get('device', '') is string
+                        && request.resource.data.activeSession.get('device', '').size() <= 80);
 
       allow delete: if isOwner();
     }
@@ -205,9 +276,19 @@ service cloud.firestore {
     // Append-only: events can be created by any editor but never edited, and
     // the actor must be the signed-in user. Only owners may clear history.
     match /history/{eventId} {
-      allow read:   if isActive();
+      allow read:   if canViewArea('history');
+      // Bound to the signed-in person: uid AND e-mail, the event's own id,
+      // a known set of fields, and no timestamp far in the future (that
+      // pinned forged rows above the real ones in the live feed).
       allow create: if canEditAnything()
-                    && request.resource.data.actorUid == request.auth.uid;
+                    && request.resource.data.actorUid == request.auth.uid
+                    && request.resource.data.get('actorEmail', '') == request.auth.token.email
+                    && request.resource.data.get('id', eventId) == eventId
+                    && request.resource.data.timestamp is int
+                    && request.resource.data.timestamp <= request.time.toMillis() + 86400000
+                    && request.resource.data.keys().hasOnly(['id', 'timestamp', 'action', 'unitId',
+                         'unitName', 'field', 'before', 'after', 'actorUid', 'actorEmail',
+                         'actorName', 'actorRole']);
       allow update: if false;
       allow delete: if isOwner();
     }

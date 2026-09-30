@@ -239,6 +239,16 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   - Laporan restore wajib menyebut koleksi yang **tidak ada di berkas**. Itu
     baris yang paling penting: restore yang diam-diam mencakup lebih sedikit
     dari yang disangka orang adalah kegagalan yang modal itu ada untuk dicegah.
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (41 skenario;
+  bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
+  kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
+  persetujuan laporan/izin (editor hanya bisa mengembalikan ke pending,
+  approver hanya menyentuh field persetujuan dengan emailnya sendiri dan
+  tidak untuk catatannya sendiri), baca per area untuk laporan, izin, surat
+  sakit, foto kerusakan dan riwayat, riwayat terikat ke uid+email pelaku,
+  bentuk dokumen pendaftar dan `activeSession`, `id` = ID dokumen, dan nilai
+  shift yang dikenal. Langganan di `initCloudSync` mengikuti aturan baca yang
+  sama — ubah keduanya bersamaan.
 - **Aturan anti-XSS (dijaga `tests/xss_test.js`).** Nilai yang ditulis satu
   pengguna tampil di layar pengguna lain, termasuk Super Admin:
   - `showToast` menampilkan TEKS. Kirim nilai mentah; jangan `escapeHtml`.
