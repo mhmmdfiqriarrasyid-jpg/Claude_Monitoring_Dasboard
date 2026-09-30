@@ -18,9 +18,15 @@ const goldenRaw = require('./fixtures/tractor_golden.json');
 //  - v111: alasan breakdown pindah dari argumen onclick ke data-reason.
 //    Argumen lama bisa keluar dari string JavaScript (escapeHtml mengubah '
 //    menjadi &#39;, yang dikembalikan browser menjadi ' sebelum JS berjalan).
+//  - v120: argumen string di onclick ditulis lewat jsArg(): "…" (di-escape
+//    jadi &quot;…&quot;) menggantikan '…'. Kutip tunggal hasil escapeHtml
+//    dikembalikan browser sebelum handler berjalan, jadi id berisi ' bisa
+//    menjalankan kode.
 const golden = JSON.parse(JSON.stringify(goldenRaw).replace(
     /onclick=\\"showBreakdownPopover\(event, '([^']*)'\)\\"/g,
-    (_, r) => `data-reason=\\"${r}\\" onclick=\\"showBreakdownPopover(event, this.dataset.reason)\\"`));
+    (_, r) => `data-reason=\\"${r}\\" onclick=\\"showBreakdownPopover(event, this.dataset.reason)\\"`)
+  .replace(/onclick=\\"(showUnitProfile|showHistory|editUnit|deleteUnit|triggerAttachUpload)\('([^']*)'\)\\"/g,
+    (_, fn, arg) => `onclick=\\"${fn}(&quot;${arg}&quot;)\\"`));
 
 const T = [];
 const t = (n, g, w) => T.push({ n, g, w, pass: JSON.stringify(g) === JSON.stringify(w) });

@@ -83,7 +83,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v119';
+const APP_VERSION = 'v120';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -900,7 +900,13 @@ function showToast(message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     const icons = { success: 'check-circle', error: 'times-circle', warning: 'exclamation-circle', info: 'info-circle' };
-    toast.innerHTML = `<i class="fas fa-${icons[type] || icons.info}"></i> ${message}`;
+    // Plain text, always. Toast messages carry unit names, member names,
+    // licence types, emails — values other users write — and innerHTML made
+    // every one of them a way to run code in whoever saw the toast (usually
+    // the Super Admin). Pass values raw; do not escapeHtml them.
+    const icon = document.createElement('i');
+    icon.className = `fas fa-${icons[type] || icons.info}`;
+    toast.append(icon, ' ', String(message == null ? '' : message));
     container.appendChild(toast);
     setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 4000);
 }
@@ -908,6 +914,24 @@ function showToast(message, type = 'info') {
 function showLoading(show) {
     document.getElementById('loadingOverlay').classList.toggle('active', show);
 }
+
+// A value as a JS string literal that is safe INSIDE an HTML attribute such as
+// onclick="fn(${jsArg(id)})". escapeHtml alone is not: the browser decodes
+// &#39; back to ' before the handler runs, so '${escapeHtml(x)}' lets a
+// stored value close the string and run code. JSON.stringify escapes quotes,
+// backslashes and line breaks; escapeHtml then protects the attribute.
+function jsArg(v) { return escapeHtml(JSON.stringify(String(v == null ? '' : v))); }
+
+// A stored photo is only ever a base64 image data URL. Anything else — a
+// value written straight to Firestore with a quote in it — renders nothing
+// instead of becoming markup.
+function safeImageSrc(v) {
+    const s = String(v == null ? '' : v);
+    return /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+\/=\s]+$/.test(s) ? s : '';
+}
+
+// For showToast, which renders text: the value as a string, nothing escaped.
+function plainText(v) { return String(v == null ? '' : v); }
 
 function escapeHtml(v) {
     return String(v == null ? '' : v)
@@ -1250,17 +1274,20 @@ function renderAttachCell(d) {
     if (atts.length === 0) {
         html += '<span class="attach-empty">No files</span>';
     }
-    atts.forEach(a => {
+    atts.forEach(att => {
+        // Attachment metadata rides on the unit document, so treat it as data
+        // anyone with unit-edit rights could have written.
+        const a = { ...att, name: String((att && att.name) || ''), size: Number(att && att.size) || 0 };
         const ext = a.name.split('.').pop().toLowerCase();
         const shortName = a.name.length > 18 ? a.name.slice(0, 15) + '…' + a.name.slice(a.name.lastIndexOf('.')) : a.name;
-        html += `<div class="attach-chip attach-chip--${escapeHtml(ext)}" title="${escapeHtml(a.name)} (${formatFileSize(a.size)})">
-            <i class="fas ${attachFileIcon(a.name)}"></i>
+        html += `<div class="attach-chip attach-chip--${escapeHtml(ext)}" title="${escapeHtml(a.name)} (${escapeHtml(formatFileSize(a.size))})">
+            <i class="fas ${escapeHtml(attachFileIcon(a.name))}"></i>
             <span class="attach-chip__name">${escapeHtml(shortName)}</span>
-            <button class="btn-icon attach-chip__dl" title="Download" onclick="downloadAttachment('${a.id}')"><i class="fas fa-download"></i></button>
-            <button class="btn-icon attach-chip__rm" title="Hapus" onclick="removeAttachment('${escapeHtml(d.id)}','${a.id}')"><i class="fas fa-xmark"></i></button>
+            <button class="btn-icon attach-chip__dl" title="Download" onclick="downloadAttachment(${jsArg(a.id)})"><i class="fas fa-download"></i></button>
+            <button class="btn-icon attach-chip__rm" title="Hapus" onclick="removeAttachment(${jsArg(d.id)},${jsArg(a.id)})"><i class="fas fa-xmark"></i></button>
         </div>`;
     });
-    html += `<button class="btn-icon attach-upload-btn" title="Upload file" onclick="triggerAttachUpload('${escapeHtml(d.id)}')"><i class="fas fa-paperclip"></i></button>`;
+    html += `<button class="btn-icon attach-upload-btn" title="Upload file" onclick="triggerAttachUpload(${jsArg(d.id)})"><i class="fas fa-paperclip"></i></button>`;
     html += '</div>';
     return html;
 }
@@ -3472,7 +3499,7 @@ function _detailRowHeavy(d, i) {
     return `
         <tr class="${!isGood(d.status) ? 'row-breakdown' : ''}">
             <td>${i + 1}</td>
-            <td><strong class="unit-link" title="Lihat profil unit" onclick="showUnitProfile('${escapeHtml(d.id)}')">${escapeHtml(d.name)}</strong></td>
+            <td><strong class="unit-link" title="Lihat profil unit" onclick="showUnitProfile(${jsArg(d.id)})">${escapeHtml(d.name)}</strong></td>
             <td>${escapeHtml(d.model)}</td>
             <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
             <td>${_dash(d.machineType)}</td><td>${_dash(d.assetCode)}</td><td>${_dash(d.workTool)}</td>
@@ -3486,7 +3513,7 @@ function _detailRowAll(d, i) {
     return `
         <tr class="${!isGood(d.status) ? 'row-breakdown' : ''}">
             <td>${i + 1}</td>
-            <td><strong class="unit-link" title="Lihat profil unit" onclick="showUnitProfile('${escapeHtml(d.id)}')">${escapeHtml(d.name)}</strong></td>
+            <td><strong class="unit-link" title="Lihat profil unit" onclick="showUnitProfile(${jsArg(d.id)})">${escapeHtml(d.name)}</strong></td>
             <td>${escapeHtml(groupDef(unitGroupOf(d)).shortLabel)}</td>
             <td>${escapeHtml(d.model)}</td>
             <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
@@ -3521,7 +3548,7 @@ function renderTable(data) {
         return `
         <tr class="${isBD ? 'row-breakdown' : ''}">
             <td>${i + 1}</td>
-            <td><strong class="unit-link" title="Lihat profil unit" onclick="showUnitProfile('${escapeHtml(d.id)}')">${escapeHtml(d.name)}</strong></td>
+            <td><strong class="unit-link" title="Lihat profil unit" onclick="showUnitProfile(${jsArg(d.id)})">${escapeHtml(d.name)}</strong></td>
             <td>${escapeHtml(d.model)}</td>
             <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
             <td>${escapeHtml(d.implement || '')}</td>
@@ -4093,9 +4120,8 @@ function _refuseCrossGroupRestore(units, opts) {
     // one (guardUnitFields, Periksa Data → Tetapkan kelompok).
     const unreadable = auto ? [] : (units || []).filter(hasUnreadableGroup);
     if (unreadable.length) {
-        // showToast renders HTML; these values come straight from the file.
         const kinds = [...new Set(unreadable.map(u => String(u.unitGroup)))].slice(0, 3)
-            .map(v => `"${escapeHtml(v)}"`).join(', ');
+            .map(v => `"${v}"`).join(', ');
         showToast(`Pemulihan dibatalkan: ${unreadable.length} unit di cadangan punya kelompok yang tidak dikenal (${kinds}). `
             + `Ubah nilainya di berkas menjadi "tractor" atau "heavy", atau pilih GABUNG — unit itu akan dilewati.`, 'error');
         return true;
@@ -4272,10 +4298,10 @@ function _editRowHeavy(d, i, ce) {
             <td class="col-attach" data-label="Attachments">${renderAttachCell(d)}</td>
             <td class="col-actions">
                 <div class="row-actions">
-                    <button class="btn btn-secondary" title="Profil" onclick="showUnitProfile('${id}')"><i class="fas fa-eye"></i></button>
-                    <button class="btn btn-secondary" title="History" onclick="showHistory('${id}')"><i class="fas fa-clock-rotate-left"></i></button>
-                    <button class="btn btn-secondary" title="Edit" onclick="editUnit('${id}')"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Delete" onclick="deleteUnit('${id}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                    <button class="btn btn-secondary" title="Profil" onclick="showUnitProfile(${jsArg(d.id)})"><i class="fas fa-eye"></i></button>
+                    <button class="btn btn-secondary" title="History" onclick="showHistory(${jsArg(d.id)})"><i class="fas fa-clock-rotate-left"></i></button>
+                    <button class="btn btn-secondary" title="Edit" onclick="editUnit(${jsArg(d.id)})"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Delete" onclick="deleteUnit(${jsArg(d.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
                 </div>
             </td>
         </tr>`;
@@ -4345,10 +4371,10 @@ function renderEditTable() {
             <td class="col-attach" data-label="Attachments">${renderAttachCell(d)}</td>
             <td class="col-actions">
                 <div class="row-actions">
-                    <button class="btn btn-secondary" title="Profil" onclick="showUnitProfile('${escapeHtml(d.id)}')"><i class="fas fa-eye"></i></button>
-                    <button class="btn btn-secondary" title="History" onclick="showHistory('${escapeHtml(d.id)}')"><i class="fas fa-clock-rotate-left"></i></button>
-                    <button class="btn btn-secondary" title="Edit" onclick="editUnit('${escapeHtml(d.id)}')"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Delete" onclick="deleteUnit('${escapeHtml(d.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                    <button class="btn btn-secondary" title="Profil" onclick="showUnitProfile(${jsArg(d.id)})"><i class="fas fa-eye"></i></button>
+                    <button class="btn btn-secondary" title="History" onclick="showHistory(${jsArg(d.id)})"><i class="fas fa-clock-rotate-left"></i></button>
+                    <button class="btn btn-secondary" title="Edit" onclick="editUnit(${jsArg(d.id)})"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Delete" onclick="deleteUnit(${jsArg(d.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
                 </div>
             </td>
         </tr>`; }).join('');
@@ -4405,7 +4431,7 @@ function saveInlineEdit(el) {
     if (changed && hasUnreadableGroup(unit)
         && (TRACTOR_ONLY_FIELDS.includes(field) || HEAVY_ONLY_FIELDS.includes(field))) {
         el.textContent = unit[field] || '';
-        showToast(`Kelompok unit ini ("${escapeHtml(unit.unitGroup)}") tidak dikenal — tetapkan dulu lewat Periksa Data`, 'warning');
+        showToast(`Kelompok unit ini ("${plainText(unit.unitGroup)}") tidak dikenal — tetapkan dulu lewat Periksa Data`, 'warning');
         return;
     }
     if (changed) {
@@ -4727,7 +4753,7 @@ function editUnit(id) {
     if (hasUnreadableGroup(unit)) {
         // showToast renders HTML, and this value is by definition one nobody
         // vetted — escape it.
-        showToast(`Kelompok unit ini ("${escapeHtml(unit.unitGroup)}") tidak dikenal. Tetapkan dulu lewat Kotak Keputusan → Periksa Data.`, 'warning');
+        showToast(`Kelompok unit ini ("${plainText(unit.unitGroup)}") tidak dikenal. Tetapkan dulu lewat Kotak Keputusan → Periksa Data.`, 'warning');
         return;
     }
 
@@ -5239,8 +5265,8 @@ function renderImplementsTable() {
             <td data-label="Chart of Account" style="max-width:240px;white-space:nowrap">${coaCell}</td>
             <td class="col-actions">
                 <div class="row-actions">
-                    <button class="btn btn-secondary" title="Edit" onclick="editImplement('${escapeHtml(d.id)}')"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Delete" onclick="deleteImplement('${escapeHtml(d.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                    <button class="btn btn-secondary" title="Edit" onclick="editImplement(${jsArg(d.id)})"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Delete" onclick="deleteImplement(${jsArg(d.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
                 </div>
             </td>
         </tr>`;
@@ -5715,7 +5741,7 @@ function damagePhotoButton(rec) {
     // load — which is exactly when a field device is on a bad connection.
     return `<button type="button" class="wl-photo-btn" title="Lihat foto kerusakan"
             aria-label="Lihat foto kerusakan"
-            onclick="event.stopPropagation();openDamagePhoto('${escapeHtml(rec.id)}', this)"><i class="fas fa-image"></i> Foto</button>`;
+            onclick="event.stopPropagation();openDamagePhoto(${jsArg(rec.id)}, this)"><i class="fas fa-image"></i> Foto</button>`;
 }
 
 // ---- Lightbox (view full-size photo) ----
@@ -5801,7 +5827,7 @@ function renderGlobalSearchResults() {
         return;
     }
     box.innerHTML = hits.map(u => `
-        <div class="global-search__item" onclick="openUnitFromSearch('${escapeHtml(u.id)}')">
+        <div class="global-search__item" onclick="openUnitFromSearch(${jsArg(u.id)})">
             <span class="global-search__name">${escapeHtml(u.name || '(tanpa nama)')}</span>
             <span class="global-search__meta"><span class="mono">${escapeHtml(u.sn || '')}</span>${u.site ? ' · ' + escapeHtml(u.site) : ''}${isHeavy(u) ? ' · ' + escapeHtml(UNIT_GROUPS.heavy.shortLabel) : ''}</span>
         </div>`).join('');
@@ -6141,11 +6167,11 @@ function renderDamageTable() {
                 : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td data-label="Perbaikan" style="white-space:nowrap">${d.resolved
                 ? `<span class="badge badge-good" style="font-size:10px" title="Selesai diperbaiki"><i class="fas fa-check"></i> Selesai${d.resolvedAt ? ' ' + escapeHtml(d.resolvedAt) : ''}</span>`
-                : `<button class="btn btn-secondary btn-sm" style="font-size:11px" title="Tandai selesai & pulihkan status unit" onclick="resolveDamage('${escapeHtml(d.id)}')"><i class="fas fa-wrench"></i> Tandai selesai</button>`}</td>
+                : `<button class="btn btn-secondary btn-sm" style="font-size:11px" title="Tandai selesai & pulihkan status unit" onclick="resolveDamage(${jsArg(d.id)})"><i class="fas fa-wrench"></i> Tandai selesai</button>`}</td>
             <td class="col-actions">
                 <div class="row-actions">
-                    <button class="btn btn-secondary" title="Edit" onclick="editDamage('${escapeHtml(d.id)}')"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Delete" onclick="deleteDamage('${escapeHtml(d.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                    <button class="btn btn-secondary" title="Edit" onclick="editDamage(${jsArg(d.id)})"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Delete" onclick="deleteDamage(${jsArg(d.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
                 </div>
             </td>
         </tr>`;
@@ -6279,7 +6305,7 @@ function saveDamage(event) {
     if (!id && hasUnreadableGroup(unit) && document.getElementById('dmgSetBreakdown')?.checked) {
         const f = damageTargetField(type, comp, unit);
         if (f && f !== DAMAGE_DRIVES_NOTHING && (TRACTOR_ONLY_FIELDS.includes(f) || HEAVY_ONLY_FIELDS.includes(f))) {
-            showToast(`Kelompok unit ini ("${escapeHtml(unit.unitGroup)}") tidak dikenal — tetapkan dulu lewat Periksa Data, `
+            showToast(`Kelompok unit ini ("${plainText(unit.unitGroup)}") tidak dikenal — tetapkan dulu lewat Periksa Data, `
                 + 'atau simpan tanpa mencentang "set Breakdown"', 'warning');
             return;
         }
@@ -6822,8 +6848,8 @@ function renderLicenseStockTable() {
             <td data-label="Catatan" style="max-width:200px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(note)}">${escapeHtml(noteShort) || '<span style="color:var(--text-light)">—</span>'}</td>
             <td class="col-actions">
                 <div class="row-actions">
-                    <button class="btn btn-secondary" title="Edit" onclick="editLicenseStock('${escapeHtml(r.id)}')"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Delete" onclick="deleteLicenseStock('${escapeHtml(r.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                    <button class="btn btn-secondary" title="Edit" onclick="editLicenseStock(${jsArg(r.id)})"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Delete" onclick="deleteLicenseStock(${jsArg(r.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
                 </div>
             </td>
         </tr>`;
@@ -7324,7 +7350,7 @@ function saveLicenseStock(event) {
     const qty = Math.max(1, parseInt(document.getElementById('licQty').value, 10) || 1);
     if (!licenseType) { showToast('Isi jenis lisensi', 'warning'); return; }
     if (typedType && licenseType !== typedType) {
-        showToast(`Jenis lisensi disamakan menjadi "${escapeHtml(licenseType)}"`, 'info');
+        showToast(`Jenis lisensi disamakan menjadi "${plainText(licenseType)}"`, 'info');
     }
 
     const data = {
@@ -7343,7 +7369,7 @@ function saveLicenseStock(event) {
         // applyDistributedLicenseToUnit still refuses to write to the unit.
         const legacy = prevRec && prevRec.unitId === unit.id;
         if (isHeavy(unit) && !legacy) {
-            showToast(`Unit "${escapeHtml(unit.name)}" adalah Alat Berat — lisensi SF/G5 hanya untuk ${UNIT_GROUPS.tractor.label}`, 'warning');
+            showToast(`Unit "${plainText(unit.name)}" adalah Alat Berat — lisensi SF/G5 hanya untuk ${UNIT_GROUPS.tractor.label}`, 'warning');
             return;
         }
         data.unitId = unit.id;
@@ -7414,19 +7440,19 @@ function saveLicenseStock(event) {
         const kind = kindKey === 'display' ? 'Display' : 'GPS';
         const tgt = kindKey && data.date ? distributionTarget({ licenseType, date: data.date }, kindKey) : null;
         if (applied === 'applied' && tgt && tgt.downgraded) {
-            showToast(`Lisensi ${kind} unit "${escapeHtml(data.unitName)}": ${escapeHtml(licenseType)} dari ${escapeHtml(data.date)} sudah habis ${escapeHtml(tgt.expiredAt)} — tercatat ${escapeHtml(tgt.type)}`, 'info');
+            showToast(`Lisensi ${kind} unit "${plainText(data.unitName)}": ${plainText(licenseType)} dari ${plainText(data.date)} sudah habis ${plainText(tgt.expiredAt)} — tercatat ${plainText(tgt.type)}`, 'info');
         } else if (applied === 'applied') {
-            showToast(`Lisensi ${kind} unit "${escapeHtml(data.unitName)}" di-set ${escapeHtml(licenseType)} (berlaku 1 tahun)`, 'info');
+            showToast(`Lisensi ${kind} unit "${plainText(data.unitName)}" di-set ${plainText(licenseType)} (berlaku 1 tahun)`, 'info');
         } else if (applied === 'unchanged') {
-            showToast(`Lisensi ${kind} unit "${escapeHtml(data.unitName)}" sudah sesuai — tidak diubah`, 'info');
+            showToast(`Lisensi ${kind} unit "${plainText(data.unitName)}" sudah sesuai — tidak diubah`, 'info');
         } else if (applied === 'skipped-older') {
-            showToast(`Lisensi ${kind} unit "${escapeHtml(data.unitName)}" tidak diubah — unit sudah punya masa berlaku yang lebih panjang`, 'warning');
+            showToast(`Lisensi ${kind} unit "${plainText(data.unitName)}" tidak diubah — unit sudah punya masa berlaku yang lebih panjang`, 'warning');
         } else if (!kindKey) {
-            showToast(`"${escapeHtml(licenseType)}" bukan lisensi unit standar — hanya dicatat di stok`, 'warning');
+            showToast(`"${plainText(licenseType)}" bukan lisensi unit standar — hanya dicatat di stok`, 'warning');
         } else if (!hasAccess('editUnits', 'edit')) {
-            showToast(`Distribusi dicatat, tetapi lisensi ${kind} unit "${escapeHtml(data.unitName)}" tidak diubah — butuh hak edit pada Edit Units`, 'warning');
+            showToast(`Distribusi dicatat, tetapi lisensi ${kind} unit "${plainText(data.unitName)}" tidak diubah — butuh hak edit pada Edit Units`, 'warning');
         } else {
-            showToast(`Distribusi dicatat, tetapi lisensi ${kind} unit "${escapeHtml(data.unitName)}" tidak diubah — cek unitnya di Periksa Data`, 'warning');
+            showToast(`Distribusi dicatat, tetapi lisensi ${kind} unit "${plainText(data.unitName)}" tidak diubah — cek unitnya di Periksa Data`, 'warning');
         }
     }
     // Moved to another unit or licence kind, or turned into stock-in: the old
@@ -8152,7 +8178,7 @@ function renderCategoriesList() {
     list.innerHTML = userCategories.map(c => `
         <li class="category-item">
             <span class="category-item__name">${escapeHtml(c.name)}</span>
-            <button class="btn-icon category-item__del" title="Delete category" onclick="deleteCategory('${escapeHtml(c.id)}')">
+            <button class="btn-icon category-item__del" title="Delete category" onclick="deleteCategory(${jsArg(c.id)})">
                 <i class="fas fa-trash" style="color:var(--danger)"></i>
             </button>
         </li>
@@ -8364,7 +8390,7 @@ function renderDamageComponentsList() {
             <span class="category-item__name">${escapeHtml(c.name)}${c.unitField
                 ? ` <span style="font-size:11px;color:var(--text-light)">· status unit: ${escapeHtml(c.unitField)}</span>`
                 : ''}</span>
-            <button class="btn-icon category-item__del" title="Hapus komponen" onclick="deleteDamageComponent('${escapeHtml(c.id)}')">
+            <button class="btn-icon category-item__del" title="Hapus komponen" onclick="deleteDamageComponent(${jsArg(c.id)})">
                 <i class="fas fa-trash" style="color:var(--danger)"></i>
             </button>
         </li>
@@ -9296,10 +9322,10 @@ function renderUsersView() {
                             ${ROLES.filter(r => r.key !== 'owner').map(r =>
                                 `<option value="${r.key}"${r.key === 'khl' ? ' selected' : ''}>${escapeHtml(r.label)}</option>`).join('')}
                         </select>
-                        <button class="btn btn-success btn-sm" title="Setujui dengan role terpilih" onclick="approveUser('${escapeHtml(u.uid)}')">
+                        <button class="btn btn-success btn-sm" title="Setujui dengan role terpilih" onclick="approveUser(${jsArg(u.uid)})">
                             <i class="fas fa-check"></i> Setujui
                         </button>
-                        <button class="btn btn-secondary btn-sm row-actions__icon" title="Tolak dan hapus pendaftaran" onclick="rejectUser('${escapeHtml(u.uid)}')">
+                        <button class="btn btn-secondary btn-sm row-actions__icon" title="Tolak dan hapus pendaftaran" onclick="rejectUser(${jsArg(u.uid)})">
                             <i class="fas fa-xmark" style="color:var(--danger)"></i>
                         </button>
                     </div>
@@ -9332,7 +9358,7 @@ function renderUsersView() {
                     .concat(legacy ? [`<option value="${u.role}" selected>${escapeHtml(roleLabel(u.role))} (role lama)</option>`] : [])
                     .join('');
                 roleSelect = `<select class="form-select user-role-select" title="Role hanya label — atur hak aksesnya lewat tombol Akses"
-                           onchange="changeUserRole('${escapeHtml(u.uid)}', this.value)">${opts}</select>`;
+                           onchange="changeUserRole(${jsArg(u.uid)}, this.value)">${opts}</select>`;
             }
 
             // A new role grants nothing by itself, so an account can sit active
@@ -9346,9 +9372,12 @@ function renderUsersView() {
             // Which device currently holds this account's single session slot.
             const sess = u.activeSession;
             const live = sess && sess.id && !String(sess.id).startsWith('revoked_');
-            const sessionTitle = live
-                ? `Keluarkan dari perangkat aktif (${sess.device || 'tidak diketahui'}${sess.startedAt ? ' · masuk ' + formatUserTime(sess.startedAt) : ''})`
-                : 'Keluarkan dari semua perangkat';
+            // escapeHtml: the device string is written by the signed-in user
+            // themselves, about their own account — anyone active can put
+            // markup there, and this row is rendered in the Super Admin's view.
+            const sessionTitle = escapeHtml(live
+                ? `Keluarkan dari perangkat aktif (${String(sess.device || 'tidak diketahui').slice(0, 80)}${sess.startedAt ? ' · masuk ' + formatUserTime(sess.startedAt) : ''})`
+                : 'Keluarkan dari semua perangkat');
 
             return `
             <tr>
@@ -9362,9 +9391,9 @@ function renderUsersView() {
                     ${isOwnerRow
                         ? '<span class="user-cell-protected">dilindungi</span>'
                         : `<div class="row-actions row-actions--labeled">
-                            <button class="btn btn-secondary btn-sm" title="Atur akses per menu" onclick="openAccessModal('${escapeHtml(u.uid)}')"><i class="fas fa-sliders"></i> Akses</button>
-                            <button class="btn btn-secondary btn-sm row-actions__icon" title="${sessionTitle}" onclick="forceSignOutUser('${escapeHtml(u.uid)}')"><i class="fas fa-right-from-bracket"></i></button>
-                            <button class="btn btn-secondary btn-sm row-actions__icon" title="Hapus user" onclick="removeUser('${escapeHtml(u.uid)}')"><i class="fas fa-user-minus" style="color:var(--danger)"></i></button>
+                            <button class="btn btn-secondary btn-sm" title="Atur akses per menu" onclick="openAccessModal(${jsArg(u.uid)})"><i class="fas fa-sliders"></i> Akses</button>
+                            <button class="btn btn-secondary btn-sm row-actions__icon" title="${sessionTitle}" onclick="forceSignOutUser(${jsArg(u.uid)})"><i class="fas fa-right-from-bracket"></i></button>
+                            <button class="btn btn-secondary btn-sm row-actions__icon" title="Hapus user" onclick="removeUser(${jsArg(u.uid)})"><i class="fas fa-user-minus" style="color:var(--danger)"></i></button>
                            </div>`}
                 </td>
             </tr>`;
@@ -9999,7 +10028,9 @@ function renderTeamView() {
 
 function shiftFor(memberId, date) {
     const rec = teamShifts.find(s => s.id === `${date}_${memberId}`);
-    return rec ? rec.shift : '';
+    // Only a known shift key: the value becomes part of a class name, and a
+    // stored "pagi\"><img onerror=…>" would otherwise break out of it.
+    return rec && Object.prototype.hasOwnProperty.call(SHIFT_LABEL, rec.shift) ? rec.shift : '';
 }
 
 // "Diisi Budi · 14 Sep 09:12" for the cell tooltip. Two people can edit the
@@ -10137,7 +10168,7 @@ function renderShiftGrid() {
             return `<td class="${cls}"${byAttr}>${lvBadge}
                 <select class="shift-select shift-select--${cur || 'none'}"
                         aria-label="Shift ${escapeHtml(m.name)} tanggal ${escapeHtml(d)}"
-                        onchange="setShift('${escapeHtml(m.id)}','${escapeHtml(d)}',this.value)">${opts}</select>
+                        onchange="setShift(${jsArg(m.id)},${jsArg(d)},this.value)">${opts}</select>
             </td>`;
         }).join('');
         return `<tr>
@@ -10329,15 +10360,15 @@ function renderTeamMembersList() {
                     ? `<input class="form-input member-item__company" list="companyList"
                               value="${escapeHtml(companyOf(m))}" placeholder="Perusahaan…" maxlength="80"
                               aria-label="Perusahaan ${escapeHtml(m.name)}"
-                              onchange="setMemberCompany('${escapeHtml(m.id)}', this.value)">`
+                              onchange="setMemberCompany(${jsArg(m.id)}, this.value)">`
                     : `<span class="member-item__job">${escapeHtml(companyOf(m) || NO_COMPANY)}</span>`}
             </span>
             ${canEdit ? `<span class="row-actions row-actions--labeled">
-                <button class="btn btn-secondary btn-sm" onclick="toggleTeamMember('${escapeHtml(m.id)}')">
+                <button class="btn btn-secondary btn-sm" onclick="toggleTeamMember(${jsArg(m.id)})">
                     ${m.active === false ? 'Aktifkan' : 'Nonaktifkan'}
                 </button>
                 <button class="btn btn-secondary btn-sm row-actions__icon" title="Hapus anggota" aria-label="Hapus ${escapeHtml(m.name)}"
-                        onclick="deleteTeamMember('${escapeHtml(m.id)}')">
+                        onclick="deleteTeamMember(${jsArg(m.id)})">
                     <i class="fas fa-trash" style="color:var(--danger)"></i>
                 </button>
             </span>` : ''}
@@ -10671,20 +10702,20 @@ function renderWorkLogTable() {
                 const badge = `<span class="appr appr--${st}" title="${escapeHtml(meta)}">${escapeHtml(APPROVAL_STATES[st].label)}</span>`;
                 if (!canApproveThisLog(w)) return badge;
                 const btns = `<span class="appr-actions">
-                    ${st !== 'approved' ? `<button class="btn btn-secondary appr-btn" title="Setujui laporan" aria-label="Setujui laporan" onclick="approveWorkLog('${escapeHtml(w.id)}')"><i class="fas fa-check"></i></button>` : ''}
-                    ${st !== 'revision' ? `<button class="btn btn-secondary appr-btn" title="Minta revisi" aria-label="Minta revisi" onclick="reviseWorkLog('${escapeHtml(w.id)}')"><i class="fas fa-rotate-left"></i></button>` : ''}
+                    ${st !== 'approved' ? `<button class="btn btn-secondary appr-btn" title="Setujui laporan" aria-label="Setujui laporan" onclick="approveWorkLog(${jsArg(w.id)})"><i class="fas fa-check"></i></button>` : ''}
+                    ${st !== 'revision' ? `<button class="btn btn-secondary appr-btn" title="Minta revisi" aria-label="Minta revisi" onclick="reviseWorkLog(${jsArg(w.id)})"><i class="fas fa-rotate-left"></i></button>` : ''}
                 </span>`;
                 return badge + btns;
             })()}</td>
             <td data-label="Dokumentasi">${photoCount
                 ? `<button type="button" class="wl-photo-btn" title="Lihat ${photoCount} foto dokumentasi"
                         aria-label="Lihat ${photoCount} foto dokumentasi"
-                        onclick="openWorkLogPhotos('${escapeHtml(w.id)}', this)"><i class="fas fa-image"></i> ${photoCount}</button>`
+                        onclick="openWorkLogPhotos(${jsArg(w.id)}, this)"><i class="fas fa-image"></i> ${photoCount}</button>`
                 : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td class="col-actions">
                 ${canEdit ? `<div class="row-actions">
-                    <button class="btn btn-secondary" title="Edit" aria-label="Edit laporan" onclick="editWorkLog('${escapeHtml(w.id)}')"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Hapus" aria-label="Hapus laporan" onclick="deleteWorkLog('${escapeHtml(w.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                    <button class="btn btn-secondary" title="Edit" aria-label="Edit laporan" onclick="editWorkLog(${jsArg(w.id)})"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Hapus" aria-label="Hapus laporan" onclick="deleteWorkLog(${jsArg(w.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
                 </div>` : ''}
             </td>
         </tr>`;
@@ -10787,7 +10818,7 @@ function renderWorkLogPhotos() {
     }
     wrap.innerHTML = _wlPhotos.map((src, i) => `
         <div class="wl-photo">
-            <img src="${src}" alt="Dokumentasi ${i + 1}" onclick="openPhotoLightbox(_wlPhotos, ${i})">
+            <img src="${escapeHtml(safeImageSrc(src))}" alt="Dokumentasi ${i + 1}" onclick="openPhotoLightbox(_wlPhotos, ${i})">
             <button type="button" class="wl-photo__x" aria-label="Hapus dokumentasi ${i + 1}"
                     title="Hapus foto" onclick="removeWorkLogPhoto(${i})">&times;</button>
         </div>`).join('');
@@ -11449,19 +11480,19 @@ function renderLeaveTable() {
             <td data-label="Surat">${docs
                 ? `<button type="button" class="wl-photo-btn" title="Lihat ${docs} lembar surat"
                         aria-label="Lihat ${docs} lembar surat"
-                        onclick="openLeaveDocs('${escapeHtml(r.id)}', this)"><i class="fas fa-file-image"></i> ${docs}</button>`
+                        onclick="openLeaveDocs(${jsArg(r.id)}, this)"><i class="fas fa-file-image"></i> ${docs}</button>`
                 : '<span style="color:var(--text-light)">—</span>'}</td>
             <td data-label="Persetujuan">
                 <span class="appr appr--${st}" title="${escapeHtml(meta)}">${escapeHtml(APPROVAL_STATES[st].label)}</span>
                 ${canApproveThisLog(r) ? `<span class="appr-actions">
-                    ${st !== 'approved' ? `<button class="btn btn-secondary appr-btn" title="Setujui pengajuan" aria-label="Setujui pengajuan" onclick="approveLeave('${escapeHtml(r.id)}')"><i class="fas fa-check"></i></button>` : ''}
-                    ${st !== 'revision' ? `<button class="btn btn-secondary appr-btn" title="Minta revisi" aria-label="Minta revisi" onclick="reviseLeave('${escapeHtml(r.id)}')"><i class="fas fa-rotate-left"></i></button>` : ''}
+                    ${st !== 'approved' ? `<button class="btn btn-secondary appr-btn" title="Setujui pengajuan" aria-label="Setujui pengajuan" onclick="approveLeave(${jsArg(r.id)})"><i class="fas fa-check"></i></button>` : ''}
+                    ${st !== 'revision' ? `<button class="btn btn-secondary appr-btn" title="Minta revisi" aria-label="Minta revisi" onclick="reviseLeave(${jsArg(r.id)})"><i class="fas fa-rotate-left"></i></button>` : ''}
                 </span>` : ''}
             </td>
             <td class="col-actions">
                 ${canEdit ? `<div class="row-actions">
-                    <button class="btn btn-secondary" title="Edit" onclick="editLeave('${escapeHtml(r.id)}')"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Hapus" onclick="deleteLeave('${escapeHtml(r.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                    <button class="btn btn-secondary" title="Edit" onclick="editLeave(${jsArg(r.id)})"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Hapus" onclick="deleteLeave(${jsArg(r.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
                 </div>` : ''}
             </td>
         </tr>`;
@@ -11492,7 +11523,7 @@ function renderLeaveDocs() {
     }
     wrap.innerHTML = _lvDocs.map((src, i) => `
         <div class="wl-photo">
-            <img src="${src}" alt="Surat lembar ${i + 1}" onclick="openPhotoLightbox(_lvDocs, ${i})">
+            <img src="${escapeHtml(safeImageSrc(src))}" alt="Surat lembar ${i + 1}" onclick="openPhotoLightbox(_lvDocs, ${i})">
             <button type="button" class="wl-photo__x" aria-label="Hapus surat lembar ${i + 1}"
                     title="Hapus lembar ini" onclick="removeLeaveDoc(${i})">&times;</button>
         </div>`).join('');
@@ -12112,8 +12143,8 @@ function renderDeviceTable() {
                 d.note ? escapeHtml(d.note) : '<span style="color:var(--text-light)">—</span>'}</td>
             <td class="col-actions">
                 ${canEdit ? `<div class="row-actions">
-                    <button class="btn btn-secondary" title="Edit" aria-label="Edit perangkat" onclick="editDevice('${escapeHtml(d.id)}')"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Hapus" aria-label="Hapus perangkat" onclick="deleteDevice('${escapeHtml(d.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                    <button class="btn btn-secondary" title="Edit" aria-label="Edit perangkat" onclick="editDevice(${jsArg(d.id)})"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Hapus" aria-label="Hapus perangkat" onclick="deleteDevice(${jsArg(d.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
                 </div>` : ''}
             </td>
         </tr>`;
@@ -12396,8 +12427,8 @@ function renderStockView() {
             <td data-label="Untuk Unit" style="font-size:12px">${escapeHtml(r.unitName || '') || '<span style="color:var(--text-light)">—</span>'}</td>
             <td class="col-actions">
                 ${canEdit ? `<div class="row-actions">
-                    <button class="btn btn-secondary" title="Edit" aria-label="Edit transaksi" onclick="editStockItem('${escapeHtml(r.id)}')"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Hapus" aria-label="Hapus transaksi" onclick="deleteStockItem('${escapeHtml(r.id)}')"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                    <button class="btn btn-secondary" title="Edit" aria-label="Edit transaksi" onclick="editStockItem(${jsArg(r.id)})"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Hapus" aria-label="Hapus transaksi" onclick="deleteStockItem(${jsArg(r.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
                 </div>` : ''}
             </td>
         </tr>`).join('');
@@ -12839,7 +12870,7 @@ function renderDecisionInbox() {
                     ? `<li class="decision-list__more">…dan ${g.total - g.items.length} lagi</li>`
                     : ''}
             </ul>
-            <button class="btn btn-secondary btn-sm" onclick="goDecision('${g.goto}')">
+            <button class="btn btn-secondary btn-sm" onclick="goDecision(${jsArg(g.goto)})">
                 Tangani <i class="fas fa-arrow-right"></i>
             </button>
         </div>`).join('');
@@ -13465,7 +13496,7 @@ function renderDataCheck() {
                     <td data-label="Apa">${escapeHtml(i.label)}</td>
                     <td data-label="Keterangan">${escapeHtml(i.detail)}</td>
                     <td data-label="" style="white-space:nowrap"><button type="button" class="btn btn-secondary btn-sm"
-                        onclick="goDecision('${escapeHtml(i.goTo)}')">Buka</button></td>
+                        onclick="goDecision(${jsArg(i.goTo)})">Buka</button></td>
                 </tr>`).join('')}</tbody>
             </table>
         </div>`).join('');

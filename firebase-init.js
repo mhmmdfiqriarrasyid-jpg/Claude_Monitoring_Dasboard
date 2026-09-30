@@ -34,6 +34,12 @@ import {
     browserLocalPersistence
 } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
 
+// Every record's id IS its document id. The stored "id" field is whatever the
+// writer put there, and the app builds edit/delete targets and click handlers
+// from it — so a document whose data claims someone else's id (or carries
+// markup in it) steered the UI. The document id cannot be forged that way.
+const withDocId = d => ({ ...d.data(), id: d.id });
+
 const firebaseConfig = {
     apiKey: "AIzaSyB0rZdvv44jDErvA6dGCrivyueY-2UB-Mw",
     authDomain: "ot-monitoring-tractor.firebaseapp.com",
@@ -156,12 +162,12 @@ window.cloud = {
     },
     async getAllUnits() {
         const snap = await getDocs(collection(db, UNITS_COL));
-        return snap.docs.map(d => d.data());
+        return snap.docs.map(withDocId);
     },
     subscribeUnits(callback, errorCallback) {
         return onSnapshot(
             collection(db, UNITS_COL),
-            snap => callback(snap.docs.map(d => d.data())),
+            snap => callback(snap.docs.map(withDocId)),
             err => {
                 console.error('[cloud] units subscription error:', err);
                 if (errorCallback) errorCallback(err);
@@ -184,12 +190,12 @@ window.cloud = {
     },
     async getAllImplements() {
         const snap = await getDocs(collection(db, IMPL_COL));
-        return snap.docs.map(d => d.data());
+        return snap.docs.map(withDocId);
     },
     subscribeImplements(callback, errorCallback) {
         return onSnapshot(
             collection(db, IMPL_COL),
-            snap => callback(snap.docs.map(d => d.data())),
+            snap => callback(snap.docs.map(withDocId)),
             err => {
                 console.error('[cloud] implements subscription error:', err);
                 if (errorCallback) errorCallback(err);
@@ -212,12 +218,12 @@ window.cloud = {
     },
     async getAllDamages() {
         const snap = await getDocs(collection(db, DAMAGE_COL));
-        return snap.docs.map(d => d.data());
+        return snap.docs.map(withDocId);
     },
     subscribeDamages(callback, errorCallback) {
         return onSnapshot(
             collection(db, DAMAGE_COL),
-            snap => callback(snap.docs.map(d => d.data())),
+            snap => callback(snap.docs.map(withDocId)),
             err => {
                 console.error('[cloud] damage subscription error:', err);
                 if (errorCallback) errorCallback(err);
@@ -240,12 +246,12 @@ window.cloud = {
     },
     async getAllLicenses() {
         const snap = await getDocs(collection(db, LICENSE_COL));
-        return snap.docs.map(d => d.data());
+        return snap.docs.map(withDocId);
     },
     subscribeLicenses(callback, errorCallback) {
         return onSnapshot(
             collection(db, LICENSE_COL),
-            snap => callback(snap.docs.map(d => d.data())),
+            snap => callback(snap.docs.map(withDocId)),
             err => {
                 console.error('[cloud] license subscription error:', err);
                 if (errorCallback) errorCallback(err);
@@ -369,7 +375,7 @@ window.cloud = {
     subscribeUsers(callback, errorCallback) {
         return onSnapshot(
             collection(db, USERS_COL),
-            snap => callback(snap.docs.map(d => d.data())),
+            snap => callback(snap.docs.map(d => ({ ...d.data(), uid: d.id }))),
             err => {
                 console.error('[cloud] users subscription error:', err);
                 if (errorCallback) errorCallback(err);
@@ -391,7 +397,7 @@ window.cloud = {
             limit(max)
         );
         return onSnapshot(q,
-            snap => callback(snap.docs.map(d => d.data())),
+            snap => callback(snap.docs.map(withDocId)),
             err => {
                 console.error('[cloud] history subscription error:', err);
                 if (errorCallback) errorCallback(err);
@@ -402,7 +408,7 @@ window.cloud = {
     // needs the whole audit trail, not just the newest page of it.
     async getAllHistory() {
         const snap = await getDocs(query(collection(db, HISTORY_COL), orderBy('timestamp', 'desc')));
-        return snap.docs.map(d => d.data());
+        return snap.docs.map(withDocId);
     },
     async clearHistoryCloud() {
         const snap = await getDocs(collection(db, HISTORY_COL));
@@ -433,12 +439,12 @@ window.cloud = {
     },
     async getAllUserCategories() {
         const snap = await getDocs(collection(db, USER_CATEGORIES_COL));
-        return snap.docs.map(d => d.data());
+        return snap.docs.map(withDocId);
     },
     subscribeUserCategories(callback, errorCallback) {
         return onSnapshot(
             collection(db, USER_CATEGORIES_COL),
-            snap => callback(snap.docs.map(d => d.data())),
+            snap => callback(snap.docs.map(withDocId)),
             err => {
                 console.error('[cloud] userCategories subscription error:', err);
                 if (errorCallback) errorCallback(err);
@@ -461,12 +467,12 @@ window.cloud = {
     },
     async getAllDamageComponents() {
         const snap = await getDocs(collection(db, DAMAGE_COMPONENTS_COL));
-        return snap.docs.map(d => d.data());
+        return snap.docs.map(withDocId);
     },
     subscribeDamageComponents(callback, errorCallback) {
         return onSnapshot(
             collection(db, DAMAGE_COMPONENTS_COL),
-            snap => callback(snap.docs.map(d => d.data())),
+            snap => callback(snap.docs.map(withDocId)),
             err => {
                 console.error('[cloud] damageComponents subscription error:', err);
                 if (errorCallback) errorCallback(err);
@@ -487,12 +493,12 @@ window.cloud = {
     },
     async getAllDevices() {
         const snap = await getDocs(collection(db, DEVICES_COL));
-        return snap.docs.map(d => d.data());
+        return snap.docs.map(withDocId);
     },
     subscribeDevices(callback, errorCallback) {
         return onSnapshot(
             collection(db, DEVICES_COL),
-            snap => callback(snap.docs.map(d => d.data())),
+            snap => callback(snap.docs.map(withDocId)),
             err => {
                 console.error('[cloud] devices subscription error:', err);
                 if (errorCallback) errorCallback(err);
@@ -513,12 +519,12 @@ window.cloud = {
     },
     async getAllStockItems() {
         const snap = await getDocs(collection(db, STOCK_ITEMS_COL));
-        return snap.docs.map(d => d.data());
+        return snap.docs.map(withDocId);
     },
     subscribeStockItems(callback, errorCallback) {
         return onSnapshot(
             query(collection(db, STOCK_ITEMS_COL), orderBy('date', 'desc')),
-            snap => callback(snap.docs.map(d => d.data())),
+            snap => callback(snap.docs.map(withDocId)),
             err => {
                 console.error('[cloud] stockItems subscription error:', err);
                 if (errorCallback) errorCallback(err);
@@ -542,12 +548,12 @@ window.cloud = {
     },
     async getAllTeamMembers() {
         const snap = await getDocs(collection(db, TEAM_MEMBERS_COL));
-        return snap.docs.map(d => d.data());
+        return snap.docs.map(withDocId);
     },
     subscribeTeamMembers(callback, errorCallback) {
         return onSnapshot(
             collection(db, TEAM_MEMBERS_COL),
-            snap => callback(snap.docs.map(d => d.data())),
+            snap => callback(snap.docs.map(withDocId)),
             err => {
                 console.error('[cloud] teamMembers subscription error:', err);
                 if (errorCallback) errorCallback(err);
@@ -570,7 +576,7 @@ window.cloud = {
     },
     async getAllShifts() {
         const snap = await getDocs(collection(db, SHIFTS_COL));
-        return snap.docs.map(d => d.data());
+        return snap.docs.map(withDocId);
     },
     // Bounded by date, because this collection grows by one document per
     // person per day and never stops — a year of eight people is ~2,900
@@ -586,7 +592,7 @@ window.cloud = {
             : query(collection(db, SHIFTS_COL));
         return onSnapshot(
             q,
-            snap => callback(snap.docs.map(d => d.data())),
+            snap => callback(snap.docs.map(withDocId)),
             err => {
                 console.error('[cloud] shifts subscription error:', err);
                 if (errorCallback) errorCallback(err);
@@ -607,12 +613,12 @@ window.cloud = {
     },
     async getAllWorkLogs() {
         const snap = await getDocs(collection(db, WORK_LOGS_COL));
-        return snap.docs.map(d => d.data());
+        return snap.docs.map(withDocId);
     },
     subscribeWorkLogs(callback, errorCallback) {
         return onSnapshot(
             query(collection(db, WORK_LOGS_COL), orderBy('date', 'desc')),
-            snap => callback(snap.docs.map(d => d.data())),
+            snap => callback(snap.docs.map(withDocId)),
             err => {
                 console.error('[cloud] workLogs subscription error:', err);
                 if (errorCallback) errorCallback(err);
@@ -640,12 +646,12 @@ window.cloud = {
     },
     async getAllLeaveRequests() {
         const snap = await getDocs(collection(db, LEAVE_COL));
-        return snap.docs.map(d => d.data());
+        return snap.docs.map(withDocId);
     },
     subscribeLeaveRequests(callback, errorCallback) {
         return onSnapshot(
             query(collection(db, LEAVE_COL), orderBy('dateFrom', 'desc')),
-            snap => callback(snap.docs.map(d => d.data())),
+            snap => callback(snap.docs.map(withDocId)),
             err => {
                 console.error('[cloud] leaveRequests subscription error:', err);
                 if (errorCallback) errorCallback(err);

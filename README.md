@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.107 pemeriksaan di dua puluh lima suite, menggerakkan Chromium sungguhan terhadap
+1.122 pemeriksaan di dua puluh enam suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -107,7 +107,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 `photos_test`, `migration_test`, `history_scan_test`, `validation_test`,
 `datacheck_test`, `damagephotos_test`, `mobile_test`, `window_test`,
 `backup_test`, `keyboard_test`, `leave_test`, `unitgroups_test`,
-`hardening_test`, `followup_test`, `licsync_test`, `regress`.
+`hardening_test`, `followup_test`, `licsync_test`, `xss_test`, `regress`.
 
 ---
 
@@ -239,6 +239,16 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   - Laporan restore wajib menyebut koleksi yang **tidak ada di berkas**. Itu
     baris yang paling penting: restore yang diam-diam mencakup lebih sedikit
     dari yang disangka orang adalah kegagalan yang modal itu ada untuk dicegah.
+- **Aturan anti-XSS (dijaga `tests/xss_test.js`).** Nilai yang ditulis satu
+  pengguna tampil di layar pengguna lain, termasuk Super Admin:
+  - `showToast` menampilkan TEKS. Kirim nilai mentah; jangan `escapeHtml`.
+  - Argumen di atribut `onclick`/`onchange` selalu lewat `jsArg(v)`, bukan
+    `'${escapeHtml(v)}'` — browser mengembalikan `&#39;` menjadi `'` sebelum
+    handler berjalan.
+  - Nilai yang menjadi nama kelas harus dari daftar yang dikenal (lihat
+    `shiftFor`); `src` foto lewat `safeImageSrc`.
+  - `id` setiap record diambil dari ID dokumen Firestore (`withDocId` di
+    `firebase-init.js`), bukan dari field `id` yang bisa diisi siapa saja.
 - **Jangan memanggil `window.cloud.X()` telanjang.** Service worker menyajikan
   `firebase-init.js` network-first tapi jatuh ke cache saat fetch gagal —
   yaitu saat sinyal buruk, yaitu saat orang menyimpan. Pakai `cloudFn('X')`
