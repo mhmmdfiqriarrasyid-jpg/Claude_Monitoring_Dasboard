@@ -284,6 +284,49 @@ async function run(page, width, body) {
     // ---------------- desktop 1440px tidak boleh ikut berubah ----------------
     // Aturan ponsel ada di @media (max-width: 700px); kalau bocor ke desktop,
     // tabel yang padat jadi renggang dan lebih sedikit baris yang muat.
+    // ---------------- modal di ponsel pendek (360x600) ----------------
+    // Empat modal membungkus isinya dengan <form> tepat di bawah kartu. Tanpa
+    // meneruskan kolom flex, form tidak bisa menyusut, kartu memotongnya, dan
+    // di ponsel TIDAK ADA yang bisa di-scroll — field bawah dan tombol Simpan
+    // tidak terjangkau. Setiap modal diperiksa: kartu muat di layar, tombol
+    // aksinya terlihat, dan isi terbawah bisa dicapai dengan scroll.
+    const short = await b.newPage({ viewport:{ width:360, height:600 }, isMobile:true, hasTouch:true });
+    short.on('pageerror', e => { if (!/Chart is not defined/.test(e.message)) errors.push(e.message); });
+    const mods = await run(short, 360, `(() => {
+        return [...document.querySelectorAll('.modal-overlay')].map(ov => {
+            const body = ov.querySelector('.modal-body');
+            const card = ov.querySelector('.modal-card');
+            if (!body || !card) return null;
+            ov.classList.add('open');
+            // Semua bagian opsional dibuka supaya formnya sepanjang mungkin.
+            ov.querySelectorAll('[style*="display:none"], [style*="display: none"]').forEach(el => {
+                if (el.closest('.modal-body')) el.style.display = '';
+            });
+            const H = window.innerHeight;
+            const cardR = card.getBoundingClientRect();
+            const act = ov.querySelector('.form-actions');
+            const actR = act ? act.getBoundingClientRect() : null;
+            body.scrollTop = body.scrollHeight;
+            const last = [...body.children].filter(c => c.getBoundingClientRect().height > 0).pop();
+            const lastR = last ? last.getBoundingClientRect() : null;
+            const bodyR = body.getBoundingClientRect();
+            const res = {
+                id: ov.id,
+                cardFits: cardR.top >= -1 && cardR.bottom <= H + 1,
+                actionsVisible: !actR || (actR.top >= 0 && actR.bottom <= H + 1),
+                bottomReachable: !lastR || lastR.bottom <= bodyR.bottom + 2
+            };
+            ov.classList.remove('open');
+            return res;
+        }).filter(Boolean);
+    })()`);
+    const bad = k => mods.filter(x => !x[k]).map(x => x.id);
+    t('modal ponsel: jumlah modal yang diperiksa', mods.length >= 13, true);
+    t('modal ponsel: setiap kartu muat di layar', bad('cardFits'), []);
+    t('modal ponsel: tombol Simpan/Batal selalu terlihat', bad('actionsVisible'), []);
+    t('modal ponsel: isi terbawah bisa dicapai dengan scroll', bad('bottomReachable'), []);
+    await short.close();
+
     const desk = await b.newPage({ viewport:{ width:1440, height:900 } });
     desk.on('pageerror', e => { if (!/Chart is not defined/.test(e.message)) errors.push(e.message); });
     const d = await run(desk, 1440, `(() => {

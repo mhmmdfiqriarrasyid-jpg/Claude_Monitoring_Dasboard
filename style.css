@@ -1043,6 +1043,9 @@ body {
     width: 100%;
     max-width: 580px;
     max-height: 90vh;
+    /* The visible height on a phone, where 90vh includes the part hidden
+       behind the browser's address bar. */
+    max-height: 90dvh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -1075,7 +1078,14 @@ body {
     color: var(--text-secondary);
 }
 
-.modal-body { padding: 20px; overflow-y: auto; flex: 1; min-height: 0; }
+.modal-body { padding: 20px; overflow-y: auto; flex: 1; min-height: 0; overscroll-behavior: contain; }
+
+/* Four modals (Laporan Harian, Izin / Sakit, Perangkat, Stok Barang) wrap
+   .modal-body and .form-actions in a <form> that sits directly in the card.
+   Without passing the flex column through, the form could not shrink, the
+   card's overflow:hidden clipped it, and on a phone nothing scrolled — the
+   lower fields and the Simpan button were simply out of reach. */
+.modal-card > form { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 
 .form-grid {
     display: grid;
@@ -3613,6 +3623,12 @@ body[data-nocsvimport] .csv-import { display: none !important; }
         font-size: 13px;
     }
     .btn-icon { width: 44px; height: 44px; }
+    /* Forms get the whole screen: a 20px frame around a 90% card wastes a
+       fifth of a phone's height on a form that is already long. */
+    .modal-overlay { padding: 8px; align-items: flex-end; }
+    .modal-card { max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); border-radius: var(--radius-lg); }
+    .modal-body { padding: 16px; }
+    .form-actions { padding: 12px 16px; }
     .wl-photo-btn { min-height: 40px; padding: 8px 14px; }
 
     /* A checkbox cannot grow much without looking wrong, so the label around

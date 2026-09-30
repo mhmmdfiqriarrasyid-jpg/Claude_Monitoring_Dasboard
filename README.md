@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.103 pemeriksaan di dua puluh lima suite, menggerakkan Chromium sungguhan terhadap
+1.107 pemeriksaan di dua puluh lima suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -196,6 +196,11 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   kembali — satu field 13px membuat seluruh aplikasi membesar sampai pengguna
   reload. Sisanya soal ukuran sentuh: kontrol ≥40px, tombol ≥44px.
   Desktop sengaja tidak ikut berubah, dan itu juga diuji.
+- **Modal yang isinya dibungkus `<form>` langsung di bawah `.modal-card`**
+  bergantung pada `.modal-card > form { display:flex; … min-height:0 }`.
+  Tanpa itu form tidak bisa menyusut, kartu (`overflow:hidden`) memotongnya,
+  dan di ponsel tidak ada yang bisa di-scroll — tombol Simpan tak terjangkau.
+  `mobile_test` membuka setiap modal di 360×600 dan memeriksanya.
 - **`.btn-sm` didefinisikan dua kali di `style.css`** dan yang kedua menang di
   semua lebar. Sunting yang kedua; yang pertama tidak berpengaruh apa-apa.
 - **Validasi ada di fungsi simpan, bukan hanya di atribut HTML.**
