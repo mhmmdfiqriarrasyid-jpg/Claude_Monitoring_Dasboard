@@ -127,12 +127,28 @@ const { launch, BASE_URL } = require('./_env');
         // =============== 6. RESTORE GANTI TIDAK MENINGGALKAN DOKUMEN FOTO ===============
         seed();
         writes.delDmg.length = 0; writes.delWl.length = 0;
-        const empty = { version: 4, units: globalData.slice(), damages: [], workLogs: [], leaveRequests: [] };
+        // Satu catatan tanpa foto tetap ada di tiap koleksi: berkas yang
+        // mendaftar koleksi sebagai KOSONG sengaja tidak menghapus apa pun
+        // (diuji di bawah).
+        const empty = { version: 4, units: globalData.slice(),
+            damages: [{ id: 'd2', unitId: 'u1' }],
+            workLogs: [{ id: 'w2', date: '2026-09-14', memberId: 'm1', task: 'y' }],
+            leaveRequests: [{ id: 'l2', memberId: 'm1', type: 'izin', dateFrom: '2026-09-16', dateTo: '2026-09-16', days: 1, approval: 'pending' }] };
         answers = [false, true];                       // GANTI, lalu lanjutkan
         importBackup(new File([JSON.stringify(empty)], 'e.json', { type: 'application/json' }));
         await tick(400);
         t('catatan kerusakan berfoto yang terhapus: dokumen fotonya ikut dihapus', writes.delDmg, ['d1']);
         t('laporan dan izin: dokumen foto/suratnya ikut dihapus', writes.delWl.sort(), ['l1', 'w1']);
+        closeRestoreReport();
+
+        // Berkas yang mendaftar koleksi sebagai KOSONG tidak menghapus isinya.
+        seed();
+        writes.delDmg.length = 0;
+        answers = [false, true];
+        importBackup(new File([JSON.stringify({ version: 4, units: globalData.slice(), damages: [] })], 'k.json', { type: 'application/json' }));
+        await tick(400);
+        t('restore GANTI dengan koleksi kosong tidak menghapus apa pun', [globalDamages.length, writes.delDmg.length], [2, 0]);
+        t('dan laporannya menjelaskan', [...document.querySelectorAll('#restoreReportBody tr')].some(tr => /berkas berisi 0 baris; 2 yang ada tidak dihapus/.test(tr.textContent)), true);
         closeRestoreReport();
 
         // =============== 7. AKUN KHUSUS MENYETUJUI ===============

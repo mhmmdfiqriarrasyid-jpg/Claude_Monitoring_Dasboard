@@ -3623,6 +3623,9 @@ body[data-nocsvimport] .csv-import { display: none !important; }
         font-size: 13px;
     }
     .btn-icon { width: 44px; height: 44px; }
+    /* Card-view tables grow with their content; the page scrolls, not a
+       600px box inside it (the inline max-height on each wrapper won). */
+    .table-wrapper:has(> .table--cardable) { max-height: none !important; }
     /* Forms get the whole screen: a 20px frame around a 90% card wastes a
        fifth of a phone's height on a form that is already long. */
     .modal-overlay { padding: 8px; align-items: flex-end; }

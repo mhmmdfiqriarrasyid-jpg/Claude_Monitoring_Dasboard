@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.122 pemeriksaan di dua puluh enam suite, menggerakkan Chromium sungguhan terhadap
+1.150 pemeriksaan di dua puluh tujuh suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -107,7 +107,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 `photos_test`, `migration_test`, `history_scan_test`, `validation_test`,
 `datacheck_test`, `damagephotos_test`, `mobile_test`, `window_test`,
 `backup_test`, `keyboard_test`, `leave_test`, `unitgroups_test`,
-`hardening_test`, `followup_test`, `licsync_test`, `xss_test`, `regress`.
+`hardening_test`, `followup_test`, `licsync_test`, `xss_test`, `auditfix_test`, `regress`.
 
 ---
 

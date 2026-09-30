@@ -182,6 +182,9 @@ const SETUP = `(() => {
         editUnit('u_h1');
         r.blankShown = document.getElementById('formCameraAi').value;
         r.jdDisabled = document.getElementById('formGPS').disabled;
+        // Sejak v120 form hanya menulis field yang DIUBAH; ubah satu supaya
+        // ada tulisan untuk diperiksa.
+        document.getElementById('formRemarks').value = 'cek DC1';
         saveUnit(new Event('submit'));
         await flush();
         const pushed = (__w.units[0] || [])[0] || {};

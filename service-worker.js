@@ -2,7 +2,7 @@
    Network-first for the app shell (so deploys show up on reload), cache-first
    for static assets, network-only for Firebase live endpoints. */
 
-const CACHE_NAME = 'tractor-monitor-v120';
+const CACHE_NAME = 'tractor-monitor-v121';
 
 // Same-origin core files — always revalidated from network first so a new
 // deploy is picked up on the next reload (falls back to cache when offline).
@@ -50,8 +50,13 @@ const NETWORK_ONLY_HOSTS = [
 self.addEventListener('install', event => {
     event.waitUntil((async () => {
         const cache = await caches.open(CACHE_NAME);
-        // Per-item best-effort: one failing URL must not abort the whole precache.
-        await Promise.allSettled([...CORE, ...CDN].map(u => cache.add(u)));
+        // The app shell must be complete and from THIS deploy: cache:'reload'
+        // skips the browser's HTTP cache (GitHub Pages sends max-age=600), so
+        // a fresh index.html is never paired with the previous script.js. If
+        // any core file fails, install fails and the old worker — with a
+        // complete cache — stays in charge. CDN libraries stay best-effort.
+        await cache.addAll(CORE.map(u => new Request(u, { cache: 'reload' })));
+        await Promise.allSettled(CDN.map(u => cache.add(u)));
     })());
     self.skipWaiting();
 });
@@ -94,7 +99,11 @@ self.addEventListener('fetch', event => {
 async function networkFirst(request) {
     const cache = await caches.open(CACHE_NAME);
     try {
-        const response = await fetch(request);
+        // 'no-cache': revalidate with the server instead of taking a copy the
+        // browser's HTTP cache may hold from the previous deploy.
+        // (A navigation request cannot be re-issued with options — it throws —
+        // and navigations revalidate on their own.)
+        const response = await fetch(request.mode === 'navigate' ? request : new Request(request, { cache: 'no-cache' }));
         if (response && response.ok) cache.put(request, response.clone());
         return response;
     } catch (e) {

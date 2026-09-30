@@ -32,6 +32,10 @@ let editSortState = { key: null, asc: true };
 
 // ---- Cloud sync state ----
 let cloudInitialized = false;
+// Collections whose first cloud snapshot has arrived this session. A backup
+// taken before that recorded them as genuinely empty.
+const _loadedParts = new Set();
+function _markLoaded(key) { _loadedParts.add(key); }
 let cloudUnitsUnsub = null;
 let cloudImplUnsub = null;
 let cloudDamageUnsub = null;
@@ -83,7 +87,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v120';
+const APP_VERSION = 'v121';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -989,8 +993,14 @@ function navigateTo(view) {
 
     currentView = view;
 
+    // Once cloud sync is live, the in-memory arrays ARE the data — the
+    // snapshots keep them current. Re-reading localStorage here swapped them
+    // for whatever the cache last managed to store: when the quota was full,
+    // that was an older copy, and the next edit pushed it back to the cloud.
+    const fromCache = !cloudInitialized;
+
     if (view === 'dashboard') {
-        loadFromStorage();
+        if (fromCache) loadFromStorage();
         if (globalData.length > 0) {
             document.getElementById('emptyState').style.display = 'none';
             document.getElementById('dashboardContent').style.display = 'block';
@@ -1004,23 +1014,23 @@ function navigateTo(view) {
     }
 
     if (view === 'editUnits') {
-        loadFromStorage();
+        if (fromCache) loadFromStorage();
         renderEditTable();
     }
 
     if (view === 'implements') {
-        loadImplements();
+        if (fromCache) loadImplements();
         renderImplementsTable();
     }
 
     if (view === 'damage') {
-        loadDamages();
+        if (fromCache) loadDamages();
         populateDamageUnitSelect();
         renderDamageTable();
     }
 
     if (view === 'licenseStock') {
-        loadLicenseStock();
+        if (fromCache) loadLicenseStock();
         populateLicenseTypeList();
         renderLicenseSummary();
         renderLicenseStockTable();
@@ -1979,9 +1989,23 @@ let _phantomHistoryFound = [];
 function findPhantomUnitHistory(log) {
     const byUnit = new Map(globalData.map(u => [u.id, u]));
     const newest = new Map();
+    // A restore puts values back WITHOUT a per-field history row, so after
+    // one a real change legitimately reads as "never happened". Nothing from
+    // before the latest restore can be judged: whole-fleet restores (no
+    // unitId) cover every unit, an undelete covers its own unit.
+    let lastFleetRestore = 0;
+    const lastUnitRestore = new Map();
+    log.forEach(e => {
+        if (!e || e.action !== 'restore') return;
+        const ts = e.timestamp || 0;
+        if (e.unitId) lastUnitRestore.set(e.unitId, Math.max(lastUnitRestore.get(e.unitId) || 0, ts));
+        else lastFleetRestore = Math.max(lastFleetRestore, ts);
+    });
 
     log.forEach(e => {
         if (!e || e.action !== 'update' || !e.unitId || !e.field) return;
+        const ts = e.timestamp || 0;
+        if (ts <= lastFleetRestore || ts <= (lastUnitRestore.get(e.unitId) || 0)) return;
         if (PHANTOM_SKIP_FIELDS.has(e.field)) return;
         // Other modules prefix unitName with [Tim], [Gudang], [Lisensi]… and
         // put something that is not a unit document id into unitId.
@@ -2286,6 +2310,12 @@ async function exportBackup() {
                 continue;
             }
             let rows = part.read() || [];
+            // Not loaded yet: what is in memory is a guess (often empty), and
+            // a REPLACE restore of this file would delete the real thing.
+            if (cloudInitialized && !part.fullRead && !_loadedParts.has(part.key)) {
+                payload.omitted.push({ key: part.key, label: part.label, why: 'belum termuat — coba lagi sebentar' });
+                continue;
+            }
             if (part.fullRead && window.cloud?.isReady) {
                 try {
                     const all = await part.fullRead();
@@ -2572,6 +2602,14 @@ function importBackup(file) {
                     }
                 }
 
+                // A file that lists a collection as EMPTY never wipes it: that
+                // is far more often a backup taken before the data had loaded
+                // than a real wish to delete everything.
+                if (!merge && rows.length === 0 && before.length > 0) {
+                    report.push({ label: part.label, count: 0,
+                                  note: `dilewati — berkas berisi 0 baris; ${before.length} yang ada tidak dihapus` });
+                    continue;
+                }
                 const next = _restoreCollection(rows, before, merge);
                 part.write(next);
                 if (part.saveLocal) part.saveLocal();
@@ -2895,14 +2933,18 @@ function processData(rows, ctx) {
             site: clean(getVal(r, 'Site')),
             yearReceived: clean(getVal(r, 'Tahun Penerimaan')) || clean(getVal(r, 'Year Received')),
             userCategory: clean(getVal(r, 'User Category')),
-            gpsLicense: clean(getVal(r, 'GPS License')),
-            licenseDisplay: clean(getValAny(r, ['License Display', 'Display License'])),
+            // Same rules as the licence ledger import: canonical spelling, and
+            // dates as YYYY-MM-DD with D/M/YYYY read day-first. Stored raw,
+            // '01/10/2026' (1 Oct) was read as 10 Jan — "expired" — and the
+            // auto-downgrade then wrote a valid SF-RTK down to SF-1.
+            gpsLicense: canonicalLicenseType(clean(getVal(r, 'GPS License'))),
+            licenseDisplay: canonicalLicenseType(clean(getValAny(r, ['License Display', 'Display License']))),
             // New dual columns. Fall back to the legacy single-pair columns so
             // importing an old export still works — legacy dates map to GPS.
-            gpsLicenseStartDate: clean(getVal(r, 'GPS License Start Date')) || clean(getVal(r, 'License Start Date')),
-            gpsLicenseEndDate:   clean(getVal(r, 'GPS License Expiration Date')) || clean(getVal(r, 'License Expiration Date')),
-            displayLicenseStartDate: clean(getVal(r, 'Display License Start Date')),
-            displayLicenseEndDate:   clean(getVal(r, 'Display License Expiration Date')),
+            gpsLicenseStartDate: csvLicenseDate(clean(getVal(r, 'GPS License Start Date')) || clean(getVal(r, 'License Start Date'))),
+            gpsLicenseEndDate:   csvLicenseDate(clean(getVal(r, 'GPS License Expiration Date')) || clean(getVal(r, 'License Expiration Date'))),
+            displayLicenseStartDate: csvLicenseDate(clean(getVal(r, 'Display License Start Date'))),
+            displayLicenseEndDate:   csvLicenseDate(clean(getVal(r, 'Display License Expiration Date'))),
             remarks: clean(getVal(r, 'Remarks')),
             breakdownReason: clean(getValAny(r, ['Breakdown Reason', 'Alasan Breakdown'])),
             downtimeHistory: [],
@@ -3584,7 +3626,7 @@ function sortTable(key) {
     if (key === 'no') { sortState.key = null; filteredData = [...applyFilterLogic()]; }
     else {
         filteredData.sort((a, b) => {
-            const va = _resolveSortValue(a, key).toLowerCase(), vb = _resolveSortValue(b, key).toLowerCase();
+            const va = String(_resolveSortValue(a, key) ?? "").toLowerCase(), vb = String(_resolveSortValue(b, key) ?? "").toLowerCase();
             if (va < vb) return sortState.asc ? -1 : 1;
             if (va > vb) return sortState.asc ? 1 : -1;
             return 0;
@@ -4194,7 +4236,7 @@ function getEditTableRows() {
     if (editSortState.key && editSortState.key !== 'no') {
         const k = editSortState.key;
         rows.sort((a, b) => {
-            const va = _resolveSortValue(a, k).toLowerCase(), vb = _resolveSortValue(b, k).toLowerCase();
+            const va = String(_resolveSortValue(a, k) ?? "").toLowerCase(), vb = String(_resolveSortValue(b, k) ?? "").toLowerCase();
             if (va < vb) return editSortState.asc ? -1 : 1;
             if (va > vb) return editSortState.asc ? 1 : -1;
             return 0;
@@ -4311,6 +4353,10 @@ function renderEditTable() {
     renderEditHead();
     renderEditGroupTabs();
     updateEditCount();
+    // A re-render (search, filter, a cloud snapshot) draws fresh, unticked
+    // rows — so the selection is dropped with them. Re-reading the OLD boxes
+    // here kept "Delete selected" armed for rows no longer on screen.
+    document.querySelectorAll('.unit-check').forEach(cb => { cb.checked = false; });
     selectedUnitIds.clear();
     updateSelectedCount();
 
@@ -4734,6 +4780,7 @@ function setHealthSelect(el, v) {
 
 function showAddForm() {
     if (!requireEdit('editUnits')) return;
+    _unitFormShown = null;
     const g = effectiveEditGroup();
     document.getElementById('modalTitle').textContent = g === 'heavy' ? `Tambah ${UNIT_GROUPS.heavy.shortLabel}` : 'Add Unit';
     document.getElementById('editUnitId').value = '';
@@ -4763,12 +4810,13 @@ function editUnit(id) {
 
     document.getElementById('modalTitle').textContent = 'Edit Unit';
     document.getElementById('editUnitId').value = id;
-    document.getElementById('formName').value = unit.name;
-    document.getElementById('formModel').value = unit.model;
-    document.getElementById('formSN').value = unit.sn;
+    // `|| ''`: an absent field assigned as-is shows — and saves — "undefined".
+    document.getElementById('formName').value = unit.name || '';
+    document.getElementById('formModel').value = unit.model || '';
+    document.getElementById('formSN').value = unit.sn || '';
     populateImplementUnitList();
     document.getElementById('formImplement').value = unit.implement || '';
-    document.getElementById('formSite').value = unit.site;
+    document.getElementById('formSite').value = unit.site || '';
     document.getElementById('formYearReceived').value = unit.yearReceived || '';
     document.getElementById('formStatus').value = isGood(unit.status) ? 'Good' : 'Breakdown';
     document.getElementById('formDisplay').value = isGood(unit.display) ? 'Good' : 'Breakdown';
@@ -4803,6 +4851,7 @@ function editUnit(id) {
         bdBox.style.display = 'none';
     }
 
+    _unitFormShown = readUnitForm('tractor');
     document.getElementById('unitModal').classList.add('open');
 }
 
@@ -4823,6 +4872,7 @@ function editHeavyUnit(unit) {
     const show = !isGood(unit.status) && unit.breakdownReason;
     bdInfo.textContent = show ? unit.breakdownReason : '';
     bdBox.style.display = show ? '' : 'none';
+    _unitFormShown = readUnitForm('heavy');
     document.getElementById('unitModal').classList.add('open');
 }
 const HEAVY_FORM_SELECTS = [['cameraAi', 'formCameraAi'], ['telematicBox', 'formTelematicBox'],
@@ -4900,7 +4950,48 @@ function saveUnit(event) {
     const existing = id ? globalData.find(d => d.id === id) : null;
     const g = existing ? unitGroupOf(existing)
                        : (document.getElementById('formUnitGroup').value === 'heavy' ? 'heavy' : 'tractor');
-    const fields = g === 'heavy' ? heavyFormFields() : {
+    const full = readUnitForm(g);
+    // Editing writes only what the person CHANGED on the form, compared with
+    // what it showed when it opened. Writing the whole form rewrote fields
+    // nobody touched: a category not in the list became '', a blank
+    // component became 'Breakdown', and a status another device set while
+    // the form was open was quietly set back.
+    let fields = full;
+    if (existing && _unitFormShown) {
+        fields = {};
+        Object.keys(full).forEach(k => { if (full[k] !== _unitFormShown[k]) fields[k] = full[k]; });
+        if (!Object.keys(fields).length) {
+            showToast('Tidak ada perubahan', 'info');
+            closeModal();
+            return;
+        }
+    }
+    // Stamped here — BEFORE the breakdown-reason stash below. A new unit saved
+    // as Breakdown goes through that stash and is committed later from it, so
+    // stamping afterwards would be lost and the unit would land as a tractor.
+    if (!id) fields.unitGroup = g;
+
+    if (!checkUnitFields(id, { ...full, ...fields })) return;
+
+    // If status is changing TO Breakdown, prompt for a reason first.
+    if (fields.status !== undefined && !isGood(fields.status)) {
+        const existingUnit = id ? globalData.find(d => d.id === id) : null;
+        const wasGood = existingUnit ? isGood(existingUnit.status) : true;
+        if (wasGood) {
+            _pendingBreakdown = { unitId: id, fields, isInline: false };
+            document.getElementById('breakdownReasonText').value = '';
+            document.getElementById('breakdownReasonModal').classList.add('open');
+            return;
+        }
+    }
+
+    _commitSaveUnit(id, fields);
+}
+
+let _unitFormShown = null;   // the edit form's values when it opened
+
+function readUnitForm(g) {
+    return g === 'heavy' ? heavyFormFields() : {
         name: document.getElementById('formName').value.trim(),
         model: document.getElementById('formModel').value.trim(),
         sn: document.getElementById('formSN').value.trim(),
@@ -4921,33 +5012,14 @@ function saveUnit(event) {
         displayLicenseEndDate:   document.getElementById('formDisplayLicenseEnd').value   || '',
         remarks: document.getElementById('formRemarks').value.trim()
     };
-    // Stamped here — BEFORE the breakdown-reason stash below. A new unit saved
-    // as Breakdown goes through that stash and is committed later from it, so
-    // stamping afterwards would be lost and the unit would land as a tractor.
-    if (!id) fields.unitGroup = g;
-
-    if (!checkUnitFields(id, fields)) return;
-
-    // If status is changing TO Breakdown, prompt for a reason first.
-    if (!isGood(fields.status)) {
-        const existingUnit = id ? globalData.find(d => d.id === id) : null;
-        const wasGood = existingUnit ? isGood(existingUnit.status) : true;
-        if (wasGood) {
-            _pendingBreakdown = { unitId: id, fields, isInline: false };
-            document.getElementById('breakdownReasonText').value = '';
-            document.getElementById('breakdownReasonModal').classList.add('open');
-            return;
-        }
-    }
-
-    _commitSaveUnit(id, fields);
 }
 
 function _commitSaveUnit(id, fields) {
     if (!requireEdit('editUnits')) return;
     if (id) {
-        if (updateUnit(id, fields)) showToast(`Unit "${fields.name}" updated`, 'success');
-        else showToast(`Unit "${fields.name}" tidak disimpan — tidak ada perubahan yang boleh ditulis`, 'warning');
+        const nm = fields.name || ((globalData.find(d => d.id === id) || {}).name) || '';
+        if (updateUnit(id, fields)) showToast(`Unit "${nm}" updated`, 'success');
+        else showToast(`Unit "${nm}" tidak disimpan — tidak ada perubahan yang boleh ditulis`, 'warning');
     } else {
         const firstHeavy = fields.unitGroup === 'heavy' && !hasHeavyUnits();
         const newUnit = { id: generateId(), ...fields, downtimeHistory: [], breakdownStartedAt: null };
@@ -5043,7 +5115,10 @@ function applyExpiredLicenseDowngrades() {
         // is not known to be one.
         if (isHeavy(u) || hasUnreadableGroup(u)) return;
         const fields = {};
-        if (u.gpsLicense === 'SF-RTK' &&
+        // Only a date written as YYYY-MM-DD is trusted enough to act on: a
+        // stored '01/10/2026' reads month-first, looks expired, and would
+        // downgrade a licence that is still valid — permanently.
+        if (u.gpsLicense === 'SF-RTK' && isoDistributionDate(getLicenseEndDate(u, 'gps')) &&
             getExpiryStatus(getLicenseEndDate(u, 'gps')).kind === 'expired') {
             fields.gpsLicense = 'SF-1';
             // Keep the expiry that caused the downgrade. Blanking it outright
@@ -5055,7 +5130,7 @@ function applyExpiredLicenseDowngrades() {
             // getLicenseEndDate falls back to the legacy field, so clear it too.
             if (u.licenseEndDate) fields.licenseEndDate = '';
         }
-        if (u.licenseDisplay === 'G5 Advance' &&
+        if (u.licenseDisplay === 'G5 Advance' && isoDistributionDate(getLicenseEndDate(u, 'display')) &&
             getExpiryStatus(getLicenseEndDate(u, 'display')).kind === 'expired') {
             fields.licenseDisplay = 'G5 Basic';
             fields.displayLicenseExpiredAt = getLicenseEndDate(u, 'display');
@@ -5215,6 +5290,10 @@ function updateImplementCount() {
 // ---- Render ----
 function renderImplementsTable() {
     updateImplementCount();
+    // A re-render (search, filter, a cloud snapshot) draws fresh, unticked
+    // rows — so the selection is dropped with them. Re-reading the OLD boxes
+    // here kept "Delete selected" armed for rows no longer on screen.
+    document.querySelectorAll('.impl-check').forEach(cb => { cb.checked = false; });
     selectedImplementIds.clear();
     updateSelectedImplementCount();
 
@@ -6120,6 +6199,10 @@ function liveUnitFor(rec) {
 // ---- Render ----
 function renderDamageTable() {
     updateDamageCount();
+    // A re-render (search, filter, a cloud snapshot) draws fresh, unticked
+    // rows — so the selection is dropped with them. Re-reading the OLD boxes
+    // here kept "Delete selected" armed for rows no longer on screen.
+    document.querySelectorAll('.damage-check').forEach(cb => { cb.checked = false; });
     selectedDamageIds.clear();
     updateSelectedDamageCount();
 
@@ -6332,6 +6415,9 @@ function saveDamage(event) {
     // today's shape; cleared when a record is moved off a heavy unit, because
     // the merges below would otherwise keep the old value.
     if (isHeavy(unit) || (old && old.unitGroup)) data.unitGroup = isHeavy(unit) ? 'heavy' : '';
+    // Moved to another unit: whatever it drove belongs to the old unit, and
+    // resolving it later must not touch the new one.
+    if (old && old.drove && (liveUnitFor(old) || {}).id !== unit.id) data.drove = '';
 
     let savedId = id;
     if (id) {
@@ -6351,6 +6437,13 @@ function saveDamage(event) {
         }
     } else {
         const newRec = { id: generateDamageId(), ...data, resolved: false, resolvedAt: '', createdAt: Date.now(), updatedAt: Date.now() };
+        // What this record put into Breakdown, if anything: 'status', a
+        // component field, or ''. "Tandai selesai" restores exactly that — it
+        // used to restore the unit's status even for a record that never set
+        // it, clearing somebody else's breakdown and its reason.
+        const setBd = !!document.getElementById('dmgSetBreakdown')?.checked;
+        const drives = setBd ? damageTargetField(data.damageType, data.component, unit) : null;
+        newRec.drove = setBd && drives !== DAMAGE_DRIVES_NOTHING ? (drives || 'status') : '';
         savedId = newRec.id;
         globalDamages.push(newRec);
         saveDamages();
@@ -6366,9 +6459,10 @@ function saveDamage(event) {
 
         // Link to unit status: put the unit (or the affected component) into
         // Breakdown so the dashboard/downtime tracking reflect this damage.
-        if (document.getElementById('dmgSetBreakdown')?.checked) {
+        if (setBd) {
             const target = _applyDamageBreakdown(unit.id, data.damageType, data.component, data.description);
             if (target) showToast(`${target} "${unit.name}" di-set Breakdown`, 'info');
+            else if (newRec.drove) { newRec.drove = ''; saveDamages(); cloudPushDamage(newRec); }
         }
     }
 
@@ -6475,7 +6569,26 @@ function resolveDamage(id) {
     const unit = liveUnitFor(rec);
     let restored = false;
     let blocked = false;
-    if (unit) {
+    // Records since v120 say what they drove. Older ones do not; for those,
+    // ask before touching the unit rather than assume.
+    const known = Object.prototype.hasOwnProperty.call(rec, 'drove');
+    const legacyTarget = unit && !known ? damageTargetField(rec.damageType, rec.component, unit) : null;
+    const legacyBroken = unit && !known && legacyTarget !== DAMAGE_DRIVES_NOTHING
+        && !isGood(legacyTarget ? unit[legacyTarget] : unit.status);
+    const restoreLegacy = legacyBroken && confirm(`Pulihkan juga ${legacyTarget ? 'komponen ' + (rec.component || legacyTarget) : 'status'} unit "${unit.name || unit.sn}" ke Good?\n\n`
+        + 'Catatan lama ini tidak mencatat apakah ia yang membuat unit Breakdown. Batal = unit dibiarkan.');
+    if (unit && known) {
+        const compField = rec.drove === 'status' ? null : rec.drove;
+        if (!rec.drove) {
+            // This record never put anything into Breakdown.
+        } else if (hasOtherOpenDamage(rec, unit, compField)) {
+            blocked = true;
+        } else if (compField) {
+            if (!isGood(unit[compField])) restored = updateUnit(unit.id, { [compField]: 'Good' });
+        } else if (!isGood(unit.status)) {
+            restored = updateUnit(unit.id, { status: 'Good' });
+        }
+    } else if (unit && restoreLegacy) {
         const compField = damageTargetField(rec.damageType, rec.component, unit);
         if (compField === DAMAGE_DRIVES_NOTHING) {
             // Nothing on the unit to restore — see damageTargetField.
@@ -6606,6 +6719,7 @@ function cloudDeleteDamage(id) {
 }
 
 function applyCloudDamagesSnapshot(items) {
+    _markLoaded('damages');
     clearRulesBanner('damageRecords');
     console.log(`[cloud] damage snapshot received — ${items.length} docs`);
 
@@ -6627,10 +6741,15 @@ function applyCloudDamagesSnapshot(items) {
             renderDamageTable();
         } else {
             updateDamageCount();
+            // The dashboard shows damage stats too — on a fresh device the
+            // units arrive first, and this section stayed hidden until
+            // something else happened to redraw the page.
+            if (currentView === 'dashboard' && globalData.length) renderDamageStats();
         }
     } finally {
         suppressCloudWrites = false;
     }
+    scheduleDecisionRefresh();
 
     // Outside the suppress window on purpose: the migration's writes must
     // actually reach Firestore.
@@ -6802,6 +6921,10 @@ function renderLicenseStockTable() {
     updateLicenseCount();
     const syncPlan = licenseSyncPlan();
     updateLicenseSyncBadge(syncPlan);
+    // A re-render (search, filter, a cloud snapshot) draws fresh, unticked
+    // rows — so the selection is dropped with them. Re-reading the OLD boxes
+    // here kept "Delete selected" armed for rows no longer on screen.
+    document.querySelectorAll('.license-check').forEach(cb => { cb.checked = false; });
     selectedLicenseIds.clear();
     updateSelectedLicenseCount();
 
@@ -7723,6 +7846,7 @@ function cloudDeleteLicense(id) {
 }
 
 function applyCloudLicenseSnapshot(items) {
+    _markLoaded('licenseStock');
     clearRulesBanner('licenseStock');
     console.log(`[cloud] license snapshot received — ${items.length} docs`);
 
@@ -7746,10 +7870,12 @@ function applyCloudLicenseSnapshot(items) {
             renderLicenseStockTable();
         } else {
             updateLicenseCount();
+            if (currentView === 'dashboard' && globalData.length) renderStockAlerts();
         }
     } finally {
         suppressCloudWrites = false;
     }
+    scheduleDecisionRefresh();
 }
 
 // Firestore rules banner for the licenseStock collection (mirrors damage/history).
@@ -7896,6 +8022,7 @@ async function migrateLocalToCloudIfNeeded() {
 }
 
 function applyCloudUnitsSnapshot(units) {
+    _markLoaded('units');
     console.log(`[cloud] units snapshot received — ${units.length} docs`);
 
     // First-snapshot guard: if cloud is empty but we have local data, do NOT
@@ -7953,6 +8080,7 @@ function applyCloudUnitsSnapshot(units) {
 }
 
 function applyCloudImplementsSnapshot(items) {
+    _markLoaded('implements');
     console.log(`[cloud] implements snapshot received — ${items.length} docs`);
 
     // First-snapshot guard: same idea as units — don't wipe local data on the
@@ -8079,6 +8207,7 @@ function applyLicenseDatesIfNeeded() {
 // ============================================================
 
 function applyCloudUserCategoriesSnapshot(cats) {
+    _markLoaded('userCategories');
     clearRulesBanner('userCategories');
     // Sort alphabetically for a stable UI
     userCategories = (cats || []).slice().sort((a, b) =>
@@ -8257,6 +8386,7 @@ function deleteCategory(id) {
 // ============================================================
 
 function applyCloudDamageComponentsSnapshot(comps) {
+    _markLoaded('damageComponents');
     clearRulesBanner('damageComponents');
     damageComponents = (comps || []).slice().sort((a, b) =>
         (a.name || '').localeCompare(b.name || '')
@@ -8647,20 +8777,41 @@ function setupAuth() {
             return;
         }
 
+        // A login RESTORED on this device (reload, reopened phone) does not get
+        // to take the account's session slot back: only a sign-in the person
+        // just typed does. Otherwise yesterday's phone, reopened, silently
+        // kicked today's laptop — and a phone the owner signed out
+        // ("Keluarkan") walked straight back in.
+        const held = profile.activeSession;
+        const mine = mySessionId();
+        const explicit = _explicitSignIn;
+        _explicitSignIn = false;
+        if (!explicit && held && held.id && held.id !== mine) {
+            handleSessionTakenOver(held);
+            return;
+        }
+
         // Active user — show app, gate UI by role, start cloud sync.
         if (!localStorage.getItem(SESSION_START_KEY)) startSessionClock();
         hideAuthGates();
         applyRoleGating();
         renderUserPill();
-        // Take the account's single session slot, then watch for anyone else
-        // taking it from us.
-        await claimActiveSession(user.uid);
+        // Claim the slot WITHOUT waiting: Firestore settles the write only
+        // once the server acknowledges it, so awaiting here meant a device
+        // opened offline (or on a weak signal) never started cloud sync at
+        // all. The local write lands in the cache at once, so the watcher
+        // below already sees this device's id.
+        if (!held || held.id !== mine) claimActiveSession(user.uid);
         watchOwnUserDoc(user.uid);
         maybeInitCloudSync();
     });
 }
 
 function tearDownCloudSync() {
+    _loadedParts.clear();
+    // Photo caches belong to the session: the next account on this browser,
+    // or this one later, must fetch what is on the server now.
+    try { _wlPhotoCache.clear(); _leaveDocCache.clear(); _dmgPhotoCache.clear(); } catch (_) {}
     if (cloudUnitsUnsub) { try { cloudUnitsUnsub(); } catch (_) {} cloudUnitsUnsub = null; }
     if (cloudImplUnsub) { try { cloudImplUnsub(); } catch (_) {} cloudImplUnsub = null; }
     if (cloudDamageUnsub) { try { cloudDamageUnsub(); } catch (_) {} cloudDamageUnsub = null; }
@@ -8803,6 +8954,7 @@ const SESSION_ID_KEY = 'tractorSessionId';
 let _mySessionId = '';
 let _userDocUnsub = null;
 let _sessionTakenOver = false;
+let _explicitSignIn = false;   // set by the sign-in / sign-up forms
 
 function mySessionId() {
     if (_mySessionId) return _mySessionId;
@@ -8856,7 +9008,10 @@ async function claimActiveSession(uid) {
 function watchOwnUserDoc(uid) {
     if (_userDocUnsub || !window.cloud?.subscribeUserDoc) return;
     _userDocUnsub = window.cloud.subscribeUserDoc(uid, doc => {
-        if (!doc || _sessionTakenOver) return;
+        if (_sessionTakenOver) return;
+        // The account was removed or rejected while this device had it open:
+        // stop showing the data it already loaded.
+        if (!doc) { handleSessionTakenOver({ id: 'revoked_deleted' }); return; }
 
         const active = doc.activeSession;
         if (active && active.id && active.id !== mySessionId()) {
@@ -8968,10 +9123,12 @@ async function handleSignIn(event) {
     const password = document.getElementById('signInPassword').value;
     try {
         showLoading(true);
+        _explicitSignIn = true;
         await window.cloud.signIn(email, password);
         startSessionClock(); // fresh 24h window
         // onAuthChange will take over from here.
     } catch (err) {
+        _explicitSignIn = false;
         showAuthError('signInError', friendlyAuthError(err));
     } finally {
         showLoading(false);
@@ -8986,6 +9143,7 @@ async function handleSignUp(event) {
     const password = document.getElementById('signUpPassword').value;
     try {
         showLoading(true);
+        _explicitSignIn = true;
         const user = await window.cloud.signUp(email, password, name);
         startSessionClock(); // fresh 24h window
         // Eagerly create the user doc so the owner sees them in the pending list.
@@ -9806,7 +9964,20 @@ const DEFAULT_COMPANIES = ['PT. Global Papua Abadi', 'PT. Murni Nusantara Mandir
 const NO_COMPANY = '(Tanpa perusahaan)';
 
 function companyOf(m) {
-    return ((m && m.company) || '').trim();
+    return canonicalCompany((m && m.company) || '');
+}
+
+// One spelling per company, whatever the case: "pt. global papua abadi" and
+// "PT. Global Papua Abadi" split the recap, the shift grid and the filters
+// into two companies, and filtering by one dropped the other's reports.
+function canonicalCompany(raw) {
+    const c = String(raw || '').trim().replace(/\s+/g, ' ');
+    const k = c.toLowerCase();
+    if (!k) return '';
+    const d = DEFAULT_COMPANIES.find(x => x.toLowerCase() === k);
+    if (d) return d;
+    const m = teamMembers.find(x => String(x.company || '').trim().replace(/\s+/g, ' ').toLowerCase() === k);
+    return m ? String(m.company).trim().replace(/\s+/g, ' ') : c;
 }
 
 // The two seeded names plus anything already typed, de-duplicated
@@ -9841,7 +10012,7 @@ function membersByCompany() {
 // stored on the record so rows survive a member being deleted or moved.
 function companyOfRecord(rec) {
     const m = rec && rec.memberId ? memberById(rec.memberId) : null;
-    return m ? companyOf(m) : ((rec && rec.company) || '').trim();
+    return m ? companyOf(m) : canonicalCompany((rec && rec.company) || '');
 }
 
 function memberById(id) {
@@ -9857,6 +10028,7 @@ function memberNameOf(rec) {
 
 // ---- Cloud snapshots ----
 function applyCloudTeamMembersSnapshot(list) {
+    _markLoaded('teamMembers');
     teamMembers = (list || []).slice().sort((a, b) =>
         (a.name || '').localeCompare(b.name || ''));
     // Company suggestions and the report filter are derived from the roster,
@@ -9867,12 +10039,15 @@ function applyCloudTeamMembersSnapshot(list) {
 }
 
 function applyCloudShiftsSnapshot(list) {
+    _markLoaded('shifts');
     reportShiftOverwrites(list);
     teamShifts = list || [];
     if (currentView === 'team' && teamTab === 'shift') renderShiftGrid();
+    scheduleDecisionRefresh();
 }
 
 function applyCloudWorkLogsSnapshot(list) {
+    _markLoaded('workLogs');
     workLogs = (list || []).slice().sort((a, b) =>
         String(b.date || '').localeCompare(String(a.date || '')) ||
         ((b.createdAt || 0) - (a.createdAt || 0)));
@@ -10938,6 +11113,10 @@ function editWorkLog(id) {
     document.getElementById('workLogModal').classList.add('open');
 
     if (_wlPhotosLoading) {
+        // Always the server's copy for an EDIT: saving replaces the stored
+        // set, and a session cache from before another device added a photo
+        // would quietly drop it.
+        _wlPhotoCache.delete(id);
         loadWorkLogPhotos(id).then(photos => {
             // The modal may have been closed or reopened on another report
             // while the fetch was in flight — only fill what still applies.
@@ -11341,6 +11520,7 @@ async function loadLeaveDocs(id) {
 }
 
 function applyCloudLeaveSnapshot(list) {
+    _markLoaded('leaveRequests');
     leaveRequests = (list || []).slice().sort((a, b) =>
         String(b.dateFrom || '').localeCompare(String(a.dateFrom || '')) ||
         ((b.createdAt || 0) - (a.createdAt || 0)));
@@ -11372,7 +11552,7 @@ function populateLeaveFilters() {
     const compSel = document.getElementById('lvCompanyFilter');
     if (compSel) {
         const keep = compSel.value;
-        const companies = [...new Set(teamMembers.map(m => (m.company || '').trim()).filter(Boolean))].sort();
+        const companies = allCompanies();
         compSel.innerHTML = '<option value="">Semua Perusahaan</option>'
             + companies.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
             + '<option value="__none__">(Tanpa perusahaan)</option>';
@@ -11623,6 +11803,7 @@ function editLeave(id) {
     rememberFocus();
     document.getElementById('leaveModal').classList.add('open');
     if (_lvDocsLoading) {
+        _leaveDocCache.delete(r.id);   // fresh copy for an edit — see editWorkLog
         loadLeaveDocs(r.id).then(pages => {
             // The form may have been closed, or reopened on another request,
             // while the fetch was in flight — only fill the one it was for.
@@ -11968,6 +12149,7 @@ function allStockItemNames() {
 
 // ---- Cloud snapshots ----
 function applyCloudDevicesSnapshot(list) {
+    _markLoaded('devices');
     warehouseDevices = (list || []).slice().sort((a, b) =>
         (a.type || '').localeCompare(b.type || '') || (a.sn || '').localeCompare(b.sn || ''));
     if (currentView === 'warehouse') { populateWarehouseFilters(); renderWarehouseView(); }
@@ -11975,6 +12157,7 @@ function applyCloudDevicesSnapshot(list) {
 }
 
 function applyCloudStockSnapshot(list) {
+    _markLoaded('stockItems');
     stockLedger = (list || []).slice().sort((a, b) =>
         String(b.date || '').localeCompare(String(a.date || '')) ||
         ((b.createdAt || 0) - (a.createdAt || 0)));
@@ -12885,7 +13068,10 @@ function scheduleDecisionRefresh() {
     _decisionTimer = setTimeout(() => {
         _decisionTimer = null;
         updateDecisionBadge();
-        if (currentView === 'leader') renderDecisionInbox();
+        // Every leader tab, not only the inbox: Rekap Perusahaan and
+        // Ringkasan Mingguan used to stay at "Belum ada laporan" after the
+        // reports arrived — on the page people print for invoicing.
+        if (currentView === 'leader') renderLeaderView();
     }, 250);
 }
 
