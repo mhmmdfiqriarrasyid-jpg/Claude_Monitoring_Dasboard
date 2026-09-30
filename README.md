@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.084 pemeriksaan di dua puluh lima suite, menggerakkan Chromium sungguhan terhadap
+1.101 pemeriksaan di dua puluh lima suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -323,6 +323,19 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
     yang MENENTUKAN lisensi unit boleh memundurkannya (`force`); distribusi
     lain tidak. Tidak ada sinkron otomatis di latar belakang: itu akan jalan
     di setiap perangkat, termasuk yang datanya basi.
+  - **Tanggal distribusi harus YYYY-MM-DD** (`isoDistributionDate`); yang lain
+    ditandai "Tanggal tidak valid", tidak ditebak. Impor CSV membaca
+    D/M/YYYY hari-dulu (`csvLicenseDate`) dan menyamakan ejaan jenis
+    (`canonicalLicenseType`). Jenis ditulis ke unit dengan ejaan kanonik dan
+    dibandingkan persis, jadi unit berisi 'sf-rtk' ikut dibetulkan.
+  - **Pratinjau Sync mengingat apa yang ditampilkannya.** Baris yang status
+    atau isinya berubah sebelum Terapkan (unit diperpanjang di perangkat lain)
+    dilewati dan dilaporkan, tidak ditulis.
+  - **Distribusi yang menentukan lisensi unit lalu dihapus, dipindah ke unit
+    lain, diganti jenisnya, atau diubah jadi stok masuk** (`_drivenBy`,
+    `_releaseDistributions`): unitnya ditawari kembali ke distribusi
+    sebelumnya, atau dikosongkan kalau tidak ada lagi. Satu konfirmasi per
+    tindakan; Batal membiarkannya dan mengatakannya.
   - **Kolom Status Unit** di Riwayat Stok Lisensi: Tersinkron, Belum, Unit
     lebih baru, Digantikan (distribusi lama yang sudah diganti yang lebih
     baru), Unit tidak ada, Bukan Pertanian, Tanggal tidak valid

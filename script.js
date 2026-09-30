@@ -83,7 +83,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v116';
+const APP_VERSION = 'v117';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -6954,34 +6954,54 @@ const _LIC_FIELDS = {
 // archived) — so a unit that was correctly downgraded reads as in sync, and a
 // back-dated handover is written straight into that state instead of as a
 // premium licence that is already dead.
+// A distribution date the plan can trust: exactly YYYY-MM-DD, and a real day.
+// '9/15/2024' would otherwise sort as a string ('9' > '1') and be read
+// month-first by new Date() — wrong for a team that writes 15/09/2024.
+function isoDistributionDate(v) {
+    const s = String(v == null ? '' : v).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+    return toISODate(parseLocalDate(s)) === s ? s : '';   // rejects 2026-02-30
+}
+// A unit's stored licence date, read the way the rest of the app reads it,
+// so comparisons happen on YYYY-MM-DD. null = set but unreadable.
+function isoUnitDate(v) {
+    if (v == null || String(v).trim() === '') return '';
+    const d = parseLocalDate(v);
+    return d ? toISODate(d) : null;
+}
+
 function distributionTarget(rec, kind) {
     const F = _LIC_FIELDS[kind];
-    const start = rec.date;
+    const start = isoDistributionDate(rec.date);
     const end = addOneYearISO(start);
-    if (licenseTypeKey(rec.licenseType) === licenseTypeKey(F.premium)
-        && getExpiryStatus(end).kind === 'expired') {
+    // The canonical spelling: 'sf-rtk' from a CSV must land as 'SF-RTK', or
+    // the unit form's select shows nothing and the auto-downgrade (exact
+    // match) never fires.
+    const premium = licenseTypeKey(rec.licenseType) === licenseTypeKey(F.premium);
+    if (premium && getExpiryStatus(end).kind === 'expired') {
         return { type: F.fallback, start, end: '', expiredAt: end, downgraded: true };
     }
-    return { type: rec.licenseType, start, end, expiredAt: '', downgraded: false };
+    return { type: premium ? F.premium : F.fallback, start, end, expiredAt: '', downgraded: false };
 }
 
 // The unit fields that put `target` in place. Only fields that differ are
 // returned, so an in-sync licence produces {} and nothing is written.
 function distributionFields(unit, kind, target) {
     const F = _LIC_FIELDS[kind];
-    const want = { [F.type]: target.type, [F.start]: target.start, [F.end]: target.end };
-    if (target.downgraded) {
-        want[F.expiredAt] = target.expiredAt;
-        // getLicenseEndDate falls back to the legacy GPS field; an emptied
-        // gpsLicenseEndDate would otherwise resurrect it.
-        if (kind === 'gps' && unit.licenseEndDate) want.licenseEndDate = '';
-    }
     const out = {};
-    Object.keys(want).forEach(f => {
-        const cur = f === F.type ? licenseTypeKey(unit[f]) : (unit[f] || '');
-        const val = f === F.type ? licenseTypeKey(want[f]) : want[f];
-        if (cur !== val) out[f] = want[f];
-    });
+    // Type compared EXACTLY, so a unit holding 'sf-rtk' is corrected.
+    if ((unit[F.type] || '') !== target.type) out[F.type] = target.type;
+    // Dates compared as what the app shows: GPS falls back to the legacy
+    // licenseStartDate / licenseEndDate, so a legacy-only unit that already
+    // matches is in sync, not a no-op "update".
+    const curStart = kind === 'gps' ? (unit.gpsLicenseStartDate || unit.licenseStartDate || '') : (unit[F.start] || '');
+    if (isoUnitDate(curStart) !== target.start) out[F.start] = target.start;
+    if (isoUnitDate(getLicenseEndDate(unit, kind)) !== target.end) {
+        out[F.end] = target.end;
+        // An emptied gpsLicenseEndDate would resurrect the legacy field.
+        if (kind === 'gps' && !target.end && unit.licenseEndDate) out.licenseEndDate = '';
+    }
+    if (target.downgraded && isoUnitDate(unit[F.expiredAt]) !== target.expiredAt) out[F.expiredAt] = target.expiredAt;
     return out;
 }
 
@@ -6997,12 +7017,15 @@ function _licenseSyncRow(rec, unit, kind) {
     const fields = distributionFields(unit, kind, target);
     const eff = effectiveLicense(unit, kind);
     const unitExpiry = eff.end || '';
+    const unitIso = isoUnitDate(unitExpiry);
     const targetExpiry = target.downgraded ? target.expiredAt : target.end;
     let status = 'update';
     if (!Object.keys(fields).length) status = 'sync';
-    else if (unitExpiry && targetExpiry && unitExpiry > targetExpiry) status = 'newer';
+    // An expiry nobody can read is not overwritten on a guess.
+    else if (unitIso === null) status = 'newer';
+    else if (unitIso && targetExpiry && unitIso > targetExpiry) status = 'newer';
     return { key: unit.id + '|' + kind, rec, unit, kind, target, fields, status,
-             now: { type: eff.type || '', end: unitExpiry } };
+             now: { type: eff.type || '', end: unitExpiry, downgraded: !!eff.downgraded, premium: eff.premium } };
 }
 
 // The whole plan: latest distribution per LIVE unit + kind. Units are resolved
@@ -7025,7 +7048,8 @@ function licenseSyncPlan() {
         if (isHeavy(unit) || hasUnreadableGroup(unit)) { skipped.notTractor++; recStatus.set(r.id, { code: 'notTractor' }); return; }
         // Without a date the target would be "today + 1 year" — different
         // every day, so the unit could never read as in sync.
-        if (!r.date || !parseLocalDate(r.date)) { skipped.noDate++; recStatus.set(r.id, { code: 'noDate' }); return; }
+        const iso = isoDistributionDate(r.date);
+        if (!iso) { skipped.noDate++; recStatus.set(r.id, { code: 'noDate' }); return; }
         const key = unit.id + '|' + kind;
         recStatus.set(r.id, { key });
         const cur = latest.get(key);
@@ -7033,12 +7057,12 @@ function licenseSyncPlan() {
         // without it two same-day records with the same createdAt resolve by
         // whatever order Firestore happened to return.
         const newer = !cur
-            || r.date > cur.rec.date
-            || (r.date === cur.rec.date && (
+            || iso > cur.iso
+            || (iso === cur.iso && (
                    (r.createdAt || 0) > (cur.rec.createdAt || 0)
                 || ((r.createdAt || 0) === (cur.rec.createdAt || 0) && String(r.id) > String(cur.rec.id))
                ));
-        if (newer) latest.set(key, { rec: r, unit, kind });
+        if (newer) latest.set(key, { rec: r, iso, unit, kind });
     });
     const rows = [...latest.values()].map(x => _licenseSyncRow(x.rec, x.unit, x.kind))
         .sort((a, b) => (a.unit.name || '').localeCompare(b.unit.name || '') || a.kind.localeCompare(b.kind));
@@ -7057,17 +7081,25 @@ function licenseSyncPlan() {
 // Writes the chosen rows, one updateUnit per unit (GPS and Display together).
 // Re-plans first: the table may have changed since the preview was drawn, and
 // a row that has meanwhile come into sync must not be written again.
-function _applyLicenseSync(keys) {
+//
+// `shown` (optional): key -> { status, sig } as the preview displayed it. A
+// row is written only if it still reads exactly the same — a unit renewed on
+// another device while the preview was open turns 'update' into 'newer', and
+// writing it anyway would move that renewal backwards.
+function _applyLicenseSync(keys, shown) {
     const want = new Set(keys);
     const byUnit = new Map();
+    let stale = 0;
     licenseSyncPlan().rows.forEach(row => {
         if (!want.has(row.key) || row.status === 'sync') return;
+        const was = shown && shown.get(row.key);
+        if (shown && (!was || was.status !== row.status || was.sig !== JSON.stringify(row.fields))) { stale++; return; }
         const f = byUnit.get(row.unit.id) || {};
         byUnit.set(row.unit.id, Object.assign(f, row.fields));
     });
     let n = 0;
     byUnit.forEach((fields, unitId) => { if (updateUnit(unitId, fields)) n++; });
-    return n;
+    return shown ? { written: n, stale } : n;
 }
 
 // Apply ONE distribution to its unit — the Distribusi form's and the CSV
@@ -7084,7 +7116,7 @@ function applyDistributedLicenseToUnit(rec, opts) {
     // The write boundary: whatever path reached here, no licence lands on a
     // heavy unit (or one whose group is unreadable).
     if (!unit || isHeavy(unit) || hasUnreadableGroup(unit)) return false;
-    if (!rec.date || !parseLocalDate(rec.date)) return false;
+    if (!isoDistributionDate(rec.date)) return false;
     const row = _licenseSyncRow(rec, unit, kind);
     if (row.status === 'sync') return 'unchanged';
     if (row.status === 'newer' && !(opts && opts.force)) return 'skipped-older';
@@ -7103,6 +7135,7 @@ function updateLicenseSyncBadge(plan) {
 }
 
 let _licSyncKeys = [];
+let _licSyncShown = new Map();
 
 // "Sync ke Unit": shows what WOULD change and writes only what is ticked.
 // Rows already in sync are counted but never written; rows where the unit
@@ -7133,6 +7166,7 @@ function syncDistributionsToUnits() {
     }
 
     _licSyncKeys = todo.map(r => r.key);
+    _licSyncShown = new Map(todo.map(r => [r.key, { status: r.status, sig: JSON.stringify(r.fields) }]));
     const fmt = (type, end) => `${escapeHtml(type || '—')}${end ? ` <span class="lic-sync__date">s/d ${escapeHtml(end)}</span>` : ''}`;
     document.getElementById('licSyncBody').innerHTML = todo.map((r, i) => {
         const t = r.target;
@@ -7141,8 +7175,18 @@ function syncDistributionsToUnits() {
         const toCell = t.downgraded
             ? `${escapeHtml(t.type)} <span class="lic-sync__date">(${escapeHtml(r.rec.licenseType)} habis ${escapeHtml(t.expiredAt)})</span>`
             : fmt(t.type, t.end);
+        // Same for what the unit holds now: a written-down premium is shown as
+        // the premium that ran out, not as a fallback "valid until" a dead date.
+        const nowCell = r.now.downgraded
+            ? `${escapeHtml(r.now.type)} <span class="lic-sync__date">(${escapeHtml(r.now.premium)} habis ${escapeHtml(r.now.end)})</span>`
+            : fmt(r.now.type, r.now.end);
+        const nowExpired = getExpiryStatus(r.now.end).kind === 'expired';
         const why = r.status === 'newer'
-            ? `Unit sudah berlaku lebih lama (s/d ${escapeHtml(r.now.end)}) — biarkan, kecuali memang salah`
+            ? (isoUnitDate(r.now.end) === null
+                ? `Tanggal habis di unit tidak terbaca ("${escapeHtml(r.now.end)}") — tidak ditimpa tanpa dicek`
+                : nowExpired
+                ? `Lisensi di unit lebih baru (${r.now.downgraded ? escapeHtml(r.now.premium) + ' ' : ''}habis ${escapeHtml(r.now.end)}) — biarkan, kecuali memang salah`
+                : `Unit sudah berlaku lebih lama (s/d ${escapeHtml(r.now.end)}) — biarkan, kecuali memang salah`)
             : (t.downgraded ? `Distribusi ${escapeHtml(r.rec.date)} sudah habis — tercatat ${escapeHtml(t.type)} (turun otomatis)`
                             : `Distribusi ${escapeHtml(r.rec.date)}`);
         return `<tr class="${r.status === 'newer' ? 'lic-sync__row--newer' : ''}">
@@ -7150,7 +7194,7 @@ function syncDistributionsToUnits() {
                 aria-label="Terapkan ke ${escapeHtml(r.unit.name || r.unit.sn || '')}" onchange="updateLicSyncApplyLabel()"></td>
             <td data-label="Unit"><span class="lic-sync__unit"><strong>${escapeHtml(r.unit.name || '')}</strong><span class="lic-sync__sn">${escapeHtml(r.unit.sn || '')}</span></span></td>
             <td data-label="Lisensi">${_LIC_FIELDS[r.kind].label}</td>
-            <td data-label="Sekarang">${fmt(r.now.type, r.now.end)}</td>
+            <td data-label="Sekarang">${nowCell}</td>
             <td data-label="Menjadi">${toCell}</td>
             <td data-label="Keterangan" class="lic-sync__why">${why}</td>
         </tr>`;
@@ -7175,6 +7219,7 @@ function updateLicSyncApplyLabel() {
 
 function closeLicSyncModal() {
     _licSyncKeys = [];
+    _licSyncShown = new Map();
     document.getElementById('licSyncModal').classList.remove('open');
 }
 
@@ -7182,13 +7227,74 @@ function applyLicSyncSelection() {
     if (!requireEdit('licenseStock')) return;
     const keys = [...document.querySelectorAll('#licSyncBody .lic-sync-check:checked')]
         .map(cb => _licSyncKeys[Number(cb.dataset.i)]).filter(Boolean);
+    const shown = _licSyncShown;
     closeLicSyncModal();
     if (!keys.length) return;
-    const n = _applyLicenseSync(keys);
-    showToast(n ? `Lisensi ${n} unit diperbarui dari distribusi terbarunya` : 'Tidak ada yang berubah', n ? 'success' : 'info');
+    const { written: n, stale } = _applyLicenseSync(keys, shown);
+    showToast((n ? `Lisensi ${n} unit diperbarui dari distribusi terbarunya` : 'Tidak ada yang ditulis')
+        + (stale ? ` · ${stale} baris dilewati karena datanya berubah sejak pratinjau — buka Sync ke Unit lagi` : ''),
+        stale ? 'warning' : (n ? 'success' : 'info'));
     renderLicenseStockTable();
     if (currentView === 'dashboard') updateDashboard(filteredData);
     else if (currentView === 'editUnits') renderEditTable();
+}
+
+// Is `rec` the distribution a unit's licence currently comes from — does the
+// unit hold exactly what it would write? Read BEFORE the ledger changes.
+function _drivenBy(rec) {
+    if (!rec || rec.txnType !== 'OUT') return null;
+    const kind = _licenseKindForType(rec.licenseType);
+    if (!kind || !isoDistributionDate(rec.date)) return null;
+    const unit = liveUnitFor(rec);
+    if (!unit || isHeavy(unit) || hasUnreadableGroup(unit)) return null;
+    return _licenseSyncRow(rec, unit, kind).status === 'sync' ? { rec, unit, kind } : null;
+}
+
+// A distribution that set a unit's licence was deleted, moved to another
+// unit, changed to another licence kind, or turned into stock-in. One licence
+// cannot sit on two units, and nothing else will ever point at this one: the
+// plan only sees units that still HAVE a distribution. So ask, once for the
+// whole batch — put each unit back on its previous distribution, or clear the
+// licence when there is none. Cancel leaves everything as it is, and says so.
+function _releaseDistributions(list) {
+    const seen = new Set();
+    const items = (list || []).filter(Boolean).filter(d => {
+        const k = d.unit.id + '|' + d.kind;
+        if (seen.has(k)) return false;
+        seen.add(k); return true;
+    }).map(d => {
+        const unit = globalData.find(u => u.id === d.unit.id);
+        if (!unit) return null;
+        const row = licenseSyncPlan().rows.find(r => r.key === unit.id + '|' + d.kind);
+        const F = _LIC_FIELDS[d.kind];
+        let fields;
+        if (row) fields = row.fields;
+        else {
+            fields = { [F.type]: '', [F.start]: '', [F.end]: '' };
+            if (unit[F.expiredAt]) fields[F.expiredAt] = '';
+            if (d.kind === 'gps' && unit.licenseStartDate) fields.licenseStartDate = '';
+            if (d.kind === 'gps' && unit.licenseEndDate) fields.licenseEndDate = '';
+        }
+        if (!Object.keys(fields).length) return null;
+        return { unit, kind: d.kind, row, fields,
+                 line: `· ${unit.name || unit.sn} (${F.label}): ` + (row
+                     ? `kembali ke ${row.target.type} dari distribusi ${row.rec.date}`
+                     : 'dikosongkan — tidak ada distribusi lain') };
+    }).filter(Boolean);
+    if (!items.length) return;
+    if (!hasAccess('editUnits', 'edit')) {
+        showToast(`${items.length} unit masih memegang lisensi dari distribusi ini — butuh hak edit Unit untuk membetulkannya`, 'warning');
+        return;
+    }
+    const lines = items.slice(0, 6).map(i => i.line).join('\n') + (items.length > 6 ? `\n… dan ${items.length - 6} lagi` : '');
+    if (!confirm(`${items.length} unit masih memegang lisensi dari distribusi yang baru diubah/dihapus:\n\n${lines}\n\n`
+        + 'OK = betulkan lisensi unitnya · Batal = biarkan seperti sekarang')) {
+        showToast(`Lisensi ${items.length} unit dibiarkan — mereka masih memegang lisensi dari distribusi itu`, 'warning');
+        return;
+    }
+    let n = 0;
+    items.forEach(i => { if (updateUnit(i.unit.id, i.fields)) n++; });
+    showToast(`Lisensi ${n} unit dibetulkan`, 'success');
 }
 
 function saveLicenseStock(event) {
@@ -7202,11 +7308,10 @@ function saveLicenseStock(event) {
     // Did the unit's licence come from THIS record? Then correcting its date
     // (a typo'd year) must be able to move the licence back as well, instead
     // of being refused as "older". Decided before anything is mutated.
-    const prevKind = prevRec && prevRec.txnType === 'OUT' ? _licenseKindForType(prevRec.licenseType) : null;
-    const prevUnit = prevKind ? liveUnitFor(prevRec) : null;
-    const prevDrove = !!(prevUnit && !isHeavy(prevUnit) && !hasUnreadableGroup(prevUnit)
-        && prevRec.date && parseLocalDate(prevRec.date)
-        && _licenseSyncRow(prevRec, prevUnit, prevKind).status === 'sync');
+    const prevDriven = _drivenBy(prevRec);
+    const prevDrove = !!prevDriven;
+    const prevUnit = prevDriven && prevDriven.unit;
+    const prevKind = prevDriven && prevDriven.kind;
     const txnType = document.getElementById('licTxnType').value;
     const typedType = document.getElementById('licType').value.trim();
     // Snap to the existing spelling so a stray "sf-rtk" doesn't open a second
@@ -7215,7 +7320,7 @@ function saveLicenseStock(event) {
     const qty = Math.max(1, parseInt(document.getElementById('licQty').value, 10) || 1);
     if (!licenseType) { showToast('Isi jenis lisensi', 'warning'); return; }
     if (typedType && licenseType !== typedType) {
-        showToast(`Jenis lisensi disamakan menjadi "${licenseType}"`, 'info');
+        showToast(`Jenis lisensi disamakan menjadi "${escapeHtml(licenseType)}"`, 'info');
     }
 
     const data = {
@@ -7234,7 +7339,7 @@ function saveLicenseStock(event) {
         // applyDistributedLicenseToUnit still refuses to write to the unit.
         const legacy = prevRec && prevRec.unitId === unit.id;
         if (isHeavy(unit) && !legacy) {
-            showToast(`Unit "${unit.name}" adalah Alat Berat — lisensi SF/G5 hanya untuk ${UNIT_GROUPS.tractor.label}`, 'warning');
+            showToast(`Unit "${escapeHtml(unit.name)}" adalah Alat Berat — lisensi SF/G5 hanya untuk ${UNIT_GROUPS.tractor.label}`, 'warning');
             return;
         }
         data.unitId = unit.id;
@@ -7312,16 +7417,19 @@ function saveLicenseStock(event) {
             showToast(`Lisensi ${kind} unit "${escapeHtml(data.unitName)}" sudah sesuai — tidak diubah`, 'info');
         } else if (applied === 'skipped-older') {
             showToast(`Lisensi ${kind} unit "${escapeHtml(data.unitName)}" tidak diubah — unit sudah punya masa berlaku yang lebih panjang`, 'warning');
-        } else if (!_licenseKindForType(licenseType)) {
+        } else if (!kindKey) {
             showToast(`"${escapeHtml(licenseType)}" bukan lisensi unit standar — hanya dicatat di stok`, 'warning');
+        } else if (!hasAccess('editUnits', 'edit')) {
+            showToast(`Distribusi dicatat, tetapi lisensi ${kind} unit "${escapeHtml(data.unitName)}" tidak diubah — butuh hak edit pada Edit Units`, 'warning');
+        } else {
+            showToast(`Distribusi dicatat, tetapi lisensi ${kind} unit "${escapeHtml(data.unitName)}" tidak diubah — cek unitnya di Periksa Data`, 'warning');
         }
-        // Moved to another unit (or another licence kind): the old unit still
-        // holds what this record gave it. Say so rather than guess whether the
-        // licence physically moved or the first unit was a typo.
-        if (prevDrove && !sameTarget) {
-            showToast(`Unit "${escapeHtml(prevUnit.name || prevUnit.sn || '')}" masih memegang lisensi dari distribusi ini — `
-                + 'periksa lewat kolom Status Unit / Sync ke Unit', 'warning');
-        }
+    }
+    // Moved to another unit or licence kind, or turned into stock-in: the old
+    // unit still holds what this record gave it.
+    if (prevDrove && licenseRelevantChange && !(txnType === 'OUT' && prevUnit.id === data.unitId
+            && prevKind === _licenseKindForType(licenseType))) {
+        _releaseDistributions([prevDriven]);
     }
 
     closeLicenseModal();
@@ -7341,6 +7449,7 @@ function deleteLicenseStock(id) {
     if (!rec) return;
     if (!confirm(`Hapus transaksi lisensi "${rec.licenseType}" (${rec.date})?`)) return;
 
+    const driven = _drivenBy(rec);
     globalLicenseStock = globalLicenseStock.filter(r => r.id !== id);
     saveLicenseStockLocal();
     cloudDeleteLicense(id);
@@ -7350,9 +7459,10 @@ function deleteLicenseStock(id) {
         unitName: `[Lisensi] ${rec.licenseType}`,
         before: rec.txnType === 'OUT' ? `Distribusi → ${rec.unitName}` : 'Stok masuk'
     });
+    showToast('Transaksi lisensi dihapus', 'success');
+    _releaseDistributions([driven]);
     renderLicenseSummary();
     renderLicenseStockTable();
-    showToast('Transaksi lisensi dihapus', 'success');
 }
 
 function deleteSelectedLicenseStock() {
@@ -7363,6 +7473,7 @@ function deleteSelectedLicenseStock() {
 
     const idSet = new Set(selectedLicenseIds);
     const removed = globalLicenseStock.filter(r => idSet.has(r.id));
+    const driven = removed.map(_drivenBy);
     globalLicenseStock = globalLicenseStock.filter(r => !idSet.has(r.id));
     saveLicenseStockLocal();
     removed.forEach(rec => cloudDeleteLicense(rec.id));
@@ -7372,9 +7483,10 @@ function deleteSelectedLicenseStock() {
         unitName: `[Lisensi] ${rec.licenseType}`,
         before: rec.txnType === 'OUT' ? `Distribusi → ${rec.unitName}` : 'Stok masuk'
     }));
+    showToast(`${count} transaksi lisensi dihapus`, 'success');
+    _releaseDistributions(driven);
     renderLicenseSummary();
     renderLicenseStockTable();
-    showToast(`${count} transaksi lisensi dihapus`, 'success');
 }
 
 // ---- Export report (CSV, opens in Excel via UTF-8 BOM) ----
@@ -7430,6 +7542,23 @@ function downloadLicenseTemplate() {
     URL.revokeObjectURL(url);
 }
 
+// A ledger date from a CSV, as YYYY-MM-DD. ISO passes through; D/M/YYYY
+// (also with '-' or '.') is read DAY-first — how this team, and Excel in an
+// Indonesian locale, writes dates. new Date('01/10/2025') would read it as
+// January 10. Anything else is kept as typed, and the Status Unit column
+// flags it "Tanggal tidak valid" instead of guessing.
+function csvLicenseDate(raw) {
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s) return '';
+    if (isoDistributionDate(s)) return s;
+    const m = /^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/.exec(s);
+    if (m) {
+        const iso = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+        if (isoDistributionDate(iso)) return iso;
+    }
+    return s;
+}
+
 function handleLicenseCSVImport(file) {
     if (!canCsv('full')) return;
     if (!requireEdit('licenseStock')) return;
@@ -7445,12 +7574,13 @@ function handleLicenseCSVImport(file) {
             const importSync = { applied: 0, newer: 0, noAccess: 0 };
 
             result.data.forEach(row => {
-                const licenseType = (getValAny(row, ['Jenis Lisensi', 'License', 'License Type']) || '').toString().trim();
+                // Same spelling rule as the Distribusi form: 'sf-rtk' is SF-RTK.
+                const licenseType = canonicalLicenseType((getValAny(row, ['Jenis Lisensi', 'License', 'License Type']) || '').toString());
                 if (!licenseType) { rejected++; return; }
 
                 const txnType = parseLicenseTxnType(getValAny(row, ['Jenis', 'Type', 'Transaksi', 'Transaction']));
                 const qty = Math.max(1, parseInt(getValAny(row, ['Jumlah', 'Qty', 'Quantity']), 10) || 1);
-                const date = (getValAny(row, ['Tanggal', 'Date']) || '').toString().trim() || today;
+                const date = csvLicenseDate(getValAny(row, ['Tanggal', 'Date'])) || today;
                 const note = (getValAny(row, ['Catatan', 'Note', 'Notes', 'Remarks']) || '').toString().trim();
 
                 const rec = {

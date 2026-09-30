@@ -24,7 +24,9 @@ const { launch, BASE_URL } = require('./_env');
         const T = []; const t = (n, g, w) => T.push({ n, g, w, pass: JSON.stringify(g) === JSON.stringify(w) });
         const toasts = [];
         window.showToast = (m, k) => { toasts.push(String(m)); };
-        window.confirm = () => true;
+        let confirmAnswer = true;
+        const asked = [];
+        window.confirm = m => { asked.push(String(m)); return confirmAnswer; };
         const writes = [];
         window.cloud = { isReady: true,
             saveUnits: u => { writes.push(...JSON.parse(JSON.stringify(u))); return Promise.resolve(); },
@@ -212,11 +214,13 @@ const { launch, BASE_URL } = require('./_env');
         seed([U('p'), U('q')], [{ id: 'IN1', txnType: 'IN', licenseType: 'SF-RTK', qty: 5, date: '2026-01-01' }]);
         fillForm(globalData[0], 'SF-RTK', '2026-09-10');
         const movId = globalLicenseStock.find(r => r.txnType === 'OUT').id;
-        toasts.length = 0;
+        toasts.length = 0; asked.length = 0;
+        confirmAnswer = false;
         fillForm(globalData[1], 'SF-RTK', '2026-09-10', movId);
         t('dipindah ke unit lain: unit baru mendapat lisensinya', globalData[1].gpsLicense, 'SF-RTK');
-        t('unit lama tidak diubah diam-diam', globalData[0].gpsLicense, 'SF-RTK');
-        t('dan ada peringatan tentang unit lama', toasts.some(m => /GGTRp.*masih memegang lisensi/.test(m)), true);
+        t('unit lama DITANYAKAN, tidak diubah diam-diam', asked.some(m => m.includes('GGTRp (GPS): dikosongkan')), true);
+        t('Batal: unit lama dibiarkan, dan itu dikatakan', [globalData[0].gpsLicense, toasts.some(m => /dibiarkan/.test(m))], ['SF-RTK', true]);
+        confirmAnswer = true;
 
         // =============== 10. IMPOR CSV = LANGSUNG TERSINKRON ===============
         seed([U('c1'), U('c2', { gpsLicense: 'SF-RTK', gpsLicenseStartDate: '2026-09-20', gpsLicenseEndDate: '2027-09-20' }), U('old')],
@@ -234,6 +238,79 @@ const { launch, BASE_URL } = require('./_env');
         const importToast = toasts.find(m => /^Import lisensi/.test(m)) || '';
         t('dan pesannya menyebut apa yang terjadi', importToast,
           'Import lisensi: 2 ditambahkan · lisensi 1 unit ikut diperbarui · 1 unit tidak diubah (berlaku lebih lama)');
+
+        // =============== 11. TEMUAN REVIEW v115 ===============
+        // A. Pratinjau basi: unit diperpanjang di perangkat lain selama
+        //    pratinjau terbuka — baris itu TIDAK boleh ditulis.
+        seed([U('s')], [OUT('s', 'SF-RTK', '2026-09-15')]);
+        openPreview();
+        globalData[0] = { ...globalData[0], gpsLicense: 'SF-RTK', gpsLicenseStartDate: '2026-09-28', gpsLicenseEndDate: '2027-09-28' };
+        toasts.length = 0; writes.length = 0;
+        applyLicSyncSelection();
+        t('A: baris yang berubah sejak pratinjau tidak ditulis', [writes.length, globalData[0].gpsLicenseEndDate], [0, '2027-09-28']);
+        t('A: dan pesannya bilang begitu', /1 baris dilewati karena datanya berubah sejak pratinjau/.test(toasts.join('|')), true);
+        // Baris "newer" yang dicentang dengan sengaja tetap bisa ditulis.
+        seed([U('n2', { gpsLicense: 'SF-RTK', gpsLicenseStartDate: '2026-09-20', gpsLicenseEndDate: '2027-09-20' })], [OUT('n2', 'SF-RTK', '2026-03-01')]);
+        openPreview(); document.querySelector('#licSyncBody .lic-sync-check').click(); applyLicSyncSelection();
+        t('A: "newer" yang dicentang sengaja tetap ditulis', globalData[0].gpsLicenseEndDate, '2027-03-01');
+
+        // B. Tanggal distribusi non-ISO: tidak dipakai untuk menebak urutan.
+        seed([U('b1')], [OUT('b1', 'SF-RTK', '9/15/2024', { id: 'US' }), OUT('b1', 'SF-RTK', '2025-10-01', { id: 'ISO' })]);
+        t('B: tanggal non-ISO ditandai, bukan diurutkan sebagai teks',
+          [licenseSyncPlan().rows[0].rec.id, licenseSyncPlan().recStatus.get('US').code], ['ISO', 'noDate']);
+        t('B: CSV D/M/YYYY dibaca hari-dulu', [csvLicenseDate('01/10/2025'), csvLicenseDate('1-2-2026'), csvLicenseDate('2026-09-30'), csvLicenseDate('31/02/2026')],
+          ['2025-10-01', '2026-02-01', '2026-09-30', '31/02/2026']);
+
+        // C. Tanggal habis unit non-ISO yang lebih lama: tidak dimundurkan.
+        seed([U('c1', { gpsLicense: 'SF-RTK', gpsLicenseStartDate: '2026-12-31', gpsLicenseEndDate: '12/31/2027' })], [OUT('c1', 'SF-RTK', '2026-03-01')]);
+        t('C: expiry unit 12/31/2027 dibaca sebagai tanggal, jadi "newer"', plan(), ['c1:gps:newer']);
+        seed([U('c2', { gpsLicense: 'SF-RTK', gpsLicenseStartDate: '2026-03-01', gpsLicenseEndDate: 'besok' })], [OUT('c2', 'SF-RTK', '2026-03-01')]);
+        t('C: expiry unit yang tak terbaca tidak ditimpa tanpa dicek', plan(), ['c2:gps:newer']);
+
+        // D. Ejaan jenis kanonik.
+        seed([U('d1'), U('d2', { gpsLicense: 'sf-rtk', gpsLicenseStartDate: '2026-09-01', gpsLicenseEndDate: '2027-09-01' })],
+             [OUT('d1', 'sf-rtk', '2026-09-01'), OUT('d2', 'SF-RTK', '2026-09-01')]);
+        openPreview(); applyLicSyncSelection();
+        t('D: distribusi "sf-rtk" ditulis sebagai SF-RTK, dan unit berejaan salah dibetulkan',
+          [globalData[0].gpsLicense, globalData[1].gpsLicense], ['SF-RTK', 'SF-RTK']);
+        t('D: unit berejaan salah hanya ditulis jenisnya', writes.filter(u => u.id === 'd2').length, 1);
+
+        // E. Unit yang hanya punya field GPS lama dan sudah cocok: sesuai.
+        seed([U('e1', { gpsLicense: 'SF-RTK', licenseStartDate: '2026-03-01', licenseEndDate: '2027-03-01' })], [OUT('e1', 'SF-RTK', '2026-03-01')]);
+        t('E: field lama yang cocok terbaca sesuai', plan(), ['e1:gps:sync']);
+
+        // F. Hapus distribusi yang menentukan lisensi unit.
+        seed([U('f1')], [OUT('f1', 'SF-1', '2026-01-01', { id: 'F_OLD' }), OUT('f1', 'SF-RTK', '2026-09-01', { id: 'F_NEW' })]);
+        applyDistributedLicenseToUnit(globalLicenseStock[0]); applyDistributedLicenseToUnit(globalLicenseStock[1]);
+        t('F: sebelum hapus unit memegang SF-RTK', globalData[0].gpsLicense, 'SF-RTK');
+        asked.length = 0;
+        deleteLicenseStock('F_NEW');
+        t('F: hapus distribusi terbaru → ditawari kembali ke distribusi sebelumnya', asked.some(m => /kembali ke SF-1 dari distribusi 2026-01-01/.test(m)), true);
+        t('F: OK → unit kembali ke SF-1', [globalData[0].gpsLicense, globalData[0].gpsLicenseStartDate], ['SF-1', '2026-01-01']);
+        deleteLicenseStock('F_OLD');
+        t('F: hapus distribusi terakhir → lisensi unit dikosongkan', [globalData[0].gpsLicense, globalData[0].gpsLicenseEndDate], ['', '']);
+        // Distribusi yang TIDAK menentukan lisensi unit: menghapusnya tidak menanyakan apa pun.
+        seed([U('f2', { gpsLicense: 'SF-RTK', gpsLicenseStartDate: '2026-09-20', gpsLicenseEndDate: '2027-09-20' })], [OUT('f2', 'SF-RTK', '2026-03-01', { id: 'F_X' })]);
+        asked.length = 0;
+        deleteLicenseStock('F_X');
+        t('F: hapus distribusi yang tidak menentukan unit: hanya konfirmasi hapus', [asked.length, globalData[0].gpsLicenseEndDate], [1, '2027-09-20']);
+
+        // G. Tanpa hak edit unit: form Distribusi memberi tahu.
+        seed([U('g1')], [{ id: 'IN1', txnType: 'IN', licenseType: 'SF-RTK', qty: 5, date: '2026-01-01' }]);
+        currentUserDoc = { role: 'staff', status: 'active', email: 's@x.id', access: { licenseStock: 'edit', editUnits: 'view' } };
+        applyRoleGating();
+        fillForm(globalData[0], 'SF-RTK', '2026-09-29');
+        t('G: distribusi dicatat tapi unit tidak diubah — dan itu dikatakan', toasts.some(m => /butuh hak edit pada Edit Units/.test(m)), true);
+        currentUserDoc = { role: 'owner', status: 'active', email: 'o@x.id' };
+        applyRoleGating();
+
+        // I. Kolom "Sekarang" untuk tier yang sudah turun.
+        seed([U('i1', { gpsLicense: 'SF-1', gpsLicenseStartDate: '2025-06-01', gpsLicenseEndDate: '', gpsLicenseExpiredAt: '2026-06-01' })],
+             [OUT('i1', 'SF-RTK', '2026-09-01')]);
+        openPreview();
+        t('I: "Sekarang" menyebut premium yang habis, bukan SF-1 "s/d" tanggal mati',
+          document.querySelector('#licSyncBody td[data-label="Sekarang"]').textContent.split(String.fromCharCode(10)).join(' ').replace(/  +/g, ' ').trim(), 'SF-1 (SF-RTK habis 2026-06-01)');
+        closeLicSyncModal();
 
         window.__T = T;
     } catch (e) { window.__T = [{ n: 'EXCEPTION ' + e.message + ' ' + e.stack, pass: false }]; } })();` });
