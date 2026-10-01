@@ -87,7 +87,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v128';
+const APP_VERSION = 'v129';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
