@@ -3269,6 +3269,77 @@ body[data-nocsvimport] .csv-import { display: none !important; }
 .appr--pending  { background: var(--warning-bg); color: var(--warning); }
 .appr--approved { background: var(--success-bg); color: var(--success); }
 .appr--revision { background: var(--danger-bg);  color: var(--danger); }
+.appr--draft    { background: var(--border-light); color: var(--text-secondary); }
+/* The checker's note, readable in the table without a hover. */
+.appr-note {
+    display: block;
+    max-width: 160px;
+    margin-top: 3px;
+    font-size: 11px;
+    line-height: 1.3;
+    color: var(--danger);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.row-lock {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    color: var(--text-light);
+    cursor: help;
+}
+.team-tab__count--alert { background: var(--danger); color: #fff; }
+
+/* Sender's side of approval: what came back and what is still out. */
+.my-notice {
+    margin-bottom: 14px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border-light);
+    background: var(--info-bg);
+    font-size: 13px;
+}
+.my-notice--alert { background: var(--danger-bg); border-color: var(--danger); }
+.my-notice__head { font-weight: 700; color: var(--danger); margin-bottom: 8px; }
+.my-notice__list { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 8px; }
+.my-notice__list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+.my-notice__note { display: block; font-size: 12px; color: var(--text-secondary); overflow-wrap: anywhere; }
+.my-notice__facts {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+.revision-note {
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--danger-bg);
+    color: var(--danger);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+.mine-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    cursor: pointer;
+}
+@media (max-width: 700px) {
+    .my-notice__list li { flex-direction: column; align-items: stretch; }
+}
 .appr-actions {
     display: flex;
     gap: 3px;

@@ -80,10 +80,14 @@ const { launch, BASE_URL } = require('./_env');
         t('catatan revisi tersimpan', rv.revisionNote, 'Jam selesai belum diisi');
         t('persetujuan lama dihapus', [rv.approvedBy, rv.approvedAt], ['', 0]);
 
-        // ---------- edit membatalkan persetujuan ----------
+        // ---------- yang sudah disetujui terkunci; revisi membukanya ----------
         before = saved.length;
         editWorkLog('wSudah');
-        document.getElementById('wlTask').value = 'Diubah setelah disetujui';
+        t('laporan disetujui tidak bisa dibuka untuk diedit', document.getElementById('workLogModal').classList.contains('open'), false);
+        t('dan tidak ada yang ditulis', saved.length, before);
+        Object.assign(workLogs.find(w => w.id === 'wSudah'), { approval:'revision', revisionNote:'Jam salah' });
+        editWorkLog('wSudah');
+        document.getElementById('wlTask').value = 'Diubah setelah diminta revisi';
         saveWorkLog({ preventDefault(){} });
         const ed = saved[saved.length-1];
         t('edit mengembalikan ke Menunggu', ed.approval, 'pending');
@@ -114,6 +118,7 @@ const { launch, BASE_URL } = require('./_env');
         t('laporan orang lain: ada tombol', rowLain.querySelectorAll('td[data-label="Persetujuan"] .appr-btn').length > 0, true);
 
         // ---------- filter ----------
+        Object.assign(workLogs.find(w => w.id === 'wSudah'), { approval:'approved', revisionNote:'' });
         document.getElementById('wlApprovalFilter').value = 'approved';
         renderWorkLogTable();
         const shown = [...document.querySelectorAll('#workLogBody tr')];

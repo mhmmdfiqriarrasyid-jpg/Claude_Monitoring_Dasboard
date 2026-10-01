@@ -232,7 +232,7 @@ const { launch, BASE_URL } = require('./_env');
         // Toast suksesnya baru muncul setelah tulisannya selesai, jadi beri
         // satu putaran microtask sebelum memeriksanya.
         await Promise.resolve(); await Promise.resolve();
-        t('penggunanya diberi tahu', toasts.some(m => /persetujuan dibatalkan/i.test(m)), true);
+        t('penggunanya diberi tahu', toasts.some(m => /dikirim ulang/i.test(m)), true);
 
         // ---------- HAK AKSES ----------
         currentUserDoc = { role: 'khl', status: 'active', access: { teamLog: 'view' } };

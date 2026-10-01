@@ -104,33 +104,54 @@ service cloud.firestore {
     // Enforced HERE, not only in the app: from the browser console anyone
     // with teamLog edit could otherwise write approval:'approved' under a
     // supervisor's name, and an approver could approve their own report.
+    //
+    // The flow:  draft ──Kirim──▶ pending ──Setujui──▶ approved
+    //              ▲                │  │                  │
+    //              └─Tarik kembali──┘  └──Minta revisi──▶ revision ◀──┘
+    //            draft / revision are open to editors; pending and
+    //            approved are locked until the checker acts.
+    // Records written before approval existed have no field: pending.
+    function apprOf(d)     { return d.get('approval', 'pending'); }
+    function isOpen(d)     { return apprOf(d) in ['draft', 'revision']; }
     function approvalKeys() {
       return ['approval', 'approvedBy', 'approvedByEmail', 'approvedAt',
               'revisionNote', 'reviewedBy', 'reviewedAt', 'updatedAt'];
     }
-    // An editor may change the record but not its approval — except to send
-    // it back to pending, which is what editing does. The author cannot be
-    // rewritten. (Writes that leave the approval fields alone, like the photo
-    // migration, pass on the first branch.)
+    // An editor changes an OPEN record, and leaves it a draft or sends it —
+    // never approved, never under someone's signature, and never as someone
+    // else's: the author cannot be rewritten.
     function editorWrite() {
-      return (!request.resource.data.diff(resource.data).affectedKeys()
-                 .hasAny(['approval', 'approvedBy', 'approvedByEmail', 'approvedAt', 'reviewedBy', 'reviewedAt'])
-              || (request.resource.data.get('approval', 'pending') == 'pending'
-                  && request.resource.data.get('approvedByEmail', '') == ''))
+      return isOpen(resource.data)
+          && apprOf(request.resource.data) in ['draft', 'pending']
+          && request.resource.data.get('approvedByEmail', '') == ''
           && request.resource.data.get('createdByUid', '') == resource.data.get('createdByUid', '');
     }
-    // An approver touches the approval fields only, signs with their own
-    // e-mail, and never checks their own record.
+    // Tarik kembali: the sender pulls a pending record back to a draft before
+    // anyone has checked it, and changes nothing else on the way.
+    function withdrawWrite() {
+      return apprOf(resource.data) == 'pending'
+          && request.resource.data.get('approval', '') == 'draft'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approval', 'updatedAt'])
+          && resource.data.get('createdByUid', '') in ['', request.auth.uid];
+    }
+    // An approver touches the approval fields only, never checks their own
+    // record, approves only what was sent, signs with their own e-mail, and
+    // sends back — with a reason — only what was sent or already approved.
     function approverWrite() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(approvalKeys())
-          && request.resource.data.get('approval', 'pending') in ['pending', 'approved', 'revision']
-          && (request.resource.data.get('approval', '') != 'approved'
-              || request.resource.data.get('approvedByEmail', '') == request.auth.token.email)
-          && resource.data.get('createdByUid', '') != request.auth.uid;
+          && resource.data.get('createdByUid', '') != request.auth.uid
+          && ((request.resource.data.get('approval', '') == 'approved'
+                && apprOf(resource.data) == 'pending'
+                && request.resource.data.get('approvedByEmail', '') == request.auth.token.email)
+              || (request.resource.data.get('approval', '') == 'revision'
+                && apprOf(resource.data) in ['pending', 'approved']
+                && request.resource.data.get('revisionNote', '') is string
+                && request.resource.data.get('revisionNote', '').size() > 0));
     }
-    function newPendingRecord(id) {
+    function newRecord(id) {
       return idMatches(id)
-          && request.resource.data.get('approval', 'pending') == 'pending'
+          && apprOf(request.resource.data) in ['draft', 'pending']
+          && request.resource.data.get('approvedByEmail', '') == ''
           && request.resource.data.get('createdByUid', request.auth.uid) == request.auth.uid;
     }
     function teamLogReader() {
@@ -142,13 +163,13 @@ service cloud.firestore {
     // to rewrite the report they are checking. affectedKeys().hasOnly() is what
     // enforces that: an approver's write may touch the approval fields and
     // nothing else, so they cannot quietly change the hours or the description
-    // on their way past. Creating and deleting stay with the editors.
+    // on their way past. Deleting follows editing: only an open record.
     match /workLogs/{id} {
       allow read:   if teamLogReader();
-      allow create: if isOwner() || (canEditArea('teamLog') && newPendingRecord(id));
-      allow delete: if canEditArea('teamLog');
+      allow create: if isOwner() || (canEditArea('teamLog') && newRecord(id));
+      allow delete: if isOwner() || (canEditArea('teamLog') && isOpen(resource.data));
       allow update: if isOwner()
-                    || (idMatches(id) && canEditArea('teamLog') && editorWrite())
+                    || (idMatches(id) && canEditArea('teamLog') && (editorWrite() || withdrawWrite()))
                     || (canEditArea('teamLogApprove') && approverWrite());
     }
 
@@ -169,11 +190,23 @@ service cloud.firestore {
     // whoever can see the schedule may read them too.
     match /leaveRequests/{id} {
       allow read:   if teamLogReader() || canViewArea('teamShift');
-      allow create: if isOwner() || (canEditArea('teamLog') && newPendingRecord(id));
-      allow delete: if canEditArea('teamLog');
+      allow create: if isOwner() || (canEditArea('teamLog') && newRecord(id));
+      allow delete: if isOwner() || (canEditArea('teamLog') && isOpen(resource.data));
       allow update: if isOwner()
-                    || (idMatches(id) && canEditArea('teamLog') && editorWrite())
+                    || (idMatches(id) && canEditArea('teamLog') && (editorWrite() || withdrawWrite()))
                     || (canEditArea('teamLogApprove') && approverWrite());
+    }
+
+    // Photos and letters follow their record: they change only while it is
+    // open, so a sent or approved report cannot have its evidence swapped
+    // underneath it. No record yet means one being created — the app writes
+    // the photos first, then the record.
+    function recordOpen(id) {
+      return exists(/databases/$(database)/documents/workLogs/$(id))
+          ? isOpen(get(/databases/$(database)/documents/workLogs/$(id)).data)
+          : (exists(/databases/$(database)/documents/leaveRequests/$(id))
+              ? isOpen(get(/databases/$(database)/documents/leaveRequests/$(id)).data)
+              : true);
     }
 
     // Field documentation photos, one document per report. Split out of the
@@ -185,7 +218,7 @@ service cloud.firestore {
     // reports and leave may read it.
     match /workLogPhotos/{id} {
       allow read:  if canViewArea('teamLog') || canViewArea('teamLogApprove');
-      allow write: if canEditArea('teamLog');
+      allow write: if isOwner() || (canEditArea('teamLog') && recordOpen(id));
     }
 
     // Damage photos, one document per record. Split out for the same reason as

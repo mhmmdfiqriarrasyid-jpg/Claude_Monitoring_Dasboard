@@ -94,7 +94,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.150 pemeriksaan di dua puluh tujuh suite, menggerakkan Chromium sungguhan terhadap
+1.215 pemeriksaan di dua puluh delapan suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -239,12 +239,25 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   - Laporan restore wajib menyebut koleksi yang **tidak ada di berkas**. Itu
     baris yang paling penting: restore yang diam-diam mencakup lebih sedikit
     dari yang disangka orang adalah kegagalan yang modal itu ada untuk dicegah.
-- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (43 skenario;
+- **Alur pengiriman laporan harian & izin/sakit (dijaga `tests/workflow_test.js`).**
+  Draf → Kirim → Menunggu → Disetujui, atau kembali sebagai Perlu Revisi.
+  Hanya draf dan yang dikembalikan yang bisa diedit/dihapus; yang menunggu
+  bisa *ditarik kembali* ke draf oleh pengirimnya; yang disetujui hanya bisa
+  dibuka lagi oleh atasan lewat Minta Revisi (wajib catatan). Owner bebas.
+  Draf tidak dihitung di KPI lapor hari ini, rekap, ringkasan mingguan,
+  profil unit, maupun penanda izin di jadwal, dan tidak terlihat orang lain.
+  Pengirim diberi tahu di aplikasi: badge Tim + badge tab, kotak "Perlu
+  direvisi" di atas tabel, dan toast saat dibuka / saat ada revisi atau
+  persetujuan baru (penanda per akun di localStorage
+  `teamApprovalSeen:<uid>:<jenis>`). Foto/surat ditulis SEBELUM laporannya,
+  karena rules hanya mengizinkan foto berubah selama laporannya terbuka.
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (69 skenario;
   bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
   kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
-  persetujuan laporan/izin (editor hanya bisa mengembalikan ke pending,
-  approver hanya menyentuh field persetujuan dengan emailnya sendiri dan
-  tidak untuk catatannya sendiri), baca per area untuk laporan, izin, surat
+  alur persetujuan laporan/izin (transisi status di atas, kunci isi dan foto
+  selama menunggu/disetujui, tarik kembali hanya oleh pengirim, approver
+  hanya menyentuh field persetujuan dengan emailnya sendiri dan tidak untuk
+  catatannya sendiri), baca per area untuk laporan, izin, surat
   sakit, foto kerusakan dan riwayat, riwayat terikat ke uid+email pelaku,
   bentuk dokumen pendaftar dan `activeSession`, `id` = ID dokumen, dan nilai
   shift yang dikenal. Langganan di `initCloudSync` mengikuti aturan baca yang

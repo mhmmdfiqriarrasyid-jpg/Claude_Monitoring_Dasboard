@@ -87,7 +87,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v123';
+const APP_VERSION = 'v124';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -9921,6 +9921,7 @@ function workLogUnitNames(rec) {
 // Three states, because two would leave a rejected report with nowhere to go:
 // the person who filed it would never learn what to fix.
 const APPROVAL_STATES = {
+    draft:    { label: 'Draf',         tone: 'muted'   },
     pending:  { label: 'Menunggu',     tone: 'warning' },
     approved: { label: 'Disetujui',    tone: 'success' },
     revision: { label: 'Perlu Revisi', tone: 'danger'  }
@@ -9931,6 +9932,60 @@ const APPROVAL_STATES = {
 function workLogApproval(w) {
     const a = w && w.approval;
     return APPROVAL_STATES[a] ? a : 'pending';
+}
+
+// ---- Submission workflow ----
+// Draf → Kirim → Menunggu → Disetujui, or back to the author as Perlu Revisi.
+// Only a draft or a record sent back can be changed: a pending record is
+// with the checker (the author may withdraw it to a draft first), and an
+// approved one stays as approved unless the checker reopens it with a
+// revision request. The owner is exempt, as everywhere else. firestore.rules
+// enforces the same transitions — these only decide what the screen offers.
+function approvalOpen(rec) {
+    const st = workLogApproval(rec);
+    return st === 'draft' || st === 'revision';
+}
+
+function myUid() {
+    return (currentUser && currentUser.uid) || '';
+}
+
+function isMyRecord(rec) {
+    return !!(rec && rec.createdByUid && myUid() && rec.createdByUid === myUid());
+}
+
+// A draft has not been handed in: it does not count as a report filed, an
+// hour worked or a day off — and it is nobody else's business yet.
+function isSubmitted(rec) {
+    return workLogApproval(rec) !== 'draft';
+}
+
+function visibleToMe(rec) {
+    return isSubmitted(rec) || isOwner() || isMyRecord(rec) || !rec.createdByUid;
+}
+
+function canEditTeamRecord(rec) {
+    if (!hasAccess('teamLog', 'edit')) return false;
+    return isOwner() || approvalOpen(rec);
+}
+
+// Withdrawing belongs to whoever sent it. Records from before authors were
+// recorded have no sender to match, so any editor may pull those back.
+function canWithdrawTeamRecord(rec) {
+    if (!hasAccess('teamLog', 'edit') || workLogApproval(rec) !== 'pending') return false;
+    return isOwner() || !rec.createdByUid || isMyRecord(rec);
+}
+
+// Why the edit button is shut, in the words the person needs.
+function lockedReason(rec, noun) {
+    const st = workLogApproval(rec);
+    if (st === 'pending') {
+        return canWithdrawTeamRecord(rec)
+            ? `${noun} sedang menunggu persetujuan — tarik kembali dulu untuk mengubahnya`
+            : `${noun} sedang menunggu persetujuan dan belum bisa diubah`;
+    }
+    if (st === 'approved') return `${noun} sudah disetujui — minta atasan membukanya lewat Minta Revisi`;
+    return '';
 }
 
 function canApproveWorkLogs() {
@@ -10201,6 +10256,7 @@ function renderTeamView() {
 
     const active = TEAM_TABS[teamTab];
     if (active && canTab(teamTab)) active.render();
+    updateMyTeamNotices();
 }
 
 // ============================================================
@@ -10776,9 +10832,12 @@ function getFilteredWorkLogs() {
     const member = (document.getElementById('wlMemberFilter')?.value || '');
     const company = (document.getElementById('wlCompanyFilter')?.value || '');
     const approval = (document.getElementById('wlApprovalFilter')?.value || '');
+    const mine = !!document.getElementById('wlMineFilter')?.checked;
     const q = (document.getElementById('wlSearch')?.value || '').toLowerCase().trim();
 
     return workLogs.filter(w => {
+        if (!visibleToMe(w)) return false;
+        if (mine && !isMyRecord(w)) return false;
         if (from && String(w.date || '') < from) return false;
         if (to && String(w.date || '') > to) return false;
         if (member && w.memberId !== member) return false;
@@ -10806,7 +10865,7 @@ function renderWorkLogTable() {
     const totalMin = rows.reduce((a, w) => a + workLogMinutes(w), 0);
     const today = toISODate();
     const reportedToday = new Set(
-        workLogs.filter(w => w.date === today && w.memberId).map(w => w.memberId)
+        workLogs.filter(w => w.date === today && w.memberId && isSubmitted(w)).map(w => w.memberId)
     ).size;
     const activeCount = activeMembers().length;
 
@@ -10837,6 +10896,7 @@ function renderWorkLogTable() {
                       (document.getElementById('wlMemberFilter')?.value || '') ||
                       (document.getElementById('wlCompanyFilter')?.value || '') ||
                       (document.getElementById('wlApprovalFilter')?.value || '') ||
+                      document.getElementById('wlMineFilter')?.checked ||
                       (document.getElementById('wlSearch')?.value || '');
 
     if (rows.length === 0) {
@@ -10876,17 +10936,7 @@ function renderWorkLogTable() {
             <td data-label="Kendala" style="max-width:110px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(issue)}">${
                 issueShort ? escapeHtml(issueShort) : '<span style="color:var(--text-light)">—</span>'}</td>
             <td data-label="Persetujuan">${(() => {
-                const st = workLogApproval(w);
-                const meta = st === 'approved'
-                    ? `Disetujui ${w.approvedBy || ''}${w.approvedAt ? ' · ' + formatUserTime(w.approvedAt) : ''}`
-                    : (st === 'revision' ? (w.revisionNote || 'Perlu revisi') : 'Belum diperiksa');
-                const badge = `<span class="appr appr--${st}" title="${escapeHtml(meta)}">${escapeHtml(APPROVAL_STATES[st].label)}</span>`;
-                if (!canApproveThisLog(w)) return badge;
-                const btns = `<span class="appr-actions">
-                    ${st !== 'approved' ? `<button class="btn btn-secondary appr-btn" title="Setujui laporan" aria-label="Setujui laporan" onclick="approveWorkLog(${jsArg(w.id)})"><i class="fas fa-check"></i></button>` : ''}
-                    ${st !== 'revision' ? `<button class="btn btn-secondary appr-btn" title="Minta revisi" aria-label="Minta revisi" onclick="reviseWorkLog(${jsArg(w.id)})"><i class="fas fa-rotate-left"></i></button>` : ''}
-                </span>`;
-                return badge + btns;
+                return approvalCell(w, 'laporan', 'approveWorkLog', 'reviseWorkLog');
             })()}</td>
             <td data-label="Dokumentasi">${photoCount
                 ? `<button type="button" class="wl-photo-btn" title="Lihat ${photoCount} foto dokumentasi"
@@ -10894,13 +10944,46 @@ function renderWorkLogTable() {
                         onclick="openWorkLogPhotos(${jsArg(w.id)}, this)"><i class="fas fa-image"></i> ${photoCount}</button>`
                 : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td class="col-actions">
-                ${canEdit ? `<div class="row-actions">
-                    <button class="btn btn-secondary" title="Edit" aria-label="Edit laporan" onclick="editWorkLog(${jsArg(w.id)})"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Hapus" aria-label="Hapus laporan" onclick="deleteWorkLog(${jsArg(w.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
-                </div>` : ''}
+                ${canEdit ? rowActionsFor(w, 'Laporan', 'editWorkLog', 'deleteWorkLog', 'withdrawWorkLog') : ''}
             </td>
         </tr>`;
     }).join('');
+}
+
+// The Persetujuan cell, shared by reports and leave. The checker approves only
+// what was actually sent, and may send back what is waiting or reopen what
+// was already approved — the one way an approved record becomes editable.
+function approvalCell(rec, noun, approveFn, reviseFn) {
+    const st = workLogApproval(rec);
+    const meta = st === 'approved'
+        ? `Disetujui ${rec.approvedBy || '-'}${rec.approvedAt ? ' · ' + formatUserTime(rec.approvedAt) : ''}`
+        : st === 'revision' ? (rec.revisionNote || 'Perlu revisi')
+        : st === 'draft' ? 'Belum dikirim' : 'Belum diperiksa';
+    let html = `<span class="appr appr--${st}" title="${escapeHtml(meta)}">${escapeHtml(APPROVAL_STATES[st].label)}</span>`;
+    if (st === 'revision' && rec.revisionNote) {
+        html += `<span class="appr-note" title="${escapeHtml(rec.revisionNote)}">${escapeHtml(rec.revisionNote.slice(0, 60))}</span>`;
+    }
+    if (!canApproveThisLog(rec) || (st !== 'pending' && st !== 'approved')) return html;
+    return html + `<span class="appr-actions">
+        ${st === 'pending' ? `<button class="btn btn-secondary appr-btn" title="Setujui ${noun}" aria-label="Setujui ${noun}" onclick="${approveFn}(${jsArg(rec.id)})"><i class="fas fa-check"></i></button>` : ''}
+        <button class="btn btn-secondary appr-btn" title="${st === 'approved' ? 'Buka kembali — minta revisi' : 'Minta revisi'}" aria-label="Minta revisi ${noun}" onclick="${reviseFn}(${jsArg(rec.id)})"><i class="fas fa-rotate-left"></i></button>
+    </span>`;
+}
+
+// Edit / delete while the record is open; a padlock (and, for the sender, a
+// withdraw button) while it is with the checker or approved.
+function rowActionsFor(rec, noun, editFn, deleteFn, withdrawFn) {
+    if (canEditTeamRecord(rec)) {
+        return `<div class="row-actions">
+            <button class="btn btn-secondary" title="Edit" aria-label="Edit ${noun.toLowerCase()}" onclick="${editFn}(${jsArg(rec.id)})"><i class="fas fa-pen"></i></button>
+            <button class="btn btn-secondary" title="Hapus" aria-label="Hapus ${noun.toLowerCase()}" onclick="${deleteFn}(${jsArg(rec.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+        </div>`;
+    }
+    const why = lockedReason(rec, noun);
+    return `<div class="row-actions">
+        ${canWithdrawTeamRecord(rec) ? `<button class="btn btn-secondary" title="Tarik kembali ke draf" aria-label="Tarik kembali ${noun.toLowerCase()}" onclick="${withdrawFn}(${jsArg(rec.id)})"><i class="fas fa-arrow-rotate-left"></i></button>` : ''}
+        <span class="row-lock" title="${escapeHtml(why)}" aria-label="${escapeHtml(why)}"><i class="fas fa-lock"></i></span>
+    </div>`;
 }
 
 function clearWorkLogFilter() {
@@ -10912,6 +10995,8 @@ function clearWorkLogFilter() {
         const sel = document.getElementById(id);
         if (sel) sel.value = '';
     });
+    const mine = document.getElementById('wlMineFilter');
+    if (mine) mine.checked = false;
     renderWorkLogTable();
 }
 
@@ -11087,14 +11172,34 @@ function showAddWorkLogForm() {
     renderWorkLogUnitChips();
     renderWorkLogPhotos();
     document.getElementById('wlDate').value = toISODate();
+    showRevisionNote('wlRevisionNote', null);
     document.getElementById('workLogModal').classList.add('open');
+}
+
+// The checker's note, shown inside the form the author fixes it in — so the
+// request does not have to be remembered from a table cell.
+function showRevisionNote(elId, rec) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const st = rec ? workLogApproval(rec) : '';
+    const note = rec && rec.revisionNote;
+    if (!note || (st !== 'revision' && st !== 'draft')) { el.style.display = 'none'; el.textContent = ''; return; }
+    el.innerHTML = '';
+    const head = document.createElement('strong');
+    head.textContent = `Diminta revisi${rec.reviewedBy ? ' oleh ' + rec.reviewedBy : ''}: `;
+    el.appendChild(head);
+    el.appendChild(document.createTextNode(note));
+    el.style.display = '';
 }
 
 function editWorkLog(id) {
     if (!requireEdit('teamLog')) return;
     const w = workLogs.find(x => x.id === id);
     if (!w) return;
-    document.getElementById('workLogModalTitle').textContent = 'Edit Laporan Harian';
+    if (!canEditTeamRecord(w)) { showToast(lockedReason(w, 'Laporan'), 'warning'); return; }
+    document.getElementById('workLogModalTitle').textContent =
+        workLogApproval(w) === 'revision' ? 'Revisi Laporan Harian' : 'Edit Laporan Harian';
+    showRevisionNote('wlRevisionNote', w);
     document.getElementById('editWorkLogId').value = w.id;
     populateWorkLogFilters();
     document.getElementById('wlDate').value = w.date || '';
@@ -11156,9 +11261,11 @@ function closeWorkLogModal(force) {
     document.getElementById('workLogModal').classList.remove('open');
 }
 
-function saveWorkLog(event) {
-    event.preventDefault();
+// mode 'draft' keeps it with the author; anything else sends it for checking.
+function saveWorkLog(event, mode) {
+    if (event) event.preventDefault();
     if (!requireEdit('teamLog')) return;
+    const asDraft = mode === 'draft';
 
     const id = document.getElementById('editWorkLogId').value;
     const memberId = document.getElementById('wlMember').value;
@@ -11169,7 +11276,8 @@ function saveWorkLog(event) {
     const start = document.getElementById('wlStart').value;
     const end = document.getElementById('wlEnd').value;
     const task = (document.getElementById('wlTask').value || '').trim();
-    if (!task) { showToast('Uraian pekerjaan tidak boleh kosong', 'warning'); return; }
+    // A draft may be half-written; what is sent for checking may not.
+    if (!task && !asDraft) { showToast('Uraian pekerjaan tidak boleh kosong', 'warning'); return; }
     if (!checkWorkLogHours(start, end)) return;
     // The native max= is the first line of defence, but a report filed decades
     // out skews the monthly recap badly enough to be worth a second one.
@@ -11188,6 +11296,12 @@ function saveWorkLog(event) {
     const units = _wlUnits.map(u => ({ ...u }));
 
     const existing = id ? workLogs.find(w => w.id === id) : null;
+    // Sent or approved while the form was open (another device, or the
+    // checker): the server would refuse the write, so say why here instead.
+    if (existing && !canEditTeamRecord(existing)) {
+        showToast(lockedReason(existing, 'Laporan'), 'warning');
+        return;
+    }
     const rec = {
         id: id || generateWorkLogId(),
         date,
@@ -11211,11 +11325,13 @@ function saveWorkLog(event) {
         // Who filed it — needed so an approver cannot sign off their own work.
         createdByUid: existing ? (existing.createdByUid || '') : ((currentUser && currentUser.uid) || ''),
         createdByEmail: existing ? (existing.createdByEmail || '') : ((currentUser && currentUser.email) || ''),
-        // Editing sends the report back for checking. Without this, someone
-        // could get a report approved and then change what it says.
-        approval: 'pending',
+        // Saving never keeps an approval: an approved report changed by the
+        // owner goes back for checking like any other. The checker's note
+        // stays on a draft, so it is still there when the fix is finished.
+        approval: asDraft ? 'draft' : 'pending',
         approvedBy: '', approvedByEmail: '', approvedAt: 0,
-        revisionNote: ''
+        revisionNote: asDraft && existing ? (existing.revisionNote || '') : '',
+        submittedAt: asDraft ? (existing ? (existing.submittedAt || 0) : 0) : Date.now()
     };
     // Untouched photos are left exactly as they are — not re-read, not
     // rewritten, not cleared. That is what makes it safe to save while the
@@ -11226,26 +11342,10 @@ function saveWorkLog(event) {
 
     const wasApproved = existing && workLogApproval(existing) === 'approved';
 
-    cloudWrite(
-        {
-            action: existing ? 'update' : 'create',
-            unitId: rec.unitId,
-            unitName: `[Laporan] ${member.name}`,
-            field: `Laporan ${rec.date}`,
-            before: existing ? (existing.task || '') : '',
-            after: rec.task
-        },
-        cloudCall('saveWorkLog', rec),
-        wasApproved
-            ? 'Laporan diperbarui — persetujuan dibatalkan, perlu diperiksa ulang'
-            : (existing ? 'Laporan diperbarui' : 'Laporan harian ditambahkan'),
-        err => {
-            console.error('[team] work log save failed:', err);
-            if (err && err.code === 'permission-denied') showTeamRulesBanner();
-            showToast('Gagal menyimpan laporan', 'error');
-        }
-    );
-
+    // Photos FIRST. firestore.rules lets a photo document change only while
+    // its report is a draft or sent back, and writes from one device reach
+    // the server in order — so the photos have to land before the report
+    // that locks them.
     if (_wlPhotosDirty) {
         const photos = _wlPhotos.slice();
         _wlPhotoCache.set(rec.id, photos);
@@ -11254,26 +11354,67 @@ function saveWorkLog(event) {
         // halfway through a save that otherwise looks like it worked.
         if (!window.cloud.saveWorkLogPhotos) {
             showToast('Muat ulang halaman — versi lama masih aktif, foto belum terkirim', 'warning');
-            closeWorkLogModal(true);
-            return;
+        } else {
+            const write = photos.length
+                ? window.cloud.saveWorkLogPhotos(rec.id, photos)
+                : window.cloud.deleteWorkLogPhotos(rec.id);
+            write.catch(err => {
+                console.error('[team] work log photos save failed:', err);
+                if (err && err.code === 'permission-denied') showTeamRulesBanner();
+                showToast('Laporan tersimpan, tetapi foto gagal dikirim', 'error');
+            });
         }
-        const write = photos.length
-            ? window.cloud.saveWorkLogPhotos(rec.id, photos)
-            : window.cloud.deleteWorkLogPhotos(rec.id);
-        write.catch(err => {
-            console.error('[team] work log photos save failed:', err);
-            if (err && err.code === 'permission-denied') showTeamRulesBanner();
-            showToast('Laporan tersimpan, tetapi foto gagal dikirim', 'error');
-        });
     }
 
+    cloudWrite(
+        {
+            action: existing ? 'update' : 'create',
+            unitId: rec.unitId,
+            unitName: `[Laporan] ${member.name}`,
+            field: `Laporan ${rec.date}${asDraft ? ' (draf)' : ''}`,
+            before: existing ? (existing.task || '') : '',
+            after: rec.task
+        },
+        cloudCall('saveWorkLog', rec),
+        asDraft ? 'Draf laporan disimpan — belum dikirim'
+            : wasApproved ? 'Laporan dikirim ulang — perlu diperiksa lagi'
+            : 'Laporan dikirim — menunggu persetujuan',
+        err => {
+            console.error('[team] work log save failed:', err);
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+            showToast('Gagal menyimpan laporan', 'error');
+        }
+    );
+
     closeWorkLogModal(true);
+}
+
+// Tarik kembali: a sent record comes back to its author as a draft, before
+// anyone has checked it. Nothing else on it changes.
+function withdrawWorkLog(id) {
+    const w = workLogs.find(x => x.id === id);
+    if (!w) return;
+    if (!canWithdrawTeamRecord(w)) { showToast('Laporan ini tidak bisa ditarik kembali', 'warning'); return; }
+    if (!confirm(`Tarik kembali laporan ${memberNameOf(w)} (${w.date}) menjadi draf?\n\nLaporan bisa diubah lalu dikirim lagi.`)) return;
+    cloudWrite(
+        { action: 'update', unitId: w.unitId || '',
+          unitName: `[Laporan] ${memberNameOf(w)}`,
+          field: `Persetujuan ${w.date}`, before: 'Menunggu', after: 'Draf (ditarik kembali)' },
+        cloudCall('saveWorkLog', { ...w, approval: 'draft', updatedAt: Date.now() }),
+        'Laporan ditarik kembali menjadi draf',
+        err => {
+            console.error('[team] withdraw failed:', err);
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+            showToast('Gagal menarik kembali — mungkin sudah diperiksa', 'error');
+        }
+    );
 }
 
 function deleteWorkLog(id) {
     if (!requireEdit('teamLog')) return;
     const w = workLogs.find(x => x.id === id);
     if (!w) return;
+    if (!canEditTeamRecord(w)) { showToast(lockedReason(w, 'Laporan'), 'warning'); return; }
     if (!confirm(`Hapus laporan ${memberNameOf(w)} tanggal ${w.date}?`)) return;
     // Otherwise the photo document is orphaned: invisible, but still billed for
     // and still downloaded by anyone who happens to request that id.
@@ -11306,7 +11447,10 @@ function approveWorkLog(id) {
         showToast('Laporan yang Anda buat sendiri harus disetujui orang lain', 'warning');
         return;
     }
-    if (workLogApproval(w) === 'approved') return;
+    if (workLogApproval(w) !== 'pending') {
+        showToast('Hanya laporan yang sudah dikirim yang bisa disetujui', 'warning');
+        return;
+    }
 
     const rec = {
         ...w,
@@ -11342,6 +11486,11 @@ function reviseWorkLog(id) {
     }
     if (!canApproveThisLog(w)) {
         showToast('Laporan yang Anda buat sendiri harus diperiksa orang lain', 'warning');
+        return;
+    }
+    const stNow = workLogApproval(w);
+    if (stNow !== 'pending' && stNow !== 'approved') {
+        showToast('Laporan ini belum dikirim atau sudah dikembalikan', 'warning');
         return;
     }
     // The note is the whole point of this state — without it the person is
@@ -11417,7 +11566,7 @@ function workLogsForUnit(unitId, sn) {
     const snLc = (sn || '').toLowerCase();
     // A report can list several units, so match any of them — not just the
     // first one mirrored into the legacy unitId field.
-    return workLogs.filter(w => workLogUnits(w).some(u =>
+    return workLogs.filter(w => isSubmitted(w) && workLogUnits(w).some(u =>
         (unitId && u.id === unitId) || (snLc && (u.sn || '').toLowerCase() === snLc)
     ));
 }
@@ -11503,6 +11652,7 @@ function overlappingLeave(memberId, from, to, exceptId) {
     return leaveRequests.filter(r =>
         r.memberId === memberId &&
         r.id !== exceptId &&
+        isSubmitted(r) &&
         workLogApproval(r) !== 'revision' &&
         a <= (r.dateTo || r.dateFrom) && b >= r.dateFrom);
 }
@@ -11576,9 +11726,12 @@ function getFilteredLeave() {
     const company = (document.getElementById('lvCompanyFilter')?.value || '');
     const approval = (document.getElementById('lvApprovalFilter')?.value || '');
     const type = (document.getElementById('lvTypeFilter')?.value || '');
+    const mine = !!document.getElementById('lvMineFilter')?.checked;
     const q = (document.getElementById('lvSearch')?.value || '').toLowerCase().trim();
 
     return leaveRequests.filter(r => {
+        if (!visibleToMe(r)) return false;
+        if (mine && !isMyRecord(r)) return false;
         const a = String(r.dateFrom || '');
         const b = String(r.dateTo || r.dateFrom || '');
         if (from && b < from) return false;
@@ -11602,6 +11755,8 @@ function getFilteredLeave() {
 function clearLeaveFilter() {
     ['lvFrom', 'lvTo', 'lvMemberFilter', 'lvCompanyFilter', 'lvApprovalFilter', 'lvTypeFilter', 'lvSearch']
         .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    const mine = document.getElementById('lvMineFilter');
+    if (mine) mine.checked = false;
     renderLeaveTable();
 }
 
@@ -11630,7 +11785,8 @@ function renderLeaveTable() {
     const canEdit = hasAccess('teamLog', 'edit');
     const filterOn = ['lvFrom', 'lvTo', 'lvMemberFilter', 'lvCompanyFilter',
                       'lvApprovalFilter', 'lvTypeFilter', 'lvSearch']
-        .some(id => (document.getElementById(id)?.value || '') !== '');
+        .some(id => (document.getElementById(id)?.value || '') !== '')
+        || !!document.getElementById('lvMineFilter')?.checked;
 
     if (rows.length === 0) {
         tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-secondary)">${
@@ -11647,10 +11803,6 @@ function renderLeaveTable() {
     // an unlabelled cell entirely on a phone, so a forgotten label does not
     // look broken, the column just disappears on the device the team uses.
     tbody.innerHTML = rows.map((r, i) => {
-        const st = workLogApproval(r);
-        const meta = st === 'approved'
-            ? `Disetujui ${r.approvedBy || '-'}${r.approvedAt ? ' · ' + new Date(r.approvedAt).toLocaleString('id-ID') : ''}`
-            : st === 'revision' ? (r.revisionNote || 'Perlu revisi') : 'Belum diperiksa';
         const docs = leaveDocCount(r);
         const days = Number(r.days) || leaveDays(r.dateFrom, r.dateTo);
         return `
@@ -11668,18 +11820,9 @@ function renderLeaveTable() {
                         aria-label="Lihat ${docs} lembar surat"
                         onclick="openLeaveDocs(${jsArg(r.id)}, this)"><i class="fas fa-file-image"></i> ${docs}</button>`
                 : '<span style="color:var(--text-light)">—</span>'}</td>
-            <td data-label="Persetujuan">
-                <span class="appr appr--${st}" title="${escapeHtml(meta)}">${escapeHtml(APPROVAL_STATES[st].label)}</span>
-                ${canApproveThisLog(r) ? `<span class="appr-actions">
-                    ${st !== 'approved' ? `<button class="btn btn-secondary appr-btn" title="Setujui pengajuan" aria-label="Setujui pengajuan" onclick="approveLeave(${jsArg(r.id)})"><i class="fas fa-check"></i></button>` : ''}
-                    ${st !== 'revision' ? `<button class="btn btn-secondary appr-btn" title="Minta revisi" aria-label="Minta revisi" onclick="reviseLeave(${jsArg(r.id)})"><i class="fas fa-rotate-left"></i></button>` : ''}
-                </span>` : ''}
-            </td>
+            <td data-label="Persetujuan">${approvalCell(r, 'pengajuan', 'approveLeave', 'reviseLeave')}</td>
             <td class="col-actions">
-                ${canEdit ? `<div class="row-actions">
-                    <button class="btn btn-secondary" title="Edit" onclick="editLeave(${jsArg(r.id)})"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Hapus" onclick="deleteLeave(${jsArg(r.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
-                </div>` : ''}
+                ${canEdit ? rowActionsFor(r, 'Pengajuan', 'editLeave', 'deleteLeave', 'withdrawLeave') : ''}
             </td>
         </tr>`;
     }).join('');
@@ -11784,6 +11927,7 @@ function showAddLeaveForm() {
     _lvDocsGen++;
     _lvDocs = []; _lvDocsDirty = false; _lvDocsLoading = false; _lvDocsFailed = false;
     renderLeaveDocs();
+    showRevisionNote('lvRevisionNote', null);
     rememberFocus();
     document.getElementById('leaveModal').classList.add('open');
 }
@@ -11792,10 +11936,13 @@ function editLeave(id) {
     if (!requireEdit('teamLog')) return;
     const r = leaveRequests.find(x => x.id === id);
     if (!r) return;
+    if (!canEditTeamRecord(r)) { showToast(lockedReason(r, 'Pengajuan'), 'warning'); return; }
     populateLeaveFilters();
     document.getElementById('editLeaveId').value = r.id;
-    document.getElementById('leaveModalTitle').innerHTML =
-        '<i class="fas fa-user-clock"></i> Edit Pengajuan Izin / Sakit';
+    document.getElementById('leaveModalTitle').innerHTML = workLogApproval(r) === 'revision'
+        ? '<i class="fas fa-user-clock"></i> Revisi Pengajuan Izin / Sakit'
+        : '<i class="fas fa-user-clock"></i> Edit Pengajuan Izin / Sakit';
+    showRevisionNote('lvRevisionNote', r);
     document.getElementById('lvMember').value = r.memberId || '';
     document.getElementById('lvType').value = r.type || 'izin';
     document.getElementById('lvDateFrom').value = r.dateFrom || '';
@@ -11875,12 +12022,17 @@ function checkLeaveRange(memberId, type, from, to, exceptId, docCount) {
     return true;
 }
 
-function saveLeave(event) {
+function saveLeave(event, mode) {
     if (event) event.preventDefault();
     if (!requireEdit('teamLog')) return;
+    const asDraft = mode === 'draft';
 
     const id = document.getElementById('editLeaveId').value;
     const existing = id ? leaveRequests.find(x => x.id === id) : null;
+    if (existing && !canEditTeamRecord(existing)) {
+        showToast(lockedReason(existing, 'Pengajuan'), 'warning');
+        return;
+    }
     const memberId = document.getElementById('lvMember').value;
     const type = document.getElementById('lvType').value;
     const from = document.getElementById('lvDateFrom').value;
@@ -11904,11 +12056,12 @@ function saveLeave(event) {
         days: leaveDays(from, to),
         reason,
         docCount,
-        // Editing sends the request back for checking. Without this, someone
-        // could get three days approved and then change which three days.
-        approval: 'pending',
+        // Saving never keeps an approval. Without this, someone could get
+        // three days approved and then change which three days.
+        approval: asDraft ? 'draft' : 'pending',
         approvedBy: '', approvedByEmail: '', approvedAt: 0,
-        revisionNote: '',
+        revisionNote: asDraft && existing ? (existing.revisionNote || '') : '',
+        submittedAt: asDraft ? (existing ? (existing.submittedAt || 0) : 0) : Date.now(),
         createdBy: existing ? (existing.createdBy || '') : ((currentUserDoc && currentUserDoc.displayName) || (currentUser && currentUser.email) || ''),
         createdByUid: existing ? (existing.createdByUid || '') : ((currentUser && currentUser.uid) || ''),
         createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),
@@ -11917,19 +12070,36 @@ function saveLeave(event) {
 
     const wasApproved = existing && workLogApproval(existing) === 'approved';
 
+    // Letters FIRST, while the request is still open — see saveWorkLog.
+    if (_lvDocsDirty) {
+        const pages = _lvDocs.slice();
+        _leaveDocCache.set(rec.id, pages);
+        const save = cloudFn('saveTeamDocs') && cloudFn('deleteTeamDocs');
+        if (save) {
+            const write = pages.length
+                ? window.cloud.saveTeamDocs(rec.id, pages)
+                : window.cloud.deleteTeamDocs(rec.id);
+            write.catch(err => {
+                console.error('[izin] surat save failed:', err);
+                if (err && err.code === 'permission-denied') showTeamRulesBanner();
+                showToast('Pengajuan tersimpan, tetapi surat gagal dikirim', 'error');
+            });
+        }
+    }
+
     cloudWrite(
         {
             action: existing ? 'update' : 'create',
             unitId: '',
             unitName: `[Izin] ${member.name}`,
-            field: `${leaveTypeLabel(rec)} ${leaveRangeLabel(rec)}`,
+            field: `${leaveTypeLabel(rec)} ${leaveRangeLabel(rec)}${asDraft ? ' (draf)' : ''}`,
             before: existing ? `${leaveTypeLabel(existing)} ${leaveRangeLabel(existing)}` : '',
             after: `${rec.days} hari${reason ? ' — ' + reason : ''}`
         },
         cloudCall('saveLeaveRequest', rec),
-        wasApproved
-            ? 'Pengajuan diperbarui — persetujuan dibatalkan, perlu diperiksa ulang'
-            : (existing ? 'Pengajuan diperbarui' : 'Pengajuan dicatat'),
+        asDraft ? 'Draf pengajuan disimpan — belum dikirim'
+            : wasApproved ? 'Pengajuan dikirim ulang — perlu diperiksa lagi'
+            : 'Pengajuan dikirim — menunggu persetujuan',
         err => {
             console.error('[izin] save failed:', err);
             if (err && err.code === 'permission-denied') showTeamRulesBanner();
@@ -11937,28 +12107,33 @@ function saveLeave(event) {
         }
     );
 
-    if (_lvDocsDirty) {
-        const pages = _lvDocs.slice();
-        _leaveDocCache.set(rec.id, pages);
-        const save = cloudFn('saveTeamDocs') && cloudFn('deleteTeamDocs');
-        if (!save) { closeLeaveModal(true); return; }
-        const write = pages.length
-            ? window.cloud.saveTeamDocs(rec.id, pages)
-            : window.cloud.deleteTeamDocs(rec.id);
-        write.catch(err => {
-            console.error('[izin] surat save failed:', err);
-            if (err && err.code === 'permission-denied') showTeamRulesBanner();
-            showToast('Pengajuan tersimpan, tetapi surat gagal dikirim', 'error');
-        });
-    }
-
     closeLeaveModal(true);
+}
+
+function withdrawLeave(id) {
+    const r = leaveRequests.find(x => x.id === id);
+    if (!r) return;
+    if (!canWithdrawTeamRecord(r)) { showToast('Pengajuan ini tidak bisa ditarik kembali', 'warning'); return; }
+    if (!confirm(`Tarik kembali pengajuan ${leaveTypeLabel(r)} ${memberNameOf(r)} (${leaveRangeLabel(r)}) menjadi draf?`)) return;
+    cloudWrite(
+        { action: 'update', unitId: '',
+          unitName: `[Izin] ${memberNameOf(r)}`,
+          field: `Persetujuan ${leaveRangeLabel(r)}`, before: 'Menunggu', after: 'Draf (ditarik kembali)' },
+        cloudCall('saveLeaveRequest', { ...r, approval: 'draft', updatedAt: Date.now() }),
+        'Pengajuan ditarik kembali menjadi draf',
+        err => {
+            console.error('[izin] withdraw failed:', err);
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+            showToast('Gagal menarik kembali — mungkin sudah diperiksa', 'error');
+        }
+    );
 }
 
 function deleteLeave(id) {
     if (!requireEdit('teamLog')) return;
     const r = leaveRequests.find(x => x.id === id);
     if (!r) return;
+    if (!canEditTeamRecord(r)) { showToast(lockedReason(r, 'Pengajuan'), 'warning'); return; }
     if (!confirm(`Hapus pengajuan ${leaveTypeLabel(r)} ${memberNameOf(r)} (${leaveRangeLabel(r)})?`)) return;
     // Otherwise the letter document is orphaned: invisible, still billed for.
     if (leaveDocCount(r) > 0 && window.cloud.deleteTeamDocs) {
@@ -11996,7 +12171,10 @@ function approveLeave(id) {
         showToast('Pengajuan yang Anda buat sendiri harus disetujui orang lain', 'warning');
         return;
     }
-    if (workLogApproval(r) === 'approved') return;
+    if (workLogApproval(r) !== 'pending') {
+        showToast('Hanya pengajuan yang sudah dikirim yang bisa disetujui', 'warning');
+        return;
+    }
 
     const rec = {
         ...r,
@@ -12028,6 +12206,11 @@ function reviseLeave(id) {
     if (!r) return;
     if (!canApproveThisLog(r)) {
         showToast('Anda tidak punya hak memeriksa pengajuan ini', 'warning');
+        return;
+    }
+    const stNow = workLogApproval(r);
+    if (stNow !== 'pending' && stNow !== 'approved') {
+        showToast('Pengajuan ini belum dikirim atau sudah dikembalikan', 'warning');
         return;
     }
     const note = prompt('Apa yang perlu dibetulkan?', r.revisionNote || '');
@@ -13083,12 +13266,132 @@ function scheduleDecisionRefresh() {
 
 // The sidebar badge is what makes this page get opened at all.
 function updateDecisionBadge() {
+    updateMyTeamNotices();
     const el = document.getElementById('decisionBadge');
     if (!el) return;
     if (!canViewView('leader')) { el.style.display = 'none'; return; }
     const n = decisionTotal();
     el.textContent = n > 99 ? '99+' : String(n);
     el.style.display = n > 0 ? '' : 'none';
+}
+
+// ============================================================
+// THE SENDER'S SIDE OF APPROVAL
+// ------------------------------------------------------------
+// Kotak Keputusan tells the checker what is waiting. This tells the person
+// who sent it what came back: a badge on Tim and on the tab, a "Perlu
+// direvisi" box above the table with the checker's note and a fix button,
+// and a toast when something is sent back or approved — once when the app
+// opens, then as it happens.
+// ============================================================
+const _myNotice = { uid: '', primed: new Set(), revision: new Set() };
+const TEAM_NOTICE_KINDS = {
+    worklog: { part: 'workLogs',      noun: 'laporan',   list: () => workLogs,      edit: 'editWorkLog',
+               box: 'wlMyNotice', tab: 'wlTabBadge', label: r => `${r.date || '-'} · ${memberNameOf(r)}` },
+    leave:   { part: 'leaveRequests', noun: 'pengajuan', list: () => leaveRequests, edit: 'editLeave',
+               box: 'lvMyNotice', tab: 'lvTabBadge', label: r => `${leaveTypeLabel(r)} ${leaveRangeLabel(r)} · ${memberNameOf(r)}` }
+};
+
+function approvalSeenKey() { return 'teamApprovalSeen:' + myUid(); }
+
+function updateMyTeamNotices() {
+    const uid = myUid();
+    if (_myNotice.uid !== uid) {
+        _myNotice.uid = uid;
+        _myNotice.primed.clear();
+        _myNotice.revision.clear();
+    }
+    let totalRevision = 0;
+    Object.entries(TEAM_NOTICE_KINDS).forEach(([kind, k]) => {
+        const mine = uid ? k.list().filter(isMyRecord) : [];
+        const rev = mine.filter(r => workLogApproval(r) === 'revision');
+        totalRevision += rev.length;
+        const tab = document.getElementById(k.tab);
+        if (tab) { tab.textContent = String(rev.length); tab.style.display = rev.length ? '' : 'none'; }
+        renderMyNoticeBox(kind, mine);
+        announceMyChanges(kind, mine, rev);
+    });
+    const nav = document.getElementById('teamBadge');
+    if (nav) {
+        nav.textContent = totalRevision > 99 ? '99+' : String(totalRevision);
+        nav.style.display = totalRevision ? '' : 'none';
+        nav.title = totalRevision ? `${totalRevision} perlu Anda revisi` : '';
+    }
+}
+
+function renderMyNoticeBox(kind, mine) {
+    const k = TEAM_NOTICE_KINDS[kind];
+    const box = document.getElementById(k.box);
+    if (!box) return;
+    const rev = mine.filter(r => workLogApproval(r) === 'revision');
+    const pending = mine.filter(r => workLogApproval(r) === 'pending').length;
+    const drafts = mine.filter(r => workLogApproval(r) === 'draft').length;
+    if (!rev.length && !pending && !drafts) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    const canFix = hasAccess('teamLog', 'edit');
+    const facts = [
+        drafts ? `${drafts} draf belum dikirim` : '',
+        pending ? `${pending} ${k.noun} menunggu persetujuan` : ''
+    ].filter(Boolean).join(' · ');
+    box.innerHTML = `
+        ${rev.length ? `<div class="my-notice__head"><i class="fas fa-rotate-left"></i>
+            Perlu direvisi (${rev.length}) — ${escapeHtml(k.noun)} Anda dikembalikan atasan</div>
+        <ul class="my-notice__list">${rev.slice(0, 8).map(r => `
+            <li><div><strong>${escapeHtml(k.label(r))}</strong>
+                <span class="my-notice__note">${escapeHtml(r.revisionNote || 'Tanpa catatan')}${r.reviewedBy ? ' — ' + escapeHtml(r.reviewedBy) : ''}</span></div>
+                ${canFix ? `<button class="btn btn-primary btn-sm" onclick="${k.edit}(${jsArg(r.id)})"><i class="fas fa-pen"></i> Perbaiki</button>` : ''}
+            </li>`).join('')}</ul>` : ''}
+        ${facts ? `<div class="my-notice__facts"><i class="fas fa-circle-info"></i> ${escapeHtml(facts)}
+            <button type="button" class="btn btn-secondary btn-sm" onclick="showMineOnly(${jsArg(kind)})">Lihat milik saya</button></div>` : ''}`;
+    box.classList.toggle('my-notice--alert', rev.length > 0);
+    box.style.display = '';
+}
+
+function showMineOnly(kind) {
+    const id = kind === 'leave' ? 'lvMineFilter' : 'wlMineFilter';
+    const cb = document.getElementById(id);
+    if (cb) cb.checked = true;
+    if (kind === 'leave') renderLeaveTable(); else renderWorkLogTable();
+}
+
+// Waits for the collection to arrive from the server: on the cached copy
+// alone, everything would be announced again on every open.
+function announceMyChanges(kind, mine, rev) {
+    const k = TEAM_NOTICE_KINDS[kind];
+    if (!_myNotice.uid || !_loadedParts.has(k.part)) return;
+    const first = !_myNotice.primed.has(kind);
+    _myNotice.primed.add(kind);
+
+    const fresh = rev.filter(r => !_myNotice.revision.has(kind + ':' + r.id));
+    _myNotice.revision.forEach(key => {
+        if (key.startsWith(kind + ':') && !rev.some(r => key === kind + ':' + r.id)) _myNotice.revision.delete(key);
+    });
+    rev.forEach(r => _myNotice.revision.add(kind + ':' + r.id));
+    if (fresh.length) {
+        showToast(first
+            ? `${rev.length} ${k.noun} Anda perlu direvisi — buka Tim untuk memperbaikinya`
+            : fresh.length === 1
+                ? `${k.noun[0].toUpperCase() + k.noun.slice(1)} ${k.label(fresh[0])} diminta revisi: ${fresh[0].revisionNote || ''}`
+                : `${fresh.length} ${k.noun} Anda diminta revisi`, 'warning');
+    }
+
+    // Approvals since the last one this account was told about. The first
+    // time ever there is no mark, and the whole history is not news.
+    let seen = 0;
+    try { seen = Number(localStorage.getItem(approvalSeenKey() + ':' + kind)) || 0; } catch (_) {}
+    const approved = mine.filter(r => workLogApproval(r) === 'approved');
+    const newest = approved.reduce((m, r) => Math.max(m, Number(r.approvedAt) || 0), 0);
+    if (seen) {
+        const news = approved.filter(r => (Number(r.approvedAt) || 0) > seen);
+        if (news.length) {
+            showToast(news.length === 1
+                ? `${k.noun[0].toUpperCase() + k.noun.slice(1)} ${k.label(news[0])} disetujui${news[0].approvedBy ? ' oleh ' + news[0].approvedBy : ''}`
+                : `${news.length} ${k.noun} Anda sudah disetujui`, 'success');
+        }
+    }
+    const mark = Math.max(seen, newest) || Date.now();
+    if (mark !== seen) {
+        try { localStorage.setItem(approvalSeenKey() + ':' + kind, String(mark)); } catch (_) {}
+    }
 }
 
 
@@ -13124,6 +13427,7 @@ function companyRecap(monthISO) {
     workLogs.forEach(w => {
         const d = String(w.date || '');
         if (monthISO && d.slice(0, 7) !== monthISO) return;
+        if (!isSubmitted(w)) return;
         const key = companyOfRecord(w) || NO_COMPANY;
         const cur = rows.get(key) || {
             company: key, minutes: 0, reports: 0,
@@ -13239,7 +13543,7 @@ function exportRecapCSV() {
 function weekStats(weekStartISO) {
     const days = weekDates(weekStartISO);
     const inWeek = v => days.includes(String(v || '').slice(0, 10));
-    const logs = workLogs.filter(w => inWeek(w.date));
+    const logs = workLogs.filter(w => inWeek(w.date) && isSubmitted(w));
     return {
         reports: logs.length,
         minutes: logs.reduce((n, w) => n + workLogMinutes(w), 0),
