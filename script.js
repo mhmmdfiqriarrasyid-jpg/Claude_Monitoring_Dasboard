@@ -87,7 +87,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v124';
+const APP_VERSION = 'v125';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -412,6 +412,9 @@ function loadUnitGroupPrefs() {
 // whatever preference a device saved.
 function effectiveEditGroup() {
     if (editUnitsGroup === 'heavy' && !_editGroupPicked && !hasHeavyUnits()) return 'tractor';
+    // A fleet of heavy units only opens on them, like the dashboard does,
+    // rather than on an empty Agricultural tab — unless that tab was chosen.
+    if (editUnitsGroup === 'tractor' && !_editGroupPicked && hasHeavyUnits() && !hasTractorUnits()) return 'heavy';
     return editUnitsGroup;
 }
 function effectiveDashGroup() {
@@ -865,6 +868,16 @@ function parseLocalDate(value) {
     return isNaN(d.getTime()) ? null : d;
 }
 
+// "YYYY-MM-DD HH:MM:SS" in the viewer's local time — what a spreadsheet shows
+// as-is. toISOString() wrote UTC, nine hours behind WIT, and before 09:00
+// the date itself read as yesterday.
+function toLocalDateTime(ms) {
+    const d = new Date(ms);
+    if (isNaN(d.getTime())) return '';
+    const p = n => String(n).padStart(2, '0');
+    return `${toISODate(d)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 function toISODate(d = new Date()) {
     if (!d || isNaN(d.getTime())) return '';
     const p = n => String(n).padStart(2, '0');
@@ -881,7 +894,14 @@ function addOneYearISO(value) {
 
 function getVal(row, key) {
     const k = Object.keys(row).find(h => h.toLowerCase().trim() === key.toLowerCase());
-    return k ? row[k] : '';
+    return k ? uncsvCell(row[k]) : '';
+}
+
+// The other half of csvCell(): our exports put a ' in front of a value that
+// starts with = + - @ so a spreadsheet does not run it as a formula. Read
+// back, "-0.5 m" or "- ganti oli" must not come in as "'-0.5 m".
+function uncsvCell(v) {
+    return (typeof v === 'string' && /^'[=+\-@\t\r]/.test(v)) ? v.slice(1) : v;
 }
 
 // Try multiple header aliases (e.g. "Status Unit" or short "Status") and
@@ -1064,8 +1084,16 @@ function navigateTo(view) {
 
 function saveToStorage(data) {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-        writeAutoBackup(data);
+        const next = JSON.stringify(data);
+        let prev = null;
+        try { prev = localStorage.getItem(STORAGE_KEY); } catch (_) {}
+        localStorage.setItem(STORAGE_KEY, next);
+        // The ring keeps what was there BEFORE this save. Storing the state
+        // after it made the newest entry always identical to the live data —
+        // three slots, two rollback points.
+        if (prev && prev !== next) {
+            try { writeAutoBackup(JSON.parse(prev)); } catch (_) { /* unreadable old copy: nothing to keep */ }
+        }
     } catch (e) {
         showToast('Penyimpanan penuh. Data tidak tersimpan.', 'error');
     }
@@ -1074,6 +1102,10 @@ function saveToStorage(data) {
 function writeAutoBackup(data) {
     try {
         const ring = JSON.parse(localStorage.getItem(BACKUP_RING_KEY) || '[]');
+        if (!Array.isArray(data)) return;
+        // The same state twice is one rollback point, not two.
+        const last = ring[ring.length - 1];
+        if (last && JSON.stringify(last.units) === JSON.stringify(data)) return;
         ring.push({ at: Date.now(), count: data.length, units: data });
         while (ring.length > BACKUP_RING_SIZE) ring.shift();
         localStorage.setItem(BACKUP_RING_KEY, JSON.stringify(ring));
@@ -1758,6 +1790,10 @@ function deleteUnits(ids) {
         recordChange({ type: 'deleted', detail: `${count} unit(s) deleted` });
         removed.forEach(u => logEvent({ action: 'delete', unitId: u.id, unitName: u.name, before: u.sn }));
         cloudDeleteUnits(ids);
+        // A second delete inside the undo window replaces the undo toast, so
+        // the first batch can no longer be undone — purge its files now, or
+        // the overwritten list leaves them in IndexedDB for good.
+        if (_pendingAttachPurge.length > 0) attachDbDelete(_pendingAttachPurge).catch(() => {});
         _pendingAttachPurge = removed.flatMap(u => (u.attachments || []).map(a => a.id));
     }
     return { count, removed };
@@ -1804,29 +1840,44 @@ function logEvent(entry) {
     // applied (those mutations aren't user-initiated and shouldn't be logged).
     if (!currentUser || suppressCloudWrites || !window.cloud?.addHistoryEvents) return;
     _historyPushQueue.push(full);
+    _scheduleHistoryFlush(80);
+}
+
+// Backoff for a batch that failed transiently: 5s, 10s, 20s … capped at 5 min,
+// reset by the first success. Before, a failed batch waited for the NEXT
+// logEvent to carry it, and closing the tab first meant it never left.
+let _historyRetryDelay = 0;
+function _scheduleHistoryFlush(delay) {
     if (_historyFlushTimer) return;
-    _historyFlushTimer = setTimeout(() => {
-        const batch = _historyPushQueue.splice(0);
-        _historyFlushTimer = null;
-        if (batch.length === 0) return;
-        window.cloud.addHistoryEvents(batch).catch(err => {
-            console.error('[cloud] history push failed:', err);
-            if (err && err.code === 'permission-denied') {
-                // The rules will keep refusing this batch, so putting it back
-                // would only cost the next one too. The local cache still has
-                // these rows; they just never become shared.
-                showHistoryRulesBanner();
-                return;
-            }
-            // Transient failure. splice(0) above already emptied the queue, so
-            // without this the batch is simply gone — the next flush carries
-            // it instead. Capped, because a queue that never drains is a leak
-            // and the local cache is the durable copy either way.
-            if (_historyPushQueue.length + batch.length <= AUDIT_LOG_MAX) {
-                _historyPushQueue.unshift(...batch);
-            }
-        });
-    }, 80);
+    _historyFlushTimer = setTimeout(_flushHistoryQueue, delay);
+}
+
+function _flushHistoryQueue() {
+    _historyFlushTimer = null;
+    if (!currentUser || !window.cloud?.addHistoryEvents) return;
+    const batch = _historyPushQueue.splice(0);
+    if (batch.length === 0) return;
+    window.cloud.addHistoryEvents(batch).then(() => {
+        _historyRetryDelay = 0;
+    }).catch(err => {
+        console.error('[cloud] history push failed:', err);
+        if (err && err.code === 'permission-denied') {
+            // The rules will keep refusing this batch, so putting it back
+            // would only cost the next one too. The local cache still has
+            // these rows; they just never become shared.
+            showHistoryRulesBanner();
+            return;
+        }
+        // Transient failure. splice(0) above already emptied the queue, so
+        // without this the batch is simply gone. Capped, because a queue that
+        // never drains is a leak and the local cache is the durable copy
+        // either way.
+        if (_historyPushQueue.length + batch.length <= AUDIT_LOG_MAX) {
+            _historyPushQueue.unshift(...batch);
+        }
+        _historyRetryDelay = Math.min(_historyRetryDelay ? _historyRetryDelay * 2 : 5000, 300000);
+        _scheduleHistoryFlush(_historyRetryDelay);
+    });
 }
 
 function getAuditLog() {
@@ -2170,7 +2221,7 @@ async function exportHistory() {
     const headers = ['Waktu', 'Aksi', 'Objek', 'Field', 'Sebelum', 'Sesudah',
                      'Oleh', 'Email', 'Peran', 'ID'];
     const rows = log.map(e => [
-        new Date(e.timestamp).toISOString(),
+        toLocalDateTime(e.timestamp),
         e.action, e.unitName || '', e.field || '',
         e.before != null ? e.before : '', e.after != null ? e.after : '',
         e.actorName || '', e.actorEmail || '', e.actorRole || '', e.id || ''
@@ -2495,6 +2546,31 @@ const BACKUP_PHOTO_KINDS = [
       present: v => Array.isArray(v) && v.length > 0, cache: () => _leaveDocCache }
 ];
 
+// Backups from before photos had their own collections carry them INSIDE the
+// records. Restored as they are, they bring back what the split fixed — every
+// device downloading every photo, localStorage filling up — and the one-shot
+// migration has already set its flag and will not run again. Moved here into
+// the file's photo maps, they go out through the same path as a v5 backup.
+function splitInlineBackupPhotos(data) {
+    if (Array.isArray(data.damages)) {
+        data.damages = data.damages.map(r => {
+            if (!r || !r.id || typeof r.photo !== 'string' || !r.photo) return r;
+            data.damagePhotos = data.damagePhotos && typeof data.damagePhotos === 'object' ? data.damagePhotos : {};
+            if (!data.damagePhotos[r.id]) data.damagePhotos[r.id] = r.photo;
+            return { ...r, photo: '', hasPhoto: true };
+        });
+    }
+    if (Array.isArray(data.workLogs)) {
+        data.workLogs = data.workLogs.map(r => {
+            if (!r || !r.id || !Array.isArray(r.photos) || !r.photos.length) return r;
+            data.workLogPhotos = data.workLogPhotos && typeof data.workLogPhotos === 'object' ? data.workLogPhotos : {};
+            if (!data.workLogPhotos[r.id]) data.workLogPhotos[r.id] = r.photos.slice();
+            return { ...r, photos: [], photoCount: r.photos.length };
+        });
+    }
+    return data;
+}
+
 // Runs fn over items, at most n at a time. Photos are fetched one document per
 // record; firing hundreds of getDoc calls at once only makes them all slow.
 async function _mapLimit(items, n, fn) {
@@ -2526,6 +2602,7 @@ function importBackup(file) {
                 showToast('Berkas backup tidak valid', 'error');
                 return;
             }
+            splitInlineBackupPhotos(data);
             const merge = confirm(
                 `Backup berisi ${data.units.length} unit.\n\n` +
                 `OK    = GABUNG (tambahkan yang baru, pertahankan yang ada)\n` +
@@ -2897,6 +2974,9 @@ const CSV_HEAVY_COLUMNS = {
     cameraAi: ['Camera AI'], telematicBox: ['Telematic Box'],
     switchLimiter: ['Switch Limiter'], rotaryLamp: ['Rotary Lamp']
 };
+// Heavy fields whose headers tractor sheets also use for their own purposes.
+const CSV_SHARED_HEADER_FIELDS = ['assetCode', 'machineType'];
+
 // Infer the file's group from its headers, using only unambiguous markers: the
 // four heavy component headers on one side, the John Deere headers on the
 // other. 'Nomor Lambung', 'Jenis Alat' and 'Kelompok' are deliberately NOT
@@ -2958,8 +3038,10 @@ function processData(rows, ctx) {
         });
         const raw = clean(getVal(r, 'Unit Group'));
         const explicit = normalizeGroupKey(raw);
-        if (explicit === null) groupWarnings.push({ row: idx + 2, name: unit.name, sn: unit.sn, value: raw });
         unit.unitGroup = explicit || fileGroup || fallback;
+        // The group it actually lands in — the file's, when the headers say
+        // so, not necessarily the open tab.
+        if (explicit === null) groupWarnings.push({ row: idx + 2, name: unit.name, sn: unit.sn, value: raw, group: unit.unitGroup });
         if (explicit) csvExplicitGroup.add(unit);
         else if (fileGroup) csvInferredGroup.add(unit);
         if (!unit.sn && !unit.name) {
@@ -3021,7 +3103,8 @@ function onDataLoaded() {
 
     populateFilters();
     populateEditFilters();
-    filteredData = scopeDashUnits();
+    // Keeps the search box and the filters: this runs on every snapshot.
+    filteredData = applyFilterLogic();
     updateDashboard(filteredData);
 
     const now = new Date().toLocaleString();
@@ -3139,13 +3222,17 @@ function renderNarrative(data) {
     const sites = [...new Set(data.map(d => d.site).filter(Boolean))].length || 1;
     const breakdown = data.filter(d => !isGood(d.status)).length;
     const issues = data.filter(d => detectIssues(d).length > 0).length;
-    const alerts = _buildAlertList(scopeDashUnits()).total;
+    // Expired and expiring are two different facts; "akan expire" counted both.
+    const al = _buildAlertList(scopeDashUnits());
+    const expired = al.expiredCount || 0;
+    const soon = al.soonCount != null ? al.soonCount : Math.max(0, al.total - expired);
 
     const clauses = [
         breakdown === 0 ? 'semua unit beroperasi hari ini' : `${breakdown} unit sedang breakdown`
     ];
     if (issues > 0) clauses.push(`${issues} berjalan dengan gangguan komponen`);
-    if (alerts > 0) clauses.push(`${alerts} lisensi akan expire dalam 30 hari ke depan`);
+    if (expired > 0) clauses.push(`${expired} lisensi sudah expire`);
+    if (soon > 0) clauses.push(`${soon} lisensi akan expire dalam 30 hari ke depan`);
 
     let tail;
     if (clauses.length === 1) tail = clauses[0];
@@ -3792,8 +3879,16 @@ function populateFilters(units) {
     const pool = units || scopeDashUnits();
     const statuses = [...new Set(pool.map(d => d.status))].filter(Boolean).sort();
     const sites = [...new Set(pool.map(d => d.site))].filter(Boolean).sort();
-    document.getElementById('statusFilter').innerHTML = `<option value="">All Status</option>` + statuses.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
-    document.getElementById('siteFilter').innerHTML = `<option value="">All Sites</option>` + sites.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+    // Rebuilt on every snapshot, so the choice is carried across — otherwise
+    // a teammate's edit silently reset someone's Breakdown filter.
+    const fill = (id, head, list) => {
+        const el = document.getElementById(id);
+        const keep = el.value;
+        el.innerHTML = head + list.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+        if (keep && list.includes(keep)) el.value = keep;
+    };
+    fill('statusFilter', `<option value="">All Status</option>`, statuses);
+    fill('siteFilter', `<option value="">All Sites</option>`, sites);
 }
 
 function applyFilterLogic() {
@@ -3992,10 +4087,14 @@ function handleEditCSVImport(file) {
             }
             const notes = [];
             groupWarnings.forEach(w => notes.push({ name: w.name, sn: w.sn,
-                reason: `Unit Group "${w.value}" tidak dikenal — dibaca sebagai ${groupDef(tab).label}` }));
+                reason: `Unit Group "${w.value}" tidak dikenal — dibaca sebagai ${groupDef(w.group || tab).label}` }));
             valid.forEach(u => {
                 const g = unitGroupOf(u);
-                const ignored = otherGroup(g).onlyFields.filter(f => !sameStoredValue(u[f], ''));
+                // Tractor sheets keep their own "Nomor Lambung" and "Jenis
+                // Alat" columns (see inferCsvGroup). Dropping them is right;
+                // calling it a mistake on every row is not.
+                const ignored = otherGroup(g).onlyFields.filter(f => !sameStoredValue(u[f], ''))
+                    .filter(f => !(g === 'tractor' && CSV_SHARED_HEADER_FIELDS.includes(f)));
                 if (ignored.length) notes.push({ name: u.name, sn: u.sn,
                     reason: `kolom ${ignored.join(', ')} diabaikan: bukan milik ${groupDef(g).shortLabel}` });
             });
@@ -5027,7 +5126,11 @@ function _commitSaveUnit(id, fields) {
         const reason = skippedDetails && skippedDetails[0] && skippedDetails[0].reason;
         if (added > 0) {
             showToast(`Unit "${fields.name}" added`, 'success');
-            if (firstHeavy) showToast(`Alat berat tampil di Dashboard lewat pilihan ${UNIT_GROUPS.heavy.shortLabel} / Semua`, 'info');
+            // The scope selector exists only when both groups do; with
+            // heavy units alone the dashboard simply shows them.
+            if (firstHeavy) showToast(hasTractorUnits()
+                ? `${UNIT_GROUPS.heavy.label} tampil di Dashboard lewat tab ${UNIT_GROUPS.heavy.label} / Semua`
+                : `${UNIT_GROUPS.heavy.label} langsung tampil di Dashboard`, 'info');
         } else if (!reason || reason === 'Duplicate serial number') {
             showToast(`Duplicate serial number "${fields.sn}" — unit not added`, 'warning');
         } else {
@@ -5571,12 +5674,19 @@ function handleImplementCSVImport(file) {
         complete: result => {
             const added = [];
             let rejected = 0;
+            let duplicates = 0;
+            // Profile name + code identify an implement. Without this,
+            // re-importing an export doubled the whole list.
+            const implKey = o => `${String(o.profileName || '').trim().toLowerCase()}|${String(o.code || '').trim().toLowerCase()}`;
+            const seenImpl = new Set(globalImplements.map(implKey));
             result.data.forEach(row => {
                 const obj = { id: generateImplementId() };
                 IMPLEMENT_FIELDS.forEach(f => {
                     obj[f.key] = (getValAny(row, _implementColAliases(f)) || '').toString().trim();
                 });
                 if (!obj.profileName) { rejected++; return; }
+                if (seenImpl.has(implKey(obj))) { duplicates++; return; }
+                seenImpl.add(implKey(obj));
                 const coaRaw = (getValAny(row, ['Chart of Account', 'Chart of Accounts', 'COA']) || '').toString();
                 obj.chartOfAccounts = coaRaw.split(/[;\n]/).map(s => s.trim()).filter(Boolean);
                 obj.createdAt = Date.now();
@@ -5609,7 +5719,8 @@ function handleImplementCSVImport(file) {
             }
 
             showLoading(false);
-            const msg = `Import implement: ${added.length} ditambahkan` + (rejected ? `, ${rejected} dilewati (Profile Name kosong)` : '');
+            const msg = `Import implement: ${added.length} ditambahkan` + (rejected ? `, ${rejected} dilewati (Profile Name kosong)` : '')
+                + (duplicates ? `, ${duplicates} dilewati (Profile Name + Code sudah ada)` : '');
             showToast(msg, added.length ? 'success' : 'warning');
         },
         error: err => {
@@ -6217,7 +6328,7 @@ function renderDamageTable() {
                       (document.getElementById('damageTypeFilter')?.value || '');
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--text-secondary)">${
             hasFilter ? 'Tidak ada kerusakan yang cocok dengan filter'
                       : 'Belum ada catatan kerusakan. Klik <strong>Tambah Kerusakan</strong> untuk mulai.'
         }</td></tr>`;
@@ -7774,6 +7885,10 @@ function handleLicenseCSVImport(file) {
             if (added.length > 0) {
                 globalLicenseStock.push(...added);
                 saveLicenseStockLocal();
+                // The unit licences this import writes, as they were before.
+                // Filled in below; a refused batch puts them back too, or the
+                // units would keep licences whose distributions never landed.
+                const unitUndo = new Map();   // unitId -> { field: oldValue }
                 if (!suppressCloudWrites && window.cloud?.isReady) {
                     // Same rollback as the implements import above: a refused
                     // batch must not keep rendering as if it had landed.
@@ -7781,6 +7896,8 @@ function handleLicenseCSVImport(file) {
                     window.cloud.saveLicenses(added).catch(err => {
                         globalLicenseStock = globalLicenseStock.filter(o => !addedIds.has(o.id));
                         saveLicenseStockLocal();
+                        unitUndo.forEach((fields, unitId) => updateUnit(unitId, fields));
+                        if (unitUndo.size) { renderEditTable(); updateDashboard(filteredData = applyFilterLogic()); }
                         renderLicenseSummary();
                         renderLicenseStockTable();
                         cloudWriteFailed(err, {
@@ -7801,6 +7918,13 @@ function handleLicenseCSVImport(file) {
                 const todo = importRows.filter(r => r.status === 'update');
                 importSync.newer = importRows.filter(r => r.status === 'newer').length;
                 if (todo.length && hasAccess('editUnits', 'edit')) {
+                    todo.forEach(r => {
+                        const u = globalData.find(x => x.id === r.unit.id);
+                        if (!u) return;
+                        const prev = unitUndo.get(u.id) || {};
+                        Object.keys(r.fields).forEach(f => { if (!(f in prev)) prev[f] = u[f] != null ? u[f] : ''; });
+                        unitUndo.set(u.id, prev);
+                    });
                     importSync.applied = _applyLicenseSync(todo.map(r => r.key));
                 } else if (todo.length) {
                     importSync.noAccess = todo.length;
@@ -8361,8 +8485,9 @@ function deleteCategory(id) {
     // Warn if this category is in use by any unit
     const inUse = globalData.filter(u => u.userCategory === cat.name).length;
     const prompt = inUse > 0
-        ? `Delete category "${cat.name}"?\n${inUse} unit(s) still reference it — their value will be cleared.`
-        : `Delete category "${cat.name}"?`;
+        ? `Hapus kategori "${cat.name}"?\n\n${inUse} unit masih memakainya. Nilai di unit itu TIDAK dihapus — `
+          + `hanya pilihannya yang hilang dari daftar. Ganti kategori unit itu lewat Bulk Edit kalau perlu.`
+        : `Hapus kategori "${cat.name}"?`;
     if (!confirm(prompt)) return;
     cloudWrite(
         { action: 'delete', unitName: '-', field: 'user category', before: cat.name },
@@ -8853,6 +8978,7 @@ function tearDownCloudSync() {
     // logEvent has already written them to the local cache.
     if (_historyFlushTimer) { clearTimeout(_historyFlushTimer); _historyFlushTimer = null; }
     _historyPushQueue.length = 0;
+    _historyRetryDelay = 0;
     cloudInitialized = false;
 }
 
@@ -9470,6 +9596,13 @@ function renderUsersView() {
 
     // Pending table
     const pendingBody = document.getElementById('pendingUsersBody');
+    // Any sign-in rewrites a user document and re-renders this table. The
+    // owner's pick in a pending row must survive that, or "Setujui" a moment
+    // later approves the person as KHL.
+    const pickedRole = {};
+    pendingBody.querySelectorAll('select[id^="approveRole_"]').forEach(sel => {
+        pickedRole[sel.id.slice('approveRole_'.length)] = sel.value;
+    });
     if (pending.length === 0) {
         pendingBody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-secondary)">Tidak ada pendaftaran menunggu</td></tr>`;
     } else {
@@ -9484,7 +9617,7 @@ function renderUsersView() {
                         <select class="form-select user-role-select" id="approveRole_${escapeHtml(u.uid)}"
                                 aria-label="Role untuk ${escapeHtml(u.email || '')}">
                             ${ROLES.filter(r => r.key !== 'owner').map(r =>
-                                `<option value="${r.key}"${r.key === 'khl' ? ' selected' : ''}>${escapeHtml(r.label)}</option>`).join('')}
+                                `<option value="${r.key}"${r.key === (pickedRole[u.uid] || 'khl') ? ' selected' : ''}>${escapeHtml(r.label)}</option>`).join('')}
                         </select>
                         <button class="btn btn-success btn-sm" title="Setujui dengan role terpilih" onclick="approveUser(${jsArg(u.uid)})">
                             <i class="fas fa-check"></i> Setujui
@@ -10012,6 +10145,23 @@ function allPaddocks() {
         if (p && !seen.has(p.toLowerCase())) seen.set(p.toLowerCase(), p);
     });
     return [...seen.values()].sort((a, b) => a.localeCompare(b));
+}
+
+// The form lists active members only, but a record may belong to someone who
+// has since left. Without their option the select silently falls back to
+// "— Pilih anggota —", and the record cannot be saved at all.
+function ensureMemberOption(selId, memberId) {
+    const sel = document.getElementById(selId);
+    if (!sel || !memberId) return;
+    if (![...sel.options].some(o => o.value === memberId)) {
+        const m = memberById(memberId);
+        if (!m) return;
+        const opt = document.createElement('option');
+        opt.value = memberId;
+        opt.textContent = `${m.name || '(tanpa nama)'} (nonaktif)`;
+        sel.appendChild(opt);
+    }
+    sel.value = memberId;
 }
 
 function activeMembers() {
@@ -11204,6 +11354,7 @@ function editWorkLog(id) {
     populateWorkLogFilters();
     document.getElementById('wlDate').value = w.date || '';
     document.getElementById('wlMember').value = w.memberId || '';
+    ensureMemberOption('wlMember', w.memberId);
     document.getElementById('wlStart').value = w.start || '';
     document.getElementById('wlEnd').value = w.end || '';
     // Copies, so cancelling the modal leaves the stored record untouched.
@@ -11944,6 +12095,7 @@ function editLeave(id) {
         : '<i class="fas fa-user-clock"></i> Edit Pengajuan Izin / Sakit';
     showRevisionNote('lvRevisionNote', r);
     document.getElementById('lvMember').value = r.memberId || '';
+    ensureMemberOption('lvMember', r.memberId);
     document.getElementById('lvType').value = r.type || 'izin';
     document.getElementById('lvDateFrom').value = r.dateFrom || '';
     document.getElementById('lvDateTo').value = r.dateTo || '';
