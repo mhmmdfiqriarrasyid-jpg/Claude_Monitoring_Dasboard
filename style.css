@@ -1770,11 +1770,6 @@ body.auth-blocked .footer { filter: blur(2px); pointer-events: none; }
     margin: 8px 0 4px;
     letter-spacing: -0.3px;
 }
-.auth-card__brand p {
-    font-size: 13px;
-    color: var(--text-secondary);
-    margin: 0;
-}
 
 .auth-tabs {
     display: flex;
