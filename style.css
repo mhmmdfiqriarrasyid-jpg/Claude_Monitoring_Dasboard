@@ -3822,3 +3822,77 @@ body[data-nocsvimport] .csv-import { display: none !important; }
 .lic-status--info  { background: var(--info-bg);    color: var(--info);    border-color: var(--info-border); }
 .lic-status--warn  { background: var(--danger-bg);  color: var(--danger);  border-color: var(--danger-border); }
 .lic-status--muted { background: transparent;       color: var(--text-light); border-color: var(--border-light); }
+
+/* ============================================================
+   PHONE TOPBAR — must fit the screen
+   ------------------------------------------------------------
+   On a phone the topbar held the burger, "216 Units", "Updated: …",
+   a 130px search box and "name + SUPER ADMIN", all nowrap: ~600px on a
+   390px screen. iOS answers content wider than the viewport by zooming
+   the WHOLE page out to fit it, so every page rendered as a narrow column
+   with a blank strip on the right. The timestamp goes, the name shortens
+   to the role badge, and the search takes whatever room is left.
+   ============================================================ */
+@media (max-width: 700px) {
+    .topbar { gap: 8px; padding: 0 10px 0 4px; }
+    #lastUpdated, .topbar__spacer, .user-pill__name, .user-pill__chev { display: none; }
+    .header__status { flex-shrink: 0; font-size: 12px; }
+    .global-search { flex: 1 1 auto; min-width: 0; }
+    .global-search input { width: 100%; min-width: 0; }
+    .global-search__results { width: min(300px, calc(100vw - 24px)); }
+    .user-pill { flex-shrink: 0; padding-left: 8px; padding-right: 8px; gap: 6px; }
+}
+/* Safety net: whatever else ever grows too wide is clipped here instead of
+   zooming the page out. `clip`, not `hidden`, so the sticky topbar still
+   sticks (clip makes no scroll container). */
+.app-shell { max-width: 100vw; overflow-x: clip; }
+/* The sticky-column shadows belong to the desktop table. In the phone card
+   layout the cells are no longer sticky, so the shadow anchored to the page
+   instead and poked 4px past the screen edge. */
+@media (max-width: 700px) {
+    #editTable td:nth-child(3)::after, #editTable th:nth-child(3)::after,
+    #editTable td:last-child::before, #editTable th:last-child::before { content: none; }
+}
+
+/* ---- Phone proportions ----
+   One KPI per row turned the dashboard into a long ledger of 44px numbers,
+   and the work-log KPIs were pinned to four columns at every width, which
+   squeezed each label to one word per line and pushed the fourth tile off
+   the screen. Two columns on a phone, smaller figures, and unit chips that
+   wrap instead of running past the card. */
+@media (max-width: 600px) {
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    .kpi-grid .kpi-card { padding: 14px 12px 14px; }
+    .kpi-grid .kpi-card__value { font-size: 32px; }
+    .kpi-grid .kpi-card__sub { font-size: 11.5px; }
+    .kpi-grid .kpi-card:nth-child(odd):last-child { grid-column: 1 / -1; }
+    .dash-narrative { font-size: 17px; margin-bottom: 16px; }
+
+    .downtime-kpis,
+    #teamWorkLogPanel .downtime-kpis,
+    #whDevicePanel .downtime-kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .downtime-kpi { padding: 10px 12px; min-width: 0; }
+    .downtime-kpi__value { font-size: 22px; }
+    .downtime-kpi__sub { font-size: 11px; line-height: 1.35; }
+}
+@media (max-width: 700px) {
+    .table--cardable td[data-label="Unit"] { flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+    .table--cardable td .badge-cat { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+}
+/* Report and leave filters: eight controls stacked one per row pushed the
+   reports a full screen down. Two per row, the search across both. */
+@media (max-width: 600px) {
+    #teamWorkLogPanel .edit-toolbar__right,
+    #teamLeavePanel .edit-toolbar__right {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        align-items: center;
+    }
+    #teamWorkLogPanel .edit-toolbar__right > *,
+    #teamLeavePanel .edit-toolbar__right > * { min-width: 0; width: 100%; }
+    #teamWorkLogPanel .edit-search, #teamLeavePanel .edit-search { grid-column: 1 / -1; }
+    #teamWorkLogPanel .wl-filter-date, #teamLeavePanel .wl-filter-date { display: flex; flex-direction: column; align-items: stretch; gap: 2px; font-size: 11px; }
+    #teamWorkLogPanel .wl-filter-date input, #teamLeavePanel .wl-filter-date input { width: 100%; min-width: 0; }
+    #workLogCount, #leaveCount { text-align: right; font-size: 12px; }
+}
