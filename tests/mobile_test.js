@@ -331,9 +331,13 @@ async function run(page, width, body) {
     // iOS memperkecil SELURUH halaman kalau ada satu elemen yang lebih lebar
     // dari layar — v125 tampil sebagai kolom sempit dengan ruang kosong di
     // kanan karena topbar (nama user + SUPER ADMIN + "Updated: …") ~600px.
-    const ip = await b.newPage({ viewport:{ width:390, height:844 }, isMobile:true, hasTouch:true });
+    // Semua merek HP: yang menentukan tata letak hanya LEBAR layar. 320 = HP
+    // kecil/lama, 360 = Android umum, 390 = iPhone, 412 = Samsung/Pixel,
+    // 430 = layar besar, 740 = HP dimiringkan.
+    for (const [PW, PH] of [[320, 640], [360, 780], [390, 844], [412, 915], [430, 932], [740, 360]]) {
+    const ip = await b.newPage({ viewport:{ width:PW, height:PH }, isMobile:true, hasTouch:true });
     ip.on('pageerror', e => { if (!/Chart is not defined/.test(e.message)) errors.push(e.message); });
-    const fit = await run(ip, 390, `(async () => {
+    const fit = await run(ip, PW, `(async () => {
         ${DATA};
         const pill = document.getElementById('userPill'); pill.style.display = '';
         document.getElementById('userPillName').textContent = 'mhmmdfiqriarrasyid';
@@ -341,7 +345,7 @@ async function run(page, width, body) {
         workLogs = [{ id:'w', date:'2026-10-01', memberId:'m1', start:'07:44', end:'15:18', task:'Support Operation Km 8',
             units:[{id:'a',name:'GGTR148G_HDG'},{id:'b',name:'MGCH002M'},{id:'c',name:'GGTR119G_HDG'}], approval:'pending' }];
         const res = {};
-        for (const v of ['dashboard', 'editUnits', 'damage', 'team:shift', 'team:worklog', 'team:leave', 'licenseStock', 'implements', 'warehouse']) {
+        for (const v of ['dashboard', 'editUnits', 'damage', 'team:shift', 'team:worklog', 'team:leave', 'licenseStock', 'implements', 'warehouse', 'leader']) {
             if (v.startsWith('team:')) { navigateTo('team'); switchTeamTab(v.slice(5)); } else navigateTo(v);
             document.getElementById('lastUpdated').textContent = 'Updated: 02/10/2026, 07:25:28';
             await new Promise(r => setTimeout(r, 50));
@@ -350,10 +354,11 @@ async function run(page, width, body) {
         res.topbarRight = Math.round(document.querySelector('.topbar').lastElementChild.getBoundingClientRect().right);
         return res;
     })()`);
-    Object.entries(fit).filter(([k]) => k !== 'topbarRight').forEach(([k, v]) =>
-        t('iPhone 390px: ' + k + ' tidak lebih lebar dari layar', v, [390, 390]));
-    t('iPhone 390px: topbar muat (pill user terlihat)', fit.topbarRight <= 390, true);
+    const over = Object.entries(fit).filter(([k, v]) => k !== 'topbarRight' && (v[0] > PW || v[1] > PW)).map(([k, v]) => k + ':' + Math.max(...v));
+    t(PW + 'px: tidak ada halaman yang lebih lebar dari layar', over, []);
+    t(PW + 'px: topbar muat (pill user terlihat)', fit.topbarRight <= PW, true);
     await ip.close();
+    }
 
     const desk = await b.newPage({ viewport:{ width:1440, height:900 } });
     desk.on('pageerror', e => { if (!/Chart is not defined/.test(e.message)) errors.push(e.message); });

@@ -3833,7 +3833,7 @@ body[data-nocsvimport] .csv-import { display: none !important; }
    with a blank strip on the right. The timestamp goes, the name shortens
    to the role badge, and the search takes whatever room is left.
    ============================================================ */
-@media (max-width: 700px) {
+@media (max-width: 900px) {
     .topbar { gap: 8px; padding: 0 10px 0 4px; }
     #lastUpdated, .topbar__spacer, .user-pill__name, .user-pill__chev { display: none; }
     .header__status { flex-shrink: 0; font-size: 12px; }
@@ -3896,3 +3896,27 @@ body[data-nocsvimport] .csv-import { display: none !important; }
     #teamWorkLogPanel .wl-filter-date input, #teamLeavePanel .wl-filter-date input { width: 100%; min-width: 0; }
     #workLogCount, #leaveCount { text-align: right; font-size: 12px; }
 }
+
+/* Any phone, any brand: layout follows the screen WIDTH, so what matters is
+   covering every width a phone reports — 320px (small/older Android, iPhone
+   SE 1st gen) up to ~430px portrait, and 640–930px when turned sideways.
+   The rules below close the gaps found at those widths. */
+
+/* Wide-but-not-desktop (landscape phones, small tablets with the sidebar
+   showing): the timestamp is the first thing to give way. */
+@media (max-width: 1200px) {
+    #lastUpdated { display: none; }
+    .user-pill__name { max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+    .global-search { min-width: 0; flex: 0 1 auto; }
+    .global-search input { min-width: 0; }
+}
+
+/* 320px: grid and flex children default to min-width:auto, so a 300px chart
+   or a 320px minimum card pushed past the screen. */
+.downtime-grid > * { min-width: 0; }
+.decision-grid { grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); }
+.team-tabs { min-width: 0; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.team-tabs::-webkit-scrollbar { display: none; }
+/* A chart canvas is 300px wide until Chart.js sizes it — and stays so if the
+   library never loads (no signal). Never wider than its card. */
+canvas { max-width: 100%; }
