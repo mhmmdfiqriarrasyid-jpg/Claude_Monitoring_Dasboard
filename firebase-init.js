@@ -91,6 +91,10 @@ const auth = getAuth(app);
 // auto-promoted to role=owner with status=active. Other emails start as
 // role=viewer with status=pending and must be approved by an owner.
 const OWNER_EMAILS = ['mhmmdfiqriarrasyid@gmail.com'];
+// The owner is pinned by Firebase Auth UID — an e-mail address can be
+// registered by anyone if the original account is ever deleted or renamed; a
+// UID cannot be claimed. Must match isOwnerAccount() in firestore.rules.
+const OWNER_UIDS = ['vWZZ3jz1LTdzrU5c5Q1Gzco8nh72'];
 
 // Persist login across reloads / browser restarts (best-effort).
 setPersistence(auth, browserLocalPersistence).catch(err => {
@@ -260,6 +264,9 @@ window.cloud = {
     },
 
     // ---- Auth ----
+    isOwnerAccount(user) {
+        return !!user && OWNER_UIDS.includes(user.uid);
+    },
     isOwnerEmail(email) {
         return OWNER_EMAILS.includes((email || '').toLowerCase());
     },
@@ -290,7 +297,7 @@ window.cloud = {
         return snap.exists() ? snap.data() : null;
     },
     async createUserDoc(user, displayName) {
-        const isOwner = this.isOwnerEmail(user.email);
+        const isOwner = this.isOwnerAccount(user);
         const data = {
             uid: user.uid,
             email: user.email,
@@ -308,7 +315,7 @@ window.cloud = {
         // If an owner-allowlisted user signs in but their doc is missing or
         // wrong (e.g. they were created before the auth feature shipped),
         // fix it so they actually get owner privileges.
-        if (!this.isOwnerEmail(user.email)) return null;
+        if (!this.isOwnerAccount(user)) return null;
         const existing = await this.getUserDoc(user.uid);
         if (existing && existing.role === 'owner' && existing.status === 'active') return existing;
         const fixed = {

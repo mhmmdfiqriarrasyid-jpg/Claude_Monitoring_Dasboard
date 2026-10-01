@@ -87,7 +87,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v122';
+const APP_VERSION = 'v123';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -8758,7 +8758,7 @@ function setupAuth() {
             profile = await window.cloud.getUserDoc(user.uid);
             if (!profile) {
                 profile = await window.cloud.createUserDoc(user);
-            } else if (window.cloud.isOwnerEmail(user.email) &&
+            } else if ((window.cloud.isOwnerAccount ? window.cloud.isOwnerAccount(user) : window.cloud.isOwnerEmail(user.email)) &&
                        (profile.role !== 'owner' || profile.status !== 'active')) {
                 // Owner allowlist takes precedence — repair the doc.
                 profile = await window.cloud.ensureOwnerDoc(user);

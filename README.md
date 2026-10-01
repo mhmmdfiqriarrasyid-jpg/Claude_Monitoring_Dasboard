@@ -239,7 +239,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   - Laporan restore wajib menyebut koleksi yang **tidak ada di berkas**. Itu
     baris yang paling penting: restore yang diam-diam mencakup lebih sedikit
     dari yang disangka orang adalah kegagalan yang modal itu ada untuk dicegah.
-- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (41 skenario;
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (43 skenario;
   bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
   kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
   persetujuan laporan/izin (editor hanya bisa mengembalikan ke pending,

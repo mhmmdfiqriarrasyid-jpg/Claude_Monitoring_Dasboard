@@ -213,14 +213,16 @@ service cloud.firestore {
     // Sign-up may only ever create a PENDING VIEWER. Without this, any signed-in
     // user could write {role:'owner', status:'active'} to their own document and
     // take over the whole project. Role/access changes are owner-only.
-    // The allowlist below must stay in sync with OWNER_EMAILS in firebase-init.js.
-    function isOwnerEmail() {
-      return isSignedIn()
-             && request.auth.token.email != null
-             && request.auth.token.email.lower() in ['mhmmdfiqriarrasyid@gmail.com'];
+    // The owner is pinned by Firebase Auth UID, which nobody can claim by
+    // registering an address. (Pinned by e-mail, anyone could register the
+    // owner's address the moment the original account was deleted or its
+    // e-mail changed, and make themselves Super Admin.) Keep in sync with
+    // OWNER_UIDS in firebase-init.js.
+    function isOwnerAccount() {
+      return isSignedIn() && request.auth.uid in ['vWZZ3jz1LTdzrU5c5Q1Gzco8nh72'];
     }
     function selfBootstrapsAsOwner() {
-      return isOwnerEmail()
+      return isOwnerAccount()
              && request.resource.data.role == 'owner'
              && request.resource.data.status == 'active';
     }

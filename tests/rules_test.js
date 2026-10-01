@@ -102,6 +102,15 @@ async function check(name, p, expectOk) {
     await check('sesi: nama perangkat panjang/berisi field lain DITOLAK', setDoc(doc(W, 'users', 'writer'), { activeSession: { id: 's', device: 'x'.repeat(200), extra: 1 } }, { merge: true }), false);
     await check('sesi: tidak bisa menaikkan role sendiri', setDoc(doc(W, 'users', 'writer'), { role: 'owner' }, { merge: true }), false);
 
+    // ---- owner dikunci lewat UID ----
+    const OWNER_UID = 'vWZZ3jz1LTdzrU5c5Q1Gzco8nh72';
+    const fake = env.authenticatedContext('penyusup', { email: 'mhmmdfiqriarrasyid@gmail.com' }).firestore();
+    await check('owner: akun lain dengan email owner TIDAK bisa menjadikan dirinya owner',
+        setDoc(doc(fake, 'users', 'penyusup'), { uid: 'penyusup', email: 'mhmmdfiqriarrasyid@gmail.com', role: 'owner', status: 'active' }), false);
+    const real = env.authenticatedContext(OWNER_UID, { email: 'mhmmdfiqriarrasyid@gmail.com' }).firestore();
+    await check('owner: UID owner bisa membuat/memulihkan dokumennya sendiri',
+        setDoc(doc(real, 'users', OWNER_UID), { uid: OWNER_UID, email: 'mhmmdfiqriarrasyid@gmail.com', role: 'owner', status: 'active' }), true);
+
     // ---- id dan nilai shift ----
     await check('unit: id di data berbeda dengan dokumen DITOLAK', setDoc(doc(O, 'units', 'u2'), { id: 'u1', name: 'X' }), false);
     await check('unit: id cocok diterima', setDoc(doc(O, 'units', 'u2'), { id: 'u2', name: 'X' }), true);
