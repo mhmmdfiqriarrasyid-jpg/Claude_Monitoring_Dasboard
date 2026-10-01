@@ -1,4 +1,4 @@
-/* OT Monitoring Tractor and Device — Firebase / Firestore / Auth initializer
+/* Operation Technology Dashboard — Firebase / Firestore / Auth initializer
    Loaded as an ES module from index.html. Bridges Firebase Auth + Firestore
    to the classic (non-module) script.js via a global window.cloud API.        */
 

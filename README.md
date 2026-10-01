@@ -1,4 +1,4 @@
-# OT Monitoring — Tractor and Device
+# Operation Technology Dashboard
 
 Dashboard pemantauan armada traktor dan perangkat presisi: status unit,
 kerusakan, lisensi, operasional tim, dan gudang. Aplikasi web statis
