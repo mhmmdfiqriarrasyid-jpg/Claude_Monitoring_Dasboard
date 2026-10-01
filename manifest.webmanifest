@@ -1,7 +1,7 @@
 {
-    "name": "OT Monitoring Tractor and Device",
-    "short_name": "OT Monitor",
-    "description": "OT monitoring dashboard for tractor unit health, devices, and implements",
+    "name": "Operation Technology Dashboard",
+    "short_name": "OT Dashboard",
+    "description": "Operation Technology dashboard for fleet health, devices, implements and team operations",
     "start_url": "./",
     "scope": "./",
     "display": "standalone",
