@@ -87,7 +87,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v127';
+const APP_VERSION = 'v128';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -11109,15 +11109,19 @@ function approvalCell(rec, noun, approveFn, reviseFn) {
         ? `Disetujui ${rec.approvedBy || '-'}${rec.approvedAt ? ' · ' + formatUserTime(rec.approvedAt) : ''}`
         : st === 'revision' ? (rec.revisionNote || 'Perlu revisi')
         : st === 'draft' ? 'Belum dikirim' : 'Belum diperiksa';
+    // One block, one width: the badge on top and the buttons sharing the same
+    // width beneath it, so every row lines up whatever its state.
     let html = `<span class="appr appr--${st}" title="${escapeHtml(meta)}">${escapeHtml(APPROVAL_STATES[st].label)}</span>`;
     if (st === 'revision' && rec.revisionNote) {
         html += `<span class="appr-note" title="${escapeHtml(rec.revisionNote)}">${escapeHtml(rec.revisionNote.slice(0, 60))}</span>`;
     }
-    if (!canApproveThisLog(rec) || (st !== 'pending' && st !== 'approved')) return html;
-    return html + `<span class="appr-actions">
-        ${st === 'pending' ? `<button class="btn btn-secondary appr-btn" title="Setujui ${noun}" aria-label="Setujui ${noun}" onclick="${approveFn}(${jsArg(rec.id)})"><i class="fas fa-check"></i></button>` : ''}
-        <button class="btn btn-secondary appr-btn" title="${st === 'approved' ? 'Buka kembali — minta revisi' : 'Minta revisi'}" aria-label="Minta revisi ${noun}" onclick="${reviseFn}(${jsArg(rec.id)})"><i class="fas fa-rotate-left"></i></button>
-    </span>`;
+    if (canApproveThisLog(rec) && (st === 'pending' || st === 'approved')) {
+        html += `<span class="appr-actions">
+            ${st === 'pending' ? `<button class="btn appr-btn appr-btn--ok" title="Setujui ${noun}" aria-label="Setujui ${noun}" onclick="${approveFn}(${jsArg(rec.id)})"><i class="fas fa-check"></i></button>` : ''}
+            <button class="btn appr-btn appr-btn--rev" title="${st === 'approved' ? 'Buka kembali — minta revisi' : 'Minta revisi'}" aria-label="Minta revisi ${noun}" onclick="${reviseFn}(${jsArg(rec.id)})"><i class="fas fa-rotate-left"></i>${st === 'approved' ? ' Buka' : ''}</button>
+        </span>`;
+    }
+    return `<div class="appr-cell">${html}</div>`;
 }
 
 // Edit / delete while the record is open; a padlock (and, for the sender, a
