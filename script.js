@@ -92,7 +92,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v134';
+const APP_VERSION = 'v135';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -4416,6 +4416,90 @@ function closeImportReport() {
 // Compute the rows shown in the Edit Units table — honors the search box,
 // status/site filters and the active sort. Shared by renderEditTable() and
 // the Export CSV button so both stay in sync.
+// ---- Units per implement / work tool ----
+// Agricultural units carry an implement, heavy units a work tool (Alat
+// Kerja). The summary counts the open tab's units by that field, under the
+// status and site filters but not the search box, and a row of it filters
+// the table. Spellings that differ only in case or spacing count together.
+let editToolFilter = '';           // '' = all, TOOL_NONE = none set, else a toolKeyOf()
+const TOOL_NONE = '__none__';
+let _toolSummaryOpen = false;
+
+function toolFieldOf(g) { return g === 'heavy' ? 'workTool' : 'implement'; }
+function toolKeyOf(u, g) {
+    const v = String((u && u[toolFieldOf(g)]) || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    return v || TOOL_NONE;
+}
+
+function toolSummaryRows(g) {
+    const statusVal = document.getElementById('editStatusFilter')?.value || '';
+    const siteVal = document.getElementById('editSiteFilter')?.value || '';
+    const units = unitsOfGroup(globalData, g)
+        .filter(d => (!statusVal || d.status === statusVal) && (!siteVal || d.site === siteVal));
+    const map = new Map();
+    units.forEach(u => {
+        const k = toolKeyOf(u, g);
+        const cur = map.get(k) || { key: k, label: k === TOOL_NONE ? '' : String(u[toolFieldOf(g)]).trim().replace(/\s+/g, ' '), count: 0 };
+        cur.count++;
+        map.set(k, cur);
+    });
+    const rows = [...map.values()].sort((a, b) =>
+        (a.key === TOOL_NONE) - (b.key === TOOL_NONE) || b.count - a.count || a.label.localeCompare(b.label));
+    return { rows, total: units.length };
+}
+
+function renderToolSummary() {
+    const box = document.getElementById('toolSummary');
+    if (!box) return;
+    const g = effectiveEditGroup();
+    const { rows, total } = toolSummaryRows(g);
+    if (!total) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    const noun = g === 'heavy' ? 'Alat Kerja' : 'Implement';
+    const withTool = rows.filter(r => r.key !== TOOL_NONE).reduce((n, r) => n + r.count, 0);
+    const kinds = rows.filter(r => r.key !== TOOL_NONE).length;
+    const LIMIT = 8;
+    // "Tanpa …" always shows: units missing the field are the thing to fix.
+    const named = rows.filter(r => r.key !== TOOL_NONE);
+    const none = rows.filter(r => r.key === TOOL_NONE);
+    const shown = (_toolSummaryOpen || named.length <= LIMIT ? named : named.slice(0, LIMIT)).concat(none);
+    const max = Math.max(...rows.map(r => r.count));
+    box.innerHTML = `
+        <div class="tool-summary__head">
+            <div class="tool-summary__title"><i class="fas ${g === 'heavy' ? 'fa-screwdriver-wrench' : 'fa-trailer'}"></i>
+                Unit per ${noun}</div>
+            <div class="tool-summary__meta">${withTool} dari ${total} unit memakai ${noun.toLowerCase()} · ${kinds} jenis
+                ${editToolFilter ? `<button type="button" class="btn btn-secondary btn-sm" onclick="setEditToolFilter('')">
+                    <i class="fas fa-filter-circle-xmark"></i> Tampilkan semua</button>` : ''}</div>
+        </div>
+        <div class="tool-summary__list">
+            ${shown.map(r => {
+                const pct = Math.round(r.count / total * 100);
+                const on = editToolFilter === r.key;
+                const name = r.key === TOOL_NONE ? `Tanpa ${noun.toLowerCase()}` : r.label;
+                return `<button type="button" class="tool-row${on ? ' is-on' : ''}${r.key === TOOL_NONE ? ' tool-row--none' : ''}"
+                        aria-pressed="${on}" title="${on ? 'Klik lagi untuk menampilkan semua' : 'Tampilkan hanya unit ini di tabel'}"
+                        onclick="setEditToolFilter(${jsArg(r.key)})">
+                    <span class="tool-row__name">${escapeHtml(name)}</span>
+                    <span class="tool-row__bar"><span style="width:${Math.max(3, Math.round(r.count / max * 100))}%"></span></span>
+                    <span class="tool-row__count">${r.count}<small>${pct}%</small></span>
+                </button>`;
+            }).join('')}
+        </div>
+        ${named.length > LIMIT ? `<button type="button" class="tool-summary__more" onclick="toggleToolSummary()">
+            ${_toolSummaryOpen ? 'Tampilkan lebih sedikit' : `+${named.length - LIMIT} jenis lainnya`}</button>` : ''}`;
+    box.style.display = '';
+}
+
+function setEditToolFilter(key) {
+    editToolFilter = editToolFilter === key ? '' : (key || '');
+    renderEditTable();
+}
+
+function toggleToolSummary() {
+    _toolSummaryOpen = !_toolSummaryOpen;
+    renderToolSummary();
+}
+
 function getEditTableRows() {
     const query = (document.getElementById('editSearch')?.value || '').toLowerCase().trim();
     const statusVal = (document.getElementById('editStatusFilter')?.value || '');
@@ -4428,6 +4512,7 @@ function getEditTableRows() {
         : `${d.name} ${d.model} ${d.sn} ${d.implement || ''} ${d.site}`).toLowerCase().includes(query));
     if (statusVal) rows = rows.filter(d => d.status === statusVal);
     if (siteVal) rows = rows.filter(d => d.site === siteVal);
+    if (editToolFilter) rows = rows.filter(d => toolKeyOf(d, g) === editToolFilter);
 
     if (editSortState.key && editSortState.key !== 'no') {
         const k = editSortState.key;
@@ -4508,6 +4593,7 @@ function switchEditUnitsGroup(g, opts) {
     _editGroupPicked = true;
     if (!opts || opts.persist !== false) writePref('editUnitsGroup', g);
     editSortState = { key: null, asc: true };
+    editToolFilter = '';
     ['editSearch', 'editStatusFilter', 'editSiteFilter'].forEach(id => {
         const el = document.getElementById(id); if (el) el.value = '';
     });
@@ -4549,6 +4635,7 @@ function _editRowHeavy(d, i, ce) {
 function renderEditTable() {
     renderEditHead();
     renderEditGroupTabs();
+    renderToolSummary();
     updateEditCount();
     // A re-render (search, filter, a cloud snapshot) draws fresh, unticked
     // rows — so the selection is dropped with them. Re-reading the OLD boxes
@@ -4572,7 +4659,7 @@ function renderEditTable() {
         const empty = group === 'heavy'
             ? `Belum ada unit ${escapeHtml(UNIT_GROUPS.heavy.label)}. Klik <strong>Add Unit</strong> atau <strong>Import CSV</strong> untuk memulai.`
             : 'Belum ada unit. Klik <strong>Add Unit</strong> atau <strong>Import CSV</strong> untuk memulai.';
-        tbody.innerHTML = `<tr><td colspan="${EDIT_COLSPAN[group]}" style="text-align:center;padding:24px;color:var(--text-secondary)">${(query || statusVal || siteVal) ? 'Tidak ada unit yang cocok dengan filter' : empty}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${EDIT_COLSPAN[group]}" style="text-align:center;padding:24px;color:var(--text-secondary)">${(query || statusVal || siteVal || editToolFilter) ? 'Tidak ada unit yang cocok dengan filter' : empty}</td></tr>`;
         return;
     }
 

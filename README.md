@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.332 pemeriksaan di tiga puluh satu suite, menggerakkan Chromium sungguhan terhadap
+1.349 pemeriksaan di tiga puluh dua suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -255,6 +255,12 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   persetujuan baru (penanda per akun di localStorage
   `teamApprovalSeen:<uid>:<jenis>`). Foto/surat ditulis SEBELUM laporannya,
   karena rules hanya mengizinkan foto berubah selama laporannya terbuka.
+- **Ringkasan unit per Implement / Alat Kerja (dijaga `tests/toolsummary_test.js`).**
+  Kartu di atas tabel Unit Database: tab Agricultural menghitung per
+  `implement`, tab Heavy per `workTool`. Ikut filter status & site (bukan
+  kotak cari); ejaan yang hanya beda huruf besar/spasi digabung
+  (`toolKeyOf`); "Tanpa …" selalu tampil. Klik baris = filter tabel
+  (`editToolFilter`, ikut ke Export CSV, direset saat pindah tab).
 - **Menu samping per kelompok alat (dijaga `tests/navgroups_test.js`).**
   Ringkasan · Agricultural Equipment · Heavy Equipment · Tim · Inventaris ·
   Admin. Dashboard, Unit Database dan Kerusakan tetap SATU halaman dengan

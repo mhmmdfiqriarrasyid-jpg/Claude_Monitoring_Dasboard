@@ -4049,3 +4049,48 @@ td[data-label="Persetujuan"] { vertical-align: middle; }
     .ins-seg__opt { padding: 8px 12px; }
     .ins-chips, .ins-res-list { justify-content: flex-end; }
 }
+
+/* ---- Unit Database: units per implement / work tool ---- */
+.tool-summary {
+    background: var(--card);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-bottom: 16px;
+}
+.tool-summary__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.tool-summary__title { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.tool-summary__meta { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tool-summary__list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 24px; }
+.tool-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(60px, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: none;
+    font: inherit;
+    font-size: 13px;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+.tool-row:hover { background: var(--bg); }
+.tool-row.is-on { background: var(--primary-lighter, var(--bg)); border-color: var(--accent); }
+.tool-row__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-row--none .tool-row__name { color: var(--text-secondary); font-style: italic; }
+.tool-row__bar { height: 8px; border-radius: 4px; background: var(--border-light); overflow: hidden; }
+.tool-row__bar span { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.tool-row--none .tool-row__bar span { background: var(--text-light); }
+.tool-row__count { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 56px; text-align: right; }
+.tool-row__count small { font-weight: 400; color: var(--text-light); margin-left: 6px; font-size: 11px; }
+.tool-summary__more {
+    margin-top: 8px; border: none; background: none; color: var(--accent-text);
+    font: inherit; font-size: 12px; cursor: pointer; padding: 4px 8px;
+}
+@media (max-width: 700px) {
+    .tool-summary__list { grid-template-columns: 1fr; }
+    .tool-row { min-height: 40px; }
+}
