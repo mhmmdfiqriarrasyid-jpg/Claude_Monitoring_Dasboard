@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.310 pemeriksaan di tiga puluh suite, menggerakkan Chromium sungguhan terhadap
+1.332 pemeriksaan di tiga puluh satu suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -255,6 +255,17 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   persetujuan baru (penanda per akun di localStorage
   `teamApprovalSeen:<uid>:<jenis>`). Foto/surat ditulis SEBELUM laporannya,
   karena rules hanya mengizinkan foto berubah selama laporannya terbuka.
+- **Menu samping per kelompok alat (dijaga `tests/navgroups_test.js`).**
+  Ringkasan · Agricultural Equipment · Heavy Equipment · Tim · Inventaris ·
+  Admin. Dashboard, Unit Database dan Kerusakan tetap SATU halaman dengan
+  pemilih kelompok; tautannya (`data-group`, `goNav`) membuka halaman itu
+  pada kelompoknya dan `markActiveNav` menyalakan tautan kelompok yang sedang
+  tampil. Kerusakan punya filter kelompok (`damageGroup`; catatan mengikuti
+  unit hidupnya, unit yang sudah dihapus memakai `unitGroup` di catatan).
+  `updateNavGroups` menyembunyikan Dashboard per kelompok bagi akun yang
+  tidak bekerja dengan kelompok itu (`NAV_GROUP_AREAS`), menyembunyikan
+  Dashboard Heavy/Semua bila armada hanya satu kelompok, lalu menyembunyikan
+  judul grup yang semua tautannya tersembunyi.
 - **Pengecekan Alat Berat (dijaga `tests/inspection_test.js`).** Menu
   sendiri dengan tiga tab: Status Unit, Jadwal, Laporan Cek. Laporan cek
   berisi 4 komponen alat berat (Camera AI, Telematic Box, Switch Limiter,

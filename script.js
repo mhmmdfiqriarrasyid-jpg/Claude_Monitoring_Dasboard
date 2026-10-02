@@ -92,7 +92,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v133';
+const APP_VERSION = 'v134';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -1016,11 +1016,8 @@ function navigateTo(view) {
     const usersView = document.getElementById('viewUsers');
     if (usersView) usersView.style.display = (view === 'users') ? 'block' : 'none';
 
-    document.querySelectorAll('.nav__link').forEach(el => el.classList.remove('active'));
-    const activeLink = document.querySelector(`[data-view="${view}"]`);
-    if (activeLink) activeLink.classList.add('active');
-
     currentView = view;
+    markActiveNav();
 
     // Once cloud sync is live, the in-memory arrays ARE the data — the
     // snapshots keep them current. Re-reading localStorage here swapped them
@@ -1087,6 +1084,80 @@ function navigateTo(view) {
         ensureUsersSubscription();
         renderUsersView();
     }
+}
+
+// ---- Sidebar: one menu per equipment group ----
+// Dashboard, Unit Database and Kerusakan are each ONE page with a group
+// switch; the sidebar lists them under Agricultural and Heavy separately and
+// opens the page on that group.
+function goNav(view, group) {
+    navigateTo(view);
+    if (currentView !== view) return;   // refused for lack of access
+    if (view === 'dashboard') setDashGroup(group);
+    else if (view === 'editUnits') switchEditUnitsGroup(group);
+    else if (view === 'damage') setDamageGroup(group === 'all' ? '' : group);
+    markActiveNav();
+}
+
+// The group a page is showing right now, in the sidebar's terms.
+function navGroupOf(view) {
+    if (view === 'dashboard') return hasHeavyUnits() && hasTractorUnits() ? dashGroupPref : effectiveDashGroup();
+    if (view === 'editUnits') return effectiveEditGroup();
+    if (view === 'damage') return damageGroup || '';
+    return '';
+}
+
+// Several links share a view; the one for the group on screen lights up.
+// Kerusakan on "Semua Kelompok" matches neither group, so nothing does.
+function markActiveNav() {
+    document.querySelectorAll('.nav__link').forEach(el => el.classList.remove('active'));
+    const g = navGroupOf(currentView);
+    const links = [...document.querySelectorAll(`.nav__link[data-view="${currentView}"]`)];
+    const hit = links.find(l => !l.dataset.group || l.dataset.group === g);
+    if (hit) hit.classList.add('active');
+}
+
+// Per-group dashboards only where there is something to show: with a single
+// group in the fleet the other group's Dashboard, and "Dashboard Semua", would
+// all render the same page. Then every group heading whose links are all
+// hidden for this account goes too, so nobody sees an empty heading.
+// Areas that make someone "work with" a group, for the sidebar only.
+const NAV_GROUP_AREAS = {
+    tractor: ['editUnits', 'implements', 'damage', 'licenseStock'],
+    heavy:   ['editUnits', 'damage', 'inspection', 'inspectionApprove']
+};
+
+function updateNavGroups() {
+    const both = hasHeavyUnits() && hasTractorUnits();
+    const show = {
+        all: both,
+        tractor: hasTractorUnits() || !hasHeavyUnits(),
+        heavy: hasHeavyUnits()
+    };
+    // The dashboard is open to everyone, but a group's dashboard is listed
+    // only for people who work with that group — a heavy-equipment technician
+    // should not get an Agricultural section of one link. Someone with no
+    // area in either group (Tim only, say) keeps both, as before.
+    const works = { tractor: NAV_GROUP_AREAS.tractor.some(a => hasAccess(a, 'view')),
+                    heavy:   NAV_GROUP_AREAS.heavy.some(a => hasAccess(a, 'view')) };
+    const neither = !works.tractor && !works.heavy;
+    const wants = g => neither || (g === 'all' ? works.tractor && works.heavy : works[g]);
+    document.querySelectorAll('.nav__link[data-view="dashboard"][data-group]').forEach(el => {
+        const g = el.dataset.group;
+        el.style.display = show[g] && wants(g) ? '' : 'none';
+    });
+    // Someone who works with one group only lands on that group's dashboard
+    // — not on the other group's, which their menu does not even list.
+    const only = works.heavy && !works.tractor ? 'heavy' : works.tractor && !works.heavy ? 'tractor' : '';
+    if (only && both && dashGroupPref !== only) {
+        if (currentView === 'dashboard') setDashGroup(only, { persist: false });
+        else dashGroupPref = only;
+    }
+    document.querySelectorAll('.sidebar__nav .nav-group').forEach(grp => {
+        const any = [...grp.querySelectorAll('.nav__link')].some(l => l.style.display !== 'none');
+        grp.style.display = any ? '' : 'none';
+    });
+    markActiveNav();
 }
 
 // ============================================================
@@ -3130,6 +3201,7 @@ function onDataLoaded() {
     // Keeps the search box and the filters: this runs on every snapshot.
     filteredData = applyFilterLogic();
     updateDashboard(filteredData);
+    updateNavGroups();
 
     const now = new Date().toLocaleString();
     document.getElementById('lastUpdated').textContent = `Updated: ${now}`;
@@ -3218,6 +3290,7 @@ function setDashGroup(g, opts) {
     populateFilters();
     filteredData = applyFilterLogic();
     updateDashboard(filteredData);
+    markActiveNav();
 }
 
 function updateDashboard(data) {
@@ -4440,6 +4513,7 @@ function switchEditUnitsGroup(g, opts) {
     });
     populateEditFilters();
     renderEditTable();
+    markActiveNav();
 }
 
 function _editRowHeavy(d, i, ce) {
@@ -6249,11 +6323,31 @@ function updateDamageCount() {
 
 // Apply the current search + type filter and sort newest-first. Shared by the
 // table renderer and the CSV export so both stay in sync.
+// Kerusakan opens per equipment group from the sidebar. '' = both.
+let damageGroup = '';
+
+// A record follows its live unit; one whose unit is gone keeps the group it
+// was stamped with (heavy records carry unitGroup:'heavy', tractor ones none).
+function damageGroupOfRecord(d) {
+    const u = liveUnitFor(d);
+    if (u) return unitGroupOf(u);
+    return d && d.unitGroup === 'heavy' ? 'heavy' : 'tractor';
+}
+
+function setDamageGroup(g) {
+    damageGroup = (g === 'tractor' || g === 'heavy') ? g : '';
+    const sel = document.getElementById('damageGroupFilter');
+    if (sel && sel.value !== damageGroup) sel.value = damageGroup;
+    if (currentView === 'damage') { populateDamageUnitSelect(); renderDamageTable(); }
+    markActiveNav();
+}
+
 function getFilteredDamages() {
     const query = (document.getElementById('damageSearch')?.value || '').toLowerCase().trim();
     const typeVal = (document.getElementById('damageTypeFilter')?.value || '');
 
     let rows = [...globalDamages];
+    if (damageGroup) rows = rows.filter(d => damageGroupOfRecord(d) === damageGroup);
     if (typeVal) rows = rows.filter(d => d.damageType === typeVal);
     if (query) rows = rows.filter(d =>
         `${d.unitName} ${d.sn} ${d.site} ${d.damageType} ${d.component} ${d.description}`
@@ -6279,8 +6373,11 @@ function populateDamageUnitSelect(selectedId) {
     const input = document.getElementById('dmgUnit');
     const list = document.getElementById('dmgUnitList');
     if (!input || !list) return;
-    const units = [...globalData].sort((a, b) =>
-        (a.name || '').localeCompare(b.name || ''));
+    // Opened from one group's menu, the suggestions are that group's units.
+    // Typing any other unit still works — this narrows the list, not the form.
+    const units = [...globalData]
+        .filter(u => !damageGroup || unitGroupOf(u) === damageGroup || u.id === selectedId)
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     list.innerHTML = units.map(u =>
         `<option value="${escapeHtml(damageUnitLabel(u))}"></option>`
     ).join('');
@@ -9564,6 +9661,7 @@ function applyAccessVisibility() {
     // CSV capability flags → hide export/import buttons.
     if (canCsv('export', false)) delete document.body.dataset.nocsvexport; else document.body.dataset.nocsvexport = '1';
     if (canCsv('full', false))   delete document.body.dataset.nocsvimport; else document.body.dataset.nocsvimport = '1';
+    updateNavGroups();
 }
 
 // Gate an edit action. With an `area` it checks per-area edit access; without,

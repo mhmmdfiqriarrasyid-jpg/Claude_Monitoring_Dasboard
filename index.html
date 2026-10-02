@@ -126,55 +126,74 @@
         </div>
     </div>
     <nav class="sidebar__nav" onclick="if(event.target.closest('.nav__link'))document.getElementById('appShell').classList.remove('nav-open')">
+        <!-- Grouped by what the work is about: the two equipment groups each
+             get their own Dashboard / Unit Database / Kerusakan, which open the
+             shared page on that group (data-group). A group whose links are all
+             hidden for this account is hidden whole — see updateNavGroups(). -->
         <div class="nav-group">
-            <div class="nav-group__label">Pimpinan</div>
+            <div class="nav-group__label">Ringkasan</div>
             <a class="nav__link" data-view="leader" onclick="navigateTo('leader')">
                 <i class="fas fa-inbox"></i> Kotak Keputusan
                 <span class="nav__badge" id="decisionBadge" style="display:none">0</span>
             </a>
+            <a class="nav__link" data-view="dashboard" data-group="all" onclick="goNav('dashboard', 'all')">
+                <i class="fas fa-layer-group"></i> Dashboard Semua
+            </a>
         </div>
         <div class="nav-group">
-            <div class="nav-group__label">General</div>
-            <a class="nav__link active" data-view="dashboard" onclick="navigateTo('dashboard')">
+            <div class="nav-group__label">Agricultural Equipment</div>
+            <a class="nav__link active" data-view="dashboard" data-group="tractor" onclick="goNav('dashboard', 'tractor')">
                 <i class="fas fa-chart-line"></i> Dashboard
             </a>
-            <a class="nav__link" data-view="editUnits" onclick="navigateTo('editUnits')">
-                <i class="fas fa-pen-to-square"></i> Edit Units
+            <a class="nav__link" data-view="editUnits" data-group="tractor" onclick="goNav('editUnits', 'tractor')">
+                <i class="fas fa-tractor"></i> Unit Database
             </a>
             <a class="nav__link" data-view="implements" onclick="navigateTo('implements')">
                 <i class="fas fa-trailer"></i> Implements
             </a>
-        </div>
-        <div class="nav-group">
-            <div class="nav-group__label">Log report</div>
-            <a class="nav__link" data-view="damage" onclick="navigateTo('damage')">
+            <a class="nav__link" data-view="damage" data-group="tractor" onclick="goNav('damage', 'tractor')">
                 <i class="fas fa-screwdriver-wrench"></i> Kerusakan
-            </a>
-            <a class="nav__link" data-view="inspection" onclick="navigateTo('inspection')">
-                <i class="fas fa-clipboard-check"></i> Pengecekan Alat Berat
-                <span class="nav__badge" id="inspectionBadge" style="display:none">0</span>
             </a>
             <a class="nav__link" data-view="licenseStock" onclick="navigateTo('licenseStock')">
                 <i class="fas fa-key"></i> Stok Lisensi
             </a>
+        </div>
+        <div class="nav-group">
+            <div class="nav-group__label">Heavy Equipment</div>
+            <a class="nav__link" data-view="dashboard" data-group="heavy" onclick="goNav('dashboard', 'heavy')">
+                <i class="fas fa-chart-line"></i> Dashboard
+            </a>
+            <a class="nav__link" data-view="editUnits" data-group="heavy" onclick="goNav('editUnits', 'heavy')">
+                <i class="fas fa-person-digging"></i> Unit Database
+            </a>
+            <a class="nav__link" data-view="damage" data-group="heavy" onclick="goNav('damage', 'heavy')">
+                <i class="fas fa-screwdriver-wrench"></i> Kerusakan
+            </a>
+            <a class="nav__link" data-view="inspection" onclick="navigateTo('inspection')">
+                <i class="fas fa-clipboard-check"></i> Pengecekan
+                <span class="nav__badge" id="inspectionBadge" style="display:none">0</span>
+            </a>
+        </div>
+        <div class="nav-group">
+            <div class="nav-group__label">Tim</div>
             <a class="nav__link" data-view="team" onclick="navigateTo('team')">
                 <i class="fas fa-user-clock"></i> Tim
                 <span class="nav__badge" id="teamBadge" style="display:none">0</span>
             </a>
-            <a class="nav__link" id="navHistory" onclick="showHistory()" title="Change History">
-                <i class="fas fa-clock-rotate-left"></i> History
-            </a>
         </div>
         <div class="nav-group">
-            <div class="nav-group__label">Warehouse</div>
+            <div class="nav-group__label">Inventaris</div>
             <a class="nav__link" data-view="warehouse" onclick="navigateTo('warehouse')">
                 <i class="fas fa-warehouse"></i> Gudang
             </a>
         </div>
-        <div class="nav-group" data-owner-only style="display:none">
+        <div class="nav-group">
             <div class="nav-group__label">Admin</div>
-            <a class="nav__link" data-view="users" onclick="navigateTo('users')">
+            <a class="nav__link" data-view="users" data-owner-only style="display:none" onclick="navigateTo('users')">
                 <i class="fas fa-users-gear"></i> Users
+            </a>
+            <a class="nav__link" id="navHistory" onclick="showHistory()" title="Change History">
+                <i class="fas fa-clock-rotate-left"></i> History
             </a>
         </div>
     </nav>
@@ -696,6 +715,12 @@
                 </button>
             </div>
             <div class="edit-toolbar__right">
+                <select id="damageGroupFilter" aria-label="Filter kelompok unit" class="btn btn-secondary btn-sm"
+                        onchange="setDamageGroup(this.value)">
+                    <option value="">Semua Kelompok</option>
+                    <option value="tractor">Agricultural Equipment</option>
+                    <option value="heavy">Heavy Equipment</option>
+                </select>
                 <select id="damageTypeFilter" aria-label="Filter tipe kerusakan" class="btn btn-secondary btn-sm">
                     <option value="">Semua Tipe</option>
                     <option value="Mekanis">Mekanis</option>
