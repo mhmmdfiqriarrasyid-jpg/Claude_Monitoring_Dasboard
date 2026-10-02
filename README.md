@@ -75,12 +75,16 @@ Area yang bisa diatur (`ACCESS_AREAS` di `script.js`) — tiap area bernilai
 `none` / `view` / `edit`:
 
 `editUnits`, `implements`, `damage`, `licenseStock`, `teamShift`, `teamLog`,
-`teamMembers`, `teamLogApprove`, `warehouse`, `history`, plus `csv`
-(`none` / `export` / `full`).
+`teamMembers`, `teamLogApprove`, `warehouse`, `inspection`,
+`inspectionApprove`, `history`, plus `csv` (`none` / `export` / `full`).
 
 `teamLogApprove` sengaja terpisah dari `teamLog`: seorang pemeriksa bisa
 menyetujui laporan tanpa bisa mengubah isinya — dan pemisahan itu ditegakkan
 oleh Firestore rules, bukan hanya oleh tampilan.
+
+`inspection` (teknisi: mengisi laporan cek alat berat, membuat jadwal) dan
+`inspectionApprove` (atasan: menyetujui / minta revisi) dipisah dengan alasan
+yang sama.
 
 **Satu akun hanya boleh aktif di satu perangkat.** Login terbaru menang;
 perangkat lain keluar sendiri.
@@ -94,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.259 pemeriksaan di dua puluh sembilan suite, menggerakkan Chromium sungguhan terhadap
+1.310 pemeriksaan di tiga puluh suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -251,7 +255,22 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   persetujuan baru (penanda per akun di localStorage
   `teamApprovalSeen:<uid>:<jenis>`). Foto/surat ditulis SEBELUM laporannya,
   karena rules hanya mengizinkan foto berubah selama laporannya terbuka.
-- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (69 skenario;
+- **Pengecekan Alat Berat (dijaga `tests/inspection_test.js`).** Menu
+  sendiri dengan tiga tab: Status Unit, Jadwal, Laporan Cek. Laporan cek
+  berisi 4 komponen alat berat (Camera AI, Telematic Box, Switch Limiter,
+  Rotary Lamp), masing-masing Baik/Rusak + **1 foto wajib** + catatan (wajib
+  kalau Rusak), lewat alur Draf → Kirim → Disetujui / Perlu Revisi yang sama
+  dengan laporan harian (`TEAM_AREAS` / `INS_AREAS` memilih area aksesnya).
+  **Cek berikutnya = tanggal cek AKTUAL laporan terkirim terakhir + 14 hari**
+  (`INSPECTION_INTERVAL_DAYS`); draf tidak dihitung, laporan yang dikembalikan
+  tetap dihitung (pengecekannya sudah terjadi). Jadwal (`inspectionPlans`)
+  hanya daftar unit per tanggal; cek di luar jadwal tetap sah dan ikut
+  mereset 14 hari. Komponen Rusak masuk ke Kerusakan **setelah disetujui**,
+  oleh akun yang punya akses edit Kerusakan (`applyInspectionFindings`,
+  stempel `appliedAt` supaya hanya sekali); tanpa akses itu muncul di Kotak
+  Keputusan. Foto di `inspectionPhotos/{id}` (tidak di-subscribe), ditulis
+  SEBELUM laporannya.
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (90 skenario;
   bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
   kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
   alur persetujuan laporan/izin (transisi status di atas, kunci isi dan foto

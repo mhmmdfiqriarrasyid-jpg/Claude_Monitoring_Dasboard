@@ -150,6 +150,10 @@
             <a class="nav__link" data-view="damage" onclick="navigateTo('damage')">
                 <i class="fas fa-screwdriver-wrench"></i> Kerusakan
             </a>
+            <a class="nav__link" data-view="inspection" onclick="navigateTo('inspection')">
+                <i class="fas fa-clipboard-check"></i> Pengecekan Alat Berat
+                <span class="nav__badge" id="inspectionBadge" style="display:none">0</span>
+            </a>
             <a class="nav__link" data-view="licenseStock" onclick="navigateTo('licenseStock')">
                 <i class="fas fa-key"></i> Stok Lisensi
             </a>
@@ -1238,6 +1242,163 @@
     </div><!-- /viewLeader -->
 
     <!-- ==================== WAREHOUSE VIEW ==================== -->
+    <!-- ==================== PENGECEKAN ALAT BERAT ==================== -->
+    <!-- Heavy-equipment checks: a schedule, one report per unit (one photo per
+         component, approved or sent back), and the next check 14 days after
+         the actual check date. -->
+    <div id="viewInspection" class="view" style="display:none;">
+        <div class="team-tabbar">
+            <div class="team-tabs" role="tablist" aria-label="Bagian pengecekan">
+                <button class="team-tab ins-tab active" data-tab="status" role="tab" aria-selected="true"
+                        aria-controls="insStatusPanel" onclick="switchInspectionTab('status')">
+                    <i class="fas fa-gauge"></i> Status Unit
+                </button>
+                <button class="team-tab ins-tab" data-tab="plans" role="tab" aria-selected="false"
+                        aria-controls="insPlansPanel" onclick="switchInspectionTab('plans')">
+                    <i class="fas fa-calendar-check"></i> Jadwal
+                </button>
+                <button class="team-tab ins-tab" data-tab="reports" role="tab" aria-selected="false"
+                        aria-controls="insReportsPanel" onclick="switchInspectionTab('reports')">
+                    <i class="fas fa-clipboard-list"></i> Laporan Cek
+                    <span class="team-tab__count team-tab__count--alert" id="insTabBadge" style="display:none" title="Perlu direvisi">0</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="downtime-kpis" style="margin-bottom:16px">
+            <div class="downtime-kpi">
+                <div class="downtime-kpi__label">Terlambat</div>
+                <div class="downtime-kpi__value" id="insKpiOverdue">0</div>
+                <div class="downtime-kpi__sub">Lewat 14 hari dari cek terakhir</div>
+            </div>
+            <div class="downtime-kpi">
+                <div class="downtime-kpi__label">Jatuh Tempo ≤3 Hari</div>
+                <div class="downtime-kpi__value" id="insKpiSoon">0</div>
+                <div class="downtime-kpi__sub">Segera dijadwalkan</div>
+            </div>
+            <div class="downtime-kpi">
+                <div class="downtime-kpi__label">Belum Pernah Dicek</div>
+                <div class="downtime-kpi__value" id="insKpiNever">0</div>
+                <div class="downtime-kpi__sub">Alat berat tanpa laporan cek</div>
+            </div>
+            <div class="downtime-kpi">
+                <div class="downtime-kpi__label">Menunggu Persetujuan</div>
+                <div class="downtime-kpi__value" id="insKpiPending">0</div>
+                <div class="downtime-kpi__sub">Laporan cek belum diperiksa</div>
+            </div>
+        </div>
+
+        <div class="my-notice" id="insMyNotice" style="display:none" role="status"></div>
+
+        <!-- ---------- Status per unit ---------- -->
+        <div id="insStatusPanel" role="tabpanel" aria-label="Status Unit">
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <button class="btn btn-success editonly editonly--inspection" onclick="showInspectionForm()">
+                        <i class="fas fa-plus"></i> Cek Unit
+                    </button>
+                </div>
+                <div class="edit-toolbar__right">
+                    <select id="insStatusFilter" aria-label="Filter status cek" class="btn btn-secondary btn-sm" onchange="renderInspectionStatus()">
+                        <option value="">Semua Status</option>
+                        <option value="overdue">Terlambat</option>
+                        <option value="soon">Jatuh tempo ≤3 hari</option>
+                        <option value="never">Belum pernah dicek</option>
+                        <option value="ok">Aman</option>
+                    </select>
+                    <div class="edit-search">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="insStatusSearch" aria-label="Cari unit" placeholder="Cari unit..." oninput="renderInspectionStatus()">
+                    </div>
+                </div>
+            </div>
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-gauge"></i> Status Pengecekan Alat Berat</div>
+                    <span id="insStatusCount" class="table-card__meta"></span>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table table--cardable" id="insStatusTable">
+                        <thead><tr>
+                            <th>No</th><th>Unit</th><th>Jenis Alat</th><th>Site</th>
+                            <th>Cek Terakhir</th><th>Hasil</th><th>Cek Berikutnya</th><th class="col-actions">Actions</th>
+                        </tr></thead>
+                        <tbody id="insStatusBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ---------- Schedule ---------- -->
+        <div id="insPlansPanel" role="tabpanel" aria-label="Jadwal" style="display:none">
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <button class="btn btn-success insplan-edit" onclick="showInspectionPlanForm()">
+                        <i class="fas fa-calendar-plus"></i> Buat Jadwal
+                    </button>
+                </div>
+            </div>
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-calendar-check"></i> Jadwal Pengecekan</div>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table table--cardable" id="insPlanTable">
+                        <thead><tr>
+                            <th>No</th><th>Tanggal</th><th>Unit</th><th>Progres</th><th>Catatan</th><th class="col-actions">Actions</th>
+                        </tr></thead>
+                        <tbody id="insPlanBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ---------- Reports ---------- -->
+        <div id="insReportsPanel" role="tabpanel" aria-label="Laporan Cek" style="display:none">
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <button class="btn btn-success editonly editonly--inspection" onclick="showInspectionForm()">
+                        <i class="fas fa-plus"></i> Cek Unit
+                    </button>
+                    <button class="btn btn-secondary csv-export" onclick="exportInspectionCSV()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+                <div class="edit-toolbar__right">
+                    <label class="mine-filter" title="Hanya yang saya buat">
+                        <input type="checkbox" id="insMineFilter" onchange="renderInspectionReports()"> Milik saya
+                    </label>
+                    <select id="insApprovalFilter" aria-label="Filter persetujuan" class="btn btn-secondary btn-sm" onchange="renderInspectionReports()">
+                        <option value="">Semua Persetujuan</option>
+                        <option value="draft">Draf</option>
+                        <option value="pending">Menunggu</option>
+                        <option value="approved">Disetujui</option>
+                        <option value="revision">Perlu Revisi</option>
+                    </select>
+                    <div class="edit-search">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="insReportSearch" aria-label="Cari laporan cek" placeholder="Cari laporan..." oninput="renderInspectionReports()">
+                    </div>
+                </div>
+            </div>
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-clipboard-list"></i> Laporan Pengecekan</div>
+                    <span id="insReportCount" class="table-card__meta"></span>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table table--cardable" id="insReportTable">
+                        <thead><tr>
+                            <th>No</th><th>Tanggal Cek</th><th>Unit</th><th>Hasil Komponen</th><th>Jadwal</th>
+                            <th>Pemeriksa</th><th>Persetujuan</th><th>Foto</th><th class="col-actions">Actions</th>
+                        </tr></thead>
+                        <tbody id="insReportBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="viewWarehouse" class="view" style="display:none;">
 
         <div class="warehouse-rules-slot"></div>
@@ -2300,6 +2461,88 @@
                         title="Simpan tanpa mengirim — masih bisa diubah"><i class="fas fa-floppy-disk"></i> Simpan Draf</button>
                 <button type="submit" class="btn btn-primary" id="wlSubmitBtn"
                         title="Kirim ke atasan — terkunci sampai diperiksa"><i class="fas fa-paper-plane"></i> Kirim</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ==================== INSPECTION MODAL ==================== -->
+<div class="modal-overlay" id="inspectionModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="inspectionModalTitle"><i class="fas fa-clipboard-check"></i> Laporan Pengecekan</h3>
+            <button class="btn-icon" onclick="closeInspectionModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form id="inspectionForm" onsubmit="saveInspection(event)">
+            <input type="hidden" id="editInspectionId">
+            <input type="hidden" id="insPlanId">
+            <div class="modal-body">
+                <div class="revision-note" id="insRevisionNote" style="display:none" role="note"></div>
+                <div class="ins-plan-tag" id="insPlanTag" style="display:none"></div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="insUnit">Unit Alat Berat</label>
+                        <select class="form-select" id="insUnit" required></select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="insDate">Tanggal Cek</label>
+                        <input type="date" class="form-input" id="insDate" data-nofuture required>
+                    </div>
+                </div>
+                <p class="ins-help">Isi setiap komponen: kondisi, satu foto, dan catatan kalau rusak.
+                    Cek berikutnya otomatis <strong>14 hari</strong> setelah tanggal cek.</p>
+                <div class="ins-components" id="insComponents"></div>
+                <div class="form-group full-width">
+                    <label class="form-label" for="insNote">Catatan Umum <span class="form-optional">(opsional)</span></label>
+                    <textarea class="form-input form-textarea" id="insNote" rows="2" maxlength="500"
+                              placeholder="Temuan lain, kondisi lapangan…"></textarea>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeInspectionModal()">Batal</button>
+                <button type="button" class="btn btn-secondary" id="insDraftBtn" onclick="saveInspection(event, 'draft')"
+                        title="Simpan tanpa mengirim — masih bisa diubah"><i class="fas fa-floppy-disk"></i> Simpan Draf</button>
+                <button type="submit" class="btn btn-primary" id="insSubmitBtn"
+                        title="Kirim ke atasan — terkunci sampai diperiksa"><i class="fas fa-paper-plane"></i> Kirim</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ==================== INSPECTION PLAN MODAL ==================== -->
+<div class="modal-overlay" id="inspectionPlanModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="inspectionPlanTitle"><i class="fas fa-calendar-plus"></i> Buat Jadwal Pengecekan</h3>
+            <button class="btn-icon" onclick="closeInspectionPlanModal()" aria-label="Tutup" title="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form id="inspectionPlanForm" onsubmit="saveInspectionPlan(event)">
+            <input type="hidden" id="editInspectionPlanId">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="insPlanDate">Tanggal Pengecekan</label>
+                        <input type="date" class="form-input" id="insPlanDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="insPlanNote">Catatan <span class="form-optional">(opsional)</span></label>
+                        <input type="text" class="form-input" id="insPlanNote" maxlength="120" placeholder="Area / tim / keterangan">
+                    </div>
+                </div>
+                <div class="ins-plan-pick__head">
+                    <span>Pilih unit <span id="insPlanPickCount" class="form-optional">(0 dipilih)</span></span>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="selectDueInspectionUnits()">
+                        <i class="fas fa-bolt"></i> Pilih yang jatuh tempo</button>
+                </div>
+                <div class="edit-search" style="margin-bottom:8px">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="insPlanSearch" aria-label="Cari unit" placeholder="Cari unit..." oninput="renderInspectionPlanPicker()">
+                </div>
+                <div class="ins-plan-pick" id="insPlanPick"></div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeInspectionPlanModal()">Batal</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Simpan Jadwal</button>
             </div>
         </form>
     </div>

@@ -134,7 +134,7 @@ const { launch, BASE_URL } = require('./_env');
         t('tanpa akses tim, koleksi tim tidak ikut', 'teamMembers' in exported, false);
         t('dan berkasnya mengakui apa yang tidak ada di dalamnya',
           exported.omitted.map(o => o.key).sort(),
-          ['devices', 'leaveRequests', 'shifts', 'stockItems', 'teamMembers', 'workLogs']);
+          ['devices', 'inspectionPlans', 'inspections', 'leaveRequests', 'shifts', 'stockItems', 'teamMembers', 'workLogs']);
         t('toastnya menyebut yang tidak termasuk',
           toasts.some(m => /TIDAK termasuk/.test(m)), true);
 
@@ -155,10 +155,11 @@ const { launch, BASE_URL } = require('./_env');
         const barisLaporan = [...document.querySelectorAll('#restoreReportBody tr')]
             .map(tr => tr.textContent.replace(/\\s+/g, ' ').trim());
         t('laporan restore muncul', barisLaporan.length > 0, true);
-        // v3 hanya membawa implement, kerusakan, dan stok lisensi — tujuh
-        // koleksi lainnya tidak ada di dalamnya, dan ketujuhnya harus tertulis.
+        // v3 hanya membawa implement, kerusakan, dan stok lisensi — sepuluh
+        // koleksi lainnya (termasuk jadwal & laporan pengecekan) tidak ada di
+        // dalamnya, dan semuanya harus tertulis.
         t('koleksi yang tidak ada di berkas DILAPORKAN, bukan didiamkan',
-          barisLaporan.filter(x => /tidak ada di berkas ini/.test(x)).length, 8);
+          barisLaporan.filter(x => /tidak ada di berkas ini/.test(x)).length, 10);
         t('anggota tim termasuk yang dilaporkan hilang',
           barisLaporan.some(x => /Anggota Tim.*tidak ada di berkas ini/.test(x)), true);
         t('peringatan cadangan lama tampil',
@@ -186,6 +187,8 @@ const { launch, BASE_URL } = require('./_env');
         v4.stockItems = [{ id: 'st1', itemName: 'Oli', txnType: 'IN', qty: 5 }];
         v4.userCategories = [{ id: 'c1', name: 'Harvest' }];
         v4.damageComponents = [{ id: 'dc1', name: 'GPS', unitField: 'gps' }];
+        v4.inspectionPlans = [{ id: 'inp1', date: '2026-10-02', unitIds: [] }];
+        v4.inspections = [{ id: 'ins1', unitId: 'u1', date: '2026-10-01', approval: 'approved' }];
         // Mode GANTI bertanya DUA kali: pertama memilih gabung/ganti (Batal =
         // ganti), lalu meminta penegasan sebelum menghapus. Menjawab "tidak"
         // pada yang kedua membatalkan seluruh restore.

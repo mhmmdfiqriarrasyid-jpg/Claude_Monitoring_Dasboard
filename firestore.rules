@@ -14,6 +14,7 @@ rules_version = '2';
 //            { editUnits:'edit', implements:'view', damage:'edit',
 //              licenseStock:'none', teamShift:'view', teamLog:'edit',
 //              teamMembers:'none', teamLogApprove:'edit', warehouse:'edit',
+//              inspection:'edit', inspectionApprove:'edit',
 //              history:'view', csv:'export' }
 //   Missing override → role default. Only 'owner' (everything) and the legacy
 //   'team' (edit) carry defaults; staff/pbt/khl/viewer grant nothing on their
@@ -66,7 +67,9 @@ service cloud.firestore {
         lvl('teamLog')      == 'edit' ||
         lvl('teamMembers')  == 'edit' ||
         lvl('teamLogApprove') == 'edit' ||
-        lvl('warehouse')    == 'edit'
+        lvl('warehouse')    == 'edit' ||
+        lvl('inspection')   == 'edit' ||
+        lvl('inspectionApprove') == 'edit'
       );
     }
 
@@ -231,6 +234,47 @@ service cloud.firestore {
     match /damagePhotos/{id} {
       allow read:  if canViewArea('damage');
       allow write: if canEditArea('damage');
+    }
+
+    // ---- Heavy-equipment checks ----
+    // Same draft → sent → approved / sent-back flow as the daily report, with
+    // its own two grants: 'inspection' for the technician who checks and
+    // files, 'inspectionApprove' for the supervisor who signs off. The
+    // approval functions above are reused unchanged.
+    function inspectionReader() {
+      return canViewArea('inspection') || canViewArea('inspectionApprove') || canViewArea('leader');
+    }
+    // The schedule is set by whoever checks or approves.
+    match /inspectionPlans/{id} {
+      allow read:   if inspectionReader();
+      allow delete: if canEditArea('inspection') || canEditArea('inspectionApprove');
+      allow create, update: if (canEditArea('inspection') || canEditArea('inspectionApprove')) && idMatches(id);
+    }
+    match /inspections/{id} {
+      allow read:   if inspectionReader();
+      allow create: if isOwner() || (canEditArea('inspection') && newRecord(id));
+      allow delete: if isOwner() || (canEditArea('inspection') && isOpen(resource.data));
+      allow update: if isOwner()
+                    || (idMatches(id) && canEditArea('inspection') && (editorWrite() || withdrawWrite()))
+                    || (canEditArea('inspectionApprove') && approverWrite())
+                    // After approval, whoever keeps the damage log records
+                    // that the findings were carried into it — that stamp
+                    // and nothing else.
+                    || (canEditArea('damage') && apprOf(resource.data) == 'approved'
+                        && request.resource.data.diff(resource.data).affectedKeys()
+                             .hasOnly(['appliedAt', 'appliedBy', 'appliedDamageIds', 'updatedAt']));
+    }
+    // One photo per component. Changes only while its report is open, like
+    // workLogPhotos; a report not written yet is one being created (the app
+    // writes the photos first).
+    function inspectionOpen(id) {
+      return exists(/databases/$(database)/documents/inspections/$(id))
+          ? isOpen(get(/databases/$(database)/documents/inspections/$(id)).data)
+          : true;
+    }
+    match /inspectionPhotos/{id} {
+      allow read:  if canViewArea('inspection') || canViewArea('inspectionApprove');
+      allow write: if isOwner() || (canEditArea('inspection') && inspectionOpen(id));
     }
 
     // ---- Warehouse ----

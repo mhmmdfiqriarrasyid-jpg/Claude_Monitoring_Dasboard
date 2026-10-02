@@ -39,6 +39,8 @@ async function check(name, p, expectOk) {
         await u('both', 'staff', { teamLog: 'edit', teamLogApprove: 'edit' });
         await u('shiftOnly', 'staff', { teamShift: 'view', editUnits: 'edit' });
         await u('nobody', 'khl', {});
+        await u('tech', 'khl', { inspection: 'edit' });
+        await u('sup', 'staff', { inspection: 'view', inspectionApprove: 'edit', damage: 'edit' });
         await setDoc(doc(db, 'workLogs', 'wl_1'), { id: 'wl_1', task: 'x', approval: 'pending', createdByUid: 'writer' });
         await setDoc(doc(db, 'workLogs', 'wl_ok'), { id: 'wl_ok', task: 'x', approval: 'approved', approvedByEmail: 'boss@x.id', createdByUid: 'writer' });
         await setDoc(doc(db, 'workLogs', 'wl_both'), { id: 'wl_both', task: 'x', approval: 'pending', createdByUid: 'both' });
@@ -105,6 +107,31 @@ async function check(name, p, expectOk) {
     await check('izin: mengubah yang sudah disetujui DITOLAK', setDoc(doc(W, 'leaveRequests', 'lv_1'), { dateTo: '2026-12-31', approval: 'pending' }, { merge: true }), false);
     await check('izin: buat draf', setDoc(doc(W, 'leaveRequests', 'lv_d'), { id: 'lv_d', approval: 'draft', createdByUid: 'writer' }), true);
     await check('izin: tarik kembali yang menunggu', (async () => { await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'leaveRequests', 'lv_p'), { id: 'lv_p', approval: 'pending', createdByUid: 'writer' })); })().then(() => setDoc(doc(W, 'leaveRequests', 'lv_p'), { approval: 'draft', updatedAt: 1 }, { merge: true })), true);
+
+    // ---- pengecekan alat berat ----
+    const TE = as('tech'), SU = as('sup');
+    const seedIns = (id, data) => env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'inspections', id), { id, unitId: 'h1', createdByUid: 'tech', ...data }));
+    await check('cek: teknisi membuat jadwal', setDoc(doc(TE, 'inspectionPlans', 'p1'), { id: 'p1', date: '2026-10-02', unitIds: ['h1'] }), true);
+    await check('cek: atasan membuat jadwal', setDoc(doc(SU, 'inspectionPlans', 'p2'), { id: 'p2', date: '2026-10-03', unitIds: ['h1'] }), true);
+    await check('cek: tanpa akses TIDAK bisa membuat jadwal', setDoc(doc(W, 'inspectionPlans', 'p3'), { id: 'p3', date: '2026-10-03', unitIds: [] }), false);
+    await check('cek: tanpa akses TIDAK bisa membaca laporan', (async () => { await seedIns('r0', { approval: 'pending' }); })().then(() => getDoc(doc(W, 'inspections', 'r0'))), false);
+    await check('cek: foto ditulis duluan (laporan belum ada)', setDoc(doc(TE, 'inspectionPhotos', 'r1'), { id: 'r1', photos: { cameraAi: 'data:image/jpeg;base64,AA' } }), true);
+    await check('cek: teknisi mengirim laporan', setDoc(doc(TE, 'inspections', 'r1'), { id: 'r1', unitId: 'h1', approval: 'pending', createdByUid: 'tech' }), true);
+    await check('cek: teknisi membuat laporan "approved" DITOLAK', setDoc(doc(TE, 'inspections', 'r2'), { id: 'r2', unitId: 'h1', approval: 'approved', createdByUid: 'tech' }), false);
+    await check('cek: laporan menunggu TIDAK bisa diubah teknisi', setDoc(doc(TE, 'inspections', 'r1'), { date: '2026-01-01' }, { merge: true }), false);
+    await check('cek: foto laporan menunggu TIDAK bisa diganti', setDoc(doc(TE, 'inspectionPhotos', 'r1'), { id: 'r1', photos: {} }), false);
+    await check('cek: teknisi tidak bisa menyetujui', setDoc(doc(TE, 'inspections', 'r1'), { approval: 'approved', approvedByEmail: 'tech@x.id' }, { merge: true }), false);
+    await check('cek: pengguna laporan harian (teamLogApprove) tidak bisa menyetujui laporan cek', setDoc(doc(B, 'inspections', 'r1'), { approval: 'approved', approvedByEmail: 'boss@x.id', approvedAt: 1 }, { merge: true }), false);
+    await check('cek: atasan menyetujui', setDoc(doc(SU, 'inspections', 'r1'), { approval: 'approved', approvedBy: 'Sup', approvedByEmail: 'sup@x.id', approvedAt: 1, revisionNote: '', updatedAt: 1 }, { merge: true }), true);
+    await check('cek: atasan mencatat temuan sudah diterapkan', setDoc(doc(SU, 'inspections', 'r1'), { appliedAt: 2, appliedBy: 'Sup', appliedDamageIds: ['d1'], updatedAt: 2 }, { merge: true }), true);
+    await check('cek: stempel diterapkan sambil mengubah hasil DITOLAK', setDoc(doc(SU, 'inspections', 'r1'), { appliedAt: 3, results: { cameraAi: 'good' } }, { merge: true }), false);
+    await check('cek: laporan disetujui TIDAK bisa dihapus teknisi', deleteDoc(doc(TE, 'inspections', 'r1')), false);
+    await check('cek: atasan membuka kembali (minta revisi)', setDoc(doc(SU, 'inspections', 'r1'), { approval: 'revision', revisionNote: 'foto buram', approvedBy: '', approvedByEmail: '', approvedAt: 0, updatedAt: 4 }, { merge: true }), true);
+    await check('cek: setelah revisi teknisi boleh mengganti foto', setDoc(doc(TE, 'inspectionPhotos', 'r1'), { id: 'r1', photos: { cameraAi: 'data:image/jpeg;base64,BB' } }), true);
+    await check('cek: dan mengirim ulang', setDoc(doc(TE, 'inspections', 'r1'), { approval: 'pending', revisionNote: '' }, { merge: true }), true);
+    await check('cek: atasan tidak bisa menyetujui laporannya sendiri', (async () => { await seedIns('r3', { approval: 'pending', createdByUid: 'sup' }); })().then(() => setDoc(doc(SU, 'inspections', 'r3'), { approval: 'approved', approvedByEmail: 'sup@x.id', approvedAt: 1 }, { merge: true })), false);
+    await check('cek: foto laporan bisa dibaca atasan', getDoc(doc(SU, 'inspectionPhotos', 'r1')), true);
+    await check('cek: foto laporan TIDAK bisa dibaca tanpa akses', getDoc(doc(N, 'inspectionPhotos', 'r1')), false);
 
     // ---- baca per area ----
     await check('surat sakit: tanpa akses laporan TIDAK bisa dibaca', getDoc(doc(N, 'workLogPhotos', 'lv_1')), false);

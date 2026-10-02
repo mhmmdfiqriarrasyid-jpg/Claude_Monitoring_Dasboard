@@ -63,6 +63,11 @@ let cloudWorkLogsUnsub = null;
 let workLogs = [];                   // [{ id, date, memberId, start, end, unitId, task, issue }]
 let cloudLeaveUnsub = null;
 let leaveRequests = [];              // [{ id, memberId, type, dateFrom, dateTo, days, reason, approval }]
+// Heavy-equipment checks — see the PENGECEKAN ALAT BERAT section.
+let inspectionPlans = [];            // [{ id, date, unitIds[], note, createdBy… }]
+let inspections = [];                // [{ id, unitId, date, planId, results{}, notes{}, approval… }]
+let cloudInspectionPlansUnsub = null;
+let cloudInspectionsUnsub = null;
 
 // ---- Warehouse (cloud-only, same pattern as the team collections) ----
 let cloudDevicesUnsub = null;
@@ -87,7 +92,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v132';
+const APP_VERSION = 'v133';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -639,6 +644,8 @@ const MODAL_CLOSERS = {
     damageModal:          'closeDamageModal',
     licenseModal:         'closeLicenseModal',
     licSyncModal:         'closeLicSyncModal',
+    inspectionModal:      'closeInspectionModal',
+    inspectionPlanModal:  'closeInspectionPlanModal',
     categoriesModal:      'closeCategoriesModal',
     damageComponentsModal:'closeDamageComponentsModal',
     accessModal:          'closeAccessModal',
@@ -1004,6 +1011,8 @@ function navigateTo(view) {
     if (whView) whView.style.display = (view === 'warehouse') ? 'block' : 'none';
     const leaderView = document.getElementById('viewLeader');
     if (leaderView) leaderView.style.display = (view === 'leader') ? 'block' : 'none';
+    const insView = document.getElementById('viewInspection');
+    if (insView) insView.style.display = (view === 'inspection') ? 'block' : 'none';
     const usersView = document.getElementById('viewUsers');
     if (usersView) usersView.style.display = (view === 'users') ? 'block' : 'none';
 
@@ -1065,6 +1074,8 @@ function navigateTo(view) {
         populateWarehouseFilters();
         renderWarehouseView();
     }
+
+    if (view === 'inspection') renderInspectionView();
 
     if (view === 'leader') {
         // Pending sign-ups only load once the owner's user subscription runs.
@@ -2304,6 +2315,15 @@ const BACKUP_PARTS = [
       bulk: 'saveLeaveRequests',
       deleteOne: (id, r) => { window.cloud.deleteLeaveRequest(id); if (leaveDocCount(r) > 0) _dropPhotoDoc('deleteTeamDocs', id); } },
 
+    { key: 'inspectionPlans', label: 'Jadwal Pengecekan', area: 'inspection',
+      read: () => inspectionPlans, write: l => { inspectionPlans = l; },
+      bulk: 'saveInspectionPlans', deleteOne: id => window.cloud.deleteInspectionPlan(id) },
+
+    { key: 'inspections', label: 'Laporan Pengecekan', area: 'inspection',
+      read: () => inspections, write: l => { inspections = l; },
+      bulk: 'saveInspections',
+      deleteOne: (id, r) => { window.cloud.deleteInspection(id); if (Number(r && r.photoCount) > 0) _dropPhotoDoc('deleteInspectionPhotos', id); } },
+
     { key: 'devices', label: 'Perangkat Gudang', area: 'warehouse',
       read: () => warehouseDevices, write: l => { warehouseDevices = l; },
       bulk: 'saveDevices', deleteOne: id => window.cloud.deleteDevice(id) },
@@ -2543,7 +2563,11 @@ const BACKUP_PHOTO_KINDS = [
       present: v => Array.isArray(v) && v.length > 0, cache: () => _wlPhotoCache },
     { key: 'leaveDocs', label: 'Surat izin / sakit', part: 'leaveRequests', area: 'teamLog',
       has: r => leaveDocCount(r) > 0, get: 'getTeamDocs', save: 'saveTeamDocs',
-      present: v => Array.isArray(v) && v.length > 0, cache: () => _leaveDocCache }
+      present: v => Array.isArray(v) && v.length > 0, cache: () => _leaveDocCache },
+    { key: 'inspectionPhotos', label: 'Foto pengecekan', part: 'inspections', area: 'inspection',
+      has: r => Number(r.photoCount) > 0, get: 'getInspectionPhotos', save: 'saveInspectionPhotos',
+      present: v => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length > 0,
+      cache: () => _insPhotoCache }
 ];
 
 // Backups from before photos had their own collections carry them INSIDE the
@@ -4428,7 +4452,7 @@ function _editRowHeavy(d, i, ce) {
         <tr>
             <td class="col-check"><input type="checkbox" class="unit-check" data-id="${id}" onchange="updateSelectedCount()"></td>
             <td>${i + 1}</td>
-            ${cell('Nickname', 'name')}${cell('Model', 'model')}
+            <td data-label="Nickname"><span class="inline-edit" contenteditable="${ce}" data-id="${id}" data-field="name" onblur="saveInlineEdit(this)">${escapeHtml(d.name == null ? '' : d.name)}</span>${inspectionChipFor(d)}</td>${cell('Model', 'model')}
             <td data-label="SN" style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
             ${cell('Jenis Alat', 'machineType')}${cell('Nomor Lambung', 'assetCode')}${cell('Alat Kerja', 'workTool')}
             ${cell('Status', 'status')}
@@ -8810,6 +8834,19 @@ function initCloudSync() {
                 }
             );
         }
+        // Checks are read by whoever checks, approves, or reads the inbox —
+        // the same set firestore.rules lets read them.
+        const canReadChecks = ['inspection', 'inspectionApprove', 'leader'].some(a => hasAccess(a, 'view'));
+        if (window.cloud.subscribeInspections && canReadChecks) {
+            cloudInspectionsUnsub = window.cloud.subscribeInspections(
+                applyCloudInspectionsSnapshot,
+                err => console.warn('[cloud] inspections offline:', err && err.code)
+            );
+            cloudInspectionPlansUnsub = window.cloud.subscribeInspectionPlans(
+                applyCloudInspectionPlansSnapshot,
+                err => console.warn('[cloud] inspectionPlans offline:', err && err.code)
+            );
+        }
         if (window.cloud.subscribeLeaveRequests && (canReadLogs || hasAccess('teamShift', 'view'))) {
             cloudLeaveUnsub = window.cloud.subscribeLeaveRequests(
                 applyCloudLeaveSnapshot,
@@ -8961,6 +8998,11 @@ function tearDownCloudSync() {
     _shiftWindowStart = '';
     if (cloudWorkLogsUnsub) { try { cloudWorkLogsUnsub(); } catch (_) {} cloudWorkLogsUnsub = null; }
     if (cloudLeaveUnsub) { try { cloudLeaveUnsub(); } catch (_) {} cloudLeaveUnsub = null; }
+    if (cloudInspectionsUnsub) { try { cloudInspectionsUnsub(); } catch (_) {} cloudInspectionsUnsub = null; }
+    if (cloudInspectionPlansUnsub) { try { cloudInspectionPlansUnsub(); } catch (_) {} cloudInspectionPlansUnsub = null; }
+    inspections = [];
+    inspectionPlans = [];
+    _insPhotoCache.clear();
     teamMembers = [];
     teamShifts = [];
     workLogs = [];
@@ -9350,6 +9392,11 @@ const ACCESS_AREAS = [
     // report without being able to rewrite the thing they are checking.
     { key: 'teamLogApprove', label: 'Persetujuan Laporan', levels: ['none', 'edit'] },
     { key: 'warehouse',    label: 'Gudang',         levels: ['none', 'view', 'edit'] },
+    // Heavy-equipment checks: the technician who checks and files, and —
+    // separately, for the same reason as teamLogApprove — the supervisor who
+    // approves or sends a report back.
+    { key: 'inspection',        label: 'Pengecekan Alat Berat',  levels: ['none', 'view', 'edit'] },
+    { key: 'inspectionApprove', label: 'Persetujuan Pengecekan', levels: ['none', 'edit'] },
     // Read-only by nature: it shows what other areas already allow, nothing more.
     { key: 'leader',       label: 'Kotak Keputusan', levels: ['none', 'view'] },
     { key: 'history',      label: 'History',        levels: ['none', 'view'] }
@@ -9366,6 +9413,7 @@ const VIEW_AREAS = {
     licenseStock: ['licenseStock'],
     team:         ['teamShift', 'teamLog', 'teamMembers', 'teamLogApprove'],
     warehouse:    ['warehouse'],
+    inspection:   ['inspection', 'inspectionApprove'],
     leader:       ['leader']
 };
 const GATED_VIEWS = Object.keys(VIEW_AREAS);
@@ -9380,7 +9428,7 @@ const RO_FLAGS = {
     editUnits: 'roEditunits', implements: 'roImplements', damage: 'roDamage',
     licenseStock: 'roLicense', teamShift: 'roTeamshift', teamLog: 'roTeamlog',
     teamMembers: 'roTeammembers', teamLogApprove: 'roTeamapprove',
-    warehouse: 'roWarehouse'
+    warehouse: 'roWarehouse', inspection: 'roInspection'
 };
 const _LVL_RANK = { none: 0, view: 1, edit: 2 };
 
@@ -10097,23 +10145,28 @@ function visibleToMe(rec) {
     return isSubmitted(rec) || isOwner() || isMyRecord(rec) || !rec.createdByUid;
 }
 
-function canEditTeamRecord(rec) {
-    if (!hasAccess('teamLog', 'edit')) return false;
+// `areas` names the grants behind a record kind: the daily report and leave
+// use teamLog / teamLogApprove, heavy-equipment checks use inspection /
+// inspectionApprove. Same flow, same rules, different people.
+const TEAM_AREAS = { edit: 'teamLog', approve: 'teamLogApprove' };
+
+function canEditTeamRecord(rec, areas = TEAM_AREAS) {
+    if (!hasAccess(areas.edit, 'edit')) return false;
     return isOwner() || approvalOpen(rec);
 }
 
 // Withdrawing belongs to whoever sent it. Records from before authors were
 // recorded have no sender to match, so any editor may pull those back.
-function canWithdrawTeamRecord(rec) {
-    if (!hasAccess('teamLog', 'edit') || workLogApproval(rec) !== 'pending') return false;
+function canWithdrawTeamRecord(rec, areas = TEAM_AREAS) {
+    if (!hasAccess(areas.edit, 'edit') || workLogApproval(rec) !== 'pending') return false;
     return isOwner() || !rec.createdByUid || isMyRecord(rec);
 }
 
 // Why the edit button is shut, in the words the person needs.
-function lockedReason(rec, noun) {
+function lockedReason(rec, noun, areas = TEAM_AREAS) {
     const st = workLogApproval(rec);
     if (st === 'pending') {
-        return canWithdrawTeamRecord(rec)
+        return canWithdrawTeamRecord(rec, areas)
             ? `${noun} sedang menunggu persetujuan — tarik kembali dulu untuk mengubahnya`
             : `${noun} sedang menunggu persetujuan dan belum bisa diubah`;
     }
@@ -10121,16 +10174,16 @@ function lockedReason(rec, noun) {
     return '';
 }
 
-function canApproveWorkLogs() {
-    return hasAccess('teamLogApprove', 'edit');
+function canApproveWorkLogs(areas = TEAM_AREAS) {
+    return hasAccess(areas.approve, 'edit');
 }
 
 // Checking your own work is not a check. Blocked on the account that filed the
 // report, not on the team member it is about — an admin may legitimately file
 // on someone else's behalf. Owners are exempt so a one-person setup is not
 // deadlocked, and older reports have no author recorded, so they pass.
-function canApproveThisLog(w) {
-    if (!canApproveWorkLogs()) return false;
+function canApproveThisLog(w, areas = TEAM_AREAS) {
+    if (!canApproveWorkLogs(areas)) return false;
     if (isOwner()) return true;
     return !(w && w.createdByUid && currentUser && w.createdByUid === currentUser.uid);
 }
@@ -11103,7 +11156,7 @@ function renderWorkLogTable() {
 // The Persetujuan cell, shared by reports and leave. The checker approves only
 // what was actually sent, and may send back what is waiting or reopen what
 // was already approved — the one way an approved record becomes editable.
-function approvalCell(rec, noun, approveFn, reviseFn) {
+function approvalCell(rec, noun, approveFn, reviseFn, areas = TEAM_AREAS) {
     const st = workLogApproval(rec);
     const meta = st === 'approved'
         ? `Disetujui ${rec.approvedBy || '-'}${rec.approvedAt ? ' · ' + formatUserTime(rec.approvedAt) : ''}`
@@ -11115,7 +11168,7 @@ function approvalCell(rec, noun, approveFn, reviseFn) {
     if (st === 'revision' && rec.revisionNote) {
         html += `<span class="appr-note" title="${escapeHtml(rec.revisionNote)}">${escapeHtml(rec.revisionNote.slice(0, 60))}</span>`;
     }
-    if (canApproveThisLog(rec) && (st === 'pending' || st === 'approved')) {
+    if (canApproveThisLog(rec, areas) && (st === 'pending' || st === 'approved')) {
         html += `<span class="appr-actions">
             ${st === 'pending' ? `<button class="btn appr-btn appr-btn--ok" title="Setujui ${noun}" aria-label="Setujui ${noun}" onclick="${approveFn}(${jsArg(rec.id)})"><i class="fas fa-check"></i></button>` : ''}
             <button class="btn appr-btn appr-btn--rev" title="${st === 'approved' ? 'Buka kembali — minta revisi' : 'Minta revisi'}" aria-label="Minta revisi ${noun}" onclick="${reviseFn}(${jsArg(rec.id)})"><i class="fas fa-rotate-left"></i>${st === 'approved' ? ' Buka' : ''}</button>
@@ -11126,16 +11179,16 @@ function approvalCell(rec, noun, approveFn, reviseFn) {
 
 // Edit / delete while the record is open; a padlock (and, for the sender, a
 // withdraw button) while it is with the checker or approved.
-function rowActionsFor(rec, noun, editFn, deleteFn, withdrawFn) {
-    if (canEditTeamRecord(rec)) {
+function rowActionsFor(rec, noun, editFn, deleteFn, withdrawFn, areas = TEAM_AREAS) {
+    if (canEditTeamRecord(rec, areas)) {
         return `<div class="row-actions">
             <button class="btn btn-secondary" title="Edit" aria-label="Edit ${noun.toLowerCase()}" onclick="${editFn}(${jsArg(rec.id)})"><i class="fas fa-pen"></i></button>
             <button class="btn btn-secondary" title="Hapus" aria-label="Hapus ${noun.toLowerCase()}" onclick="${deleteFn}(${jsArg(rec.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
         </div>`;
     }
-    const why = lockedReason(rec, noun);
+    const why = lockedReason(rec, noun, areas);
     return `<div class="row-actions">
-        ${canWithdrawTeamRecord(rec) ? `<button class="btn btn-secondary" title="Tarik kembali ke draf" aria-label="Tarik kembali ${noun.toLowerCase()}" onclick="${withdrawFn}(${jsArg(rec.id)})"><i class="fas fa-arrow-rotate-left"></i></button>` : ''}
+        ${canWithdrawTeamRecord(rec, areas) ? `<button class="btn btn-secondary" title="Tarik kembali ke draf" aria-label="Tarik kembali ${noun.toLowerCase()}" onclick="${withdrawFn}(${jsArg(rec.id)})"><i class="fas fa-arrow-rotate-left"></i></button>` : ''}
         <span class="row-lock" title="${escapeHtml(why)}" aria-label="${escapeHtml(why)}"><i class="fas fa-lock"></i></span>
     </div>`;
 }
@@ -13184,6 +13237,46 @@ function decisionGroups() {
         });
     }
 
+    // ---- Pengecekan alat berat ----
+    if (['inspection', 'inspectionApprove', 'leader'].some(x => hasAccess(x, 'view'))) {
+        const today = toISODate();
+        const st = inspectableUnits().map(u => ({ u, s: inspectionStatusFor(u, today) }));
+        const late = st.filter(x => x.s.key === 'overdue').sort((a, b) => a.s.days - b.s.days);
+        add({
+            key: 'insOverdue', icon: 'clipboard-check', tone: 'danger',
+            title: 'Alat berat terlambat dicek',
+            total: late.length,
+            items: late.slice(0, 6).map(x => ({ text: x.u.name || x.u.sn || '-', sub: `${x.s.label} · cek terakhir ${x.s.last.date}` })),
+            goto: 'inspection:overdue'
+        });
+        const soon = st.filter(x => x.s.key === 'soon').sort((a, b) => a.s.days - b.s.days);
+        add({
+            key: 'insSoon', icon: 'calendar-check', tone: 'warning',
+            title: `Alat berat jatuh tempo cek (≤${INSPECTION_SOON_DAYS} hari)`,
+            total: soon.length,
+            items: soon.slice(0, 6).map(x => ({ text: x.u.name || x.u.sn || '-', sub: `${x.s.label} · ${x.s.next}` })),
+            goto: 'inspection:soon'
+        });
+        const waiting = inspections.filter(r => workLogApproval(r) === 'pending');
+        add({
+            key: 'insPending', icon: 'clipboard-list', tone: 'warning',
+            title: 'Laporan cek menunggu persetujuan',
+            total: waiting.length,
+            items: waiting.slice(0, 6).map(r => ({ text: `${inspectionUnitLabel(r)} · ${r.date}`, sub: inspectionResultSummary(r).text })),
+            goto: 'inspection:pending'
+        });
+        if (hasAccess('damage', 'edit')) {
+            const unapplied = inspections.filter(inspectionNeedsApply);
+            add({
+                key: 'insApply', icon: 'screwdriver-wrench', tone: 'danger',
+                title: 'Temuan cek disetujui, belum dicatat di Kerusakan',
+                total: unapplied.length,
+                items: unapplied.slice(0, 6).map(r => ({ text: `${inspectionUnitLabel(r)} · ${r.date}`, sub: inspectionResultSummary(r).text })),
+                goto: 'inspection:approved'
+            });
+        }
+    }
+
     // ---- Lisensi habis / segera habis ----
     if (hasAccess('editUnits', 'view')) {
         const alerts = _buildAlertList();
@@ -13309,6 +13402,22 @@ function goDecision(target) {
         if (currentView === 'editUnits') switchEditUnitsGroup(target.slice(10), { persist: false });
         return;
     }
+    if (typeof target === 'string' && target.startsWith('inspection:')) {
+        navigateTo('inspection');
+        if (currentView !== 'inspection') return;
+        const what = target.slice(11);
+        if (what === 'overdue' || what === 'soon') {
+            inspectionTab = 'status';
+            const f = document.getElementById('insStatusFilter');
+            if (f) f.value = what;
+        } else {
+            inspectionTab = 'reports';
+            const f = document.getElementById('insApprovalFilter');
+            if (f) f.value = what;
+        }
+        renderInspectionView();
+        return;
+    }
     if (typeof target === 'string' && target.startsWith('dashboard:')) {
         navigateTo('dashboard');
         if (currentView === 'dashboard') setDashGroup(target.slice(10), { persist: false });
@@ -13423,6 +13532,7 @@ function scheduleDecisionRefresh() {
 // The sidebar badge is what makes this page get opened at all.
 function updateDecisionBadge() {
     updateMyTeamNotices();
+    updateInspectionBadge();
     const el = document.getElementById('decisionBadge');
     if (!el) return;
     if (!canViewView('leader')) { el.style.display = 'none'; return; }
@@ -13445,7 +13555,11 @@ const TEAM_NOTICE_KINDS = {
     worklog: { part: 'workLogs',      noun: 'laporan',   list: () => workLogs,      edit: 'editWorkLog',
                box: 'wlMyNotice', tab: 'wlTabBadge', label: r => `${r.date || '-'} · ${memberNameOf(r)}` },
     leave:   { part: 'leaveRequests', noun: 'pengajuan', list: () => leaveRequests, edit: 'editLeave',
-               box: 'lvMyNotice', tab: 'lvTabBadge', label: r => `${leaveTypeLabel(r)} ${leaveRangeLabel(r)} · ${memberNameOf(r)}` }
+               box: 'lvMyNotice', tab: 'lvTabBadge', label: r => `${leaveTypeLabel(r)} ${leaveRangeLabel(r)} · ${memberNameOf(r)}` },
+    // Its own menu, so its revisions count on its own badge, not on Tim's.
+    inspection: { part: 'inspections', noun: 'laporan cek', list: () => inspections, edit: 'editInspection',
+               box: 'insMyNotice', tab: 'insTabBadge', area: 'inspection', ownNav: true,
+               label: r => `${r.date || '-'} · ${inspectionUnitLabel(r)}` }
 };
 
 function approvalSeenKey() { return 'teamApprovalSeen:' + myUid(); }
@@ -13461,7 +13575,7 @@ function updateMyTeamNotices() {
     Object.entries(TEAM_NOTICE_KINDS).forEach(([kind, k]) => {
         const mine = uid ? k.list().filter(isMyRecord) : [];
         const rev = mine.filter(r => workLogApproval(r) === 'revision');
-        totalRevision += rev.length;
+        if (!k.ownNav) totalRevision += rev.length;
         const tab = document.getElementById(k.tab);
         if (tab) { tab.textContent = String(rev.length); tab.style.display = rev.length ? '' : 'none'; }
         renderMyNoticeBox(kind, mine);
@@ -13483,7 +13597,7 @@ function renderMyNoticeBox(kind, mine) {
     const pending = mine.filter(r => workLogApproval(r) === 'pending').length;
     const drafts = mine.filter(r => workLogApproval(r) === 'draft').length;
     if (!rev.length && !pending && !drafts) { box.style.display = 'none'; box.innerHTML = ''; return; }
-    const canFix = hasAccess('teamLog', 'edit');
+    const canFix = hasAccess(k.area || 'teamLog', 'edit');
     const facts = [
         drafts ? `${drafts} draf belum dikirim` : '',
         pending ? `${pending} ${k.noun} menunggu persetujuan` : ''
@@ -13503,10 +13617,12 @@ function renderMyNoticeBox(kind, mine) {
 }
 
 function showMineOnly(kind) {
-    const id = kind === 'leave' ? 'lvMineFilter' : 'wlMineFilter';
+    const id = { leave: 'lvMineFilter', inspection: 'insMineFilter' }[kind] || 'wlMineFilter';
     const cb = document.getElementById(id);
     if (cb) cb.checked = true;
-    if (kind === 'leave') renderLeaveTable(); else renderWorkLogTable();
+    if (kind === 'leave') renderLeaveTable();
+    else if (kind === 'inspection') { inspectionTab = 'reports'; renderInspectionView(); }
+    else renderWorkLogTable();
 }
 
 // Waits for the collection to arrive from the server: on the cached copy
@@ -14257,6 +14373,951 @@ function renderLeaderView() {
     else if (leaderTab === 'company') renderCompanyRecap();
     else if (leaderTab === 'check') renderDataCheck();
     else renderWeekSummary();
+}
+
+// ============================================================
+// PENGECEKAN ALAT BERAT — heavy-equipment checks
+// ------------------------------------------------------------
+// A technician checks a heavy unit's four components (Camera AI, Telematic
+// Box, Switch Limiter, Rotary Lamp), one photo each, and files a report that
+// goes through the same Draf → Kirim → Menunggu → Disetujui / Perlu Revisi
+// flow as the daily report — on its own two grants (inspection /
+// inspectionApprove), enforced in firestore.rules.
+//
+// The next check is due INSPECTION_INTERVAL_DAYS after the ACTUAL check date
+// of the unit's latest sent report — not the scheduled date — so a check
+// done three days late moves the next one with it. A schedule (inspectionPlans)
+// lists the units to check on a day; a unit can always be checked outside it.
+//
+// Components found broken reach the damage log only once a report is
+// approved, and only through someone allowed to write it (see
+// applyInspectionFindings).
+// ============================================================
+const INS_AREAS = { edit: 'inspection', approve: 'inspectionApprove' };
+const INSPECTION_INTERVAL_DAYS = 14;
+const INSPECTION_SOON_DAYS = 3;
+// Four photos share one document under Firestore's 1 MB cap.
+const INS_PHOTO_OPTS = { maxDim: 1024, maxBytes: 200 * 1024, quality: 0.7 };
+const INS_RESULT = { good: 'Baik', bad: 'Rusak' };
+const _insPhotoCache = new Map();   // report id -> { componentKey: dataURL }
+let inspectionTab = 'status';
+
+function inspectionComponents() { return UNIT_GROUPS.heavy.components; }
+
+function inspectableUnits() {
+    return globalData.filter(u => isHeavy(u))
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+}
+
+function generateInspectionId() {
+    return 'ins_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+}
+function generateInspectionPlanId() {
+    return 'inp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+}
+
+function addDaysISO(iso, n) {
+    const d = parseLocalDate(iso);
+    if (!d) return '';
+    d.setDate(d.getDate() + n);
+    return toISODate(d);
+}
+
+function daysFromTo(fromIso, toIso) {
+    const a = parseLocalDate(fromIso), b = parseLocalDate(toIso);
+    if (!a || !b) return 0;
+    return Math.round((b - a) / 86400000);
+}
+
+function canPlanInspections() {
+    return hasAccess('inspection', 'edit') || hasAccess('inspectionApprove', 'edit');
+}
+
+function inspectionUnitLabel(rec) {
+    const live = liveUnitFor({ unitId: rec.unitId, sn: rec.sn });
+    return (live && live.name) || rec.unitName || rec.sn || '(unit)';
+}
+
+// A sent report counts as the unit having been checked — waiting, approved,
+// or sent back to have the REPORT fixed (the check itself happened). A draft
+// does not: nothing has been handed in.
+function lastInspectionFor(unitId) {
+    let best = null;
+    inspections.forEach(r => {
+        if (r.unitId !== unitId || !isSubmitted(r) || !r.date) return;
+        if (!best || r.date > best.date || (r.date === best.date && (r.submittedAt || 0) > (best.submittedAt || 0))) best = r;
+    });
+    return best;
+}
+
+function inspectionStatusFor(unit, today) {
+    today = today || toISODate();
+    const last = lastInspectionFor(unit.id);
+    if (!last) return { key: 'never', label: 'Belum pernah dicek', last: null, next: '', days: null };
+    const next = addDaysISO(last.date, INSPECTION_INTERVAL_DAYS);
+    const days = daysFromTo(today, next);
+    if (days < 0) return { key: 'overdue', label: `Terlambat ${-days} hari`, last, next, days };
+    if (days <= INSPECTION_SOON_DAYS) return { key: 'soon', label: days === 0 ? 'Hari ini' : `${days} hari lagi`, last, next, days };
+    return { key: 'ok', label: `${days} hari lagi`, last, next, days };
+}
+
+function inspectionBadBits(rec) {
+    return inspectionComponents().filter(c => (rec.results || {})[c.key] === 'bad');
+}
+
+function inspectionResultSummary(rec) {
+    const bad = inspectionBadBits(rec);
+    if (!bad.length) return { tone: 'good', text: 'Semua baik' };
+    return { tone: 'bad', text: `${bad.length} rusak: ${bad.map(c => c.label).join(', ')}` };
+}
+
+// Done for a plan: a sent report linked to it, or any sent report of that
+// unit on or after the plan date (checked "outside" the plan still counts).
+function planUnitDone(plan, unitId) {
+    return inspections.some(r => r.unitId === unitId && isSubmitted(r)
+        && (r.planId === plan.id || (r.date && r.date >= plan.date)));
+}
+
+function planProgress(plan) {
+    const ids = plan.unitIds || [];
+    const done = ids.filter(id => planUnitDone(plan, id)).length;
+    return { done, total: ids.length };
+}
+
+// The open plan a check of this unit belongs to: the earliest one that lists
+// it and is not yet done for it.
+function openPlanFor(unitId) {
+    return inspectionPlans
+        .filter(p => (p.unitIds || []).includes(unitId) && !planUnitDone(p, unitId))
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)))[0] || null;
+}
+
+// ---- Snapshots ----
+function applyCloudInspectionsSnapshot(list) {
+    _markLoaded('inspections');
+    inspections = (list || []).slice().sort((a, b) =>
+        String(b.date || '').localeCompare(String(a.date || '')) || ((b.createdAt || 0) - (a.createdAt || 0)));
+    if (currentView === 'inspection') renderInspectionView();
+    if (currentView === 'editUnits') renderEditTable();
+    scheduleDecisionRefresh();
+}
+
+function applyCloudInspectionPlansSnapshot(list) {
+    _markLoaded('inspectionPlans');
+    inspectionPlans = (list || []).slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    if (currentView === 'inspection') renderInspectionView();
+    scheduleDecisionRefresh();
+}
+
+// ---- View ----
+function switchInspectionTab(tab) {
+    inspectionTab = ['status', 'plans', 'reports'].includes(tab) ? tab : 'status';
+    renderInspectionView();
+}
+
+function renderInspectionView() {
+    const panels = { status: 'insStatusPanel', plans: 'insPlansPanel', reports: 'insReportsPanel' };
+    document.querySelectorAll('#viewInspection .ins-tab').forEach(btn => {
+        const on = btn.dataset.tab === inspectionTab;
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    Object.entries(panels).forEach(([k, id]) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = k === inspectionTab ? '' : 'none';
+    });
+    document.querySelectorAll('#viewInspection .insplan-edit').forEach(b => { b.style.display = canPlanInspections() ? '' : 'none'; });
+
+    const today = toISODate();
+    const st = inspectableUnits().map(u => inspectionStatusFor(u, today));
+    const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    setText('insKpiOverdue', st.filter(s => s.key === 'overdue').length);
+    setText('insKpiSoon', st.filter(s => s.key === 'soon').length);
+    setText('insKpiNever', st.filter(s => s.key === 'never').length);
+    setText('insKpiPending', inspections.filter(r => workLogApproval(r) === 'pending').length);
+
+    if (inspectionTab === 'status') renderInspectionStatus();
+    else if (inspectionTab === 'plans') renderInspectionPlans();
+    else renderInspectionReports();
+    updateMyTeamNotices();
+}
+
+const INS_STATUS_ORDER = { overdue: 0, soon: 1, never: 2, ok: 3 };
+
+function insStatusBadge(s) {
+    return `<span class="ins-st ins-st--${s.key}" title="${escapeHtml(s.next ? 'Cek berikutnya ' + s.next : 'Belum ada laporan cek terkirim')}">${escapeHtml(s.label)}</span>`;
+}
+
+function renderInspectionStatus() {
+    const tbody = document.getElementById('insStatusBody');
+    if (!tbody) return;
+    const filter = document.getElementById('insStatusFilter')?.value || '';
+    const q = (document.getElementById('insStatusSearch')?.value || '').toLowerCase().trim();
+    const today = toISODate();
+    const canCheck = hasAccess('inspection', 'edit');
+    const rows = inspectableUnits()
+        .map(u => ({ u, s: inspectionStatusFor(u, today) }))
+        .filter(({ u, s }) => (!filter || s.key === filter)
+            && (!q || `${u.name} ${u.sn} ${u.assetCode || ''} ${u.machineType || ''} ${u.site || ''}`.toLowerCase().includes(q)))
+        .sort((a, b) => (INS_STATUS_ORDER[a.s.key] - INS_STATUS_ORDER[b.s.key])
+            || ((a.s.days == null ? 0 : a.s.days) - (b.s.days == null ? 0 : b.s.days))
+            || String(a.u.name || '').localeCompare(String(b.u.name || '')));
+    const count = document.getElementById('insStatusCount');
+    if (count) count.textContent = `${rows.length} unit`;
+    if (!rows.length) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+            inspectableUnits().length ? 'Tidak ada unit yang cocok dengan filter' : 'Belum ada unit Alat Berat di Unit Database.'}</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = rows.map(({ u, s }, i) => {
+        const res = s.last ? inspectionResultSummary(s.last) : null;
+        return `<tr>
+            <td>${i + 1}</td>
+            <td data-label="Unit"><strong>${escapeHtml(u.name || '-')}</strong>${u.assetCode ? `<div class="ins-sub">${escapeHtml(u.assetCode)}</div>` : ''}</td>
+            <td data-label="Jenis Alat">${escapeHtml(u.machineType || '—')}</td>
+            <td data-label="Site">${escapeHtml(u.site || '—')}</td>
+            <td data-label="Cek Terakhir">${s.last ? escapeHtml(s.last.date) + (workLogApproval(s.last) !== 'approved'
+                ? ` <span class="appr appr--${workLogApproval(s.last)}">${escapeHtml(APPROVAL_STATES[workLogApproval(s.last)].label)}</span>` : '') : '—'}</td>
+            <td data-label="Hasil">${res ? `<span class="ins-res ins-res--${res.tone}">${escapeHtml(res.text)}</span>` : '—'}</td>
+            <td data-label="Cek Berikutnya">${insStatusBadge(s)}${s.next ? `<div class="ins-sub">${escapeHtml(s.next)}</div>` : ''}</td>
+            <td class="col-actions"><div class="row-actions">
+                ${canCheck ? `<button class="btn btn-secondary" title="Cek unit ini" aria-label="Cek ${escapeHtml(u.name || '')}" onclick="showInspectionForm(${jsArg(u.id)})"><i class="fas fa-clipboard-check"></i></button>` : ''}
+                <button class="btn btn-secondary" title="Riwayat cek" aria-label="Riwayat cek ${escapeHtml(u.name || '')}" onclick="showInspectionHistory(${jsArg(u.id)})"><i class="fas fa-clock-rotate-left"></i></button>
+            </div></td>
+        </tr>`;
+    }).join('');
+}
+
+function showInspectionHistory(unitId) {
+    const u = globalData.find(x => x.id === unitId);
+    inspectionTab = 'reports';
+    const s = document.getElementById('insReportSearch');
+    if (s) s.value = u ? (u.name || u.sn || '') : '';
+    renderInspectionView();
+}
+
+// ---- Schedule ----
+function renderInspectionPlans() {
+    const tbody = document.getElementById('insPlanBody');
+    if (!tbody) return;
+    const today = toISODate();
+    const canCheck = hasAccess('inspection', 'edit');
+    const canPlan = canPlanInspections();
+    if (!inspectionPlans.length) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-secondary)">Belum ada jadwal pengecekan.${
+            canPlan ? ' Klik <strong>Buat Jadwal</strong> untuk mulai.' : ''}</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = inspectionPlans.map((p, i) => {
+        const pr = planProgress(p);
+        const late = pr.done < pr.total && p.date < today;
+        const chips = (p.unitIds || []).map(id => {
+            const u = globalData.find(x => x.id === id);
+            const done = planUnitDone(p, id);
+            const name = u ? (u.name || u.sn) : '(unit dihapus)';
+            const btn = !done && u && canCheck
+                ? ` <button type="button" class="ins-chip__go" title="Cek ${escapeHtml(name)}" aria-label="Cek ${escapeHtml(name)}" onclick="showInspectionForm(${jsArg(id)}, ${jsArg(p.id)})"><i class="fas fa-clipboard-check"></i></button>` : '';
+            return `<span class="ins-chip ${done ? 'ins-chip--done' : ''}">${done ? '<i class="fas fa-check"></i> ' : ''}${escapeHtml(name)}${btn}</span>`;
+        }).join('');
+        return `<tr>
+            <td>${i + 1}</td>
+            <td data-label="Tanggal" style="white-space:nowrap">${escapeHtml(p.date || '')}${p.date === today ? ' <span class="ins-st ins-st--soon">Hari ini</span>' : ''}</td>
+            <td data-label="Unit"><div class="ins-chips">${chips}</div></td>
+            <td data-label="Progres"><span class="ins-st ins-st--${pr.done === pr.total ? 'ok' : late ? 'overdue' : 'soon'}">${pr.done}/${pr.total}${late ? ' · terlambat' : pr.done === pr.total ? ' · selesai' : ''}</span></td>
+            <td data-label="Catatan" style="font-size:12px;color:var(--text-secondary)">${escapeHtml(p.note || '') || '—'}</td>
+            <td class="col-actions">${canPlan ? `<div class="row-actions">
+                <button class="btn btn-secondary" title="Edit jadwal" aria-label="Edit jadwal" onclick="showInspectionPlanForm(${jsArg(p.id)})"><i class="fas fa-pen"></i></button>
+                <button class="btn btn-secondary" title="Hapus jadwal" aria-label="Hapus jadwal" onclick="deleteInspectionPlan(${jsArg(p.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+            </div>` : ''}</td>
+        </tr>`;
+    }).join('');
+}
+
+let _insPlanPick = new Set();
+
+function showInspectionPlanForm(id) {
+    if (!canPlanInspections()) { showToast('Anda tidak punya akses membuat jadwal pengecekan', 'warning'); return; }
+    const p = id ? inspectionPlans.find(x => x.id === id) : null;
+    document.getElementById('editInspectionPlanId').value = p ? p.id : '';
+    document.getElementById('inspectionPlanTitle').innerHTML = p
+        ? '<i class="fas fa-calendar-check"></i> Edit Jadwal Pengecekan'
+        : '<i class="fas fa-calendar-plus"></i> Buat Jadwal Pengecekan';
+    document.getElementById('insPlanDate').value = p ? (p.date || '') : toISODate();
+    document.getElementById('insPlanNote').value = p ? (p.note || '') : '';
+    document.getElementById('insPlanSearch').value = '';
+    _insPlanPick = new Set(p ? (p.unitIds || []) : []);
+    renderInspectionPlanPicker();
+    document.getElementById('inspectionPlanModal').classList.add('open');
+}
+
+function closeInspectionPlanModal() {
+    document.getElementById('inspectionPlanModal').classList.remove('open');
+}
+
+function renderInspectionPlanPicker() {
+    const wrap = document.getElementById('insPlanPick');
+    if (!wrap) return;
+    const q = (document.getElementById('insPlanSearch')?.value || '').toLowerCase().trim();
+    const today = toISODate();
+    const units = inspectableUnits()
+        .map(u => ({ u, s: inspectionStatusFor(u, today) }))
+        .filter(({ u }) => !q || `${u.name} ${u.sn} ${u.assetCode || ''} ${u.site || ''}`.toLowerCase().includes(q))
+        .sort((a, b) => INS_STATUS_ORDER[a.s.key] - INS_STATUS_ORDER[b.s.key] || String(a.u.name || '').localeCompare(String(b.u.name || '')));
+    wrap.innerHTML = units.length ? units.map(({ u, s }) => `
+        <label class="ins-pick">
+            <input type="checkbox" data-id="${escapeHtml(u.id)}" ${_insPlanPick.has(u.id) ? 'checked' : ''}
+                   onchange="toggleInspectionPlanUnit(this.dataset.id, this.checked)">
+            <span class="ins-pick__name">${escapeHtml(u.name || u.sn || '-')}<span class="ins-sub">${escapeHtml([u.machineType, u.site].filter(Boolean).join(' · '))}</span></span>
+            ${insStatusBadge(s)}
+        </label>`).join('')
+        : '<p class="ins-sub" style="padding:8px 0">Tidak ada unit Alat Berat yang cocok.</p>';
+    const c = document.getElementById('insPlanPickCount');
+    if (c) c.textContent = `(${_insPlanPick.size} dipilih)`;
+}
+
+function toggleInspectionPlanUnit(id, on) {
+    if (on) _insPlanPick.add(id); else _insPlanPick.delete(id);
+    const c = document.getElementById('insPlanPickCount');
+    if (c) c.textContent = `(${_insPlanPick.size} dipilih)`;
+}
+
+function selectDueInspectionUnits() {
+    const today = toISODate();
+    let n = 0;
+    inspectableUnits().forEach(u => {
+        const k = inspectionStatusFor(u, today).key;
+        if ((k === 'overdue' || k === 'soon' || k === 'never') && !_insPlanPick.has(u.id)) { _insPlanPick.add(u.id); n++; }
+    });
+    renderInspectionPlanPicker();
+    showToast(n ? `${n} unit jatuh tempo ditambahkan` : 'Tidak ada unit jatuh tempo yang belum dipilih', 'info');
+}
+
+function saveInspectionPlan(event) {
+    if (event) event.preventDefault();
+    if (!canPlanInspections()) return;
+    const id = document.getElementById('editInspectionPlanId').value;
+    const date = document.getElementById('insPlanDate').value;
+    if (!isoDistributionDate(date)) { showToast('Tanggal jadwal wajib diisi', 'warning'); return; }
+    const unitIds = [..._insPlanPick].filter(uid => globalData.some(u => u.id === uid && isHeavy(u)));
+    if (!unitIds.length) { showToast('Pilih minimal satu unit', 'warning'); return; }
+    const existing = id ? inspectionPlans.find(p => p.id === id) : null;
+    const rec = {
+        id: id || generateInspectionPlanId(),
+        date, unitIds,
+        note: (document.getElementById('insPlanNote').value || '').trim().slice(0, 120),
+        createdBy: existing ? (existing.createdBy || '') : ((currentUserDoc && currentUserDoc.displayName) || (currentUser && currentUser.email) || ''),
+        createdByUid: existing ? (existing.createdByUid || '') : myUid(),
+        createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),
+        updatedAt: Date.now()
+    };
+    cloudWrite(
+        { action: existing ? 'update' : 'create', unitName: '[Pengecekan] Jadwal', field: `Jadwal ${date}`,
+          before: existing ? `${(existing.unitIds || []).length} unit` : '', after: `${unitIds.length} unit` },
+        cloudCall('saveInspectionPlan', rec),
+        existing ? 'Jadwal diperbarui' : `Jadwal ${date} dibuat — ${unitIds.length} unit`,
+        err => {
+            console.error('[ins] plan save failed:', err);
+            showToast('Gagal menyimpan jadwal' + (err && err.code === 'permission-denied' ? ' — publish ulang firestore.rules' : ''), 'error');
+        }
+    );
+    closeInspectionPlanModal();
+}
+
+function deleteInspectionPlan(id) {
+    if (!canPlanInspections()) return;
+    const p = inspectionPlans.find(x => x.id === id);
+    if (!p) return;
+    if (!confirm(`Hapus jadwal ${p.date} (${(p.unitIds || []).length} unit)?\n\nLaporan cek yang sudah dibuat tetap tersimpan.`)) return;
+    cloudWrite(
+        { action: 'delete', unitName: '[Pengecekan] Jadwal', field: `Jadwal ${p.date}`, before: `${(p.unitIds || []).length} unit`, after: '' },
+        cloudCall('deleteInspectionPlan', id),
+        'Jadwal dihapus',
+        err => { console.error('[ins] plan delete failed:', err); showToast('Gagal menghapus jadwal', 'error'); }
+    );
+}
+
+// ---- Reports table ----
+function getFilteredInspections() {
+    const approval = document.getElementById('insApprovalFilter')?.value || '';
+    const mine = !!document.getElementById('insMineFilter')?.checked;
+    const q = (document.getElementById('insReportSearch')?.value || '').toLowerCase().trim();
+    return inspections.filter(r => {
+        if (!visibleToMe(r)) return false;
+        if (mine && !isMyRecord(r)) return false;
+        if (approval && workLogApproval(r) !== approval) return false;
+        if (q) {
+            const u = liveUnitFor({ unitId: r.unitId, sn: r.sn }) || {};
+            const hay = [inspectionUnitLabel(r), r.sn, u.assetCode, r.createdBy, r.note,
+                         ...Object.values(r.notes || {})].join(' ').toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
+}
+
+function inspectionNeedsApply(r) {
+    return workLogApproval(r) === 'approved' && inspectionBadBits(r).length > 0 && !r.appliedAt;
+}
+
+function renderInspectionReports() {
+    const tbody = document.getElementById('insReportBody');
+    if (!tbody) return;
+    const rows = getFilteredInspections();
+    const count = document.getElementById('insReportCount');
+    if (count) count.textContent = `${rows.length} laporan`;
+    const canEdit = hasAccess('inspection', 'edit');
+    if (!rows.length) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+            inspections.length ? 'Tidak ada laporan yang cocok dengan filter' : 'Belum ada laporan pengecekan.'}</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = rows.map((r, i) => {
+        const plan = r.planId ? inspectionPlans.find(p => p.id === r.planId) : null;
+        const res = inspectionComponents().map(c => {
+            const v = (r.results || {})[c.key];
+            return `<span class="ins-res ins-res--${v === 'bad' ? 'bad' : v === 'good' ? 'good' : 'none'}" title="${escapeHtml(((r.notes || {})[c.key]) || '')}">${escapeHtml(c.label)}: ${escapeHtml(INS_RESULT[v] || '—')}</span>`;
+        }).join('');
+        const photos = Number(r.photoCount) || 0;
+        const apply = inspectionNeedsApply(r) && hasAccess('damage', 'edit')
+            ? `<button class="btn btn-secondary btn-sm ins-apply" title="Catat komponen rusak ke menu Kerusakan" onclick="applyInspectionFindings(${jsArg(r.id)})"><i class="fas fa-screwdriver-wrench"></i> Ke Kerusakan</button>` : '';
+        return `<tr>
+            <td>${i + 1}</td>
+            <td data-label="Tanggal Cek" style="white-space:nowrap">${escapeHtml(r.date || '')}</td>
+            <td data-label="Unit"><strong>${escapeHtml(inspectionUnitLabel(r))}</strong></td>
+            <td data-label="Hasil Komponen"><div class="ins-res-list">${res}</div>${r.note ? `<div class="ins-sub" title="${escapeHtml(r.note)}">${escapeHtml(r.note.slice(0, 60))}</div>` : ''}</td>
+            <td data-label="Jadwal">${plan ? `<span class="ins-tag">Jadwal ${escapeHtml(plan.date)}</span>` : r.planId ? '<span class="ins-tag">Jadwal dihapus</span>' : '<span class="ins-tag ins-tag--adhoc">Di luar jadwal</span>'}</td>
+            <td data-label="Pemeriksa" style="font-size:12px">${escapeHtml(r.createdBy || '—')}</td>
+            <td data-label="Persetujuan">${approvalCell(r, 'laporan cek', 'approveInspection', 'reviseInspection', INS_AREAS)}${
+                r.appliedAt ? '<div class="ins-sub"><i class="fas fa-check"></i> Tercatat di Kerusakan</div>' : ''}</td>
+            <td data-label="Foto">${photos
+                ? `<button type="button" class="wl-photo-btn" title="Lihat ${photos} foto" aria-label="Lihat ${photos} foto" onclick="openInspectionPhotos(${jsArg(r.id)}, this)"><i class="fas fa-image"></i> ${photos}</button>`
+                : '<span style="color:var(--text-light)">—</span>'}</td>
+            <td class="col-actions">${apply}${canEdit ? rowActionsFor(r, 'Laporan cek', 'editInspection', 'deleteInspection', 'withdrawInspection', INS_AREAS) : ''}</td>
+        </tr>`;
+    }).join('');
+}
+
+async function loadInspectionPhotos(id) {
+    if (_insPhotoCache.has(id)) return _insPhotoCache.get(id);
+    const fn = window.cloud && window.cloud.getInspectionPhotos;
+    if (!fn) return {};
+    const photos = await window.cloud.getInspectionPhotos(id);
+    _insPhotoCache.set(id, photos || {});
+    return photos || {};
+}
+
+async function openInspectionPhotos(id, btn) {
+    const old = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+    try {
+        const photos = await loadInspectionPhotos(id);
+        const list = inspectionComponents().map(c => safeImageSrc(photos[c.key])).filter(Boolean);
+        if (!list.length) { showToast('Foto tidak ditemukan', 'warning'); return; }
+        openPhotoLightbox(list, 0);
+    } catch (err) {
+        console.error('[ins] photos load failed:', err);
+        showToast(navigator.onLine ? 'Gagal memuat foto' : 'Foto perlu sinyal untuk dimuat', 'warning');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = old; }
+    }
+}
+
+// ---- Form ----
+let _insPhotos = {};          // componentKey -> dataURL
+let _insPhotosDirty = false;
+let _insPhotosLoading = false;
+let _insPhotosFailed = false;
+let _insGen = 0;
+let _insResults = {};         // componentKey -> 'good' | 'bad'
+
+function populateInspectionUnitSelect(selectedId) {
+    const sel = document.getElementById('insUnit');
+    if (!sel) return;
+    const units = inspectableUnits();
+    sel.innerHTML = '<option value="">— Pilih unit alat berat —</option>' + units.map(u =>
+        `<option value="${escapeHtml(u.id)}">${escapeHtml(u.name || u.sn)}${u.assetCode ? ' · ' + escapeHtml(u.assetCode) : ''}</option>`).join('');
+    if (selectedId) {
+        if (![...sel.options].some(o => o.value === selectedId)) {
+            const u = globalData.find(x => x.id === selectedId);
+            const opt = document.createElement('option');
+            opt.value = selectedId;
+            opt.textContent = u ? (u.name || u.sn) : '(unit dihapus)';
+            sel.appendChild(opt);
+        }
+        sel.value = selectedId;
+    }
+    sel.onchange = () => updateInspectionPlanTag();
+}
+
+// Which schedule this check belongs to — shown, and recalculated when the unit
+// changes on a new report. An edited report keeps the plan it was filed under.
+function updateInspectionPlanTag() {
+    const tag = document.getElementById('insPlanTag');
+    const planInput = document.getElementById('insPlanId');
+    if (!tag || !planInput) return;
+    if (!document.getElementById('editInspectionId').value) {
+        const unitId = document.getElementById('insUnit').value;
+        const forced = planInput.dataset.forced || '';
+        const plan = forced && inspectionPlans.find(p => p.id === forced && (p.unitIds || []).includes(unitId))
+            || (unitId ? openPlanFor(unitId) : null);
+        planInput.value = plan ? plan.id : '';
+    }
+    const plan = planInput.value ? inspectionPlans.find(p => p.id === planInput.value) : null;
+    tag.style.display = document.getElementById('insUnit').value ? '' : 'none';
+    tag.className = 'ins-plan-tag' + (plan ? '' : ' ins-plan-tag--adhoc');
+    tag.textContent = plan ? `Bagian dari jadwal ${plan.date}` : 'Di luar jadwal — tetap menghitung ulang cek berikutnya';
+}
+
+function renderInspectionComponents(rec) {
+    const wrap = document.getElementById('insComponents');
+    if (!wrap) return;
+    wrap.innerHTML = inspectionComponents().map(c => {
+        const v = _insResults[c.key] || '';
+        const note = rec && rec.notes ? (rec.notes[c.key] || '') : '';
+        return `<div class="ins-comp" data-key="${escapeHtml(c.key)}">
+            <div class="ins-comp__head">
+                <strong>${escapeHtml(c.label)}</strong>
+                <div class="ins-seg" role="radiogroup" aria-label="Kondisi ${escapeHtml(c.label)}">
+                    <label class="ins-seg__opt ins-seg__opt--good"><input type="radio" name="insRes_${escapeHtml(c.key)}" value="good" ${v === 'good' ? 'checked' : ''}
+                        onchange="setInspectionResult(${jsArg(c.key)}, 'good')"> Baik</label>
+                    <label class="ins-seg__opt ins-seg__opt--bad"><input type="radio" name="insRes_${escapeHtml(c.key)}" value="bad" ${v === 'bad' ? 'checked' : ''}
+                        onchange="setInspectionResult(${jsArg(c.key)}, 'bad')"> Rusak</label>
+                </div>
+            </div>
+            <div class="ins-comp__body">
+                <div class="ins-photo" id="insPhoto_${escapeHtml(c.key)}"></div>
+                <input type="text" class="form-input ins-comp__note" id="insNote_${escapeHtml(c.key)}" maxlength="200"
+                       placeholder="${v === 'bad' ? 'Wajib: jelaskan kerusakannya' : 'Catatan (opsional)'}" value="${escapeHtml(note)}">
+            </div>
+        </div>`;
+    }).join('');
+    inspectionComponents().forEach(c => renderInspectionPhoto(c.key));
+}
+
+function setInspectionResult(key, v) {
+    _insResults[key] = v;
+    const note = document.getElementById('insNote_' + key);
+    if (note) note.placeholder = v === 'bad' ? 'Wajib: jelaskan kerusakannya' : 'Catatan (opsional)';
+}
+
+function renderInspectionPhoto(key) {
+    const box = document.getElementById('insPhoto_' + key);
+    if (!box) return;
+    const src = safeImageSrc(_insPhotos[key]);
+    const off = _insPhotosLoading || _insPhotosFailed;
+    if (_insPhotosLoading && !src) {
+        box.innerHTML = '<span class="ins-photo__empty"><i class="fas fa-spinner fa-spin"></i></span>';
+        return;
+    }
+    box.innerHTML = src
+        ? `<img src="${src}" alt="Foto ${escapeHtml(key)}" onclick="openPhotoLightbox(safeImageSrc(_insPhotos[${jsArg(key)}]))">
+           ${off ? '' : `<button type="button" class="ins-photo__x" aria-label="Hapus foto" title="Hapus foto" onclick="removeInspectionPhoto(${jsArg(key)})">&times;</button>`}`
+        : `<label class="ins-photo__add ${off ? 'is-off' : ''}" title="${_insPhotosFailed ? 'Foto lama gagal dimuat' : 'Ambil / pilih foto'}">
+               <i class="fas fa-camera"></i><span>Foto</span>
+               <input type="file" accept="image/*" capture="environment" ${off ? 'disabled' : ''} style="display:none"
+                      onchange="handleInspectionPhoto(${jsArg(key)}, event)">
+           </label>`;
+}
+
+async function handleInspectionPhoto(key, event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file || _insPhotosLoading || _insPhotosFailed) return;
+    if (!file.type.startsWith('image/')) { showToast('File harus berupa gambar (foto)', 'warning'); return; }
+    const gen = _insGen;
+    try {
+        const data = await compressImageToDataURL(file, INS_PHOTO_OPTS);
+        if (gen !== _insGen) return;
+        _insPhotos[key] = data;
+        _insPhotosDirty = true;
+        renderInspectionPhoto(key);
+    } catch (err) {
+        showToast(err.message || 'Gagal memproses foto', 'error');
+    }
+}
+
+function removeInspectionPhoto(key) {
+    delete _insPhotos[key];
+    _insPhotosDirty = true;
+    renderInspectionPhoto(key);
+}
+
+function _openInspectionModal(rec, unitId, planId) {
+    _insGen++;
+    _insPhotos = {}; _insPhotosDirty = false; _insPhotosFailed = false;
+    _insPhotosLoading = !!(rec && Number(rec.photoCount) > 0);
+    _insResults = rec ? { ...(rec.results || {}) } : {};
+    document.getElementById('inspectionForm').reset();
+    document.getElementById('editInspectionId').value = rec ? rec.id : '';
+    const planInput = document.getElementById('insPlanId');
+    planInput.value = rec ? (rec.planId || '') : '';
+    planInput.dataset.forced = rec ? '' : (planId || '');
+    document.getElementById('inspectionModalTitle').innerHTML = !rec
+        ? '<i class="fas fa-clipboard-check"></i> Laporan Pengecekan'
+        : workLogApproval(rec) === 'revision'
+            ? '<i class="fas fa-clipboard-check"></i> Revisi Laporan Pengecekan'
+            : '<i class="fas fa-clipboard-check"></i> Edit Laporan Pengecekan';
+    populateInspectionUnitSelect(rec ? rec.unitId : (unitId || ''));
+    // A report's unit is what its photos and its 14-day clock are about.
+    document.getElementById('insUnit').disabled = !!rec;
+    const plan = planId ? inspectionPlans.find(p => p.id === planId) : null;
+    const today = toISODate();
+    document.getElementById('insDate').value = rec ? (rec.date || '') : (plan && plan.date < today ? plan.date : today);
+    document.getElementById('insDate').max = today;
+    document.getElementById('insNote').value = rec ? (rec.note || '') : '';
+    showRevisionNote('insRevisionNote', rec);
+    renderInspectionComponents(rec);
+    updateInspectionPlanTag();
+    document.getElementById('inspectionModal').classList.add('open');
+
+    if (_insPhotosLoading) {
+        const gen = _insGen;
+        _insPhotoCache.delete(rec.id);   // the server's copy for an edit — see editWorkLog
+        loadInspectionPhotos(rec.id).then(photos => {
+            if (gen !== _insGen) return;
+            _insPhotos = { ...(photos || {}) };
+            _insPhotosLoading = false;
+            inspectionComponents().forEach(c => renderInspectionPhoto(c.key));
+        }).catch(err => {
+            console.error('[ins] photos load failed:', err);
+            if (gen !== _insGen) return;
+            _insPhotosLoading = false;
+            _insPhotosFailed = true;
+            inspectionComponents().forEach(c => renderInspectionPhoto(c.key));
+            showToast('Foto lama gagal dimuat — tetap tersimpan. Tutup lalu buka lagi untuk mengubahnya.', 'warning');
+        });
+    }
+}
+
+function showInspectionForm(unitId, planId) {
+    if (!requireEdit('inspection')) return;
+    if (!inspectableUnits().length) { showToast('Belum ada unit Alat Berat di Unit Database', 'warning'); return; }
+    if (currentView !== 'inspection' && canViewView('inspection')) navigateTo('inspection');
+    _openInspectionModal(null, unitId, planId);
+}
+
+function editInspection(id) {
+    if (!requireEdit('inspection')) return;
+    const r = inspections.find(x => x.id === id);
+    if (!r) return;
+    if (!canEditTeamRecord(r, INS_AREAS)) { showToast(lockedReason(r, 'Laporan cek', INS_AREAS), 'warning'); return; }
+    _openInspectionModal(r);
+}
+
+function closeInspectionModal(force) {
+    if (!force && _insPhotosDirty && Object.keys(_insPhotos).length &&
+        !confirm(`${Object.keys(_insPhotos).length} foto belum tersimpan dan akan hilang. Tutup saja?`)) return;
+    _insGen++;
+    _insPhotosDirty = false;
+    document.getElementById('inspectionModal').classList.remove('open');
+}
+
+function saveInspection(event, mode) {
+    if (event) event.preventDefault();
+    if (!requireEdit('inspection')) return;
+    const asDraft = mode === 'draft';
+    const id = document.getElementById('editInspectionId').value;
+    const existing = id ? inspections.find(x => x.id === id) : null;
+    if (existing && !canEditTeamRecord(existing, INS_AREAS)) {
+        showToast(lockedReason(existing, 'Laporan cek', INS_AREAS), 'warning');
+        return;
+    }
+    const unitId = existing ? existing.unitId : document.getElementById('insUnit').value;
+    const unit = globalData.find(u => u.id === unitId);
+    if (!unit && !existing) { showToast('Pilih unit alat berat dulu', 'warning'); return; }
+    if (unit && !isHeavy(unit)) { showToast('Pengecekan ini khusus unit Alat Berat', 'warning'); return; }
+    const date = document.getElementById('insDate').value;
+    if (!isoDistributionDate(date)) { showToast('Tanggal cek wajib diisi', 'warning'); return; }
+    if (date > toISODate()) { showToast('Tanggal cek tidak boleh di masa depan', 'warning'); return; }
+    if (_insPhotosLoading) { showToast('Tunggu foto lama selesai dimuat', 'warning'); return; }
+
+    const notes = {};
+    inspectionComponents().forEach(c => {
+        notes[c.key] = (document.getElementById('insNote_' + c.key)?.value || '').trim().slice(0, 200);
+    });
+    const results = {};
+    inspectionComponents().forEach(c => { if (_insResults[c.key]) results[c.key] = _insResults[c.key]; });
+
+    // Sent for checking: every component has a verdict and a photo, and a
+    // broken one says what is wrong. A draft may be half-done.
+    if (!asDraft) {
+        const missing = inspectionComponents().filter(c => !results[c.key]).map(c => c.label);
+        if (missing.length) { showToast(`Pilih Baik/Rusak untuk: ${missing.join(', ')}`, 'warning'); return; }
+        const noPhoto = _insPhotosFailed ? [] : inspectionComponents().filter(c => !_insPhotos[c.key]).map(c => c.label);
+        if (noPhoto.length) { showToast(`Foto wajib untuk: ${noPhoto.join(', ')}`, 'warning'); return; }
+        const noNote = inspectionComponents().filter(c => results[c.key] === 'bad' && !notes[c.key]).map(c => c.label);
+        if (noNote.length) { showToast(`Jelaskan kerusakan: ${noNote.join(', ')}`, 'warning'); return; }
+    }
+
+    const photoKeys = _insPhotosDirty
+        ? inspectionComponents().map(c => c.key).filter(k => _insPhotos[k])
+        : (existing ? (existing.photoKeys || []) : []);
+    const rec = {
+        id: id || generateInspectionId(),
+        unitId,
+        unitName: unit ? (unit.name || '') : (existing.unitName || ''),
+        sn: unit ? (unit.sn || '') : (existing.sn || ''),
+        date,
+        planId: document.getElementById('insPlanId').value || '',
+        results, notes,
+        note: (document.getElementById('insNote').value || '').trim().slice(0, 500),
+        photoKeys,
+        photoCount: photoKeys.length,
+        approval: asDraft ? 'draft' : 'pending',
+        approvedBy: '', approvedByEmail: '', approvedAt: 0,
+        revisionNote: asDraft && existing ? (existing.revisionNote || '') : '',
+        submittedAt: asDraft ? (existing ? (existing.submittedAt || 0) : 0) : Date.now(),
+        createdBy: existing ? (existing.createdBy || '') : ((currentUserDoc && currentUserDoc.displayName) || (currentUser && currentUser.email) || ''),
+        createdByUid: existing ? (existing.createdByUid || '') : myUid(),
+        createdByEmail: existing ? (existing.createdByEmail || '') : ((currentUser && currentUser.email) || ''),
+        createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),
+        updatedAt: Date.now()
+    };
+
+    // Photos FIRST, while the report is still open — firestore.rules locks the
+    // photo document once its report is sent. See saveWorkLog.
+    if (_insPhotosDirty) {
+        const photos = {};
+        photoKeys.forEach(k => { photos[k] = _insPhotos[k]; });
+        _insPhotoCache.set(rec.id, photos);
+        const fn = photoKeys.length ? cloudFn('saveInspectionPhotos') : cloudFn('deleteInspectionPhotos');
+        if (fn) {
+            (photoKeys.length ? fn(rec.id, photos) : fn(rec.id)).catch(err => {
+                console.error('[ins] photos save failed:', err);
+                showToast('Laporan tersimpan, tetapi foto gagal dikirim', 'error');
+            });
+        }
+    }
+
+    const bad = inspectionBadBits(rec);
+    cloudWrite(
+        { action: existing ? 'update' : 'create', unitId,
+          unitName: `[Pengecekan] ${rec.unitName}`,
+          field: `Cek ${date}${asDraft ? ' (draf)' : ''}`,
+          before: existing ? inspectionResultSummary(existing).text : '',
+          after: bad.length ? `${bad.length} rusak: ${bad.map(c => c.label).join(', ')}` : (Object.keys(results).length === inspectionComponents().length ? 'Semua baik' : 'Belum lengkap') },
+        cloudCall('saveInspection', rec),
+        asDraft ? 'Draf laporan cek disimpan — belum dikirim'
+            : `Laporan cek dikirim — cek berikutnya ${addDaysISO(date, INSPECTION_INTERVAL_DAYS)}`,
+        err => {
+            console.error('[ins] save failed:', err);
+            showToast('Gagal menyimpan laporan cek' + (err && err.code === 'permission-denied' ? ' — publish ulang firestore.rules' : ''), 'error');
+        }
+    );
+    closeInspectionModal(true);
+}
+
+function withdrawInspection(id) {
+    const r = inspections.find(x => x.id === id);
+    if (!r) return;
+    if (!canWithdrawTeamRecord(r, INS_AREAS)) { showToast('Laporan cek ini tidak bisa ditarik kembali', 'warning'); return; }
+    if (!confirm(`Tarik kembali laporan cek ${inspectionUnitLabel(r)} (${r.date}) menjadi draf?`)) return;
+    cloudWrite(
+        { action: 'update', unitId: r.unitId, unitName: `[Pengecekan] ${inspectionUnitLabel(r)}`,
+          field: `Persetujuan ${r.date}`, before: 'Menunggu', after: 'Draf (ditarik kembali)' },
+        cloudCall('saveInspection', { ...r, approval: 'draft', updatedAt: Date.now() }),
+        'Laporan cek ditarik kembali menjadi draf',
+        err => { console.error('[ins] withdraw failed:', err); showToast('Gagal menarik kembali — mungkin sudah diperiksa', 'error'); }
+    );
+}
+
+function deleteInspection(id) {
+    if (!requireEdit('inspection')) return;
+    const r = inspections.find(x => x.id === id);
+    if (!r) return;
+    if (!canEditTeamRecord(r, INS_AREAS)) { showToast(lockedReason(r, 'Laporan cek', INS_AREAS), 'warning'); return; }
+    if (!confirm(`Hapus laporan cek ${inspectionUnitLabel(r)} tanggal ${r.date}?`)) return;
+    if (Number(r.photoCount) > 0 && window.cloud && window.cloud.deleteInspectionPhotos) {
+        _insPhotoCache.delete(id);
+        window.cloud.deleteInspectionPhotos(id).catch(err => console.error('[ins] photos delete failed:', err));
+    }
+    cloudWrite(
+        { action: 'delete', unitId: r.unitId, unitName: `[Pengecekan] ${inspectionUnitLabel(r)}`,
+          field: `Cek ${r.date}`, before: inspectionResultSummary(r).text, after: '' },
+        cloudCall('deleteInspection', id),
+        'Laporan cek dihapus',
+        err => { console.error('[ins] delete failed:', err); showToast('Gagal menghapus laporan cek', 'error'); }
+    );
+}
+
+function approveInspection(id) {
+    const r = inspections.find(x => x.id === id);
+    if (!r) return;
+    if (!canApproveWorkLogs(INS_AREAS)) { showToast('Anda tidak punya hak menyetujui laporan cek', 'warning'); return; }
+    if (!canApproveThisLog(r, INS_AREAS)) { showToast('Laporan cek yang Anda buat sendiri harus disetujui orang lain', 'warning'); return; }
+    if (workLogApproval(r) !== 'pending') { showToast('Hanya laporan yang sudah dikirim yang bisa disetujui', 'warning'); return; }
+    const rec = {
+        ...r,
+        approval: 'approved',
+        approvedBy: (currentUserDoc && currentUserDoc.displayName) || (currentUser && currentUser.email) || '',
+        approvedByEmail: (currentUser && currentUser.email) || '',
+        approvedAt: Date.now(),
+        revisionNote: '',
+        updatedAt: Date.now()
+    };
+    const bad = inspectionBadBits(rec);
+    cloudWrite(
+        { action: 'approve', unitId: r.unitId, unitName: `[Pengecekan] ${inspectionUnitLabel(r)}`,
+          field: `Persetujuan ${r.date}`, before: APPROVAL_STATES[workLogApproval(r)].label, after: 'Disetujui' },
+        cloudCall('saveInspection', rec),
+        'Laporan cek disetujui',
+        err => { console.error('[ins] approve failed:', err); showToast('Gagal menyetujui laporan cek', 'error'); return false; }
+    ).then(ok => {
+        // Broken components go to the damage log once approved — by whoever
+        // is allowed to write it. Anyone else leaves it to the inbox.
+        if (ok === false || !bad.length) return;
+        const idx = inspections.findIndex(x => x.id === id);
+        if (idx !== -1) inspections[idx] = { ...inspections[idx], ...rec };
+        if (hasAccess('damage', 'edit')) applyInspectionFindings(id);
+        else showToast(`${bad.length} komponen rusak belum masuk ke Kerusakan — perlu akun dengan akses Kerusakan`, 'info');
+    });
+}
+
+function reviseInspection(id) {
+    const r = inspections.find(x => x.id === id);
+    if (!r) return;
+    if (!canApproveThisLog(r, INS_AREAS)) { showToast('Anda tidak punya hak memeriksa laporan cek ini', 'warning'); return; }
+    const st = workLogApproval(r);
+    if (st !== 'pending' && st !== 'approved') { showToast('Laporan cek ini belum dikirim atau sudah dikembalikan', 'warning'); return; }
+    const note = prompt(`Apa yang perlu diperbaiki pada laporan cek ${inspectionUnitLabel(r)} (${r.date})?`, r.revisionNote || '');
+    if (note === null) return;
+    if (!note.trim()) { showToast('Tulis alasannya supaya bisa diperbaiki', 'warning'); return; }
+    const rec = {
+        ...r,
+        approval: 'revision',
+        revisionNote: note.trim(),
+        approvedBy: '', approvedByEmail: '', approvedAt: 0,
+        reviewedBy: (currentUserDoc && currentUserDoc.displayName) || (currentUser && currentUser.email) || '',
+        reviewedAt: Date.now(),
+        updatedAt: Date.now()
+    };
+    cloudWrite(
+        { action: 'reject', unitId: r.unitId, unitName: `[Pengecekan] ${inspectionUnitLabel(r)}`,
+          field: `Persetujuan ${r.date}`, before: APPROVAL_STATES[st].label, after: `Perlu revisi — ${rec.revisionNote}` },
+        cloudCall('saveInspection', rec),
+        'Laporan cek dikembalikan untuk revisi',
+        err => { console.error('[ins] revise failed:', err); showToast('Gagal mengirim permintaan revisi', 'error'); }
+    );
+}
+
+// Approved findings → the damage log: one record per broken component, with
+// that component's photo, and — for whoever may edit units — the component
+// put into Breakdown so the dashboard shows it. Stamped on the report so it
+// happens once.
+const _insApplying = new Set();
+async function applyInspectionFindings(id) {
+    const r = inspections.find(x => x.id === id);
+    if (!r || !inspectionNeedsApply(r) || _insApplying.has(id)) return;
+    if (!hasAccess('damage', 'edit')) { showToast('Perlu akses edit Kerusakan', 'warning'); return; }
+    const unit = liveUnitFor({ unitId: r.unitId, sn: r.sn });
+    if (!unit) { showToast('Unitnya sudah tidak ada di Unit Database', 'warning'); return; }
+    _insApplying.add(id);
+    try {
+        let photos = {};
+        try { photos = await loadInspectionPhotos(id); } catch (_) { photos = {}; }
+        const ids = [];
+        for (const c of inspectionBadBits(r)) {
+            const photo = safeImageSrc(photos[c.key]);
+            const note = (r.notes || {})[c.key] || '';
+            const rec = {
+                id: generateDamageId(),
+                date: r.date, unitId: unit.id, unitName: unit.name || '', sn: unit.sn || '', site: unit.site || '',
+                damageType: 'Device Precision', component: c.label,
+                description: `Temuan pengecekan ${r.date}: ${note}`.slice(0, 500),
+                hasPhoto: !!photo, unitGroup: 'heavy', fromInspection: r.id,
+                resolved: false, resolvedAt: '', createdAt: Date.now(), updatedAt: Date.now(), drove: ''
+            };
+            if (hasAccess('editUnits', 'edit') && _applyDamageBreakdown(unit.id, rec.damageType, c.label, note)) {
+                rec.drove = damageTargetField(rec.damageType, c.label, unit) || '';
+            }
+            globalDamages.push(rec);
+            cloudPushDamage(rec);
+            if (photo && window.cloud && window.cloud.saveDamagePhoto) {
+                _dmgPhotoCache.set(rec.id, photo);
+                window.cloud.saveDamagePhoto(rec.id, photo).catch(err => console.error('[ins] damage photo failed:', err));
+            }
+            logEvent({ action: 'add', unitId: unit.id, unitName: `[Kerusakan] ${unit.name || ''}`,
+                       field: `Device Precision / ${c.label}`, after: `${r.date} (dari pengecekan)` });
+            ids.push(rec.id);
+        }
+        saveDamages();
+        const stamp = { ...r, appliedAt: Date.now(),
+                        appliedBy: (currentUserDoc && currentUserDoc.displayName) || (currentUser && currentUser.email) || '',
+                        appliedDamageIds: ids, updatedAt: Date.now() };
+        const idx = inspections.findIndex(x => x.id === id);
+        if (idx !== -1) inspections[idx] = stamp;
+        cloudCall('saveInspection', stamp).catch(err => console.error('[ins] apply stamp failed:', err));
+        showToast(`${ids.length} catatan Kerusakan dibuat dari laporan cek ${inspectionUnitLabel(r)}`, 'success');
+        if (currentView === 'inspection') renderInspectionView();
+        if (currentView === 'damage') renderDamageTable();
+        scheduleDecisionRefresh();
+    } finally {
+        _insApplying.delete(id);
+    }
+}
+
+function exportInspectionCSV() {
+    if (!canCsv('export')) return;
+    const rows = getFilteredInspections();
+    if (!rows.length) { showToast('Tidak ada laporan cek untuk diexport', 'warning'); return; }
+    const comps = inspectionComponents();
+    const headers = ['No', 'Tanggal Cek', 'Unit', 'Serial Number', 'Nomor Lambung',
+        ...comps.flatMap(c => [c.label, `Catatan ${c.label}`]), 'Catatan Umum', 'Jadwal', 'Cek Berikutnya',
+        'Pemeriksa', 'Persetujuan', 'Disetujui Oleh', 'Catatan Revisi'];
+    const body = rows.map((r, i) => {
+        const u = liveUnitFor({ unitId: r.unitId, sn: r.sn }) || {};
+        const plan = r.planId ? inspectionPlans.find(p => p.id === r.planId) : null;
+        return [i + 1, r.date || '', inspectionUnitLabel(r), r.sn || '', u.assetCode || '',
+            ...comps.flatMap(c => [INS_RESULT[(r.results || {})[c.key]] || '', (r.notes || {})[c.key] || '']),
+            r.note || '', plan ? plan.date : (r.planId ? 'dihapus' : 'Di luar jadwal'),
+            isSubmitted(r) ? addDaysISO(r.date, INSPECTION_INTERVAL_DAYS) : '',
+            r.createdBy || '', APPROVAL_STATES[workLogApproval(r)].label, r.approvedBy || '', r.revisionNote || ''];
+    });
+    const blob = new Blob(['﻿' + toCSV(headers, body)], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pengecekan_alat_berat_${toISODate()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Export ${rows.length} laporan cek ke CSV`, 'success');
+}
+
+// The chip under a heavy unit's name in Unit Database.
+function inspectionChipFor(unit) {
+    if (!isHeavy(unit) || !['inspection', 'inspectionApprove', 'leader'].some(a => hasAccess(a, 'view'))) return '';
+    const s = inspectionStatusFor(unit);
+    return `<button type="button" class="ins-st ins-st--${s.key} ins-st--chip" title="${escapeHtml(s.next ? 'Cek berikutnya ' + s.next : 'Belum pernah dicek')} — buka Pengecekan"
+        onclick="goInspectionFor(${jsArg(unit.id)})"><i class="fas fa-clipboard-check"></i> ${escapeHtml(s.key === 'never' ? 'Belum dicek' : 'Cek: ' + s.label)}</button>`;
+}
+
+function goInspectionFor(unitId) {
+    navigateTo('inspection');
+    if (currentView !== 'inspection') return;
+    const u = globalData.find(x => x.id === unitId);
+    inspectionTab = 'status';
+    const s = document.getElementById('insStatusSearch');
+    if (s) s.value = u ? (u.name || u.sn || '') : '';
+    const f = document.getElementById('insStatusFilter');
+    if (f) f.value = '';
+    renderInspectionView();
+}
+
+// Sidebar badge: units overdue or due within three days, for whoever checks,
+// plus this account's own reports sent back.
+function updateInspectionBadge() {
+    const el = document.getElementById('inspectionBadge');
+    if (!el) return;
+    if (!canViewView('inspection')) { el.style.display = 'none'; return; }
+    const today = toISODate();
+    const due = hasAccess('inspection', 'edit')
+        ? inspectableUnits().filter(u => ['overdue', 'soon'].includes(inspectionStatusFor(u, today).key)).length : 0;
+    const mine = inspections.filter(r => isMyRecord(r) && workLogApproval(r) === 'revision').length;
+    // And, for a supervisor, reports waiting for them.
+    const waiting = inspections.filter(r => workLogApproval(r) === 'pending' && canApproveThisLog(r, INS_AREAS)).length;
+    const n = due + mine + waiting;
+    el.textContent = n > 99 ? '99+' : String(n);
+    el.style.display = n ? '' : 'none';
 }
 
 if (window.cloudReady) {

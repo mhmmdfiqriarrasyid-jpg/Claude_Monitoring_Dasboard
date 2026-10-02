@@ -124,6 +124,12 @@ const WORK_LOG_PHOTOS_COL = 'workLogPhotos';
 const LEAVE_COL = 'leaveRequests';
 // Same again for damage records — one document per record, never subscribed.
 const DAMAGE_PHOTOS_COL = 'damagePhotos';
+// Heavy-equipment checks: the schedule, one report per unit check (with its
+// own approval), and that report's photos — one per component, kept apart
+// and never subscribed, for the same reason as the photo collections above.
+const INSPECTION_PLANS_COL = 'inspectionPlans';
+const INSPECTIONS_COL = 'inspections';
+const INSPECTION_PHOTOS_COL = 'inspectionPhotos';
 
 function batchInChunks(items, fn, chunkSize = 400) {
     // Firestore allows up to 500 ops per batch; 400 is a safe cap.
@@ -715,6 +721,69 @@ window.cloud = {
     },
     async deleteDamagePhoto(id) {
         await deleteDoc(doc(db, DAMAGE_PHOTOS_COL, id));
+    },
+
+    // ---- Heavy-equipment checks ----
+    async saveInspectionPlan(rec) {
+        await setDoc(doc(db, INSPECTION_PLANS_COL, rec.id), rec, { merge: true });
+    },
+    async saveInspectionPlans(items) {
+        if (!items || !items.length) return;
+        await batchInChunks(items, (batch, r) => batch.set(doc(db, INSPECTION_PLANS_COL, r.id), r, { merge: true }));
+    },
+    async deleteInspectionPlan(id) {
+        await deleteDoc(doc(db, INSPECTION_PLANS_COL, id));
+    },
+    async getAllInspectionPlans() {
+        const snap = await getDocs(collection(db, INSPECTION_PLANS_COL));
+        return snap.docs.map(withDocId);
+    },
+    subscribeInspectionPlans(callback, errorCallback) {
+        return onSnapshot(
+            collection(db, INSPECTION_PLANS_COL),
+            snap => callback(snap.docs.map(withDocId)),
+            err => {
+                console.error('[cloud] inspectionPlans subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
+    },
+    async saveInspection(rec) {
+        await setDoc(doc(db, INSPECTIONS_COL, rec.id), rec, { merge: true });
+    },
+    async saveInspections(items) {
+        if (!items || !items.length) return;
+        await batchInChunks(items, (batch, r) => batch.set(doc(db, INSPECTIONS_COL, r.id), r, { merge: true }));
+    },
+    async deleteInspection(id) {
+        await deleteDoc(doc(db, INSPECTIONS_COL, id));
+    },
+    async getAllInspections() {
+        const snap = await getDocs(collection(db, INSPECTIONS_COL));
+        return snap.docs.map(withDocId);
+    },
+    subscribeInspections(callback, errorCallback) {
+        return onSnapshot(
+            collection(db, INSPECTIONS_COL),
+            snap => callback(snap.docs.map(withDocId)),
+            err => {
+                console.error('[cloud] inspections subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
+    },
+    // { componentKey: dataURL } for one report. Never subscribed.
+    async getInspectionPhotos(id) {
+        const snap = await getDoc(doc(db, INSPECTION_PHOTOS_COL, id));
+        if (!snap.exists()) return {};
+        const data = snap.data();
+        return data.photos && typeof data.photos === 'object' ? data.photos : {};
+    },
+    async saveInspectionPhotos(id, photos) {
+        await setDoc(doc(db, INSPECTION_PHOTOS_COL, id), { id, photos, updatedAt: Date.now() });
+    },
+    async deleteInspectionPhotos(id) {
+        await deleteDoc(doc(db, INSPECTION_PHOTOS_COL, id));
     },
 
     // "Is this collection empty?" without downloading it.
