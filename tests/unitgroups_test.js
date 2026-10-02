@@ -106,10 +106,11 @@ const SETUP = `(() => {
             t(`tanpa alat berat identik dengan kode lama: ${k}`, out[k], want);
         });
         const ui = await page.evaluate(() => ({
-            bar: document.getElementById('dashGroupBar').style.display,
+            bar: !!document.getElementById('dashGroupBar'),
             cap: document.getElementById('dashScopeCaption').hidden
         }));
-        t('pemilih grup dashboard tersembunyi tanpa alat berat', ui.bar, 'none');
+        // v137: the group is picked from the sidebar; the tab bar is gone.
+        t('tidak ada lagi tab kelompok di dashboard', ui.bar, false);
         t('keterangan cakupan tersembunyi tanpa alat berat', ui.cap, true);
         await ctx.close();
     }
@@ -140,10 +141,10 @@ const SETUP = `(() => {
                 t(`dengan 2 alat berat, cakupan Pertanian tetap sama: ${k}`, out[k], want);
             });
         const extra = await page.evaluate(() => ({
-            bar: document.getElementById('dashGroupBar').style.display,
+            cap: [document.getElementById('dashScopeCaption').hidden, document.getElementById('dashScopeCaption').textContent],
             mtbf: JSON.stringify(computeDowntimeStats(scopeDashUnits()))
         }));
-        t('pemilih grup muncul begitu dua kelompok ada', extra.bar, '');
+        t('keterangan cakupan muncul begitu dua kelompok ada', extra.cap, [false, 'Scope: Agricultural Equipment · 8 units']);
         t('MTBF cakupan Pertanian sama dengan sebelum ada alat berat', extra.mtbf, JSON.stringify(golden.downtime));
         await ctx.close();
     }

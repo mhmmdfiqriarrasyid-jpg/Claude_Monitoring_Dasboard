@@ -263,17 +263,9 @@
         <div id="dashboardContent" style="display:none;">
 
             <!-- KPI Cards -->
-            <!-- Dashboard scope. Shown only once both groups have units, so a
-                 database with no heavy equipment looks exactly as before. -->
-            <div class="team-tabbar" id="dashGroupBar" style="display:none">
-                <div class="team-tabs" role="tablist" aria-label="Dashboard scope">
-                    <button type="button" class="team-tab dash-group-tab" data-group="tractor" role="tab" aria-selected="true" onclick="setDashGroup('tractor')"><i class="fas fa-tractor"></i> Agricultural Equipment</button>
-                    <button type="button" class="team-tab dash-group-tab" data-group="heavy" role="tab" aria-selected="false" onclick="setDashGroup('heavy')"><i class="fas fa-person-digging"></i> Heavy Equipment</button>
-                    <button type="button" class="team-tab dash-group-tab" data-group="all" role="tab" aria-selected="false" onclick="setDashGroup('all')"><i class="fas fa-layer-group"></i> All</button>
-                </div>
-            </div>
-            <!-- Outside the tab bar on purpose: print CSS hides .team-tabbar, and
-                 a printed dashboard must still say which group it covers. -->
+            <!-- Which group this dashboard covers. The group is picked in the
+                 sidebar (Dashboard under each group, All Dashboard); this line
+                 says it on screen and on a printed copy. -->
             <p id="dashScopeCaption" class="dash-scope-caption" hidden></p>
             <p id="dashNarrative" class="dash-narrative" style="display:none"></p>
 
