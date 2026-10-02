@@ -54,7 +54,7 @@ const { launch, BASE_URL } = require('./_env');
         let got = null;
         const realProfile = window.showUnitProfile;
         window.showUnitProfile = id => { got = id; };
-        document.querySelector('#editBody button[title="Profil"]').click();
+        document.querySelector('#editBody button[title="Profile"]').click();
         window.showUnitProfile = realProfile;
         t('onclick: id berkutip tidak menjalankan kode', window.__pwn, 0);
         t('onclick: fungsi menerima id-nya persis', got, QID);
@@ -104,7 +104,7 @@ const { launch, BASE_URL } = require('./_env');
         t('Users: nama perangkat sesi tidak menjadi markup', [document.querySelectorAll('#viewUsers img').length, window.__pwn], [0, 0]);
         let gotUid = null;
         window.approveUser = uid => { gotUid = uid; };
-        const apBtn = document.querySelector('button[title="Setujui dengan role terpilih"]');
+        const apBtn = document.querySelector('button[title="Approve with the selected role"]');
         if (apBtn) apBtn.click();
         t('Users: uid berkutip diteruskan persis, tidak berjalan', [gotUid, window.__pwn], [apBtn ? "p1');window.__pwn++;//" : null, 0]);
 

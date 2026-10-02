@@ -31,13 +31,13 @@ const { launch, BASE_URL } = require('./_env');
         const rows = () => [...document.querySelectorAll('#toolSummary .tool-row')].map(r => [
             r.querySelector('.tool-row__name').textContent.trim(), Number(r.querySelector('.tool-row__count').firstChild.textContent)]);
         let r = rows();
-        t('judul Agricultural', document.querySelector('.tool-summary__title').textContent.trim(), 'Unit per Implement');
+        t('judul Agricultural', document.querySelector('.tool-summary__title').textContent.trim(), 'Units per Implement');
         t('terbanyak di atas, ejaan beda huruf/spasi digabung', r[0], ['Offset Harrow — Grizzly', 3]);
-        t('tanpa implement selalu tampil, paling bawah', r[r.length - 1], ['Tanpa implement', 2]);
-        t('daftar diringkas 8 jenis + tombol lainnya', [r.length, document.querySelector('.tool-summary__more').textContent.trim()], [9, '+4 jenis lainnya']);
+        t('tanpa implement selalu tampil, paling bawah', r[r.length - 1], ['No implement', 2]);
+        t('daftar diringkas 8 jenis + tombol lainnya', [r.length, document.querySelector('.tool-summary__more').textContent.trim()], [9, '+4 more types']);
         toggleToolSummary();
         t('tampilkan semua jenis', rows().length, 13);
-        t('ringkasan angka', document.querySelector('.tool-summary__meta').textContent.trim().startsWith('14 dari 16 unit memakai implement · 12 jenis'), true);
+        t('ringkasan angka', document.querySelector('.tool-summary__meta').textContent.trim().startsWith('14 of 16 units have an implement · 12 types'), true);
 
         // filter
         document.querySelector('#toolSummary .tool-row').click();
@@ -46,7 +46,7 @@ const { launch, BASE_URL } = require('./_env');
         t('baris aktif ditandai', document.querySelector('#toolSummary .tool-row.is-on .tool-row__name').textContent.trim(), 'Offset Harrow — Grizzly');
         document.querySelector('#toolSummary .tool-row.is-on').click();
         t('klik lagi menampilkan semua', shown().length, 16);
-        [...document.querySelectorAll('#toolSummary .tool-row')].find(b => /Tanpa implement/.test(b.textContent)).click();
+        [...document.querySelectorAll('#toolSummary .tool-row')].find(b => /No implement/.test(b.textContent)).click();
         t('filter tanpa implement', shown(), ['TR5', 'TR6']);
         setEditToolFilter('');
 
@@ -64,8 +64,8 @@ const { launch, BASE_URL } = require('./_env');
         setEditToolFilter(globalData[0] && toolKeyOf(globalData[0], 'tractor'));
         goNav('editUnits', 'heavy');
         t('pindah tab mereset filter', editToolFilter, '');
-        t('judul Heavy', document.querySelector('.tool-summary__title').textContent.trim(), 'Unit per Alat Kerja');
-        t('Heavy: per alat kerja', rows(), [['Root Plough', 2], ['Root Rake', 1], ['Tanpa alat kerja', 1]]);
+        t('judul Heavy', document.querySelector('.tool-summary__title').textContent.trim(), 'Units per Work Tool');
+        t('Heavy: per alat kerja', rows(), [['Root Plough', 2], ['Root Rake', 1], ['No work tool', 1]]);
         document.querySelector('#toolSummary .tool-row').click();
         t('Heavy: filter alat kerja', shown(), ['EX1', 'EX2']);
 

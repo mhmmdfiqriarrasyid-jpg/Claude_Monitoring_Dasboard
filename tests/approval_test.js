@@ -107,22 +107,22 @@ const { launch, BASE_URL } = require('./_env');
         // ---------- tampilan tabel ----------
         renderWorkLogTable();
         t('kolom Persetujuan ada',
-          [...document.querySelectorAll('#workLogTable thead th')].map(th=>th.textContent.trim()).includes('Persetujuan'), true);
+          [...document.querySelectorAll('#workLogTable thead th')].map(th=>th.textContent.trim()).includes('Approval'), true);
         t('KPI menunggu menghitung seluruh log',
           document.getElementById('wlKpiPending').textContent,
           String(workLogs.filter(w=>workLogApproval(w)==='pending').length));
         const rowSendiri = [...document.querySelectorAll('#workLogBody tr')].find(tr=>tr.textContent.includes('Dibuat sendiri'));
         t('laporan sendiri: tanpa tombol setujui',
-          rowSendiri.querySelectorAll('td[data-label="Persetujuan"] .appr-btn').length, 0);
+          rowSendiri.querySelectorAll('td[data-label="Approval"] .appr-btn').length, 0);
         const rowLain = [...document.querySelectorAll('#workLogBody tr')].find(tr=>tr.textContent.includes('Dibuat KHL'));
-        t('laporan orang lain: ada tombol', rowLain.querySelectorAll('td[data-label="Persetujuan"] .appr-btn').length > 0, true);
+        t('laporan orang lain: ada tombol', rowLain.querySelectorAll('td[data-label="Approval"] .appr-btn').length > 0, true);
 
         // ---------- filter ----------
         Object.assign(workLogs.find(w => w.id === 'wSudah'), { approval:'approved', revisionNote:'' });
         document.getElementById('wlApprovalFilter').value = 'approved';
         renderWorkLogTable();
         const shown = [...document.querySelectorAll('#workLogBody tr')];
-        t('filter disetujui', shown.every(tr=>tr.textContent.includes('Disetujui')), true);
+        t('filter disetujui', shown.every(tr=>tr.textContent.includes('Approved')), true);
         document.getElementById('wlApprovalFilter').value = 'pending';
         renderWorkLogTable();
         t('filter menunggu menyaring', document.querySelectorAll('#workLogBody tr').length < workLogs.length, true);

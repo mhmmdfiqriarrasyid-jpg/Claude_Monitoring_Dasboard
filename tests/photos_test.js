@@ -68,9 +68,9 @@ const { launch, BASE_URL } = require('./_env');
         // ---------- tabel tidak menarik satu gambar pun ----------
         const cellOf = id => [...document.querySelectorAll('#workLogBody tr')]
             .find(tr => tr.textContent.includes('Servis ' + id))
-            .querySelector('td[data-label="Dokumentasi"]');
+            .querySelector('td[data-label="Photos"]');
         t('tidak ada <img> di seluruh kolom dokumentasi',
-          document.querySelectorAll('#workLogBody td[data-label="Dokumentasi"] img').length, 0);
+          document.querySelectorAll('#workLogBody td[data-label="Photos"] img').length, 0);
         t('tombol bentuk lama menunjukkan 2', cellOf('wOld').querySelector('.wl-photo-btn').textContent.trim(), '2');
         t('tombol bentuk baru menunjukkan 3', cellOf('wSplit').querySelector('.wl-photo-btn').textContent.trim(), '3');
         t('tanpa foto: tidak ada tombol', !!cellOf('wNone').querySelector('.wl-photo-btn'), false);

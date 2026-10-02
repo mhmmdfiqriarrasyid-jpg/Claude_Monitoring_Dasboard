@@ -155,7 +155,7 @@ async function run(page, width, body) {
             gps: terlihat('GPS'),
             lisensi: terlihat('GPS Expiry'),
             remarks: terlihat('Remarks'),
-            tahun: terlihat('Tahun Penerimaan')
+            tahun: terlihat('Year Received')
         };
     })()`);
     // Dua yang sengaja tanpa label: nomor baris dan kotak centang.
@@ -201,10 +201,10 @@ async function run(page, width, body) {
         const hasil = {
             tanpaLabel: tds.filter(td => !td.hasAttribute('data-label')
                                       && !td.classList.contains('col-actions')).length,
-            tanggal: terlihat('Tanggal'),
-            hari: terlihat('Hari'),
-            surat: terlihat('Surat'),
-            persetujuan: terlihat('Persetujuan'),
+            tanggal: terlihat('Date'),
+            hari: terlihat('Days'),
+            surat: terlihat('Letter'),
+            persetujuan: terlihat('Approval'),
             kolom: String(kolom),
             geser: document.documentElement.scrollWidth > innerWidth
         };
@@ -234,7 +234,7 @@ async function run(page, width, body) {
                                 return !!td && td.offsetParent !== null; };
         const hasil = {
             tanpaLabel: tds.filter(td => !td.hasAttribute('data-label') && !td.classList.contains('col-actions')).length,
-            camera: terlihat('Camera AI'), lambung: terlihat('Nomor Lambung'),
+            camera: terlihat('Camera AI'), lambung: terlihat('Asset No.'),
             geser: document.documentElement.scrollWidth > innerWidth,
             tab: Math.round(document.querySelector('.eu-tab').getBoundingClientRect().height)
         };

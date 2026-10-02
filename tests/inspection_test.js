@@ -64,9 +64,9 @@ const { launch, BASE_URL } = require('./_env');
                        { id: 'b', unitId: 'h2', date: '2026-09-20', approval: 'pending', createdByUid: 'x', results: {} },
                        { id: 'c', unitId: 'h3', date: '2026-09-30', approval: 'draft', createdByUid: 'x', results: {} }];
         const s1 = inspectionStatusFor(globalData[0], '2026-10-02');
-        t('14 hari dari tanggal cek aktual: 10 Sep → 24 Sep', [s1.next, s1.key, s1.label], ['2026-09-24', 'overdue', 'Terlambat 8 hari']);
+        t('14 hari dari tanggal cek aktual: 10 Sep → 24 Sep', [s1.next, s1.key, s1.label], ['2026-09-24', 'overdue', '8 days overdue']);
         const s2 = inspectionStatusFor(globalData[1], '2026-10-02');
-        t('laporan menunggu juga dihitung sudah dicek: 20 Sep → 4 Okt', [s2.next, s2.key, s2.label], ['2026-10-04', 'soon', '2 hari lagi']);
+        t('laporan menunggu juga dihitung sudah dicek: 20 Sep → 4 Okt', [s2.next, s2.key, s2.label], ['2026-10-04', 'soon', 'in 2 days']);
         t('draf tidak dihitung', inspectionStatusFor(globalData[2], '2026-10-02').key, 'never');
         renderInspectionView();
         t('KPI terlambat / jatuh tempo / belum pernah', ['insKpiOverdue', 'insKpiSoon', 'insKpiNever'].map(i => document.getElementById(i).textContent), ['1', '1', '1']);
@@ -91,12 +91,12 @@ const { launch, BASE_URL } = require('./_env');
         t('jadwal tersimpan', [plan.date, plan.unitIds], ['2026-10-02', ['h1', 'h2']]);
         inspectionPlans = [plan];
         renderInspectionPlans();
-        t('progres jadwal 0/2', document.querySelector('#insPlanBody td[data-label="Progres"]').textContent.trim().startsWith('0/2'), true);
+        t('progres jadwal 0/2', document.querySelector('#insPlanBody td[data-label="Progress"]').textContent.trim().startsWith('0/2'), true);
 
         // =============== laporan cek ===============
         document.querySelector('#insPlanBody .ins-chip__go').click();
         t('cek dari jadwal: form terbuka untuk unit itu', [document.getElementById('inspectionModal').classList.contains('open'), document.getElementById('insUnit').value], [true, 'h1']);
-        t('dan tercatat bagian dari jadwal', [document.getElementById('insPlanId').value, document.getElementById('insPlanTag').textContent], [plan.id, 'Bagian dari jadwal 2026-10-02']);
+        t('dan tercatat bagian dari jadwal', [document.getElementById('insPlanId').value, document.getElementById('insPlanTag').textContent], [plan.id, 'Part of schedule 2026-10-02']);
         t('empat komponen alat berat', [...document.querySelectorAll('#insComponents .ins-comp')].map(e => e.dataset.key), ['cameraAi', 'telematicBox', 'switchLimiter', 'rotaryLamp']);
         let n0 = calls.length;
         saveInspection(null);
@@ -121,11 +121,11 @@ const { launch, BASE_URL } = require('./_env');
         t('pesan menyebut cek berikutnya', toasts.some(m => /cek berikutnya 2026-10-16/.test(m)), true);
         inspections = [rep];
         renderInspectionPlans();
-        t('jadwal: 1/2 selesai', document.querySelector('#insPlanBody td[data-label="Progres"]').textContent.trim().startsWith('1/2'), true);
+        t('jadwal: 1/2 selesai', document.querySelector('#insPlanBody td[data-label="Progress"]').textContent.trim().startsWith('1/2'), true);
 
         // Di luar jadwal
         showInspectionForm('h3');
-        t('cek di luar jadwal ditandai', [document.getElementById('insPlanId').value, /Di luar jadwal/.test(document.getElementById('insPlanTag').textContent)], ['', true]);
+        t('cek di luar jadwal ditandai', [document.getElementById('insPlanId').value, /Unscheduled/.test(document.getElementById('insPlanTag').textContent)], ['', true]);
         document.getElementById('insDate').value = '2026-09-25';
         ['cameraAi', 'telematicBox', 'switchLimiter', 'rotaryLamp'].forEach(k => setInspectionResult(k, 'good'));
         _insPhotos = { cameraAi: PH, telematicBox: PH, switchLimiter: PH, rotaryLamp: PH }; _insPhotosDirty = true;
@@ -138,7 +138,7 @@ const { launch, BASE_URL } = require('./_env');
         // Kunci
         switchInspectionTab('reports');
         const row = [...document.querySelectorAll('#insReportBody tr')].find(tr => tr.textContent.includes('EX-h1'));
-        t('menunggu: gembok + tarik kembali', [!!row.querySelector('button[title="Edit"]'), !!row.querySelector('.row-lock'), !!row.querySelector('button[title="Tarik kembali ke draf"]')], [false, true, true]);
+        t('menunggu: gembok + tarik kembali', [!!row.querySelector('button[title="Edit"]'), !!row.querySelector('.row-lock'), !!row.querySelector('button[title="Withdraw to draft"]')], [false, true, true]);
         t('catatan berbahaya tidak menjadi markup', [document.querySelectorAll('#insReportBody img').length, window.__pwn || 0], [0, 0]);
         const n1 = calls.length;
         editInspection(rep.id);

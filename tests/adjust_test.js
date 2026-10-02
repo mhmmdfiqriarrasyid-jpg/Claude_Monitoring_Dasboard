@@ -70,20 +70,20 @@ const { launch, BASE_URL } = require('./_env');
         // ---------- kolom tabel ----------
         const heads = [...document.querySelectorAll('#workLogTable thead th')].map(th=>th.textContent.trim());
         t('kepala tabel lengkap', heads,
-          ['No','Tanggal','Anggota','Perusahaan','Jam Kerja','Unit','Paddock','Uraian Pekerjaan','Kendala','Persetujuan','Dokumentasi','Actions']);
+          ['No','Date','Member','Company','Work Hours','Unit','Paddock','Work Description','Issues','Approval','Photos','Actions']);
         const rowNew = [...document.querySelectorAll('#workLogBody tr')].find(tr => tr.textContent.includes('Servis baru'));
         t('dua badge unit di satu baris', rowNew.querySelectorAll('td[data-label="Unit"] .badge').length, 2);
         t('paddock tampil', rowNew.querySelector('td[data-label="Paddock"]').textContent.trim(), 'Paddock B-12');
         // Foto tidak lagi dirender inline di tabel — hanya tombol berisi jumlahnya,
         // supaya membuka halaman ini tidak menarik satu pun gambar.
-        t('tidak ada gambar inline di tabel', rowNew.querySelectorAll('td[data-label="Dokumentasi"] img').length, 0);
+        t('tidak ada gambar inline di tabel', rowNew.querySelectorAll('td[data-label="Photos"] img').length, 0);
         t('tombol foto menampilkan jumlah',
-          rowNew.querySelector('td[data-label="Dokumentasi"] .wl-photo-btn').textContent.trim(), '2');
-        const jamCell = rowNew.querySelector('td[data-label="Jam Kerja"]');
+          rowNew.querySelector('td[data-label="Photos"] .wl-photo-btn').textContent.trim(), '2');
+        const jamCell = rowNew.querySelector('td[data-label="Work Hours"]');
         t('rentang jam di kolom Jam Kerja',
           jamCell.firstChild.textContent.trim(), '08:00–12:00');
         t('durasi di baris kedua kolom yang sama',
-          jamCell.querySelector('.wl-duration').textContent.trim(), '4j');
+          jamCell.querySelector('.wl-duration').textContent.trim(), '4h');
         t('durasi memang ditampilkan sebagai blok terpisah',
           getComputedStyle(jamCell.querySelector('.wl-duration')).display, 'block');
 

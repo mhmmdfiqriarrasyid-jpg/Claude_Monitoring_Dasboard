@@ -71,7 +71,7 @@ const { launch, BASE_URL } = require('./_env');
         const groupRows = [...document.querySelectorAll('#shiftBody tr.shift-group')];
         t('baris judul grup muncul', groupRows.length, 3);
         t('judul grup pertama', groupRows[0].querySelector('.shift-group__name').textContent.trim().split('\\n')[0].trim(), GPA);
-        t('jumlah orang per grup', groupRows.map(r => r.querySelector('.shift-group__count').textContent), ['2 orang','2 orang','1 orang']);
+        t('jumlah orang per grup', groupRows.map(r => r.querySelector('.shift-group__count').textContent), ['2 people','2 people','1 people']);
         t('total baris = 3 judul + 5 anggota aktif', document.querySelectorAll('#shiftBody tr').length, 8);
 
         // subtotal per perusahaan pada hari Senin (kolom pertama)
@@ -81,18 +81,18 @@ const { launch, BASE_URL } = require('./_env');
         t('tanpa perusahaan Senin bertugas 1', cellOf(groupRows[2], 0), '1');
         const footCells = document.querySelectorAll('#shiftFoot td');
         t('total keseluruhan Senin = 4', footCells[0].querySelector('strong').textContent, '4');
-        t('label total', document.querySelector('#shiftFoot th').textContent.trim(), 'Total bertugas');
+        t('label total', document.querySelector('#shiftFoot th').textContent.trim(), 'Total on duty');
 
         // ---------- laporan harian ----------
         switchTeamTab('worklog');
-        t('kolom Perusahaan ada di kepala tabel',
-          [...document.querySelectorAll('#workLogTable thead th')].map(th=>th.textContent.trim()).includes('Perusahaan'), true);
+        t('kolom Company ada di kepala tabel',
+          [...document.querySelectorAll('#workLogTable thead th')].map(th=>th.textContent.trim()).includes('Company'), true);
         t('semua laporan tampil', document.querySelectorAll('#workLogBody tr').length, 4);
 
         document.getElementById('wlCompanyFilter').value = GPA;
         renderWorkLogTable();
         t('filter perusahaan GPA', document.querySelectorAll('#workLogBody tr').length, 1);
-        t('KPI jam ikut tersaring', document.getElementById('wlKpiHours').textContent, '8j');
+        t('KPI jam ikut tersaring', document.getElementById('wlKpiHours').textContent, '8h');
 
         document.getElementById('wlCompanyFilter').value = '__none__';
         renderWorkLogTable();

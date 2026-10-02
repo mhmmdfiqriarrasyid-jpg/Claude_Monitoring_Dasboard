@@ -60,7 +60,7 @@ const { launch, BASE_URL } = require('./_env');
         t('terpasang di unit -> nama unit hidup', deviceWhere(warehouseDevices[1]), 'JD-6110B-01');
         t('terpasang di lapangan -> nama titik', deviceWhere(warehouseDevices[2]), 'Weather Station Blok C');
         t('terpasang tanpa lokasi -> diberi tahu',
-          deviceWhere({ status:'installed' }), 'Terpasang (lokasi belum diisi)');
+          deviceWhere({ status:'installed' }), 'Installed (location not set)');
         t('nama unit diambil dari data hidup, bukan salinan basi',
           deviceWhere({ status:'installed', unitId:'u_1', unitName:'NAMA BASI' }), 'JD-6110B-01');
 

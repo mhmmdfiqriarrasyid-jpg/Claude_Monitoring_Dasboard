@@ -22,11 +22,27 @@ const goldenRaw = require('./fixtures/tractor_golden.json');
 //    jadi &quot;…&quot;) menggantikan '…'. Kutip tunggal hasil escapeHtml
 //    dikembalikan browser sebelum handler berjalan, jadi id berisi ' bisa
 //    menjalankan kode.
-const golden = JSON.parse(JSON.stringify(goldenRaw).replace(
+//  - Label UI diterjemahkan ke bahasa Inggris (judul, aria-label, header,
+//    data-label, judul kartu Decision Inbox). Hanya teks label ini yang
+//    ditukar — persis, satu per satu — sehingga markup lainnya tetap harus
+//    identik dengan kode lama.
+const UI_LABELS_EN = [
+    ['title="Lihat profil unit"', 'title="View unit profile"'],
+    ['title="Otomatis turun dari ', 'title="Auto-downgraded from '],
+    ['title="Auto-fallback dari ', 'title="Auto-fallback from '],
+    ['>Tahun Penerimaan <', '>Year Received <'],
+    ['data-label="Tahun Penerimaan"', 'data-label="Year Received"'],
+    ['aria-label="Filter komponen"', 'aria-label="Filter components"'],
+    ['aria-label="Filter jenis masalah"', 'aria-label="Filter issue type"'],
+    ['aria-label="Pilih semua unit"', 'aria-label="Select all units"'],
+    ['title="Profil"', 'title="Profile"'],
+    ['Lisensi segera habis', 'Licenses expiring soon']
+].map(([a, b]) => [JSON.stringify(a).slice(1, -1), JSON.stringify(b).slice(1, -1)]);
+const golden = JSON.parse(UI_LABELS_EN.reduce((s, [a, b]) => s.split(a).join(b), JSON.stringify(goldenRaw).replace(
     /onclick=\\"showBreakdownPopover\(event, '([^']*)'\)\\"/g,
     (_, r) => `data-reason=\\"${r}\\" onclick=\\"showBreakdownPopover(event, this.dataset.reason)\\"`)
   .replace(/onclick=\\"(showUnitProfile|showHistory|editUnit|deleteUnit|triggerAttachUpload)\('([^']*)'\)\\"/g,
-    (_, fn, arg) => `onclick=\\"${fn}(&quot;${arg}&quot;)\\"`));
+    (_, fn, arg) => `onclick=\\"${fn}(&quot;${arg}&quot;)\\"`)));
 
 const T = [];
 const t = (n, g, w) => T.push({ n, g, w, pass: JSON.stringify(g) === JSON.stringify(w) });
@@ -433,7 +449,7 @@ const SETUP = `(() => {
           R.heavyFilterOpts, ['Camera AI', 'Telematic Box', 'Switch Limiter', 'Rotary Lamp']);
         t('WN4: cakupan bertahan melewati snapshot', R.scopeAfterSnapshot, true);
         t('WN4: cakupan bertahan melewati reset filter', R.scopeAfterClear, true);
-        t('cakupan Semua menyebut isinya', R.captionAll, 'Cakupan: semua unit (2 Agricultural Equipment, 1 Heavy Equipment)');
+        t('cakupan Semua menyebut isinya', R.captionAll, 'Scope: all units (2 Agricultural Equipment, 1 Heavy Equipment)');
         t('tabel cakupan Semua: 10 kolom', R.allHead, 10);
 
         t('UI1: menyentuh sel kosong alat berat tidak menulis apa pun', R.inlineNoWrite, [0, 0, true]);

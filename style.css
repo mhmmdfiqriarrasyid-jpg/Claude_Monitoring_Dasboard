@@ -3012,14 +3012,14 @@ body[data-nocsvimport] .csv-import { display: none !important; }
 /* .data-table td is nowrap, so a long name or company name forced the table
    224px wider than its card and pushed the last columns out of sight. These
    two wrap instead; the rest stay on one line. */
-#workLogTable td[data-label="Anggota"],
-#workLogTable td[data-label="Perusahaan"] {
+#workLogTable td[data-label="Member"],
+#workLogTable td[data-label="Company"] {
     white-space: normal;
     overflow-wrap: break-word;
     max-width: 150px;
     line-height: 1.35;
 }
-#workLogTable td[data-label="Perusahaan"] { max-width: 130px; }
+#workLogTable td[data-label="Company"] { max-width: 130px; }
 
 /* The report filters outgrew one line once the company filter joined them. */
 #teamWorkLogPanel .edit-toolbar__right {
@@ -3111,7 +3111,7 @@ body[data-nocsvimport] .csv-import { display: none !important; }
     font-size: 11px;
     color: var(--text-light);
 }
-#workLogTable td[data-label="Dokumentasi"] {
+#workLogTable td[data-label="Photos"] {
     white-space: normal;
     max-width: 120px;
 }
@@ -3133,8 +3133,8 @@ body[data-nocsvimport] .csv-import { display: none !important; }
     line-height: 1.9;
 }
 #workLogTable td[data-label="Unit"] .badge { white-space: nowrap; }
-#workLogTable td[data-label="Dokumentasi"] { max-width: 96px; }
-#workLogTable td[data-label="Dokumentasi"] .dmg-thumb {
+#workLogTable td[data-label="Photos"] { max-width: 96px; }
+#workLogTable td[data-label="Photos"] .dmg-thumb {
     width: 30px;
     height: 30px;
     margin: 1px;
@@ -3148,8 +3148,8 @@ body[data-nocsvimport] .csv-import { display: none !important; }
 }
 /* max-width alone does not clip a nowrap cell — the text simply spilled over
    the next column. The full value stays available as the cell's tooltip. */
-#workLogTable td[data-label="Uraian"],
-#workLogTable td[data-label="Kendala"] {
+#workLogTable td[data-label="Work Description"],
+#workLogTable td[data-label="Issues"] {
     overflow: hidden;
     text-overflow: ellipsis;
 }
@@ -3237,8 +3237,8 @@ body[data-nocsvimport] .csv-import { display: none !important; }
     padding-left: 8px;
     padding-right: 8px;
 }
-#deviceTable td[data-label="Catatan"],
-#deviceTable td[data-label="Posisi"] {
+#deviceTable td[data-label="Notes"],
+#deviceTable td[data-label="Location"] {
     white-space: normal;
     overflow-wrap: break-word;
     max-width: 140px;
@@ -3363,7 +3363,7 @@ body[data-nocsvimport] .csv-import { display: none !important; }
 .lv-type--sakit { background: var(--warning-bg); color: var(--warning); }
 .lv-type--alpa  { background: var(--danger-bg);  color: var(--danger); }
 
-#leaveTable td[data-label="Persetujuan"] {
+#leaveTable td[data-label="Approval"] {
     white-space: normal;
     max-width: 110px;
 }
@@ -3384,7 +3384,7 @@ body[data-nocsvimport] .csv-import { display: none !important; }
 .shift-leave--sakit { background: var(--warning-bg); color: var(--warning); }
 .shift-leave--alpa  { background: var(--danger-bg);  color: var(--danger); }
 
-#workLogTable td[data-label="Persetujuan"] {
+#workLogTable td[data-label="Approval"] {
     white-space: normal;
     max-width: 110px;
 }
@@ -3954,7 +3954,7 @@ canvas { max-width: 100%; }
 .appr-cell .appr-btn--ok:hover  { background: var(--success-bg); }
 .appr-cell .appr-btn--rev { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 35%, var(--border)); }
 .appr-cell .appr-btn--rev:hover { background: var(--warning-bg); }
-td[data-label="Persetujuan"] { vertical-align: middle; }
+td[data-label="Approval"] { vertical-align: middle; }
 @media (max-width: 700px) {
     .appr-cell { width: 120px; }
     .appr-cell .appr-btn { height: 36px; }

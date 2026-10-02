@@ -124,7 +124,7 @@ const { launch, BASE_URL } = require('./_env');
         freshAsk(); answer = false;
         t('tabrakan minta konfirmasi, bukan menolak',
           checkLeaveRange('m1', 'sakit', '2026-09-22', '2026-09-25', null, 1), false);
-        t('dan menyebut pengajuan yang bertabrakan', /Sakit/.test(asked[0] || ''), true);
+        t('dan menyebut pengajuan yang bertabrakan', /Sick/.test(asked[0] || ''), true);
         answer = true;
 
         // ---------- HANYA YANG DISETUJUI MENANDAI JADWAL ----------
@@ -148,7 +148,7 @@ const { launch, BASE_URL } = require('./_env');
         renderShiftGrid();
         const penanda = document.querySelector('.shift-leave');
         t('penanda izin tergambar di grid', !!penanda, true);
-        t('penandanya menyebut jenisnya', penanda ? penanda.textContent.trim() : '', 'Sakit');
+        t('penandanya menyebut jenisnya', penanda ? penanda.textContent.trim() : '', 'Sick');
         t('pilihan shift TIDAK ikut hilang',
           !!document.querySelector('#shiftBody .shift-select'), true);
         t('dan shift yang sudah diisi tidak berubah',
@@ -271,9 +271,9 @@ const { launch, BASE_URL } = require('./_env');
               approval: 'approved' }
         ];
         t('izin/sakit disetujui tanpa surat terdeteksi',
-          dcLeaveWithoutDoc().map(x => x.label), ['Sakit: Andi']);
+          dcLeaveWithoutDoc().map(x => x.label), ['Sick: Andi']);
         t('alpa TIDAK pernah dianggap kurang surat',
-          dcLeaveWithoutDoc().some(x => /Alpa/.test(x.label)), false);
+          dcLeaveWithoutDoc().some(x => /Absent/.test(x.label)), false);
         t('rentang terbalik terdeteksi', dcLeaveReversed().length, 1);
 
         leaveRequests = [{ id: 'lv_ok', memberId: 'm1', memberName: 'Andi', type: 'izin',

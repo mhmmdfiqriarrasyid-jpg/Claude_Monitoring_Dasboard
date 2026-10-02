@@ -42,7 +42,7 @@ const { launch, BASE_URL } = require('./_env');
         workLogs = [{ id: 'w1', memberId: 'm2', memberName: 'Budi', date: '2026-09-01', task: 'x', approval: 'draft', createdByUid: 'uO' }];
         editLeave('l1');
         t('izin anggota nonaktif: anggotanya tetap terpilih', document.getElementById('lvMember').value, 'm2');
-        t('dan ditandai nonaktif', document.getElementById('lvMember').selectedOptions[0].textContent, 'Budi (nonaktif)');
+        t('dan ditandai nonaktif', document.getElementById('lvMember').selectedOptions[0].textContent, 'Budi (inactive)');
         closeLeaveModal(true);
         editWorkLog('w1');
         t('laporan anggota nonaktif: anggotanya tetap terpilih', document.getElementById('wlMember').value, 'm2');

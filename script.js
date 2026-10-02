@@ -92,12 +92,15 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v135';
+const APP_VERSION = 'v136';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
 const DAMAGE_STORAGE_KEY = 'tractorDamageRecords';
 const DAMAGE_TYPES = ['Mekanis', 'Software', 'Device Precision'];
+// Display-only names; the stored damageType values above never change.
+const DAMAGE_TYPE_LABEL = { Mekanis: 'Mechanical', Lainnya: 'Other' };
+function damageTypeLabel(t) { return DAMAGE_TYPE_LABEL[t] || t || ''; }
 // Built-in components seeded into the manageable list. `unitField` links a
 // component to the unit status column it controls; custom components added
 // later have no field, so they flip the whole unit's status instead.
@@ -289,13 +292,13 @@ const HEAVY_COMPONENT_KEYS = ['cameraAi', 'telematicBox', 'switchLimiter', 'rota
 const HEAVY_ONLY_FIELDS = ['machineType', 'assetCode', 'workTool', ...HEAVY_COMPONENT_KEYS];
 const UNIT_GROUPS = {
     tractor: {
-        key: 'tractor', label: 'Agricultural Equipment', shortLabel: 'Pertanian', icon: 'fa-tractor',
+        key: 'tractor', label: 'Agricultural Equipment', shortLabel: 'Agricultural', icon: 'fa-tractor',
         hasLicences: true, csvPrefix: 'tractor_monitoring', onlyFields: TRACTOR_ONLY_FIELDS,
         components: COMPONENT_KEYS.map(k => ({ key: k, label: COMPONENT_LABELS[k],
                                                badge: 'badge-' + COMPONENT_LABELS[k].toLowerCase() }))
     },
     heavy: {
-        key: 'heavy', label: 'Heavy Equipment', shortLabel: 'Alat Berat', icon: 'fa-person-digging',
+        key: 'heavy', label: 'Heavy Equipment', shortLabel: 'Heavy', icon: 'fa-person-digging',
         hasLicences: false, csvPrefix: 'alat_berat_monitoring', onlyFields: HEAVY_ONLY_FIELDS,
         components: [
             { key: 'cameraAi',      label: 'Camera AI',      badge: 'badge-camera-ai' },
@@ -322,7 +325,7 @@ function normalizeGroupKey(raw) {
         const g = UNIT_GROUPS[k];
         if (v === k || v === g.label.toLowerCase() || v === g.shortLabel.toLowerCase()) return k;
     }
-    if (['traktor', 'agricultural', 'agricultural tractor'].includes(v)) return 'tractor';
+    if (['traktor', 'pertanian', 'agricultural', 'agricultural tractor'].includes(v)) return 'tractor';
     if (['alat berat', 'heavy equipment'].includes(v)) return 'heavy';
     return null;
 }
@@ -1408,7 +1411,7 @@ function renderAttachCell(d) {
             <i class="fas ${escapeHtml(attachFileIcon(a.name))}"></i>
             <span class="attach-chip__name">${escapeHtml(shortName)}</span>
             <button class="btn-icon attach-chip__dl" title="Download" onclick="downloadAttachment(${jsArg(a.id)})"><i class="fas fa-download"></i></button>
-            <button class="btn-icon attach-chip__rm" title="Hapus" onclick="removeAttachment(${jsArg(d.id)},${jsArg(a.id)})"><i class="fas fa-xmark"></i></button>
+            <button class="btn-icon attach-chip__rm" title="Delete" onclick="removeAttachment(${jsArg(d.id)},${jsArg(a.id)})"><i class="fas fa-xmark"></i></button>
         </div>`;
     });
     html += `<button class="btn-icon attach-upload-btn" title="Upload file" onclick="triggerAttachUpload(${jsArg(d.id)})"><i class="fas fa-paperclip"></i></button>`;
@@ -1845,7 +1848,7 @@ function updateConnectionLabel() {
         el.textContent = `${globalData.length} Units`;
     } else {
         document.body.dataset.offline = '1';
-        el.textContent = 'Offline — perubahan tersimpan di perangkat';
+        el.textContent = 'Offline — changes saved on this device';
     }
 }
 
@@ -2038,8 +2041,8 @@ function showHistory(unitId) {
     const countEl = document.getElementById('historyCount');
     if (countEl) {
         countEl.textContent = truncated
-            ? `Menampilkan ${filtered.length} terbaru — riwayat lengkap ada di tombol Export`
-            : `${filtered.length} kejadian`;
+            ? `Showing the latest ${filtered.length} — full history via the Export button`
+            : `${filtered.length} events`;
     }
 
     const tbody = document.getElementById('historyBody');
@@ -2048,8 +2051,8 @@ function showHistory(unitId) {
         // fall outside the capped window, so separate the two cases.
         tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-secondary)">${
             unitId
-                ? 'Tidak ada riwayat unit ini di dalam 500 kejadian terbaru — coba Export untuk riwayat lengkap'
-                : 'Belum ada riwayat'
+                ? 'No history for this unit in the latest 500 events — use Export for the full history'
+                : 'No history yet'
         }</td></tr>`;
     } else {
         tbody.innerHTML = filtered.map(e => {
@@ -2058,13 +2061,13 @@ function showHistory(unitId) {
                 : '<span style="color:var(--text-light)">—</span>';
             return `
             <tr>
-                <td data-label="Waktu" style="white-space:nowrap">${formatUserTime(e.timestamp)}</td>
-                <td data-label="Aksi"><span class="audit-badge audit-${escapeHtml(e.action)}">${escapeHtml(e.action)}</span></td>
-                <td data-label="Oleh">${who}</td>
+                <td data-label="Time" style="white-space:nowrap">${formatUserTime(e.timestamp)}</td>
+                <td data-label="Action"><span class="audit-badge audit-${escapeHtml(e.action)}">${escapeHtml(e.action)}</span></td>
+                <td data-label="By">${who}</td>
                 <td data-label="Unit">${escapeHtml(e.unitName || '-')}</td>
                 <td data-label="Field">${escapeHtml(e.field || '-')}</td>
-                <td data-label="Sebelum">${escapeHtml(e.before != null ? e.before : '-')}</td>
-                <td data-label="Sesudah">${escapeHtml(e.after  != null ? e.after  : '-')}</td>
+                <td data-label="Before">${escapeHtml(e.before != null ? e.before : '-')}</td>
+                <td data-label="After">${escapeHtml(e.after  != null ? e.after  : '-')}</td>
             </tr>`;
         }).join('');
     }
@@ -2209,18 +2212,18 @@ function renderPhantomHistory(scanned) {
     document.getElementById('phantomHistoryBody').innerHTML = _phantomHistoryFound.map(f => {
         const e = f.entry;
         return `<tr>
-            <td data-label="Waktu" style="white-space:nowrap">${formatUserTime(e.timestamp)}</td>
-            <td data-label="Oleh">${escapeHtml(e.actorName || '-')}</td>
+            <td data-label="Time" style="white-space:nowrap">${formatUserTime(e.timestamp)}</td>
+            <td data-label="By">${escapeHtml(e.actorName || '-')}</td>
             <td data-label="Unit">${escapeHtml(e.unitName || '-')}</td>
             <td data-label="Field">${escapeHtml(e.field)}</td>
-            <td data-label="Sebelum">${escapeHtml(e.before != null && e.before !== '' ? String(e.before) : '(kosong)')}</td>
-            <td data-label="Tercatat jadi">${escapeHtml(e.after != null ? String(e.after) : '-')}</td>
-            <td data-label="Nilai sekarang"><strong>${escapeHtml(f.current != null && f.current !== '' ? String(f.current) : '(kosong)')}</strong></td>
+            <td data-label="Before">${escapeHtml(e.before != null && e.before !== '' ? String(e.before) : '(empty)')}</td>
+            <td data-label="Recorded as">${escapeHtml(e.after != null ? String(e.after) : '-')}</td>
+            <td data-label="Current Value"><strong>${escapeHtml(f.current != null && f.current !== '' ? String(f.current) : '(empty)')}</strong></td>
         </tr>`;
     }).join('');
 
     document.getElementById('phantomHistoryDeleteBtn').textContent =
-        `Hapus ${_phantomHistoryFound.length} baris ini`;
+        `Delete these ${_phantomHistoryFound.length} rows`;
     document.getElementById('phantomHistoryModal').classList.add('open');
 }
 
@@ -3022,7 +3025,7 @@ function renderDowntimeKPIs(units) {
     const listEl = document.getElementById('topOffendersList');
     if (!listEl) return;
     if (s.topOffenders.length === 0) {
-        listEl.innerHTML = '<div class="top-offender top-offender--empty">Belum ada downtime tercatat</div>';
+        listEl.innerHTML = '<div class="top-offender top-offender--empty">No downtime recorded yet</div>';
     } else {
         listEl.innerHTML = s.topOffenders.map((u, i) => `
             <div class="top-offender">
@@ -3260,7 +3263,7 @@ function syncDashGroupUI() {
         const n = g === 'all' ? globalData.length : unitsOfGroup(globalData, g).length;
         // Same names and icons as the Edit Units tabs, so the two pages read
         // as one set of groups.
-        const label = g === 'all' ? 'Semua' : groupDef(g).label;
+        const label = g === 'all' ? 'All' : groupDef(g).label;
         const icon = g === 'all' ? 'fa-layer-group' : groupDef(g).icon;
         btn.style.display = '';
         btn.classList.toggle('active', g === scope);
@@ -3273,8 +3276,8 @@ function syncDashGroupUI() {
         if (both) {
             const nH = unitsOfGroup(globalData, 'heavy').length;
             cap.textContent = scope === 'all'
-                ? `Cakupan: semua unit (${globalData.length - nH} ${UNIT_GROUPS.tractor.label}, ${nH} ${UNIT_GROUPS.heavy.label})`
-                : `Cakupan: ${groupDef(scope).label}`;
+                ? `Scope: all units (${globalData.length - nH} ${UNIT_GROUPS.tractor.label}, ${nH} ${UNIT_GROUPS.heavy.label})`
+                : `Scope: ${groupDef(scope).label}`;
         }
     }
     _syncSelect(document.getElementById('componentFilter'), 'All Components', _issueOptions(scope, false), ' Issues');
@@ -3517,10 +3520,10 @@ function renderStockAlerts() {
     if (!low.length) { section.style.display = 'none'; return; }
     section.style.display = '';
     cards.innerHTML = low.map(l => `
-        <div class="stock-alert-card ${l.sisa <= 0 ? 'empty' : ''}" onclick="navigateTo('licenseStock')" title="Buka Stok Lisensi">
+        <div class="stock-alert-card ${l.sisa <= 0 ? 'empty' : ''}" onclick="navigateTo('licenseStock')" title="Open License Stock">
             <i class="fas fa-${l.sisa <= 0 ? 'circle-xmark' : 'triangle-exclamation'}"></i>
             <span class="stock-alert-card__type">${escapeHtml(l.type)}</span>
-            <span class="stock-alert-card__n">sisa ${l.sisa}</span>
+            <span class="stock-alert-card__n">${l.sisa} left</span>
         </div>`).join('');
 }
 
@@ -3703,12 +3706,12 @@ function renderDetailHead(scope) {
     const s = (k, l) => sortTh(k, l, 'sortTable');
     if (scope === 'tractor') head.innerHTML = DETAIL_HEADS.tractor;
     else if (scope === 'heavy') head.innerHTML = `<tr>${s('no', 'No')}${s('name', 'Nickname')}${s('model', 'Model')}${s('sn', 'Serial Number')}
-        ${s('machineType', 'Jenis Alat')}${s('assetCode', 'Nomor Lambung')}${s('workTool', 'Alat Kerja')}${s('status', 'Status')}
+        ${s('machineType', 'Machine Type')}${s('assetCode', 'Asset No.')}${s('workTool', 'Work Tool')}${s('status', 'Status')}
         ${UNIT_GROUPS.heavy.components.map(c => s(c.key, c.label)).join('')}
-        ${s('site', 'Site')}${s('yearReceived', 'Tahun Penerimaan')}${s('userCategory', 'User Category')}</tr>`;
-    else head.innerHTML = `<tr>${s('no', 'No')}${s('name', 'Nickname')}${s('unitGroup', 'Kelompok')}${s('model', 'Model')}
-        ${s('sn', 'Serial Number')}${s('status', 'Status')}<th>Komponen</th>
-        ${s('site', 'Site')}${s('yearReceived', 'Tahun Penerimaan')}${s('userCategory', 'User Category')}</tr>`;
+        ${s('site', 'Site')}${s('yearReceived', 'Year Received')}${s('userCategory', 'User Category')}</tr>`;
+    else head.innerHTML = `<tr>${s('no', 'No')}${s('name', 'Nickname')}${s('unitGroup', 'Group')}${s('model', 'Model')}
+        ${s('sn', 'Serial Number')}${s('status', 'Status')}<th>Components</th>
+        ${s('site', 'Site')}${s('yearReceived', 'Year Received')}${s('userCategory', 'User Category')}</tr>`;
     _detailHeadGroup = scope;
     markSortedHeader('#detailTable thead', sortState.key, sortState.asc);
 }
@@ -3725,7 +3728,7 @@ function _detailRowHeavy(d, i) {
     return `
         <tr class="${!isGood(d.status) ? 'row-breakdown' : ''}">
             <td>${i + 1}</td>
-            <td><strong class="unit-link" title="Lihat profil unit" onclick="showUnitProfile(${jsArg(d.id)})">${escapeHtml(d.name)}</strong></td>
+            <td><strong class="unit-link" title="View unit profile" onclick="showUnitProfile(${jsArg(d.id)})">${escapeHtml(d.name)}</strong></td>
             <td>${escapeHtml(d.model)}</td>
             <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
             <td>${_dash(d.machineType)}</td><td>${_dash(d.assetCode)}</td><td>${_dash(d.workTool)}</td>
@@ -3739,12 +3742,12 @@ function _detailRowAll(d, i) {
     return `
         <tr class="${!isGood(d.status) ? 'row-breakdown' : ''}">
             <td>${i + 1}</td>
-            <td><strong class="unit-link" title="Lihat profil unit" onclick="showUnitProfile(${jsArg(d.id)})">${escapeHtml(d.name)}</strong></td>
+            <td><strong class="unit-link" title="View unit profile" onclick="showUnitProfile(${jsArg(d.id)})">${escapeHtml(d.name)}</strong></td>
             <td>${escapeHtml(groupDef(unitGroupOf(d)).shortLabel)}</td>
             <td>${escapeHtml(d.model)}</td>
             <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
             <td>${_statusCell(d)}</td>
-            <td>${comp.length ? comp.map(x => `<span class="badge-component ${issueBadgeClass(x)}">${escapeHtml(x)}</span>`).join(' ') : '<span class="cell-good">Semua baik</span>'}</td>
+            <td>${comp.length ? comp.map(x => `<span class="badge-component ${issueBadgeClass(x)}">${escapeHtml(x)}</span>`).join(' ') : '<span class="cell-good">All good</span>'}</td>
             <td>${escapeHtml(d.site)}</td><td>${_dash(d.yearReceived)}</td><td>${_catCell(d)}</td>
         </tr>`;
 }
@@ -3760,11 +3763,11 @@ function renderTable(data) {
         const span = DETAIL_COLSPAN[scope];
         tbody.innerHTML = dashboardFilterActive()
             ? `<tr><td colspan="${span}" style="text-align:center;padding:24px;color:var(--text-secondary)">
-                   Tidak ada unit yang cocok dengan filter.
+                   No units match the filter.
                    <button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="clearFilter()">
-                       <i class="fas fa-filter-circle-xmark"></i> Hapus filter</button>
+                       <i class="fas fa-filter-circle-xmark"></i> Clear filter</button>
                </td></tr>`
-            : `<tr><td colspan="${span}" style="text-align:center;padding:24px;color:var(--text-secondary)">Belum ada unit.</td></tr>`;
+            : `<tr><td colspan="${span}" style="text-align:center;padding:24px;color:var(--text-secondary)">No units yet.</td></tr>`;
         return;
     }
     if (scope === 'heavy') { tbody.innerHTML = data.map(_detailRowHeavy).join(''); return; }
@@ -3774,7 +3777,7 @@ function renderTable(data) {
         return `
         <tr class="${isBD ? 'row-breakdown' : ''}">
             <td>${i + 1}</td>
-            <td><strong class="unit-link" title="Lihat profil unit" onclick="showUnitProfile(${jsArg(d.id)})">${escapeHtml(d.name)}</strong></td>
+            <td><strong class="unit-link" title="View unit profile" onclick="showUnitProfile(${jsArg(d.id)})">${escapeHtml(d.name)}</strong></td>
             <td>${escapeHtml(d.model)}</td>
             <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
             <td>${escapeHtml(d.implement || '')}</td>
@@ -3846,7 +3849,7 @@ function renderDamageStats() {
 
     const open = recs.filter(r => !r.resolved).length;
     const totalEl = document.getElementById('damageStatsTotal');
-    if (totalEl) totalEl.textContent = `${recs.length} catatan · ${open} belum selesai`;
+    if (totalEl) totalEl.textContent = `${recs.length} records · ${open} open`;
 
     // Counts per damage type
     const typeColors = { 'Mekanis': 'var(--danger)', 'Software': 'var(--info)', 'Device Precision': 'var(--warning)' };
@@ -3855,7 +3858,7 @@ function renderDamageStats() {
     const typeOrder = DAMAGE_TYPES.concat(Object.keys(counts).filter(t => !DAMAGE_TYPES.includes(t)));
     document.getElementById('damageTypeChips').innerHTML = typeOrder
         .filter(t => counts[t])
-        .map(t => `<div class="damage-type-chip"><span class="dot" style="background:${typeColors[t] || 'var(--text-light)'}"></span>${escapeHtml(t)}<strong>${counts[t]}</strong></div>`)
+        .map(t => `<div class="damage-type-chip"><span class="dot" style="background:${typeColors[t] || 'var(--text-light)'}"></span>${escapeHtml(damageTypeLabel(t))}<strong>${counts[t]}</strong></div>`)
         .join('');
 
     // Monthly trend, last 6 months
@@ -3948,13 +3951,13 @@ function renderRepair(scope) {
     if (repairRows.length === 0) {
         repairBody.innerHTML = issueFilterVal
             ? `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-secondary)">
-                   Tidak ada unit dengan masalah <strong>${escapeHtml(issueFilterVal)}</strong>.
+                   No units with <strong>${escapeHtml(issueFilterVal)}</strong> issues.
                    <button class="btn btn-secondary btn-sm" style="margin-left:8px"
                            onclick="document.getElementById('issueFilter').value='';renderRepair()">
-                       <i class="fas fa-filter-circle-xmark"></i> Tampilkan semua</button>
+                       <i class="fas fa-filter-circle-xmark"></i> Show all</button>
                </td></tr>`
             : `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-secondary)">
-                   Tidak ada unit bermasalah. Semua komponen terbaca normal.</td></tr>`;
+                   No units with issues. All components read normal.</td></tr>`;
         return;
     }
     repairBody.innerHTML = repairRows.map((d, i) => `
@@ -4280,9 +4283,9 @@ function showRestoreReport(rows, version, merge) {
     const excluded = BACKUP_EXCLUDED.map(e =>
         `<tr><td>${escapeHtml(e.label)}</td><td>—</td><td>tidak pernah dicadangkan — ${escapeHtml(e.why)}</td></tr>`).join('');
     const body = rows.map(r =>
-        `<tr><td data-label="Koleksi">${escapeHtml(r.label)}</td>`
-        + `<td data-label="Jumlah">${escapeHtml(String(r.count))}</td>`
-        + `<td data-label="Keterangan">${escapeHtml(r.note)}</td></tr>`).join('');
+        `<tr><td data-label="Collection">${escapeHtml(r.label)}</td>`
+        + `<td data-label="Count">${escapeHtml(String(r.count))}</td>`
+        + `<td data-label="Details">${escapeHtml(r.note)}</td></tr>`).join('');
 
     const note = document.getElementById('restoreReportNote');
     if (note) {
@@ -4319,7 +4322,7 @@ function showAutoBackups() {
     const list = document.getElementById('autoBackupList');
     if (list) {
         list.innerHTML = ring.length === 0
-            ? '<li style="color:var(--text-secondary);padding:8px 0">Belum ada cadangan otomatis di perangkat ini.</li>'
+            ? '<li style="color:var(--text-secondary);padding:8px 0">No automatic backups on this device yet.</li>'
             : ring.map((b, i) => {
                 const when = b.at ? new Date(b.at).toLocaleString('id-ID',
                     { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -4327,7 +4330,7 @@ function showAutoBackups() {
                     <span><strong>${escapeHtml(when)}</strong>
                         <span style="color:var(--text-secondary)"> · ${Number(b.count) || 0} unit</span></span>
                     <button class="btn btn-secondary btn-sm" onclick="restoreAutoBackup(${i})">
-                        <i class="fas fa-rotate-left"></i> Pulihkan</button>
+                        <i class="fas fa-rotate-left"></i> Restore</button>
                 </li>`;
             }).join('');
     }
@@ -4455,6 +4458,7 @@ function renderToolSummary() {
     const { rows, total } = toolSummaryRows(g);
     if (!total) { box.style.display = 'none'; box.innerHTML = ''; return; }
     const noun = g === 'heavy' ? 'Alat Kerja' : 'Implement';
+    const nounEn = g === 'heavy' ? 'Work Tool' : 'Implement';
     const withTool = rows.filter(r => r.key !== TOOL_NONE).reduce((n, r) => n + r.count, 0);
     const kinds = rows.filter(r => r.key !== TOOL_NONE).length;
     const LIMIT = 8;
@@ -4466,18 +4470,18 @@ function renderToolSummary() {
     box.innerHTML = `
         <div class="tool-summary__head">
             <div class="tool-summary__title"><i class="fas ${g === 'heavy' ? 'fa-screwdriver-wrench' : 'fa-trailer'}"></i>
-                Unit per ${noun}</div>
-            <div class="tool-summary__meta">${withTool} dari ${total} unit memakai ${noun.toLowerCase()} · ${kinds} jenis
+                Units per ${nounEn}</div>
+            <div class="tool-summary__meta">${withTool} of ${total} units have ${nounEn === 'Implement' ? 'an implement' : 'a work tool'} · ${kinds} ${kinds === 1 ? 'type' : 'types'}
                 ${editToolFilter ? `<button type="button" class="btn btn-secondary btn-sm" onclick="setEditToolFilter('')">
-                    <i class="fas fa-filter-circle-xmark"></i> Tampilkan semua</button>` : ''}</div>
+                    <i class="fas fa-filter-circle-xmark"></i> Show all</button>` : ''}</div>
         </div>
         <div class="tool-summary__list">
             ${shown.map(r => {
                 const pct = Math.round(r.count / total * 100);
                 const on = editToolFilter === r.key;
-                const name = r.key === TOOL_NONE ? `Tanpa ${noun.toLowerCase()}` : r.label;
+                const name = r.key === TOOL_NONE ? `No ${nounEn.toLowerCase()}` : r.label;
                 return `<button type="button" class="tool-row${on ? ' is-on' : ''}${r.key === TOOL_NONE ? ' tool-row--none' : ''}"
-                        aria-pressed="${on}" title="${on ? 'Klik lagi untuk menampilkan semua' : 'Tampilkan hanya unit ini di tabel'}"
+                        aria-pressed="${on}" title="${on ? 'Click again to show all' : 'Show only these units in the table'}"
                         onclick="setEditToolFilter(${jsArg(r.key)})">
                     <span class="tool-row__name">${escapeHtml(name)}</span>
                     <span class="tool-row__bar"><span style="width:${Math.max(3, Math.round(r.count / max * 100))}%"></span></span>
@@ -4486,7 +4490,7 @@ function renderToolSummary() {
             }).join('')}
         </div>
         ${named.length > LIMIT ? `<button type="button" class="tool-summary__more" onclick="toggleToolSummary()">
-            ${_toolSummaryOpen ? 'Tampilkan lebih sedikit' : `+${named.length - LIMIT} jenis lainnya`}</button>` : ''}`;
+            ${_toolSummaryOpen ? 'Show less' : `+${named.length - LIMIT} more types`}</button>` : ''}`;
     box.style.display = '';
 }
 
@@ -4547,11 +4551,11 @@ function sortTh(key, label, fn) {
 function heavyEditHead() {
     const s = (k, l) => sortTh(k, l, 'sortEditTable');
     return `<tr>
-        <th class="col-check"><input type="checkbox" id="selectAll" aria-label="Pilih semua unit" onchange="toggleSelectAll()"></th>
+        <th class="col-check"><input type="checkbox" id="selectAll" aria-label="Select all units" onchange="toggleSelectAll()"></th>
         ${s('no', 'No')}${s('name', 'Nickname')}${s('model', 'Model')}${s('sn', 'Serial Number')}
-        ${s('machineType', 'Jenis Alat')}${s('assetCode', 'Nomor Lambung')}${s('workTool', 'Alat Kerja')}${s('status', 'Status')}
+        ${s('machineType', 'Machine Type')}${s('assetCode', 'Asset No.')}${s('workTool', 'Work Tool')}${s('status', 'Status')}
         ${UNIT_GROUPS.heavy.components.map(c => s(c.key, c.label)).join('')}
-        ${s('site', 'Site')}${s('yearReceived', 'Tahun Penerimaan')}${s('userCategory', 'User Category')}
+        ${s('site', 'Site')}${s('yearReceived', 'Year Received')}${s('userCategory', 'User Category')}
         <th>Remarks</th><th>Attachments</th><th class="col-actions">Actions</th>
     </tr>`;
 }
@@ -4614,16 +4618,16 @@ function _editRowHeavy(d, i, ce) {
             <td>${i + 1}</td>
             <td data-label="Nickname"><span class="inline-edit" contenteditable="${ce}" data-id="${id}" data-field="name" onblur="saveInlineEdit(this)">${escapeHtml(d.name == null ? '' : d.name)}</span>${inspectionChipFor(d)}</td>${cell('Model', 'model')}
             <td data-label="SN" style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
-            ${cell('Jenis Alat', 'machineType')}${cell('Nomor Lambung', 'assetCode')}${cell('Alat Kerja', 'workTool')}
+            ${cell('Machine Type', 'machineType')}${cell('Asset No.', 'assetCode')}${cell('Work Tool', 'workTool')}
             ${cell('Status', 'status')}
             ${UNIT_GROUPS.heavy.components.map(c => cell(c.label, c.key)).join('')}
-            ${cell('Site', 'site')}${cell('Tahun Penerimaan', 'yearReceived')}
+            ${cell('Site', 'site')}${cell('Year Received', 'yearReceived')}
             <td data-label="User Category">${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td data-label="Remarks" style="max-width:180px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(remarks)}">${escapeHtml(remarksShort) || '<span style="color:var(--text-light)">—</span>'}</td>
             <td class="col-attach" data-label="Attachments">${renderAttachCell(d)}</td>
             <td class="col-actions">
                 <div class="row-actions">
-                    <button class="btn btn-secondary" title="Profil" onclick="showUnitProfile(${jsArg(d.id)})"><i class="fas fa-eye"></i></button>
+                    <button class="btn btn-secondary" title="Profile" onclick="showUnitProfile(${jsArg(d.id)})"><i class="fas fa-eye"></i></button>
                     <button class="btn btn-secondary" title="History" onclick="showHistory(${jsArg(d.id)})"><i class="fas fa-clock-rotate-left"></i></button>
                     <button class="btn btn-secondary" title="Edit" onclick="editUnit(${jsArg(d.id)})"><i class="fas fa-pen"></i></button>
                     <button class="btn btn-secondary" title="Delete" onclick="deleteUnit(${jsArg(d.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
@@ -4657,9 +4661,9 @@ function renderEditTable() {
     const group = effectiveEditGroup();
     if (rows.length === 0) {
         const empty = group === 'heavy'
-            ? `Belum ada unit ${escapeHtml(UNIT_GROUPS.heavy.label)}. Klik <strong>Add Unit</strong> atau <strong>Import CSV</strong> untuk memulai.`
-            : 'Belum ada unit. Klik <strong>Add Unit</strong> atau <strong>Import CSV</strong> untuk memulai.';
-        tbody.innerHTML = `<tr><td colspan="${EDIT_COLSPAN[group]}" style="text-align:center;padding:24px;color:var(--text-secondary)">${(query || statusVal || siteVal || editToolFilter) ? 'Tidak ada unit yang cocok dengan filter' : empty}</td></tr>`;
+            ? `No ${escapeHtml(UNIT_GROUPS.heavy.label)} units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.`
+            : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.';
+        tbody.innerHTML = `<tr><td colspan="${EDIT_COLSPAN[group]}" style="text-align:center;padding:24px;color:var(--text-secondary)">${(query || statusVal || siteVal || editToolFilter) ? 'No units match the filter' : empty}</td></tr>`;
         return;
     }
 
@@ -4691,7 +4695,7 @@ function renderEditTable() {
             <td data-label="Steering"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="steering" onblur="saveInlineEdit(this)">${escapeHtml(d.steering)}</span></td>
             <td data-label="JDLink"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="jdlink" onblur="saveInlineEdit(this)">${escapeHtml(d.jdlink)}</span></td>
             <td data-label="Site"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="site" onblur="saveInlineEdit(this)">${escapeHtml(d.site)}</span></td>
-            <td data-label="Tahun Penerimaan"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="yearReceived" onblur="saveInlineEdit(this)">${escapeHtml(d.yearReceived || '')}</span></td>
+            <td data-label="Year Received"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="yearReceived" onblur="saveInlineEdit(this)">${escapeHtml(d.yearReceived || '')}</span></td>
             <td data-label="User Category">${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td data-label="GPS License">${licenseTypeBadge(d, 'gps')}</td>
             <td data-label="GPS Expiry">${licenseBadgeFor(d, 'gps')}</td>
@@ -4701,7 +4705,7 @@ function renderEditTable() {
             <td class="col-attach" data-label="Attachments">${renderAttachCell(d)}</td>
             <td class="col-actions">
                 <div class="row-actions">
-                    <button class="btn btn-secondary" title="Profil" onclick="showUnitProfile(${jsArg(d.id)})"><i class="fas fa-eye"></i></button>
+                    <button class="btn btn-secondary" title="Profile" onclick="showUnitProfile(${jsArg(d.id)})"><i class="fas fa-eye"></i></button>
                     <button class="btn btn-secondary" title="History" onclick="showHistory(${jsArg(d.id)})"><i class="fas fa-clock-rotate-left"></i></button>
                     <button class="btn btn-secondary" title="Edit" onclick="editUnit(${jsArg(d.id)})"><i class="fas fa-pen"></i></button>
                     <button class="btn btn-secondary" title="Delete" onclick="deleteUnit(${jsArg(d.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
@@ -4853,7 +4857,7 @@ function updateSelectedCount() {
 function openBulkEdit() {
     if (!requireEdit('editUnits')) return;
     if (selectedUnitIds.size === 0) return;
-    document.getElementById('bulkEditTitle').textContent = `${selectedUnitIds.size} unit`;
+    document.getElementById('bulkEditTitle').textContent = `${selectedUnitIds.size} unit(s)`;
     ['bulkChkSite', 'bulkChkStatus', 'bulkChkCategory', 'bulkChkYear', 'bulkChkImplement', 'bulkChkWorkTool'].forEach(id => {
         const el = document.getElementById(id); if (el) el.checked = false;
     });
@@ -5039,7 +5043,7 @@ function setUnitFormGroup(g) {
     });
     document.querySelectorAll('#unitForm option[data-temp]').forEach(o => o.remove());
     const legend = document.getElementById('unitFormLegend');
-    if (legend) legend.textContent = g === 'heavy' ? 'Kategori & Catatan' : 'Category, License & Notes';
+    if (legend) legend.textContent = g === 'heavy' ? 'Category & Notes' : 'Category, License & Notes';
     if (g === 'heavy') populateHeavySuggestionLists();
 }
 
@@ -5058,7 +5062,7 @@ function populateHeavySuggestionLists() {
 function setHealthSelect(el, v) {
     if (isGood(v)) { el.value = 'Good'; return; }
     if (!sameStoredValue(v, '')) { el.value = 'Breakdown'; return; }
-    el.insertAdjacentHTML('afterbegin', '<option value="" data-temp>— belum diisi —</option>');
+    el.insertAdjacentHTML('afterbegin', '<option value="" data-temp>— not set —</option>');
     el.value = '';
 }
 
@@ -5066,7 +5070,7 @@ function showAddForm() {
     if (!requireEdit('editUnits')) return;
     _unitFormShown = null;
     const g = effectiveEditGroup();
-    document.getElementById('modalTitle').textContent = g === 'heavy' ? `Tambah ${UNIT_GROUPS.heavy.shortLabel}` : 'Add Unit';
+    document.getElementById('modalTitle').textContent = g === 'heavy' ? `Add ${UNIT_GROUPS.heavy.label}` : 'Add Unit';
     document.getElementById('editUnitId').value = '';
     document.getElementById('unitForm').reset();
     setUnitFormGroup(g);
@@ -5141,7 +5145,7 @@ function editUnit(id) {
 
 function editHeavyUnit(unit) {
     const set = (id, v) => { document.getElementById(id).value = v == null ? '' : v; };
-    document.getElementById('modalTitle').textContent = `Edit ${UNIT_GROUPS.heavy.shortLabel}`;
+    document.getElementById('modalTitle').textContent = `Edit ${UNIT_GROUPS.heavy.label}`;
     set('editUnitId', unit.id);
     set('formName', unit.name); set('formModel', unit.model); set('formSN', unit.sn);
     set('formMachineType', unit.machineType); set('formAssetCode', unit.assetCode); set('formWorkTool', unit.workTool);
@@ -5440,7 +5444,7 @@ function licenseTypeBadge(unit, kind) {
     const eff = effectiveLicense(unit, kind);
     if (!eff.type) return '<span style="color:var(--text-light);font-size:11px">—</span>';
     if (eff.downgraded) {
-        const tt = `Otomatis turun dari ${eff.premium} (expired ${eff.end})`;
+        const tt = `Auto-downgraded from ${eff.premium} (expired ${eff.end})`;
         return `<span class="badge badge-cat" style="font-size:10px" title="${escapeHtml(tt)}"><i class="fas fa-arrow-turn-down" style="font-size:9px;opacity:.7"></i> ${escapeHtml(eff.type)}</span>`;
     }
     return `<span class="badge badge-good" style="font-size:10px">${escapeHtml(eff.type)}</span>`;
@@ -5464,7 +5468,7 @@ function licenseBadgeFor(unit, kind) {
     // of a red expired one (the receiver still works on SF-1 / G5 Basic).
     const eff = effectiveLicense(unit, kind);
     if (eff.downgraded) {
-        const tt = `Auto-fallback dari ${eff.premium} (expired ${end})`;
+        const tt = `Auto-fallback from ${eff.premium} (expired ${end})`;
         return `<span class="license-badge license-badge--ok" title="${escapeHtml(tt)}"><i class="fas fa-circle-check"></i> ${escapeHtml(eff.fallback)}</span>`;
     }
     const cls = `license-badge license-badge--${s.kind}`;
@@ -6114,9 +6118,9 @@ function damagePhotoButton(rec) {
     // Carries a word, not just the icon: a one-glyph button is a poor tap
     // target on a phone, and it disappears entirely if the icon font does not
     // load — which is exactly when a field device is on a bad connection.
-    return `<button type="button" class="wl-photo-btn" title="Lihat foto kerusakan"
-            aria-label="Lihat foto kerusakan"
-            onclick="event.stopPropagation();openDamagePhoto(${jsArg(rec.id)}, this)"><i class="fas fa-image"></i> Foto</button>`;
+    return `<button type="button" class="wl-photo-btn" title="View damage photo"
+            aria-label="View damage photo"
+            onclick="event.stopPropagation();openDamagePhoto(${jsArg(rec.id)}, this)"><i class="fas fa-image"></i> Photo</button>`;
 }
 
 // ---- Lightbox (view full-size photo) ----
@@ -6197,13 +6201,13 @@ function renderGlobalSearchResults() {
         ? `${u.name} ${u.sn} ${u.model} ${u.site} ${u.machineType || ''} ${u.assetCode || ''}`
         : `${u.name} ${u.sn} ${u.model} ${u.site}`).toLowerCase().includes(q)).slice(0, 8);
     if (!hits.length) {
-        box.innerHTML = '<div class="global-search__empty">Tidak ada unit yang cocok</div>';
+        box.innerHTML = '<div class="global-search__empty">No matching units</div>';
         box.style.display = '';
         return;
     }
     box.innerHTML = hits.map(u => `
         <div class="global-search__item" onclick="openUnitFromSearch(${jsArg(u.id)})">
-            <span class="global-search__name">${escapeHtml(u.name || '(tanpa nama)')}</span>
+            <span class="global-search__name">${escapeHtml(u.name || '(unnamed)')}</span>
             <span class="global-search__meta"><span class="mono">${escapeHtml(u.sn || '')}</span>${u.site ? ' · ' + escapeHtml(u.site) : ''}${isHeavy(u) ? ' · ' + escapeHtml(UNIT_GROUPS.heavy.shortLabel) : ''}</span>
         </div>`).join('');
     box.style.display = '';
@@ -6220,7 +6224,7 @@ function showUnitProfile(id) {
     const u = globalData.find(d => d.id === id);
     if (!u) { showToast('Unit tidak ditemukan', 'warning'); return; }
 
-    document.getElementById('unitProfileTitle').textContent = u.name || u.sn || 'Profil Unit';
+    document.getElementById('unitProfileTitle').textContent = u.name || u.sn || 'Unit Profile';
     document.getElementById('unitProfileEditBtn').onclick = () => { closeUnitProfile(); editUnit(id); };
     document.getElementById('unitProfileHistoryBtn').onclick = () => showHistory(id);
 
@@ -6243,21 +6247,21 @@ function showUnitProfile(id) {
     const snCell = u.sn ? `<span style="font-family:var(--font-mono);font-size:12px">${escapeHtml(u.sn)}</span>` : dash;
     const catCell = u.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(u.userCategory)}</span>` : dash;
     const identity = (heavyUnit ? [
-        ['Kelompok', `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(UNIT_GROUPS.heavy.label)}</span>`],
+        ['Group', `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(UNIT_GROUPS.heavy.label)}</span>`],
         ['Model', val(u.model)],
         ['Serial Number', snCell],
-        ['Jenis Alat', val(u.machineType)],
-        ['Nomor Lambung', val(u.assetCode)],
-        ['Alat Kerja', val(u.workTool)],
+        ['Machine Type', val(u.machineType)],
+        ['Asset No.', val(u.assetCode)],
+        ['Work Tool', val(u.workTool)],
         ['Site', val(u.site)],
-        ['Tahun Penerimaan', val(u.yearReceived)],
+        ['Year Received', val(u.yearReceived)],
         ['User Category', catCell]
     ] : [
         ['Model', val(u.model)],
         ['Serial Number', u.sn ? `<span style="font-family:var(--font-mono);font-size:12px">${escapeHtml(u.sn)}</span>` : dash],
         ['Implement', impVal],
         ['Site', val(u.site)],
-        ['Tahun Penerimaan', val(u.yearReceived)],
+        ['Year Received', val(u.yearReceived)],
         ['User Category', u.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(u.userCategory)}</span>` : dash]
     ]).map(([l, v]) => `<div class="profile-row"><span class="profile-row__label">${l}</span><span>${v}</span></div>`).join('');
 
@@ -6290,12 +6294,12 @@ function showUnitProfile(id) {
     const dmgHtml = dmg.length ? dmg.map(r => `
         <div class="profile-item">
             <span class="profile-item__date">${escapeHtml(r.date || '')}</span>
-            <span class="badge badge-breakdown" style="font-size:10px">${escapeHtml(r.damageType || '')}</span>
+            <span class="badge badge-breakdown" style="font-size:10px">${escapeHtml(damageTypeLabel(r.damageType))}</span>
             ${r.component ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(r.component)}</span>` : ''}
             <span class="profile-item__text" title="${escapeHtml(r.description || '')}">${escapeHtml((r.description || '').slice(0, 60))}</span>
             ${damageHasPhoto(r) ? damagePhotoButton(r) : ''}
         </div>`).join('')
-        : '<div class="profile-empty">Belum ada catatan kerusakan.</div>';
+        : '<div class="profile-empty">No damage records yet.</div>';
 
     const dist = globalLicenseStock
         .filter(r => r.txnType === 'OUT' && (r.unitId === id || (snLc && (r.sn || '').toLowerCase() === snLc)))
@@ -6307,15 +6311,15 @@ function showUnitProfile(id) {
             <span style="font-size:12px">× ${Number(r.qty) || 0}</span>
             ${r.note ? `<span class="profile-item__text" title="${escapeHtml(r.note)}">${escapeHtml(r.note.slice(0, 40))}</span>` : ''}
         </div>`).join('')
-        : '<div class="profile-empty">Belum ada distribusi lisensi.</div>';
+        : '<div class="profile-empty">No license distributions yet.</div>';
 
     const hist = u.downtimeHistory || [];
     const downParts = hist.slice(-5).reverse().map(iv =>
         `<div class="profile-item"><span class="profile-item__date">${new Date(iv.start).toLocaleDateString()}</span><span style="font-size:12px">${formatDuration(iv.durationMs)}</span></div>`);
     if (u.breakdownStartedAt) {
-        downParts.unshift(`<div class="profile-item"><span class="badge badge-breakdown" style="font-size:10px">Sedang breakdown</span><span style="font-size:12px">${formatDuration(Date.now() - u.breakdownStartedAt)}</span></div>`);
+        downParts.unshift(`<div class="profile-item"><span class="badge badge-breakdown" style="font-size:10px">In breakdown</span><span style="font-size:12px">${formatDuration(Date.now() - u.breakdownStartedAt)}</span></div>`);
     }
-    const downHtml = downParts.length ? downParts.join('') : '<div class="profile-empty">Tidak ada riwayat downtime.</div>';
+    const downHtml = downParts.length ? downParts.join('') : '<div class="profile-empty">No downtime history.</div>';
 
     // Who has worked on this machine — newest first, capped like the other lists.
     const work = workLogsForUnit(u.id, u.sn);
@@ -6326,22 +6330,22 @@ function showUnitProfile(id) {
             <span style="font-size:12px;color:var(--text-light)">${escapeHtml(formatMinutes(workLogMinutes(w)))}</span>
             ${w.task ? `<span class="profile-item__text" title="${escapeHtml(w.task)}">${escapeHtml(w.task.slice(0, 40))}</span>` : ''}
         </div>`).join('')
-        : '<div class="profile-empty">Belum ada laporan kerja untuk unit ini.</div>';
+        : '<div class="profile-empty">No work reports for this unit yet.</div>';
 
     // Devices from the warehouse currently fitted to this machine.
     const fitted = devicesForUnit(u.id);
     const fittedHtml = fitted.length ? fitted.map(d => `
         <div class="profile-item">
-            <span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.type || 'Perangkat')}</span>
+            <span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.type || 'Device')}</span>
             <span style="font-family:monospace;font-size:12px">${escapeHtml(d.sn || '')}</span>
             ${d.note ? `<span class="profile-item__text" title="${escapeHtml(d.note)}">${escapeHtml(d.note.slice(0, 30))}</span>` : ''}
         </div>`).join('')
-        : '<div class="profile-empty">Tidak ada perangkat gudang terdaftar di unit ini.</div>';
+        : '<div class="profile-empty">No warehouse devices registered to this unit.</div>';
 
     document.getElementById('unitProfileBody').innerHTML = `
         <div class="profile-grid">
             <div class="profile-section">
-                <div class="profile-section__title">Identitas</div>
+                <div class="profile-section__title">Identity</div>
                 ${identity}
                 ${u.remarks ? `<div class="profile-note">${escapeHtml(u.remarks)}</div>` : ''}
             </div>
@@ -6350,19 +6354,19 @@ function showUnitProfile(id) {
                 <div style="margin-bottom:10px">${statusBadge}</div>
                 <div class="profile-comps">${compRow}</div>
                 ${bdReason}${strayNote}
-                ${heavyUnit ? '' : `<div class="profile-section__title" style="margin-top:16px">Lisensi</div>
+                ${heavyUnit ? '' : `<div class="profile-section__title" style="margin-top:16px">Licenses</div>
                 ${licenses}`}
             </div>
             <div class="profile-section">
-                <div class="profile-section__title">Riwayat Kerusakan (${dmg.length})</div>
+                <div class="profile-section__title">Damage History (${dmg.length})</div>
                 <div class="profile-list">${dmgHtml}</div>
             </div>
             ${heavyUnit ? '' : `<div class="profile-section">
-                <div class="profile-section__title">Distribusi Lisensi (${dist.length})</div>
+                <div class="profile-section__title">License Distribution (${dist.length})</div>
                 <div class="profile-list">${distHtml}</div>
             </div>`}
             <div class="profile-section">
-                <div class="profile-section__title">Lampiran</div>
+                <div class="profile-section__title">Attachments</div>
                 <div class="profile-attach">${renderAttachCell(u)}</div>
             </div>
             <div class="profile-section">
@@ -6370,11 +6374,11 @@ function showUnitProfile(id) {
                 <div class="profile-list">${downHtml}</div>
             </div>
             <div class="profile-section">
-                <div class="profile-section__title">Pekerjaan Tim (${work.length})</div>
+                <div class="profile-section__title">Team Work (${work.length})</div>
                 <div class="profile-list">${workHtml}</div>
             </div>
             <div class="profile-section">
-                <div class="profile-section__title">Perangkat Terpasang (${fitted.length})</div>
+                <div class="profile-section__title">Installed Devices (${fitted.length})</div>
                 <div class="profile-list">${fittedHtml}</div>
             </div>
         </div>`;
@@ -6405,7 +6409,7 @@ function saveDamages() {
 
 function updateDamageCount() {
     const el = document.getElementById('damageCount');
-    if (el) el.textContent = `${globalDamages.length} catatan kerusakan`;
+    if (el) el.textContent = `${globalDamages.length} damage records`;
 }
 
 // Apply the current search + type filter and sort newest-first. Shared by the
@@ -6537,8 +6541,8 @@ function renderDamageTable() {
 
     if (rows.length === 0) {
         tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--text-secondary)">${
-            hasFilter ? 'Tidak ada kerusakan yang cocok dengan filter'
-                      : 'Belum ada catatan kerusakan. Klik <strong>Tambah Kerusakan</strong> untuk mulai.'
+            hasFilter ? 'No damage records match the filter'
+                      : 'No damage records yet. Click <strong>Add Damage</strong> to get started.'
         }</td></tr>`;
         return;
     }
@@ -6557,19 +6561,19 @@ function renderDamageTable() {
         <tr>
             <td class="col-check"><input type="checkbox" class="damage-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedDamageCount()"></td>
             <td>${i + 1}</td>
-            <td data-label="Tanggal" style="white-space:nowrap">${escapeHtml(d.date || '')}</td>
+            <td data-label="Date" style="white-space:nowrap">${escapeHtml(d.date || '')}</td>
             <td data-label="Unit"><strong>${escapeHtml(uName)}</strong></td>
             <td data-label="SN" style="font-family:monospace;font-size:12px">${escapeHtml(uSn)}</td>
             <td data-label="Site">${escapeHtml(uSite)}</td>
-            <td data-label="Tipe"><span class="badge badge-breakdown" style="font-size:10px">${escapeHtml(d.damageType || '')}</span></td>
-            <td data-label="Komponen">${comp}</td>
-            <td data-label="Deskripsi" style="max-width:240px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(desc)}">${escapeHtml(descShort) || '<span style="color:var(--text-light)">—</span>'}</td>
-            <td data-label="Foto">${damageHasPhoto(d)
+            <td data-label="Damage Type"><span class="badge badge-breakdown" style="font-size:10px">${escapeHtml(damageTypeLabel(d.damageType))}</span></td>
+            <td data-label="Component">${comp}</td>
+            <td data-label="Description" style="max-width:240px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(desc)}">${escapeHtml(descShort) || '<span style="color:var(--text-light)">—</span>'}</td>
+            <td data-label="Photo">${damageHasPhoto(d)
                 ? damagePhotoButton(d)
                 : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
-            <td data-label="Perbaikan" style="white-space:nowrap">${d.resolved
-                ? `<span class="badge badge-good" style="font-size:10px" title="Selesai diperbaiki"><i class="fas fa-check"></i> Selesai${d.resolvedAt ? ' ' + escapeHtml(d.resolvedAt) : ''}</span>`
-                : `<button class="btn btn-secondary btn-sm" style="font-size:11px" title="Tandai selesai & pulihkan status unit" onclick="resolveDamage(${jsArg(d.id)})"><i class="fas fa-wrench"></i> Tandai selesai</button>`}</td>
+            <td data-label="Repair" style="white-space:nowrap">${d.resolved
+                ? `<span class="badge badge-good" style="font-size:10px" title="Repaired"><i class="fas fa-check"></i> Done${d.resolvedAt ? ' ' + escapeHtml(d.resolvedAt) : ''}</span>`
+                : `<button class="btn btn-secondary btn-sm" style="font-size:11px" title="Mark as done & restore unit status" onclick="resolveDamage(${jsArg(d.id)})"><i class="fas fa-wrench"></i> Mark done</button>`}</td>
             <td class="col-actions">
                 <div class="row-actions">
                     <button class="btn btn-secondary" title="Edit" onclick="editDamage(${jsArg(d.id)})"><i class="fas fa-pen"></i></button>
@@ -6608,7 +6612,7 @@ function onDamageTypeChange() {
 // ---- Modal: Add / Edit ----
 function showAddDamageForm() {
     if (!requireEdit('damage')) return;
-    document.getElementById('damageModalTitle').textContent = 'Tambah Kerusakan';
+    document.getElementById('damageModalTitle').textContent = 'Add Damage';
     document.getElementById('editDamageId').value = '';
     document.getElementById('damageForm').reset();
     document.getElementById('dmgDate').value = toISODate();
@@ -6629,7 +6633,7 @@ function editDamage(id) {
     const rec = globalDamages.find(d => d.id === id);
     if (!rec) return;
 
-    document.getElementById('damageModalTitle').textContent = 'Edit Kerusakan';
+    document.getElementById('damageModalTitle').textContent = 'Edit Damage';
     document.getElementById('editDamageId').value = id;
     document.getElementById('dmgDate').value = rec.date || '';
     // Prefer the current unit (by id or serial) so a renamed unit shows its new
@@ -7105,7 +7109,7 @@ function saveLicenseStockLocal() {
 
 function updateLicenseCount() {
     const el = document.getElementById('licenseCount');
-    if (el) el.textContent = `${globalLicenseStock.length} transaksi`;
+    if (el) el.textContent = `${globalLicenseStock.length} transactions`;
 }
 
 // All distinct license types: defaults plus any already used in the data.
@@ -7171,7 +7175,7 @@ function renderLicenseSummary() {
     const map = computeLicenseSummary();
     const types = Object.keys(map).sort((a, b) => a.localeCompare(b));
     if (types.length === 0) {
-        el.innerHTML = '<div class="license-summary__empty">Belum ada data stok lisensi.</div>';
+        el.innerHTML = '<div class="license-summary__empty">No license stock data yet.</div>';
         return;
     }
     el.innerHTML = types.map(t => {
@@ -7181,9 +7185,9 @@ function renderLicenseSummary() {
         <div class="license-sum-card${low ? ' low' : ''}">
             <div class="license-sum-card__type">${escapeHtml(t)}</div>
             <div class="license-sum-card__nums">
-                <span title="Masuk"><i class="fas fa-arrow-down" style="color:var(--success)"></i> ${s.in}</span>
-                <span title="Terdistribusi"><i class="fas fa-arrow-up" style="color:var(--primary)"></i> ${s.out}</span>
-                <span class="license-sum-card__sisa" title="Sisa">Sisa: <strong>${s.sisa}</strong></span>
+                <span title="In"><i class="fas fa-arrow-down" style="color:var(--success)"></i> ${s.in}</span>
+                <span title="Distributed"><i class="fas fa-arrow-up" style="color:var(--primary)"></i> ${s.out}</span>
+                <span class="license-sum-card__sisa" title="Remaining">Remaining: <strong>${s.sisa}</strong></span>
             </div>
         </div>`;
     }).join('');
@@ -7215,19 +7219,19 @@ function getFilteredLicenseStock() {
 // Only the latest distribution per unit licence can be "Tersinkron" or
 // "Belum"; earlier ones are history ("Digantikan").
 const LIC_STATUS = {
-    sync:       { cls: 'ok',    icon: 'circle-check',        label: 'Tersinkron',
+    sync:       { cls: 'ok',    icon: 'circle-check',        label: 'Synced',
                   tip: () => 'Lisensi unit sudah sesuai dengan distribusi ini' },
-    update:     { cls: 'todo',  icon: 'clock',               label: 'Belum',
+    update:     { cls: 'todo',  icon: 'clock',               label: 'Not synced',
                   tip: () => 'Lisensi unit belum sesuai — tekan Sync ke Unit' },
-    newer:      { cls: 'info',  icon: 'arrow-up',            label: 'Unit lebih baru',
+    newer:      { cls: 'info',  icon: 'arrow-up',            label: 'Unit is newer',
                   tip: i => `Unit berlaku s/d ${i.row.now.end}, lebih lama dari distribusi ini — tidak ditimpa` },
-    superseded: { cls: 'muted', icon: 'clock-rotate-left',   label: 'Digantikan',
+    superseded: { cls: 'muted', icon: 'clock-rotate-left',   label: 'Superseded',
                   tip: i => `Distribusi ${i.by.date} yang lebih baru sudah menentukan lisensi unit ini` },
-    noUnit:     { cls: 'warn',  icon: 'triangle-exclamation', label: 'Unit tidak ada',
+    noUnit:     { cls: 'warn',  icon: 'triangle-exclamation', label: 'Unit missing',
                   tip: () => 'Unitnya tidak ditemukan (id maupun nomor seri)' },
-    notTractor: { cls: 'muted', icon: 'ban',                 label: 'Bukan Pertanian',
+    notTractor: { cls: 'muted', icon: 'ban',                 label: 'Not Agricultural',
                   tip: () => `Lisensi SF/G5 hanya untuk ${UNIT_GROUPS.tractor.label}` },
-    noDate:     { cls: 'warn',  icon: 'triangle-exclamation', label: 'Tanggal tidak valid',
+    noDate:     { cls: 'warn',  icon: 'triangle-exclamation', label: 'Invalid date',
                   tip: () => 'Tanggal distribusinya kosong atau tidak terbaca (harus YYYY-MM-DD) — betulkan supaya bisa diterapkan ke unit' }
 };
 function licenseSyncCell(info) {
@@ -7260,8 +7264,8 @@ function renderLicenseStockTable() {
 
     if (rows.length === 0) {
         tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--text-secondary)">${
-            hasFilter ? 'Tidak ada transaksi yang cocok dengan filter'
-                      : 'Belum ada transaksi stok lisensi. Klik <strong>Tambah Stok</strong> atau <strong>Distribusi</strong>.'
+            hasFilter ? 'No transactions match the filter'
+                      : 'No license stock transactions yet. Click <strong>Add Stock</strong> or <strong>Distribute</strong>.'
         }</td></tr>`;
         return;
     }
@@ -7269,8 +7273,8 @@ function renderLicenseStockTable() {
     tbody.innerHTML = rows.map((r, i) => {
         const isOut = r.txnType === 'OUT';
         const badge = isOut
-            ? '<span class="badge badge-cat" style="font-size:10px"><i class="fas fa-share-from-square"></i> Distribusi</span>'
-            : '<span class="badge badge-good" style="font-size:10px"><i class="fas fa-arrow-down"></i> Masuk</span>';
+            ? '<span class="badge badge-cat" style="font-size:10px"><i class="fas fa-share-from-square"></i> Distribution</span>'
+            : '<span class="badge badge-good" style="font-size:10px"><i class="fas fa-arrow-down"></i> Stock In</span>';
         const note = r.note || '';
         const noteShort = note.length > 40 ? note.slice(0, 40) + '…' : note;
         const lu = isOut ? liveUnitFor(r) : null;
@@ -7280,14 +7284,14 @@ function renderLicenseStockTable() {
         <tr>
             <td class="col-check"><input type="checkbox" class="license-check" data-id="${escapeHtml(r.id)}" onchange="updateSelectedLicenseCount()"></td>
             <td>${i + 1}</td>
-            <td data-label="Tanggal" style="white-space:nowrap">${escapeHtml(r.date || '')}</td>
-            <td data-label="Transaksi">${badge}</td>
-            <td data-label="Jenis"><strong>${escapeHtml(r.licenseType || '')}</strong></td>
-            <td data-label="Jumlah">${Number(r.qty) || 0}</td>
+            <td data-label="Date" style="white-space:nowrap">${escapeHtml(r.date || '')}</td>
+            <td data-label="Transaction">${badge}</td>
+            <td data-label="Type"><strong>${escapeHtml(r.licenseType || '')}</strong></td>
+            <td data-label="Quantity">${Number(r.qty) || 0}</td>
             <td data-label="Unit">${isOut ? escapeHtml(uName) : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td data-label="SN" style="font-family:monospace;font-size:12px">${isOut ? escapeHtml(uSn) : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
-            <td data-label="Status Unit">${isOut ? licenseSyncCell(syncPlan.recStatus.get(r.id)) : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
-            <td data-label="Catatan" style="max-width:200px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(note)}">${escapeHtml(noteShort) || '<span style="color:var(--text-light)">—</span>'}</td>
+            <td data-label="Unit Status">${isOut ? licenseSyncCell(syncPlan.recStatus.get(r.id)) : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
+            <td data-label="Notes" style="max-width:200px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(note)}">${escapeHtml(noteShort) || '<span style="color:var(--text-light)">—</span>'}</td>
             <td class="col-actions">
                 <div class="row-actions">
                     <button class="btn btn-secondary" title="Edit" onclick="editLicenseStock(${jsArg(r.id)})"><i class="fas fa-pen"></i></button>
@@ -7324,7 +7328,7 @@ function populateLicenseTypeList() {
     const filter = document.getElementById('licenseTypeFilter');
     if (filter) {
         const cur = filter.value;
-        filter.innerHTML = '<option value="">Semua Jenis</option>' +
+        filter.innerHTML = '<option value="">All Types</option>' +
             types.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
         filter.value = cur;
     }
@@ -7350,7 +7354,7 @@ function onLicenseTxnChange() {
 function showAddLicenseForm(txnType) {
     if (!requireEdit('licenseStock')) return;
     document.getElementById('licenseModalTitle').textContent =
-        txnType === 'OUT' ? 'Distribusi Lisensi' : 'Tambah Stok Lisensi';
+        txnType === 'OUT' ? 'Distribute License' : 'Add License Stock';
     document.getElementById('editLicenseId').value = '';
     document.getElementById('licenseForm').reset();
     document.getElementById('licTxnType').value = txnType || 'IN';
@@ -7367,7 +7371,7 @@ function editLicenseStock(id) {
     const rec = globalLicenseStock.find(r => r.id === id);
     if (!rec) return;
 
-    document.getElementById('licenseModalTitle').textContent = 'Edit Transaksi Lisensi';
+    document.getElementById('licenseModalTitle').textContent = 'Edit License Transaction';
     document.getElementById('editLicenseId').value = id;
     populateLicenseTypeList();
     document.getElementById('licTxnType').value = rec.txnType || 'IN';
@@ -7639,18 +7643,18 @@ function syncDistributionsToUnits() {
 
     _licSyncKeys = todo.map(r => r.key);
     _licSyncShown = new Map(todo.map(r => [r.key, { status: r.status, sig: JSON.stringify(r.fields) }]));
-    const fmt = (type, end) => `${escapeHtml(type || '—')}${end ? ` <span class="lic-sync__date">s/d ${escapeHtml(end)}</span>` : ''}`;
+    const fmt = (type, end) => `${escapeHtml(type || '—')}${end ? ` <span class="lic-sync__date">until ${escapeHtml(end)}</span>` : ''}`;
     document.getElementById('licSyncBody').innerHTML = todo.map((r, i) => {
         const t = r.target;
         // A downgraded target has no expiry of its own: say which premium
         // licence ran out and when, instead of pinning that date on SF-1.
         const toCell = t.downgraded
-            ? `${escapeHtml(t.type)} <span class="lic-sync__date">(${escapeHtml(r.rec.licenseType)} habis ${escapeHtml(t.expiredAt)})</span>`
+            ? `${escapeHtml(t.type)} <span class="lic-sync__date">(${escapeHtml(r.rec.licenseType)} expired ${escapeHtml(t.expiredAt)})</span>`
             : fmt(t.type, t.end);
         // Same for what the unit holds now: a written-down premium is shown as
         // the premium that ran out, not as a fallback "valid until" a dead date.
         const nowCell = r.now.downgraded
-            ? `${escapeHtml(r.now.type)} <span class="lic-sync__date">(${escapeHtml(r.now.premium)} habis ${escapeHtml(r.now.end)})</span>`
+            ? `${escapeHtml(r.now.type)} <span class="lic-sync__date">(${escapeHtml(r.now.premium)} expired ${escapeHtml(r.now.end)})</span>`
             : fmt(r.now.type, r.now.end);
         const nowExpired = getExpiryStatus(r.now.end).kind === 'expired';
         const why = r.status === 'newer'
@@ -7662,13 +7666,13 @@ function syncDistributionsToUnits() {
             : (t.downgraded ? `Distribusi ${escapeHtml(r.rec.date)} sudah habis — tercatat ${escapeHtml(t.type)} (turun otomatis)`
                             : `Distribusi ${escapeHtml(r.rec.date)}`);
         return `<tr class="${r.status === 'newer' ? 'lic-sync__row--newer' : ''}">
-            <td class="col-check" data-label="Terapkan"><input type="checkbox" class="lic-sync-check" data-i="${i}"${r.status === 'update' ? ' checked' : ''}
-                aria-label="Terapkan ke ${escapeHtml(r.unit.name || r.unit.sn || '')}" onchange="updateLicSyncApplyLabel()"></td>
+            <td class="col-check" data-label="Apply"><input type="checkbox" class="lic-sync-check" data-i="${i}"${r.status === 'update' ? ' checked' : ''}
+                aria-label="Apply to ${escapeHtml(r.unit.name || r.unit.sn || '')}" onchange="updateLicSyncApplyLabel()"></td>
             <td data-label="Unit"><span class="lic-sync__unit"><strong>${escapeHtml(r.unit.name || '')}</strong><span class="lic-sync__sn">${escapeHtml(r.unit.sn || '')}</span></span></td>
-            <td data-label="Lisensi">${_LIC_FIELDS[r.kind].label}</td>
-            <td data-label="Sekarang">${nowCell}</td>
-            <td data-label="Menjadi">${toCell}</td>
-            <td data-label="Keterangan" class="lic-sync__why">${why}</td>
+            <td data-label="License">${_LIC_FIELDS[r.kind].label}</td>
+            <td data-label="Current">${nowCell}</td>
+            <td data-label="Change To">${toCell}</td>
+            <td data-label="Details" class="lic-sync__why">${why}</td>
         </tr>`;
     }).join('');
     const nUpdate = todo.filter(r => r.status === 'update').length;
@@ -7686,7 +7690,7 @@ function updateLicSyncApplyLabel() {
     const btn = document.getElementById('licSyncApplyBtn');
     if (!btn) return;
     btn.disabled = n === 0;
-    btn.innerHTML = `<i class="fas fa-link"></i> Terapkan ${n} perubahan`;
+    btn.innerHTML = `<i class="fas fa-link"></i> Apply ${n} change(s)`;
 }
 
 function closeLicSyncModal() {
@@ -8780,7 +8784,7 @@ function renderDamageComponentOptions() {
         ? UNIT_GROUPS.heavy.components.map(c => ({ name: c.label }))
             .concat(tractorList.filter(c => !c.unitField && !heavyComponentField(c.name)))
         : tractorList;
-    const opts = ['<option value="">Pilih komponen… (opsional)</option>'];
+    const opts = ['<option value="">Select component… (optional)</option>'];
     list.forEach(c => {
         opts.push(`<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`);
     });
@@ -8845,15 +8849,15 @@ function renderDamageComponentsList() {
     const list = document.getElementById('damageComponentsList');
     if (!list) return;
     if (damageComponents.length === 0) {
-        list.innerHTML = '<li class="category-empty">Belum ada komponen — tambahkan di bawah.</li>';
+        list.innerHTML = '<li class="category-empty">No components yet — add one below.</li>';
         return;
     }
     list.innerHTML = damageComponents.map(c => `
         <li class="category-item">
             <span class="category-item__name">${escapeHtml(c.name)}${c.unitField
-                ? ` <span style="font-size:11px;color:var(--text-light)">· status unit: ${escapeHtml(c.unitField)}</span>`
+                ? ` <span style="font-size:11px;color:var(--text-light)">· unit status: ${escapeHtml(c.unitField)}</span>`
                 : ''}</span>
-            <button class="btn-icon category-item__del" title="Hapus komponen" onclick="deleteDamageComponent(${jsArg(c.id)})">
+            <button class="btn-icon category-item__del" title="Delete component" onclick="deleteDamageComponent(${jsArg(c.id)})">
                 <i class="fas fa-trash" style="color:var(--danger)"></i>
             </button>
         </li>
@@ -9531,7 +9535,7 @@ function renderUserPill() {
     document.getElementById('userPillRole').textContent = label;
     pill.dataset.role = currentUserDoc.role;
     document.getElementById('userMenuEmail').textContent = currentUserDoc.email || '';
-    document.getElementById('userMenuRoleLabel').textContent = `Akun ${label} · ${APP_VERSION}`;
+    document.getElementById('userMenuRoleLabel').textContent = `${label} account · ${APP_VERSION}`;
 }
 
 function toggleUserMenu() {
@@ -9562,27 +9566,27 @@ function isOwner() {
 // Configurable areas the owner can restrict per user. Users management stays
 // owner-only; the Dashboard is always available to any active user.
 const ACCESS_AREAS = [
-    { key: 'editUnits',    label: 'Edit Units',     levels: ['none', 'view', 'edit'] },
+    { key: 'editUnits',    label: 'Unit Database',     levels: ['none', 'view', 'edit'] },
     { key: 'implements',   label: 'Implements',     levels: ['none', 'view', 'edit'] },
-    { key: 'damage',       label: 'Kerusakan',      levels: ['none', 'view', 'edit'] },
-    { key: 'licenseStock', label: 'Stok Lisensi',   levels: ['none', 'view', 'edit'] },
+    { key: 'damage',       label: 'Damage',      levels: ['none', 'view', 'edit'] },
+    { key: 'licenseStock', label: 'License Stock',  levels: ['none', 'view', 'edit'] },
     // The Tim page is three separate permissions, not one. A KHL may need to
     // read the roster and file their own daily report while having no say over
     // the shift schedule, which a single team-wide level cannot express.
-    { key: 'teamShift',    label: 'Jadwal Shift',   levels: ['none', 'view', 'edit'] },
-    { key: 'teamLog',      label: 'Laporan Harian', levels: ['none', 'view', 'edit'] },
-    { key: 'teamMembers',  label: 'Daftar Anggota', levels: ['none', 'view', 'edit'] },
+    { key: 'teamShift',    label: 'Shift Schedule',   levels: ['none', 'view', 'edit'] },
+    { key: 'teamLog',      label: 'Daily Report', levels: ['none', 'view', 'edit'] },
+    { key: 'teamMembers',  label: 'Member List', levels: ['none', 'view', 'edit'] },
     // Separate from teamLog on purpose: a checker should be able to approve a
     // report without being able to rewrite the thing they are checking.
-    { key: 'teamLogApprove', label: 'Persetujuan Laporan', levels: ['none', 'edit'] },
-    { key: 'warehouse',    label: 'Gudang',         levels: ['none', 'view', 'edit'] },
+    { key: 'teamLogApprove', label: 'Report Approval', levels: ['none', 'edit'] },
+    { key: 'warehouse',    label: 'Warehouse',         levels: ['none', 'view', 'edit'] },
     // Heavy-equipment checks: the technician who checks and files, and —
     // separately, for the same reason as teamLogApprove — the supervisor who
     // approves or sends a report back.
-    { key: 'inspection',        label: 'Pengecekan Alat Berat',  levels: ['none', 'view', 'edit'] },
-    { key: 'inspectionApprove', label: 'Persetujuan Pengecekan', levels: ['none', 'edit'] },
+    { key: 'inspection',        label: 'Heavy Equipment Inspection',  levels: ['none', 'view', 'edit'] },
+    { key: 'inspectionApprove', label: 'Inspection Approval', levels: ['none', 'edit'] },
     // Read-only by nature: it shows what other areas already allow, nothing more.
-    { key: 'leader',       label: 'Kotak Keputusan', levels: ['none', 'view'] },
+    { key: 'leader',       label: 'Decision Inbox', levels: ['none', 'view'] },
     { key: 'history',      label: 'History',        levels: ['none', 'view'] }
 ];
 
@@ -9822,7 +9826,7 @@ function renderUsersView() {
     ).join('');
     const legacyTotal = LEGACY_ROLES.reduce((n, r) => n + countOf(r.key), 0);
     if (legacyTotal > 0) {
-        chips += `<div class="user-chip user-chip--legacy" title="Role lama — pilihkan role baru untuk mereka"><i class="fas fa-clock-rotate-left"></i> ${legacyTotal} role lama</div>`;
+        chips += `<div class="user-chip user-chip--legacy" title="Legacy role — assign them a new role"><i class="fas fa-clock-rotate-left"></i> ${legacyTotal} legacy role</div>`;
     }
     chips += `<div class="user-chip user-chip--pending"><i class="fas fa-hourglass-half"></i> ${pending.length} Pending</div>`;
     document.getElementById('usersSummary').innerHTML = chips;
@@ -9837,25 +9841,25 @@ function renderUsersView() {
         pickedRole[sel.id.slice('approveRole_'.length)] = sel.value;
     });
     if (pending.length === 0) {
-        pendingBody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-secondary)">Tidak ada pendaftaran menunggu</td></tr>`;
+        pendingBody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-secondary)">No pending registrations</td></tr>`;
     } else {
         pendingBody.innerHTML = pending.map((u, i) => `
             <tr>
                 <td>${i + 1}</td>
-                <td data-label="Nama"><strong>${escapeHtml(u.displayName || '—')}</strong></td>
+                <td data-label="Name"><strong>${escapeHtml(u.displayName || '—')}</strong></td>
                 <td data-label="Email"><span class="user-cell-email" title="${escapeHtml(u.email || '')}">${escapeHtml(u.email || '')}</span></td>
-                <td data-label="Waktu daftar"><span class="user-cell-time">${formatUserTime(u.createdAt)}</span></td>
+                <td data-label="Registered"><span class="user-cell-time">${formatUserTime(u.createdAt)}</span></td>
                 <td class="col-actions">
                     <div class="row-actions row-actions--labeled">
                         <select class="form-select user-role-select" id="approveRole_${escapeHtml(u.uid)}"
-                                aria-label="Role untuk ${escapeHtml(u.email || '')}">
+                                aria-label="Role for ${escapeHtml(u.email || '')}">
                             ${ROLES.filter(r => r.key !== 'owner').map(r =>
                                 `<option value="${r.key}"${r.key === (pickedRole[u.uid] || 'khl') ? ' selected' : ''}>${escapeHtml(r.label)}</option>`).join('')}
                         </select>
-                        <button class="btn btn-success btn-sm" title="Setujui dengan role terpilih" onclick="approveUser(${jsArg(u.uid)})">
-                            <i class="fas fa-check"></i> Setujui
+                        <button class="btn btn-success btn-sm" title="Approve with the selected role" onclick="approveUser(${jsArg(u.uid)})">
+                            <i class="fas fa-check"></i> Approve
                         </button>
-                        <button class="btn btn-secondary btn-sm row-actions__icon" title="Tolak dan hapus pendaftaran" onclick="rejectUser(${jsArg(u.uid)})">
+                        <button class="btn btn-secondary btn-sm row-actions__icon" title="Reject and delete registration" onclick="rejectUser(${jsArg(u.uid)})">
                             <i class="fas fa-xmark" style="color:var(--danger)"></i>
                         </button>
                     </div>
@@ -9866,7 +9870,7 @@ function renderUsersView() {
     // Active table
     const activeBody = document.getElementById('activeUsersBody');
     if (active.length === 0) {
-        activeBody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-secondary)">Belum ada user aktif</td></tr>`;
+        activeBody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-secondary)">No active users yet</td></tr>`;
     } else {
         activeBody.innerHTML = active.map((u, i) => {
             const isMe = currentUser && u.uid === currentUser.uid;
@@ -9885,9 +9889,9 @@ function renderUsersView() {
                 // swapped underneath someone.
                 const opts = ROLES.map(r =>
                     `<option value="${r.key}" ${u.role === r.key ? 'selected' : ''}>${escapeHtml(r.label)}</option>`)
-                    .concat(legacy ? [`<option value="${u.role}" selected>${escapeHtml(roleLabel(u.role))} (role lama)</option>`] : [])
+                    .concat(legacy ? [`<option value="${u.role}" selected>${escapeHtml(roleLabel(u.role))} (legacy role)</option>`] : [])
                     .join('');
-                roleSelect = `<select class="form-select user-role-select" title="Role hanya label — atur hak aksesnya lewat tombol Akses"
+                roleSelect = `<select class="form-select user-role-select" title="Role is only a label — set permissions with the Access button"
                            onchange="changeUserRole(${jsArg(u.uid)}, this.value)">${opts}</select>`;
             }
 
@@ -9896,8 +9900,8 @@ function renderUsersView() {
             const noAccess = !isOwnerRow &&
                 ACCESS_AREAS.every(a => effectiveAccess(a.key, u) === 'none');
             const roleNote = legacy
-                ? '<div class="user-role-note user-role-note--legacy">Role lama — pilihkan role baru</div>'
-                : (noAccess ? '<div class="user-role-note user-role-note--warn">Belum diberi akses apa pun</div>' : '');
+                ? '<div class="user-role-note user-role-note--legacy">Legacy role — assign a new role</div>'
+                : (noAccess ? '<div class="user-role-note user-role-note--warn">No access granted yet</div>' : '');
 
             // Which device currently holds this account's single session slot.
             const sess = u.activeSession;
@@ -9906,24 +9910,24 @@ function renderUsersView() {
             // themselves, about their own account — anyone active can put
             // markup there, and this row is rendered in the Super Admin's view.
             const sessionTitle = escapeHtml(live
-                ? `Keluarkan dari perangkat aktif (${String(sess.device || 'tidak diketahui').slice(0, 80)}${sess.startedAt ? ' · masuk ' + formatUserTime(sess.startedAt) : ''})`
-                : 'Keluarkan dari semua perangkat');
+                ? `Sign out of active device (${String(sess.device || 'unknown').slice(0, 80)}${sess.startedAt ? ' · signed in ' + formatUserTime(sess.startedAt) : ''})`
+                : 'Sign out of all devices');
 
             return `
             <tr>
                 <td>${i + 1}</td>
-                <td data-label="Nama"><strong>${escapeHtml(u.displayName || '—')}</strong>${isMe ? ' <span style="font-size:11px;color:var(--text-secondary)">(Anda)</span>' : ''}</td>
+                <td data-label="Name"><strong>${escapeHtml(u.displayName || '—')}</strong>${isMe ? ' <span style="font-size:11px;color:var(--text-secondary)">(You)</span>' : ''}</td>
                 <td data-label="Email"><span class="user-cell-email" title="${escapeHtml(u.email || '')}">${escapeHtml(u.email || '')}</span></td>
                 <td data-label="Role">${roleSelect}${roleNote}</td>
-                <td data-label="Terakhir diubah"><span class="user-cell-time">${formatUserTime(u.updatedAt)}</span></td>
-                <td data-label="Diubah oleh"><span class="user-cell-actor" title="${escapeHtml(u.updatedBy || '')}">${escapeHtml(shortActor(u.updatedBy))}</span></td>
+                <td data-label="Last Updated"><span class="user-cell-time">${formatUserTime(u.updatedAt)}</span></td>
+                <td data-label="Updated By"><span class="user-cell-actor" title="${escapeHtml(u.updatedBy || '')}">${escapeHtml(shortActor(u.updatedBy))}</span></td>
                 <td class="col-actions">
                     ${isOwnerRow
-                        ? '<span class="user-cell-protected">dilindungi</span>'
+                        ? '<span class="user-cell-protected">protected</span>'
                         : `<div class="row-actions row-actions--labeled">
-                            <button class="btn btn-secondary btn-sm" title="Atur akses per menu" onclick="openAccessModal(${jsArg(u.uid)})"><i class="fas fa-sliders"></i> Akses</button>
+                            <button class="btn btn-secondary btn-sm" title="Set access per menu" onclick="openAccessModal(${jsArg(u.uid)})"><i class="fas fa-sliders"></i> Access</button>
                             <button class="btn btn-secondary btn-sm row-actions__icon" title="${sessionTitle}" onclick="forceSignOutUser(${jsArg(u.uid)})"><i class="fas fa-right-from-bracket"></i></button>
-                            <button class="btn btn-secondary btn-sm row-actions__icon" title="Hapus user" onclick="removeUser(${jsArg(u.uid)})"><i class="fas fa-user-minus" style="color:var(--danger)"></i></button>
+                            <button class="btn btn-secondary btn-sm row-actions__icon" title="Remove user" onclick="removeUser(${jsArg(u.uid)})"><i class="fas fa-user-minus" style="color:var(--danger)"></i></button>
                            </div>`}
                 </td>
             </tr>`;
@@ -9938,7 +9942,7 @@ function openAccessModal(uid) {
     if (!user) return;
     document.getElementById('accessUserUid').value = uid;
     document.getElementById('accessUserName').textContent = user.displayName || user.email || uid;
-    const labels = { none: 'Tidak ada', view: 'Lihat', edit: 'Edit' };
+    const labels = { none: 'None', view: 'View', edit: 'Edit' };
     let rows = ACCESS_AREAS.map(area => {
         const cur = effectiveAccess(area.key, user);
         const opts = area.levels.map(l => `<option value="${l}" ${l === cur ? 'selected' : ''}>${labels[l]}</option>`).join('');
@@ -9948,7 +9952,7 @@ function openAccessModal(uid) {
         </div>`;
     }).join('');
     // CSV export/import capability (its own level set)
-    const csvLabels = { none: 'Tidak ada', export: 'Export saja', full: 'Export + Import' };
+    const csvLabels = { none: 'None', export: 'Export only', full: 'Export + Import' };
     const curCsv = effectiveCsv(user);
     rows += `<div class="access-row">
         <span class="access-row__label">CSV Export/Import</span>
@@ -10166,10 +10170,10 @@ function maybeInitCloudSync() {
 // ============================================================
 
 const SHIFT_TYPES = [
-    { key: 'pagi',  label: 'Pagi',  hours: '07:00–15:00' },
-    { key: 'siang', label: 'Siang', hours: '15:00–23:00' },
-    { key: 'malam', label: 'Malam', hours: '23:00–07:00' },
-    { key: 'libur', label: 'Libur', hours: '—' }
+    { key: 'pagi',  label: 'Morning',  hours: '07:00–15:00' },
+    { key: 'siang', label: 'Afternoon', hours: '15:00–23:00' },
+    { key: 'malam', label: 'Night', hours: '23:00–07:00' },
+    { key: 'libur', label: 'Off', hours: '—' }
 ];
 const SHIFT_LABEL = SHIFT_TYPES.reduce((m, s) => { m[s.key] = s.label; return m; }, {});
 const DAY_NAMES = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
@@ -10287,10 +10291,10 @@ function workLogUnitNames(rec) {
 // Three states, because two would leave a rejected report with nowhere to go:
 // the person who filed it would never learn what to fix.
 const APPROVAL_STATES = {
-    draft:    { label: 'Draf',         tone: 'muted'   },
-    pending:  { label: 'Menunggu',     tone: 'warning' },
-    approved: { label: 'Disetujui',    tone: 'success' },
-    revision: { label: 'Perlu Revisi', tone: 'danger'  }
+    draft:    { label: 'Draft',        tone: 'muted'   },
+    pending:  { label: 'Pending',      tone: 'warning' },
+    approved: { label: 'Approved',     tone: 'success' },
+    revision: { label: 'Needs Revision', tone: 'danger'  }
 };
 
 // Reports written before approval existed carry no field; they have genuinely
@@ -10396,7 +10400,7 @@ function ensureMemberOption(selId, memberId) {
         if (!m) return;
         const opt = document.createElement('option');
         opt.value = memberId;
-        opt.textContent = `${m.name || '(tanpa nama)'} (nonaktif)`;
+        opt.textContent = `${m.name || '(unnamed)'} (inactive)`;
         sel.appendChild(opt);
     }
     sel.value = memberId;
@@ -10410,7 +10414,7 @@ function activeMembers() {
 // Free text on the member record with suggestions, rather than a fixed list:
 // a third company can be added by typing it, without a code change.
 const DEFAULT_COMPANIES = ['PT. Global Papua Abadi', 'PT. Murni Nusantara Mandiri'];
-const NO_COMPANY = '(Tanpa perusahaan)';
+const NO_COMPANY = '(No company)';
 
 function companyOf(m) {
     return canonicalCompany((m && m.company) || '');
@@ -10731,7 +10735,7 @@ function renderShiftGrid() {
 
     const head = document.getElementById('shiftHead');
     if (head) {
-        head.innerHTML = `<tr><th class="shift-grid__member">Anggota</th>${
+        head.innerHTML = `<tr><th class="shift-grid__member">Member</th>${
             dates.map(d => `<th class="${d === today ? 'is-today' : ''}">${escapeHtml(dayLabel(d))}</th>`).join('')
         }</tr>`;
     }
@@ -10743,7 +10747,7 @@ function renderShiftGrid() {
     const members = activeMembers();
     if (members.length === 0) {
         body.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-secondary)">
-            Belum ada anggota tim aktif. Klik <strong>Kelola Anggota</strong> untuk menambahkan.
+            No active team members yet. Click <strong>Manage Members</strong> to add some.
         </td></tr>`;
         if (foot) foot.innerHTML = '';
         return;
@@ -10792,7 +10796,7 @@ function renderShiftGrid() {
             ).join('');
             return `<td class="${cls}"${byAttr}>${lvBadge}
                 <select class="shift-select shift-select--${cur || 'none'}"
-                        aria-label="Shift ${escapeHtml(m.name)} tanggal ${escapeHtml(d)}"
+                        aria-label="Shift ${escapeHtml(m.name)} on ${escapeHtml(d)}"
                         onchange="setShift(${jsArg(m.id)},${jsArg(d)},this.value)">${opts}</select>
             </td>`;
         }).join('');
@@ -10810,13 +10814,13 @@ function renderShiftGrid() {
         <tr class="shift-group">
             <th scope="row" class="shift-grid__member shift-group__name">
                 ${escapeHtml(company)}
-                <span class="shift-group__count">${list.length} orang</span>
+                <span class="shift-group__count">${list.length} people</span>
             </th>${dutyCells(list, 'shift-group__cell')}
         </tr>
         ${list.map(memberRow).join('')}`).join('');
 
     if (foot) {
-        foot.innerHTML = `<tr><th scope="row" class="shift-grid__member">Total bertugas</th>${
+        foot.innerHTML = `<tr><th scope="row" class="shift-grid__member">Total on duty</th>${
             dutyCells(members, '')
         }</tr>`;
     }
@@ -10970,7 +10974,7 @@ function renderTeamMembersList() {
     const dl = document.getElementById('companyList');
     if (dl) dl.innerHTML = allCompanies().map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
     if (teamMembers.length === 0) {
-        list.innerHTML = `<li class="category-empty">Belum ada anggota tim.</li>`;
+        list.innerHTML = `<li class="category-empty">No team members yet.</li>`;
         return;
     }
     list.innerHTML = teamMembers.map(m => `
@@ -10979,20 +10983,20 @@ function renderTeamMembersList() {
                 <strong>${escapeHtml(m.name)}</strong>
                 ${(m.jobTitle || m.active === false) ? `<span class="member-item__meta">
                     ${m.jobTitle ? `<span class="member-item__job" title="${escapeHtml(m.jobTitle)}">${escapeHtml(m.jobTitle)}</span>` : ''}
-                    ${m.active === false ? '<span class="member-item__off">Nonaktif</span>' : ''}
+                    ${m.active === false ? '<span class="member-item__off">Inactive</span>' : ''}
                 </span>` : ''}
                 ${canEdit
                     ? `<input class="form-input member-item__company" list="companyList"
-                              value="${escapeHtml(companyOf(m))}" placeholder="Perusahaan…" maxlength="80"
-                              aria-label="Perusahaan ${escapeHtml(m.name)}"
+                              value="${escapeHtml(companyOf(m))}" placeholder="Company…" maxlength="80"
+                              aria-label="Company of ${escapeHtml(m.name)}"
                               onchange="setMemberCompany(${jsArg(m.id)}, this.value)">`
                     : `<span class="member-item__job">${escapeHtml(companyOf(m) || NO_COMPANY)}</span>`}
             </span>
             ${canEdit ? `<span class="row-actions row-actions--labeled">
                 <button class="btn btn-secondary btn-sm" onclick="toggleTeamMember(${jsArg(m.id)})">
-                    ${m.active === false ? 'Aktifkan' : 'Nonaktifkan'}
+                    ${m.active === false ? 'Activate' : 'Deactivate'}
                 </button>
-                <button class="btn btn-secondary btn-sm row-actions__icon" title="Hapus anggota" aria-label="Hapus ${escapeHtml(m.name)}"
+                <button class="btn btn-secondary btn-sm row-actions__icon" title="Delete member" aria-label="Delete ${escapeHtml(m.name)}"
                         onclick="deleteTeamMember(${jsArg(m.id)})">
                     <i class="fas fa-trash" style="color:var(--danger)"></i>
                 </button>
@@ -11169,17 +11173,17 @@ function workLogMinutes(log) {
 }
 
 function formatMinutes(min) {
-    if (!min) return '0j';
+    if (!min) return '0h';
     const h = Math.floor(min / 60), m = min % 60;
     if (!h) return `${m}m`;
-    return m ? `${h}j ${m}m` : `${h}j`;
+    return m ? `${h}h ${m}m` : `${h}h`;
 }
 
 function populateWorkLogFilters() {
     const sel = document.getElementById('wlMemberFilter');
     if (sel) {
         const keep = sel.value;
-        sel.innerHTML = '<option value="">Semua Anggota</option>' +
+        sel.innerHTML = '<option value="">All Members</option>' +
             teamMembers.map(m =>
                 `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}</option>`).join('');
         if (keep && sel.querySelector(`option[value="${CSS.escape(keep)}"]`)) sel.value = keep;
@@ -11187,7 +11191,7 @@ function populateWorkLogFilters() {
     const formSel = document.getElementById('wlMember');
     if (formSel) {
         const keep = formSel.value;
-        formSel.innerHTML = '<option value="">— Pilih anggota —</option>' +
+        formSel.innerHTML = '<option value="">— Select member —</option>' +
             activeMembers().map(m =>
                 `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}</option>`).join('');
         if (keep && formSel.querySelector(`option[value="${CSS.escape(keep)}"]`)) formSel.value = keep;
@@ -11207,7 +11211,7 @@ function populateWorkLogFilters() {
     const compFilter = document.getElementById('wlCompanyFilter');
     if (compFilter) {
         const keep = compFilter.value;
-        compFilter.innerHTML = '<option value="">Semua Perusahaan</option>' +
+        compFilter.innerHTML = '<option value="">All Companies</option>' +
             comps.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('') +
             `<option value="__none__">${escapeHtml(NO_COMPANY)}</option>`;
         if (keep && compFilter.querySelector(`option[value="${CSS.escape(keep)}"]`)) compFilter.value = keep;
@@ -11270,13 +11274,13 @@ function renderWorkLogTable() {
     const todaySub = document.getElementById('wlKpiTodaySub');
     if (todaySub) {
         todaySub.textContent = onLeaveToday
-            ? `Anggota aktif yang sudah melapor · ${onLeaveToday} izin/sakit`
-            : 'Anggota aktif yang sudah melapor';
+            ? `Active members who reported · ${onLeaveToday} on leave/sick`
+            : 'Active members who reported';
     }
     // Counts the whole log, not the filtered slice: a backlog you have filtered
     // out of sight is exactly the backlog worth showing.
     setText('wlKpiPending', workLogs.filter(w => workLogApproval(w) === 'pending').length);
-    setText('workLogCount', `${rows.length} laporan`);
+    setText('workLogCount', `${rows.length} ${rows.length === 1 ? 'report' : 'reports'}`);
 
     const canEdit = hasAccess('teamLog', 'edit');
     const hasFilter = (document.getElementById('wlFrom')?.value || '') ||
@@ -11289,8 +11293,8 @@ function renderWorkLogTable() {
 
     if (rows.length === 0) {
         tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--text-secondary)">${
-            hasFilter ? 'Tidak ada laporan yang cocok dengan filter'
-                      : 'Belum ada laporan harian. Klik <strong>Tambah Laporan</strong> untuk mulai.'
+            hasFilter ? 'No reports match the filter'
+                      : 'No daily reports yet. Click <strong>Add Report</strong> to get started.'
         }</td></tr>`;
         return;
     }
@@ -11306,13 +11310,13 @@ function renderWorkLogTable() {
         return `
         <tr>
             <td>${i + 1}</td>
-            <td data-label="Tanggal" style="white-space:nowrap">${escapeHtml(w.date || '')}</td>
-            <td data-label="Anggota"><strong>${escapeHtml(memberNameOf(w))}</strong></td>
-            <td data-label="Perusahaan" style="font-size:12px">${(() => {
+            <td data-label="Date" style="white-space:nowrap">${escapeHtml(w.date || '')}</td>
+            <td data-label="Member"><strong>${escapeHtml(memberNameOf(w))}</strong></td>
+            <td data-label="Company" style="font-size:12px">${(() => {
                 const c = companyOfRecord(w);
                 return c ? escapeHtml(c) : '<span style="color:var(--text-light)">—</span>';
             })()}</td>
-            <td data-label="Jam Kerja" style="white-space:nowrap;font-variant-numeric:tabular-nums">
+            <td data-label="Work Hours" style="white-space:nowrap;font-variant-numeric:tabular-nums">
                 ${jam}<span class="wl-duration">${escapeHtml(formatMinutes(workLogMinutes(w)))}</span></td>
             <td data-label="Unit">${names.length
                 ? names.map(n => `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(n)}</span>`).join(' ')
@@ -11320,15 +11324,15 @@ function renderWorkLogTable() {
             <td data-label="Paddock" style="font-size:12px">${w.paddock
                 ? escapeHtml(w.paddock)
                 : '<span style="color:var(--text-light)">—</span>'}</td>
-            <td data-label="Uraian" style="max-width:150px;font-size:12px" title="${escapeHtml(task)}">${escapeHtml(taskShort)}</td>
-            <td data-label="Kendala" style="max-width:110px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(issue)}">${
+            <td data-label="Work Description" style="max-width:150px;font-size:12px" title="${escapeHtml(task)}">${escapeHtml(taskShort)}</td>
+            <td data-label="Issues" style="max-width:110px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(issue)}">${
                 issueShort ? escapeHtml(issueShort) : '<span style="color:var(--text-light)">—</span>'}</td>
-            <td data-label="Persetujuan">${(() => {
-                return approvalCell(w, 'laporan', 'approveWorkLog', 'reviseWorkLog');
+            <td data-label="Approval">${(() => {
+                return approvalCell(w, 'report', 'approveWorkLog', 'reviseWorkLog');
             })()}</td>
-            <td data-label="Dokumentasi">${photoCount
-                ? `<button type="button" class="wl-photo-btn" title="Lihat ${photoCount} foto dokumentasi"
-                        aria-label="Lihat ${photoCount} foto dokumentasi"
+            <td data-label="Photos">${photoCount
+                ? `<button type="button" class="wl-photo-btn" title="View ${photoCount} photo(s)"
+                        aria-label="View ${photoCount} photo(s)"
                         onclick="openWorkLogPhotos(${jsArg(w.id)}, this)"><i class="fas fa-image"></i> ${photoCount}</button>`
                 : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td class="col-actions">
@@ -11344,9 +11348,9 @@ function renderWorkLogTable() {
 function approvalCell(rec, noun, approveFn, reviseFn, areas = TEAM_AREAS) {
     const st = workLogApproval(rec);
     const meta = st === 'approved'
-        ? `Disetujui ${rec.approvedBy || '-'}${rec.approvedAt ? ' · ' + formatUserTime(rec.approvedAt) : ''}`
-        : st === 'revision' ? (rec.revisionNote || 'Perlu revisi')
-        : st === 'draft' ? 'Belum dikirim' : 'Belum diperiksa';
+        ? `Approved by ${rec.approvedBy || '-'}${rec.approvedAt ? ' · ' + formatUserTime(rec.approvedAt) : ''}`
+        : st === 'revision' ? (rec.revisionNote || 'Needs revision')
+        : st === 'draft' ? 'Not submitted' : 'Not reviewed yet';
     // One block, one width: the badge on top and the buttons sharing the same
     // width beneath it, so every row lines up whatever its state.
     let html = `<span class="appr appr--${st}" title="${escapeHtml(meta)}">${escapeHtml(APPROVAL_STATES[st].label)}</span>`;
@@ -11355,8 +11359,8 @@ function approvalCell(rec, noun, approveFn, reviseFn, areas = TEAM_AREAS) {
     }
     if (canApproveThisLog(rec, areas) && (st === 'pending' || st === 'approved')) {
         html += `<span class="appr-actions">
-            ${st === 'pending' ? `<button class="btn appr-btn appr-btn--ok" title="Setujui ${noun}" aria-label="Setujui ${noun}" onclick="${approveFn}(${jsArg(rec.id)})"><i class="fas fa-check"></i></button>` : ''}
-            <button class="btn appr-btn appr-btn--rev" title="${st === 'approved' ? 'Buka kembali — minta revisi' : 'Minta revisi'}" aria-label="Minta revisi ${noun}" onclick="${reviseFn}(${jsArg(rec.id)})"><i class="fas fa-rotate-left"></i>${st === 'approved' ? ' Buka' : ''}</button>
+            ${st === 'pending' ? `<button class="btn appr-btn appr-btn--ok" title="Approve ${noun}" aria-label="Approve ${noun}" onclick="${approveFn}(${jsArg(rec.id)})"><i class="fas fa-check"></i></button>` : ''}
+            <button class="btn appr-btn appr-btn--rev" title="${st === 'approved' ? 'Reopen — request revision' : 'Request revision'}" aria-label="Request revision for ${noun}" onclick="${reviseFn}(${jsArg(rec.id)})"><i class="fas fa-rotate-left"></i>${st === 'approved' ? ' Reopen' : ''}</button>
         </span>`;
     }
     return `<div class="appr-cell">${html}</div>`;
@@ -11367,13 +11371,13 @@ function approvalCell(rec, noun, approveFn, reviseFn, areas = TEAM_AREAS) {
 function rowActionsFor(rec, noun, editFn, deleteFn, withdrawFn, areas = TEAM_AREAS) {
     if (canEditTeamRecord(rec, areas)) {
         return `<div class="row-actions">
-            <button class="btn btn-secondary" title="Edit" aria-label="Edit ${noun.toLowerCase()}" onclick="${editFn}(${jsArg(rec.id)})"><i class="fas fa-pen"></i></button>
-            <button class="btn btn-secondary" title="Hapus" aria-label="Hapus ${noun.toLowerCase()}" onclick="${deleteFn}(${jsArg(rec.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+            <button class="btn btn-secondary" title="Edit" aria-label="Edit" onclick="${editFn}(${jsArg(rec.id)})"><i class="fas fa-pen"></i></button>
+            <button class="btn btn-secondary" title="Delete" aria-label="Delete" onclick="${deleteFn}(${jsArg(rec.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
         </div>`;
     }
     const why = lockedReason(rec, noun, areas);
     return `<div class="row-actions">
-        ${canWithdrawTeamRecord(rec, areas) ? `<button class="btn btn-secondary" title="Tarik kembali ke draf" aria-label="Tarik kembali ${noun.toLowerCase()}" onclick="${withdrawFn}(${jsArg(rec.id)})"><i class="fas fa-arrow-rotate-left"></i></button>` : ''}
+        ${canWithdrawTeamRecord(rec, areas) ? `<button class="btn btn-secondary" title="Withdraw to draft" aria-label="Withdraw to draft" onclick="${withdrawFn}(${jsArg(rec.id)})"><i class="fas fa-arrow-rotate-left"></i></button>` : ''}
         <span class="row-lock" title="${escapeHtml(why)}" aria-label="${escapeHtml(why)}"><i class="fas fa-lock"></i></span>
     </div>`;
 }
@@ -11427,10 +11431,10 @@ function renderWorkLogUnitChips() {
         ? _wlUnits.map((u, i) => `
             <span class="unit-chip">
                 ${escapeHtml(u.name || u.sn || '(unit)')}
-                <button type="button" class="unit-chip__x" aria-label="Hapus ${escapeHtml(u.name || u.sn)}"
-                        title="Hapus dari daftar" onclick="removeWorkLogUnit(${i})">&times;</button>
+                <button type="button" class="unit-chip__x" aria-label="Remove ${escapeHtml(u.name || u.sn)}"
+                        title="Remove from list" onclick="removeWorkLogUnit(${i})">&times;</button>
             </span>`).join('')
-        : '<span class="unit-chip__empty">Belum ada unit dipilih</span>';
+        : '<span class="unit-chip__empty">No units selected</span>';
 }
 
 function addWorkLogUnit() {
@@ -11466,7 +11470,7 @@ function renderWorkLogPhotos() {
     setPhotoAddState('wlPhotoAddBtn', _wlPhotosLoading, _wlPhotosFailed, 'Foto');
     if (!wrap) return;
     if (_wlPhotosLoading && !_wlPhotos.length) {
-        wrap.innerHTML = '<span class="wl-photo__loading"><i class="fas fa-spinner fa-spin"></i> Memuat foto…</span>';
+        wrap.innerHTML = '<span class="wl-photo__loading"><i class="fas fa-spinner fa-spin"></i> Loading photos…</span>';
         return;
     }
     if (_wlPhotosFailed) {
@@ -11476,9 +11480,9 @@ function renderWorkLogPhotos() {
     }
     wrap.innerHTML = _wlPhotos.map((src, i) => `
         <div class="wl-photo">
-            <img src="${escapeHtml(safeImageSrc(src))}" alt="Dokumentasi ${i + 1}" onclick="openPhotoLightbox(_wlPhotos, ${i})">
-            <button type="button" class="wl-photo__x" aria-label="Hapus dokumentasi ${i + 1}"
-                    title="Hapus foto" onclick="removeWorkLogPhoto(${i})">&times;</button>
+            <img src="${escapeHtml(safeImageSrc(src))}" alt="Photo ${i + 1}" onclick="openPhotoLightbox(_wlPhotos, ${i})">
+            <button type="button" class="wl-photo__x" aria-label="Delete photo ${i + 1}"
+                    title="Delete photo" onclick="removeWorkLogPhoto(${i})">&times;</button>
         </div>`).join('');
 }
 
@@ -11551,7 +11555,7 @@ function showAddWorkLogForm() {
         showToast('Tambahkan anggota tim dulu lewat Kelola Anggota', 'warning');
         return;
     }
-    document.getElementById('workLogModalTitle').textContent = 'Tambah Laporan Harian';
+    document.getElementById('workLogModalTitle').textContent = 'Add Daily Report';
     document.getElementById('editWorkLogId').value = '';
     document.getElementById('workLogForm').reset();
     _wlUnits = [];
@@ -11578,7 +11582,7 @@ function showRevisionNote(elId, rec) {
     if (!note || (st !== 'revision' && st !== 'draft')) { el.style.display = 'none'; el.textContent = ''; return; }
     el.innerHTML = '';
     const head = document.createElement('strong');
-    head.textContent = `Diminta revisi${rec.reviewedBy ? ' oleh ' + rec.reviewedBy : ''}: `;
+    head.textContent = `Revision requested${rec.reviewedBy ? ' by ' + rec.reviewedBy : ''}: `;
     el.appendChild(head);
     el.appendChild(document.createTextNode(note));
     el.style.display = '';
@@ -11590,7 +11594,7 @@ function editWorkLog(id) {
     if (!w) return;
     if (!canEditTeamRecord(w)) { showToast(lockedReason(w, 'Laporan'), 'warning'); return; }
     document.getElementById('workLogModalTitle').textContent =
-        workLogApproval(w) === 'revision' ? 'Revisi Laporan Harian' : 'Edit Laporan Harian';
+        workLogApproval(w) === 'revision' ? 'Revise Daily Report' : 'Edit Daily Report';
     showRevisionNote('wlRevisionNote', w);
     document.getElementById('editWorkLogId').value = w.id;
     populateWorkLogFilters();
@@ -11859,7 +11863,7 @@ function approveWorkLog(id) {
           unitName: `[Laporan] ${memberNameOf(rec)}`,
           field: `Persetujuan ${rec.date}`,
           before: APPROVAL_STATES[workLogApproval(w)].label,
-          after: 'Disetujui' },
+          after: APPROVAL_STATES.approved.label },
         cloudCall('saveWorkLog', rec),
         'Laporan disetujui',
         err => {
@@ -11907,7 +11911,7 @@ function reviseWorkLog(id) {
           unitName: `[Laporan] ${memberNameOf(rec)}`,
           field: `Persetujuan ${rec.date}`,
           before: APPROVAL_STATES[workLogApproval(w)].label,
-          after: `Perlu Revisi — ${rec.revisionNote}` },
+          after: `${APPROVAL_STATES.revision.label} — ${rec.revisionNote}` },
         cloudCall('saveWorkLog', rec),
         'Laporan ditandai perlu revisi',
         err => {
@@ -11985,9 +11989,9 @@ function workLogsForUnit(unitId, sn) {
 // not rewrite what is in the database — the Good/Breakdown values elsewhere in
 // this app are the cautionary example.
 const LEAVE_TYPES = [
-    { key: 'izin',  label: 'Izin',                   tone: 'info',    needsDoc: true  },
-    { key: 'sakit', label: 'Sakit',                  tone: 'warning', needsDoc: true  },
-    { key: 'alpa',  label: 'Alpa (tanpa keterangan)', tone: 'danger', needsDoc: false }
+    { key: 'izin',  label: 'Leave',                  tone: 'info',    needsDoc: true  },
+    { key: 'sakit', label: 'Sick',                   tone: 'warning', needsDoc: true  },
+    { key: 'alpa',  label: 'Absent (no notice)',     tone: 'danger', needsDoc: false }
 ];
 const LEAVE_LABEL = LEAVE_TYPES.reduce((m, t) => { m[t.key] = t.label; return m; }, {});
 const LEAVE_DOC_MAX = 4;                       // lembar surat per pengajuan
@@ -12087,14 +12091,14 @@ function populateLeaveFilters() {
     const memberSel = document.getElementById('lvMemberFilter');
     if (memberSel) {
         const keep = memberSel.value;
-        memberSel.innerHTML = '<option value="">Semua Anggota</option>'
+        memberSel.innerHTML = '<option value="">All Members</option>'
             + teamMembers.map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}</option>`).join('');
         if (keep && memberSel.querySelector(`option[value="${CSS.escape(keep)}"]`)) memberSel.value = keep;
     }
     const formSel = document.getElementById('lvMember');
     if (formSel) {
         const keep = formSel.value;
-        formSel.innerHTML = '<option value="">— Pilih anggota —</option>'
+        formSel.innerHTML = '<option value="">— Select member —</option>'
             + activeMembers().map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}</option>`).join('');
         if (keep && formSel.querySelector(`option[value="${CSS.escape(keep)}"]`)) formSel.value = keep;
     }
@@ -12102,9 +12106,9 @@ function populateLeaveFilters() {
     if (compSel) {
         const keep = compSel.value;
         const companies = allCompanies();
-        compSel.innerHTML = '<option value="">Semua Perusahaan</option>'
+        compSel.innerHTML = '<option value="">All Companies</option>'
             + companies.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
-            + '<option value="__none__">(Tanpa perusahaan)</option>';
+            + `<option value="__none__">${escapeHtml(NO_COMPANY)}</option>`;
         if (keep && compSel.querySelector(`option[value="${CSS.escape(keep)}"]`)) compSel.value = keep;
     }
 }
@@ -12173,7 +12177,7 @@ function renderLeaveTable() {
     setText('lvKpiToday', membersOnLeave().size);
 
     const counter = document.getElementById('leaveCount');
-    if (counter) counter.textContent = `${rows.length} pengajuan`;
+    if (counter) counter.textContent = `${rows.length} ${rows.length === 1 ? 'request' : 'requests'}`;
 
     const canEdit = hasAccess('teamLog', 'edit');
     const filterOn = ['lvFrom', 'lvTo', 'lvMemberFilter', 'lvCompanyFilter',
@@ -12184,10 +12188,10 @@ function renderLeaveTable() {
     if (rows.length === 0) {
         tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-secondary)">${
             filterOn
-                ? `Tidak ada pengajuan yang cocok dengan filter.
+                ? `No requests match the filter.
                    <button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="clearLeaveFilter()">
-                       <i class="fas fa-filter-circle-xmark"></i> Hapus filter</button>`
-                : 'Belum ada pengajuan izin atau sakit.'
+                       <i class="fas fa-filter-circle-xmark"></i> Clear filter</button>`
+                : 'No leave or sick requests yet.'
         }</td></tr>`;
         return;
     }
@@ -12201,19 +12205,19 @@ function renderLeaveTable() {
         return `
         <tr>
             <td>${i + 1}</td>
-            <td data-label="Jenis"><span class="lv-type lv-type--${escapeHtml(r.type || 'izin')}">${escapeHtml(leaveTypeLabel(r))}</span></td>
-            <td data-label="Anggota"><strong>${escapeHtml(memberNameOf(r))}</strong></td>
-            <td data-label="Perusahaan">${escapeHtml(companyOfRecord(r) || '—')}</td>
-            <td data-label="Tanggal">${escapeHtml(leaveRangeLabel(r))}</td>
-            <td data-label="Hari">${days}</td>
-            <td data-label="Catatan" style="max-width:220px;font-size:12px;color:var(--text-secondary)"
+            <td data-label="Type"><span class="lv-type lv-type--${escapeHtml(r.type || 'izin')}">${escapeHtml(leaveTypeLabel(r))}</span></td>
+            <td data-label="Member"><strong>${escapeHtml(memberNameOf(r))}</strong></td>
+            <td data-label="Company">${escapeHtml(companyOfRecord(r) || '—')}</td>
+            <td data-label="Date">${escapeHtml(leaveRangeLabel(r))}</td>
+            <td data-label="Days">${days}</td>
+            <td data-label="Notes" style="max-width:220px;font-size:12px;color:var(--text-secondary)"
                 title="${escapeHtml(r.reason || '')}">${escapeHtml((r.reason || '').slice(0, 60)) || '—'}</td>
-            <td data-label="Surat">${docs
-                ? `<button type="button" class="wl-photo-btn" title="Lihat ${docs} lembar surat"
-                        aria-label="Lihat ${docs} lembar surat"
+            <td data-label="Letter">${docs
+                ? `<button type="button" class="wl-photo-btn" title="View ${docs} letter page(s)"
+                        aria-label="View ${docs} letter page(s)"
                         onclick="openLeaveDocs(${jsArg(r.id)}, this)"><i class="fas fa-file-image"></i> ${docs}</button>`
                 : '<span style="color:var(--text-light)">—</span>'}</td>
-            <td data-label="Persetujuan">${approvalCell(r, 'pengajuan', 'approveLeave', 'reviseLeave')}</td>
+            <td data-label="Approval">${approvalCell(r, 'request', 'approveLeave', 'reviseLeave')}</td>
             <td class="col-actions">
                 ${canEdit ? rowActionsFor(r, 'Pengajuan', 'editLeave', 'deleteLeave', 'withdrawLeave') : ''}
             </td>
@@ -12235,7 +12239,7 @@ function renderLeaveDocs() {
     const wrap = document.getElementById('lvDocPreviews');
     if (!wrap) return;
     if (_lvDocsLoading && !_lvDocs.length) {
-        wrap.innerHTML = '<span class="wl-photo__loading"><i class="fas fa-spinner fa-spin"></i> Memuat surat…</span>';
+        wrap.innerHTML = '<span class="wl-photo__loading"><i class="fas fa-spinner fa-spin"></i> Loading letters…</span>';
         return;
     }
     if (_lvDocsFailed) {
@@ -12245,9 +12249,9 @@ function renderLeaveDocs() {
     }
     wrap.innerHTML = _lvDocs.map((src, i) => `
         <div class="wl-photo">
-            <img src="${escapeHtml(safeImageSrc(src))}" alt="Surat lembar ${i + 1}" onclick="openPhotoLightbox(_lvDocs, ${i})">
-            <button type="button" class="wl-photo__x" aria-label="Hapus surat lembar ${i + 1}"
-                    title="Hapus lembar ini" onclick="removeLeaveDoc(${i})">&times;</button>
+            <img src="${escapeHtml(safeImageSrc(src))}" alt="Letter page ${i + 1}" onclick="openPhotoLightbox(_lvDocs, ${i})">
+            <button type="button" class="wl-photo__x" aria-label="Delete letter page ${i + 1}"
+                    title="Delete this page" onclick="removeLeaveDoc(${i})">&times;</button>
         </div>`).join('');
 }
 
@@ -12314,7 +12318,7 @@ function showAddLeaveForm() {
     document.getElementById('leaveForm').reset();
     document.getElementById('editLeaveId').value = '';
     document.getElementById('leaveModalTitle').innerHTML =
-        '<i class="fas fa-user-clock"></i> Tambah Pengajuan Izin / Sakit';
+        '<i class="fas fa-user-clock"></i> Add Leave / Sick Request';
     document.getElementById('lvDateFrom').value = toISODate();
     document.getElementById('lvType').value = 'izin';
     _lvDocsGen++;
@@ -12333,8 +12337,8 @@ function editLeave(id) {
     populateLeaveFilters();
     document.getElementById('editLeaveId').value = r.id;
     document.getElementById('leaveModalTitle').innerHTML = workLogApproval(r) === 'revision'
-        ? '<i class="fas fa-user-clock"></i> Revisi Pengajuan Izin / Sakit'
-        : '<i class="fas fa-user-clock"></i> Edit Pengajuan Izin / Sakit';
+        ? '<i class="fas fa-user-clock"></i> Revise Leave / Sick Request'
+        : '<i class="fas fa-user-clock"></i> Edit Leave / Sick Request';
     showRevisionNote('lvRevisionNote', r);
     document.getElementById('lvMember').value = r.memberId || '';
     ensureMemberOption('lvMember', r.memberId);
@@ -12584,7 +12588,7 @@ function approveLeave(id) {
           unitName: `[Izin] ${memberNameOf(rec)}`,
           field: `Persetujuan ${leaveRangeLabel(rec)}`,
           before: APPROVAL_STATES[workLogApproval(r)].label,
-          after: 'Disetujui' },
+          after: APPROVAL_STATES.approved.label },
         cloudCall('saveLeaveRequest', rec),
         'Pengajuan disetujui',
         err => {
@@ -12627,7 +12631,7 @@ function reviseLeave(id) {
           unitName: `[Izin] ${memberNameOf(rec)}`,
           field: `Persetujuan ${leaveRangeLabel(rec)}`,
           before: APPROVAL_STATES[workLogApproval(r)].label,
-          after: `Perlu revisi — ${note.trim()}` },
+          after: `${APPROVAL_STATES.revision.label} — ${note.trim()}` },
         cloudCall('saveLeaveRequest', rec),
         'Pengajuan dikembalikan untuk revisi',
         err => {
@@ -12683,11 +12687,11 @@ function exportLeaveCSV() {
 // ============================================================
 
 const DEVICE_STATUSES = [
-    { key: 'warehouse', label: 'Di Gudang',  tone: 'info' },
-    { key: 'installed', label: 'Terpasang',  tone: 'success' },
-    { key: 'damaged',   label: 'Rusak',      tone: 'danger' },
-    { key: 'repair',    label: 'Perbaikan',  tone: 'warning' },
-    { key: 'retired',   label: 'Afkir',      tone: 'muted' }
+    { key: 'warehouse', label: 'In Warehouse', tone: 'info' },
+    { key: 'installed', label: 'Installed',  tone: 'success' },
+    { key: 'damaged',   label: 'Damaged',    tone: 'danger' },
+    { key: 'repair',    label: 'In Repair',  tone: 'warning' },
+    { key: 'retired',   label: 'Retired',    tone: 'muted' }
 ];
 const DEVICE_STATUS_LABEL = DEVICE_STATUSES.reduce((m, s) => { m[s.key] = s.label; return m; }, {});
 const DEFAULT_DEVICE_TYPES = ['GPS / StarFire', 'Display', 'Steering Sensor', 'JDLink', 'Weather Station'];
@@ -12793,10 +12797,10 @@ function populateWarehouseFilters() {
             values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
         if (keep && sel.querySelector(`option[value="${CSS.escape(keep)}"]`)) sel.value = keep;
     };
-    fill('devTypeFilter', allDeviceTypes(), 'Semua Jenis');
-    fill('devLocationFilter', allWarehouseLocations(), 'Semua Lokasi');
-    fill('stkLocationFilter', allWarehouseLocations(), 'Semua Lokasi');
-    fill('stkItemFilter', allStockItemNames(), 'Semua Barang');
+    fill('devTypeFilter', allDeviceTypes(), 'All Types');
+    fill('devLocationFilter', allWarehouseLocations(), 'All Locations');
+    fill('stkLocationFilter', allWarehouseLocations(), 'All Locations');
+    fill('stkItemFilter', allStockItemNames(), 'All Items');
 
     const dl = (id, values) => {
         const el = document.getElementById(id);
@@ -12828,7 +12832,7 @@ function deviceWhere(d) {
             const live = globalData.find(u => u.id === d.unitId);
             return live ? (live.name || d.unitName || '—') : (d.unitName || '—');
         }
-        return d.siteName || 'Terpasang (lokasi belum diisi)';
+        return d.siteName || 'Installed (location not set)';
     }
     return d.location || '—';
 }
@@ -12873,7 +12877,7 @@ function renderDeviceTable() {
     DEVICE_STATUSES.forEach(s => {
         setText('devKpi_' + s.key, warehouseDevices.filter(d => d.status === s.key).length);
     });
-    setText('deviceCount', `${rows.length} perangkat`);
+    setText('deviceCount', `${rows.length} devices`);
 
     const canEdit = hasAccess('warehouse', 'edit');
     const hasFilter = (document.getElementById('devStatusFilter')?.value || '') ||
@@ -12883,8 +12887,8 @@ function renderDeviceTable() {
 
     if (rows.length === 0) {
         tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-secondary)">${
-            hasFilter ? 'Tidak ada perangkat yang cocok dengan filter'
-                      : 'Belum ada perangkat. Klik <strong>Tambah Perangkat</strong> untuk mulai.'
+            hasFilter ? 'No devices match the filter'
+                      : 'No devices yet. Click <strong>Add Device</strong> to get started.'
         }</td></tr>`;
         return;
     }
@@ -12894,23 +12898,23 @@ function renderDeviceTable() {
         const map = deviceMapLink(d);
         const pos = (d.posX || d.posY)
             ? `${escapeHtml(d.posX || '—')}, ${escapeHtml(d.posY || '—')}${
-                map ? ` <a href="${map}" target="_blank" rel="noopener" title="Buka di peta"><i class="fas fa-map-location-dot"></i></a>` : ''}`
+                map ? ` <a href="${map}" target="_blank" rel="noopener" title="Open in map"><i class="fas fa-map-location-dot"></i></a>` : ''}`
             : '<span style="color:var(--text-light)">—</span>';
         return `
         <tr>
             <td>${i + 1}</td>
             <td data-label="Serial Number" style="font-family:monospace;font-size:12px">${escapeHtml(d.sn || '')}</td>
-            <td data-label="Jenis">${d.type ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.type)}</span>` : '<span style="color:var(--text-light)">—</span>'}</td>
-            <td data-label="Merek / Model" style="font-size:12px">${escapeHtml([d.brand, d.model].filter(Boolean).join(' ')) || '<span style="color:var(--text-light)">—</span>'}</td>
+            <td data-label="Type">${d.type ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.type)}</span>` : '<span style="color:var(--text-light)">—</span>'}</td>
+            <td data-label="Brand / Model" style="font-size:12px">${escapeHtml([d.brand, d.model].filter(Boolean).join(' ')) || '<span style="color:var(--text-light)">—</span>'}</td>
             <td data-label="Status"><span class="wh-status wh-status--${st.key}">${escapeHtml(st.label)}</span></td>
-            <td data-label="Posisi" style="font-size:12px">${escapeHtml(deviceWhere(d))}</td>
-            <td data-label="Koordinat" style="font-size:12px;white-space:nowrap">${pos}</td>
-            <td data-label="Catatan" style="max-width:130px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(d.note || '')}">${
+            <td data-label="Location" style="font-size:12px">${escapeHtml(deviceWhere(d))}</td>
+            <td data-label="Coordinates" style="font-size:12px;white-space:nowrap">${pos}</td>
+            <td data-label="Notes" style="max-width:130px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(d.note || '')}">${
                 d.note ? escapeHtml(d.note) : '<span style="color:var(--text-light)">—</span>'}</td>
             <td class="col-actions">
                 ${canEdit ? `<div class="row-actions">
-                    <button class="btn btn-secondary" title="Edit" aria-label="Edit perangkat" onclick="editDevice(${jsArg(d.id)})"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Hapus" aria-label="Hapus perangkat" onclick="deleteDevice(${jsArg(d.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                    <button class="btn btn-secondary" title="Edit" aria-label="Edit device" onclick="editDevice(${jsArg(d.id)})"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Delete" aria-label="Delete device" onclick="deleteDevice(${jsArg(d.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
                 </div>` : ''}
             </td>
         </tr>`;
@@ -12938,7 +12942,7 @@ function onDeviceStatusChange() {
 
 function showAddDeviceForm() {
     if (!requireEdit('warehouse')) return;
-    document.getElementById('deviceModalTitle').textContent = 'Tambah Perangkat';
+    document.getElementById('deviceModalTitle').textContent = 'Add Device';
     document.getElementById('editDeviceId').value = '';
     document.getElementById('deviceForm').reset();
     document.getElementById('devStatus').value = 'warehouse';
@@ -12951,7 +12955,7 @@ function editDevice(id) {
     if (!requireEdit('warehouse')) return;
     const d = warehouseDevices.find(x => x.id === id);
     if (!d) return;
-    document.getElementById('deviceModalTitle').textContent = 'Edit Perangkat';
+    document.getElementById('deviceModalTitle').textContent = 'Edit Device';
     document.getElementById('editDeviceId').value = d.id;
     populateWarehouseFilters();
     document.getElementById('devSn').value = d.sn || '';
@@ -13165,19 +13169,19 @@ function renderStockView() {
                     <span class="stock-chip__name">${escapeHtml(s.name)}</span>
                     <span class="stock-chip__qty">${s.qty}</span>
                 </div>`).join('')
-            : '<div class="stock-empty">Belum ada barang tercatat.</div>';
+            : '<div class="stock-empty">No items recorded yet.</div>';
     }
 
     const rows = getFilteredStock();
     const tbody = document.getElementById('stockBody');
     if (!tbody) return;
     const countEl = document.getElementById('stockCount');
-    if (countEl) countEl.textContent = `${rows.length} transaksi`;
+    if (countEl) countEl.textContent = `${rows.length} transactions`;
 
     const canEdit = hasAccess('warehouse', 'edit');
     if (rows.length === 0) {
         tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-secondary)">
-            Belum ada transaksi stok. Klik <strong>Catat Masuk/Keluar</strong> untuk mulai.
+            No stock transactions yet. Click <strong>Record In/Out</strong> to get started.
         </td></tr>`;
         return;
     }
@@ -13185,16 +13189,16 @@ function renderStockView() {
     tbody.innerHTML = rows.map((r, i) => `
         <tr>
             <td>${i + 1}</td>
-            <td data-label="Tanggal" style="white-space:nowrap">${escapeHtml(r.date || '')}</td>
-            <td data-label="Jenis"><span class="wh-txn wh-txn--${r.txnType === 'OUT' ? 'out' : 'in'}">${r.txnType === 'OUT' ? 'Keluar' : 'Masuk'}</span></td>
-            <td data-label="Barang"><strong>${escapeHtml(r.itemName || '')}</strong></td>
-            <td data-label="Jumlah" style="white-space:nowrap">${Number(r.qty) || 0}</td>
-            <td data-label="Lokasi" style="font-size:12px">${escapeHtml(r.location || '') || '<span style="color:var(--text-light)">—</span>'}</td>
-            <td data-label="Untuk Unit" style="font-size:12px">${escapeHtml(r.unitName || '') || '<span style="color:var(--text-light)">—</span>'}</td>
+            <td data-label="Date" style="white-space:nowrap">${escapeHtml(r.date || '')}</td>
+            <td data-label="Type"><span class="wh-txn wh-txn--${r.txnType === 'OUT' ? 'out' : 'in'}">${r.txnType === 'OUT' ? 'Out' : 'In'}</span></td>
+            <td data-label="Item"><strong>${escapeHtml(r.itemName || '')}</strong></td>
+            <td data-label="Quantity" style="white-space:nowrap">${Number(r.qty) || 0}</td>
+            <td data-label="Location" style="font-size:12px">${escapeHtml(r.location || '') || '<span style="color:var(--text-light)">—</span>'}</td>
+            <td data-label="For Unit" style="font-size:12px">${escapeHtml(r.unitName || '') || '<span style="color:var(--text-light)">—</span>'}</td>
             <td class="col-actions">
                 ${canEdit ? `<div class="row-actions">
-                    <button class="btn btn-secondary" title="Edit" aria-label="Edit transaksi" onclick="editStockItem(${jsArg(r.id)})"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Hapus" aria-label="Hapus transaksi" onclick="deleteStockItem(${jsArg(r.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                    <button class="btn btn-secondary" title="Edit" aria-label="Edit transaction" onclick="editStockItem(${jsArg(r.id)})"><i class="fas fa-pen"></i></button>
+                    <button class="btn btn-secondary" title="Delete" aria-label="Delete transaction" onclick="deleteStockItem(${jsArg(r.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
                 </div>` : ''}
             </td>
         </tr>`).join('');
@@ -13218,7 +13222,7 @@ function onStockTxnChange() {
 
 function showAddStockForm() {
     if (!requireEdit('warehouse')) return;
-    document.getElementById('stockModalTitle').textContent = 'Catat Stok Masuk/Keluar';
+    document.getElementById('stockModalTitle').textContent = 'Record Stock In/Out';
     document.getElementById('editStockId').value = '';
     document.getElementById('stockForm').reset();
     populateWarehouseFilters();
@@ -13232,7 +13236,7 @@ function editStockItem(id) {
     if (!requireEdit('warehouse')) return;
     const r = stockLedger.find(x => x.id === id);
     if (!r) return;
-    document.getElementById('stockModalTitle').textContent = 'Edit Transaksi Stok';
+    document.getElementById('stockModalTitle').textContent = 'Edit Stock Transaction';
     document.getElementById('editStockId').value = r.id;
     populateWarehouseFilters();
     document.getElementById('stkDate').value = r.date || '';
@@ -13386,7 +13390,7 @@ function decisionGroups() {
         const pending = workLogs.filter(w => workLogApproval(w) === 'pending');
         add({
             key: 'approval', icon: 'clipboard-check', tone: 'warning',
-            title: 'Laporan menunggu persetujuan',
+            title: 'Reports pending approval',
             total: pending.length,
             items: pending.slice(0, 6).map(w => ({
                 text: `${memberNameOf(w)} · ${w.date}`,
@@ -13398,7 +13402,7 @@ function decisionGroups() {
         const revision = workLogs.filter(w => workLogApproval(w) === 'revision');
         add({
             key: 'revision', icon: 'rotate-left', tone: 'danger',
-            title: 'Laporan diminta revisi, belum diperbaiki',
+            title: 'Reports sent back for revision, not yet fixed',
             total: revision.length,
             items: revision.slice(0, 6).map(w => ({
                 text: `${memberNameOf(w)} · ${w.date}`,
@@ -13412,7 +13416,7 @@ function decisionGroups() {
         const izin = leaveRequests.filter(r => workLogApproval(r) === 'pending');
         add({
             key: 'leave', icon: 'user-clock', tone: 'warning',
-            title: 'Izin / sakit menunggu persetujuan',
+            title: 'Leave / sick requests pending approval',
             total: izin.length,
             items: izin.slice(0, 6).map(r => ({
                 text: `${memberNameOf(r)} · ${leaveTypeLabel(r)}`,
@@ -13429,7 +13433,7 @@ function decisionGroups() {
         const late = st.filter(x => x.s.key === 'overdue').sort((a, b) => a.s.days - b.s.days);
         add({
             key: 'insOverdue', icon: 'clipboard-check', tone: 'danger',
-            title: 'Alat berat terlambat dicek',
+            title: 'Heavy equipment overdue for inspection',
             total: late.length,
             items: late.slice(0, 6).map(x => ({ text: x.u.name || x.u.sn || '-', sub: `${x.s.label} · cek terakhir ${x.s.last.date}` })),
             goto: 'inspection:overdue'
@@ -13437,7 +13441,7 @@ function decisionGroups() {
         const soon = st.filter(x => x.s.key === 'soon').sort((a, b) => a.s.days - b.s.days);
         add({
             key: 'insSoon', icon: 'calendar-check', tone: 'warning',
-            title: `Alat berat jatuh tempo cek (≤${INSPECTION_SOON_DAYS} hari)`,
+            title: `Heavy equipment inspection due (≤${INSPECTION_SOON_DAYS} days)`,
             total: soon.length,
             items: soon.slice(0, 6).map(x => ({ text: x.u.name || x.u.sn || '-', sub: `${x.s.label} · ${x.s.next}` })),
             goto: 'inspection:soon'
@@ -13445,7 +13449,7 @@ function decisionGroups() {
         const waiting = inspections.filter(r => workLogApproval(r) === 'pending');
         add({
             key: 'insPending', icon: 'clipboard-list', tone: 'warning',
-            title: 'Laporan cek menunggu persetujuan',
+            title: 'Check reports pending approval',
             total: waiting.length,
             items: waiting.slice(0, 6).map(r => ({ text: `${inspectionUnitLabel(r)} · ${r.date}`, sub: inspectionResultSummary(r).text })),
             goto: 'inspection:pending'
@@ -13454,7 +13458,7 @@ function decisionGroups() {
             const unapplied = inspections.filter(inspectionNeedsApply);
             add({
                 key: 'insApply', icon: 'screwdriver-wrench', tone: 'danger',
-                title: 'Temuan cek disetujui, belum dicatat di Kerusakan',
+                title: 'Approved check findings not yet logged in Damage',
                 total: unapplied.length,
                 items: unapplied.slice(0, 6).map(r => ({ text: `${inspectionUnitLabel(r)} · ${r.date}`, sub: inspectionResultSummary(r).text })),
                 goto: 'inspection:approved'
@@ -13468,8 +13472,8 @@ function decisionGroups() {
         add({
             key: 'license', icon: 'key', tone: alerts.expiredCount ? 'danger' : 'warning',
             title: alerts.expiredCount
-                ? `Lisensi kedaluwarsa (${alerts.expiredCount}) dan segera habis (${alerts.soonCount})`
-                : 'Lisensi segera habis',
+                ? `Expired licenses (${alerts.expiredCount}) and expiring soon (${alerts.soonCount})`
+                : 'Licenses expiring soon',
             total: alerts.total,
             // _buildAlertList already sorts soonest-first and formats each line.
             items: alerts.lines.slice(0, 6).map(line => {
@@ -13486,7 +13490,7 @@ function decisionGroups() {
             .sort((a, b) => a.breakdownStartedAt - b.breakdownStartedAt);
         add({
             key: 'breakdown', icon: 'triangle-exclamation', tone: 'danger',
-            title: `Unit breakdown lebih dari ${LEADER_BREAKDOWN_DAYS} hari`,
+            title: `Units in breakdown over ${LEADER_BREAKDOWN_DAYS} days`,
             total: stuck.length,
             items: stuck.slice(0, 6).map(u => ({
                 text: u.name || u.sn || '(tanpa nama)',
@@ -13503,7 +13507,7 @@ function decisionGroups() {
         const low = _lowStockList();
         add({
             key: 'licenseStock', icon: 'layer-group', tone: 'warning',
-            title: 'Stok lisensi menipis',
+            title: 'License stock running low',
             total: low.length,
             items: low.slice(0, 6).map(l => ({ text: l.type, sub: `sisa ${l.sisa}` })),
             goto: 'licenseStock'
@@ -13516,7 +13520,7 @@ function decisionGroups() {
         add({
             key: 'stock', icon: 'boxes-stacked',
             tone: low.some(s => s.qty <= 0) ? 'danger' : 'warning',
-            title: 'Stok barang habis atau menipis',
+            title: 'Items out of stock or running low',
             total: low.length,
             items: low.slice(0, 6).map(s => ({
                 text: s.name,
@@ -13528,7 +13532,7 @@ function decisionGroups() {
         const unwell = warehouseDevices.filter(d => d.status === 'damaged' || d.status === 'repair');
         add({
             key: 'devices', icon: 'microchip', tone: 'warning',
-            title: 'Perangkat rusak atau sedang diperbaiki',
+            title: 'Devices damaged or in repair',
             total: unwell.length,
             items: unwell.slice(0, 6).map(d => ({
                 text: `${d.type || 'Perangkat'} · ${d.sn || ''}`,
@@ -13543,7 +13547,7 @@ function decisionGroups() {
         const pendingUsers = allUsers.filter(u => u.status !== 'active');
         add({
             key: 'users', icon: 'user-plus', tone: 'info',
-            title: 'Pendaftar menunggu persetujuan',
+            title: 'Registrations pending approval',
             total: pendingUsers.length,
             items: pendingUsers.slice(0, 6).map(u => ({
                 text: u.displayName || u.email || '(tanpa nama)',
@@ -13559,7 +13563,7 @@ function decisionGroups() {
             ACCESS_AREAS.every(a => effectiveAccess(a.key, u) === 'none'));
         add({
             key: 'noaccess', icon: 'user-lock', tone: 'warning',
-            title: 'Akun aktif tapi belum diberi akses',
+            title: 'Active accounts without access',
             total: noAccess.length,
             items: noAccess.slice(0, 6).map(u => ({
                 text: u.displayName || u.email || '(tanpa nama)',
@@ -13651,22 +13655,22 @@ function renderDecisionInbox() {
     updateDecisionBadge();
 
     const stamp = document.getElementById('printStamp');
-    if (stamp) stamp.textContent = `Dicetak ${formatUserTime(Date.now())}`;
+    if (stamp) stamp.textContent = `Printed ${formatUserTime(Date.now())}`;
 
     const countEl = document.getElementById('decisionTotal');
     if (countEl) countEl.textContent = total;
     const subEl = document.getElementById('decisionTotalSub');
     if (subEl) {
         subEl.textContent = total === 0
-            ? 'Tidak ada yang menunggu keputusan Anda'
-            : `Tersebar di ${groups.length} bagian`;
+            ? 'Nothing awaiting your decision'
+            : `Across ${groups.length} sections`;
     }
 
     if (groups.length === 0) {
         wrap.innerHTML = `<div class="decision-clear">
             <i class="fas fa-circle-check"></i>
             <div>
-                <strong>Tidak ada yang menunggu.</strong>
+                <strong>Nothing pending.</strong>
                 <p>Semua laporan sudah diperiksa, tidak ada lisensi atau stok yang perlu ditindak,
                 dan tidak ada unit yang terlalu lama berhenti.</p>
             </div>
@@ -13689,11 +13693,11 @@ function renderDecisionInbox() {
                         ${it.sub ? `<span class="decision-list__sub">${escapeHtml(it.sub)}</span>` : ''}
                     </li>`).join('')}
                 ${g.total > g.items.length
-                    ? `<li class="decision-list__more">…dan ${g.total - g.items.length} lagi</li>`
+                    ? `<li class="decision-list__more">…and ${g.total - g.items.length} more</li>`
                     : ''}
             </ul>
             <button class="btn btn-secondary btn-sm" onclick="goDecision(${jsArg(g.goto)})">
-                Tangani <i class="fas fa-arrow-right"></i>
+                Handle <i class="fas fa-arrow-right"></i>
             </button>
         </div>`).join('');
 }
@@ -13770,7 +13774,7 @@ function updateMyTeamNotices() {
     if (nav) {
         nav.textContent = totalRevision > 99 ? '99+' : String(totalRevision);
         nav.style.display = totalRevision ? '' : 'none';
-        nav.title = totalRevision ? `${totalRevision} perlu Anda revisi` : '';
+        nav.title = totalRevision ? `${totalRevision} need your revision` : '';
     }
 }
 
@@ -13793,10 +13797,10 @@ function renderMyNoticeBox(kind, mine) {
         <ul class="my-notice__list">${rev.slice(0, 8).map(r => `
             <li><div><strong>${escapeHtml(k.label(r))}</strong>
                 <span class="my-notice__note">${escapeHtml(r.revisionNote || 'Tanpa catatan')}${r.reviewedBy ? ' — ' + escapeHtml(r.reviewedBy) : ''}</span></div>
-                ${canFix ? `<button class="btn btn-primary btn-sm" onclick="${k.edit}(${jsArg(r.id)})"><i class="fas fa-pen"></i> Perbaiki</button>` : ''}
+                ${canFix ? `<button class="btn btn-primary btn-sm" onclick="${k.edit}(${jsArg(r.id)})"><i class="fas fa-pen"></i> Fix</button>` : ''}
             </li>`).join('')}</ul>` : ''}
         ${facts ? `<div class="my-notice__facts"><i class="fas fa-circle-info"></i> ${escapeHtml(facts)}
-            <button type="button" class="btn btn-secondary btn-sm" onclick="showMineOnly(${jsArg(kind)})">Lihat milik saya</button></div>` : ''}`;
+            <button type="button" class="btn btn-secondary btn-sm" onclick="showMineOnly(${jsArg(kind)})">Show mine</button></div>` : ''}`;
     box.classList.toggle('my-notice--alert', rev.length > 0);
     box.style.display = '';
 }
@@ -13916,7 +13920,7 @@ function renderCompanyRecap() {
 
     if (rows.length === 0) {
         tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-secondary)">
-            Belum ada laporan harian pada ${escapeHtml(monthLabel(recapMonth))}.
+            No daily reports in ${escapeHtml(monthLabel(recapMonth))}.
         </td></tr>`;
         const f = document.getElementById('recapFoot');
         if (f) f.innerHTML = '';
@@ -13926,15 +13930,15 @@ function renderCompanyRecap() {
     tbody.innerHTML = rows.map((r, i) => `
         <tr>
             <td>${i + 1}</td>
-            <td data-label="Perusahaan"><strong>${escapeHtml(r.company)}</strong></td>
-            <td data-label="Anggota">${r.members}</td>
-            <td data-label="Laporan">${r.reports}</td>
-            <td data-label="Total Jam" style="white-space:nowrap"><strong>${escapeHtml(formatMinutes(r.minutes))}</strong></td>
-            <td data-label="Unit Ditangani">${r.units}</td>
-            <td data-label="Disetujui"><span class="appr appr--approved">${r.approved}</span></td>
-            <td data-label="Belum Selesai">
-                ${r.pending ? `<span class="appr appr--pending">${r.pending} menunggu</span> ` : ''}
-                ${r.revision ? `<span class="appr appr--revision">${r.revision} revisi</span>` : ''}
+            <td data-label="Company"><strong>${escapeHtml(r.company)}</strong></td>
+            <td data-label="Member">${r.members}</td>
+            <td data-label="Reports">${r.reports}</td>
+            <td data-label="Total Hours" style="white-space:nowrap"><strong>${escapeHtml(formatMinutes(r.minutes))}</strong></td>
+            <td data-label="Units Handled">${r.units}</td>
+            <td data-label="Approved"><span class="appr appr--approved">${r.approved}</span></td>
+            <td data-label="Outstanding">
+                ${r.pending ? `<span class="appr appr--pending">${r.pending} pending</span> ` : ''}
+                ${r.revision ? `<span class="appr appr--revision">${r.revision} revision</span>` : ''}
                 ${(!r.pending && !r.revision) ? '<span style="color:var(--text-light)">—</span>' : ''}
             </td>
         </tr>`).join('');
@@ -14031,18 +14035,18 @@ function renderWeekSummary() {
     const label = document.getElementById('weekSummaryLabel');
     if (label) label.textContent = weekRangeLabel(thisStart);
     const prevLabel = document.getElementById('weekSummaryPrev');
-    if (prevLabel) prevLabel.textContent = `dibanding ${weekRangeLabel(lastStart)}`;
+    if (prevLabel) prevLabel.textContent = `vs ${weekRangeLabel(lastStart)}`;
 
     // Fewer breakdowns is good, more hours is good — direction is not the same
     // for every row, so each one says which way is better.
     const metrics = [
-        { key: 'reports',  label: 'Laporan harian',    fmt: v => String(v),        better: 'up' },
-        { key: 'minutes',  label: 'Jam kerja tercatat', fmt: v => formatMinutes(v), better: 'up' },
-        { key: 'people',   label: 'Anggota melapor',    fmt: v => String(v),        better: 'up' },
-        { key: 'onDuty',   label: 'Hari-orang bertugas', fmt: v => String(v),       better: 'up' },
-        { key: 'damages',  label: 'Kerusakan baru',     fmt: v => String(v),        better: 'down' },
-        { key: 'resolved', label: 'Kerusakan selesai',  fmt: v => String(v),        better: 'up' },
-        { key: 'stockOut', label: 'Barang keluar gudang', fmt: v => String(v),      better: 'flat' }
+        { key: 'reports',  label: 'Daily reports',     fmt: v => String(v),        better: 'up' },
+        { key: 'minutes',  label: 'Work hours logged', fmt: v => formatMinutes(v), better: 'up' },
+        { key: 'people',   label: 'Members reporting',  fmt: v => String(v),        better: 'up' },
+        { key: 'onDuty',   label: 'Person-days on duty', fmt: v => String(v),       better: 'up' },
+        { key: 'damages',  label: 'New damage',         fmt: v => String(v),        better: 'down' },
+        { key: 'resolved', label: 'Damage resolved',    fmt: v => String(v),        better: 'up' },
+        { key: 'stockOut', label: 'Items out of warehouse', fmt: v => String(v),      better: 'flat' }
     ];
 
     const wrap = document.getElementById('weekSummaryGrid');
@@ -14059,7 +14063,7 @@ function renderWeekSummary() {
             arrow = diff > 0 ? '▲' : '▼';
         }
         const deltaText = diff === 0
-            ? 'sama'
+            ? 'same'
             : `${arrow} ${m.key === 'minutes' ? formatMinutes(Math.abs(diff)) : Math.abs(diff)}`;
         return `
         <div class="week-metric">
@@ -14067,7 +14071,7 @@ function renderWeekSummary() {
             <div class="week-metric__value">${escapeHtml(m.fmt(a))}</div>
             <div class="week-metric__delta week-metric__delta--${tone}">
                 ${escapeHtml(deltaText)}
-                <span class="week-metric__prev">minggu lalu ${escapeHtml(m.fmt(b))}</span>
+                <span class="week-metric__prev">last week ${escapeHtml(m.fmt(b))}</span>
             </div>
         </div>`;
     }).join('');
@@ -14081,7 +14085,7 @@ function renderWeekSummary() {
         health.innerHTML = globalData.length
             ? `<strong>${pct(good, globalData.length)}%</strong> unit sehat saat ini
                (${good} dari ${globalData.length}) — angka sekarang, bukan perbandingan mingguan`
-            : 'Belum ada data unit.';
+            : 'No unit data yet.';
     }
 }
 
@@ -14380,19 +14384,19 @@ function dcGroupReferences() {
 }
 
 const DATA_CHECKS = [
-    { key: 'sn',       label: 'Nomor seri duplikat',        run: dcDuplicateSerials },
-    { key: 'spasi',    label: 'Spasi / karakter tak terlihat', run: dcInvisibleCharacters },
-    { key: 'site',     label: 'Nama site ditulis beda-beda', run: dcSiteVariants },
-    { key: 'kosong',   label: 'Perusahaan / site belum diisi', run: dcMissingCompany },
-    { key: 'jam',      label: 'Jam laporan tidak wajar',    run: dcWorkLogHours },
-    { key: 'tanggal',  label: 'Tanggal di masa depan',      run: dcFutureDates },
-    { key: 'lisensi',  label: 'Tanggal lisensi janggal',    run: dcLicenceDates },
-    { key: 'yatim',    label: 'Kerusakan tanpa unit',       run: dcOrphanDamage },
-    { key: 'stok',     label: 'Saldo stok minus',           run: dcNegativeStock },
-    { key: 'surat',    label: 'Izin / sakit tanpa surat',    run: dcLeaveWithoutDoc },
-    { key: 'izin-tgl', label: 'Rentang izin terbalik',       run: dcLeaveReversed },
-    { key: 'kelompok', label: 'Field kelompok unit tidak cocok', run: dcUnitGroupFields },
-    { key: 'kelompok-ref', label: 'Lisensi / kerusakan salah kelompok', run: dcGroupReferences }
+    { key: 'sn',       label: 'Duplicate serial numbers',   run: dcDuplicateSerials },
+    { key: 'spasi',    label: 'Spaces / invisible characters', run: dcInvisibleCharacters },
+    { key: 'site',     label: 'Site names spelled differently', run: dcSiteVariants },
+    { key: 'kosong',   label: 'Company / site not set', run: dcMissingCompany },
+    { key: 'jam',      label: 'Unusual report hours',       run: dcWorkLogHours },
+    { key: 'tanggal',  label: 'Dates in the future',        run: dcFutureDates },
+    { key: 'lisensi',  label: 'Odd license dates',          run: dcLicenceDates },
+    { key: 'yatim',    label: 'Damage without a unit',      run: dcOrphanDamage },
+    { key: 'stok',     label: 'Negative stock balance',     run: dcNegativeStock },
+    { key: 'surat',    label: 'Leave / sick without letter', run: dcLeaveWithoutDoc },
+    { key: 'izin-tgl', label: 'Reversed leave range',        run: dcLeaveReversed },
+    { key: 'kelompok', label: 'Unit group fields mismatch', run: dcUnitGroupFields },
+    { key: 'kelompok-ref', label: 'License / damage in wrong group', run: dcGroupReferences }
 ];
 
 function runDataChecks() {
@@ -14417,13 +14421,13 @@ function renderDataCheck() {
     const groupFixBtn = document.getElementById('dataCheckGroupFixBtn');
     if (groupFixBtn) {
         groupFixBtn.style.display = strayFixable ? '' : 'none';
-        groupFixBtn.textContent = `Bersihkan field kelompok lain di ${strayFixable} unit`;
+        groupFixBtn.textContent = `Clear other-group fields on ${strayFixable} unit(s)`;
     }
     const groupUnknown = groups.reduce((n, g) => n + g.items.filter(i => i.setGroup).length, 0);
     const groupSetBtn = document.getElementById('dataCheckGroupSetBtn');
     if (groupSetBtn) {
         groupSetBtn.style.display = groupUnknown ? '' : 'none';
-        groupSetBtn.textContent = `Tetapkan kelompok ${groupUnknown} unit`;
+        groupSetBtn.textContent = `Set group for ${groupUnknown} unit(s)`;
     }
 
     const summary = document.getElementById('dataCheckSummary');
@@ -14435,7 +14439,7 @@ function renderDataCheck() {
     const fixBtn = document.getElementById('dataCheckFixBtn');
     if (fixBtn) {
         fixBtn.style.display = fixable ? '' : 'none';
-        fixBtn.textContent = `Rapikan ${fixable} spasi tersembunyi`;
+        fixBtn.textContent = `Clean up ${fixable} hidden space(s)`;
     }
 
     if (total === 0) { host.innerHTML = ''; return; }
@@ -14444,12 +14448,12 @@ function renderDataCheck() {
         <div class="datacheck-group">
             <h4>${escapeHtml(g.label)} <span class="datacheck-count">${g.items.length}</span></h4>
             <table class="data-table table--cardable">
-                <thead><tr><th>Apa</th><th>Keterangan</th><th></th></tr></thead>
+                <thead><tr><th>Item</th><th>Details</th><th></th></tr></thead>
                 <tbody>${g.items.map(i => `<tr>
-                    <td data-label="Apa">${escapeHtml(i.label)}</td>
-                    <td data-label="Keterangan">${escapeHtml(i.detail)}</td>
+                    <td data-label="Item">${escapeHtml(i.label)}</td>
+                    <td data-label="Details">${escapeHtml(i.detail)}</td>
                     <td data-label="" style="white-space:nowrap"><button type="button" class="btn btn-secondary btn-sm"
-                        onclick="goDecision(${jsArg(i.goTo)})">Buka</button></td>
+                        onclick="goDecision(${jsArg(i.goTo)})">Open</button></td>
                 </tr>`).join('')}</tbody>
             </table>
         </div>`).join('');
@@ -14583,7 +14587,7 @@ const INSPECTION_INTERVAL_DAYS = 14;
 const INSPECTION_SOON_DAYS = 3;
 // Four photos share one document under Firestore's 1 MB cap.
 const INS_PHOTO_OPTS = { maxDim: 1024, maxBytes: 200 * 1024, quality: 0.7 };
-const INS_RESULT = { good: 'Baik', bad: 'Rusak' };
+const INS_RESULT = { good: 'Good', bad: 'Damaged' };
 const _insPhotoCache = new Map();   // report id -> { componentKey: dataURL }
 let inspectionTab = 'status';
 
@@ -14638,12 +14642,12 @@ function lastInspectionFor(unitId) {
 function inspectionStatusFor(unit, today) {
     today = today || toISODate();
     const last = lastInspectionFor(unit.id);
-    if (!last) return { key: 'never', label: 'Belum pernah dicek', last: null, next: '', days: null };
+    if (!last) return { key: 'never', label: 'Never checked', last: null, next: '', days: null };
     const next = addDaysISO(last.date, INSPECTION_INTERVAL_DAYS);
     const days = daysFromTo(today, next);
-    if (days < 0) return { key: 'overdue', label: `Terlambat ${-days} hari`, last, next, days };
-    if (days <= INSPECTION_SOON_DAYS) return { key: 'soon', label: days === 0 ? 'Hari ini' : `${days} hari lagi`, last, next, days };
-    return { key: 'ok', label: `${days} hari lagi`, last, next, days };
+    if (days < 0) return { key: 'overdue', label: `${-days} days overdue`, last, next, days };
+    if (days <= INSPECTION_SOON_DAYS) return { key: 'soon', label: days === 0 ? 'Today' : `in ${days} days`, last, next, days };
+    return { key: 'ok', label: `in ${days} days`, last, next, days };
 }
 
 function inspectionBadBits(rec) {
@@ -14652,8 +14656,8 @@ function inspectionBadBits(rec) {
 
 function inspectionResultSummary(rec) {
     const bad = inspectionBadBits(rec);
-    if (!bad.length) return { tone: 'good', text: 'Semua baik' };
-    return { tone: 'bad', text: `${bad.length} rusak: ${bad.map(c => c.label).join(', ')}` };
+    if (!bad.length) return { tone: 'good', text: 'All good' };
+    return { tone: 'bad', text: `${bad.length} damaged: ${bad.map(c => c.label).join(', ')}` };
 }
 
 // Done for a plan: a sent report linked to it, or any sent report of that
@@ -14730,7 +14734,7 @@ function renderInspectionView() {
 const INS_STATUS_ORDER = { overdue: 0, soon: 1, never: 2, ok: 3 };
 
 function insStatusBadge(s) {
-    return `<span class="ins-st ins-st--${s.key}" title="${escapeHtml(s.next ? 'Cek berikutnya ' + s.next : 'Belum ada laporan cek terkirim')}">${escapeHtml(s.label)}</span>`;
+    return `<span class="ins-st ins-st--${s.key}" title="${escapeHtml(s.next ? 'Next check ' + s.next : 'No check report submitted yet')}">${escapeHtml(s.label)}</span>`;
 }
 
 function renderInspectionStatus() {
@@ -14748,10 +14752,10 @@ function renderInspectionStatus() {
             || ((a.s.days == null ? 0 : a.s.days) - (b.s.days == null ? 0 : b.s.days))
             || String(a.u.name || '').localeCompare(String(b.u.name || '')));
     const count = document.getElementById('insStatusCount');
-    if (count) count.textContent = `${rows.length} unit`;
+    if (count) count.textContent = `${rows.length} unit(s)`;
     if (!rows.length) {
         tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-secondary)">${
-            inspectableUnits().length ? 'Tidak ada unit yang cocok dengan filter' : 'Belum ada unit Alat Berat di Unit Database.'}</td></tr>`;
+            inspectableUnits().length ? 'No units match the filter' : 'No Heavy Equipment units in the Unit Database yet.'}</td></tr>`;
         return;
     }
     tbody.innerHTML = rows.map(({ u, s }, i) => {
@@ -14759,15 +14763,15 @@ function renderInspectionStatus() {
         return `<tr>
             <td>${i + 1}</td>
             <td data-label="Unit"><strong>${escapeHtml(u.name || '-')}</strong>${u.assetCode ? `<div class="ins-sub">${escapeHtml(u.assetCode)}</div>` : ''}</td>
-            <td data-label="Jenis Alat">${escapeHtml(u.machineType || '—')}</td>
+            <td data-label="Machine Type">${escapeHtml(u.machineType || '—')}</td>
             <td data-label="Site">${escapeHtml(u.site || '—')}</td>
-            <td data-label="Cek Terakhir">${s.last ? escapeHtml(s.last.date) + (workLogApproval(s.last) !== 'approved'
+            <td data-label="Last Check">${s.last ? escapeHtml(s.last.date) + (workLogApproval(s.last) !== 'approved'
                 ? ` <span class="appr appr--${workLogApproval(s.last)}">${escapeHtml(APPROVAL_STATES[workLogApproval(s.last)].label)}</span>` : '') : '—'}</td>
-            <td data-label="Hasil">${res ? `<span class="ins-res ins-res--${res.tone}">${escapeHtml(res.text)}</span>` : '—'}</td>
-            <td data-label="Cek Berikutnya">${insStatusBadge(s)}${s.next ? `<div class="ins-sub">${escapeHtml(s.next)}</div>` : ''}</td>
+            <td data-label="Result">${res ? `<span class="ins-res ins-res--${res.tone}">${escapeHtml(res.text)}</span>` : '—'}</td>
+            <td data-label="Next Check">${insStatusBadge(s)}${s.next ? `<div class="ins-sub">${escapeHtml(s.next)}</div>` : ''}</td>
             <td class="col-actions"><div class="row-actions">
-                ${canCheck ? `<button class="btn btn-secondary" title="Cek unit ini" aria-label="Cek ${escapeHtml(u.name || '')}" onclick="showInspectionForm(${jsArg(u.id)})"><i class="fas fa-clipboard-check"></i></button>` : ''}
-                <button class="btn btn-secondary" title="Riwayat cek" aria-label="Riwayat cek ${escapeHtml(u.name || '')}" onclick="showInspectionHistory(${jsArg(u.id)})"><i class="fas fa-clock-rotate-left"></i></button>
+                ${canCheck ? `<button class="btn btn-secondary" title="Check this unit" aria-label="Check ${escapeHtml(u.name || '')}" onclick="showInspectionForm(${jsArg(u.id)})"><i class="fas fa-clipboard-check"></i></button>` : ''}
+                <button class="btn btn-secondary" title="Check history" aria-label="Check history for ${escapeHtml(u.name || '')}" onclick="showInspectionHistory(${jsArg(u.id)})"><i class="fas fa-clock-rotate-left"></i></button>
             </div></td>
         </tr>`;
     }).join('');
@@ -14789,8 +14793,8 @@ function renderInspectionPlans() {
     const canCheck = hasAccess('inspection', 'edit');
     const canPlan = canPlanInspections();
     if (!inspectionPlans.length) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-secondary)">Belum ada jadwal pengecekan.${
-            canPlan ? ' Klik <strong>Buat Jadwal</strong> untuk mulai.' : ''}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-secondary)">No inspection schedules yet.${
+            canPlan ? ' Click <strong>New Schedule</strong> to get started.' : ''}</td></tr>`;
         return;
     }
     tbody.innerHTML = inspectionPlans.map((p, i) => {
@@ -14799,20 +14803,20 @@ function renderInspectionPlans() {
         const chips = (p.unitIds || []).map(id => {
             const u = globalData.find(x => x.id === id);
             const done = planUnitDone(p, id);
-            const name = u ? (u.name || u.sn) : '(unit dihapus)';
+            const name = u ? (u.name || u.sn) : '(unit deleted)';
             const btn = !done && u && canCheck
-                ? ` <button type="button" class="ins-chip__go" title="Cek ${escapeHtml(name)}" aria-label="Cek ${escapeHtml(name)}" onclick="showInspectionForm(${jsArg(id)}, ${jsArg(p.id)})"><i class="fas fa-clipboard-check"></i></button>` : '';
+                ? ` <button type="button" class="ins-chip__go" title="Check ${escapeHtml(name)}" aria-label="Check ${escapeHtml(name)}" onclick="showInspectionForm(${jsArg(id)}, ${jsArg(p.id)})"><i class="fas fa-clipboard-check"></i></button>` : '';
             return `<span class="ins-chip ${done ? 'ins-chip--done' : ''}">${done ? '<i class="fas fa-check"></i> ' : ''}${escapeHtml(name)}${btn}</span>`;
         }).join('');
         return `<tr>
             <td>${i + 1}</td>
-            <td data-label="Tanggal" style="white-space:nowrap">${escapeHtml(p.date || '')}${p.date === today ? ' <span class="ins-st ins-st--soon">Hari ini</span>' : ''}</td>
+            <td data-label="Date" style="white-space:nowrap">${escapeHtml(p.date || '')}${p.date === today ? ' <span class="ins-st ins-st--soon">Today</span>' : ''}</td>
             <td data-label="Unit"><div class="ins-chips">${chips}</div></td>
-            <td data-label="Progres"><span class="ins-st ins-st--${pr.done === pr.total ? 'ok' : late ? 'overdue' : 'soon'}">${pr.done}/${pr.total}${late ? ' · terlambat' : pr.done === pr.total ? ' · selesai' : ''}</span></td>
-            <td data-label="Catatan" style="font-size:12px;color:var(--text-secondary)">${escapeHtml(p.note || '') || '—'}</td>
+            <td data-label="Progress"><span class="ins-st ins-st--${pr.done === pr.total ? 'ok' : late ? 'overdue' : 'soon'}">${pr.done}/${pr.total}${late ? ' · overdue' : pr.done === pr.total ? ' · done' : ''}</span></td>
+            <td data-label="Notes" style="font-size:12px;color:var(--text-secondary)">${escapeHtml(p.note || '') || '—'}</td>
             <td class="col-actions">${canPlan ? `<div class="row-actions">
-                <button class="btn btn-secondary" title="Edit jadwal" aria-label="Edit jadwal" onclick="showInspectionPlanForm(${jsArg(p.id)})"><i class="fas fa-pen"></i></button>
-                <button class="btn btn-secondary" title="Hapus jadwal" aria-label="Hapus jadwal" onclick="deleteInspectionPlan(${jsArg(p.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                <button class="btn btn-secondary" title="Edit schedule" aria-label="Edit schedule" onclick="showInspectionPlanForm(${jsArg(p.id)})"><i class="fas fa-pen"></i></button>
+                <button class="btn btn-secondary" title="Delete schedule" aria-label="Delete schedule" onclick="deleteInspectionPlan(${jsArg(p.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
             </div>` : ''}</td>
         </tr>`;
     }).join('');
@@ -14825,8 +14829,8 @@ function showInspectionPlanForm(id) {
     const p = id ? inspectionPlans.find(x => x.id === id) : null;
     document.getElementById('editInspectionPlanId').value = p ? p.id : '';
     document.getElementById('inspectionPlanTitle').innerHTML = p
-        ? '<i class="fas fa-calendar-check"></i> Edit Jadwal Pengecekan'
-        : '<i class="fas fa-calendar-plus"></i> Buat Jadwal Pengecekan';
+        ? '<i class="fas fa-calendar-check"></i> Edit Inspection Schedule'
+        : '<i class="fas fa-calendar-plus"></i> Create Inspection Schedule';
     document.getElementById('insPlanDate').value = p ? (p.date || '') : toISODate();
     document.getElementById('insPlanNote').value = p ? (p.note || '') : '';
     document.getElementById('insPlanSearch').value = '';
@@ -14855,15 +14859,15 @@ function renderInspectionPlanPicker() {
             <span class="ins-pick__name">${escapeHtml(u.name || u.sn || '-')}<span class="ins-sub">${escapeHtml([u.machineType, u.site].filter(Boolean).join(' · '))}</span></span>
             ${insStatusBadge(s)}
         </label>`).join('')
-        : '<p class="ins-sub" style="padding:8px 0">Tidak ada unit Alat Berat yang cocok.</p>';
+        : '<p class="ins-sub" style="padding:8px 0">No matching Heavy Equipment units.</p>';
     const c = document.getElementById('insPlanPickCount');
-    if (c) c.textContent = `(${_insPlanPick.size} dipilih)`;
+    if (c) c.textContent = `(${_insPlanPick.size} selected)`;
 }
 
 function toggleInspectionPlanUnit(id, on) {
     if (on) _insPlanPick.add(id); else _insPlanPick.delete(id);
     const c = document.getElementById('insPlanPickCount');
-    if (c) c.textContent = `(${_insPlanPick.size} dipilih)`;
+    if (c) c.textContent = `(${_insPlanPick.size} selected)`;
 }
 
 function selectDueInspectionUnits() {
@@ -14949,11 +14953,11 @@ function renderInspectionReports() {
     if (!tbody) return;
     const rows = getFilteredInspections();
     const count = document.getElementById('insReportCount');
-    if (count) count.textContent = `${rows.length} laporan`;
+    if (count) count.textContent = `${rows.length} ${rows.length === 1 ? 'report' : 'reports'}`;
     const canEdit = hasAccess('inspection', 'edit');
     if (!rows.length) {
         tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-secondary)">${
-            inspections.length ? 'Tidak ada laporan yang cocok dengan filter' : 'Belum ada laporan pengecekan.'}</td></tr>`;
+            inspections.length ? 'No reports match the filter' : 'No inspection reports yet.'}</td></tr>`;
         return;
     }
     tbody.innerHTML = rows.map((r, i) => {
@@ -14964,18 +14968,18 @@ function renderInspectionReports() {
         }).join('');
         const photos = Number(r.photoCount) || 0;
         const apply = inspectionNeedsApply(r) && hasAccess('damage', 'edit')
-            ? `<button class="btn btn-secondary btn-sm ins-apply" title="Catat komponen rusak ke menu Kerusakan" onclick="applyInspectionFindings(${jsArg(r.id)})"><i class="fas fa-screwdriver-wrench"></i> Ke Kerusakan</button>` : '';
+            ? `<button class="btn btn-secondary btn-sm ins-apply" title="Log damaged components in the Damage menu" onclick="applyInspectionFindings(${jsArg(r.id)})"><i class="fas fa-screwdriver-wrench"></i> To Damage</button>` : '';
         return `<tr>
             <td>${i + 1}</td>
-            <td data-label="Tanggal Cek" style="white-space:nowrap">${escapeHtml(r.date || '')}</td>
+            <td data-label="Check Date" style="white-space:nowrap">${escapeHtml(r.date || '')}</td>
             <td data-label="Unit"><strong>${escapeHtml(inspectionUnitLabel(r))}</strong></td>
-            <td data-label="Hasil Komponen"><div class="ins-res-list">${res}</div>${r.note ? `<div class="ins-sub" title="${escapeHtml(r.note)}">${escapeHtml(r.note.slice(0, 60))}</div>` : ''}</td>
-            <td data-label="Jadwal">${plan ? `<span class="ins-tag">Jadwal ${escapeHtml(plan.date)}</span>` : r.planId ? '<span class="ins-tag">Jadwal dihapus</span>' : '<span class="ins-tag ins-tag--adhoc">Di luar jadwal</span>'}</td>
-            <td data-label="Pemeriksa" style="font-size:12px">${escapeHtml(r.createdBy || '—')}</td>
-            <td data-label="Persetujuan">${approvalCell(r, 'laporan cek', 'approveInspection', 'reviseInspection', INS_AREAS)}${
-                r.appliedAt ? '<div class="ins-sub"><i class="fas fa-check"></i> Tercatat di Kerusakan</div>' : ''}</td>
-            <td data-label="Foto">${photos
-                ? `<button type="button" class="wl-photo-btn" title="Lihat ${photos} foto" aria-label="Lihat ${photos} foto" onclick="openInspectionPhotos(${jsArg(r.id)}, this)"><i class="fas fa-image"></i> ${photos}</button>`
+            <td data-label="Component Results"><div class="ins-res-list">${res}</div>${r.note ? `<div class="ins-sub" title="${escapeHtml(r.note)}">${escapeHtml(r.note.slice(0, 60))}</div>` : ''}</td>
+            <td data-label="Schedule">${plan ? `<span class="ins-tag">Schedule ${escapeHtml(plan.date)}</span>` : r.planId ? '<span class="ins-tag">Schedule deleted</span>' : '<span class="ins-tag ins-tag--adhoc">Unscheduled</span>'}</td>
+            <td data-label="Inspector" style="font-size:12px">${escapeHtml(r.createdBy || '—')}</td>
+            <td data-label="Approval">${approvalCell(r, 'check report', 'approveInspection', 'reviseInspection', INS_AREAS)}${
+                r.appliedAt ? '<div class="ins-sub"><i class="fas fa-check"></i> Logged in Damage</div>' : ''}</td>
+            <td data-label="Photo">${photos
+                ? `<button type="button" class="wl-photo-btn" title="View ${photos} photo(s)" aria-label="View ${photos} photo(s)" onclick="openInspectionPhotos(${jsArg(r.id)}, this)"><i class="fas fa-image"></i> ${photos}</button>`
                 : '<span style="color:var(--text-light)">—</span>'}</td>
             <td class="col-actions">${apply}${canEdit ? rowActionsFor(r, 'Laporan cek', 'editInspection', 'deleteInspection', 'withdrawInspection', INS_AREAS) : ''}</td>
         </tr>`;
@@ -15019,14 +15023,14 @@ function populateInspectionUnitSelect(selectedId) {
     const sel = document.getElementById('insUnit');
     if (!sel) return;
     const units = inspectableUnits();
-    sel.innerHTML = '<option value="">— Pilih unit alat berat —</option>' + units.map(u =>
+    sel.innerHTML = '<option value="">— Select heavy equipment unit —</option>' + units.map(u =>
         `<option value="${escapeHtml(u.id)}">${escapeHtml(u.name || u.sn)}${u.assetCode ? ' · ' + escapeHtml(u.assetCode) : ''}</option>`).join('');
     if (selectedId) {
         if (![...sel.options].some(o => o.value === selectedId)) {
             const u = globalData.find(x => x.id === selectedId);
             const opt = document.createElement('option');
             opt.value = selectedId;
-            opt.textContent = u ? (u.name || u.sn) : '(unit dihapus)';
+            opt.textContent = u ? (u.name || u.sn) : '(unit deleted)';
             sel.appendChild(opt);
         }
         sel.value = selectedId;
@@ -15050,7 +15054,7 @@ function updateInspectionPlanTag() {
     const plan = planInput.value ? inspectionPlans.find(p => p.id === planInput.value) : null;
     tag.style.display = document.getElementById('insUnit').value ? '' : 'none';
     tag.className = 'ins-plan-tag' + (plan ? '' : ' ins-plan-tag--adhoc');
-    tag.textContent = plan ? `Bagian dari jadwal ${plan.date}` : 'Di luar jadwal — tetap menghitung ulang cek berikutnya';
+    tag.textContent = plan ? `Part of schedule ${plan.date}` : 'Unscheduled — still resets the next check date';
 }
 
 function renderInspectionComponents(rec) {
@@ -15062,17 +15066,17 @@ function renderInspectionComponents(rec) {
         return `<div class="ins-comp" data-key="${escapeHtml(c.key)}">
             <div class="ins-comp__head">
                 <strong>${escapeHtml(c.label)}</strong>
-                <div class="ins-seg" role="radiogroup" aria-label="Kondisi ${escapeHtml(c.label)}">
+                <div class="ins-seg" role="radiogroup" aria-label="Condition of ${escapeHtml(c.label)}">
                     <label class="ins-seg__opt ins-seg__opt--good"><input type="radio" name="insRes_${escapeHtml(c.key)}" value="good" ${v === 'good' ? 'checked' : ''}
-                        onchange="setInspectionResult(${jsArg(c.key)}, 'good')"> Baik</label>
+                        onchange="setInspectionResult(${jsArg(c.key)}, 'good')"> Good</label>
                     <label class="ins-seg__opt ins-seg__opt--bad"><input type="radio" name="insRes_${escapeHtml(c.key)}" value="bad" ${v === 'bad' ? 'checked' : ''}
-                        onchange="setInspectionResult(${jsArg(c.key)}, 'bad')"> Rusak</label>
+                        onchange="setInspectionResult(${jsArg(c.key)}, 'bad')"> Damaged</label>
                 </div>
             </div>
             <div class="ins-comp__body">
                 <div class="ins-photo" id="insPhoto_${escapeHtml(c.key)}"></div>
                 <input type="text" class="form-input ins-comp__note" id="insNote_${escapeHtml(c.key)}" maxlength="200"
-                       placeholder="${v === 'bad' ? 'Wajib: jelaskan kerusakannya' : 'Catatan (opsional)'}" value="${escapeHtml(note)}">
+                       placeholder="${v === 'bad' ? 'Required: describe the damage' : 'Notes (optional)'}" value="${escapeHtml(note)}">
             </div>
         </div>`;
     }).join('');
@@ -15082,7 +15086,7 @@ function renderInspectionComponents(rec) {
 function setInspectionResult(key, v) {
     _insResults[key] = v;
     const note = document.getElementById('insNote_' + key);
-    if (note) note.placeholder = v === 'bad' ? 'Wajib: jelaskan kerusakannya' : 'Catatan (opsional)';
+    if (note) note.placeholder = v === 'bad' ? 'Required: describe the damage' : 'Notes (optional)';
 }
 
 function renderInspectionPhoto(key) {
@@ -15095,10 +15099,10 @@ function renderInspectionPhoto(key) {
         return;
     }
     box.innerHTML = src
-        ? `<img src="${src}" alt="Foto ${escapeHtml(key)}" onclick="openPhotoLightbox(safeImageSrc(_insPhotos[${jsArg(key)}]))">
-           ${off ? '' : `<button type="button" class="ins-photo__x" aria-label="Hapus foto" title="Hapus foto" onclick="removeInspectionPhoto(${jsArg(key)})">&times;</button>`}`
-        : `<label class="ins-photo__add ${off ? 'is-off' : ''}" title="${_insPhotosFailed ? 'Foto lama gagal dimuat' : 'Ambil / pilih foto'}">
-               <i class="fas fa-camera"></i><span>Foto</span>
+        ? `<img src="${src}" alt="Photo ${escapeHtml(key)}" onclick="openPhotoLightbox(safeImageSrc(_insPhotos[${jsArg(key)}]))">
+           ${off ? '' : `<button type="button" class="ins-photo__x" aria-label="Delete photo" title="Delete photo" onclick="removeInspectionPhoto(${jsArg(key)})">&times;</button>`}`
+        : `<label class="ins-photo__add ${off ? 'is-off' : ''}" title="${_insPhotosFailed ? 'Old photo failed to load' : 'Take / choose photo'}">
+               <i class="fas fa-camera"></i><span>Photo</span>
                <input type="file" accept="image/*" capture="environment" ${off ? 'disabled' : ''} style="display:none"
                       onchange="handleInspectionPhoto(${jsArg(key)}, event)">
            </label>`;
@@ -15138,10 +15142,10 @@ function _openInspectionModal(rec, unitId, planId) {
     planInput.value = rec ? (rec.planId || '') : '';
     planInput.dataset.forced = rec ? '' : (planId || '');
     document.getElementById('inspectionModalTitle').innerHTML = !rec
-        ? '<i class="fas fa-clipboard-check"></i> Laporan Pengecekan'
+        ? '<i class="fas fa-clipboard-check"></i> Inspection Report'
         : workLogApproval(rec) === 'revision'
-            ? '<i class="fas fa-clipboard-check"></i> Revisi Laporan Pengecekan'
-            : '<i class="fas fa-clipboard-check"></i> Edit Laporan Pengecekan';
+            ? '<i class="fas fa-clipboard-check"></i> Revise Inspection Report'
+            : '<i class="fas fa-clipboard-check"></i> Edit Inspection Report';
     populateInspectionUnitSelect(rec ? rec.unitId : (unitId || ''));
     // A report's unit is what its photos and its 14-day clock are about.
     document.getElementById('insUnit').disabled = !!rec;
@@ -15343,7 +15347,7 @@ function approveInspection(id) {
     const bad = inspectionBadBits(rec);
     cloudWrite(
         { action: 'approve', unitId: r.unitId, unitName: `[Pengecekan] ${inspectionUnitLabel(r)}`,
-          field: `Persetujuan ${r.date}`, before: APPROVAL_STATES[workLogApproval(r)].label, after: 'Disetujui' },
+          field: `Persetujuan ${r.date}`, before: APPROVAL_STATES[workLogApproval(r)].label, after: APPROVAL_STATES.approved.label },
         cloudCall('saveInspection', rec),
         'Laporan cek disetujui',
         err => { console.error('[ins] approve failed:', err); showToast('Gagal menyetujui laporan cek', 'error'); return false; }
@@ -15378,7 +15382,7 @@ function reviseInspection(id) {
     };
     cloudWrite(
         { action: 'reject', unitId: r.unitId, unitName: `[Pengecekan] ${inspectionUnitLabel(r)}`,
-          field: `Persetujuan ${r.date}`, before: APPROVAL_STATES[st].label, after: `Perlu revisi — ${rec.revisionNote}` },
+          field: `Persetujuan ${r.date}`, before: APPROVAL_STATES[st].label, after: `${APPROVAL_STATES.revision.label} — ${rec.revisionNote}` },
         cloudCall('saveInspection', rec),
         'Laporan cek dikembalikan untuk revisi',
         err => { console.error('[ins] revise failed:', err); showToast('Gagal mengirim permintaan revisi', 'error'); }
@@ -15472,8 +15476,8 @@ function exportInspectionCSV() {
 function inspectionChipFor(unit) {
     if (!isHeavy(unit) || !['inspection', 'inspectionApprove', 'leader'].some(a => hasAccess(a, 'view'))) return '';
     const s = inspectionStatusFor(unit);
-    return `<button type="button" class="ins-st ins-st--${s.key} ins-st--chip" title="${escapeHtml(s.next ? 'Cek berikutnya ' + s.next : 'Belum pernah dicek')} — buka Pengecekan"
-        onclick="goInspectionFor(${jsArg(unit.id)})"><i class="fas fa-clipboard-check"></i> ${escapeHtml(s.key === 'never' ? 'Belum dicek' : 'Cek: ' + s.label)}</button>`;
+    return `<button type="button" class="ins-st ins-st--${s.key} ins-st--chip" title="${escapeHtml(s.next ? 'Next check ' + s.next : 'Never checked')} — open Inspection"
+        onclick="goInspectionFor(${jsArg(unit.id)})"><i class="fas fa-clipboard-check"></i> ${escapeHtml(s.key === 'never' ? 'Not checked' : 'Check: ' + s.label)}</button>`;
 }
 
 function goInspectionFor(unitId) {

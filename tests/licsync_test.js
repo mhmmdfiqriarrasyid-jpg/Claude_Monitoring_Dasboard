@@ -133,7 +133,7 @@ const { launch, BASE_URL } = require('./_env');
         t('unit hilang / alat berat / kelompok tak terbaca / tanpa tanggal: dilewati',
           [pl.rows.length, pl.skipped], [0, { noUnit: 1, notTractor: 2, noDate: 1 }]);
         openPreview();
-        t('dan pesannya menyebut alasannya', /1 unitnya tidak ditemukan, 1 tanggalnya tidak valid, 2 ke unit non-Pertanian/.test(toasts.join('|')), true);
+        t('dan pesannya menyebut alasannya', /1 unitnya tidak ditemukan, 1 tanggalnya tidak valid, 2 ke unit non-Agricultural/.test(toasts.join('|')), true);
 
         // =============== 5. FORM DISTRIBUSI (satu catatan) ===============
         seed([U('a', { gpsLicense: 'SF-RTK', gpsLicenseStartDate: '2026-09-01', gpsLicenseEndDate: '2027-09-01' })], []);
@@ -175,15 +175,15 @@ const { launch, BASE_URL } = require('./_env');
         renderLicenseStockTable();
         const statusOf = id => {
             const tr = [...document.querySelectorAll('#licenseBody tr')].find(x => x.querySelector('.license-check')?.dataset.id === id);
-            const cell = tr && tr.querySelector('td[data-label="Status Unit"]');
+            const cell = tr && tr.querySelector('td[data-label="Unit Status"]');
             return cell ? cell.textContent.trim() : '(tidak ada)';
         };
         t('kolom Status Unit ada di tabel', document.querySelectorAll('#licenseTable thead th').length, 11);
         t('status tiap jenis baris',
           ['OK', 'OLD', 'TODO', 'NEWER', 'GONE', 'HV', 'BADDATE', 'IN1'].map(statusOf),
-          ['Tersinkron', 'Digantikan', 'Belum', 'Unit lebih baru', 'Unit tidak ada', 'Bukan Pertanian', 'Tanggal tidak valid', '—']);
+          ['Synced', 'Superseded', 'Not synced', 'Unit is newer', 'Unit missing', 'Not Agricultural', 'Invalid date', '—']);
         t('tooltip "Digantikan" menyebut distribusi penggantinya',
-          /2026-09-01/.test(([...document.querySelectorAll('#licenseBody .lic-status--muted')].find(x => /Digantikan/.test(x.textContent)) || {}).title), true);
+          /2026-09-01/.test(([...document.querySelectorAll('#licenseBody .lic-status--muted')].find(x => /Superseded/.test(x.textContent)) || {}).title), true);
 
         // =============== 9. MASUK LEWAT FORM = LANGSUNG TERSINKRON ===============
         const fillForm = (unit, type, date, editId) => {
@@ -199,13 +199,13 @@ const { launch, BASE_URL } = require('./_env');
         fillForm(globalData[0], 'SF-RTK', '2026-09-29');
         const newId = globalLicenseStock.find(r => r.txnType === 'OUT').id;
         t('distribusi baru lewat form: unit langsung diperbarui', [globalData[0].gpsLicense, globalData[0].gpsLicenseEndDate], ['SF-RTK', '2027-09-29']);
-        t('dan kolomnya langsung "Tersinkron"', statusOf(newId), 'Tersinkron');
+        t('dan kolomnya langsung "Tersinkron"', statusOf(newId), 'Synced');
         t('tombol Sync tanpa angka', document.getElementById('licSyncCount').hidden, true);
 
         // Membetulkan tanggal distribusi yang MENENTUKAN lisensi unit: boleh mundur.
         fillForm(globalData[0], 'SF-RTK', '2025-09-29', newId);
         t('salah ketik tahun dibetulkan: lisensi unit ikut mundur', globalData[0].gpsLicenseStartDate, '2025-09-29');
-        t('dan tetap "Tersinkron"', statusOf(newId), 'Tersinkron');
+        t('dan tetap "Tersinkron"', statusOf(newId), 'Synced');
         // Tapi distribusi yang TIDAK menentukan lisensi unit tetap tidak boleh
         // memundurkannya.
         seed([U('r', { gpsLicense: 'SF-RTK', gpsLicenseStartDate: '2026-09-20', gpsLicenseEndDate: '2027-09-20' })],
@@ -311,7 +311,7 @@ const { launch, BASE_URL } = require('./_env');
              [OUT('i1', 'SF-RTK', '2026-09-01')]);
         openPreview();
         t('I: "Sekarang" menyebut premium yang habis, bukan SF-1 "s/d" tanggal mati',
-          document.querySelector('#licSyncBody td[data-label="Sekarang"]').textContent.split(String.fromCharCode(10)).join(' ').replace(/  +/g, ' ').trim(), 'SF-1 (SF-RTK habis 2026-06-01)');
+          document.querySelector('#licSyncBody td[data-label="Current"]').textContent.split(String.fromCharCode(10)).join(' ').replace(/  +/g, ' ').trim(), 'SF-1 (SF-RTK expired 2026-06-01)');
         closeLicSyncModal();
 
         window.__T = T;

@@ -47,7 +47,7 @@ const { launch, BASE_URL } = require('./_env');
 
         freshAsk(); answer = false;
         t('jam terbalik minta konfirmasi dulu', checkWorkLogHours('08:00','07:00'), false);
-        t('dialognya menyebut berapa jam yang terbaca', /23j/.test(asked[0] || ''), true);
+        t('dialognya menyebut berapa jam yang terbaca', /23h/.test(asked[0] || ''), true);
         freshAsk(); answer = true;
         // Shift malam yang sah harus tetap bisa disimpan — ini bukan larangan.
         t('kalau dikonfirmasi, tetap boleh', checkWorkLogHours('08:00','07:00'), true);

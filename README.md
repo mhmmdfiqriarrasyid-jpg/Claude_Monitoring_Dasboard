@@ -255,6 +255,15 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   persetujuan baru (penanda per akun di localStorage
   `teamApprovalSeen:<uid>:<jenis>`). Foto/surat ditulis SEBELUM laporannya,
   karena rules hanya mengizinkan foto berubah selama laporannya terbuka.
+- **Bahasa antarmuka.** Label tampilan berbahasa Inggris: menu, judul
+  halaman/tab, judul kolom dan `data-label`, tombol, label form, judul
+  kartu/KPI, label status (`APPROVAL_STATES`, `LEAVE_TYPES`, shift, status
+  perangkat, `INS_RESULT`, `shortLabel` kelompok). Pesan (toast, confirm,
+  prompt), paragraf penjelasan, header CSV dan teks riwayat tetap bahasa
+  Indonesia. **Nilai tersimpan tidak pernah diterjemahkan** — kunci seperti
+  `izin`, `pagi`, `pending`, `Mekanis` tetap; yang tampil lewat peta label
+  (mis. `DAMAGE_TYPE_LABEL`). Selector `data-label` di style.css harus ikut
+  nama kolom yang sama.
 - **Ringkasan unit per Implement / Alat Kerja (dijaga `tests/toolsummary_test.js`).**
   Kartu di atas tabel Unit Database: tab Agricultural menghitung per
   `implement`, tab Heavy per `workTool`. Ikut filter status & site (bukan

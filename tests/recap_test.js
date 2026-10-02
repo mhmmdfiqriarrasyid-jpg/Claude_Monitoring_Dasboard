@@ -117,11 +117,11 @@ const { launch, BASE_URL } = require('./_env');
         t('label minggu tampil',
           document.getElementById('weekSummaryLabel').textContent, '14 – 20 Sep 2026');
         // Kerusakan naik dari 1 ke 2 -> itu kabar BURUK, harus merah
-        const dmg = [...metrics].find(m => m.textContent.includes('Kerusakan baru'));
+        const dmg = [...metrics].find(m => m.textContent.includes('New damage'));
         t('kerusakan naik ditandai buruk',
           !!dmg.querySelector('.week-metric__delta--bad'), true);
         // Laporan naik dari 0 ke 4 -> kabar BAIK
-        const rep = [...metrics].find(m => m.textContent.includes('Laporan harian'));
+        const rep = [...metrics].find(m => m.textContent.includes('Daily reports'));
         t('laporan naik ditandai baik',
           !!rep.querySelector('.week-metric__delta--good'), true);
         t('kesehatan armada disebut sebagai angka sekarang',

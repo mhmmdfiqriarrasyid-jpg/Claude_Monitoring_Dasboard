@@ -37,9 +37,9 @@ const { launch, BASE_URL } = require('./_env');
         onDataLoaded();
 
         // =============== susunan ===============
-        t('owner: semua grup', groups(), ['Ringkasan', 'Agricultural Equipment', 'Heavy Equipment', 'Tim', 'Inventaris', 'Admin']);
-        t('Agricultural: isi menu', links('Agricultural Equipment'), ['Dashboard', 'Unit Database', 'Implements', 'Kerusakan', 'Stok Lisensi']);
-        t('Heavy: isi menu', links('Heavy Equipment'), ['Dashboard', 'Unit Database', 'Kerusakan', 'Pengecekan']);
+        t('owner: semua grup', groups(), ['Overview', 'Agricultural Equipment', 'Heavy Equipment', 'Team', 'Inventory', 'Admin']);
+        t('Agricultural: isi menu', links('Agricultural Equipment'), ['Dashboard', 'Unit Database', 'Implements', 'Damage', 'License Stock']);
+        t('Heavy: isi menu', links('Heavy Equipment'), ['Dashboard', 'Unit Database', 'Damage', 'Inspection']);
         t('Admin: Users dan History', links('Admin'), ['Users', 'History']);
 
         // =============== membuka halaman pada kelompoknya ===============
@@ -52,22 +52,22 @@ const { launch, BASE_URL } = require('./_env');
         goNav('dashboard', 'heavy');
         t('Dashboard Heavy', [effectiveDashGroup(), active()], ['heavy', 'Heavy Equipment / Dashboard']);
         goNav('dashboard', 'all');
-        t('Dashboard Semua', [dashGroupPref, active()], ['all', 'Ringkasan / Dashboard Semua']);
+        t('Dashboard Semua', [dashGroupPref, active()], ['all', 'Overview / All Dashboard']);
 
         goNav('damage', 'heavy');
         const body = () => document.getElementById('damageBody').textContent;
         t('Kerusakan Heavy: hanya alat berat (termasuk unit yang sudah dihapus)', [body().includes('EX1'), body().includes('EX-OLD'), body().includes('TR1'), active()],
-          [true, true, false, 'Heavy Equipment / Kerusakan']);
+          [true, true, false, 'Heavy Equipment / Damage']);
         t('saran unit di form = alat berat', [...document.querySelectorAll('#dmgUnitList option')].map(o => o.value.split(' ')[0]), ['EX1']);
         goNav('damage', 'tractor');
-        t('Kerusakan Agricultural: hanya pertanian', [body().includes('TR1'), body().includes('EX1'), active()], [true, false, 'Agricultural Equipment / Kerusakan']);
+        t('Kerusakan Agricultural: hanya pertanian', [body().includes('TR1'), body().includes('EX1'), active()], [true, false, 'Agricultural Equipment / Damage']);
         setDamageGroup('');
         t('Semua Kelompok: keduanya, tanpa penanda grup', [body().includes('TR1'), body().includes('EX1'), active()], [true, true, null]);
 
         // =============== per akun ===============
         as({ role: 'khl', access: { inspection: 'edit' } });
         t('teknisi alat berat: hanya grup Heavy', groups(), ['Heavy Equipment']);
-        t('dan isinya Dashboard + Pengecekan', links('Heavy Equipment'), ['Dashboard', 'Pengecekan']);
+        t('dan isinya Dashboard + Pengecekan', links('Heavy Equipment'), ['Dashboard', 'Inspection']);
         t('dashboard-nya alat berat', effectiveDashGroup(), 'heavy');
         as({ role: 'staff', access: { implements: 'edit', licenseStock: 'view' } });
         t('staf pertanian: tanpa grup Heavy', groups().includes('Heavy Equipment'), false);
@@ -80,7 +80,7 @@ const { launch, BASE_URL } = require('./_env');
         // =============== armada satu kelompok ===============
         as({ role: 'owner' });
         globalData = [globalData[0]]; saveToStorage(globalData); onDataLoaded();
-        t('tanpa alat berat: tidak ada Dashboard Heavy / Semua', [links('Heavy Equipment').includes('Dashboard'), links('Ringkasan').includes('Dashboard Semua')], [false, false]);
+        t('tanpa alat berat: tidak ada Dashboard Heavy / Semua', [links('Heavy Equipment').includes('Dashboard'), links('Overview').includes('All Dashboard')], [false, false]);
         t('Unit Database Heavy tetap ada (untuk menambah unit pertama)', links('Heavy Equipment').includes('Unit Database'), true);
 
         window.__T = T;

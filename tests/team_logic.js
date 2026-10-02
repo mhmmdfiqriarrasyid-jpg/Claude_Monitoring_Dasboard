@@ -24,10 +24,10 @@ const { launch, BASE_URL } = require('./_env');
         t('durasi 22:30-06:15 (lewat tengah malam)', workLogMinutes({ start: '22:30', end: '06:15' }), 465);
         t('durasi jam kosong', workLogMinutes({ start: '', end: '' }), 0);
 
-        t('formatMinutes 480', formatMinutes(480), '8j');
-        t('formatMinutes 465', formatMinutes(465), '7j 45m');
+        t('formatMinutes 480', formatMinutes(480), '8h');
+        t('formatMinutes 465', formatMinutes(465), '7h 45m');
         t('formatMinutes 45', formatMinutes(45), '45m');
-        t('formatMinutes 0', formatMinutes(0), '0j');
+        t('formatMinutes 0', formatMinutes(0), '0h');
 
         // Week starts on Monday. 2026-09-15 is a Tuesday.
         t('startOfWeek Selasa 2026-09-15', startOfWeekISO('2026-09-15'), '2026-09-14');
@@ -116,13 +116,13 @@ const { launch, BASE_URL } = require('./_env');
         t('tab laporan aktif', document.getElementById('teamWorkLogPanel').style.display, '');
         t('jumlah baris laporan', document.querySelectorAll('#workLogBody tr').length, 3);
         t('KPI jumlah', document.getElementById('wlKpiCount').textContent, '3');
-        t('KPI total jam (8j + 8j + 3j)', document.getElementById('wlKpiHours').textContent, '19j');
+        t('KPI total jam (8j + 8j + 3j)', document.getElementById('wlKpiHours').textContent, '19h');
 
         // filter by member
         document.getElementById('wlMemberFilter').value = 'm1';
         renderWorkLogTable();
         t('filter anggota', document.querySelectorAll('#workLogBody tr').length, 1);
-        t('filter anggota KPI jam', document.getElementById('wlKpiHours').textContent, '8j');
+        t('filter anggota KPI jam', document.getElementById('wlKpiHours').textContent, '8h');
         document.getElementById('wlMemberFilter').value = '';
 
         // filter by date range
@@ -195,7 +195,7 @@ const { launch, BASE_URL } = require('./_env');
             shift:'malam', updatedBy:'Budi', updatedByUid:'uBudi' }]);
         t('ditimpa orang lain memunculkan peringatan', pesanShift.length, 1);
         t('peringatannya menyebut siapa', /Budi/.test(pesanShift[0]), true);
-        t('dan menyebut jadi apa', /Malam|malam/.test(pesanShift[0]), true);
+        t('dan menyebut jadi apa', /Night|night/.test(pesanShift[0]), true);
 
         // Nilai berbeda TANPA pemilik lain berarti tulisan kita belum mendarat.
         // Memperingatkan di situ akan jadi alarm palsu tiap sinyal lambat.
