@@ -12970,12 +12970,12 @@ function saveDevice(event) {
 
     const id = document.getElementById('editDeviceId').value;
     const sn = (document.getElementById('devSn').value || '').trim();
-    if (!sn) { showToast('Serial number tidak boleh kosong', 'warning'); return; }
+    if (!sn) { showToast('Serial number cannot be empty', 'warning'); return; }
     // The serial number is the identity here, so a duplicate would make
     // "where is this device" unanswerable.
     const clash = warehouseDevices.find(d =>
         d.id !== id && (d.sn || '').toLowerCase() === sn.toLowerCase());
-    if (clash) { showToast(`SN "${sn}" sudah terdaftar`, 'warning'); return; }
+    if (clash) { showToast(`SN "${sn}" is already registered`, 'warning'); return; }
 
     const status = document.getElementById('devStatus').value || 'warehouse';
     const installed = status === 'installed';
@@ -12985,13 +12985,13 @@ function saveDevice(event) {
     if (installed && unitRaw) {
         unit = resolveDamageUnit(unitRaw);
         if (!unit) {
-            showToast(`Unit "${unitRaw}" tidak ditemukan — pilih dari daftar`, 'warning');
+            showToast(`Unit "${unitRaw}" not found — pick one from the list`, 'warning');
             return;
         }
     }
     const siteName = installed ? (document.getElementById('devSite').value || '').trim() : '';
     if (installed && !unit && !siteName) {
-        showToast('Perangkat terpasang: isi unit atau nama lokasi pemasangan', 'warning');
+        showToast('Installed device: fill in the unit or the installation site', 'warning');
         return;
     }
 
@@ -13018,17 +13018,17 @@ function saveDevice(event) {
         {
             action: existing ? 'update' : 'create',
             unitId: rec.unitId,
-            unitName: `[Gudang] ${rec.type || 'Perangkat'} ${rec.sn}`,
-            field: 'Perangkat',
+            unitName: `[Inventory] ${rec.type || 'Device'} ${rec.sn}`,
+            field: 'Device',
             before: existing ? `${DEVICE_STATUS_LABEL[existing.status] || existing.status} · ${deviceWhere(existing)}` : '',
             after: `${DEVICE_STATUS_LABEL[rec.status] || rec.status} · ${deviceWhere(rec)}`
         },
         cloudCall('saveDevice', rec),
-        existing ? 'Perangkat diperbarui' : 'Perangkat ditambahkan',
+        existing ? 'Device updated' : 'Device added',
         err => {
             console.error('[warehouse] device save failed:', err);
             if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
-            showToast('Gagal menyimpan perangkat', 'error');
+            showToast('Failed to save device', 'error');
         }
     );
 
@@ -13039,18 +13039,18 @@ function deleteDevice(id) {
     if (!requireEdit('warehouse')) return;
     const d = warehouseDevices.find(x => x.id === id);
     if (!d) return;
-    if (!confirm(`Hapus perangkat ${d.type || ''} SN ${d.sn}?\n\nRiwayatnya di audit log tetap tersimpan.`)) return;
+    if (!confirm(`Delete device ${d.type || ''} SN ${d.sn}?\n\nIts history in the audit log is kept.`)) return;
     cloudWrite(
         { action: 'delete',
-          unitName: `[Gudang] ${d.type || 'Perangkat'} ${d.sn}`,
-          field: 'Perangkat',
+          unitName: `[Inventory] ${d.type || 'Device'} ${d.sn}`,
+          field: 'Device',
           before: `${DEVICE_STATUS_LABEL[d.status] || d.status} · ${deviceWhere(d)}`,
           after: '' },
         cloudCall('deleteDevice', id),
-        'Perangkat dihapus',
+        'Device deleted',
         err => {
             console.error('[warehouse] device delete failed:', err);
-            showToast('Gagal menghapus perangkat', 'error');
+            showToast('Failed to delete device', 'error');
         }
     );
 }
@@ -13058,9 +13058,9 @@ function deleteDevice(id) {
 function exportDeviceCSV() {
     if (!canCsv('export')) return;
     const rows = getFilteredDevices();
-    if (rows.length === 0) { showToast('Tidak ada perangkat untuk diexport', 'warning'); return; }
-    const headers = ['No', 'Serial Number', 'Jenis', 'Merek', 'Model', 'Status',
-                     'Lokasi Gudang', 'Terpasang di Unit', 'Lokasi Pemasangan', 'Posisi X', 'Posisi Y', 'Catatan'];
+    if (rows.length === 0) { showToast('No devices to export', 'warning'); return; }
+    const headers = ['No', 'Serial Number', 'Type', 'Brand', 'Model', 'Status',
+                     'Warehouse Location', 'Installed on Unit', 'Installation Site', 'Position X', 'Position Y', 'Notes'];
     const dataRows = rows.map((d, i) => [
         i + 1, d.sn || '', d.type || '', d.brand || '', d.model || '',
         DEVICE_STATUS_LABEL[d.status] || d.status || '',
@@ -13076,7 +13076,7 @@ function exportDeviceCSV() {
     a.download = `perangkat_gudang_${toISODate()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`Export ${rows.length} perangkat ke CSV`, 'success');
+    showToast(`Exported ${rows.length} devices to CSV`, 'success');
 }
 
 // Devices fitted to one tractor — surfaced on the unit profile.
@@ -13103,9 +13103,9 @@ function checkStockBalance(itemName, qty, existing) {
         available += Number(existing.qty) || 0;
     }
     if (qty <= available) return true;
-    return confirm(`Stok "${itemName}" tinggal ${available}, tetapi keluar ${qty}.\n\n`
-        + 'Saldo akan jadi minus. Biasanya ini karena nama barangnya beda tipis '
-        + 'dari yang sudah ada.\n\nTetap simpan?');
+    return confirm(`Only ${available} of "${itemName}" left in stock, but ${qty} going out.\n\n`
+        + 'The balance will go negative. Usually this is because the item name differs slightly '
+        + 'from an existing one.\n\nSave anyway?');
 }
 
 function stockSummary(location) {
@@ -13247,7 +13247,7 @@ function saveStockItem(event) {
 
     const id = document.getElementById('editStockId').value;
     const itemName = (document.getElementById('stkItem').value || '').trim();
-    if (!itemName) { showToast('Isi nama barang', 'warning'); return; }
+    if (!itemName) { showToast('Fill in the item name', 'warning'); return; }
     const qty = Math.max(1, parseInt(document.getElementById('stkQty').value, 10) || 1);
     const txnType = document.getElementById('stkTxnType').value === 'OUT' ? 'OUT' : 'IN';
 
@@ -13256,7 +13256,7 @@ function saveStockItem(event) {
     if (txnType === 'OUT' && unitRaw) {
         unit = resolveDamageUnit(unitRaw);
         if (!unit) {
-            showToast(`Unit "${unitRaw}" tidak ditemukan — kosongkan atau pilih dari daftar`, 'warning');
+            showToast(`Unit "${unitRaw}" not found — clear it or pick one from the list`, 'warning');
             return;
         }
     }
@@ -13288,17 +13288,17 @@ function saveStockItem(event) {
         {
             action: existing ? 'update' : 'create',
             unitId: rec.unitId,
-            unitName: `[Gudang] ${rec.itemName}`,
-            field: txnType === 'OUT' ? 'Stok keluar' : 'Stok masuk',
+            unitName: `[Inventory] ${rec.itemName}`,
+            field: txnType === 'OUT' ? 'Stock out' : 'Stock in',
             before: existing ? `${existing.txnType} ${existing.qty}` : '',
             after: `${txnType} ${qty}${rec.location ? ' @ ' + rec.location : ''}`
         },
         cloudCall('saveStockItem', rec),
-        existing ? 'Transaksi diperbarui' : 'Transaksi dicatat',
+        existing ? 'Transaction updated' : 'Transaction recorded',
         err => {
             console.error('[warehouse] stock save failed:', err);
             if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
-            showToast('Gagal menyimpan transaksi', 'error');
+            showToast('Failed to save transaction', 'error');
         }
     );
 
@@ -13309,18 +13309,18 @@ function deleteStockItem(id) {
     if (!requireEdit('warehouse')) return;
     const r = stockLedger.find(x => x.id === id);
     if (!r) return;
-    if (!confirm(`Hapus transaksi ${r.txnType === 'OUT' ? 'keluar' : 'masuk'} ${r.qty} ${r.itemName} (${r.date})?`)) return;
+    if (!confirm(`Delete stock-${r.txnType === 'OUT' ? 'out' : 'in'} transaction ${r.qty} ${r.itemName} (${r.date})?`)) return;
     cloudWrite(
         { action: 'delete',
-          unitName: `[Gudang] ${r.itemName}`,
-          field: 'Transaksi stok',
+          unitName: `[Inventory] ${r.itemName}`,
+          field: 'Stock transaction',
           before: `${r.txnType} ${r.qty}`,
           after: '' },
         cloudCall('deleteStockItem', id),
-        'Transaksi dihapus',
+        'Transaction deleted',
         err => {
             console.error('[warehouse] stock delete failed:', err);
-            showToast('Gagal menghapus transaksi', 'error');
+            showToast('Failed to delete transaction', 'error');
         }
     );
 }
@@ -13328,10 +13328,10 @@ function deleteStockItem(id) {
 function exportStockCSV() {
     if (!canCsv('export')) return;
     const rows = getFilteredStock();
-    if (rows.length === 0) { showToast('Tidak ada transaksi untuk diexport', 'warning'); return; }
-    const headers = ['No', 'Tanggal', 'Jenis', 'Barang', 'Jumlah', 'Lokasi', 'Untuk Unit', 'Catatan'];
+    if (rows.length === 0) { showToast('No transactions to export', 'warning'); return; }
+    const headers = ['No', 'Date', 'Type', 'Item', 'Quantity', 'Location', 'For Unit', 'Notes'];
     const dataRows = rows.map((r, i) => [
-        i + 1, r.date || '', r.txnType === 'OUT' ? 'Keluar' : 'Masuk',
+        i + 1, r.date || '', r.txnType === 'OUT' ? 'Out' : 'In',
         r.itemName || '', Number(r.qty) || 0, r.location || '', r.unitName || '', r.note || ''
     ]);
     const csv = toCSV(headers, dataRows);
@@ -13342,7 +13342,7 @@ function exportStockCSV() {
     a.download = `stok_gudang_${toISODate()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`Export ${rows.length} transaksi ke CSV`, 'success');
+    showToast(`Exported ${rows.length} transactions to CSV`, 'success');
 }
 
 
@@ -13406,7 +13406,7 @@ function decisionGroups() {
             total: izin.length,
             items: izin.slice(0, 6).map(r => ({
                 text: `${memberNameOf(r)} · ${leaveTypeLabel(r)}`,
-                sub: `${leaveRangeLabel(r)} — ${Number(r.days) || leaveDays(r.dateFrom, r.dateTo)} hari`
+                sub: `${leaveRangeLabel(r)} — ${Number(r.days) || leaveDays(r.dateFrom, r.dateTo)} day(s)`
             })),
             goto: 'leave'
         });
@@ -13421,7 +13421,7 @@ function decisionGroups() {
             key: 'insOverdue', icon: 'clipboard-check', tone: 'danger',
             title: 'Heavy equipment overdue for inspection',
             total: late.length,
-            items: late.slice(0, 6).map(x => ({ text: x.u.name || x.u.sn || '-', sub: `${x.s.label} · cek terakhir ${x.s.last.date}` })),
+            items: late.slice(0, 6).map(x => ({ text: x.u.name || x.u.sn || '-', sub: `${x.s.label} · last checked ${x.s.last.date}` })),
             goto: 'inspection:overdue'
         });
         const soon = st.filter(x => x.s.key === 'soon').sort((a, b) => a.s.days - b.s.days);
@@ -13479,8 +13479,8 @@ function decisionGroups() {
             title: `Units in breakdown over ${LEADER_BREAKDOWN_DAYS} days`,
             total: stuck.length,
             items: stuck.slice(0, 6).map(u => ({
-                text: u.name || u.sn || '(tanpa nama)',
-                sub: `${_daysSince(u.breakdownStartedAt)} hari · ${u.site || '-'}${u.breakdownReason ? ' · ' + u.breakdownReason : ''}${isHeavy(u) ? ' · ' + UNIT_GROUPS.heavy.shortLabel : ''}`
+                text: u.name || u.sn || '(no name)',
+                sub: `${_daysSince(u.breakdownStartedAt)} day(s) · ${u.site || '-'}${u.breakdownReason ? ' · ' + u.breakdownReason : ''}${isHeavy(u) ? ' · ' + UNIT_GROUPS.heavy.shortLabel : ''}`
             })),
             // With a heavy unit in the list, open the dashboard on "Semua" so
             // the unit is actually on screen when the link lands.
@@ -13495,7 +13495,7 @@ function decisionGroups() {
             key: 'licenseStock', icon: 'layer-group', tone: 'warning',
             title: 'License stock running low',
             total: low.length,
-            items: low.slice(0, 6).map(l => ({ text: l.type, sub: `sisa ${l.sisa}` })),
+            items: low.slice(0, 6).map(l => ({ text: l.type, sub: `${l.sisa} left` })),
             goto: 'licenseStock'
         });
     }
@@ -13510,7 +13510,7 @@ function decisionGroups() {
             total: low.length,
             items: low.slice(0, 6).map(s => ({
                 text: s.name,
-                sub: s.qty <= 0 ? 'habis' : `sisa ${s.qty}`
+                sub: s.qty <= 0 ? 'out of stock' : `${s.qty} left`
             })),
             goto: 'warehouseStock'
         });
@@ -13521,7 +13521,7 @@ function decisionGroups() {
             title: 'Devices damaged or in repair',
             total: unwell.length,
             items: unwell.slice(0, 6).map(d => ({
-                text: `${d.type || 'Perangkat'} · ${d.sn || ''}`,
+                text: `${d.type || 'Device'} · ${d.sn || ''}`,
                 sub: `${DEVICE_STATUS_LABEL[d.status] || d.status}${d.note ? ' · ' + d.note.slice(0, 40) : ''}`
             })),
             goto: 'warehouseDevices'
@@ -13536,7 +13536,7 @@ function decisionGroups() {
             title: 'Registrations pending approval',
             total: pendingUsers.length,
             items: pendingUsers.slice(0, 6).map(u => ({
-                text: u.displayName || u.email || '(tanpa nama)',
+                text: u.displayName || u.email || '(no name)',
                 sub: u.email || ''
             })),
             goto: 'users'
@@ -13552,8 +13552,8 @@ function decisionGroups() {
             title: 'Active accounts without access',
             total: noAccess.length,
             items: noAccess.slice(0, 6).map(u => ({
-                text: u.displayName || u.email || '(tanpa nama)',
-                sub: `${roleLabel(u.role)} — belum bisa membuka apa pun`
+                text: u.displayName || u.email || '(no name)',
+                sub: `${roleLabel(u.role)} — cannot open anything yet`
             })),
             goto: 'users'
         });
@@ -13657,8 +13657,8 @@ function renderDecisionInbox() {
             <i class="fas fa-circle-check"></i>
             <div>
                 <strong>Nothing pending.</strong>
-                <p>Semua laporan sudah diperiksa, tidak ada lisensi atau stok yang perlu ditindak,
-                dan tidak ada unit yang terlalu lama berhenti.</p>
+                <p>All reports have been reviewed, no license or stock needs action,
+                and no unit has been down too long.</p>
             </div>
         </div>`;
         return;
@@ -13727,12 +13727,12 @@ function updateDecisionBadge() {
 // ============================================================
 const _myNotice = { uid: '', primed: new Set(), revision: new Set() };
 const TEAM_NOTICE_KINDS = {
-    worklog: { part: 'workLogs',      noun: 'laporan',   list: () => workLogs,      edit: 'editWorkLog',
+    worklog: { part: 'workLogs',      noun: 'report',   list: () => workLogs,      edit: 'editWorkLog',
                box: 'wlMyNotice', tab: 'wlTabBadge', label: r => `${r.date || '-'} · ${memberNameOf(r)}` },
-    leave:   { part: 'leaveRequests', noun: 'pengajuan', list: () => leaveRequests, edit: 'editLeave',
+    leave:   { part: 'leaveRequests', noun: 'request', list: () => leaveRequests, edit: 'editLeave',
                box: 'lvMyNotice', tab: 'lvTabBadge', label: r => `${leaveTypeLabel(r)} ${leaveRangeLabel(r)} · ${memberNameOf(r)}` },
     // Its own menu, so its revisions count on its own badge, not on Tim's.
-    inspection: { part: 'inspections', noun: 'laporan cek', list: () => inspections, edit: 'editInspection',
+    inspection: { part: 'inspections', noun: 'inspection report', list: () => inspections, edit: 'editInspection',
                box: 'insMyNotice', tab: 'insTabBadge', area: 'inspection', ownNav: true,
                label: r => `${r.date || '-'} · ${inspectionUnitLabel(r)}` }
 };
@@ -13774,15 +13774,15 @@ function renderMyNoticeBox(kind, mine) {
     if (!rev.length && !pending && !drafts) { box.style.display = 'none'; box.innerHTML = ''; return; }
     const canFix = hasAccess(k.area || 'teamLog', 'edit');
     const facts = [
-        drafts ? `${drafts} draf belum dikirim` : '',
-        pending ? `${pending} ${k.noun} menunggu persetujuan` : ''
+        drafts ? `${drafts} draft(s) not yet submitted` : '',
+        pending ? `${pending} ${k.noun}(s) pending approval` : ''
     ].filter(Boolean).join(' · ');
     box.innerHTML = `
         ${rev.length ? `<div class="my-notice__head"><i class="fas fa-rotate-left"></i>
-            Perlu direvisi (${rev.length}) — ${escapeHtml(k.noun)} Anda dikembalikan atasan</div>
+            Needs revision (${rev.length}) — your ${escapeHtml(k.noun)}(s) sent back by your supervisor</div>
         <ul class="my-notice__list">${rev.slice(0, 8).map(r => `
             <li><div><strong>${escapeHtml(k.label(r))}</strong>
-                <span class="my-notice__note">${escapeHtml(r.revisionNote || 'Tanpa catatan')}${r.reviewedBy ? ' — ' + escapeHtml(r.reviewedBy) : ''}</span></div>
+                <span class="my-notice__note">${escapeHtml(r.revisionNote || 'No notes')}${r.reviewedBy ? ' — ' + escapeHtml(r.reviewedBy) : ''}</span></div>
                 ${canFix ? `<button class="btn btn-primary btn-sm" onclick="${k.edit}(${jsArg(r.id)})"><i class="fas fa-pen"></i> Fix</button>` : ''}
             </li>`).join('')}</ul>` : ''}
         ${facts ? `<div class="my-notice__facts"><i class="fas fa-circle-info"></i> ${escapeHtml(facts)}
@@ -13815,10 +13815,10 @@ function announceMyChanges(kind, mine, rev) {
     rev.forEach(r => _myNotice.revision.add(kind + ':' + r.id));
     if (fresh.length) {
         showToast(first
-            ? `${rev.length} ${k.noun} Anda perlu direvisi — buka Tim untuk memperbaikinya`
+            ? `${rev.length} of your ${k.noun}(s) need revision — open Team to fix them`
             : fresh.length === 1
-                ? `${k.noun[0].toUpperCase() + k.noun.slice(1)} ${k.label(fresh[0])} diminta revisi: ${fresh[0].revisionNote || ''}`
-                : `${fresh.length} ${k.noun} Anda diminta revisi`, 'warning');
+                ? `${k.noun[0].toUpperCase() + k.noun.slice(1)} ${k.label(fresh[0])} needs revision: ${fresh[0].revisionNote || ''}`
+                : `${fresh.length} of your ${k.noun}(s) need revision`, 'warning');
     }
 
     // Approvals since the last one this account was told about. The first
@@ -13831,8 +13831,8 @@ function announceMyChanges(kind, mine, rev) {
         const news = approved.filter(r => (Number(r.approvedAt) || 0) > seen);
         if (news.length) {
             showToast(news.length === 1
-                ? `${k.noun[0].toUpperCase() + k.noun.slice(1)} ${k.label(news[0])} disetujui${news[0].approvedBy ? ' oleh ' + news[0].approvedBy : ''}`
-                : `${news.length} ${k.noun} Anda sudah disetujui`, 'success');
+                ? `${k.noun[0].toUpperCase() + k.noun.slice(1)} ${k.label(news[0])} approved${news[0].approvedBy ? ' by ' + news[0].approvedBy : ''}`
+                : `${news.length} of your ${k.noun}(s) have been approved`, 'success');
         }
     }
     const mark = Math.max(seen, newest) || Date.now();
@@ -13967,9 +13967,9 @@ function onRecapMonthChange() {
 function exportRecapCSV() {
     if (!canCsv('export')) return;
     const rows = companyRecap(recapMonth);
-    if (rows.length === 0) { showToast('Tidak ada data untuk diexport', 'warning'); return; }
-    const headers = ['Perusahaan', 'Bulan', 'Jumlah Anggota', 'Jumlah Laporan', 'Total Jam',
-                     'Total Jam (desimal)', 'Unit Ditangani', 'Disetujui', 'Menunggu', 'Perlu Revisi'];
+    if (rows.length === 0) { showToast('No data to export', 'warning'); return; }
+    const headers = ['Company', 'Month', 'Members', 'Reports', 'Total Hours',
+                     'Total Hours (decimal)', 'Units Handled', 'Approved', 'Pending', 'Needs Revision'];
     const dataRows = rows.map(r => [
         r.company, monthLabel(recapMonth), r.members, r.reports,
         formatMinutes(r.minutes), (r.minutes / 60).toFixed(2),
@@ -13983,7 +13983,7 @@ function exportRecapCSV() {
     a.download = `rekap_perusahaan_${recapMonth}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`Export rekap ${monthLabel(recapMonth)}`, 'success');
+    showToast(`Exported recap for ${monthLabel(recapMonth)}`, 'success');
 }
 
 // ---- B3: this week against last week ----
@@ -14069,8 +14069,8 @@ function renderWeekSummary() {
     const health = document.getElementById('weekHealth');
     if (health) {
         health.innerHTML = globalData.length
-            ? `<strong>${pct(good, globalData.length)}%</strong> unit sehat saat ini
-               (${good} dari ${globalData.length}) — angka sekarang, bukan perbandingan mingguan`
+            ? `<strong>${pct(good, globalData.length)}%</strong> of units healthy right now
+               (${good} of ${globalData.length}) — a current figure, not a weekly comparison`
             : 'No unit data yet.';
     }
 }
@@ -14118,7 +14118,7 @@ function dcDuplicateSerials() {
             if (!sn) return;
             if (seen.has(sn)) {
                 out.push(dc('sn-ganda', `${what}: ${r.sn}`,
-                    `Dipakai "${seen.get(sn)}" dan "${r.name || r.type || '-'}"`,
+                    `Used by "${seen.get(sn)}" and "${r.name || r.type || '-'}"`,
                     goTo === 'editUnits' ? unitEditTarget(r) : goTo));
             } else {
                 seen.set(sn, r.name || r.type || '-');
@@ -14126,7 +14126,7 @@ function dcDuplicateSerials() {
         });
     };
     scan(globalData, 'Unit', 'editUnits');
-    scan(warehouseDevices, 'Perangkat', 'warehouseDevices');
+    scan(warehouseDevices, 'Device', 'warehouseDevices');
     return out;
 }
 
@@ -14138,7 +14138,7 @@ function dcInvisibleCharacters() {
             if (typeof v !== 'string' || !v) return;
             if (INVISIBLE_RE.test(v) || v !== v.trim()) {
                 out.push(dc('spasi', `Unit ${u.name || u.sn || u.id}`,
-                    `Field "${f}" punya spasi atau karakter tak terlihat`, unitEditTarget(u),
+                    `Field "${f}" has extra spaces or invisible characters`, unitEditTarget(u),
                     { unitId: u.id, field: f, fixable: true }));
             }
         });
@@ -14166,7 +14166,7 @@ function dcSiteVariants() {
         const parts = [...variants.entries()]
             .sort((a, b) => b[1] - a[1])
             .map(([v, n]) => `"${v}" (${n})`);
-        out.push(dc('site-beda-tipis', 'Nama site ditulis beberapa cara',
+        out.push(dc('site-beda-tipis', 'Site name spelled several ways',
             parts.join(' · '), 'editUnits'));
     });
     return out;
@@ -14179,14 +14179,14 @@ function dcMissingCompany() {
     (teamMembers || []).forEach(m => {
         if (m.active === false) return;
         if (!(companyOf(m) || '').trim()) {
-            out.push(dc('tanpa-perusahaan', `Anggota: ${m.name}`,
-                'Belum punya perusahaan — jamnya tidak masuk rekap mana pun', 'team'));
+            out.push(dc('tanpa-perusahaan', `Member: ${m.name}`,
+                'No company set — their hours are not in any recap', 'team'));
         }
     });
     globalData.forEach(u => {
         if (!(u.site || '').trim()) {
             out.push(dc('tanpa-site', `Unit: ${u.name || u.sn || u.id}`,
-                'Belum punya site — tidak terhitung di pembagian PT', unitEditTarget(u),
+                'No site set — not counted in the per-company split', unitEditTarget(u),
                 { unitId: u.id }));
         }
     });
@@ -14200,16 +14200,16 @@ function dcWorkLogHours() {
         const s = parseHHMM(w.start), e = parseHHMM(w.end);
         const who = `${memberNameOf(w)} · ${w.date}`;
         if ((s == null) !== (e == null)) {
-            out.push(dc('jam-sebelah', `Laporan: ${who}`, 'Hanya satu jam yang terisi', 'teamLog'));
+            out.push(dc('jam-sebelah', `Report: ${who}`, 'Only one of the times is filled in', 'teamLog'));
             return;
         }
         if (s == null) return;
         const mins = workLogMinutes(w);
         if (mins === 0) {
-            out.push(dc('jam-nol', `Laporan: ${who}`, 'Terhitung 0 jam', 'teamLog'));
+            out.push(dc('jam-nol', `Report: ${who}`, 'Counts as 0 hours', 'teamLog'));
         } else if (mins >= WORKLOG_LONG_SHIFT_MIN) {
-            out.push(dc('jam-panjang', `Laporan: ${who}`,
-                `Terhitung ${formatMinutes(mins)} — kemungkinan jamnya tertukar`, 'teamLog'));
+            out.push(dc('jam-panjang', `Report: ${who}`,
+                `Counts as ${formatMinutes(mins)} — the times may be swapped`, 'teamLog'));
         }
     });
     return out;
@@ -14221,13 +14221,13 @@ function dcFutureDates() {
     const scan = (list, what, goTo) => (list || []).forEach(r => {
         if (r.date && r.date > today) {
             out.push(dc('tanggal-depan', `${what}: ${r.date}`,
-                'Tanggal di masa depan — kemungkinan salah ketik tahun', goTo));
+                'Date is in the future — the year may be mistyped', goTo));
         }
     });
-    scan(workLogs, 'Laporan', 'teamLog');
-    scan(globalDamages, 'Kerusakan', 'damage');
-    scan(stockLedger, 'Stok', 'warehouseStock');
-    scan(globalLicenseStock, 'Lisensi', 'licenseStock');
+    scan(workLogs, 'Report', 'teamLog');
+    scan(globalDamages, 'Damage', 'damage');
+    scan(stockLedger, 'Stock', 'warehouseStock');
+    scan(globalLicenseStock, 'License', 'licenseStock');
     return out;
 }
 
@@ -14247,11 +14247,11 @@ function dcLicenceDates() {
             const name = u.name || u.sn || u.id;
             if (from === to) {
                 out.push(dc('lisensi-sehari', `Unit: ${name}`,
-                    `Lisensi ${label} mulai dan habis di hari yang sama (${from})`, 'editUnits',
+                    `${label} license starts and expires on the same day (${from})`, 'editUnits',
                     { unitId: u.id }));
             } else if (to < from) {
                 out.push(dc('lisensi-terbalik', `Unit: ${name}`,
-                    `Lisensi ${label} habis (${to}) sebelum mulai (${from})`, 'editUnits',
+                    `${label} license expires (${to}) before it starts (${from})`, 'editUnits',
                     { unitId: u.id }));
             }
         });
@@ -14266,14 +14266,14 @@ function dcOrphanDamage() {
         if (d.unitId && ids.has(d.unitId)) return false;
         if (d.sn && sns.has(String(d.sn).toLowerCase())) return false;
         return true;
-    }).map(d => dc('kerusakan-yatim', `Kerusakan: ${d.unitName || d.sn || '-'}`,
-        'Unitnya sudah tidak ada — catatan ini tidak bisa ditelusuri', 'damage'));
+    }).map(d => dc('kerusakan-yatim', `Damage: ${d.unitName || d.sn || '-'}`,
+        'The unit no longer exists — this record cannot be traced', 'damage'));
 }
 
 function dcNegativeStock() {
     return stockSummary().filter(s => s.qty < 0).map(s =>
-        dc('stok-minus', `Stok: ${s.name}`,
-            `Saldo ${s.qty} — biasanya nama barangnya beda tipis dari yang sudah ada`,
+        dc('stok-minus', `Stock: ${s.name}`,
+            `Balance ${s.qty} — usually the item name differs slightly from an existing one`,
             'warehouseStock'));
 }
 
@@ -14291,7 +14291,7 @@ function dcLeaveWithoutDoc() {
             && leaveDocCount(r) === 0)
         .map(r => dc('izin-tanpa-surat',
             `${leaveTypeLabel(r)}: ${memberNameOf(r)}`,
-            `Disetujui untuk ${leaveRangeLabel(r)} tetapi tidak ada surat yang dilampirkan.`,
+            `Approved for ${leaveRangeLabel(r)} but no letter is attached.`,
             'leave'));
 }
 
@@ -14303,7 +14303,7 @@ function dcLeaveReversed() {
         .filter(r => r.dateFrom && r.dateTo && r.dateTo < r.dateFrom)
         .map(r => dc('izin-terbalik',
             `${leaveTypeLabel(r)}: ${memberNameOf(r)}`,
-            `Tanggal selesai (${r.dateTo}) lebih awal dari tanggal mulai (${r.dateFrom}).`,
+            `End date (${r.dateTo}) is earlier than start date (${r.dateFrom}).`,
             'leave'));
 }
 
@@ -14321,8 +14321,8 @@ function dcUnitGroupFields() {
         if (hasUnreadableGroup(u)) {
             const guess = guessUnitGroup(u);
             out.push(dc('kelompok-tak-dikenal', `Unit: ${u.name || u.sn || u.id}`,
-                `Kelompok "${u.unitGroup}" tidak dikenal — dibaca sebagai ${UNIT_GROUPS.tractor.label}, dan tidak bisa diedit sampai kelompoknya ditetapkan`
-                + (guess ? `. Isinya cocok dengan ${UNIT_GROUPS[guess].label}.` : '.'),
+                `Unknown group "${u.unitGroup}" — read as ${UNIT_GROUPS.tractor.label}, and cannot be edited until its group is set`
+                + (guess ? `. Its contents match ${UNIT_GROUPS[guess].label}.` : '.'),
                 unitEditTarget(u), { unitId: u.id, setGroup: true }));
             return;
         }
@@ -14330,7 +14330,7 @@ function dcUnitGroupFields() {
         if (stray.length) {
             const g = groupDef(unitGroupOf(u));
             out.push(dc('kelompok-silang', `${g.shortLabel}: ${u.name || u.sn || u.id}`,
-                `${g.shortLabel} membawa field kelompok lain: ${stray.map(x => `${COMPONENT_LABELS[x.field] || UNIT_FIELD_LABELS[x.field] || x.field}=${x.value}`).join(', ')}`,
+                `${g.shortLabel} carries fields of another group: ${stray.map(x => `${COMPONENT_LABELS[x.field] || UNIT_FIELD_LABELS[x.field] || x.field}=${x.value}`).join(', ')}`,
                 unitEditTarget(u), { unitId: u.id, fixable: true, stray: stray.map(x => x.field) }));
         }
     });
@@ -14356,15 +14356,15 @@ function dcGroupReferences() {
     (globalLicenseStock || []).forEach(r => {
         if (r.txnType !== 'OUT') return;
         const u = liveUnitFor(r);
-        if (u && isHeavy(u)) out.push(dc('lisensi-alat-berat', `Lisensi: ${u.name || u.sn}`,
-            `${r.licenseType || 'Lisensi'} didistribusikan ke unit ${UNIT_GROUPS.heavy.shortLabel} — lisensi SF/G5 hanya untuk ${UNIT_GROUPS.tractor.shortLabel}`,
+        if (u && isHeavy(u)) out.push(dc('lisensi-alat-berat', `License: ${u.name || u.sn}`,
+            `${r.licenseType || 'License'} distributed to a ${UNIT_GROUPS.heavy.shortLabel} unit — SF/G5 licenses are for ${UNIT_GROUPS.tractor.shortLabel} only`,
             'licenseStock'));
     });
     (globalDamages || []).forEach(r => {
         const u = liveUnitFor(r);
         if (u && r.component && componentGroupConflict(r.component, u)) out.push(dc('kerusakan-komponen-silang',
-            `Kerusakan: ${u.name || u.sn}`,
-            `Komponen "${r.component}" bukan milik ${groupDef(unitGroupOf(u)).shortLabel}`, 'damage'));
+            `Damage: ${u.name || u.sn}`,
+            `Component "${r.component}" does not belong to ${groupDef(unitGroupOf(u)).shortLabel}`, 'damage'));
     });
     return out;
 }
@@ -14419,8 +14419,8 @@ function renderDataCheck() {
     const summary = document.getElementById('dataCheckSummary');
     if (summary) {
         summary.textContent = total === 0
-            ? 'Tidak ada yang mencurigakan — data Anda bersih.'
-            : `${total} hal perlu dilihat, di ${groups.filter(g => g.items.length).length} kelompok.`;
+            ? 'Nothing suspicious — your data is clean.'
+            : `${total} item(s) to look at, in ${groups.filter(g => g.items.length).length} group(s).`;
     }
     const fixBtn = document.getElementById('dataCheckFixBtn');
     if (fixBtn) {
@@ -14453,9 +14453,9 @@ function renderDataCheck() {
 function fixInvisibleCharacters() {
     if (!requireEdit('editUnits')) return;
     const found = dcInvisibleCharacters().filter(i => i.fixable);
-    if (!found.length) { showToast('Tidak ada yang perlu dirapikan', 'info'); return; }
-    if (!confirm(`Rapikan ${found.length} nilai yang punya spasi atau karakter tak terlihat?\n\n`
-        + 'Tulisannya tidak berubah — hanya karakter tersembunyinya yang dibuang.')) return;
+    if (!found.length) { showToast('Nothing to tidy up', 'info'); return; }
+    if (!confirm(`Tidy up ${found.length} value(s) with extra spaces or invisible characters?\n\n`
+        + 'The text stays the same — only the hidden characters are removed.')) return;
 
     const byUnit = new Map();
     found.forEach(i => {
@@ -14470,7 +14470,7 @@ function fixInvisibleCharacters() {
 
     let n = 0;
     byUnit.forEach((fields, id) => { if (updateUnit(id, fields)) n++; });
-    showToast(n ? `${n} unit dirapikan` : 'Tidak ada yang berubah', n ? 'success' : 'info');
+    showToast(n ? `${n} unit(s) tidied up` : 'Nothing changed', n ? 'success' : 'info');
     renderDataCheck();
 }
 
@@ -14481,7 +14481,7 @@ function fixInvisibleCharacters() {
 function setUnreadableGroups() {
     if (!requireEdit('editUnits')) return;
     const found = dcUnitGroupFields().filter(i => i.setGroup);
-    if (!found.length) { showToast('Tidak ada kelompok yang perlu ditetapkan', 'info'); return; }
+    if (!found.length) { showToast('No groups need to be set', 'info'); return; }
     let n = 0;
     for (const i of found) {
         const u = globalData.find(x => x.id === i.unitId);
@@ -14491,17 +14491,17 @@ function setUnreadableGroups() {
             .filter(f => !sameStoredValue(u[f], ''))
             .slice(0, 6)
             .map(f => `${COMPONENT_LABELS[f] || UNIT_FIELD_LABELS[f] || f}=${u[f]}`).join(', ');
-        const answer = prompt(`Unit "${u.name || u.sn || u.id}" berkelompok "${u.unitGroup}", yang tidak dikenal.\n`
-            + (filled ? `Isinya: ${filled}\n` : '')
-            + `\nKetik 1 untuk ${UNIT_GROUPS.tractor.label}, 2 untuk ${UNIT_GROUPS.heavy.label}.\n`
-            + 'Kosongkan atau Batal untuk melewati unit ini.',
+        const answer = prompt(`Unit "${u.name || u.sn || u.id}" has group "${u.unitGroup}", which is not recognised.\n`
+            + (filled ? `Contents: ${filled}\n` : '')
+            + `\nType 1 for ${UNIT_GROUPS.tractor.label}, 2 for ${UNIT_GROUPS.heavy.label}.\n`
+            + 'Leave empty or Cancel to skip this unit.',
             guess === 'heavy' ? '2' : guess === 'tractor' ? '1' : '');
         const to = String(answer == null ? '' : answer).trim() === '1' ? 'tractor'
                  : String(answer == null ? '' : answer).trim() === '2' ? 'heavy' : null;
         if (!to) continue;
         if (updateUnit(u.id, { unitGroup: to }, { setGroup: true })) n++;
     }
-    showToast(n ? `Kelompok ${n} unit ditetapkan` : 'Tidak ada yang berubah', n ? 'success' : 'info');
+    showToast(n ? `Group set for ${n} unit(s)` : 'Nothing changed', n ? 'success' : 'info');
     renderEditTable();
     renderDataCheck();
 }
@@ -14512,16 +14512,16 @@ function setUnreadableGroups() {
 function fixStrayGroupFields() {
     if (!requireEdit('editUnits')) return;
     const found = dcUnitGroupFields().filter(i => i.kind === 'kelompok-silang');
-    if (!found.length) { showToast('Tidak ada yang perlu dibersihkan', 'info'); return; }
-    if (!confirm(`Kosongkan field milik kelompok lain di ${found.length} unit?\n\n`
-        + 'Nilai itu tidak pernah dibaca untuk kelompok unitnya sendiri, jadi arti unitnya tidak berubah.')) return;
+    if (!found.length) { showToast('Nothing to clean up', 'info'); return; }
+    if (!confirm(`Clear fields belonging to another group on ${found.length} unit(s)?\n\n`
+        + 'Those values are never read for the unit\'s own group, so the unit\'s meaning does not change.')) return;
     let n = 0;
     found.forEach(i => {
         const fields = {};
         i.stray.forEach(f => { fields[f] = ''; });
         if (updateUnit(i.unitId, fields, { clearStray: true })) n++;
     });
-    showToast(n ? `${n} unit dibersihkan` : 'Tidak ada yang berubah', n ? 'success' : 'info');
+    showToast(n ? `${n} unit(s) cleaned up` : 'Nothing changed', n ? 'success' : 'info');
     renderDataCheck();
 }
 
@@ -14844,7 +14844,7 @@ function renderInspectionPlans() {
 let _insPlanPick = new Set();
 
 function showInspectionPlanForm(id) {
-    if (!canPlanInspections()) { showToast('Anda tidak punya akses membuat jadwal pengecekan', 'warning'); return; }
+    if (!canPlanInspections()) { showToast('You do not have access to create inspection schedules', 'warning'); return; }
     const p = id ? inspectionPlans.find(x => x.id === id) : null;
     document.getElementById('editInspectionPlanId').value = p ? p.id : '';
     document.getElementById('inspectionPlanTitle').innerHTML = p
@@ -14897,7 +14897,7 @@ function selectDueInspectionUnits() {
         if ((k === 'overdue' || k === 'soon' || k === 'never') && !_insPlanPick.has(u.id)) { _insPlanPick.add(u.id); n++; }
     });
     renderInspectionPlanPicker();
-    showToast(n ? `${n} unit jatuh tempo ditambahkan` : 'Tidak ada unit jatuh tempo yang belum dipilih', 'info');
+    showToast(n ? `${n} due unit(s) added` : 'No unselected units are due', 'info');
 }
 
 function saveInspectionPlan(event) {
@@ -14905,9 +14905,9 @@ function saveInspectionPlan(event) {
     if (!canPlanInspections()) return;
     const id = document.getElementById('editInspectionPlanId').value;
     const date = document.getElementById('insPlanDate').value;
-    if (!isoDistributionDate(date)) { showToast('Tanggal jadwal wajib diisi', 'warning'); return; }
+    if (!isoDistributionDate(date)) { showToast('Schedule date is required', 'warning'); return; }
     const unitIds = [..._insPlanPick].filter(uid => globalData.some(u => u.id === uid && isHeavy(u)));
-    if (!unitIds.length) { showToast('Pilih minimal satu unit', 'warning'); return; }
+    if (!unitIds.length) { showToast('Select at least one unit', 'warning'); return; }
     const existing = id ? inspectionPlans.find(p => p.id === id) : null;
     const rec = {
         id: id || generateInspectionPlanId(),
@@ -14919,13 +14919,13 @@ function saveInspectionPlan(event) {
         updatedAt: Date.now()
     };
     cloudWrite(
-        { action: existing ? 'update' : 'create', unitName: '[Pengecekan] Jadwal', field: `Jadwal ${date}`,
+        { action: existing ? 'update' : 'create', unitName: '[Inspection] Schedule', field: `Schedule ${date}`,
           before: existing ? `${(existing.unitIds || []).length} unit` : '', after: `${unitIds.length} unit` },
         cloudCall('saveInspectionPlan', rec),
-        existing ? 'Jadwal diperbarui' : `Jadwal ${date} dibuat — ${unitIds.length} unit`,
+        existing ? 'Schedule updated' : `Schedule ${date} created — ${unitIds.length} unit(s)`,
         err => {
             console.error('[ins] plan save failed:', err);
-            showToast('Gagal menyimpan jadwal' + (err && err.code === 'permission-denied' ? ' — publish ulang firestore.rules' : ''), 'error');
+            showToast('Failed to save schedule' + (err && err.code === 'permission-denied' ? ' — republish firestore.rules' : ''), 'error');
         }
     );
     closeInspectionPlanModal();
@@ -14935,12 +14935,12 @@ function deleteInspectionPlan(id) {
     if (!canPlanInspections()) return;
     const p = inspectionPlans.find(x => x.id === id);
     if (!p) return;
-    if (!confirm(`Hapus jadwal ${p.date} (${(p.unitIds || []).length} unit)?\n\nLaporan cek yang sudah dibuat tetap tersimpan.`)) return;
+    if (!confirm(`Delete schedule ${p.date} (${(p.unitIds || []).length} unit(s))?\n\nInspection reports already filed are kept.`)) return;
     cloudWrite(
-        { action: 'delete', unitName: '[Pengecekan] Jadwal', field: `Jadwal ${p.date}`, before: `${(p.unitIds || []).length} unit`, after: '' },
+        { action: 'delete', unitName: '[Inspection] Schedule', field: `Schedule ${p.date}`, before: `${(p.unitIds || []).length} unit`, after: '' },
         cloudCall('deleteInspectionPlan', id),
-        'Jadwal dihapus',
-        err => { console.error('[ins] plan delete failed:', err); showToast('Gagal menghapus jadwal', 'error'); }
+        'Schedule deleted',
+        err => { console.error('[ins] plan delete failed:', err); showToast('Failed to delete schedule', 'error'); }
     );
 }
 
@@ -15000,7 +15000,7 @@ function renderInspectionReports() {
             <td data-label="Photo">${photos
                 ? `<button type="button" class="wl-photo-btn" title="View ${photos} photo(s)" aria-label="View ${photos} photo(s)" onclick="openInspectionPhotos(${jsArg(r.id)}, this)"><i class="fas fa-image"></i> ${photos}</button>`
                 : '<span style="color:var(--text-light)">—</span>'}</td>
-            <td class="col-actions">${apply}${canEdit ? rowActionsFor(r, 'Laporan cek', 'editInspection', 'deleteInspection', 'withdrawInspection', INS_AREAS) : ''}</td>
+            <td class="col-actions">${apply}${canEdit ? rowActionsFor(r, 'Inspection report', 'editInspection', 'deleteInspection', 'withdrawInspection', INS_AREAS) : ''}</td>
         </tr>`;
     }).join('');
 }
@@ -15020,11 +15020,11 @@ async function openInspectionPhotos(id, btn) {
     try {
         const photos = await loadInspectionPhotos(id);
         const list = inspectionComponents().map(c => safeImageSrc(photos[c.key])).filter(Boolean);
-        if (!list.length) { showToast('Foto tidak ditemukan', 'warning'); return; }
+        if (!list.length) { showToast('Photo not found', 'warning'); return; }
         openPhotoLightbox(list, 0);
     } catch (err) {
         console.error('[ins] photos load failed:', err);
-        showToast(navigator.onLine ? 'Gagal memuat foto' : 'Foto perlu sinyal untuk dimuat', 'warning');
+        showToast(navigator.onLine ? 'Failed to load photo' : 'Photos need a signal to load', 'warning');
     } finally {
         if (btn) { btn.disabled = false; btn.innerHTML = old; }
     }
@@ -15131,7 +15131,7 @@ async function handleInspectionPhoto(key, event) {
     const file = event.target.files && event.target.files[0];
     event.target.value = '';
     if (!file || _insPhotosLoading || _insPhotosFailed) return;
-    if (!file.type.startsWith('image/')) { showToast('File harus berupa gambar (foto)', 'warning'); return; }
+    if (!file.type.startsWith('image/')) { showToast('File must be an image (photo)', 'warning'); return; }
     const gen = _insGen;
     try {
         const data = await compressImageToDataURL(file, INS_PHOTO_OPTS);
@@ -15140,7 +15140,7 @@ async function handleInspectionPhoto(key, event) {
         _insPhotosDirty = true;
         renderInspectionPhoto(key);
     } catch (err) {
-        showToast(err.message || 'Gagal memproses foto', 'error');
+        showToast(err.message || 'Failed to process photo', 'error');
     }
 }
 
@@ -15193,14 +15193,14 @@ function _openInspectionModal(rec, unitId, planId) {
             _insPhotosLoading = false;
             _insPhotosFailed = true;
             inspectionComponents().forEach(c => renderInspectionPhoto(c.key));
-            showToast('Foto lama gagal dimuat — tetap tersimpan. Tutup lalu buka lagi untuk mengubahnya.', 'warning');
+            showToast('Existing photos failed to load — they are still saved. Close and reopen to change them.', 'warning');
         });
     }
 }
 
 function showInspectionForm(unitId, planId) {
     if (!requireEdit('inspection')) return;
-    if (!inspectableUnits().length) { showToast('Belum ada unit Alat Berat di Unit Database', 'warning'); return; }
+    if (!inspectableUnits().length) { showToast('No Heavy Equipment units in the Unit Database yet', 'warning'); return; }
     if (currentView !== 'inspection' && canViewView('inspection')) navigateTo('inspection');
     _openInspectionModal(null, unitId, planId);
 }
@@ -15209,13 +15209,13 @@ function editInspection(id) {
     if (!requireEdit('inspection')) return;
     const r = inspections.find(x => x.id === id);
     if (!r) return;
-    if (!canEditTeamRecord(r, INS_AREAS)) { showToast(lockedReason(r, 'Laporan cek', INS_AREAS), 'warning'); return; }
+    if (!canEditTeamRecord(r, INS_AREAS)) { showToast(lockedReason(r, 'Inspection report', INS_AREAS), 'warning'); return; }
     _openInspectionModal(r);
 }
 
 function closeInspectionModal(force) {
     if (!force && _insPhotosDirty && Object.keys(_insPhotos).length &&
-        !confirm(`${Object.keys(_insPhotos).length} foto belum tersimpan dan akan hilang. Tutup saja?`)) return;
+        !confirm(`${Object.keys(_insPhotos).length} photo(s) not saved yet and will be lost. Close anyway?`)) return;
     _insGen++;
     _insPhotosDirty = false;
     document.getElementById('inspectionModal').classList.remove('open');
@@ -15228,17 +15228,17 @@ function saveInspection(event, mode) {
     const id = document.getElementById('editInspectionId').value;
     const existing = id ? inspections.find(x => x.id === id) : null;
     if (existing && !canEditTeamRecord(existing, INS_AREAS)) {
-        showToast(lockedReason(existing, 'Laporan cek', INS_AREAS), 'warning');
+        showToast(lockedReason(existing, 'Inspection report', INS_AREAS), 'warning');
         return;
     }
     const unitId = existing ? existing.unitId : document.getElementById('insUnit').value;
     const unit = globalData.find(u => u.id === unitId);
-    if (!unit && !existing) { showToast('Pilih unit alat berat dulu', 'warning'); return; }
-    if (unit && !isHeavy(unit)) { showToast('Pengecekan ini khusus unit Alat Berat', 'warning'); return; }
+    if (!unit && !existing) { showToast('Select a heavy equipment unit first', 'warning'); return; }
+    if (unit && !isHeavy(unit)) { showToast('This inspection is for Heavy Equipment units only', 'warning'); return; }
     const date = document.getElementById('insDate').value;
-    if (!isoDistributionDate(date)) { showToast('Tanggal cek wajib diisi', 'warning'); return; }
-    if (date > toISODate()) { showToast('Tanggal cek tidak boleh di masa depan', 'warning'); return; }
-    if (_insPhotosLoading) { showToast('Tunggu foto lama selesai dimuat', 'warning'); return; }
+    if (!isoDistributionDate(date)) { showToast('Check date is required', 'warning'); return; }
+    if (date > toISODate()) { showToast('Check date cannot be in the future', 'warning'); return; }
+    if (_insPhotosLoading) { showToast('Wait for the existing photos to finish loading', 'warning'); return; }
 
     const notes = {};
     inspectionComponents().forEach(c => {
@@ -15251,11 +15251,11 @@ function saveInspection(event, mode) {
     // broken one says what is wrong. A draft may be half-done.
     if (!asDraft) {
         const missing = inspectionComponents().filter(c => !results[c.key]).map(c => c.label);
-        if (missing.length) { showToast(`Pilih Baik/Rusak untuk: ${missing.join(', ')}`, 'warning'); return; }
+        if (missing.length) { showToast(`Choose Good/Damaged for: ${missing.join(', ')}`, 'warning'); return; }
         const noPhoto = _insPhotosFailed ? [] : inspectionComponents().filter(c => !_insPhotos[c.key]).map(c => c.label);
-        if (noPhoto.length) { showToast(`Foto wajib untuk: ${noPhoto.join(', ')}`, 'warning'); return; }
+        if (noPhoto.length) { showToast(`Photo required for: ${noPhoto.join(', ')}`, 'warning'); return; }
         const noNote = inspectionComponents().filter(c => results[c.key] === 'bad' && !notes[c.key]).map(c => c.label);
-        if (noNote.length) { showToast(`Jelaskan kerusakan: ${noNote.join(', ')}`, 'warning'); return; }
+        if (noNote.length) { showToast(`Describe the damage: ${noNote.join(', ')}`, 'warning'); return; }
     }
 
     const photoKeys = _insPhotosDirty
@@ -15293,7 +15293,7 @@ function saveInspection(event, mode) {
         if (fn) {
             (photoKeys.length ? fn(rec.id, photos) : fn(rec.id)).catch(err => {
                 console.error('[ins] photos save failed:', err);
-                showToast('Laporan tersimpan, tetapi foto gagal dikirim', 'error');
+                showToast('Report saved, but the photos failed to upload', 'error');
             });
         }
     }
@@ -15301,16 +15301,16 @@ function saveInspection(event, mode) {
     const bad = inspectionBadBits(rec);
     cloudWrite(
         { action: existing ? 'update' : 'create', unitId,
-          unitName: `[Pengecekan] ${rec.unitName}`,
-          field: `Cek ${date}${asDraft ? ' (draf)' : ''}`,
+          unitName: `[Inspection] ${rec.unitName}`,
+          field: `Check ${date}${asDraft ? ' (draft)' : ''}`,
           before: existing ? inspectionResultSummary(existing).text : '',
-          after: bad.length ? `${bad.length} rusak: ${bad.map(c => c.label).join(', ')}` : (Object.keys(results).length === inspectionComponents().length ? 'Semua baik' : 'Belum lengkap') },
+          after: bad.length ? `${bad.length} damaged: ${bad.map(c => c.label).join(', ')}` : (Object.keys(results).length === inspectionComponents().length ? 'All good' : 'Incomplete') },
         cloudCall('saveInspection', rec),
-        asDraft ? 'Draf laporan cek disimpan — belum dikirim'
-            : `Laporan cek dikirim — cek berikutnya ${addDaysISO(date, INSPECTION_INTERVAL_DAYS)}`,
+        asDraft ? 'Inspection report draft saved — not submitted yet'
+            : `Inspection report submitted — next check ${addDaysISO(date, INSPECTION_INTERVAL_DAYS)}`,
         err => {
             console.error('[ins] save failed:', err);
-            showToast('Gagal menyimpan laporan cek' + (err && err.code === 'permission-denied' ? ' — publish ulang firestore.rules' : ''), 'error');
+            showToast('Failed to save inspection report' + (err && err.code === 'permission-denied' ? ' — republish firestore.rules' : ''), 'error');
         }
     );
     closeInspectionModal(true);
@@ -15319,14 +15319,14 @@ function saveInspection(event, mode) {
 function withdrawInspection(id) {
     const r = inspections.find(x => x.id === id);
     if (!r) return;
-    if (!canWithdrawTeamRecord(r, INS_AREAS)) { showToast('Laporan cek ini tidak bisa ditarik kembali', 'warning'); return; }
-    if (!confirm(`Tarik kembali laporan cek ${inspectionUnitLabel(r)} (${r.date}) menjadi draf?`)) return;
+    if (!canWithdrawTeamRecord(r, INS_AREAS)) { showToast('This inspection report cannot be withdrawn', 'warning'); return; }
+    if (!confirm(`Withdraw the inspection report for ${inspectionUnitLabel(r)} (${r.date}) back to draft?`)) return;
     cloudWrite(
-        { action: 'update', unitId: r.unitId, unitName: `[Pengecekan] ${inspectionUnitLabel(r)}`,
-          field: `Persetujuan ${r.date}`, before: 'Menunggu', after: 'Draf (ditarik kembali)' },
+        { action: 'update', unitId: r.unitId, unitName: `[Inspection] ${inspectionUnitLabel(r)}`,
+          field: `Approval ${r.date}`, before: 'Pending', after: 'Draft (withdrawn)' },
         cloudCall('saveInspection', { ...r, approval: 'draft', updatedAt: Date.now() }),
-        'Laporan cek ditarik kembali menjadi draf',
-        err => { console.error('[ins] withdraw failed:', err); showToast('Gagal menarik kembali — mungkin sudah diperiksa', 'error'); }
+        'Inspection report withdrawn to draft',
+        err => { console.error('[ins] withdraw failed:', err); showToast('Failed to withdraw — it may already have been reviewed', 'error'); }
     );
 }
 
@@ -15334,27 +15334,27 @@ function deleteInspection(id) {
     if (!requireEdit('inspection')) return;
     const r = inspections.find(x => x.id === id);
     if (!r) return;
-    if (!canEditTeamRecord(r, INS_AREAS)) { showToast(lockedReason(r, 'Laporan cek', INS_AREAS), 'warning'); return; }
-    if (!confirm(`Hapus laporan cek ${inspectionUnitLabel(r)} tanggal ${r.date}?`)) return;
+    if (!canEditTeamRecord(r, INS_AREAS)) { showToast(lockedReason(r, 'Inspection report', INS_AREAS), 'warning'); return; }
+    if (!confirm(`Delete the inspection report for ${inspectionUnitLabel(r)} dated ${r.date}?`)) return;
     if (Number(r.photoCount) > 0 && window.cloud && window.cloud.deleteInspectionPhotos) {
         _insPhotoCache.delete(id);
         window.cloud.deleteInspectionPhotos(id).catch(err => console.error('[ins] photos delete failed:', err));
     }
     cloudWrite(
-        { action: 'delete', unitId: r.unitId, unitName: `[Pengecekan] ${inspectionUnitLabel(r)}`,
-          field: `Cek ${r.date}`, before: inspectionResultSummary(r).text, after: '' },
+        { action: 'delete', unitId: r.unitId, unitName: `[Inspection] ${inspectionUnitLabel(r)}`,
+          field: `Check ${r.date}`, before: inspectionResultSummary(r).text, after: '' },
         cloudCall('deleteInspection', id),
-        'Laporan cek dihapus',
-        err => { console.error('[ins] delete failed:', err); showToast('Gagal menghapus laporan cek', 'error'); }
+        'Inspection report deleted',
+        err => { console.error('[ins] delete failed:', err); showToast('Failed to delete inspection report', 'error'); }
     );
 }
 
 function approveInspection(id) {
     const r = inspections.find(x => x.id === id);
     if (!r) return;
-    if (!canApproveWorkLogs(INS_AREAS)) { showToast('Anda tidak punya hak menyetujui laporan cek', 'warning'); return; }
-    if (!canApproveThisLog(r, INS_AREAS)) { showToast('Laporan cek yang Anda buat sendiri harus disetujui orang lain', 'warning'); return; }
-    if (workLogApproval(r) !== 'pending') { showToast('Hanya laporan yang sudah dikirim yang bisa disetujui', 'warning'); return; }
+    if (!canApproveWorkLogs(INS_AREAS)) { showToast('You do not have the right to approve inspection reports', 'warning'); return; }
+    if (!canApproveThisLog(r, INS_AREAS)) { showToast('An inspection report you filed yourself must be approved by someone else', 'warning'); return; }
+    if (workLogApproval(r) !== 'pending') { showToast('Only submitted reports can be approved', 'warning'); return; }
     const rec = {
         ...r,
         approval: 'approved',
@@ -15366,11 +15366,11 @@ function approveInspection(id) {
     };
     const bad = inspectionBadBits(rec);
     cloudWrite(
-        { action: 'approve', unitId: r.unitId, unitName: `[Pengecekan] ${inspectionUnitLabel(r)}`,
-          field: `Persetujuan ${r.date}`, before: APPROVAL_STATES[workLogApproval(r)].label, after: APPROVAL_STATES.approved.label },
+        { action: 'approve', unitId: r.unitId, unitName: `[Inspection] ${inspectionUnitLabel(r)}`,
+          field: `Approval ${r.date}`, before: APPROVAL_STATES[workLogApproval(r)].label, after: APPROVAL_STATES.approved.label },
         cloudCall('saveInspection', rec),
-        'Laporan cek disetujui',
-        err => { console.error('[ins] approve failed:', err); showToast('Gagal menyetujui laporan cek', 'error'); return false; }
+        'Inspection report approved',
+        err => { console.error('[ins] approve failed:', err); showToast('Failed to approve inspection report', 'error'); return false; }
     ).then(ok => {
         // Broken components go to the damage log once approved — by whoever
         // is allowed to write it. Anyone else leaves it to the inbox.
@@ -15378,19 +15378,19 @@ function approveInspection(id) {
         const idx = inspections.findIndex(x => x.id === id);
         if (idx !== -1) inspections[idx] = { ...inspections[idx], ...rec };
         if (hasAccess('damage', 'edit')) applyInspectionFindings(id);
-        else showToast(`${bad.length} komponen rusak belum masuk ke Kerusakan — perlu akun dengan akses Kerusakan`, 'info');
+        else showToast(`${bad.length} damaged component(s) not yet logged in Damage — needs an account with Damage access`, 'info');
     });
 }
 
 function reviseInspection(id) {
     const r = inspections.find(x => x.id === id);
     if (!r) return;
-    if (!canApproveThisLog(r, INS_AREAS)) { showToast('Anda tidak punya hak memeriksa laporan cek ini', 'warning'); return; }
+    if (!canApproveThisLog(r, INS_AREAS)) { showToast('You do not have the right to review this inspection report', 'warning'); return; }
     const st = workLogApproval(r);
-    if (st !== 'pending' && st !== 'approved') { showToast('Laporan cek ini belum dikirim atau sudah dikembalikan', 'warning'); return; }
-    const note = prompt(`Apa yang perlu diperbaiki pada laporan cek ${inspectionUnitLabel(r)} (${r.date})?`, r.revisionNote || '');
+    if (st !== 'pending' && st !== 'approved') { showToast('This inspection report has not been submitted or was already sent back', 'warning'); return; }
+    const note = prompt(`What needs fixing in the inspection report for ${inspectionUnitLabel(r)} (${r.date})?`, r.revisionNote || '');
     if (note === null) return;
-    if (!note.trim()) { showToast('Tulis alasannya supaya bisa diperbaiki', 'warning'); return; }
+    if (!note.trim()) { showToast('Write the reason so it can be fixed', 'warning'); return; }
     const rec = {
         ...r,
         approval: 'revision',
@@ -15401,11 +15401,11 @@ function reviseInspection(id) {
         updatedAt: Date.now()
     };
     cloudWrite(
-        { action: 'reject', unitId: r.unitId, unitName: `[Pengecekan] ${inspectionUnitLabel(r)}`,
-          field: `Persetujuan ${r.date}`, before: APPROVAL_STATES[st].label, after: `${APPROVAL_STATES.revision.label} — ${rec.revisionNote}` },
+        { action: 'reject', unitId: r.unitId, unitName: `[Inspection] ${inspectionUnitLabel(r)}`,
+          field: `Approval ${r.date}`, before: APPROVAL_STATES[st].label, after: `${APPROVAL_STATES.revision.label} — ${rec.revisionNote}` },
         cloudCall('saveInspection', rec),
-        'Laporan cek dikembalikan untuk revisi',
-        err => { console.error('[ins] revise failed:', err); showToast('Gagal mengirim permintaan revisi', 'error'); }
+        'Inspection report sent back for revision',
+        err => { console.error('[ins] revise failed:', err); showToast('Failed to send revision request', 'error'); }
     );
 }
 
@@ -15417,9 +15417,9 @@ const _insApplying = new Set();
 async function applyInspectionFindings(id) {
     const r = inspections.find(x => x.id === id);
     if (!r || !inspectionNeedsApply(r) || _insApplying.has(id)) return;
-    if (!hasAccess('damage', 'edit')) { showToast('Perlu akses edit Kerusakan', 'warning'); return; }
+    if (!hasAccess('damage', 'edit')) { showToast('Damage edit access required', 'warning'); return; }
     const unit = liveUnitFor({ unitId: r.unitId, sn: r.sn });
-    if (!unit) { showToast('Unitnya sudah tidak ada di Unit Database', 'warning'); return; }
+    if (!unit) { showToast('The unit is no longer in the Unit Database', 'warning'); return; }
     _insApplying.add(id);
     try {
         let photos = {};
@@ -15432,7 +15432,7 @@ async function applyInspectionFindings(id) {
                 id: generateDamageId(),
                 date: r.date, unitId: unit.id, unitName: unit.name || '', sn: unit.sn || '', site: unit.site || '',
                 damageType: 'Device Precision', component: c.label,
-                description: `Temuan pengecekan ${r.date}: ${note}`.slice(0, 500),
+                description: `Inspection finding ${r.date}: ${note}`.slice(0, 500),
                 hasPhoto: !!photo, unitGroup: 'heavy', fromInspection: r.id,
                 resolved: false, resolvedAt: '', createdAt: Date.now(), updatedAt: Date.now(), drove: ''
             };
@@ -15445,8 +15445,8 @@ async function applyInspectionFindings(id) {
                 _dmgPhotoCache.set(rec.id, photo);
                 window.cloud.saveDamagePhoto(rec.id, photo).catch(err => console.error('[ins] damage photo failed:', err));
             }
-            logEvent({ action: 'add', unitId: unit.id, unitName: `[Kerusakan] ${unit.name || ''}`,
-                       field: `Device Precision / ${c.label}`, after: `${r.date} (dari pengecekan)` });
+            logEvent({ action: 'add', unitId: unit.id, unitName: `[Damage] ${unit.name || ''}`,
+                       field: `Device Precision / ${c.label}`, after: `${r.date} (from inspection)` });
             ids.push(rec.id);
         }
         saveDamages();
@@ -15456,7 +15456,7 @@ async function applyInspectionFindings(id) {
         const idx = inspections.findIndex(x => x.id === id);
         if (idx !== -1) inspections[idx] = stamp;
         cloudCall('saveInspection', stamp).catch(err => console.error('[ins] apply stamp failed:', err));
-        showToast(`${ids.length} catatan Kerusakan dibuat dari laporan cek ${inspectionUnitLabel(r)}`, 'success');
+        showToast(`${ids.length} Damage record(s) created from the inspection report for ${inspectionUnitLabel(r)}`, 'success');
         if (currentView === 'inspection') renderInspectionView();
         if (currentView === 'damage') renderDamageTable();
         scheduleDecisionRefresh();
@@ -15468,17 +15468,17 @@ async function applyInspectionFindings(id) {
 function exportInspectionCSV() {
     if (!canCsv('export')) return;
     const rows = getFilteredInspections();
-    if (!rows.length) { showToast('Tidak ada laporan cek untuk diexport', 'warning'); return; }
+    if (!rows.length) { showToast('No inspection reports to export', 'warning'); return; }
     const comps = inspectionComponents();
-    const headers = ['No', 'Tanggal Cek', 'Unit', 'Serial Number', 'Nomor Lambung',
-        ...comps.flatMap(c => [c.label, `Catatan ${c.label}`]), 'Catatan Umum', 'Jadwal', 'Cek Berikutnya',
-        'Pemeriksa', 'Persetujuan', 'Disetujui Oleh', 'Catatan Revisi'];
+    const headers = ['No', 'Check Date', 'Unit', 'Serial Number', 'Asset Code',
+        ...comps.flatMap(c => [c.label, `${c.label} Notes`]), 'General Notes', 'Schedule', 'Next Check',
+        'Inspector', 'Approval', 'Approved By', 'Revision Notes'];
     const body = rows.map((r, i) => {
         const u = liveUnitFor({ unitId: r.unitId, sn: r.sn }) || {};
         const plan = r.planId ? inspectionPlans.find(p => p.id === r.planId) : null;
         return [i + 1, r.date || '', inspectionUnitLabel(r), r.sn || '', u.assetCode || '',
             ...comps.flatMap(c => [INS_RESULT[(r.results || {})[c.key]] || '', (r.notes || {})[c.key] || '']),
-            r.note || '', plan ? plan.date : (r.planId ? 'dihapus' : 'Di luar jadwal'),
+            r.note || '', plan ? plan.date : (r.planId ? 'deleted' : 'Unscheduled'),
             isSubmitted(r) ? addDaysISO(r.date, INSPECTION_INTERVAL_DAYS) : '',
             r.createdBy || '', APPROVAL_STATES[workLogApproval(r)].label, r.approvedBy || '', r.revisionNote || ''];
     });
@@ -15489,7 +15489,7 @@ function exportInspectionCSV() {
     a.download = `pengecekan_alat_berat_${toISODate()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`Export ${rows.length} laporan cek ke CSV`, 'success');
+    showToast(`Exported ${rows.length} inspection reports to CSV`, 'success');
 }
 
 // The chip under a heavy unit's name in Unit Database.
