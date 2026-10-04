@@ -236,7 +236,7 @@ async function run(page, width, body) {
             tanpaLabel: tds.filter(td => !td.hasAttribute('data-label') && !td.classList.contains('col-actions')).length,
             camera: terlihat('Camera AI'), lambung: terlihat('Asset No.'),
             geser: document.documentElement.scrollWidth > innerWidth,
-            tab: Math.round(document.querySelector('.eu-tab').getBoundingClientRect().height)
+            judul: document.getElementById('editTableTitle').textContent
         };
         globalData = [];
         renderEditTable();
@@ -250,7 +250,7 @@ async function run(page, width, body) {
     t('kolom Nomor Lambung terlihat di ponsel', berat.lambung, true);
     t('tab alat berat tidak memaksa halaman menggeser', berat.geser, false);
     t('colspan baris kosong alat berat = 19 kolom', berat.colspan, '19');
-    t('tombol tab kelompok cukup besar disentuh', berat.tab >= 36, true);
+    t('judul tabel menyebut kelompoknya (tab kelompok sudah dihapus)', berat.judul, 'Unit Database — Heavy Equipment');
 
     // Jadwal shift: satu-satunya yang memang menggeser, jadi nama harus menempel.
     const shift = await phone.evaluate(`(async () => {

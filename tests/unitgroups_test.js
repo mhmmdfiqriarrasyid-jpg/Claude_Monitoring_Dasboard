@@ -166,7 +166,7 @@ const SETUP = `(() => {
         globalData = [__T('u_t1'), __H('u_h1')];
         navigateTo('team');
         navigateTo('editUnits');
-        r.euTabsHidden = [...document.querySelectorAll('.eu-tab')].filter(x => x.style.display === 'none').length;
+        r.euTabs = document.querySelectorAll('.eu-tab, #editGroupBar').length;
         // I8: sortTable tidak boleh mengurutkan globalData itu sendiri.
         navigateTo('dashboard');
         globalData = [__T('u_t2', {name:'ZZZ'}), __H('u_h1'), __T('u_t1', {name:'AAA'})];
@@ -385,7 +385,7 @@ const SETUP = `(() => {
     else {
         t('tanpa alat berat, preferensi tab tersimpan tidak berlaku', R.prefEdit, 'tractor');
         t('tanpa alat berat, preferensi dashboard tersimpan tidak berlaku', R.prefDash, 'tractor');
-        t('membuka Tim tidak menyembunyikan tab Edit Units', R.euTabsHidden, 0);
+        t('Unit Database tidak lagi punya tab kelompok (dipilih dari menu samping)', R.euTabs, 0);
         t('mengurutkan dashboard tidak mengubah urutan globalData', R.aliasOk, true);
 
         t('firewall: GPS ke alat berat ditolak', R.fwGpsOnHeavy, false);
