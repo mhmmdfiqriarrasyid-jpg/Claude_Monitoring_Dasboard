@@ -311,7 +311,7 @@ const UNIT_GROUPS = {
 const UNIT_GROUP_KEYS = ['tractor', 'heavy'];
 const DASH_GROUP_KEYS = ['tractor', 'heavy', 'all'];
 const HEAVY_MACHINE_TYPES = ['Excavator', 'Bulldozer', 'Motor Grader', 'Wheel Loader'];
-const HEAVY_WORK_TOOLS = ['Bucket', 'Ripper', 'Blade', 'Breaker'];
+const HEAVY_WORK_TOOLS = ['Bucket', 'Ripper', 'Blade', 'Breaker', 'Root Plough', 'Root Rake'];
 const HEAVY_CSV_UPDATABLE_FIELDS = ['name', 'model', 'machineType', 'assetCode', 'workTool', 'status',
     ...HEAVY_COMPONENT_KEYS, 'site', 'yearReceived', 'userCategory', 'remarks', 'breakdownReason'];
 // "Alat Kerja", never "Attachment": units already have an "Attachments" file
@@ -1855,10 +1855,12 @@ function updateConnectionLabel() {
 function watchConnection() {
     window.addEventListener('online', () => {
         updateConnectionLabel();
+        if (typeof renderInspectionSyncNotice === 'function') renderInspectionSyncNotice();
         showToast('Kembali online — perubahan yang tertunda sedang dikirim', 'success');
     });
     window.addEventListener('offline', () => {
         updateConnectionLabel();
+        if (typeof renderInspectionSyncNotice === 'function') renderInspectionSyncNotice();
         showToast('Sinyal hilang — perubahan tetap bisa disimpan di perangkat', 'warning');
     });
     updateConnectionLabel();
@@ -4555,19 +4557,12 @@ function renderEditHead() {
     markSortedHeader('#editTable thead', editSortState.key, editSortState.asc);
 }
 
+// The group is picked in the sidebar (Agricultural / Heavy Equipment), so the
+// page only says which one it is showing.
 function renderEditGroupTabs() {
     const g = effectiveEditGroup();
-    document.querySelectorAll('.eu-tab').forEach(btn => {
-        const key = btn.dataset.group;
-        const def = groupDef(key);
-        const on = key === g;
-        btn.style.display = '';
-        btn.classList.toggle('active', on);
-        btn.setAttribute('aria-selected', on ? 'true' : 'false');
-        btn.innerHTML = `<i class="fas ${def.icon}"></i> ${escapeHtml(def.label)} <span class="team-tab__count">${unitsOfGroup(globalData, key).length}</span>`;
-    });
     const title = document.getElementById('editTableTitle');
-    if (title) title.textContent = g === 'heavy' ? `Unit Database — ${UNIT_GROUPS.heavy.shortLabel}` : 'Unit Database';
+    if (title) title.textContent = `Unit Database — ${groupDef(g).label}`;
     const hint = document.getElementById('importHint');
     if (hint) {
         if (!hint.dataset.tractor) hint.dataset.tractor = hint.innerHTML;
@@ -9175,6 +9170,7 @@ function tearDownCloudSync() {
     if (cloudInspectionsUnsub) { try { cloudInspectionsUnsub(); } catch (_) {} cloudInspectionsUnsub = null; }
     if (cloudInspectionPlansUnsub) { try { cloudInspectionPlansUnsub(); } catch (_) {} cloudInspectionPlansUnsub = null; }
     inspections = [];
+    insQueuedIds = new Set();
     inspectionPlans = [];
     _insPhotoCache.clear();
     teamMembers = [];
@@ -9505,6 +9501,10 @@ async function handleSignUp(event) {
 }
 
 async function handleSignOut() {
+    // Firestore holds a signed-out account's queued writes until that same
+    // account signs in here again — they are not lost, but they do not move.
+    const queued = inspections.filter(r => insQueuedIds.has(r.id)).length;
+    if (queued && !confirm(`${queued} inspection report(s) have not been sent yet. If you sign out now they stay on this device and are only sent after you sign in again here. Sign out anyway?`)) return;
     try {
         await window.cloud.signOutUser();
     } catch (e) { /* ignore */ }
@@ -14668,8 +14668,16 @@ function openPlanFor(unitId) {
 }
 
 // ---- Snapshots ----
-function applyCloudInspectionsSnapshot(list) {
+// Reports filed on this device that the server has not acknowledged yet —
+// a check done where there is no signal. Firestore keeps them in its
+// on-device queue (it survives closing the app) and sends them by itself.
+let insQueuedIds = new Set();
+
+function applyCloudInspectionsSnapshot(list, queuedIds) {
     _markLoaded('inspections');
+    const before = insQueuedIds.size;
+    insQueuedIds = new Set(queuedIds || []);
+    if (before && !insQueuedIds.size) showToast('All inspection reports have been sent', 'success');
     inspections = (list || []).slice().sort((a, b) =>
         String(b.date || '').localeCompare(String(a.date || '')) || ((b.createdAt || 0) - (a.createdAt || 0)));
     if (currentView === 'inspection') renderInspectionView();
@@ -14714,7 +14722,32 @@ function renderInspectionView() {
     if (inspectionTab === 'status') renderInspectionStatus();
     else if (inspectionTab === 'plans') renderInspectionPlans();
     else renderInspectionReports();
+    renderInspectionSyncNotice();
     updateMyTeamNotices();
+}
+
+function renderInspectionSyncNotice() {
+    const el = document.getElementById('insSyncNotice');
+    if (el) {
+        const n = inspections.filter(r => insQueuedIds.has(r.id)).length;
+        const offline = !navigator.onLine;
+        // Without the persistent cache the queue lives only in this tab.
+        const volatile = !!(window.cloud && window.cloud.cacheMode && window.cloud.cacheMode !== 'persistent-multitab');
+        let html = '';
+        if (n) {
+            html = `<i class="fas fa-cloud-arrow-up"></i><strong>${n} ${n === 1 ? 'report is' : 'reports are'} waiting to be sent.</strong> ${
+                offline ? 'They are saved on this device and will be sent automatically when the signal returns.'
+                        : 'Sending now…'} ${
+                volatile ? 'Keep this tab open until they are sent.' : 'You can close the app — they will be sent the next time it is opened with a signal.'}`;
+        } else if (offline) {
+            html = '<i class="fas fa-wifi"></i>No signal — you can still fill in check reports. They are saved on this device and sent when the signal returns.';
+        }
+        el.innerHTML = html;
+        el.className = 'ins-sync' + (n ? '' : ' ins-sync--offline');
+        el.style.display = html ? '' : 'none';
+    }
+    const m = document.getElementById('insModalOffline');
+    if (m) m.style.display = navigator.onLine ? 'none' : '';
 }
 
 const INS_STATUS_ORDER = { overdue: 0, soon: 1, never: 2, ok: 3 };
@@ -14962,7 +14995,7 @@ function renderInspectionReports() {
             <td data-label="Component Results"><div class="ins-res-list">${res}</div>${r.note ? `<div class="ins-sub" title="${escapeHtml(r.note)}">${escapeHtml(r.note.slice(0, 60))}</div>` : ''}</td>
             <td data-label="Schedule">${plan ? `<span class="ins-tag">Schedule ${escapeHtml(plan.date)}</span>` : r.planId ? '<span class="ins-tag">Schedule deleted</span>' : '<span class="ins-tag ins-tag--adhoc">Unscheduled</span>'}</td>
             <td data-label="Inspector" style="font-size:12px">${escapeHtml(r.createdBy || '—')}</td>
-            <td data-label="Approval">${approvalCell(r, 'check report', 'approveInspection', 'reviseInspection', INS_AREAS)}${
+            <td data-label="Approval">${insQueuedIds.has(r.id) ? '<span class="ins-tag ins-tag--queued" title="Saved on this device, not yet on the server"><i class="fas fa-cloud-arrow-up"></i> Waiting to send</span> ' : ''}${approvalCell(r, 'check report', 'approveInspection', 'reviseInspection', INS_AREAS)}${
                 r.appliedAt ? '<div class="ins-sub"><i class="fas fa-check"></i> Logged in Damage</div>' : ''}</td>
             <td data-label="Photo">${photos
                 ? `<button type="button" class="wl-photo-btn" title="View ${photos} photo(s)" aria-label="View ${photos} photo(s)" onclick="openInspectionPhotos(${jsArg(r.id)}, this)"><i class="fas fa-image"></i> ${photos}</button>`
@@ -15143,6 +15176,7 @@ function _openInspectionModal(rec, unitId, planId) {
     showRevisionNote('insRevisionNote', rec);
     renderInspectionComponents(rec);
     updateInspectionPlanTag();
+    renderInspectionSyncNotice();
     document.getElementById('inspectionModal').classList.add('open');
 
     if (_insPhotosLoading) {

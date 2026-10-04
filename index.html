@@ -519,17 +519,6 @@
     <!-- ==================== EDIT UNITS VIEW ==================== -->
     <div id="viewEditUnits" class="view" style="display:none;">
 
-        <!-- Unit groups. Always visible: it is how the first heavy unit gets
-             added. Button text is filled in by renderEditGroupTabs(). -->
-        <div class="team-tabbar" id="editGroupBar">
-            <div class="team-tabs" role="tablist" aria-label="Unit group">
-                <button type="button" class="team-tab eu-tab active" data-group="tractor" role="tab" aria-selected="true"
-                        aria-controls="editTable" onclick="switchEditUnitsGroup('tractor')">Agricultural Equipment</button>
-                <button type="button" class="team-tab eu-tab" data-group="heavy" role="tab" aria-selected="false"
-                        aria-controls="editTable" onclick="switchEditUnitsGroup('heavy')">Heavy Equipment</button>
-            </div>
-        </div>
-
         <!-- Edit Toolbar -->
         <div class="edit-toolbar">
             <div class="edit-toolbar__left">
@@ -1308,6 +1297,7 @@
             </div>
         </div>
 
+        <div class="ins-sync" id="insSyncNotice" style="display:none" role="status"></div>
         <div class="my-notice" id="insMyNotice" style="display:none" role="status"></div>
 
         <!-- ---------- Status per unit ---------- -->
@@ -2498,6 +2488,7 @@
             <input type="hidden" id="insPlanId">
             <div class="modal-body">
                 <div class="revision-note" id="insRevisionNote" style="display:none" role="note"></div>
+                <div class="ins-sync ins-sync--offline" id="insModalOffline" style="display:none" role="note"><i class="fas fa-wifi"></i> No signal — this report will be saved on this device and sent automatically when the signal returns.</div>
                 <div class="ins-plan-tag" id="insPlanTag" style="display:none"></div>
                 <div class="form-grid">
                     <div class="form-group">

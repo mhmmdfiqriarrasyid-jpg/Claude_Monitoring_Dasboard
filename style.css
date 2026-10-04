@@ -3992,6 +3992,16 @@ td[data-label="Approval"] { vertical-align: middle; }
 .ins-res--none { background: var(--border-light); color: var(--text-secondary); }
 .ins-res-list { display: flex; flex-wrap: wrap; gap: 4px; max-width: 280px; }
 .ins-tag { display: inline-block; padding: 1px 7px; border-radius: 8px; font-size: 11px; background: var(--info-bg); color: var(--info); white-space: nowrap; }
+.ins-tag--queued { background: var(--warning-bg); color: var(--warning); }
+/* Reports filed with no signal: how many are still on this device. */
+.ins-sync {
+    margin-bottom: 14px; padding: 10px 14px; border-radius: 10px; font-size: 13px;
+    border: 1px solid var(--warning); background: var(--warning-bg); color: var(--text-primary);
+    overflow-wrap: anywhere;
+}
+.ins-sync i { color: var(--warning); margin-right: 6px; }
+.ins-sync--offline { border-color: var(--border-light); background: var(--info-bg); }
+.ins-sync--offline i { color: var(--info); }
 .ins-tag--adhoc { background: var(--border-light); color: var(--text-secondary); }
 .ins-chips { display: flex; flex-wrap: wrap; gap: 4px; max-width: 420px; }
 .ins-chip {

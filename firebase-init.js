@@ -762,10 +762,16 @@ window.cloud = {
         const snap = await getDocs(collection(db, INSPECTIONS_COL));
         return snap.docs.map(withDocId);
     },
+    // The second argument lists the reports still queued on this device — a
+    // check filed with no signal. includeMetadataChanges makes the listener
+    // fire again when the server acknowledges them, so the "waiting to send"
+    // marks clear by themselves.
     subscribeInspections(callback, errorCallback) {
         return onSnapshot(
             collection(db, INSPECTIONS_COL),
-            snap => callback(snap.docs.map(withDocId)),
+            { includeMetadataChanges: true },
+            snap => callback(snap.docs.map(withDocId),
+                             snap.docs.filter(d => d.metadata.hasPendingWrites).map(d => d.id)),
             err => {
                 console.error('[cloud] inspections subscription error:', err);
                 if (errorCallback) errorCallback(err);
