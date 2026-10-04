@@ -82,7 +82,7 @@
             <div class="auth-error" id="signUpError"></div>
             <div class="auth-hint">
                 <i class="fas fa-info-circle"></i>
-                Akun baru dimulai sebagai <strong>hanya-lihat</strong> dan perlu persetujuan owner sebelum bisa mengedit data.
+                New accounts start as <strong>view-only</strong> and need the owner's approval before they can edit data.
             </div>
             <button type="submit" class="btn btn-primary auth-submit">
                 <i class="fas fa-user-plus"></i> Create Account
@@ -98,13 +98,13 @@
     <div class="auth-card">
         <div class="auth-card__brand">
             <i class="fas fa-hourglass-half" style="color:#d69e2e"></i>
-            <h1>Menunggu persetujuan</h1>
+            <h1>Pending approval</h1>
             <p id="pendingEmail"></p>
         </div>
         <div class="pending-message">
-            <p>Akun Anda sudah dibuat, tetapi owner harus menyetujuinya dulu sebelum Anda bisa membuka dashboard.</p>
+            <p>Your account has been created, but the owner has to approve it before you can open the dashboard.</p>
             <p style="margin-top:12px;color:var(--text-secondary);font-size:13px">
-                Setelah disetujui, muat ulang halaman ini atau login lagi. Anda akan mulai dengan akses <strong>hanya-lihat</strong> — owner bisa memberi hak edit kapan saja.
+                Once approved, reload this page or sign in again. You will start with <strong>view-only</strong> access — the owner can grant edit rights at any time.
             </p>
         </div>
         <button class="btn btn-secondary auth-submit" onclick="handleSignOut()">
@@ -252,7 +252,7 @@
         <div id="emptyState" class="empty-state">
             <i class="fas fa-database"></i>
             <h3>No units in the database yet</h3>
-            <p>Buka Edit Units untuk menambah unit traktor manual atau impor dari berkas CSV.</p>
+            <p>Open Edit Units to add tractor units manually or import them from a CSV file.</p>
             <br>
             <button class="btn btn-primary" onclick="navigateTo('editUnits')">
                 <i class="fas fa-pen-to-square"></i> Manage Units
@@ -405,7 +405,7 @@
                     <i class="fas fa-search"></i>
                     <input type="text" id="searchInput" aria-label="Search units by name, model, or serial number" placeholder="Search by nickname, model, or serial...">
                 </div>
-                <select id="statusFilter" aria-label="Filter status unit"><option value="">All Status</option></select>
+                <select id="statusFilter" aria-label="Filter unit status"><option value="">All Status</option></select>
                 <select id="siteFilter" aria-label="Filter site"><option value="">All Sites</option></select>
                 <select id="componentFilter" aria-label="Filter components">
                     <option value="">All Components</option>
@@ -531,7 +531,7 @@
                 <button class="btn btn-secondary csv-export" onclick="exportEditCSV()" title="Export the units shown below to CSV">
                     <i class="fas fa-file-csv"></i> Export CSV
                 </button>
-                <button class="btn btn-secondary csv-export" onclick="exportBackup()" title="Unduh cadangan JSON: unit, implement, kerusakan, lisensi, kategori, komponen, tim, shift, laporan harian, dan gudang. Akun dan riwayat audit tidak termasuk. (Ctrl+S)">
+                <button class="btn btn-secondary csv-export" onclick="exportBackup()" title="Download a JSON backup: units, implements, damage, licenses, categories, components, team, shifts, daily reports, and inventory. Accounts and audit history are not included. (Ctrl+S)">
                     <i class="fas fa-download"></i> Backup
                 </button>
                 <button class="btn btn-secondary editonly editonly--editunits" onclick="triggerRestore()" title="Restore from a JSON backup file">
@@ -548,7 +548,7 @@
                 </button>
             </div>
             <div class="edit-toolbar__right">
-                <select class="form-select form-select--sm" id="editStatusFilter" aria-label="Filter status unit" onchange="renderEditTable()">
+                <select class="form-select form-select--sm" id="editStatusFilter" aria-label="Filter unit status" onchange="renderEditTable()">
                     <option value="">All Status</option>
                 </select>
                 <select class="form-select form-select--sm" id="editSiteFilter" aria-label="Filter site" onchange="renderEditTable()">
@@ -572,7 +572,7 @@
             <div class="file-upload-area" id="editDropZone" onclick="document.getElementById('editCsvInput').click()">
                 <i class="fas fa-cloud-upload-alt"></i>
                 <p>Click to upload or drag &amp; drop a CSV file</p>
-                <span class="hint" id="importHint">Unit baru akan ditambahkan. Serial number duplikat dilewati.</span>
+                <span class="hint" id="importHint">New units will be added. Duplicate serial numbers are skipped.</span>
                 <input type="file" id="editCsvInput" aria-label="Choose a unit CSV file to import" accept=".csv" hidden>
             </div>
         </div>
@@ -865,8 +865,8 @@
         <!-- Shown when the user reaches this page through Daftar Anggota only. -->
         <div id="teamNoPanel" class="team-no-panel" style="display:none">
             <i class="fas fa-lock"></i>
-            <p>Anda hanya punya akses ke <strong>Daftar Anggota</strong>. Klik
-            <strong>Manage Members</strong> di atas untuk membukanya.</p>
+            <p>You only have access to the <strong>Member List</strong>. Click
+            <strong>Manage Members</strong> above to open it.</p>
         </div>
 
         <!-- ---------- Shift schedule ---------- -->
@@ -1242,9 +1242,9 @@
                 </div>
             </div>
             <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
-                Halaman ini hanya membaca dan menunjukkan. Satu-satunya yang bisa
-                diperbaiki otomatis adalah spasi dan karakter tersembunyi, karena itu
-                tidak mengubah arti tulisannya. Sisanya butuh keputusan Anda.
+                This page only reads and reports. The only things that can be
+                fixed automatically are spaces and hidden characters, because those
+                do not change what the text means. Everything else needs your decision.
             </p>
             <div id="dataCheckBody"></div>
         </div>
@@ -1962,7 +1962,7 @@
                 </table>
             </div>
             <p style="margin-top:12px;font-size:12px;color:var(--text-secondary)">
-                Hanya baris yang dicentang yang ditulis. Masa berlaku = tanggal distribusi + 1 tahun.
+                Only checked rows are written. Validity = distribution date + 1 year.
             </p>
         </div>
         <div class="form-actions">
@@ -1984,9 +1984,9 @@
         </div>
         <div class="modal-body">
             <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
-                Disimpan otomatis sebelum tiga penyimpanan terakhir. Berguna untuk membatalkan
-                Bulk Edit atau impor CSV yang salah. <strong>Hanya berisi data unit</strong>,
-                dan hanya ada di perangkat ini — bukan pengganti tombol Backup.
+                Saved automatically before the last three saves. Useful for undoing a wrong
+                Bulk Edit or CSV import. <strong>Contains unit data only</strong>,
+                and only exists on this device — not a replacement for the Backup button.
             </p>
             <ul class="categories-list" id="autoBackupList"></ul>
         </div>
@@ -2008,13 +2008,13 @@
                 <strong id="phantomHistorySummary"></strong>
             </p>
             <p style="margin-bottom:12px;font-size:12px;color:var(--text-secondary)">
-                Baris di bawah ini mencatat perubahan pada unit, tetapi unit itu
-                sekarang <em>masih persis seperti sebelum perubahan</em> — nilainya
-                tidak pernah bergerak, artinya tulisannya ditolak server dan tidak
-                pernah tersimpan. Hanya baris terbaru per unit dan per field yang
-                dinilai; perubahan lama dalam satu rantai sengaja tidak disentuh.
-                Bandingkan kolom <strong>Before</strong> dan
-                <strong>Current Value</strong> sebelum menghapus.
+                The rows below record changes to a unit, but that unit is
+                now <em>still exactly as it was before the change</em> — the value
+                never moved, meaning the server rejected the write and it was never
+                saved. Only the latest row per unit and per field is
+                evaluated; older changes in the same chain are deliberately left alone.
+                Compare the <strong>Before</strong> and
+                <strong>Current Value</strong> columns before deleting.
             </p>
             <div class="table-wrapper" style="max-height:45vh">
                 <table class="data-table table--cardable">
@@ -2167,7 +2167,7 @@
                             Set unit/component status to <strong>Breakdown</strong>
                         </label>
                         <div id="dmgBreakdownHint" style="font-size:11.5px;color:var(--text-secondary);margin-top:4px">
-                            Device Precision → komponen terkait (GPS/Display/Steering/JDLink); tipe lain → status unit.
+                            Device Precision → related component (GPS/Display/Steering/JDLink); other types → unit status.
                         </div>
                     </div>
                     <div class="form-group full-width">
@@ -2254,8 +2254,8 @@
                 <!-- Only relevant once the device is installed somewhere. -->
                 <div id="devInstallGroup" style="display:none">
                     <p class="wh-install-hint">
-                        Isi <strong>salah satu</strong>: terpasang pada unit traktor, atau terpasang di
-                        satu titik tetap di lapangan — seperti weather station.
+                        Fill in <strong>one of</strong>: installed on a tractor unit, or installed at
+                        a fixed point in the field — such as a weather station.
                     </p>
                     <div class="form-grid">
                         <div class="form-group full-width">
@@ -2278,8 +2278,8 @@
                             <input class="form-input" id="devPosY" maxlength="30" autocomplete="off" placeholder="e.g. -4.5432">
                         </div>
                         <div class="form-group full-width">
-                            <p class="wh-install-hint">Boleh derajat desimal atau UTM. Kalau nilainya terbaca
-                            sebagai bujur/lintang, tautan peta muncul otomatis di tabel.</p>
+                            <p class="wh-install-hint">Decimal degrees or UTM are both fine. If the values read
+                            as longitude/latitude, a map link appears automatically in the table.</p>
                         </div>
                     </div>
                 </div>
@@ -2367,9 +2367,9 @@
         </div>
         <div class="modal-body">
             <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
-                Daftar ini terpisah dari akun login, jadi rekan yang tidak pernah membuka aplikasi
-                tetap bisa dijadwalkan dan dilaporkan. <strong>Nonaktifkan</strong> mengeluarkan orang
-                dari jadwal dan form laporan tanpa menghapus riwayatnya.
+                This list is separate from login accounts, so colleagues who never open the app
+                can still be scheduled and reported on. <strong>Deactivate</strong> removes a person
+                from the schedule and report form without deleting their history.
             </p>
             <datalist id="companyList"></datalist>
             <ul class="categories-list" id="teamMembersList"></ul>
@@ -2449,7 +2449,7 @@
                                     onclick="document.getElementById('wlPhotoInput').click()">
                                 <i class="fas fa-camera"></i> Add Photo
                             </button>
-                            <span class="wl-photo-hint">Foto dikecilkan otomatis sebelum disimpan.</span>
+                            <span class="wl-photo-hint">Photos are resized automatically before saving.</span>
                         </div>
                         <div class="wl-photos" id="wlPhotoPreviews"></div>
                     </div>
@@ -2500,8 +2500,8 @@
                         <input type="date" class="form-input" id="insDate" data-nofuture required>
                     </div>
                 </div>
-                <p class="ins-help">Isi setiap komponen: kondisi, satu foto, dan catatan kalau rusak.
-                    Cek berikutnya otomatis <strong>14 hari</strong> setelah tanggal cek.</p>
+                <p class="ins-help">Fill in every component: condition, one photo, and notes if damaged.
+                    The next check is set automatically <strong>14 days</strong> after the check date.</p>
                 <div class="ins-components" id="insComponents"></div>
                 <div class="form-group full-width">
                     <label class="form-label" for="insNote">General Notes <span class="form-optional">(optional)</span></label>
@@ -2606,7 +2606,7 @@
                                     onclick="document.getElementById('lvDocInput').click()">
                                 <i class="fas fa-camera"></i> Add Letter
                             </button>
-                            <span class="wl-photo-hint">Foto atau hasil pindai gambar — bukan PDF. Dikecilkan otomatis.</span>
+                            <span class="wl-photo-hint">Photo or scanned image — not PDF. Resized automatically.</span>
                         </div>
                         <div class="wl-photos" id="lvDocPreviews"></div>
                     </div>
@@ -2636,9 +2636,9 @@
         </div>
         <div class="modal-body">
             <p style="margin-bottom:12px;font-size:13px;color:var(--text-secondary)">
-                Komponen ini muncul di form Tambah/Edit Kerusakan. Perubahan langsung tersimpan dan terlihat oleh seluruh tim.
-                Komponen bawaan (GPS, Display, JDLink, Steering Sensor) terhubung ke status komponen unit;
-                komponen baru akan mengubah <strong>status unit</strong> saat ditandai Breakdown.
+                These components appear in the Add/Edit Damage form. Changes are saved instantly and visible to the whole team.
+                Built-in components (GPS, Display, JDLink, Steering Sensor) are linked to the unit's component status;
+                new components change the <strong>unit status</strong> when marked Breakdown.
             </p>
             <ul class="categories-list" id="damageComponentsList"></ul>
             <form class="category-add-form" onsubmit="addDamageComponent(event)">
@@ -2661,7 +2661,7 @@
         </div>
         <div class="modal-body">
             <p style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px">
-                Centang field yang mau diubah. Hanya field tercentang yang diterapkan ke semua unit terpilih.
+                Check the fields you want to change. Only checked fields are applied to all selected units.
             </p>
             <div class="bulk-row">
                 <label><input type="checkbox" id="bulkChkSite"> Site</label>
@@ -2708,14 +2708,14 @@
         <div class="modal-body">
             <input type="hidden" id="accessUserUid">
             <p style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px">
-                Atur per menu: <strong>Tidak ada</strong> (tak bisa buka), <strong>Lihat</strong> (baca saja),
-                atau <strong>Edit</strong> (ubah data). Dashboard selalu bisa diakses.
+                Set per menu: <strong>None</strong> (cannot open), <strong>View</strong> (read only),
+                or <strong>Edit</strong> (change data). The Dashboard is always accessible.
             </p>
             <div id="accessGrid" class="access-grid"></div>
             <p style="font-size:11.5px;color:var(--text-light);margin-top:14px">
-                Catatan: pengaturan di sini mengatur tampilan. Pengamanan sesungguhnya ada di
-                <code>firestore.rules</code> — publish ulang berkas itu dari repo setiap kali
-                ada area akses atau koleksi baru.
+                Note: these settings control what is shown. The real protection lives in
+                <code>firestore.rules</code> — republish that file from the repo whenever
+                there is a new access area or collection.
             </p>
         </div>
         <div class="form-actions">
@@ -2842,8 +2842,8 @@
         </div>
         <div class="modal-body">
             <p style="margin-bottom:14px;font-size:13px;color:var(--text-secondary)">
-                Hubungkan dengan <a href="https://www.emailjs.com/" target="_blank" rel="noopener">EmailJS</a> (gratis ~200 email/bulan).
-                Buat akun, lalu isi data di bawah.
+                Connect with <a href="https://www.emailjs.com/" target="_blank" rel="noopener">EmailJS</a> (free, ~200 emails/month).
+                Create an account, then fill in the details below.
             </p>
             <div style="display:flex;flex-direction:column;gap:12px">
                 <div class="form-group">
