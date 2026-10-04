@@ -316,7 +316,7 @@ const HEAVY_CSV_UPDATABLE_FIELDS = ['name', 'model', 'machineType', 'assetCode',
     ...HEAVY_COMPONENT_KEYS, 'site', 'yearReceived', 'userCategory', 'remarks', 'breakdownReason'];
 // "Alat Kerja", never "Attachment": units already have an "Attachments" file
 // column, and the two side by side read as the same thing.
-const UNIT_FIELD_LABELS = { machineType: 'Jenis Alat', assetCode: 'Nomor Lambung', workTool: 'Alat Kerja' };
+const UNIT_FIELD_LABELS = { machineType: 'Machine Type', assetCode: 'Asset Code', workTool: 'Work Tool' };
 
 function normalizeGroupKey(raw) {
     const v = String(raw == null ? '' : raw).trim().toLowerCase().replace(/\s+/g, ' ');
@@ -468,7 +468,7 @@ function makeChart(canvasId, config) {
         if (host && !host.querySelector('.chart-unavailable')) {
             const note = document.createElement('div');
             note.className = 'chart-unavailable';
-            note.textContent = 'Grafik tidak tersedia — pustaka grafik gagal dimuat.';
+            note.textContent = 'Chart unavailable — the chart library failed to load.';
             host.appendChild(note);
         }
         canvas.style.display = 'none';
@@ -594,7 +594,7 @@ function setupEventListeners() {
         if (file && file.name.endsWith('.csv')) {
             handleEditCSVImport(file);
         } else {
-            showToast('Silakan unggah berkas .csv', 'error');
+            showToast('Please upload a .csv file', 'error');
         }
     });
 
@@ -992,11 +992,11 @@ function formatDuration(ms) {
 function navigateTo(view) {
     // Per-user access gating: the user needs at least 'view' on the area.
     if (GATED_VIEWS.includes(view) && !canViewView(view)) {
-        showToast('Anda tidak punya akses ke menu ini', 'warning');
+        showToast('You do not have access to this menu', 'warning');
         view = 'dashboard';
     }
     if (view === 'users' && !isOwner()) {
-        showToast('Khusus owner', 'warning');
+        showToast('Owner only', 'warning');
         view = 'dashboard';
     }
 
@@ -1180,7 +1180,7 @@ function saveToStorage(data) {
             try { writeAutoBackup(JSON.parse(prev)); } catch (_) { /* unreadable old copy: nothing to keep */ }
         }
     } catch (e) {
-        showToast('Penyimpanan penuh. Data tidak tersimpan.', 'error');
+        showToast('Storage full. Data not saved.', 'error');
     }
 }
 
@@ -1203,7 +1203,7 @@ function writeAutoBackup(data) {
         console.error('[backup] auto backup failed:', e);
         if (!_autoBackupFailed) {
             _autoBackupFailed = true;
-            showToast('Cadangan otomatis berhenti — penyimpanan browser penuh. Export Backup sekarang.', 'error');
+            showToast('Automatic backup stopped — browser storage is full. Export a backup now.', 'error');
         }
     }
 }
@@ -1324,16 +1324,16 @@ async function handleAttachFileChange(e) {
 
     for (const file of files) {
         if (currentCount + added >= ATTACH_MAX_PER_UNIT) {
-            showToast(`Maks ${ATTACH_MAX_PER_UNIT} file per unit`, 'warning');
+            showToast(`Max ${ATTACH_MAX_PER_UNIT} files per unit`, 'warning');
             break;
         }
         const ext = '.' + file.name.split('.').pop().toLowerCase();
         if (!ATTACH_ALLOWED_EXT.includes(ext)) {
-            showToast(`"${file.name}" — tipe tidak didukung (hanya PDF, CSV, Word, Excel)`, 'warning');
+            showToast(`"${file.name}" — file type not supported (PDF, CSV, Word, Excel only)`, 'warning');
             continue;
         }
         if (file.size > ATTACH_MAX_SIZE) {
-            showToast(`"${file.name}" — melebihi batas 5MB`, 'warning');
+            showToast(`"${file.name}" — exceeds the 5MB limit`, 'warning');
             continue;
         }
 
@@ -1344,7 +1344,7 @@ async function handleAttachFileChange(e) {
             unit.attachments.push(meta);
             added++;
         } catch (err) {
-            showToast(`Gagal menyimpan "${file.name}": ${err.message}`, 'error');
+            showToast(`Failed to save "${file.name}": ${err.message}`, 'error');
         }
     }
 
@@ -1352,7 +1352,7 @@ async function handleAttachFileChange(e) {
         saveToStorage(globalData);
         cloudPushUnits([unit]);
         renderEditTable();
-        showToast(`${added} file dilampirkan`, 'success');
+        showToast(`${added} file(s) attached`, 'success');
     }
 
     e.target.value = '';
@@ -1363,7 +1363,7 @@ async function downloadAttachment(attId) {
     try {
         const record = await attachDbGet(attId);
         if (!record || !record.blob) {
-            showToast('File tidak tersedia di perangkat ini — diunggah dari perangkat lain. Gunakan Export/Import Backup.', 'warning');
+            showToast('File not available on this device — it was uploaded from another device. Use Export/Import Backup.', 'warning');
             return;
         }
         const blob = record.blob instanceof Blob ? record.blob : new Blob([record.blob], { type: record.type });
@@ -1374,13 +1374,13 @@ async function downloadAttachment(attId) {
         a.click();
         URL.revokeObjectURL(url);
     } catch (err) {
-        showToast('Gagal mengunduh file: ' + err.message, 'error');
+        showToast('Failed to download file: ' + err.message, 'error');
     }
 }
 
 async function removeAttachment(unitId, attId) {
     if (!requireEdit('editUnits')) return;
-    if (!confirm('Hapus lampiran ini?')) return;
+    if (!confirm('Delete this attachment?')) return;
     const unit = globalData.find(d => d.id === unitId);
     if (!unit) return;
 
@@ -1392,7 +1392,7 @@ async function removeAttachment(unitId, attId) {
     saveToStorage(globalData);
     cloudPushUnits([unit]);
     renderEditTable();
-    showToast('Lampiran dihapus', 'success');
+    showToast('Attachment deleted', 'success');
 }
 
 function renderAttachCell(d) {
@@ -1465,14 +1465,14 @@ function addUnits(newUnits) {
             const k = normalizeGroupKey(u.unitGroup);
             if (k === null) {
                 skipped++;
-                skippedDetails.push({ name: u.name, sn: u.sn, reason: `Kelompok "${u.unitGroup}" tidak dikenal` });
+                skippedDetails.push({ name: u.name, sn: u.sn, reason: `Group "${u.unitGroup}" not recognized` });
                 return;
             }
             if (k === '') delete u.unitGroup; else u.unitGroup = k;
         }
         if (u.id && existingById.has(u.id) && unitGroupOf(existingById.get(u.id)) !== unitGroupOf(u)) {
             skipped++;
-            skippedDetails.push({ name: u.name, sn: u.sn, reason: 'ID dipakai unit kelompok lain' });
+            skippedDetails.push({ name: u.name, sn: u.sn, reason: 'ID already used by a unit in the other group' });
             return;
         }
         // A unit never carries the other group's fields. Tractor inputs today
@@ -1618,21 +1618,21 @@ function bulkUpdateUnitsFromCSV(parsedUnits) {
         const before = { ...globalData[idx] };
         const g = unitGroupOf(before);
         if (hasUnreadableGroup(before)) {
-            failed.push({ sn: p.sn, reason: `Kelompok unit "${before.unitGroup}" tidak dikenal — tetapkan dulu lewat Periksa Data` });
+            failed.push({ sn: p.sn, reason: `Unit group "${before.unitGroup}" not recognized — set it first via Data Check` });
             return;
         }
         // A row that names a group can only update a unit of that group: a
         // CSV never moves a unit between groups.
         if (csvExplicitGroup.has(p) && normalizeGroupKey(p.unitGroup) !== g) {
-            failed.push({ sn: p.sn, reason: 'Kelompok di CSV berbeda dengan unit — tidak dipindah' });
+            failed.push({ sn: p.sn, reason: 'Group in the CSV differs from the unit — not moved' });
             return;
         }
         // Nor does a file whose columns belong to the other group: its values
         // for this unit would be dropped and only name/status would land —
         // on what is most likely the wrong unit.
         if (csvInferredGroup.has(p) && p.unitGroup !== g) {
-            failed.push({ sn: p.sn, reason: `Kolom berkas ini milik ${groupDef(p.unitGroup).label}, `
-                + `tetapi SN ini milik unit ${groupDef(g).label} — tidak diperbarui` });
+            failed.push({ sn: p.sn, reason: `This file's columns belong to ${groupDef(p.unitGroup).label}, `
+                + `but this SN belongs to a ${groupDef(g).label} unit — not updated` });
             return;
         }
         const fields = {};
@@ -1706,7 +1706,7 @@ function logEventFailed(entry, err) {
         ...entry,
         action: 'error',
         before: entry.after != null ? String(entry.after) : '',
-        after: `GAGAL (${(err && err.code) || 'error'}) — perubahan tidak tersimpan`
+        after: `FAILED (${(err && err.code) || 'error'}) — change not saved`
     });
 }
 
@@ -1720,7 +1720,7 @@ function saveWithFeedback(promise, successMsg, onError) {
     const delay = navigator.onLine ? 8000 : 0;
     const timer = setTimeout(() => {
         if (settled) return;
-        showToast('Tersimpan di perangkat — akan terkirim saat sinyal kembali', 'info');
+        showToast('Saved on this device — will be sent when the signal returns', 'info');
     }, delay);
     return promise.then(value => {
         settled = true;
@@ -1756,7 +1756,7 @@ function cloudWrite(auditEntry, promise, successMsg, onError) {
     });
 }
 
-const STALE_CLIENT_MSG = 'Muat ulang halaman — versi lama masih aktif, perubahan belum terkirim';
+const STALE_CLIENT_MSG = 'Reload the page — an old version is still running, changes not sent yet';
 
 // The service worker serves firebase-init.js network-first but falls back to
 // the cache when the fetch fails — which on a bad signal is exactly when
@@ -1787,7 +1787,7 @@ function cloudCall(name, ...args) {
     const fn = window.cloud && window.cloud[name];
     if (typeof fn === 'function') return fn.apply(window.cloud, args);
     console.warn(`[cloud] ${name} tidak ada — firebase-init.js lama masih disajikan`);
-    const err = new Error(`window.cloud.${name} tidak tersedia`);
+    const err = new Error(`window.cloud.${name} is not available`);
     err.code = 'stale-client';
     return Promise.reject(err);
 }
@@ -1817,7 +1817,7 @@ function cloudWriteFailed(err, opts) {
         unitId: opts.unitId || '',
         unitName: opts.label || '-',
         field: opts.what,
-        after: `GAGAL (${code}) — perubahan tidak tersimpan`
+        after: `FAILED (${code}) — change not saved`
     });
 
     if (opts.resync && navigator.onLine) {
@@ -1826,8 +1826,8 @@ function cloudWriteFailed(err, opts) {
     }
 
     showToast(code === 'permission-denied'
-        ? `Ditolak server — ${opts.what} dikembalikan. Akses Anda tidak mengizinkan perubahan ini.`
-        : `Gagal menyimpan ${opts.what} ke cloud — perubahan dikembalikan`, 'error');
+        ? `Rejected by the server — ${opts.what} reverted. Your access does not allow this change.`
+        : `Failed to save ${opts.what} to the cloud — change reverted`, 'error');
 }
 
 // Pull the server's copy back over the local one after a rejected write. Each
@@ -1856,12 +1856,12 @@ function watchConnection() {
     window.addEventListener('online', () => {
         updateConnectionLabel();
         if (typeof renderInspectionSyncNotice === 'function') renderInspectionSyncNotice();
-        showToast('Kembali online — perubahan yang tertunda sedang dikirim', 'success');
+        showToast('Back online — sending pending changes', 'success');
     });
     window.addEventListener('offline', () => {
         updateConnectionLabel();
         if (typeof renderInspectionSyncNotice === 'function') renderInspectionSyncNotice();
-        showToast('Sinyal hilang — perubahan tetap bisa disimpan di perangkat', 'warning');
+        showToast('Signal lost — changes can still be saved on this device', 'warning');
     });
     updateConnectionLabel();
 }
@@ -2006,7 +2006,7 @@ function startHistorySubscription() {
         console.warn('[cloud] history offline:', err && err.code);
         if (err && err.code === 'permission-denied') {
             showHistoryRulesBanner();
-            showToast('History diblokir Firestore rules — lihat pesan di panel History', 'warning');
+            showToast('History blocked by Firestore rules — see the message in the History panel', 'warning');
         }
     });
 }
@@ -2021,7 +2021,7 @@ function stopHistorySubscription() {
 }
 
 function showHistory(unitId) {
-    if (!hasAccess('history', 'view')) { showToast('Anda tidak punya akses ke History', 'warning'); return; }
+    if (!hasAccess('history', 'view')) { showToast('You do not have access to History', 'warning'); return; }
     startHistorySubscription();
     const log = getAuditLog();
     const filtered = unitId ? log.filter(e => e.unitId === unitId) : log;
@@ -2082,24 +2082,24 @@ function closeHistory() {
 
 function clearHistory() {
     if (!isOwner || !isOwner()) {
-        showToast('Hanya owner yang bisa menghapus riwayat bersama', 'warning');
+        showToast('Only the owner can delete the shared history', 'warning');
         return;
     }
-    if (!confirm('Hapus SELURUH riwayat perubahan untuk seluruh tim? Tindakan ini tidak bisa dibatalkan.')) return;
+    if (!confirm('Delete the ENTIRE change history for the whole team? This cannot be undone.')) return;
     localStorage.removeItem(AUDIT_LOG_KEY);
     if (window.cloud?.clearHistoryCloud) {
         window.cloud.clearHistoryCloud().then(() => {
             cloudHistory = [];
             showHistory();
-            showToast('Riwayat tim dihapus', 'success');
+            showToast('Team history deleted', 'success');
         }).catch(err => {
             console.error('[cloud] clear history failed:', err);
-            showToast('Gagal menghapus di cloud — periksa console', 'error');
+            showToast('Failed to delete in the cloud — check the console', 'error');
         });
     } else {
         cloudHistory = [];
         showHistory();
-        showToast('Riwayat dihapus', 'success');
+        showToast('History deleted', 'success');
     }
 }
 
@@ -2179,11 +2179,11 @@ function findPhantomUnitHistory(log) {
 
 async function scanPhantomHistory() {
     if (!isOwner || !isOwner()) {
-        showToast('Hanya owner yang bisa memeriksa riwayat bersama', 'warning');
+        showToast('Only the owner can check the shared history', 'warning');
         return;
     }
     if (!window.cloud?.getAllHistory) {
-        showToast('Perlu koneksi ke cloud untuk memeriksa riwayat', 'warning');
+        showToast('A cloud connection is needed to check the history', 'warning');
         return;
     }
     showLoading(true);
@@ -2194,13 +2194,13 @@ async function scanPhantomHistory() {
         _phantomHistoryFound = findPhantomUnitHistory(log);
 
         if (_phantomHistoryFound.length === 0) {
-            showToast(`Diperiksa ${log.length} catatan — tidak ada yang mencurigakan`, 'success');
+            showToast(`Checked ${log.length} records — nothing suspicious`, 'success');
             return;
         }
         renderPhantomHistory(log.length);
     } catch (err) {
         console.error('[audit] phantom scan failed:', err);
-        showToast('Gagal memeriksa riwayat — periksa console', 'error');
+        showToast('Failed to check the history — check the console', 'error');
     } finally {
         showLoading(false);
     }
@@ -2209,7 +2209,7 @@ async function scanPhantomHistory() {
 function renderPhantomHistory(scanned) {
     const actors = new Set(_phantomHistoryFound.map(f => f.entry.actorName || '-'));
     document.getElementById('phantomHistorySummary').textContent =
-        `${_phantomHistoryFound.length} dari ${scanned} catatan tidak cocok dengan data unit sekarang · ${actors.size} pelaku`;
+        `${_phantomHistoryFound.length} of ${scanned} records do not match the current unit data · ${actors.size} actor(s)`;
 
     document.getElementById('phantomHistoryBody').innerHTML = _phantomHistoryFound.map(f => {
         const e = f.entry;
@@ -2241,11 +2241,11 @@ async function deletePhantomHistory() {
     // this function existed; without the check the delete silently does
     // nothing while the toast says it worked.
     if (!window.cloud?.deleteHistoryEvents) {
-        showToast('Muat ulang halaman — versi lama masih aktif', 'warning');
+        showToast('Reload the page — an old version is still running', 'warning');
         return;
     }
     const n = _phantomHistoryFound.length;
-    if (!confirm(`Hapus ${n} catatan riwayat ini untuk seluruh tim? Tindakan ini tidak bisa dibatalkan.`)) return;
+    if (!confirm(`Delete these ${n} history records for the whole team? This cannot be undone.`)) return;
 
     const ids = _phantomHistoryFound.map(f => f.entry.id).filter(Boolean);
     showLoading(true);
@@ -2259,10 +2259,10 @@ async function deletePhantomHistory() {
         cloudHistory = cloudHistory.filter(e => !gone.has(e.id));
         closePhantomHistory();
         showHistory();
-        showToast(`${n} catatan palsu dihapus`, 'success');
+        showToast(`${n} false records deleted`, 'success');
     } catch (err) {
         console.error('[audit] phantom delete failed:', err);
-        showToast('Gagal menghapus — periksa console', 'error');
+        showToast('Failed to delete — check the console', 'error');
     } finally {
         showLoading(false);
     }
@@ -2300,13 +2300,13 @@ async function exportHistory() {
         }
     }
 
-    if (log.length === 0) { showToast('Tidak ada riwayat untuk diekspor', 'warning'); return; }
+    if (log.length === 0) { showToast('No history to export', 'warning'); return; }
     // The actor columns matter more here than anywhere else in the app: this
     // export is the only path that sees the whole collection rather than the
     // newest 500, so it is the tool you reach for to answer "who changed this"
     // — and it used to be the one place that dropped the answer.
-    const headers = ['Waktu', 'Aksi', 'Objek', 'Field', 'Sebelum', 'Sesudah',
-                     'Oleh', 'Email', 'Peran', 'ID'];
+    const headers = ['Time', 'Action', 'Object', 'Field', 'Before', 'After',
+                     'By', 'Email', 'Role', 'ID'];
     const rows = log.map(e => [
         toLocalDateTime(e.timestamp),
         e.action, e.unitName || '', e.field || '',
@@ -2322,8 +2322,8 @@ async function exportHistory() {
     a.click();
     URL.revokeObjectURL(url);
     showToast(complete
-        ? `${log.length} kejadian riwayat diekspor (lengkap)`
-        : `${log.length} kejadian riwayat diekspor — hanya yang tersimpan di perangkat ini, bukan seluruh riwayat`,
+        ? `${log.length} history events exported (complete)`
+        : `${log.length} history events exported — only those stored on this device, not the full history`,
         complete ? 'success' : 'warning');
 }
 
@@ -2352,59 +2352,59 @@ const BACKUP_PARTS = [
       saveLocal: () => saveImplements(), bulk: 'saveImplements',
       deleteOne: id => cloudDeleteImplement(id), resync: () => resyncImplements() },
 
-    { key: 'damages', label: 'Kerusakan', area: 'damage',
+    { key: 'damages', label: 'Damage Records', area: 'damage',
       read: () => globalDamages, write: l => { globalDamages = l; },
       saveLocal: () => saveDamages(), bulk: 'saveDamages',
       deleteOne: (id, r) => { cloudDeleteDamage(id); if (damageHasPhoto(r)) _dropPhotoDoc('deleteDamagePhoto', id); },
       resync: () => resyncDamages() },
 
-    { key: 'licenseStock', label: 'Stok Lisensi', area: 'licenseStock',
+    { key: 'licenseStock', label: 'License Stock', area: 'licenseStock',
       read: () => globalLicenseStock, write: l => { globalLicenseStock = l; },
       saveLocal: () => saveLicenseStockLocal(), bulk: 'saveLicenses',
       deleteOne: id => cloudDeleteLicense(id), resync: () => resyncLicenses() },
 
-    { key: 'userCategories', label: 'Kategori User', area: 'editUnits',
+    { key: 'userCategories', label: 'User Categories', area: 'editUnits',
       read: () => userCategories, write: l => { userCategories = l; },
       bulk: 'saveUserCategories', deleteOne: id => window.cloud.deleteUserCategory(id) },
 
-    { key: 'damageComponents', label: 'Komponen Kerusakan', area: 'damage',
+    { key: 'damageComponents', label: 'Damage Components', area: 'damage',
       read: () => damageComponents, write: l => { damageComponents = l; },
       bulk: 'saveDamageComponents', deleteOne: id => window.cloud.deleteDamageComponent(id) },
 
-    { key: 'teamMembers', label: 'Anggota Tim', area: 'teamMembers',
+    { key: 'teamMembers', label: 'Team Members', area: 'teamMembers',
       read: () => teamMembers, write: l => { teamMembers = l; },
       bulk: 'saveTeamMembers', deleteOne: id => window.cloud.deleteTeamMember(id) },
 
-    { key: 'shifts', label: 'Jadwal Shift', area: 'teamShift',
+    { key: 'shifts', label: 'Shift Schedules', area: 'teamShift',
       read: () => teamShifts, write: l => { teamShifts = l; },
       // The subscription is windowed; the backup must not be.
       fullRead: () => window.cloud.getAllShifts(),
       bulk: 'saveShifts', deleteOne: id => window.cloud.deleteShift(id) },
 
-    { key: 'workLogs', label: 'Laporan Harian', area: 'teamLog',
+    { key: 'workLogs', label: 'Daily Reports', area: 'teamLog',
       read: () => workLogs, write: l => { workLogs = l; },
       bulk: 'saveWorkLogs',
       deleteOne: (id, r) => { window.cloud.deleteWorkLog(id); if (workLogPhotoCount(r) > 0) _dropPhotoDoc('deleteWorkLogPhotos', id); } },
 
-    { key: 'leaveRequests', label: 'Izin / Sakit', area: 'teamLog',
+    { key: 'leaveRequests', label: 'Leave / Sick', area: 'teamLog',
       read: () => leaveRequests, write: l => { leaveRequests = l; },
       bulk: 'saveLeaveRequests',
       deleteOne: (id, r) => { window.cloud.deleteLeaveRequest(id); if (leaveDocCount(r) > 0) _dropPhotoDoc('deleteTeamDocs', id); } },
 
-    { key: 'inspectionPlans', label: 'Jadwal Pengecekan', area: 'inspection',
+    { key: 'inspectionPlans', label: 'Inspection Schedules', area: 'inspection',
       read: () => inspectionPlans, write: l => { inspectionPlans = l; },
       bulk: 'saveInspectionPlans', deleteOne: id => window.cloud.deleteInspectionPlan(id) },
 
-    { key: 'inspections', label: 'Laporan Pengecekan', area: 'inspection',
+    { key: 'inspections', label: 'Inspection Reports', area: 'inspection',
       read: () => inspections, write: l => { inspections = l; },
       bulk: 'saveInspections',
       deleteOne: (id, r) => { window.cloud.deleteInspection(id); if (Number(r && r.photoCount) > 0) _dropPhotoDoc('deleteInspectionPhotos', id); } },
 
-    { key: 'devices', label: 'Perangkat Gudang', area: 'warehouse',
+    { key: 'devices', label: 'Inventory Devices', area: 'warehouse',
       read: () => warehouseDevices, write: l => { warehouseDevices = l; },
       bulk: 'saveDevices', deleteOne: id => window.cloud.deleteDevice(id) },
 
-    { key: 'stockItems', label: 'Stok Barang', area: 'warehouse',
+    { key: 'stockItems', label: 'Stock Items', area: 'warehouse',
       read: () => stockLedger, write: l => { stockLedger = l; },
       bulk: 'saveStockItems', deleteOne: id => window.cloud.deleteStockItem(id) }
 ];
@@ -2416,8 +2416,8 @@ const BACKUP_PARTS = [
 //   history — the audit log has its own Export button, reads the whole
 //             collection, and has no size limit worth putting in every backup.
 const BACKUP_EXCLUDED = [
-    { label: 'Akun & Akses', why: 'diatur di halaman Users, bukan lewat berkas' },
-    { label: 'Riwayat Audit', why: 'punya tombol Export sendiri di halaman History' }
+    { label: 'Accounts & Access', why: 'managed on the Users page, not through a file' },
+    { label: 'Audit History', why: 'has its own Export button on the History page' }
 ];
 
 async function exportBackup() {
@@ -2428,12 +2428,12 @@ async function exportBackup() {
     const blocked = ['editUnits', 'implements', 'damage', 'licenseStock']
         .filter(a => !hasAccess(a, 'view'));
     if (blocked.length) {
-        showToast('Backup butuh akses ke semua data — Anda tidak punya akses penuh', 'warning');
+        showToast('Backup needs access to all data — you do not have full access', 'warning');
         return;
     }
 
     const includeFiles = globalData.some(u => u.attachments && u.attachments.length > 0)
-        && confirm('Sertakan file lampiran dalam backup? (ukuran file bisa besar)');
+        && confirm('Include attached files in the backup? (files can be large)');
 
     const payload = {
         version: 4,
@@ -2453,14 +2453,14 @@ async function exportBackup() {
             // this account may not read — and record it, so the file says what
             // it is missing instead of looking complete.
             if (!hasAccess(part.area, 'view')) {
-                payload.omitted.push({ key: part.key, label: part.label, why: 'tanpa akses' });
+                payload.omitted.push({ key: part.key, label: part.label, why: 'no access' });
                 continue;
             }
             let rows = part.read() || [];
             // Not loaded yet: what is in memory is a guess (often empty), and
             // a REPLACE restore of this file would delete the real thing.
             if (cloudInitialized && !part.fullRead && !_loadedParts.has(part.key)) {
-                payload.omitted.push({ key: part.key, label: part.label, why: 'belum termuat — coba lagi sebentar' });
+                payload.omitted.push({ key: part.key, label: part.label, why: 'not loaded yet — try again shortly' });
                 continue;
             }
             if (part.fullRead && window.cloud?.isReady) {
@@ -2471,7 +2471,7 @@ async function exportBackup() {
                     // Better a short backup that admits it than a short backup
                     // that does not.
                     console.warn(`[backup] ${part.key} full read failed:`, err);
-                    payload.omitted.push({ key: part.key, label: part.label, why: 'gagal dibaca lengkap' });
+                    payload.omitted.push({ key: part.key, label: part.label, why: 'could not be read in full' });
                 }
             }
             payload[part.key] = rows;
@@ -2491,9 +2491,9 @@ async function exportBackup() {
     const kindsWith = BACKUP_PHOTO_KINDS.filter(k => photoJobs.some(j => j.k === k));
     const cloudCanRead = window.cloud?.isReady && kindsWith.every(k => typeof window.cloud[k.get] === 'function');
     const includePhotos = photoJobs.length > 0 && cloudCanRead
-        && confirm(`Sertakan ${photoJobs.length} dokumen foto & surat (${kindsWith.map(k => k.label.toLowerCase()).join(', ')})?\n\n`
-            + 'Tanpa ini, cadangan hanya menyimpan catatannya — fotonya tidak bisa dipulihkan dari berkas ini. '
-            + 'Dengan ini, berkasnya bisa jauh lebih besar dan butuh sinyal untuk mengunduhnya.');
+        && confirm(`Include ${photoJobs.length} photo & letter documents (${kindsWith.map(k => k.label.toLowerCase()).join(', ')})?\n\n`
+            + 'Without them, the backup keeps only the records — the photos cannot be restored from this file. '
+            + 'With them, the file can be much larger and needs signal to download.');
     if (includePhotos) {
         showLoading(true);
         const failed = new Map();
@@ -2514,11 +2514,11 @@ async function exportBackup() {
         kindsWith.forEach(k => {
             const n = Object.keys(payload[k.key]).length;
             included.push(`${n} ${k.label.toLowerCase()}`);
-            if (failed.get(k)) payload.omitted.push({ key: k.key, label: k.label, why: `${failed.get(k)} gagal diunduh` });
+            if (failed.get(k)) payload.omitted.push({ key: k.key, label: k.label, why: `${failed.get(k)} failed to download` });
         });
     } else {
         kindsWith.forEach(k => payload.omitted.push({ key: k.key, label: k.label,
-            why: cloudCanRead ? 'tidak disertakan' : 'hanya bisa diunduh saat online' }));
+            why: cloudCanRead ? 'not included' : 'can only be downloaded while online' }));
     }
 
     if (includeFiles) {
@@ -2554,8 +2554,8 @@ async function exportBackup() {
     // collections it saved, which read as a complete list when eleven others
     // were missing.
     const missing = payload.omitted.map(o => o.label);
-    showToast(`Backup tersimpan: ${globalData.length} unit, ${included.join(', ')}`
-        + (missing.length ? ` · TIDAK termasuk: ${missing.join(', ')}` : ''),
+    showToast(`Backup saved: ${globalData.length} units, ${included.join(', ')}`
+        + (missing.length ? ` · NOT included: ${missing.join(', ')}` : ''),
         missing.length ? 'warning' : 'success');
 }
 
@@ -2588,7 +2588,7 @@ function checkStorageUsage() {
     const now = Date.now();
     if (_storageWarnedAt && now - _storageWarnedAt < STORAGE_WARN_REPEAT_MS) return;
     _storageWarnedAt = now;
-    showToast(`Penyimpanan browser hampir penuh (${(used / 1048576).toFixed(1)} MB terpakai) — export Backup sekarang`, 'warning');
+    showToast(`Browser storage almost full (${(used / 1048576).toFixed(1)} MB used) — export a backup now`, 'warning');
 }
 
 function triggerRestore() {
@@ -2630,17 +2630,17 @@ function _dropPhotoDoc(fnName, id) {
 // in it. 'has' is true only for a record whose image lives OUTSIDE the record
 // (an inline one already travels with the record itself).
 const BACKUP_PHOTO_KINDS = [
-    { key: 'damagePhotos', label: 'Foto kerusakan', part: 'damages', area: 'damage',
+    { key: 'damagePhotos', label: 'Damage photos', part: 'damages', area: 'damage',
       has: r => !r.photo && !!r.hasPhoto, get: 'getDamagePhoto', save: 'saveDamagePhoto',
       present: v => typeof v === 'string' && v.length > 0, cache: () => _dmgPhotoCache },
-    { key: 'workLogPhotos', label: 'Foto laporan harian', part: 'workLogs', area: 'teamLog',
+    { key: 'workLogPhotos', label: 'Daily report photos', part: 'workLogs', area: 'teamLog',
       has: r => !(Array.isArray(r.photos) && r.photos.length) && Number(r.photoCount) > 0,
       get: 'getWorkLogPhotos', save: 'saveWorkLogPhotos',
       present: v => Array.isArray(v) && v.length > 0, cache: () => _wlPhotoCache },
-    { key: 'leaveDocs', label: 'Surat izin / sakit', part: 'leaveRequests', area: 'teamLog',
+    { key: 'leaveDocs', label: 'Leave / sick letters', part: 'leaveRequests', area: 'teamLog',
       has: r => leaveDocCount(r) > 0, get: 'getTeamDocs', save: 'saveTeamDocs',
       present: v => Array.isArray(v) && v.length > 0, cache: () => _leaveDocCache },
-    { key: 'inspectionPhotos', label: 'Foto pengecekan', part: 'inspections', area: 'inspection',
+    { key: 'inspectionPhotos', label: 'Inspection photos', part: 'inspections', area: 'inspection',
       has: r => Number(r.photoCount) > 0, get: 'getInspectionPhotos', save: 'saveInspectionPhotos',
       present: v => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length > 0,
       cache: () => _insPhotoCache }
@@ -2691,7 +2691,7 @@ function importBackup(file) {
     // they are restored, so someone with partial rights restores what they may
     // and is told plainly what was left alone.
     if (!hasAccess('editUnits', 'edit')) {
-        showToast('Restore butuh hak edit pada data Unit', 'warning');
+        showToast('Restore needs edit rights on Unit data', 'warning');
         return;
     }
     const reader = new FileReader();
@@ -2699,24 +2699,24 @@ function importBackup(file) {
         try {
             const data = JSON.parse(e.target.result);
             if (!data || !Array.isArray(data.units)) {
-                showToast('Berkas backup tidak valid', 'error');
+                showToast('Invalid backup file', 'error');
                 return;
             }
             splitInlineBackupPhotos(data);
             const merge = confirm(
-                `Backup berisi ${data.units.length} unit.\n\n` +
-                `OK    = GABUNG (tambahkan yang baru, pertahankan yang ada)\n` +
-                `Batal = GANTI (hapus data sekarang, muat isi backup)\n\n` +
-                `Pilihan ini berlaku untuk SEMUA koleksi di dalam berkas, bukan unit saja.`
+                `Backup contains ${data.units.length} units.\n\n` +
+                `OK     = MERGE (add new ones, keep existing ones)\n` +
+                `Cancel = REPLACE (delete current data, load the backup)\n\n` +
+                `This choice applies to ALL collections in the file, not just units.`
             );
             if (merge) {
                 const result = addUnits(data.units);
-                showToast(`Backup digabung: ${result.added} ditambahkan, ${result.skipped} duplikat dilewati`, 'success');
+                showToast(`Backup merged: ${result.added} added, ${result.skipped} duplicates skipped`, 'success');
             } else {
                 if (_refuseCrossGroupRestore(data.units)) return;
                 const nHeavy = data.units.filter(isHeavy).length;
-                if (!confirm(`Ini akan MENGHAPUS seluruh ${globalData.length} unit saat ini dan menggantinya dengan isi backup`
-                    + (nHeavy ? ` (termasuk ${nHeavy} unit ${UNIT_GROUPS.heavy.shortLabel})` : '') + `. Lanjutkan?`)) return;
+                if (!confirm(`This will DELETE all ${globalData.length} current units and replace them with the backup contents`
+                    + (nHeavy ? ` (including ${nHeavy} ${UNIT_GROUPS.heavy.shortLabel} units)` : '') + `. Continue?`)) return;
                 // Mirror the replace to the cloud, otherwise the next units
                 // snapshot overwrites localStorage and silently undoes the
                 // whole restore (and deleted units come back).
@@ -2726,9 +2726,9 @@ function importBackup(file) {
                 saveToStorage(globalData);
                 cloudDeleteUnits(previousIds.filter(id => !keptIds.has(id)));
                 cloudPushUnits(globalData);
-                logEvent({ action: 'restore', unitName: '-', after: `${data.units.length} unit dipulihkan dari backup` });
+                logEvent({ action: 'restore', unitName: '-', after: `${data.units.length} units restored from backup` });
                 recordChange({ type: 'restored', detail: `${data.units.length} units restored from backup` });
-                showToast(`${data.units.length} unit dipulihkan dari backup`, 'success');
+                showToast(`${data.units.length} units restored from backup`, 'success');
             }
 
             // Every other collection goes through BACKUP_PARTS, in the same
@@ -2746,12 +2746,12 @@ function importBackup(file) {
                     continue;
                 }
                 if (!hasAccess(part.area, 'edit')) {
-                    report.push({ label: part.label, count: rows.length, note: 'dilewati — Anda tidak punya hak edit' });
+                    report.push({ label: part.label, count: rows.length, note: 'skipped — you do not have edit rights' });
                     continue;
                 }
                 const bulk = cloudFn(part.bulk);
                 if (window.cloud?.isReady && !bulk) {
-                    report.push({ label: part.label, count: rows.length, note: 'dilewati — versi lama masih aktif, muat ulang halaman' });
+                    report.push({ label: part.label, count: rows.length, note: 'skipped — an old version is still running, reload the page' });
                     continue;
                 }
 
@@ -2769,7 +2769,7 @@ function importBackup(file) {
                         // rows it cannot see. Upsert only, and say so.
                         console.warn(`[restore] ${part.key} full read failed:`, err);
                         report.push({ label: part.label, count: rows.length,
-                                      note: 'hanya ditambahkan — daftar lama gagal dibaca, tidak ada yang dihapus' });
+                                      note: 'added only — the old list could not be read, nothing was deleted' });
                         part.write(_restoreCollection(rows, part.read() || [], true));
                         if (part.saveLocal) part.saveLocal();
                         if (bulk) bulk(part.read()).catch(e => cloudWriteFailed(e, {
@@ -2784,7 +2784,7 @@ function importBackup(file) {
                 // than a real wish to delete everything.
                 if (!merge && rows.length === 0 && before.length > 0) {
                     report.push({ label: part.label, count: 0,
-                                  note: `dilewati — berkas berisi 0 baris; ${before.length} yang ada tidak dihapus` });
+                                  note: `skipped — the file has 0 rows; the ${before.length} existing ones were not deleted` });
                     continue;
                 }
                 const next = _restoreCollection(rows, before, merge);
@@ -2809,18 +2809,18 @@ function importBackup(file) {
                 if (!rows || typeof rows !== 'object') {
                     // Only worth a line when the file's records expected one.
                     if (partDone && recs.some(r => r && k.has(r))) {
-                        report.push({ label: k.label, count: '—', note: 'tidak ada di berkas ini — catatannya ada, fotonya tidak' });
+                        report.push({ label: k.label, count: '—', note: 'not in this file — the records are there, the photos are not' });
                     }
                     continue;
                 }
                 const ids = Object.keys(rows).filter(id => k.present(rows[id]) && recs.some(r => r && r.id === id));
                 if (!partDone) {
-                    report.push({ label: k.label, count: ids.length, note: 'dilewati — catatannya tidak dipulihkan' });
+                    report.push({ label: k.label, count: ids.length, note: 'skipped — the records were not restored' });
                     continue;
                 }
                 const save = window.cloud && window.cloud[k.save];
                 if (window.cloud?.isReady && typeof save !== 'function') {
-                    report.push({ label: k.label, count: ids.length, note: 'dilewati — versi lama masih aktif, muat ulang halaman' });
+                    report.push({ label: k.label, count: ids.length, note: 'skipped — an old version is still running, reload the page' });
                     continue;
                 }
                 ids.forEach(id => k.cache().set(id, rows[id]));
@@ -2830,7 +2830,7 @@ function importBackup(file) {
                         .catch(err => { failedN++; console.warn(`[restore] ${k.save}(${id}) gagal:`, err); }));
                 }
                 report.push({ label: k.label, count: ids.length,
-                    note: failedN ? `${failedN} gagal dikirim` : (merge ? 'digabung' : 'diganti') });
+                    note: failedN ? `${failedN} failed to send` : (merge ? 'digabung' : 'diganti') });
             }
             showRestoreReport(report, data.version || 0, merge);
 
@@ -2847,7 +2847,7 @@ function importBackup(file) {
                         restored++;
                     } catch (err) { /* skip invalid */ }
                 }
-                if (restored > 0) showToast(`${restored} lampiran berhasil di-restore`, 'success');
+                if (restored > 0) showToast(`${restored} attachment(s) restored`, 'success');
             }
 
             // Refresh every surface, not just the units table — a restore can
@@ -2869,7 +2869,7 @@ function importBackup(file) {
             filteredData = scopeDashUnits();
             updateDashboard(filteredData);
         } catch (err) {
-            showToast('Gagal membaca backup: ' + err.message, 'error');
+            showToast('Failed to read backup: ' + err.message, 'error');
         }
     };
     reader.readAsText(file);
@@ -3018,8 +3018,8 @@ function renderDowntimeKPIs(units) {
     const mtbfSub = document.getElementById('kpiMTBFSub');
     if (mtbfSub) {
         mtbfSub.textContent = s.observedMs > 0
-            ? `Rata-rata jarak antar kerusakan · diamati ${formatDuration(s.observedMs)}`
-            : 'Rata-rata jarak antar kerusakan';
+            ? `Average time between failures · observed over ${formatDuration(s.observedMs)}`
+            : 'Average time between failures';
     }
     document.getElementById('kpiMonthDowntime').textContent = formatDuration(s.totalMonthDowntime);
     document.getElementById('kpiFailures').textContent = s.totalFailures;
