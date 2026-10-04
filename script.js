@@ -6436,7 +6436,7 @@ function getFilteredDamages() {
 // ---- Unit picker ----
 // Single source of truth for how a unit is shown/typed in the damage picker.
 function damageUnitLabel(u) {
-    return `${u.name || '(tanpa nama)'}${u.sn ? ' — ' + u.sn : ''}`;
+    return `${u.name || '(no name)'}${u.sn ? ' — ' + u.sn : ''}`;
 }
 
 // Fill the searchable datalist behind the #dmgUnit input. With selectedId, also
@@ -6659,7 +6659,7 @@ function editDamage(id) {
             console.error('[damage] photo load failed:', err);
             _dmgPhotoLoading = false;
             setDamagePhotoPreview();
-            showToast('Foto lama gagal dimuat — foto lama tetap tersimpan', 'warning');
+            showToast('Existing photo failed to load — it is still saved', 'warning');
         });
     }
 }
@@ -6670,7 +6670,7 @@ function saveDamage(event) {
 
     const id = document.getElementById('editDamageId').value;
     const unit = resolveDamageUnit(document.getElementById('dmgUnit').value);
-    if (!unit) { showToast('Pilih unit dari daftar (ketik nama atau SN)', 'warning'); return; }
+    if (!unit) { showToast('Pick a unit from the list (type a name or SN)', 'warning'); return; }
 
     // A component of the other group is refused in both directions: GPS on an
     // excavator would flip a field it does not own, Camera AI on a tractor
@@ -6681,7 +6681,7 @@ function saveDamage(event) {
     const moved = !old || comp !== (old.component || '') || ((liveUnitFor(old) || {}).id !== unit.id);
     if (comp && moved && componentGroupConflict(comp, unit)) {
         const own = groupDef(unitGroupOf(unit)).shortLabel;
-        showToast(`Komponen "${comp}" bukan milik ${own} — pilih komponen ${own}`, 'warning');
+        showToast(`Component "${comp}" does not belong to ${own} — pick a ${own} component`, 'warning');
         return;
     }
 
@@ -6692,8 +6692,8 @@ function saveDamage(event) {
     if (!id && hasUnreadableGroup(unit) && document.getElementById('dmgSetBreakdown')?.checked) {
         const f = damageTargetField(type, comp, unit);
         if (f && f !== DAMAGE_DRIVES_NOTHING && (TRACTOR_ONLY_FIELDS.includes(f) || HEAVY_ONLY_FIELDS.includes(f))) {
-            showToast(`Kelompok unit ini ("${plainText(unit.unitGroup)}") tidak dikenal — tetapkan dulu lewat Periksa Data, `
-                + 'atau simpan tanpa mencentang "set Breakdown"', 'warning');
+            showToast(`This unit's group ("${plainText(unit.unitGroup)}") is not recognised — set it first via Check Data, `
+                + 'or save without ticking "set Breakdown"', 'warning');
             return;
         }
     }
@@ -6733,11 +6733,11 @@ function saveDamage(event) {
             logEvent({
                 action: 'update',
                 unitId: unit.id,
-                unitName: `[Kerusakan] ${data.unitName}`,
+                unitName: `[Damage] ${data.unitName}`,
                 field: data.damageType + (data.component ? ` / ${data.component}` : ''),
                 after: data.date
             });
-            showToast('Catatan kerusakan diperbarui', 'success');
+            showToast('Damage record updated', 'success');
         }
     } else {
         const newRec = { id: generateDamageId(), ...data, resolved: false, resolvedAt: '', createdAt: Date.now(), updatedAt: Date.now() };
@@ -6755,17 +6755,17 @@ function saveDamage(event) {
         logEvent({
             action: 'add',
             unitId: unit.id,
-            unitName: `[Kerusakan] ${data.unitName}`,
+            unitName: `[Damage] ${data.unitName}`,
             field: data.damageType + (data.component ? ` / ${data.component}` : ''),
             after: data.date
         });
-        showToast('Catatan kerusakan ditambahkan', 'success');
+        showToast('Damage record added', 'success');
 
         // Link to unit status: put the unit (or the affected component) into
         // Breakdown so the dashboard/downtime tracking reflect this damage.
         if (setBd) {
             const target = _applyDamageBreakdown(unit.id, data.damageType, data.component, data.description);
-            if (target) showToast(`${target} "${unit.name}" di-set Breakdown`, 'info');
+            if (target) showToast(`${target} "${unit.name}" set to Breakdown`, 'info');
             else if (newRec.drove) { newRec.drove = ''; saveDamages(); cloudPushDamage(newRec); }
         }
     }
@@ -6778,7 +6778,7 @@ function saveDamage(event) {
         // from before this collection existed. Say so rather than failing
         // silently on a save that otherwise looks like it worked.
         if (!window.cloud.saveDamagePhoto) {
-            showToast('Muat ulang halaman — versi lama masih aktif, foto belum terkirim', 'warning');
+            showToast('Reload the page — an old version is still active, photo not sent yet', 'warning');
         } else {
             const write = photo
                 ? window.cloud.saveDamagePhoto(recId, photo)
@@ -6786,7 +6786,7 @@ function saveDamage(event) {
             write.catch(err => {
                 console.error('[damage] photo save failed:', err);
                 if (err && err.code === 'permission-denied') showDamageRulesBanner();
-                showToast('Catatan tersimpan, tetapi foto gagal dikirim', 'error');
+                showToast('Record saved, but the photo failed to send', 'error');
             });
         }
     }
@@ -6827,10 +6827,10 @@ function _applyDamageBreakdown(unitId, damageType, component, description) {
     // unit whose group is unreadable, and saying "di-set Breakdown" anyway
     // would leave an open damage that shows nowhere.
     if (compField) {
-        return updateUnit(unitId, { [compField]: 'Breakdown' }) ? `Komponen ${component} unit` : '';
+        return updateUnit(unitId, { [compField]: 'Breakdown' }) ? `Unit component ${component}` : '';
     }
     const reason = `${damageType}${component ? ' / ' + component : ''}: ${description || '-'}`;
-    return updateUnit(unitId, { status: 'Breakdown', breakdownReason: reason }) ? 'Status unit' : '';
+    return updateUnit(unitId, { status: 'Breakdown', breakdownReason: reason }) ? 'Unit status' : '';
 }
 
 // Is there ANOTHER still-open damage record on the same unit that drives the
@@ -6854,7 +6854,7 @@ function resolveDamage(id) {
     if (!requireEdit('damage')) return;
     const rec = globalDamages.find(d => d.id === id);
     if (!rec || rec.resolved) return;
-    if (!confirm(`Tandai kerusakan unit "${rec.unitName}" (${rec.date}) selesai diperbaiki?`)) return;
+    if (!confirm(`Mark the damage on unit "${rec.unitName}" (${rec.date}) as repaired?`)) return;
 
     rec.resolved = true;
     rec.resolvedAt = toISODate();
@@ -6864,10 +6864,10 @@ function resolveDamage(id) {
     logEvent({
         action: 'update',
         unitId: rec.unitId,
-        unitName: `[Kerusakan] ${rec.unitName}`,
-        field: 'Perbaikan',
+        unitName: `[Damage] ${rec.unitName}`,
+        field: 'Repair',
         before: 'Open',
-        after: `Selesai (${rec.resolvedAt})`
+        after: `Done (${rec.resolvedAt})`
     });
 
     const unit = liveUnitFor(rec);
@@ -6879,8 +6879,8 @@ function resolveDamage(id) {
     const legacyTarget = unit && !known ? damageTargetField(rec.damageType, rec.component, unit) : null;
     const legacyBroken = unit && !known && legacyTarget !== DAMAGE_DRIVES_NOTHING
         && !isGood(legacyTarget ? unit[legacyTarget] : unit.status);
-    const restoreLegacy = legacyBroken && confirm(`Pulihkan juga ${legacyTarget ? 'komponen ' + (rec.component || legacyTarget) : 'status'} unit "${unit.name || unit.sn}" ke Good?\n\n`
-        + 'Catatan lama ini tidak mencatat apakah ia yang membuat unit Breakdown. Batal = unit dibiarkan.');
+    const restoreLegacy = legacyBroken && confirm(`Also restore the unit ${legacyTarget ? 'component ' + (rec.component || legacyTarget) : 'status'} of "${unit.name || unit.sn}" to Good?\n\n`
+        + 'This older record does not say whether it put the unit into Breakdown. Cancel = leave the unit as is.');
     if (unit && known) {
         const compField = rec.drove === 'status' ? null : rec.drove;
         if (!rec.drove) {
@@ -6907,11 +6907,11 @@ function resolveDamage(id) {
 
     renderDamageTable();
     if (blocked) {
-        showToast('Kerusakan ditandai selesai — status unit belum dipulihkan karena masih ada kerusakan lain yang terbuka', 'warning');
+        showToast('Damage marked as done — unit status not restored because other damage is still open', 'warning');
     } else if (restored) {
-        showToast('Kerusakan ditandai selesai — status unit dipulihkan', 'success');
+        showToast('Damage marked as done — unit status restored', 'success');
     } else {
-        showToast('Kerusakan ditandai selesai', 'success');
+        showToast('Damage marked as done', 'success');
     }
 }
 
@@ -6924,7 +6924,7 @@ function deleteDamage(id) {
     if (!requireEdit('damage')) return;
     const rec = globalDamages.find(d => d.id === id);
     if (!rec) return;
-    if (!confirm(`Hapus catatan kerusakan unit "${rec.unitName}" (${rec.date})?`)) return;
+    if (!confirm(`Delete the damage record for unit "${rec.unitName}" (${rec.date})?`)) return;
 
     globalDamages = globalDamages.filter(d => d.id !== id);
     saveDamages();
@@ -6937,18 +6937,18 @@ function deleteDamage(id) {
     logEvent({
         action: 'delete',
         unitId: rec.unitId,
-        unitName: `[Kerusakan] ${rec.unitName}`,
+        unitName: `[Damage] ${rec.unitName}`,
         before: rec.damageType + (rec.component ? ` / ${rec.component}` : '')
     });
     renderDamageTable();
-    showToast('Catatan kerusakan dihapus', 'success');
+    showToast('Damage record deleted', 'success');
 }
 
 function deleteSelectedDamages() {
     if (!requireEdit('damage')) return;
     const count = selectedDamageIds.size;
     if (count === 0) return;
-    if (!confirm(`Hapus ${count} catatan kerusakan terpilih?`)) return;
+    if (!confirm(`Delete ${count} selected damage record(s)?`)) return;
 
     const idSet = new Set(selectedDamageIds);
     const removed = globalDamages.filter(d => idSet.has(d.id));
@@ -6966,19 +6966,19 @@ function deleteSelectedDamages() {
     removed.forEach(rec => logEvent({
         action: 'delete',
         unitId: rec.unitId,
-        unitName: `[Kerusakan] ${rec.unitName}`,
+        unitName: `[Damage] ${rec.unitName}`,
         before: rec.damageType + (rec.component ? ` / ${rec.component}` : '')
     }));
     renderDamageTable();
-    showToast(`${count} catatan kerusakan dihapus`, 'success');
+    showToast(`${count} damage record(s) deleted`, 'success');
 }
 
 // ---- Export report (CSV, opens in Excel via UTF-8 BOM) ----
 function exportDamageCSV() {
     if (!canCsv('export')) return;
     const rows = getFilteredDamages();
-    if (rows.length === 0) { showToast('Tidak ada data kerusakan untuk diexport', 'warning'); return; }
-    const headers = ['No', 'Tanggal', 'Unit', 'Serial Number', 'Site', 'Tipe Kerusakan', 'Komponen', 'Deskripsi', 'Foto', 'Perbaikan'];
+    if (rows.length === 0) { showToast('No damage data to export', 'warning'); return; }
+    const headers = ['No', 'Date', 'Unit', 'Serial Number', 'Site', 'Damage Type', 'Component', 'Description', 'Photo', 'Repair'];
     const dataRows = rows.map((d, i) => {
         const lu = liveUnitFor(d);
         return [
@@ -6986,8 +6986,8 @@ function exportDamageCSV() {
             lu ? (lu.name || '') : (d.unitName || ''),
             lu ? (lu.sn || '') : (d.sn || ''),
             lu ? (lu.site || '') : (d.site || ''),
-            d.damageType || '', d.component || '', d.description || '', damageHasPhoto(d) ? 'Ada' : '',
-            d.resolved ? `Selesai ${d.resolvedAt || ''}`.trim() : 'Open'
+            d.damageType || '', d.component || '', d.description || '', damageHasPhoto(d) ? 'Yes' : '',
+            d.resolved ? `Done ${d.resolvedAt || ''}`.trim() : 'Open'
         ];
     });
     const csv = [headers, ...dataRows].map(row =>
@@ -6996,18 +6996,18 @@ function exportDamageCSV() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `kerusakan_report_${toISODate()}.csv`;
+    a.download = `damage_report_${toISODate()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`Export ${rows.length} catatan kerusakan ke CSV`, 'success');
+    showToast(`Exported ${rows.length} damage record(s) to CSV`, 'success');
 }
 
 // ---- Cloud ----
 function cloudPushDamage(rec) {
     if (suppressCloudWrites || !window.cloud?.isReady || !rec) return;
     window.cloud.saveDamage(rec).catch(err => cloudWriteFailed(err, {
-        what: 'kerusakan',
-        label: `[Kerusakan] ${rec.unitName || '-'}`,
+        what: 'damage',
+        label: `[Damage] ${rec.unitName || '-'}`,
         unitId: rec.unitId || '',
         resync: resyncDamages
     }));
@@ -7016,8 +7016,8 @@ function cloudPushDamage(rec) {
 function cloudDeleteDamage(id) {
     if (suppressCloudWrites || !window.cloud?.isReady || !id) return;
     window.cloud.deleteDamage(id).catch(err => cloudWriteFailed(err, {
-        what: 'hapus kerusakan',
-        label: '[Kerusakan] -',
+        what: 'delete damage',
+        label: '[Damage] -',
         resync: resyncDamages
     }));
 }
@@ -7084,7 +7084,7 @@ function saveLicenseStockLocal() {
     try {
         localStorage.setItem(LICENSE_STORAGE_KEY, JSON.stringify(globalLicenseStock));
     } catch (e) {
-        showToast('Penyimpanan penuh. Stok lisensi tidak tersimpan.', 'error');
+        showToast('Storage full. License stock not saved.', 'error');
     }
 }
 
@@ -7135,7 +7135,7 @@ function computeLicenseSummary() {
         const key = licenseTypeKey(r.licenseType) || '(tanpa jenis)';
         if (!acc[key]) {
             acc[key] = {
-                label: known.get(key) || (r.licenseType || '').trim().replace(/\s+/g, ' ') || '(tanpa jenis)',
+                label: known.get(key) || (r.licenseType || '').trim().replace(/\s+/g, ' ') || '(no type)',
                 in: 0, out: 0
             };
         }
@@ -7201,19 +7201,19 @@ function getFilteredLicenseStock() {
 // "Belum"; earlier ones are history ("Digantikan").
 const LIC_STATUS = {
     sync:       { cls: 'ok',    icon: 'circle-check',        label: 'Synced',
-                  tip: () => 'Lisensi unit sudah sesuai dengan distribusi ini' },
+                  tip: () => 'The unit license already matches this distribution' },
     update:     { cls: 'todo',  icon: 'clock',               label: 'Not synced',
-                  tip: () => 'Lisensi unit belum sesuai — tekan Sync ke Unit' },
+                  tip: () => 'The unit license does not match yet — press Sync to Units' },
     newer:      { cls: 'info',  icon: 'arrow-up',            label: 'Unit is newer',
-                  tip: i => `Unit berlaku s/d ${i.row.now.end}, lebih lama dari distribusi ini — tidak ditimpa` },
+                  tip: i => `Unit is valid until ${i.row.now.end}, later than this distribution — not overwritten` },
     superseded: { cls: 'muted', icon: 'clock-rotate-left',   label: 'Superseded',
-                  tip: i => `Distribusi ${i.by.date} yang lebih baru sudah menentukan lisensi unit ini` },
+                  tip: i => `A newer distribution (${i.by.date}) already sets this unit's license` },
     noUnit:     { cls: 'warn',  icon: 'triangle-exclamation', label: 'Unit missing',
-                  tip: () => 'Unitnya tidak ditemukan (id maupun nomor seri)' },
+                  tip: () => 'Unit not found (by id or serial number)' },
     notTractor: { cls: 'muted', icon: 'ban',                 label: 'Not Agricultural',
-                  tip: () => `Lisensi SF/G5 hanya untuk ${UNIT_GROUPS.tractor.label}` },
+                  tip: () => `SF/G5 licenses are only for ${UNIT_GROUPS.tractor.label}` },
     noDate:     { cls: 'warn',  icon: 'triangle-exclamation', label: 'Invalid date',
-                  tip: () => 'Tanggal distribusinya kosong atau tidak terbaca (harus YYYY-MM-DD) — betulkan supaya bisa diterapkan ke unit' }
+                  tip: () => 'The distribution date is empty or unreadable (must be YYYY-MM-DD) — fix it so it can be applied to the unit' }
 };
 function licenseSyncCell(info) {
     const d = info && LIC_STATUS[info.code];
@@ -7600,25 +7600,25 @@ let _licSyncShown = new Map();
 function syncDistributionsToUnits() {
     if (!requireEdit('licenseStock')) return;
     if (!hasAccess('editUnits', 'edit')) {
-        showToast('Sync ke Unit mengubah data unit — butuh hak edit pada Edit Units', 'warning');
+        showToast('Sync to Units changes unit data — requires edit access on Edit Units', 'warning');
         return;
     }
     const { rows, skipped } = licenseSyncPlan();
     const todo = rows.filter(r => r.status !== 'sync');
     const inSync = rows.length - todo.length;
     const skipNote = [
-        skipped.noUnit ? `${skipped.noUnit} unitnya tidak ditemukan` : '',
-        skipped.noDate ? `${skipped.noDate} tanggalnya tidak valid` : '',
-        skipped.notTractor ? `${skipped.notTractor} ke unit non-${UNIT_GROUPS.tractor.shortLabel}` : ''
+        skipped.noUnit ? `${skipped.noUnit} with unit not found` : '',
+        skipped.noDate ? `${skipped.noDate} with invalid date` : '',
+        skipped.notTractor ? `${skipped.notTractor} to non-${UNIT_GROUPS.tractor.shortLabel} units` : ''
     ].filter(Boolean).join(', ');
     if (!rows.length) {
-        showToast('Tidak ada distribusi standar (SF-RTK/SF-1/G5) yang bisa disinkron ke unit'
+        showToast('No standard distributions (SF-RTK/SF-1/G5) to sync to units'
             + (skipNote ? ` (${skipNote})` : ''), 'info');
         return;
     }
     if (!todo.length) {
-        showToast(`Semua ${inSync} lisensi unit sudah sesuai dengan distribusi terbarunya — tidak ada yang ditulis`
-            + (skipNote ? ` · dilewati: ${skipNote}` : ''), 'success');
+        showToast(`All ${inSync} unit licenses already match their latest distribution — nothing written`
+            + (skipNote ? ` · skipped: ${skipNote}` : ''), 'success');
         return;
     }
 
@@ -7640,12 +7640,12 @@ function syncDistributionsToUnits() {
         const nowExpired = getExpiryStatus(r.now.end).kind === 'expired';
         const why = r.status === 'newer'
             ? (isoUnitDate(r.now.end) === null
-                ? `Tanggal habis di unit tidak terbaca ("${escapeHtml(r.now.end)}") — tidak ditimpa tanpa dicek`
+                ? `Expiry date on the unit is unreadable ("${escapeHtml(r.now.end)}") — not overwritten without a check`
                 : nowExpired
-                ? `Lisensi di unit lebih baru (${r.now.downgraded ? escapeHtml(r.now.premium) + ' ' : ''}habis ${escapeHtml(r.now.end)}) — biarkan, kecuali memang salah`
-                : `Unit sudah berlaku lebih lama (s/d ${escapeHtml(r.now.end)}) — biarkan, kecuali memang salah`)
-            : (t.downgraded ? `Distribusi ${escapeHtml(r.rec.date)} sudah habis — tercatat ${escapeHtml(t.type)} (turun otomatis)`
-                            : `Distribusi ${escapeHtml(r.rec.date)}`);
+                ? `License on the unit is newer (${r.now.downgraded ? escapeHtml(r.now.premium) + ' ' : ''}expires ${escapeHtml(r.now.end)}) — leave it unless it is wrong`
+                : `Unit is already valid for longer (until ${escapeHtml(r.now.end)}) — leave it unless it is wrong`)
+            : (t.downgraded ? `Distribution ${escapeHtml(r.rec.date)} has expired — recorded as ${escapeHtml(t.type)} (auto-downgraded)`
+                            : `Distribution ${escapeHtml(r.rec.date)}`);
         return `<tr class="${r.status === 'newer' ? 'lic-sync__row--newer' : ''}">
             <td class="col-check" data-label="Apply"><input type="checkbox" class="lic-sync-check" data-i="${i}"${r.status === 'update' ? ' checked' : ''}
                 aria-label="Apply to ${escapeHtml(r.unit.name || r.unit.sn || '')}" onchange="updateLicSyncApplyLabel()"></td>
@@ -7659,8 +7659,8 @@ function syncDistributionsToUnits() {
     const nUpdate = todo.filter(r => r.status === 'update').length;
     const nNewer = todo.length - nUpdate;
     document.getElementById('licSyncSummary').textContent =
-        `${nUpdate} perlu diperbarui` + (nNewer ? ` · ${nNewer} unit berlaku lebih lama (tidak dicentang)` : '')
-        + ` · ${inSync} sudah sesuai dan tidak disentuh` + (skipNote ? ` · dilewati: ${skipNote}` : '');
+        `${nUpdate} need updating` + (nNewer ? ` · ${nNewer} unit(s) valid for longer (unticked)` : '')
+        + ` · ${inSync} already match and are left untouched` + (skipNote ? ` · skipped: ${skipNote}` : '');
     updateLicSyncApplyLabel();
     rememberFocus();
     document.getElementById('licSyncModal').classList.add('open');
@@ -7688,8 +7688,8 @@ function applyLicSyncSelection() {
     closeLicSyncModal();
     if (!keys.length) return;
     const { written: n, stale } = _applyLicenseSync(keys, shown);
-    showToast((n ? `Lisensi ${n} unit diperbarui dari distribusi terbarunya` : 'Tidak ada yang ditulis')
-        + (stale ? ` · ${stale} baris dilewati karena datanya berubah sejak pratinjau — buka Sync ke Unit lagi` : ''),
+    showToast((n ? `Licenses of ${n} unit(s) updated from their latest distribution` : 'Nothing written')
+        + (stale ? ` · ${stale} row(s) skipped because the data changed since the preview — open Sync to Units again` : ''),
         stale ? 'warning' : (n ? 'success' : 'info'));
     renderLicenseStockTable();
     if (currentView === 'dashboard') updateDashboard(filteredData);
@@ -7735,23 +7735,23 @@ function _releaseDistributions(list) {
         if (!Object.keys(fields).length) return null;
         return { unit, kind: d.kind, row, fields,
                  line: `· ${unit.name || unit.sn} (${F.label}): ` + (row
-                     ? `kembali ke ${row.target.type} dari distribusi ${row.rec.date}`
-                     : 'dikosongkan — tidak ada distribusi lain') };
+                     ? `back to ${row.target.type} from the ${row.rec.date} distribution`
+                     : 'cleared — no other distribution') };
     }).filter(Boolean);
     if (!items.length) return;
     if (!hasAccess('editUnits', 'edit')) {
-        showToast(`${items.length} unit masih memegang lisensi dari distribusi ini — butuh hak edit Unit untuk membetulkannya`, 'warning');
+        showToast(`${items.length} unit(s) still hold a license from this distribution — Unit edit access is needed to fix it`, 'warning');
         return;
     }
-    const lines = items.slice(0, 6).map(i => i.line).join('\n') + (items.length > 6 ? `\n… dan ${items.length - 6} lagi` : '');
-    if (!confirm(`${items.length} unit masih memegang lisensi dari distribusi yang baru diubah/dihapus:\n\n${lines}\n\n`
-        + 'OK = betulkan lisensi unitnya · Batal = biarkan seperti sekarang')) {
-        showToast(`Lisensi ${items.length} unit dibiarkan — mereka masih memegang lisensi dari distribusi itu`, 'warning');
+    const lines = items.slice(0, 6).map(i => i.line).join('\n') + (items.length > 6 ? `\n… and ${items.length - 6} more` : '');
+    if (!confirm(`${items.length} unit(s) still hold a license from the distribution just changed/deleted:\n\n${lines}\n\n`
+        + 'OK = fix the unit licenses · Cancel = leave them as they are')) {
+        showToast(`Licenses of ${items.length} unit(s) left as is — they still hold a license from that distribution`, 'warning');
         return;
     }
     let n = 0;
     items.forEach(i => { if (updateUnit(i.unit.id, i.fields)) n++; });
-    showToast(`Lisensi ${n} unit dibetulkan`, 'success');
+    showToast(`Licenses of ${n} unit(s) fixed`, 'success');
 }
 
 function saveLicenseStock(event) {
@@ -7775,9 +7775,9 @@ function saveLicenseStock(event) {
     // stock bucket for a type that already exists.
     const licenseType = canonicalLicenseType(typedType);
     const qty = Math.max(1, parseInt(document.getElementById('licQty').value, 10) || 1);
-    if (!licenseType) { showToast('Isi jenis lisensi', 'warning'); return; }
+    if (!licenseType) { showToast('Enter the license type', 'warning'); return; }
     if (typedType && licenseType !== typedType) {
-        showToast(`Jenis lisensi disamakan menjadi "${plainText(licenseType)}"`, 'info');
+        showToast(`License type normalised to "${plainText(licenseType)}"`, 'info');
     }
 
     const data = {
@@ -7791,12 +7791,12 @@ function saveLicenseStock(event) {
 
     if (txnType === 'OUT') {
         const unit = resolveDamageUnit(document.getElementById('licUnit').value);
-        if (!unit) { showToast('Pilih unit tujuan dari daftar (ketik nama atau SN)', 'warning'); return; }
+        if (!unit) { showToast('Pick the target unit from the list (type a name or SN)', 'warning'); return; }
         // A legacy row that already points at this heavy unit stays editable;
         // applyDistributedLicenseToUnit still refuses to write to the unit.
         const legacy = prevRec && prevRec.unitId === unit.id;
         if (isHeavy(unit) && !legacy) {
-            showToast(`Unit "${plainText(unit.name)}" adalah Alat Berat — lisensi SF/G5 hanya untuk ${UNIT_GROUPS.tractor.label}`, 'warning');
+            showToast(`Unit "${plainText(unit.name)}" is Heavy Equipment — SF/G5 licenses are only for ${UNIT_GROUPS.tractor.label}`, 'warning');
             return;
         }
         data.unitId = unit.id;
@@ -7817,7 +7817,7 @@ function saveLicenseStock(event) {
             }
         }
         if (qty > sisa) {
-            if (!confirm(`Stok "${licenseType}" tidak cukup (sisa ${sisa}). Tetap simpan?`)) return;
+            if (!confirm(`Not enough "${licenseType}" stock (${sisa} remaining). Save anyway?`)) return;
         }
     }
 
@@ -7830,11 +7830,11 @@ function saveLicenseStock(event) {
             logEvent({
                 action: 'update',
                 unitId: data.unitId || '',
-                unitName: `[Lisensi] ${data.licenseType}`,
-                field: txnType === 'OUT' ? `Distribusi → ${data.unitName}` : 'Stok masuk',
+                unitName: `[License] ${data.licenseType}`,
+                field: txnType === 'OUT' ? `Distribution → ${data.unitName}` : 'Stock in',
                 after: `${qty} (${data.date})`
             });
-            showToast('Transaksi lisensi diperbarui', 'success');
+            showToast('License transaction updated', 'success');
         }
     } else {
         const newRec = { id: generateLicenseId(), ...data, createdAt: Date.now(), updatedAt: Date.now() };
@@ -7844,11 +7844,11 @@ function saveLicenseStock(event) {
         logEvent({
             action: 'add',
             unitId: data.unitId || '',
-            unitName: `[Lisensi] ${data.licenseType}`,
-            field: txnType === 'OUT' ? `Distribusi → ${data.unitName}` : 'Stok masuk',
+            unitName: `[License] ${data.licenseType}`,
+            field: txnType === 'OUT' ? `Distribution → ${data.unitName}` : 'Stock in',
             after: `${qty} (${data.date})`
         });
-        showToast(txnType === 'OUT' ? 'Distribusi lisensi dicatat' : 'Stok lisensi ditambahkan', 'success');
+        showToast(txnType === 'OUT' ? 'License distribution recorded' : 'License stock added', 'success');
     }
 
     // Connect distribution → the unit's own license (type + dates).
@@ -7867,19 +7867,19 @@ function saveLicenseStock(event) {
         const kind = kindKey === 'display' ? 'Display' : 'GPS';
         const tgt = kindKey && data.date ? distributionTarget({ licenseType, date: data.date }, kindKey) : null;
         if (applied === 'applied' && tgt && tgt.downgraded) {
-            showToast(`Lisensi ${kind} unit "${plainText(data.unitName)}": ${plainText(licenseType)} dari ${plainText(data.date)} sudah habis ${plainText(tgt.expiredAt)} — tercatat ${plainText(tgt.type)}`, 'info');
+            showToast(`${kind} license of unit "${plainText(data.unitName)}": ${plainText(licenseType)} from ${plainText(data.date)} already expired ${plainText(tgt.expiredAt)} — recorded as ${plainText(tgt.type)}`, 'info');
         } else if (applied === 'applied') {
-            showToast(`Lisensi ${kind} unit "${plainText(data.unitName)}" di-set ${plainText(licenseType)} (berlaku 1 tahun)`, 'info');
+            showToast(`${kind} license of unit "${plainText(data.unitName)}" set to ${plainText(licenseType)} (valid for 1 year)`, 'info');
         } else if (applied === 'unchanged') {
-            showToast(`Lisensi ${kind} unit "${plainText(data.unitName)}" sudah sesuai — tidak diubah`, 'info');
+            showToast(`${kind} license of unit "${plainText(data.unitName)}" already matches — not changed`, 'info');
         } else if (applied === 'skipped-older') {
-            showToast(`Lisensi ${kind} unit "${plainText(data.unitName)}" tidak diubah — unit sudah punya masa berlaku yang lebih panjang`, 'warning');
+            showToast(`${kind} license of unit "${plainText(data.unitName)}" not changed — the unit is already valid for longer`, 'warning');
         } else if (!kindKey) {
-            showToast(`"${plainText(licenseType)}" bukan lisensi unit standar — hanya dicatat di stok`, 'warning');
+            showToast(`"${plainText(licenseType)}" is not a standard unit license — recorded in stock only`, 'warning');
         } else if (!hasAccess('editUnits', 'edit')) {
-            showToast(`Distribusi dicatat, tetapi lisensi ${kind} unit "${plainText(data.unitName)}" tidak diubah — butuh hak edit pada Edit Units`, 'warning');
+            showToast(`Distribution recorded, but the ${kind} license of unit "${plainText(data.unitName)}" was not changed — requires edit access on Edit Units`, 'warning');
         } else {
-            showToast(`Distribusi dicatat, tetapi lisensi ${kind} unit "${plainText(data.unitName)}" tidak diubah — cek unitnya di Periksa Data`, 'warning');
+            showToast(`Distribution recorded, but the ${kind} license of unit "${plainText(data.unitName)}" was not changed — check the unit in Check Data`, 'warning');
         }
     }
     // Moved to another unit or licence kind, or turned into stock-in: the old
@@ -7904,7 +7904,7 @@ function deleteLicenseStock(id) {
     if (!requireEdit('licenseStock')) return;
     const rec = globalLicenseStock.find(r => r.id === id);
     if (!rec) return;
-    if (!confirm(`Hapus transaksi lisensi "${rec.licenseType}" (${rec.date})?`)) return;
+    if (!confirm(`Delete license transaction "${rec.licenseType}" (${rec.date})?`)) return;
 
     const driven = _drivenBy(rec);
     globalLicenseStock = globalLicenseStock.filter(r => r.id !== id);
@@ -7913,10 +7913,10 @@ function deleteLicenseStock(id) {
     logEvent({
         action: 'delete',
         unitId: rec.unitId || '',
-        unitName: `[Lisensi] ${rec.licenseType}`,
-        before: rec.txnType === 'OUT' ? `Distribusi → ${rec.unitName}` : 'Stok masuk'
+        unitName: `[License] ${rec.licenseType}`,
+        before: rec.txnType === 'OUT' ? `Distribution → ${rec.unitName}` : 'Stock in'
     });
-    showToast('Transaksi lisensi dihapus', 'success');
+    showToast('License transaction deleted', 'success');
     _releaseDistributions([driven]);
     renderLicenseSummary();
     renderLicenseStockTable();
@@ -7926,7 +7926,7 @@ function deleteSelectedLicenseStock() {
     if (!requireEdit('licenseStock')) return;
     const count = selectedLicenseIds.size;
     if (count === 0) return;
-    if (!confirm(`Hapus ${count} transaksi lisensi terpilih?`)) return;
+    if (!confirm(`Delete ${count} selected license transaction(s)?`)) return;
 
     const idSet = new Set(selectedLicenseIds);
     const removed = globalLicenseStock.filter(r => idSet.has(r.id));
@@ -7937,10 +7937,10 @@ function deleteSelectedLicenseStock() {
     removed.forEach(rec => logEvent({
         action: 'delete',
         unitId: rec.unitId || '',
-        unitName: `[Lisensi] ${rec.licenseType}`,
-        before: rec.txnType === 'OUT' ? `Distribusi → ${rec.unitName}` : 'Stok masuk'
+        unitName: `[License] ${rec.licenseType}`,
+        before: rec.txnType === 'OUT' ? `Distribution → ${rec.unitName}` : 'Stock in'
     }));
-    showToast(`${count} transaksi lisensi dihapus`, 'success');
+    showToast(`${count} license transaction(s) deleted`, 'success');
     _releaseDistributions(driven);
     renderLicenseSummary();
     renderLicenseStockTable();
@@ -7950,12 +7950,12 @@ function deleteSelectedLicenseStock() {
 function exportLicenseStockCSV() {
     if (!canCsv('export')) return;
     const rows = getFilteredLicenseStock();
-    if (rows.length === 0) { showToast('Tidak ada data lisensi untuk diexport', 'warning'); return; }
-    const headers = ['No', 'Tanggal', 'Jenis', 'Jenis Lisensi', 'Jumlah', 'Unit', 'Serial Number', 'Catatan'];
+    if (rows.length === 0) { showToast('No license data to export', 'warning'); return; }
+    const headers = ['No', 'Date', 'Transaction', 'License Type', 'Quantity', 'Unit', 'Serial Number', 'Notes'];
     const dataRows = rows.map((r, i) => {
         const lu = r.txnType === 'OUT' ? liveUnitFor(r) : null;
         return [
-            i + 1, r.date || '', r.txnType === 'OUT' ? 'Distribusi' : 'Masuk',
+            i + 1, r.date || '', r.txnType === 'OUT' ? 'Distribution' : 'In',
             r.licenseType || '', Number(r.qty) || 0,
             r.txnType === 'OUT' ? (lu ? (lu.name || '') : (r.unitName || '')) : '',
             r.txnType === 'OUT' ? (lu ? (lu.sn || '') : (r.sn || '')) : '',
@@ -7968,10 +7968,10 @@ function exportLicenseStockCSV() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `stok_lisensi_${toISODate()}.csv`;
+    a.download = `license_stock_${toISODate()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`Export ${rows.length} transaksi lisensi ke CSV`, 'success');
+    showToast(`Exported ${rows.length} license transaction(s) to CSV`, 'success');
 }
 
 // ---- Import (CSV, append-only ledger) ----
@@ -7983,10 +7983,10 @@ function parseLicenseTxnType(s) {
 
 function downloadLicenseTemplate() {
     if (!canCsv('export')) return;
-    const headers = ['Tanggal', 'Jenis', 'Jenis Lisensi', 'Jumlah', 'Unit', 'Serial Number', 'Catatan'];
+    const headers = ['Date', 'Transaction', 'License Type', 'Quantity', 'Unit', 'Serial Number', 'Notes'];
     const sample = [
-        ['2026-04-06', 'Masuk', 'SF-RTK', '50', '', '', 'PO.GPA.2026.04.01343'],
-        ['2026-05-11', 'Distribusi', 'G5 Advance', '1', 'GGCH001G', '', 'Dipasang di unit']
+        ['2026-04-06', 'In', 'SF-RTK', '50', '', '', 'PO.GPA.2026.04.01343'],
+        ['2026-05-11', 'Distribution', 'G5 Advance', '1', 'GGCH001G', '', 'Installed on unit']
     ];
     const csv = [headers, ...sample].map(row =>
         row.map(csvCell).join(',')).join('\n');
@@ -7994,7 +7994,7 @@ function downloadLicenseTemplate() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'template_stok_lisensi.csv';
+    a.download = 'license_stock_template.csv';
     a.click();
     URL.revokeObjectURL(url);
 }
@@ -8094,13 +8094,13 @@ function handleLicenseCSVImport(file) {
                         renderLicenseSummary();
                         renderLicenseStockTable();
                         cloudWriteFailed(err, {
-                            what: `impor ${added.length} transaksi lisensi`,
-                            label: '[Lisensi] Import CSV',
+                            what: `import ${added.length} license transaction(s)`,
+                            label: '[License] Import CSV',
                             resync: resyncLicenses
                         });
                     });
                 }
-                logEvent({ action: 'add', unitName: '[Lisensi] Import CSV', after: `${added.length} transaksi` });
+                logEvent({ action: 'add', unitName: '[License] Import CSV', after: `${added.length} transaction(s)` });
                 // Imported distributions go straight to their units, like the
                 // Distribusi form — but only where an imported row is now the
                 // LATEST for that unit licence and nothing newer is on the
@@ -8128,15 +8128,15 @@ function handleLicenseCSVImport(file) {
             }
 
             showLoading(false);
-            const msg = `Import lisensi: ${added.length} ditambahkan` + (rejected ? `, ${rejected} dilewati (jenis lisensi kosong)` : '')
-                + (heavyRejected ? `, ${heavyRejected} dilewati (unit Alat Berat — lisensi SF/G5 hanya untuk ${UNIT_GROUPS.tractor.shortLabel})` : '')
-                + (importSync.applied ? ` · lisensi ${importSync.applied} unit ikut diperbarui` : '')
-                + (importSync.newer ? ` · ${importSync.newer} unit tidak diubah (berlaku lebih lama)` : '')
-                + (importSync.noAccess ? ` · ${importSync.noAccess} lisensi unit belum diterapkan (butuh hak edit Unit)` : '');
+            const msg = `License import: ${added.length} added` + (rejected ? `, ${rejected} skipped (empty license type)` : '')
+                + (heavyRejected ? `, ${heavyRejected} skipped (Heavy Equipment unit — SF/G5 licenses are only for ${UNIT_GROUPS.tractor.shortLabel})` : '')
+                + (importSync.applied ? ` · licenses of ${importSync.applied} unit(s) updated too` : '')
+                + (importSync.newer ? ` · ${importSync.newer} unit(s) not changed (valid for longer)` : '')
+                + (importSync.noAccess ? ` · ${importSync.noAccess} unit license(s) not applied yet (Unit edit access required)` : '');
             showToast(msg, added.length ? 'success' : 'warning');
         },
         error: err => {
-            showToast('Gagal membaca CSV: ' + err.message, 'error');
+            showToast('Failed to read CSV: ' + err.message, 'error');
             showLoading(false);
         }
     });
@@ -8146,8 +8146,8 @@ function handleLicenseCSVImport(file) {
 function cloudPushLicense(rec) {
     if (suppressCloudWrites || !window.cloud?.isReady || !rec) return;
     window.cloud.saveLicense(rec).catch(err => cloudWriteFailed(err, {
-        what: 'stok lisensi',
-        label: `[Lisensi] ${rec.licenseType || '-'}`,
+        what: 'license stock',
+        label: `[License] ${rec.licenseType || '-'}`,
         unitId: rec.unitId || '',
         resync: resyncLicenses
     }));
@@ -8156,8 +8156,8 @@ function cloudPushLicense(rec) {
 function cloudDeleteLicense(id) {
     if (suppressCloudWrites || !window.cloud?.isReady || !id) return;
     window.cloud.deleteLicense(id).catch(err => cloudWriteFailed(err, {
-        what: 'hapus stok lisensi',
-        label: '[Lisensi] -',
+        what: 'delete license stock',
+        label: '[License] -',
         resync: resyncLicenses
     }));
 }
@@ -8218,13 +8218,13 @@ function renderRulesBanner(host, key, label, collections, opts) {
     banner.dataset.rulesFor = key;
     const cols = collections.map(c => `<code>${escapeHtml(c)}</code>`).join(', ');
     banner.innerHTML = (isOwner && isOwner())
-        ? `<strong><i class="fas fa-triangle-exclamation"></i> Firestore rules memblokir ${escapeHtml(label)}.</strong>
-           <p>Rules proyek Anda belum mengizinkan akses ke koleksi ${cols}. Publish ulang file
-           <code>firestore.rules</code> dari repo ini di
-           <em>Firebase Console → Firestore → Rules</em>, lalu muat ulang halaman.</p>`
-        : `<strong><i class="fas fa-triangle-exclamation"></i> Tidak bisa membuka ${escapeHtml(label)}.</strong>
-           <p>Biasanya ini berarti akun Anda belum diaktifkan, atau belum diberi akses ke
-           bagian ini. Minta owner memeriksanya, lalu muat ulang halaman.</p>`;
+        ? `<strong><i class="fas fa-triangle-exclamation"></i> Firestore rules are blocking ${escapeHtml(label)}.</strong>
+           <p>Your project's rules do not allow access to the ${cols} collection yet. Re-publish the
+           <code>firestore.rules</code> file from this repo in
+           <em>Firebase Console → Firestore → Rules</em>, then reload the page.</p>`
+        : `<strong><i class="fas fa-triangle-exclamation"></i> Cannot open ${escapeHtml(label)}.</strong>
+           <p>This usually means your account has not been activated yet, or has not been given access to
+           this section. Ask the owner to check, then reload the page.</p>`;
     if (opts && opts.prepend) host.insertBefore(banner, host.firstChild);
     else host.appendChild(banner);
 }
@@ -8238,7 +8238,7 @@ function clearRulesBanner(key) {
 
 function showLicenseRulesBanner() {
     renderRulesBanner(document.querySelector('#viewLicenseStock .license-rules-slot'),
-        'licenseStock', 'stok lisensi', ['licenseStock']);
+        'licenseStock', 'license stock', ['licenseStock']);
 }
 
 // ============================================================
@@ -8260,7 +8260,7 @@ function cloudDeleteUnits(ids) {
     if (suppressCloudWrites || !window.cloud?.isReady || !ids?.length) return;
     if (!canWriteUnits('cloudDeleteUnits')) return;
     window.cloud.deleteUnits(ids).catch(err => cloudWriteFailed(err, {
-        what: 'hapus unit',
+        what: 'delete unit',
         label: `${ids.length} unit`,
         unitId: ids.length === 1 ? ids[0] : '',
         resync: resyncUnits
@@ -8280,7 +8280,7 @@ function cloudPushImplement(imp) {
 function cloudDeleteImplement(id) {
     if (suppressCloudWrites || !window.cloud?.isReady || !id) return;
     window.cloud.deleteImplement(id).catch(err => cloudWriteFailed(err, {
-        what: 'hapus implement',
+        what: 'delete implement',
         label: '[Implement] -',
         unitId: id,
         resync: resyncImplements
@@ -8308,20 +8308,20 @@ async function migrateLocalToCloudIfNeeded() {
         if (await isEmpty('units', window.cloud.getAllUnits) && globalData.length > 0) {
             console.log(`[cloud] migrating ${globalData.length} local units to Firestore...`);
             await window.cloud.saveUnits(globalData);
-            showToast(`${globalData.length} unit diunggah ke cloud`, 'success');
+            showToast(`${globalData.length} unit(s) uploaded to the cloud`, 'success');
         }
         // Implements
         if (await isEmpty('implements', window.cloud.getAllImplements) && globalImplements.length > 0) {
             console.log(`[cloud] migrating ${globalImplements.length} local implements to Firestore...`);
             await window.cloud.saveImplements(globalImplements);
-            showToast(`${globalImplements.length} implement diunggah ke cloud`, 'success');
+            showToast(`${globalImplements.length} implement(s) uploaded to the cloud`, 'success');
         }
         // Damage records
         if (window.cloud.getAllDamages) {
             if (await isEmpty('damages', window.cloud.getAllDamages) && globalDamages.length > 0) {
                 console.log(`[cloud] migrating ${globalDamages.length} local damage records to Firestore...`);
                 await window.cloud.saveDamages(globalDamages);
-                showToast(`${globalDamages.length} catatan kerusakan diunggah ke cloud`, 'success');
+                showToast(`${globalDamages.length} damage record(s) uploaded to the cloud`, 'success');
             }
         }
         // License stock
@@ -8329,12 +8329,12 @@ async function migrateLocalToCloudIfNeeded() {
             if (await isEmpty('licenses', window.cloud.getAllLicenses) && globalLicenseStock.length > 0) {
                 console.log(`[cloud] migrating ${globalLicenseStock.length} local license records to Firestore...`);
                 await window.cloud.saveLicenses(globalLicenseStock);
-                showToast(`${globalLicenseStock.length} catatan lisensi diunggah ke cloud`, 'success');
+                showToast(`${globalLicenseStock.length} license record(s) uploaded to the cloud`, 'success');
             }
         }
     } catch (e) {
         console.error('[cloud] migration failed:', e);
-        showToast('Migrasi ke cloud gagal — periksa console', 'error');
+        showToast('Cloud migration failed — check the console', 'error');
     }
 }
 
@@ -8510,12 +8510,12 @@ function applyLicenseDatesIfNeeded() {
                 after: `Imported start+expiry dates on ${updates.length} units`
             });
         } catch (e) {}
-        showToast(`Tanggal lisensi diimpor untuk ${updates.length} unit`, 'success');
+        showToast(`License dates imported for ${updates.length} unit(s)`, 'success');
         if (currentView === 'dashboard') updateDashboard(filteredData);
         if (currentView === 'editUnits') renderEditTable();
     }).catch(err => {
         console.error('[license-dates] bulk save failed:', err);
-        showToast('Impor tanggal lisensi gagal — periksa console', 'error');
+        showToast('License date import failed — check the console', 'error');
     });
 }
 
@@ -8560,7 +8560,7 @@ function seedDefaultUserCategoriesIfOwner() {
     console.log('[user-categories] seeding 3 default categories...');
     window.cloud.saveUserCategories(defaults).then(() => {
         localStorage.setItem(USER_CATEGORIES_SEED_KEY, '1');
-        showToast('Kategori user bawaan ditambahkan', 'success');
+        showToast('Default user categories added', 'success');
     }).catch(err => {
         console.error('[user-categories] seed failed:', err);
         if (err && err.code === 'permission-denied') {
@@ -8573,18 +8573,18 @@ function seedDefaultUserCategoriesIfOwner() {
 function showCategoryRulesBanner() {
     const modal = document.getElementById('categoriesModal');
     renderRulesBanner(modal && modal.querySelector('.modal-body'),
-        'userCategories', 'kategori pengguna', ['userCategories'], { prepend: true });
+        'userCategories', 'user categories', ['userCategories'], { prepend: true });
 }
 
 function showHistoryRulesBanner() {
     const modal = document.getElementById('historyModal');
     renderRulesBanner(modal && modal.querySelector('.history-rules-slot'),
-        'history', 'riwayat perubahan', ['history']);
+        'history', 'change history', ['history']);
 }
 
 function showDamageRulesBanner() {
     renderRulesBanner(document.querySelector('#viewDamage .damage-rules-slot'),
-        'damageRecords', 'catatan kerusakan', ['damageRecords']);
+        'damageRecords', 'damage records', ['damageRecords']);
 }
 
 function renderUserCategoryOptions() {
@@ -8637,7 +8637,7 @@ function addCategory(event) {
     const input = document.getElementById('newCategoryName');
     const name = (input.value || '').trim();
     if (!name) {
-        showToast('Isi nama kategori', 'warning');
+        showToast('Enter a category name', 'warning');
         return;
     }
     // Prevent duplicates (case-insensitive)
@@ -8657,15 +8657,15 @@ function addCategory(event) {
     cloudWrite(
         { action: 'add', unitName: '-', field: 'user category', after: name },
         cloudCall('saveUserCategory', cat),
-        `Kategori "${name}" ditambahkan`,
+        `Category "${name}" added`,
         err => {
         console.error('[user-categories] save failed:', err);
         const code = (err && err.code) || 'unknown';
         if (code === 'permission-denied') {
-            showToast('Firestore rules memblokir userCategories — lihat banner', 'error');
+            showToast('Firestore rules are blocking userCategories — see the banner', 'error');
             showCategoryRulesBanner();
         } else {
-            showToast(`Gagal menyimpan kategori (${code})`, 'error');
+            showToast(`Failed to save category (${code})`, 'error');
         }
         }
     );
@@ -8678,22 +8678,22 @@ function deleteCategory(id) {
     // Warn if this category is in use by any unit
     const inUse = globalData.filter(u => u.userCategory === cat.name).length;
     const prompt = inUse > 0
-        ? `Hapus kategori "${cat.name}"?\n\n${inUse} unit masih memakainya. Nilai di unit itu TIDAK dihapus — `
-          + `hanya pilihannya yang hilang dari daftar. Ganti kategori unit itu lewat Bulk Edit kalau perlu.`
-        : `Hapus kategori "${cat.name}"?`;
+        ? `Delete category "${cat.name}"?\n\n${inUse} unit(s) still use it. The value on those units is NOT deleted — `
+          + `only the option disappears from the list. Change those units' category via Bulk Edit if needed.`
+        : `Delete category "${cat.name}"?`;
     if (!confirm(prompt)) return;
     cloudWrite(
         { action: 'delete', unitName: '-', field: 'user category', before: cat.name },
         cloudCall('deleteUserCategory', id),
-        `Kategori "${cat.name}" dihapus`,
+        `Category "${cat.name}" deleted`,
         err => {
         console.error('[user-categories] delete failed:', err);
         const code = (err && err.code) || 'unknown';
         if (code === 'permission-denied') {
-            showToast('Firestore rules memblokir userCategories — lihat banner', 'error');
+            showToast('Firestore rules are blocking userCategories — see the banner', 'error');
             showCategoryRulesBanner();
         } else {
-            showToast(`Gagal menghapus kategori (${code})`, 'error');
+            showToast(`Failed to delete category (${code})`, 'error');
         }
         }
     );
@@ -8745,7 +8745,7 @@ function seedDefaultDamageComponentsIfOwner() {
 function showDamageComponentRulesBanner() {
     const modal = document.getElementById('damageComponentsModal');
     renderRulesBanner(modal && modal.querySelector('.modal-body'),
-        'damageComponents', 'komponen kerusakan', ['damageComponents'], { prepend: true });
+        'damageComponents', 'damage components', ['damageComponents'], { prepend: true });
 }
 
 // Fill the damage modal's component <select> from the managed list.
@@ -8795,12 +8795,12 @@ function renderDamageComponentOptions() {
 
 // The hint under "Set status Breakdown" names the components of the chosen
 // unit's group. Tractor (or no unit): today's wording.
-const DAMAGE_HINT_TRACTOR = 'Device Precision → komponen terkait (GPS/Display/Steering/JDLink); tipe lain → status unit.';
+const DAMAGE_HINT_TRACTOR = 'Device Precision → the related component (GPS/Display/Steering/JDLink); other types → unit status.';
 function renderDamageHint(unit) {
     const el = document.getElementById('dmgBreakdownHint');
     if (!el) return;
     el.textContent = (unit && isHeavy(unit))
-        ? 'Device Precision → komponen terkait (Camera AI/Telematic Box/Switch Limiter/Rotary Lamp); tipe lain → status unit.'
+        ? 'Device Precision → the related component (Camera AI/Telematic Box/Switch Limiter/Rotary Lamp); other types → unit status.'
         : DAMAGE_HINT_TRACTOR;
 }
 
@@ -8808,7 +8808,7 @@ function onDamageUnitChanged() {
     const dropped = renderDamageComponentOptions();
     if (dropped) {
         const unit = resolveDamageUnit(document.getElementById('dmgUnit').value);
-        showToast(`Komponen "${dropped}" tidak berlaku untuk ${groupDef(unitGroupOf(unit)).shortLabel} — pilih ulang`, 'warning');
+        showToast(`Component "${dropped}" does not apply to ${groupDef(unitGroupOf(unit)).shortLabel} — pick again`, 'warning');
     }
 }
 
@@ -8850,13 +8850,13 @@ function addDamageComponent(event) {
     if (!requireEdit('damage')) return;
     const input = document.getElementById('newComponentName');
     const name = (input.value || '').trim();
-    if (!name) { showToast('Isi nama komponen', 'warning'); return; }
+    if (!name) { showToast('Enter a component name', 'warning'); return; }
     const exists = damageComponents.some(c => (c.name || '').toLowerCase() === name.toLowerCase());
-    if (exists) { showToast(`Komponen "${name}" sudah ada`, 'warning'); return; }
+    if (exists) { showToast(`Component "${name}" already exists`, 'warning'); return; }
     // Heavy components are built in and keyed to heavy fields; a custom one of
     // the same name would put 'Camera AI' in front of every tractor.
     if (heavyComponentField(name)) {
-        showToast(`"${name}" sudah bawaan Alat Berat — tidak perlu ditambahkan`, 'warning');
+        showToast(`"${name}" is already built in for Heavy Equipment — no need to add it`, 'warning');
         return;
     }
 
@@ -8870,17 +8870,17 @@ function addDamageComponent(event) {
     };
     input.value = '';
     cloudWrite(
-        { action: 'add', unitName: '-', field: 'komponen kerusakan', after: name },
+        { action: 'add', unitName: '-', field: 'damage component', after: name },
         cloudCall('saveDamageComponent', comp),
-        `Komponen "${name}" ditambahkan`,
+        `Component "${name}" added`,
         err => {
         console.error('[damage-components] save failed:', err);
         const code = (err && err.code) || 'unknown';
         if (code === 'permission-denied') {
-            showToast('Firestore rules memblokir damageComponents — lihat panduan', 'error');
+            showToast('Firestore rules are blocking damageComponents — see the guide', 'error');
             showDamageComponentRulesBanner();
         } else {
-            showToast(`Gagal menyimpan komponen (${code})`, 'error');
+            showToast(`Failed to save component (${code})`, 'error');
         }
         }
     );
@@ -8892,21 +8892,21 @@ function deleteDamageComponent(id) {
     if (!comp) return;
     const inUse = globalDamages.filter(d => d.component === comp.name).length;
     const prompt = inUse > 0
-        ? `Hapus komponen "${comp.name}"?\n${inUse} catatan kerusakan memakainya (data lama tetap tersimpan).`
-        : `Hapus komponen "${comp.name}"?`;
+        ? `Delete component "${comp.name}"?\n${inUse} damage record(s) use it (existing data stays saved).`
+        : `Delete component "${comp.name}"?`;
     if (!confirm(prompt)) return;
     cloudWrite(
-        { action: 'delete', unitName: '-', field: 'komponen kerusakan', before: comp.name },
+        { action: 'delete', unitName: '-', field: 'damage component', before: comp.name },
         cloudCall('deleteDamageComponent', id),
-        `Komponen "${comp.name}" dihapus`,
+        `Component "${comp.name}" deleted`,
         err => {
         console.error('[damage-components] delete failed:', err);
         const code = (err && err.code) || 'unknown';
         if (code === 'permission-denied') {
-            showToast('Firestore rules memblokir damageComponents — lihat panduan', 'error');
+            showToast('Firestore rules are blocking damageComponents — see the guide', 'error');
             showDamageComponentRulesBanner();
         } else {
-            showToast(`Gagal menghapus komponen (${code})`, 'error');
+            showToast(`Failed to delete component (${code})`, 'error');
         }
         }
     );
@@ -8936,7 +8936,7 @@ function initCloudSync() {
                 console.warn('[cloud] damage records offline:', err && err.code);
                 if (err && err.code === 'permission-denied') {
                     showDamageRulesBanner();
-                    showToast('Kerusakan diblokir Firestore rules — lihat panel Kerusakan', 'warning');
+                    showToast('Damage is blocked by Firestore rules — see the Damage panel', 'warning');
                 }
             });
         }
@@ -8945,7 +8945,7 @@ function initCloudSync() {
                 console.warn('[cloud] license stock offline:', err && err.code);
                 if (err && err.code === 'permission-denied') {
                     showLicenseRulesBanner();
-                    showToast('Stok Lisensi diblokir Firestore rules — lihat panel Stok Lisensi', 'warning');
+                    showToast('License Stock is blocked by Firestore rules — see the License Stock panel', 'warning');
                 }
             });
         }
@@ -9340,7 +9340,7 @@ async function claimActiveSession(uid) {
         // Sign-in still works; the single-session rule just is not enforced.
         console.warn('[session] could not claim session:', e && e.code);
         if (e && e.code === 'permission-denied') {
-            showToast('Aturan sesi tunggal belum aktif — publish ulang firestore.rules', 'warning');
+            showToast('Single-session rule is not active yet — re-publish firestore.rules', 'warning');
         }
     }
 }
@@ -9373,7 +9373,7 @@ function watchOwnUserDoc(uid) {
             renderUserPill();
             // Which collections this account may read changed: subscribe again.
             if (cloudInitialized) { tearDownCloudSync(); cloudInitialized = false; maybeInitCloudSync(); }
-            showToast('Hak akses Anda diperbarui oleh admin', 'info');
+            showToast('Your access rights were updated by an admin', 'info');
         }
     }, err => console.warn('[session] user doc watch failed:', err && err.code));
 }
@@ -9392,8 +9392,8 @@ async function handleSessionTakenOver(active) {
     const revoked = String(active.id || '').startsWith('revoked_');
     const where = active.device ? ` (${active.device})` : '';
     const msg = revoked
-        ? 'Sesi Anda diakhiri oleh admin. Silakan masuk kembali.'
-        : `Anda dikeluarkan karena akun ini dibuka di perangkat lain${where}.`;
+        ? 'Your session was ended by an admin. Please sign in again.'
+        : `You were signed out because this account was opened on another device${where}.`;
 
     try { await window.cloud.signOutUser(); } catch (e) { /* gate still shows below */ }
     currentUser = null;
@@ -9415,7 +9415,7 @@ async function expireSession() {
     if (_expiring) return;
     _expiring = true;
     if (_sessionTimer) { clearTimeout(_sessionTimer); _sessionTimer = null; }
-    showToast('Sesi harian berakhir — silakan login kembali', 'warning');
+    showToast('Daily session ended — please sign in again', 'warning');
     try {
         await window.cloud.signOutUser();
         // onAuthChange(null) clears the clock; do it here too in case it
