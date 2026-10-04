@@ -9677,8 +9677,8 @@ function canCsv(min, notify = true) {
     const ok = _CSV_RANK[effectiveCsv()] >= _CSV_RANK[min];
     if (!ok && notify) {
         showToast(min === 'full'
-            ? 'Anda tidak punya izin Import CSV'
-            : 'Anda tidak punya izin Export CSV', 'warning');
+            ? 'You do not have permission to import CSV'
+            : 'You do not have permission to export CSV', 'warning');
     }
     return ok;
 }
@@ -9747,7 +9747,7 @@ function applyAccessVisibility() {
 function requireEdit(area) {
     const ok = area ? hasAccess(area, 'edit') : canEditAnyArea();
     if (!ok) {
-        showToast('Akses hanya-lihat — minta owner untuk memberi hak edit', 'warning');
+        showToast('View-only access — ask the owner for edit rights', 'warning');
         return false;
     }
     return true;
@@ -9972,10 +9972,10 @@ async function saveAccess() {
             field: 'access',
             after: ACCESS_AREAS.map(a => `${a.label}:${access[a.key]}`).join(', ')
         });
-        showToast(`Akses "${user.displayName || user.email}" diperbarui`, 'success');
+        showToast(`Access for "${user.displayName || user.email}" updated`, 'success');
         closeAccessModal();
     } catch (e) {
-        showToast('Gagal menyimpan akses: ' + e.message, 'error');
+        showToast('Failed to save access: ' + e.message, 'error');
     }
 }
 
@@ -9989,7 +9989,7 @@ async function approveUser(uid, role) {
         role = sel ? sel.value : 'khl';
     }
     if (!ROLES.some(r => r.key === role) || role === 'owner') {
-        showToast('Role tidak dikenal', 'warning');
+        showToast('Unknown role', 'warning');
         return;
     }
     const label = roleLabel(role);
@@ -10005,10 +10005,10 @@ async function approveUser(uid, role) {
         });
         // The new roles carry no access, so approving alone leaves them with an
         // empty app — point the owner straight at the next step.
-        showToast(`${user.email} disetujui sebagai ${label} — atur hak aksesnya lewat tombol Akses`, 'success');
+        showToast(`${user.email} approved as ${label} — set their access rights with the Access button`, 'success');
     } catch (e) {
         console.error('[users] approve failed:', e);
-        showToast('Gagal menyetujui user — ' + e.message, 'error');
+        showToast('Failed to approve user — ' + e.message, 'error');
     }
 }
 
@@ -10016,7 +10016,7 @@ async function rejectUser(uid) {
     if (!isOwner()) return;
     const user = allUsers.find(u => u.uid === uid);
     if (!user) return;
-    if (!confirm(`Tolak dan hapus ${user.email}?\n\nAkun Firebase-nya tetap ada, tetapi ia kehilangan akses ke dashboard.`)) return;
+    if (!confirm(`Reject and delete ${user.email}?\n\nTheir Firebase account remains, but they lose access to the dashboard.`)) return;
     try {
         await window.cloud.deleteUserDoc(uid);
         logEvent({
@@ -10028,7 +10028,7 @@ async function rejectUser(uid) {
         });
         showToast(`Rejected ${user.email}`, 'success');
     } catch (e) {
-        showToast('Gagal menolak user — ' + e.message, 'error');
+        showToast('Failed to reject user — ' + e.message, 'error');
     }
 }
 
@@ -10037,7 +10037,7 @@ async function changeUserRole(uid, newRole) {
     const user = allUsers.find(u => u.uid === uid);
     if (!user) return;
     if (user.uid === currentUser.uid && user.role === 'owner') {
-        showToast("Anda tidak bisa mengubah role owner milik sendiri.", 'warning');
+        showToast("You cannot change your own owner role.", 'warning');
         renderUsersView();
         return;
     }
@@ -10050,12 +10050,12 @@ async function changeUserRole(uid, newRole) {
     // Super Admin is unrestricted by design and can manage every other account,
     // so granting it deserves a deliberate yes.
     if (newRole === 'owner' &&
-        !confirm(`Jadikan ${user.email} Super Admin?\n\nSuper Admin punya akses penuh ke seluruh data dan bisa mengubah atau menghapus akun lain, termasuk mencabut akses Anda. Hanya berikan ke orang yang Anda percaya sepenuhnya.`)) {
+        !confirm(`Make ${user.email} a Super Admin?\n\nA Super Admin has full access to all data and can change or delete other accounts, including revoking your access. Only grant this to someone you fully trust.`)) {
         renderUsersView();
         return;
     }
     if (oldRole === 'owner' &&
-        !confirm(`Turunkan ${user.email} dari Super Admin menjadi ${after}?\n\nSetelah ini akses mereka mengikuti pengaturan per-menu, dan role baru tidak memberi akses apa pun sampai Anda mengaturnya.`)) {
+        !confirm(`Demote ${user.email} from Super Admin to ${after}?\n\nTheir access will then follow the per-menu settings, and the new role grants no access until you set it.`)) {
         renderUsersView();
         return;
     }
@@ -10073,10 +10073,10 @@ async function changeUserRole(uid, newRole) {
         const needsAccess = newRole !== 'owner' &&
             ACCESS_AREAS.every(a => effectiveAccess(a.key, { ...user, role: newRole }) === 'none');
         showToast(needsAccess
-            ? `${user.email} sekarang ${after} — belum punya akses, atur lewat tombol Akses`
-            : `${user.email} sekarang ${after}`, 'success');
+            ? `${user.email} is now ${after} — no access yet, set it with the Access button`
+            : `${user.email} is now ${after}`, 'success');
     } catch (e) {
-        showToast('Gagal mengubah role — ' + e.message, 'error');
+        showToast('Failed to change role — ' + e.message, 'error');
     }
 }
 
@@ -10087,12 +10087,12 @@ async function forceSignOutUser(uid) {
     const user = allUsers.find(u => u.uid === uid);
     if (!user) return;
     if (currentUser && uid === currentUser.uid) {
-        showToast('Gunakan menu akun untuk keluar dari perangkat ini', 'warning');
+        showToast('Use the account menu to sign out of this device', 'warning');
         return;
     }
     const sess = user.activeSession;
-    const where = (sess && sess.device) ? `\n\nPerangkat aktif: ${sess.device}` : '';
-    if (!confirm(`Keluarkan ${user.email} dari semua perangkat?${where}\n\nMereka harus masuk lagi. Data mereka tidak terhapus.`)) return;
+    const where = (sess && sess.device) ? `\n\nActive device: ${sess.device}` : '';
+    if (!confirm(`Sign ${user.email} out of all devices?${where}\n\nThey will have to sign in again. Their data is not deleted.`)) return;
     try {
         const fn = cloudFn('revokeUserSession');
         if (!fn) return;
@@ -10101,13 +10101,13 @@ async function forceSignOutUser(uid) {
             action: 'update',
             unitId: uid,
             unitName: `[User] ${user.displayName || user.email}`,
-            field: 'Sesi',
-            before: (sess && sess.device) || 'aktif',
-            after: 'dikeluarkan'
+            field: 'Session',
+            before: (sess && sess.device) || 'active',
+            after: 'signed out'
         });
-        showToast(`${user.email} dikeluarkan dari semua perangkat`, 'success');
+        showToast(`${user.email} signed out of all devices`, 'success');
     } catch (e) {
-        showToast('Gagal mengakhiri sesi — ' + e.message, 'error');
+        showToast('Failed to end session — ' + e.message, 'error');
     }
 }
 
@@ -10115,8 +10115,8 @@ async function removeUser(uid) {
     if (!isOwner()) return;
     const user = allUsers.find(u => u.uid === uid);
     if (!user) return;
-    if (user.role === 'owner') { showToast('Owner tidak bisa dihapus', 'warning'); return; }
-    if (!confirm(`Hapus ${user.email} dari dashboard?\n\nAkun Firebase-nya tetap ada, tetapi ia kehilangan seluruh akses.`)) return;
+    if (user.role === 'owner') { showToast('The owner cannot be removed', 'warning'); return; }
+    if (!confirm(`Remove ${user.email} from the dashboard?\n\nTheir Firebase account remains, but they lose all access.`)) return;
     try {
         await window.cloud.deleteUserDoc(uid);
         logEvent({
@@ -10126,9 +10126,9 @@ async function removeUser(uid) {
             before: user.role,
             after: 'removed'
         });
-        showToast(`${user.email} dihapus`, 'success');
+        showToast(`${user.email} removed`, 'success');
     } catch (e) {
-        showToast('Gagal menghapus user — ' + e.message, 'error');
+        showToast('Failed to remove user — ' + e.message, 'error');
     }
 }
 
@@ -10162,8 +10162,8 @@ const SHIFT_TYPES = [
     { key: 'libur', label: 'Off', hours: '—' }
 ];
 const SHIFT_LABEL = SHIFT_TYPES.reduce((m, s) => { m[s.key] = s.label; return m; }, {});
-const DAY_NAMES = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 let teamTab = 'shift';      // 'shift' | 'worklog'
 let teamWeekStart = null;   // ISO date of the Monday of the visible week
@@ -10342,10 +10342,10 @@ function lockedReason(rec, noun, areas = TEAM_AREAS) {
     const st = workLogApproval(rec);
     if (st === 'pending') {
         return canWithdrawTeamRecord(rec, areas)
-            ? `${noun} sedang menunggu persetujuan — tarik kembali dulu untuk mengubahnya`
-            : `${noun} sedang menunggu persetujuan dan belum bisa diubah`;
+            ? `${noun} is pending approval — withdraw it first to change it`
+            : `${noun} is pending approval and cannot be changed yet`;
     }
-    if (st === 'approved') return `${noun} sudah disetujui — minta atasan membukanya lewat Minta Revisi`;
+    if (st === 'approved') return `${noun} is already approved — ask a supervisor to reopen it with Request Revision`;
     return '';
 }
 
@@ -10462,7 +10462,7 @@ function memberById(id) {
 // the record, so a deleted member still reads correctly in old rows.
 function memberNameOf(rec) {
     const m = rec && rec.memberId ? memberById(rec.memberId) : null;
-    return m ? m.name : ((rec && rec.memberName) || '(anggota dihapus)');
+    return m ? m.name : ((rec && rec.memberName) || '(deleted member)');
 }
 
 // ---- Cloud snapshots ----
@@ -10543,8 +10543,8 @@ function migrateWorkLogPhotosIfNeeded() {
             logEvent({
                 action: 'migrate',
                 unitName: '-',
-                field: 'foto laporan',
-                after: `${moved} laporan dipindah ke koleksi workLogPhotos`
+                field: 'report photos',
+                after: `${moved} report(s) moved to the workLogPhotos collection`
             });
         } catch (e) {}
         console.log(`[wl-photos] done — ${moved} work logs migrated`);
@@ -10563,11 +10563,11 @@ function showTeamRulesBanner() {
     const banner = document.createElement('div');
     banner.className = 'category-rules-banner';
     banner.innerHTML = `
-        <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules memblokir data Tim.</strong>
-        <p>Rules proyek Anda belum mengizinkan akses ke koleksi <code>teamMembers</code>,
-        <code>shifts</code>, dan <code>workLogs</code>. Publish ulang file
-        <code>firestore.rules</code> dari repo ini di
-        <em>Firebase Console → Firestore → Rules</em>, lalu muat ulang halaman.</p>`;
+        <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules are blocking Team data.</strong>
+        <p>Your project's rules do not yet allow access to the <code>teamMembers</code>,
+        <code>shifts</code> and <code>workLogs</code> collections. Republish the
+        <code>firestore.rules</code> file from this repo in
+        <em>Firebase Console → Firestore → Rules</em>, then reload the page.</p>`;
     slot.appendChild(banner);
 }
 
@@ -10656,7 +10656,7 @@ function shiftSetByLabel(memberId, date) {
     if (!rec || !rec.updatedBy) return '';
     const when = rec.updatedAt ? new Date(rec.updatedAt).toLocaleString('id-ID',
         { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
-    return `Diisi ${rec.updatedBy}${when ? ' · ' + when : ''}`;
+    return `Set by ${rec.updatedBy}${when ? ' · ' + when : ''}`;
 }
 
 // ---- Shift subscription window ----
@@ -10842,9 +10842,9 @@ function reportShiftOverwrites(list) {
         // Different value — but only shout if somebody else put it there.
         // Our own pending write simply has not landed yet.
         if (server && server.updatedByUid && server.updatedByUid !== myUid) {
-            const who = server.updatedBy || 'orang lain';
-            const label = serverShift ? (SHIFT_LABEL[serverShift] || serverShift) : 'kosong';
-            showToast(`Jadwal ${mine.memberName} ${mine.date} baru diubah ${who} menjadi ${label}`, 'warning');
+            const who = server.updatedBy || 'someone else';
+            const label = serverShift ? (SHIFT_LABEL[serverShift] || serverShift) : 'empty';
+            showToast(`${who} just changed the schedule for ${mine.memberName} on ${mine.date} to ${label}`, 'warning');
             _shiftPendingWrites.delete(id);
         }
     });
@@ -10890,14 +10890,14 @@ function setShift(memberId, date, shiftKey) {
     renderShiftGrid();
 
     if (!window.cloud || !window.cloud.saveShift) {
-        showToast('Cloud belum siap — perubahan shift belum tersimpan', 'warning');
+        showToast('Cloud not ready — shift change not saved', 'warning');
         teamShifts = snapshot;
         renderShiftGrid();
         return;
     }
 
     cloudWrite(
-        { action: 'update', unitName: `[Tim] ${m.name}`, field: `Shift ${date}`, before, after },
+        { action: 'update', unitName: `[Team] ${m.name}`, field: `Shift ${date}`, before, after },
         rec ? cloudCall('saveShift', rec) : cloudCall('deleteShift', id),
         null,
         err => {
@@ -10906,7 +10906,7 @@ function setShift(memberId, date, shiftKey) {
             teamShifts = snapshot;
             renderShiftGrid();
             if (err && err.code === 'permission-denied') showTeamRulesBanner();
-            showToast('Gagal menyimpan shift — perubahan dikembalikan', 'error');
+            showToast('Failed to save shift — change reverted', 'error');
         }
     );
 }
@@ -10914,9 +10914,9 @@ function setShift(memberId, date, shiftKey) {
 function exportShiftCSV() {
     if (!canCsv('export')) return;
     const members = activeMembers();
-    if (members.length === 0) { showToast('Belum ada anggota tim untuk diexport', 'warning'); return; }
+    if (members.length === 0) { showToast('No team members to export yet', 'warning'); return; }
     const dates = weekDates(teamWeekStart || startOfWeekISO(toISODate()));
-    const headers = ['Perusahaan', 'Anggota', 'Jabatan', ...dates.map(d => `${dayLabel(d)} (${d})`)];
+    const headers = ['Company', 'Member', 'Job Title', ...dates.map(d => `${dayLabel(d)} (${d})`)];
     // Exported in the same company order the grid shows, so the file reads the
     // same way as the screen.
     const rows = membersByCompany().flatMap(([company, list]) => list.map(m => [
@@ -10932,10 +10932,10 @@ function exportShiftCSV() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `jadwal_shift_${dates[0]}_sd_${dates[6]}.csv`;
+    a.download = `shift_schedule_${dates[0]}_to_${dates[6]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`Export jadwal shift ${members.length} anggota ke CSV`, 'success');
+    showToast(`Exported shift schedule for ${members.length} member(s) to CSV`, 'success');
 }
 
 // ============================================================
@@ -11013,7 +11013,7 @@ function setMemberCompany(id, value) {
     if (currentView === 'team') renderTeamView();
 
     cloudWrite(
-        { action: 'update', unitName: `[Tim] ${m.name}`, field: 'Perusahaan',
+        { action: 'update', unitName: `[Team] ${m.name}`, field: 'Company',
           before: before || '—', after: company || '—' },
         cloudCall('saveTeamMember', rec),
         null,
@@ -11023,7 +11023,7 @@ function setMemberCompany(id, value) {
             renderTeamMembersList();
             if (currentView === 'team') renderTeamView();
             if (err && err.code === 'permission-denied') showTeamRulesBanner();
-            showToast('Gagal menyimpan perusahaan — perubahan dikembalikan', 'error');
+            showToast('Failed to save company — change reverted', 'error');
         }
     );
 }
@@ -11037,20 +11037,20 @@ function addTeamMember(event) {
     const name = (nameEl.value || '').trim();
     const jobTitle = (jobEl.value || '').trim();
     const company = ((compEl && compEl.value) || '').trim();
-    if (!name) { showToast('Nama anggota tidak boleh kosong', 'warning'); return; }
+    if (!name) { showToast('Member name cannot be empty', 'warning'); return; }
     if (teamMembers.some(m => (m.name || '').toLowerCase() === name.toLowerCase())) {
-        showToast(`Anggota "${name}" sudah ada`, 'warning');
+        showToast(`Member "${name}" already exists`, 'warning');
         return;
     }
     const rec = { id: generateMemberId(), name, jobTitle, company, active: true, createdAt: Date.now() };
     cloudWrite(
-        { action: 'create', unitName: `[Tim] ${name}`, field: 'Anggota', before: '', after: jobTitle || name },
+        { action: 'create', unitName: `[Team] ${name}`, field: 'Member', before: '', after: jobTitle || name },
         cloudCall('saveTeamMember', rec),
-        `Anggota "${name}" ditambahkan`,
+        `Member "${name}" added`,
         err => {
             console.error('[team] member save failed:', err);
             if (err && err.code === 'permission-denied') showTeamRulesBanner();
-            showToast('Gagal menyimpan anggota', 'error');
+            showToast('Failed to save member', 'error');
         }
     );
     nameEl.value = '';
@@ -11066,14 +11066,14 @@ function toggleTeamMember(id) {
     if (!m) return;
     const nextActive = m.active === false;
     cloudWrite(
-        { action: 'update', unitName: `[Tim] ${m.name}`, field: 'Status anggota',
-          before: m.active === false ? 'Nonaktif' : 'Aktif',
-          after: nextActive ? 'Aktif' : 'Nonaktif' },
+        { action: 'update', unitName: `[Team] ${m.name}`, field: 'Member status',
+          before: m.active === false ? 'Inactive' : 'Active',
+          after: nextActive ? 'Active' : 'Inactive' },
         cloudCall('saveTeamMember', { ...m, active: nextActive, updatedAt: Date.now() }),
         null,
         err => {
             console.error('[team] member toggle failed:', err);
-            showToast('Gagal mengubah status anggota', 'error');
+            showToast('Failed to change member status', 'error');
         }
     );
 }
@@ -11088,17 +11088,17 @@ function deleteTeamMember(id) {
     const hasShifts = teamShifts.some(s => s.memberId === id);
     const logCount = workLogs.filter(w => w.memberId === id).length;
     const warn = (hasShifts || logCount)
-        ? `\n\nJadwal shift${logCount ? ` dan ${logCount} laporan harian` : ''} miliknya akan tetap tersimpan, tetapi namanya akan tampil sebagai "(anggota dihapus)". Untuk sekadar mengeluarkannya dari jadwal, pakai Nonaktifkan.`
+        ? `\n\nTheir shift schedule${logCount ? ` and ${logCount} daily report(s)` : ''} will be kept, but their name will show as "(deleted member)". To simply take them off the schedule, use Deactivate.`
         : '';
-    if (!confirm(`Hapus anggota "${m.name}"?${warn}`)) return;
+    if (!confirm(`Delete member "${m.name}"?${warn}`)) return;
 
     cloudWrite(
-        { action: 'delete', unitName: `[Tim] ${m.name}`, field: 'Anggota', before: m.jobTitle || m.name, after: '' },
+        { action: 'delete', unitName: `[Team] ${m.name}`, field: 'Member', before: m.jobTitle || m.name, after: '' },
         cloudCall('deleteTeamMember', id),
-        `Anggota "${m.name}" dihapus`,
+        `Member "${m.name}" deleted`,
         err => {
             console.error('[team] member delete failed:', err);
-            showToast('Gagal menghapus anggota', 'error');
+            showToast('Failed to delete member', 'error');
         }
     );
 }
@@ -11123,19 +11123,19 @@ function checkWorkLogHours(start, end) {
     const e = parseHHMM(end);
 
     if ((s == null) !== (e == null)) {
-        showToast('Isi jam mulai dan jam selesai dua-duanya, atau kosongkan dua-duanya', 'warning');
+        showToast('Fill in both the start and end time, or leave both empty', 'warning');
         return false;
     }
     if (s == null) return true;          // both blank — allowed on purpose
 
     if (s === e) {
-        return confirm('Jam mulai dan jam selesai sama, jadi laporan ini terhitung 0 jam. Tetap simpan?');
+        return confirm('The start and end times are the same, so this report counts as 0 hours. Save anyway?');
     }
     const mins = e - s < 0 ? e - s + 24 * 60 : e - s;
     if (e - s < 0 && mins >= WORKLOG_LONG_SHIFT_MIN) {
-        return confirm(`Jam kerja terbaca ${formatMinutes(mins)} karena jam selesai lebih awal dari jam mulai.\n\n`
-            + 'Kalau ini shift malam yang melewati tengah malam, tekan OK.\n'
-            + 'Kalau jamnya tertukar, tekan Batal lalu betulkan.');
+        return confirm(`Work hours read as ${formatMinutes(mins)} because the end time is earlier than the start time.\n\n`
+            + 'If this is a night shift that runs past midnight, press OK.\n'
+            + 'If the times are swapped, press Cancel and fix them.');
     }
     return true;
 }
@@ -11322,7 +11322,7 @@ function renderWorkLogTable() {
                         onclick="openWorkLogPhotos(${jsArg(w.id)}, this)"><i class="fas fa-image"></i> ${photoCount}</button>`
                 : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td class="col-actions">
-                ${canEdit ? rowActionsFor(w, 'Laporan', 'editWorkLog', 'deleteWorkLog', 'withdrawWorkLog') : ''}
+                ${canEdit ? rowActionsFor(w, 'Report', 'editWorkLog', 'deleteWorkLog', 'withdrawWorkLog') : ''}
             </td>
         </tr>`;
     }).join('');
@@ -11406,8 +11406,8 @@ function setPhotoAddState(btnId, loading, failed, what) {
     const btn = document.getElementById(btnId);
     if (!btn) return;
     btn.disabled = !!(loading || failed);
-    btn.title = loading ? `Tunggu ${what.toLowerCase()} lama selesai dimuat`
-        : failed ? `${what} lama gagal dimuat — tutup lalu buka lagi untuk mengubahnya` : '';
+    btn.title = loading ? `Wait for the existing ${what.toLowerCase()} to finish loading`
+        : failed ? `Existing ${what.toLowerCase()} failed to load — close and reopen to change them` : '';
 }
 
 function renderWorkLogUnitChips() {
@@ -11430,11 +11430,11 @@ function addWorkLogUnit() {
     if (!raw) return;
     const unit = resolveDamageUnit(raw);
     if (!unit) {
-        showToast(`Unit "${raw}" tidak ditemukan — pilih dari daftar`, 'warning');
+        showToast(`Unit "${raw}" not found — pick one from the list`, 'warning');
         return;
     }
     if (_wlUnits.some(u => u.id === unit.id)) {
-        showToast(`${unit.name || unit.sn} sudah ada di daftar`, 'warning');
+        showToast(`${unit.name || unit.sn} is already in the list`, 'warning');
         input.value = '';
         return;
     }
@@ -11453,7 +11453,7 @@ function renderWorkLogPhotos() {
     const wrap = document.getElementById('wlPhotoPreviews');
     const count = document.getElementById('wlPhotoCount');
     if (count) count.textContent = `${_wlPhotos.length}/${WORKLOG_PHOTO_MAX}`;
-    setPhotoAddState('wlPhotoAddBtn', _wlPhotosLoading, _wlPhotosFailed, 'Foto');
+    setPhotoAddState('wlPhotoAddBtn', _wlPhotosLoading, _wlPhotosFailed, 'Photos');
     if (!wrap) return;
     if (_wlPhotosLoading && !_wlPhotos.length) {
         wrap.innerHTML = '<span class="wl-photo__loading"><i class="fas fa-spinner fa-spin"></i> Loading photos…</span>';
@@ -11461,7 +11461,7 @@ function renderWorkLogPhotos() {
     }
     if (_wlPhotosFailed) {
         wrap.innerHTML = '<span class="wl-photo__loading"><i class="fas fa-triangle-exclamation"></i> '
-            + 'Foto lama gagal dimuat dan tetap tersimpan. Tutup lalu buka lagi untuk mengubahnya.</span>';
+            + 'Existing photos failed to load and are still saved. Close and reopen to change them.</span>';
         return;
     }
     wrap.innerHTML = _wlPhotos.map((src, i) => `
@@ -11481,11 +11481,11 @@ async function handleWorkLogPhotoChange(event) {
 
     for (const file of files) {
         if (_wlPhotos.length >= WORKLOG_PHOTO_MAX) {
-            showToast(`Maksimal ${WORKLOG_PHOTO_MAX} foto per laporan`, 'warning');
+            showToast(`Maximum ${WORKLOG_PHOTO_MAX} photos per report`, 'warning');
             break;
         }
         if (!file.type.startsWith('image/')) {
-            showToast(`"${file.name}" bukan gambar — dilewati`, 'warning');
+            showToast(`"${file.name}" is not an image — skipped`, 'warning');
             continue;
         }
         try {
@@ -11496,13 +11496,13 @@ async function handleWorkLogPhotoChange(event) {
             // the write fails rather than after.
             const total = _wlPhotos.reduce((n, p) => n + p.length, 0) + data.length;
             if (total > WORKLOG_PHOTOS_TOTAL_BYTES) {
-                showToast('Total ukuran foto sudah maksimal — hapus satu dulu', 'warning');
+                showToast('Total photo size is at the limit — delete one first', 'warning');
                 break;
             }
             _wlPhotos.push(data);
             _wlPhotosDirty = true;
         } catch (err) {
-            showToast(err.message || `Gagal memproses "${file.name}"`, 'error');
+            showToast(err.message || `Failed to process "${file.name}"`, 'error');
         }
     }
     renderWorkLogPhotos();
@@ -11523,13 +11523,13 @@ async function openWorkLogPhotos(id, btn) {
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
     try {
         const photos = await loadWorkLogPhotos(id);
-        if (!photos.length) { showToast('Foto tidak ditemukan', 'warning'); return; }
+        if (!photos.length) { showToast('Photos not found', 'warning'); return; }
         openPhotoLightbox(photos);
     } catch (err) {
         console.error('[team] work log photos load failed:', err);
         showToast(navigator.onLine
-            ? 'Gagal memuat foto dokumentasi'
-            : 'Foto perlu sinyal untuk dimuat', 'error');
+            ? 'Failed to load documentation photos'
+            : 'Photos need a signal to load', 'error');
     } finally {
         if (btn) { btn.disabled = false; btn.innerHTML = original; }
     }
@@ -11538,7 +11538,7 @@ async function openWorkLogPhotos(id, btn) {
 function showAddWorkLogForm() {
     if (!requireEdit('teamLog')) return;
     if (activeMembers().length === 0) {
-        showToast('Tambahkan anggota tim dulu lewat Kelola Anggota', 'warning');
+        showToast('Add team members first via Manage Members', 'warning');
         return;
     }
     document.getElementById('workLogModalTitle').textContent = 'Add Daily Report';
@@ -11578,7 +11578,7 @@ function editWorkLog(id) {
     if (!requireEdit('teamLog')) return;
     const w = workLogs.find(x => x.id === id);
     if (!w) return;
-    if (!canEditTeamRecord(w)) { showToast(lockedReason(w, 'Laporan'), 'warning'); return; }
+    if (!canEditTeamRecord(w)) { showToast(lockedReason(w, 'Report'), 'warning'); return; }
     document.getElementById('workLogModalTitle').textContent =
         workLogApproval(w) === 'revision' ? 'Revise Daily Report' : 'Edit Daily Report';
     showRevisionNote('wlRevisionNote', w);
@@ -11625,8 +11625,8 @@ function editWorkLog(id) {
             _wlPhotosFailed = true;
             renderWorkLogPhotos();
             showToast(navigator.onLine
-                ? 'Foto lama gagal dimuat — foto lama tetap tersimpan'
-                : 'Foto lama perlu sinyal untuk dimuat — foto lama tetap tersimpan', 'warning');
+                ? 'Existing photos failed to load — they are still saved'
+                : 'Existing photos need a signal to load — they are still saved', 'warning');
         });
     }
 }
@@ -11636,7 +11636,7 @@ function closeWorkLogModal(force) {
     // report is saved, so closing after shooting four of them in the field is
     // the most expensive discard in the app. saveWorkLog passes force.
     if (!force && _wlPhotosDirty && _wlPhotos.length &&
-        !confirm(`${_wlPhotos.length} foto belum tersimpan dan akan hilang. Tutup saja?`)) {
+        !confirm(`${_wlPhotos.length} photo(s) not saved yet and will be lost. Close anyway?`)) {
         return;
     }
     _wlPhotosGen++;
@@ -11653,19 +11653,19 @@ function saveWorkLog(event, mode) {
     const id = document.getElementById('editWorkLogId').value;
     const memberId = document.getElementById('wlMember').value;
     const member = memberById(memberId);
-    if (!member) { showToast('Pilih anggota tim dulu', 'warning'); return; }
+    if (!member) { showToast('Select a team member first', 'warning'); return; }
 
     const date = document.getElementById('wlDate').value;
     const start = document.getElementById('wlStart').value;
     const end = document.getElementById('wlEnd').value;
     const task = (document.getElementById('wlTask').value || '').trim();
     // A draft may be half-written; what is sent for checking may not.
-    if (!task && !asDraft) { showToast('Uraian pekerjaan tidak boleh kosong', 'warning'); return; }
+    if (!task && !asDraft) { showToast('Work description cannot be empty', 'warning'); return; }
     if (!checkWorkLogHours(start, end)) return;
     // The native max= is the first line of defence, but a report filed decades
     // out skews the monthly recap badly enough to be worth a second one.
     if (date && date > toISODate()) {
-        showToast('Tanggal laporan tidak boleh di masa depan — periksa tahunnya', 'warning');
+        showToast('Report date cannot be in the future — check the year', 'warning');
         return;
     }
 
@@ -11682,7 +11682,7 @@ function saveWorkLog(event, mode) {
     // Sent or approved while the form was open (another device, or the
     // checker): the server would refuse the write, so say why here instead.
     if (existing && !canEditTeamRecord(existing)) {
-        showToast(lockedReason(existing, 'Laporan'), 'warning');
+        showToast(lockedReason(existing, 'Report'), 'warning');
         return;
     }
     const rec = {
@@ -11736,7 +11736,7 @@ function saveWorkLog(event, mode) {
         // from before this collection existed. Say so rather than throwing
         // halfway through a save that otherwise looks like it worked.
         if (!window.cloud.saveWorkLogPhotos) {
-            showToast('Muat ulang halaman — versi lama masih aktif, foto belum terkirim', 'warning');
+            showToast('Reload the page — an old version is still active, photos not sent', 'warning');
         } else {
             const write = photos.length
                 ? window.cloud.saveWorkLogPhotos(rec.id, photos)
@@ -11744,7 +11744,7 @@ function saveWorkLog(event, mode) {
             write.catch(err => {
                 console.error('[team] work log photos save failed:', err);
                 if (err && err.code === 'permission-denied') showTeamRulesBanner();
-                showToast('Laporan tersimpan, tetapi foto gagal dikirim', 'error');
+                showToast('Report saved, but the photos failed to send', 'error');
             });
         }
     }
@@ -11753,19 +11753,19 @@ function saveWorkLog(event, mode) {
         {
             action: existing ? 'update' : 'create',
             unitId: rec.unitId,
-            unitName: `[Laporan] ${member.name}`,
-            field: `Laporan ${rec.date}${asDraft ? ' (draf)' : ''}`,
+            unitName: `[Daily Report] ${member.name}`,
+            field: `Report ${rec.date}${asDraft ? ' (draft)' : ''}`,
             before: existing ? (existing.task || '') : '',
             after: rec.task
         },
         cloudCall('saveWorkLog', rec),
-        asDraft ? 'Draf laporan disimpan — belum dikirim'
-            : wasApproved ? 'Laporan dikirim ulang — perlu diperiksa lagi'
-            : 'Laporan dikirim — menunggu persetujuan',
+        asDraft ? 'Draft report saved — not submitted yet'
+            : wasApproved ? 'Report resubmitted — needs review again'
+            : 'Report submitted — pending approval',
         err => {
             console.error('[team] work log save failed:', err);
             if (err && err.code === 'permission-denied') showTeamRulesBanner();
-            showToast('Gagal menyimpan laporan', 'error');
+            showToast('Failed to save report', 'error');
         }
     );
 
@@ -11777,18 +11777,18 @@ function saveWorkLog(event, mode) {
 function withdrawWorkLog(id) {
     const w = workLogs.find(x => x.id === id);
     if (!w) return;
-    if (!canWithdrawTeamRecord(w)) { showToast('Laporan ini tidak bisa ditarik kembali', 'warning'); return; }
-    if (!confirm(`Tarik kembali laporan ${memberNameOf(w)} (${w.date}) menjadi draf?\n\nLaporan bisa diubah lalu dikirim lagi.`)) return;
+    if (!canWithdrawTeamRecord(w)) { showToast('This report cannot be withdrawn', 'warning'); return; }
+    if (!confirm(`Withdraw the report for ${memberNameOf(w)} (${w.date}) to a draft?\n\nThe report can then be changed and submitted again.`)) return;
     cloudWrite(
         { action: 'update', unitId: w.unitId || '',
-          unitName: `[Laporan] ${memberNameOf(w)}`,
-          field: `Persetujuan ${w.date}`, before: 'Menunggu', after: 'Draf (ditarik kembali)' },
+          unitName: `[Daily Report] ${memberNameOf(w)}`,
+          field: `Approval ${w.date}`, before: 'Pending', after: 'Draft (withdrawn)' },
         cloudCall('saveWorkLog', { ...w, approval: 'draft', updatedAt: Date.now() }),
-        'Laporan ditarik kembali menjadi draf',
+        'Report withdrawn to draft',
         err => {
             console.error('[team] withdraw failed:', err);
             if (err && err.code === 'permission-denied') showTeamRulesBanner();
-            showToast('Gagal menarik kembali — mungkin sudah diperiksa', 'error');
+            showToast('Failed to withdraw — it may already have been reviewed', 'error');
         }
     );
 }
@@ -11797,8 +11797,8 @@ function deleteWorkLog(id) {
     if (!requireEdit('teamLog')) return;
     const w = workLogs.find(x => x.id === id);
     if (!w) return;
-    if (!canEditTeamRecord(w)) { showToast(lockedReason(w, 'Laporan'), 'warning'); return; }
-    if (!confirm(`Hapus laporan ${memberNameOf(w)} tanggal ${w.date}?`)) return;
+    if (!canEditTeamRecord(w)) { showToast(lockedReason(w, 'Report'), 'warning'); return; }
+    if (!confirm(`Delete the report for ${memberNameOf(w)} on ${w.date}?`)) return;
     // Otherwise the photo document is orphaned: invisible, but still billed for
     // and still downloaded by anyone who happens to request that id.
     if (workLogPhotoCount(w) > 0 && window.cloud.deleteWorkLogPhotos) {
@@ -11808,13 +11808,13 @@ function deleteWorkLog(id) {
     }
     cloudWrite(
         { action: 'delete', unitId: w.unitId || '',
-          unitName: `[Laporan] ${memberNameOf(w)}`,
-          field: `Laporan ${w.date}`, before: w.task || '', after: '' },
+          unitName: `[Daily Report] ${memberNameOf(w)}`,
+          field: `Report ${w.date}`, before: w.task || '', after: '' },
         cloudCall('deleteWorkLog', id),
-        'Laporan dihapus',
+        'Report deleted',
         err => {
             console.error('[team] work log delete failed:', err);
-            showToast('Gagal menghapus laporan', 'error');
+            showToast('Failed to delete report', 'error');
         }
     );
 }
@@ -11823,15 +11823,15 @@ function approveWorkLog(id) {
     const w = workLogs.find(x => x.id === id);
     if (!w) return;
     if (!canApproveWorkLogs()) {
-        showToast('Anda tidak punya hak menyetujui laporan', 'warning');
+        showToast('You do not have the right to approve reports', 'warning');
         return;
     }
     if (!canApproveThisLog(w)) {
-        showToast('Laporan yang Anda buat sendiri harus disetujui orang lain', 'warning');
+        showToast('A report you filed yourself must be approved by someone else', 'warning');
         return;
     }
     if (workLogApproval(w) !== 'pending') {
-        showToast('Hanya laporan yang sudah dikirim yang bisa disetujui', 'warning');
+        showToast('Only submitted reports can be approved', 'warning');
         return;
     }
 
@@ -11846,16 +11846,16 @@ function approveWorkLog(id) {
     };
     cloudWrite(
         { action: 'update', unitId: rec.unitId || '',
-          unitName: `[Laporan] ${memberNameOf(rec)}`,
-          field: `Persetujuan ${rec.date}`,
+          unitName: `[Daily Report] ${memberNameOf(rec)}`,
+          field: `Approval ${rec.date}`,
           before: APPROVAL_STATES[workLogApproval(w)].label,
           after: APPROVAL_STATES.approved.label },
         cloudCall('saveWorkLog', rec),
-        'Laporan disetujui',
+        'Report approved',
         err => {
             console.error('[team] approve failed:', err);
             if (err && err.code === 'permission-denied') showTeamRulesBanner();
-            showToast('Gagal menyetujui laporan', 'error');
+            showToast('Failed to approve report', 'error');
         }
     );
 }
@@ -11864,24 +11864,24 @@ function reviseWorkLog(id) {
     const w = workLogs.find(x => x.id === id);
     if (!w) return;
     if (!canApproveWorkLogs()) {
-        showToast('Anda tidak punya hak menyetujui laporan', 'warning');
+        showToast('You do not have the right to approve reports', 'warning');
         return;
     }
     if (!canApproveThisLog(w)) {
-        showToast('Laporan yang Anda buat sendiri harus diperiksa orang lain', 'warning');
+        showToast('A report you filed yourself must be reviewed by someone else', 'warning');
         return;
     }
     const stNow = workLogApproval(w);
     if (stNow !== 'pending' && stNow !== 'approved') {
-        showToast('Laporan ini belum dikirim atau sudah dikembalikan', 'warning');
+        showToast('This report has not been submitted or has already been sent back', 'warning');
         return;
     }
     // The note is the whole point of this state — without it the person is
     // told "wrong" and nothing else.
-    const note = prompt(`Apa yang perlu diperbaiki pada laporan ${memberNameOf(w)} (${w.date})?`,
+    const note = prompt(`What needs fixing in the report for ${memberNameOf(w)} (${w.date})?`,
         w.revisionNote || '');
     if (note === null) return;
-    if (!note.trim()) { showToast('Tulis alasannya supaya bisa diperbaiki', 'warning'); return; }
+    if (!note.trim()) { showToast('Write the reason so it can be fixed', 'warning'); return; }
 
     const rec = {
         ...w,
@@ -11894,16 +11894,16 @@ function reviseWorkLog(id) {
     };
     cloudWrite(
         { action: 'update', unitId: rec.unitId || '',
-          unitName: `[Laporan] ${memberNameOf(rec)}`,
-          field: `Persetujuan ${rec.date}`,
+          unitName: `[Daily Report] ${memberNameOf(rec)}`,
+          field: `Approval ${rec.date}`,
           before: APPROVAL_STATES[workLogApproval(w)].label,
           after: `${APPROVAL_STATES.revision.label} — ${rec.revisionNote}` },
         cloudCall('saveWorkLog', rec),
-        'Laporan ditandai perlu revisi',
+        'Report marked as needing revision',
         err => {
             console.error('[team] revise failed:', err);
             if (err && err.code === 'permission-denied') showTeamRulesBanner();
-            showToast('Gagal menandai laporan', 'error');
+            showToast('Failed to mark report', 'error');
         }
     );
 }
@@ -11911,10 +11911,10 @@ function reviseWorkLog(id) {
 function exportWorkLogCSV() {
     if (!canCsv('export')) return;
     const rows = getFilteredWorkLogs();
-    if (rows.length === 0) { showToast('Tidak ada laporan untuk diexport', 'warning'); return; }
-    const headers = ['No', 'Tanggal', 'Perusahaan', 'Anggota', 'Jabatan', 'Mulai', 'Selesai', 'Durasi (jam)',
-                     'Paddock Area', 'Unit', 'Serial Number', 'Jumlah Foto', 'Uraian Pekerjaan', 'Kendala',
-                     'Persetujuan', 'Disetujui Oleh', 'Catatan Revisi'];
+    if (rows.length === 0) { showToast('No reports to export', 'warning'); return; }
+    const headers = ['No', 'Date', 'Company', 'Member', 'Job Title', 'Start', 'End', 'Duration (hours)',
+                     'Paddock Area', 'Unit', 'Serial Number', 'Photo Count', 'Work Description', 'Issues',
+                     'Approval', 'Approved By', 'Revision Notes'];
     const dataRows = rows.map((w, i) => {
         const m = w.memberId ? memberById(w.memberId) : null;
         const us = workLogUnits(w);
@@ -11937,10 +11937,10 @@ function exportWorkLogCSV() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `laporan_harian_${toISODate()}.csv`;
+    a.download = `daily_report_${toISODate()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`Export ${rows.length} laporan ke CSV`, 'success');
+    showToast(`Exported ${rows.length} report(s) to CSV`, 'success');
 }
 
 // Work logs attached to one unit, newest first — used by the unit profile so
@@ -12205,7 +12205,7 @@ function renderLeaveTable() {
                 : '<span style="color:var(--text-light)">—</span>'}</td>
             <td data-label="Approval">${approvalCell(r, 'request', 'approveLeave', 'reviseLeave')}</td>
             <td class="col-actions">
-                ${canEdit ? rowActionsFor(r, 'Pengajuan', 'editLeave', 'deleteLeave', 'withdrawLeave') : ''}
+                ${canEdit ? rowActionsFor(r, 'Request', 'editLeave', 'deleteLeave', 'withdrawLeave') : ''}
             </td>
         </tr>`;
     }).join('');
@@ -12221,7 +12221,7 @@ let _lvDocsGen = 0;          // bumped each time the form opens or closes
 function renderLeaveDocs() {
     const count = document.getElementById('lvDocCount');
     if (count) count.textContent = `${_lvDocs.length}/${LEAVE_DOC_MAX}`;
-    setPhotoAddState('lvDocAddBtn', _lvDocsLoading, _lvDocsFailed, 'Surat');
+    setPhotoAddState('lvDocAddBtn', _lvDocsLoading, _lvDocsFailed, 'Letters');
     const wrap = document.getElementById('lvDocPreviews');
     if (!wrap) return;
     if (_lvDocsLoading && !_lvDocs.length) {
@@ -12230,7 +12230,7 @@ function renderLeaveDocs() {
     }
     if (_lvDocsFailed) {
         wrap.innerHTML = '<span class="wl-photo__loading"><i class="fas fa-triangle-exclamation"></i> '
-            + 'Surat lama gagal dimuat dan tetap tersimpan. Tutup lalu buka lagi untuk mengubahnya.</span>';
+            + 'Existing letters failed to load and are still saved. Close and reopen to change them.</span>';
         return;
     }
     wrap.innerHTML = _lvDocs.map((src, i) => `
@@ -12248,13 +12248,13 @@ async function handleLeaveDocChange(event) {
     const gen = _lvDocsGen;
     for (const file of files) {
         if (_lvDocs.length >= LEAVE_DOC_MAX) {
-            showToast(`Maksimal ${LEAVE_DOC_MAX} lembar surat`, 'warning');
+            showToast(`Maximum ${LEAVE_DOC_MAX} letter pages`, 'warning');
             break;
         }
         // Nothing in this app reads PDFs, so say that rather than failing
         // silently on a file someone scanned straight from a printer.
         if (!file.type.startsWith('image/')) {
-            showToast(`"${file.name}" dilewati — surat harus berupa foto atau hasil pindai gambar, bukan PDF`, 'warning');
+            showToast(`"${file.name}" skipped — the letter must be a photo or scanned image, not a PDF`, 'warning');
             continue;
         }
         try {
@@ -12263,7 +12263,7 @@ async function handleLeaveDocChange(event) {
             if (gen !== _lvDocsGen) return;
             const total = _lvDocs.reduce((a, d) => a + d.length, 0) + data.length;
             if (total > WORKLOG_PHOTOS_TOTAL_BYTES) {
-                showToast('Ukuran surat terlalu besar — kurangi jumlah lembarnya', 'warning');
+                showToast('Letter is too large — reduce the number of pages', 'warning');
                 break;
             }
             _lvDocs.push(data);
@@ -12286,13 +12286,13 @@ async function openLeaveDocs(id, btn) {
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
     try {
         const pages = await loadLeaveDocs(id);
-        if (!pages.length) { showToast('Surat tidak ditemukan', 'warning'); return; }
+        if (!pages.length) { showToast('Letter not found', 'warning'); return; }
         openPhotoLightbox(pages, 0);
     } catch (err) {
         console.error('[izin] gagal memuat surat:', err);
         showToast(navigator.onLine
-            ? 'Gagal memuat surat'
-            : 'Surat perlu sinyal untuk dimuat', 'warning');
+            ? 'Failed to load letter'
+            : 'The letter needs a signal to load', 'warning');
     } finally {
         if (btn) { btn.disabled = false; btn.innerHTML = old; }
     }
@@ -12319,7 +12319,7 @@ function editLeave(id) {
     if (!requireEdit('teamLog')) return;
     const r = leaveRequests.find(x => x.id === id);
     if (!r) return;
-    if (!canEditTeamRecord(r)) { showToast(lockedReason(r, 'Pengajuan'), 'warning'); return; }
+    if (!canEditTeamRecord(r)) { showToast(lockedReason(r, 'Request'), 'warning'); return; }
     populateLeaveFilters();
     document.getElementById('editLeaveId').value = r.id;
     document.getElementById('leaveModalTitle').innerHTML = workLogApproval(r) === 'revision'
@@ -12354,14 +12354,14 @@ function editLeave(id) {
             _lvDocsLoading = false;
             _lvDocsFailed = true;
             renderLeaveDocs();
-            showToast('Surat lama gagal dimuat — tetap tersimpan, dan menyimpan sekarang tidak mengubahnya', 'warning');
+            showToast('Existing letters failed to load — they are still saved, and saving now will not change them', 'warning');
         });
     }
 }
 
 function closeLeaveModal(force) {
     if (!force && _lvDocsDirty && _lvDocs.length &&
-        !confirm(`${_lvDocs.length} lembar surat belum tersimpan dan akan hilang. Tutup saja?`)) {
+        !confirm(`${_lvDocs.length} letter page(s) not saved yet and will be lost. Close anyway?`)) {
         return;
     }
     _lvDocsGen++;
@@ -12373,17 +12373,17 @@ function closeLeaveModal(force) {
 // work log validation uses. Refusing too much costs as much as accepting too
 // much: an extended illness and a corrected date really do overlap.
 function checkLeaveRange(memberId, type, from, to, exceptId, docCount) {
-    if (!memberId) { showToast('Pilih anggota dulu', 'warning'); return false; }
-    if (!from) { showToast('Tanggal mulai wajib diisi', 'warning'); return false; }
+    if (!memberId) { showToast('Select a member first', 'warning'); return false; }
+    if (!from) { showToast('Start date is required', 'warning'); return false; }
     const end = to || from;
     if (end < from) {
-        showToast('Tanggal selesai lebih awal dari tanggal mulai', 'warning');
+        showToast('End date is earlier than the start date', 'warning');
         return false;
     }
     const days = leaveDays(from, end);
     if (days > LEAVE_LONG_DAYS) {
-        if (!confirm(`Pengajuan ini ${days} hari (${from} sampai ${end}).\n\n`
-            + 'Kalau memang selama itu, tekan OK. Kalau tanggalnya salah ketik, tekan Batal lalu betulkan.')) {
+        if (!confirm(`This request is ${days} days (${from} to ${end}).\n\n`
+            + 'If it really is that long, press OK. If a date was mistyped, press Cancel and fix it.')) {
             return false;
         }
     }
@@ -12392,14 +12392,14 @@ function checkLeaveRange(memberId, type, from, to, exceptId, docCount) {
         const list = clash.slice(0, 3)
             .map(c => `· ${leaveTypeLabel(c)} ${leaveRangeLabel(c)} (${APPROVAL_STATES[workLogApproval(c)].label})`)
             .join('\n');
-        if (!confirm(`Tanggal ini beririsan dengan pengajuan yang sudah ada:\n\n${list}\n\n`
-            + 'Kalau ini perpanjangan yang memang disengaja, tekan OK.')) {
+        if (!confirm(`These dates overlap an existing request:\n\n${list}\n\n`
+            + 'If this is an intentional extension, press OK.')) {
             return false;
         }
     }
     if (type === 'alpa' && docCount > 0) {
-        if (!confirm('Alpa berarti tidak masuk TANPA keterangan, tetapi ada surat dilampirkan.\n\n'
-            + 'Kalau suratnya memang ada, mungkin jenisnya Izin atau Sakit. Tetap simpan sebagai Alpa?')) {
+        if (!confirm('Absent means away WITHOUT notice, but a letter is attached.\n\n'
+            + 'If there really is a letter, the type may be Leave or Sick. Save as Absent anyway?')) {
             return false;
         }
     }
@@ -12414,7 +12414,7 @@ function saveLeave(event, mode) {
     const id = document.getElementById('editLeaveId').value;
     const existing = id ? leaveRequests.find(x => x.id === id) : null;
     if (existing && !canEditTeamRecord(existing)) {
-        showToast(lockedReason(existing, 'Pengajuan'), 'warning');
+        showToast(lockedReason(existing, 'Request'), 'warning');
         return;
     }
     const memberId = document.getElementById('lvMember').value;
@@ -12427,7 +12427,7 @@ function saveLeave(event, mode) {
     if (!checkLeaveRange(memberId, type, from, to, id || null, docCount)) return;
 
     const member = memberById(memberId);
-    if (!member) { showToast('Anggota tidak ditemukan', 'warning'); return; }
+    if (!member) { showToast('Member not found', 'warning'); return; }
 
     const rec = {
         id: id || generateLeaveId(),
@@ -12466,7 +12466,7 @@ function saveLeave(event, mode) {
             write.catch(err => {
                 console.error('[izin] surat save failed:', err);
                 if (err && err.code === 'permission-denied') showTeamRulesBanner();
-                showToast('Pengajuan tersimpan, tetapi surat gagal dikirim', 'error');
+                showToast('Request saved, but the letter failed to send', 'error');
             });
         }
     }
@@ -12475,19 +12475,19 @@ function saveLeave(event, mode) {
         {
             action: existing ? 'update' : 'create',
             unitId: '',
-            unitName: `[Izin] ${member.name}`,
-            field: `${leaveTypeLabel(rec)} ${leaveRangeLabel(rec)}${asDraft ? ' (draf)' : ''}`,
+            unitName: `[Leave] ${member.name}`,
+            field: `${leaveTypeLabel(rec)} ${leaveRangeLabel(rec)}${asDraft ? ' (draft)' : ''}`,
             before: existing ? `${leaveTypeLabel(existing)} ${leaveRangeLabel(existing)}` : '',
-            after: `${rec.days} hari${reason ? ' — ' + reason : ''}`
+            after: `${rec.days} day(s)${reason ? ' — ' + reason : ''}`
         },
         cloudCall('saveLeaveRequest', rec),
-        asDraft ? 'Draf pengajuan disimpan — belum dikirim'
-            : wasApproved ? 'Pengajuan dikirim ulang — perlu diperiksa lagi'
-            : 'Pengajuan dikirim — menunggu persetujuan',
+        asDraft ? 'Draft request saved — not submitted yet'
+            : wasApproved ? 'Request resubmitted — needs review again'
+            : 'Request submitted — pending approval',
         err => {
             console.error('[izin] save failed:', err);
             if (err && err.code === 'permission-denied') showTeamRulesBanner();
-            showToast('Gagal menyimpan pengajuan', 'error');
+            showToast('Failed to save request', 'error');
         }
     );
 
@@ -12497,18 +12497,18 @@ function saveLeave(event, mode) {
 function withdrawLeave(id) {
     const r = leaveRequests.find(x => x.id === id);
     if (!r) return;
-    if (!canWithdrawTeamRecord(r)) { showToast('Pengajuan ini tidak bisa ditarik kembali', 'warning'); return; }
-    if (!confirm(`Tarik kembali pengajuan ${leaveTypeLabel(r)} ${memberNameOf(r)} (${leaveRangeLabel(r)}) menjadi draf?`)) return;
+    if (!canWithdrawTeamRecord(r)) { showToast('This request cannot be withdrawn', 'warning'); return; }
+    if (!confirm(`Withdraw the ${leaveTypeLabel(r)} request for ${memberNameOf(r)} (${leaveRangeLabel(r)}) to a draft?`)) return;
     cloudWrite(
         { action: 'update', unitId: '',
-          unitName: `[Izin] ${memberNameOf(r)}`,
-          field: `Persetujuan ${leaveRangeLabel(r)}`, before: 'Menunggu', after: 'Draf (ditarik kembali)' },
+          unitName: `[Leave] ${memberNameOf(r)}`,
+          field: `Approval ${leaveRangeLabel(r)}`, before: 'Pending', after: 'Draft (withdrawn)' },
         cloudCall('saveLeaveRequest', { ...r, approval: 'draft', updatedAt: Date.now() }),
-        'Pengajuan ditarik kembali menjadi draf',
+        'Request withdrawn to draft',
         err => {
             console.error('[izin] withdraw failed:', err);
             if (err && err.code === 'permission-denied') showTeamRulesBanner();
-            showToast('Gagal menarik kembali — mungkin sudah diperiksa', 'error');
+            showToast('Failed to withdraw — it may already have been reviewed', 'error');
         }
     );
 }
@@ -12517,8 +12517,8 @@ function deleteLeave(id) {
     if (!requireEdit('teamLog')) return;
     const r = leaveRequests.find(x => x.id === id);
     if (!r) return;
-    if (!canEditTeamRecord(r)) { showToast(lockedReason(r, 'Pengajuan'), 'warning'); return; }
-    if (!confirm(`Hapus pengajuan ${leaveTypeLabel(r)} ${memberNameOf(r)} (${leaveRangeLabel(r)})?`)) return;
+    if (!canEditTeamRecord(r)) { showToast(lockedReason(r, 'Request'), 'warning'); return; }
+    if (!confirm(`Delete the ${leaveTypeLabel(r)} request for ${memberNameOf(r)} (${leaveRangeLabel(r)})?`)) return;
     // Otherwise the letter document is orphaned: invisible, still billed for.
     if (leaveDocCount(r) > 0 && window.cloud.deleteTeamDocs) {
         _leaveDocCache.delete(id);
@@ -12527,15 +12527,15 @@ function deleteLeave(id) {
     }
     cloudWrite(
         { action: 'delete', unitId: '',
-          unitName: `[Izin] ${memberNameOf(r)}`,
+          unitName: `[Leave] ${memberNameOf(r)}`,
           field: `${leaveTypeLabel(r)} ${leaveRangeLabel(r)}`,
-          before: `${r.days || 0} hari`, after: '' },
+          before: `${r.days || 0} day(s)`, after: '' },
         cloudCall('deleteLeaveRequest', id),
-        'Pengajuan dihapus',
+        'Request deleted',
         err => {
             console.error('[izin] delete failed:', err);
             if (err && err.code === 'permission-denied') showTeamRulesBanner();
-            showToast('Gagal menghapus pengajuan', 'error');
+            showToast('Failed to delete request', 'error');
         }
     );
 }
@@ -12548,15 +12548,15 @@ function approveLeave(id) {
     const r = leaveRequests.find(x => x.id === id);
     if (!r) return;
     if (!canApproveWorkLogs()) {
-        showToast('Anda tidak punya hak menyetujui pengajuan', 'warning');
+        showToast('You do not have the right to approve requests', 'warning');
         return;
     }
     if (!canApproveThisLog(r)) {
-        showToast('Pengajuan yang Anda buat sendiri harus disetujui orang lain', 'warning');
+        showToast('A request you filed yourself must be approved by someone else', 'warning');
         return;
     }
     if (workLogApproval(r) !== 'pending') {
-        showToast('Hanya pengajuan yang sudah dikirim yang bisa disetujui', 'warning');
+        showToast('Only submitted requests can be approved', 'warning');
         return;
     }
 
@@ -12571,16 +12571,16 @@ function approveLeave(id) {
     };
     cloudWrite(
         { action: 'approve', unitId: '',
-          unitName: `[Izin] ${memberNameOf(rec)}`,
-          field: `Persetujuan ${leaveRangeLabel(rec)}`,
+          unitName: `[Leave] ${memberNameOf(rec)}`,
+          field: `Approval ${leaveRangeLabel(rec)}`,
           before: APPROVAL_STATES[workLogApproval(r)].label,
           after: APPROVAL_STATES.approved.label },
         cloudCall('saveLeaveRequest', rec),
-        'Pengajuan disetujui',
+        'Request approved',
         err => {
             console.error('[izin] approve failed:', err);
             if (err && err.code === 'permission-denied') showTeamRulesBanner();
-            showToast('Gagal menyetujui pengajuan', 'error');
+            showToast('Failed to approve request', 'error');
         }
     );
 }
@@ -12589,18 +12589,18 @@ function reviseLeave(id) {
     const r = leaveRequests.find(x => x.id === id);
     if (!r) return;
     if (!canApproveThisLog(r)) {
-        showToast('Anda tidak punya hak memeriksa pengajuan ini', 'warning');
+        showToast('You do not have the right to review this request', 'warning');
         return;
     }
     const stNow = workLogApproval(r);
     if (stNow !== 'pending' && stNow !== 'approved') {
-        showToast('Pengajuan ini belum dikirim atau sudah dikembalikan', 'warning');
+        showToast('This request has not been submitted or has already been sent back', 'warning');
         return;
     }
-    const note = prompt('Apa yang perlu dibetulkan?', r.revisionNote || '');
+    const note = prompt('What needs to be fixed?', r.revisionNote || '');
     if (note === null) return;
     if (!note.trim()) {
-        showToast('Tulis dulu apa yang perlu dibetulkan', 'warning');
+        showToast('Write what needs to be fixed first', 'warning');
         return;
     }
     const rec = {
@@ -12614,16 +12614,16 @@ function reviseLeave(id) {
     };
     cloudWrite(
         { action: 'reject', unitId: '',
-          unitName: `[Izin] ${memberNameOf(rec)}`,
-          field: `Persetujuan ${leaveRangeLabel(rec)}`,
+          unitName: `[Leave] ${memberNameOf(rec)}`,
+          field: `Approval ${leaveRangeLabel(rec)}`,
           before: APPROVAL_STATES[workLogApproval(r)].label,
           after: `${APPROVAL_STATES.revision.label} — ${note.trim()}` },
         cloudCall('saveLeaveRequest', rec),
-        'Pengajuan dikembalikan untuk revisi',
+        'Request sent back for revision',
         err => {
             console.error('[izin] revise failed:', err);
             if (err && err.code === 'permission-denied') showTeamRulesBanner();
-            showToast('Gagal mengirim permintaan revisi', 'error');
+            showToast('Failed to send revision request', 'error');
         }
     );
 }
@@ -12631,10 +12631,10 @@ function reviseLeave(id) {
 function exportLeaveCSV() {
     if (!canCsv('export')) return;
     const rows = getFilteredLeave();
-    if (rows.length === 0) { showToast('Tidak ada pengajuan untuk diexport', 'warning'); return; }
-    const headers = ['No', 'Jenis', 'Anggota', 'Perusahaan', 'Tanggal Mulai', 'Tanggal Selesai',
-                     'Jumlah Hari', 'Keterangan', 'Lembar Surat', 'Persetujuan', 'Disetujui Oleh',
-                     'Catatan Revisi', 'Dicatat Oleh'];
+    if (rows.length === 0) { showToast('No requests to export', 'warning'); return; }
+    const headers = ['No', 'Type', 'Member', 'Company', 'Start Date', 'End Date',
+                     'Days', 'Remarks', 'Letter Pages', 'Approval', 'Approved By',
+                     'Revision Notes', 'Recorded By'];
     const body = rows.map((r, i) => [
         i + 1,
         leaveTypeLabel(r),
@@ -12655,10 +12655,10 @@ function exportLeaveCSV() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `izin_sakit_${toISODate()}.csv`;
+    a.download = `leave_sick_${toISODate()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`Export ${rows.length} pengajuan ke CSV`, 'success');
+    showToast(`Exported ${rows.length} request(s) to CSV`, 'success');
 }
 
 // ============================================================
@@ -12744,10 +12744,10 @@ function showWarehouseRulesBanner() {
     const banner = document.createElement('div');
     banner.className = 'category-rules-banner';
     banner.innerHTML = `
-        <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules memblokir data Gudang.</strong>
-        <p>Rules proyek Anda belum mengizinkan akses ke koleksi <code>devices</code> dan
-        <code>stockItems</code>. Publish ulang file <code>firestore.rules</code> dari repo ini di
-        <em>Firebase Console → Firestore → Rules</em>, lalu muat ulang halaman.</p>`;
+        <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules are blocking Inventory data.</strong>
+        <p>Your project's rules do not yet allow access to the <code>devices</code> and
+        <code>stockItems</code> collections. Republish the <code>firestore.rules</code> file from this repo in
+        <em>Firebase Console → Firestore → Rules</em>, then reload the page.</p>`;
     slot.appendChild(banner);
 }
 
