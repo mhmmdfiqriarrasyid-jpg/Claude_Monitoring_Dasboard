@@ -2742,7 +2742,7 @@ function importBackup(file) {
             for (const part of BACKUP_PARTS) {
                 const rows = data[part.key];
                 if (!Array.isArray(rows)) {
-                    report.push({ label: part.label, count: '—', note: 'tidak ada di berkas ini' });
+                    report.push({ label: part.label, count: '—', note: 'not in this file' });
                     continue;
                 }
                 if (!hasAccess(part.area, 'edit')) {
@@ -2798,13 +2798,13 @@ function importBackup(file) {
                         resync: part.resync
                     }));
                 }
-                report.push({ label: part.label, count: rows.length, note: merge ? 'digabung' : 'diganti' });
+                report.push({ label: part.label, count: rows.length, note: merge ? 'merged' : 'replaced' });
             }
             // Photos and letters, for the records this restore actually wrote.
             for (const k of BACKUP_PHOTO_KINDS) {
                 const rows = data[k.key];
                 const partLabel = (BACKUP_PARTS.find(p => p.key === k.part) || {}).label;
-                const partDone = report.some(r => r.label === partLabel && (r.note === 'digabung' || r.note === 'diganti'));
+                const partDone = report.some(r => r.label === partLabel && (r.note === 'merged' || r.note === 'replaced'));
                 const recs = Array.isArray(data[k.part]) ? data[k.part] : [];
                 if (!rows || typeof rows !== 'object') {
                     // Only worth a line when the file's records expected one.
@@ -2830,7 +2830,7 @@ function importBackup(file) {
                         .catch(err => { failedN++; console.warn(`[restore] ${k.save}(${id}) gagal:`, err); }));
                 }
                 report.push({ label: k.label, count: ids.length,
-                    note: failedN ? `${failedN} failed to send` : (merge ? 'digabung' : 'diganti') });
+                    note: failedN ? `${failedN} failed to send` : (merge ? 'merged' : 'replaced') });
             }
             showRestoreReport(report, data.version || 0, merge);
 
@@ -4263,8 +4263,8 @@ function showImportReport({ total, added, skipped, skippedDetails, rejected, upd
 // including the ones that were not in the file and the ones skipped for lack
 // of rights — the two outcomes people most need to see.
 function showRestoreReport(rows, version, merge) {
-    const missing = rows.filter(r => r.note === 'tidak ada di berkas ini').length;
-    const done = rows.filter(r => r.note === 'digabung' || r.note === 'diganti').length;
+    const missing = rows.filter(r => r.note === 'not in this file').length;
+    const done = rows.filter(r => r.note === 'merged' || r.note === 'replaced').length;
     const summary = `${done} collection(s) ${merge ? 'merged' : 'replaced'}`
         + (missing ? ` · ${missing} collection(s) not in this file` : '');
 
