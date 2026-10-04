@@ -125,7 +125,7 @@ const { launch, BASE_URL } = require('./_env');
         t('laporan naik ditandai baik',
           !!rep.querySelector('.week-metric__delta--good'), true);
         t('kesehatan armada disebut sebagai angka sekarang',
-          /angka sekarang/.test(document.getElementById('weekHealth').textContent), true);
+          /current figure/.test(document.getElementById('weekHealth').textContent), true);
         shiftSummaryWeek(-1);
         t('mundur satu minggu',
           document.getElementById('weekSummaryLabel').textContent, '7 – 13 Sep 2026');

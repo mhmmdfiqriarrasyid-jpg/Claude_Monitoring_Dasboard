@@ -108,7 +108,7 @@ const { launch, BASE_URL } = require('./_env');
         t('gagal memuat tidak membuka lightbox',
           document.getElementById('photoLightbox').classList.contains('open'), false);
         t('gagal memuat memberi tahu pengguna',
-          [...document.querySelectorAll('#toastContainer .toast')].some(el => /foto/i.test(el.textContent)), true);
+          [...document.querySelectorAll('#toastContainer .toast')].some(el => /photo/i.test(el.textContent)), true);
         t('tombol dipulihkan setelah gagal', btn.disabled, false);
 
         // ---------- menyunting teks TIDAK menyentuh foto ----------

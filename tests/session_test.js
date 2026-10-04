@@ -108,7 +108,7 @@ const { launch, BASE_URL } = require('./_env');
     const res = await page.evaluate(() => window.__T);
     const extra = [
         { n: 'pengambilalihan: gerbang login tampil', g: after.gate, w: 'flex' },
-        { n: 'pengambilalihan: pesan menyebut perangkat lain', g: /perangkat lain/i.test(after.err), w: true },
+        { n: 'pengambilalihan: pesan menyebut perangkat lain', g: /another device/i.test(after.err), w: true },
         { n: 'pengambilalihan: pesan menyebut perangkatnya', g: /Safari · iOS/.test(after.err), w: true },
         { n: 'pengambilalihan: benar-benar signOut', g: after.signedOut, w: true },
         { n: 'pengambilalihan: currentUser dibersihkan', g: after.currentUser, w: null },

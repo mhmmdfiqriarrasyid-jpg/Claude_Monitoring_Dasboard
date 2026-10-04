@@ -144,7 +144,7 @@ const { launch, BASE_URL } = require('./_env');
         editLeave('lvA');
         docFetch.lvA.rej(new Error('offline')); await tick();
         t('gagal memuat: tombol Tambah Surat tetap nonaktif', lvAdd().disabled, true);
-        t('dan form menjelaskan sebabnya', /gagal dimuat/.test(document.getElementById('lvDocPreviews').textContent), true);
+        t('dan form menjelaskan sebabnya', /failed to load/.test(document.getElementById('lvDocPreviews').textContent), true);
         await addFile(handleLeaveDocChange);
         const before = docWrites.length;
         saveLeave({ preventDefault() {} });
@@ -221,7 +221,7 @@ const { launch, BASE_URL } = require('./_env');
         toasts.length = 0;
         editUnit('u_x1');
         t('Edit pada unit tak terbaca tidak membuka form', document.getElementById('unitModal').classList.contains('open'), false);
-        t('dan menjelaskan jalan keluarnya', /Periksa Data/.test(toasts[toasts.length - 1] || ''), true);
+        t('dan menjelaskan jalan keluarnya', /Data Check/.test(toasts[toasts.length - 1] || ''), true);
         const cell = document.createElement('td');
         cell.dataset.id = 'u_x1'; cell.dataset.field = 'gps'; cell.textContent = 'Breakdown';
         unitWrites.length = 0;
@@ -233,7 +233,7 @@ const { launch, BASE_URL } = require('./_env');
         const found = dcUnitGroupFields();
         t('Periksa Data: satu temuan "tak dikenal", BUKAN "field kelompok lain"',
           found.map(f => f.kind), ['kelompok-tak-dikenal']);
-        t('dan menebak kelompoknya dari isinya', /cocok dengan Heavy Equipment/.test(found[0].detail), true);
+        t('dan menebak kelompoknya dari isinya', /match Heavy Equipment/.test(found[0].detail), true);
         unitWrites.length = 0;
         answer = true;
         fixStrayGroupFields();
@@ -244,7 +244,7 @@ const { launch, BASE_URL } = require('./_env');
         let promptText = '';
         window.prompt = (m, d) => { promptText = m; return d; };   // terima tebakan
         setUnreadableGroups();
-        t('prompt menawarkan tebakan Heavy Equipment', /2 untuk Heavy Equipment/.test(promptText), true);
+        t('prompt menawarkan tebakan Heavy Equipment', /2 for Heavy Equipment/.test(promptText), true);
         t('kelompoknya ditetapkan, isinya utuh', [globalData[1].unitGroup, globalData[1].cameraAi, globalData[1].machineType],
           ['heavy', 'Good', 'Excavator']);
         t('tulisan ke cloud membawa kelompok barunya', unitWrites.flat().filter(u => u.id === 'u_x1').pop().unitGroup, 'heavy');
@@ -291,11 +291,11 @@ const { launch, BASE_URL } = require('./_env');
         toasts.length = 0;
         restoreAutoBackup(0);
         t('konflik kelompok terbaca tetap ditolak', globalData[0].unitGroup, 'heavy');
-        t('dan sarannya tidak menyebut GABUNG', [/GABUNG/.test(toasts.join('|')), /berkas cadangan/.test(toasts.join('|'))], [false, true]);
+        t('dan sarannya tidak menyebut GABUNG', [/MERGE/.test(toasts.join('|')), /backup file/.test(toasts.join('|'))], [false, true]);
         window.readAutoBackups = realRead;
         const merged = addUnits([ODD()]);
         t('GABUNG tetap melewati unit itu dengan alasannya', [merged.added, (merged.skippedDetails[0] || {}).reason],
-          [0, 'Kelompok "Heavy Equip" tidak dikenal']);
+          [0, 'Group "Heavy Equip" not recognized']);
 
         // Nilai kelompok yang tak terbaca bisa berisi apa saja, dan showToast
         // merender HTML. Diuji dengan showToast ASLI.
@@ -336,12 +336,12 @@ const { launch, BASE_URL } = require('./_env');
         saveDamage({ preventDefault() {} });
         t('kerusakan komponen + set Breakdown pada unit tak terbaca ditolak sebelum disimpan',
           [globalDamages.length, unitWrites.length], [0, 0]);
-        t('tanpa mengaku "di-set Breakdown"', toasts.some(x => /di-set Breakdown/.test(x)), false);
+        t('tanpa mengaku "di-set Breakdown"', toasts.some(x => /set to Breakdown/.test(x)), false);
         fillDamage(globalData[1], 'GPS', false);
         saveDamage({ preventDefault() {} });
         t('tanpa centang set Breakdown, catatannya tetap bisa disimpan', globalDamages.length, 1);
         document.getElementById('damageModal')?.classList.remove('open');
-        t('traktor biasa tidak terpengaruh', _applyDamageBreakdown('u_t1', 'Device Precision', 'GPS', 'x'), 'Komponen GPS unit');
+        t('traktor biasa tidak terpengaruh', _applyDamageBreakdown('u_t1', 'Device Precision', 'GPS', 'x'), 'Unit component GPS');
 
         // Migrasi lisensi tidak menyentuh unit tak terbaca.
         globalData = [HV('u_x1', { unitGroup: 'Heavy Equip', gpsLicense: 'SF-RTK', gpsLicenseEndDate: '2020-01-01' })];

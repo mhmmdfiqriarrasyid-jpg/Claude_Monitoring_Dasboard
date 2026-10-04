@@ -80,7 +80,7 @@ const { launch, BASE_URL } = require('./_env');
         seed();
         answers = [true];                              // sertakan foto
         let ex = await exportNow();
-        t('ditanya dulu, dengan jumlah dokumennya', /Sertakan 3 dokumen foto/.test(asked[asked.length - 1] || ''), true);
+        t('ditanya dulu, dengan jumlah dokumennya', /Include 3 photo & letter documents/.test(asked[asked.length - 1] || ''), true);
         t('foto kerusakan ikut', ex.damagePhotos, { d1: PH('D1') });
         t('foto laporan harian ikut', ex.workLogPhotos, { w1: [PH('W1'), PH('W2')] });
         t('surat izin ikut', ex.leaveDocs, { l1: [PH('L1')] });
@@ -89,8 +89,8 @@ const { launch, BASE_URL } = require('./_env');
         answers = [false];                             // tanpa foto
         ex = await exportNow();
         t('tanpa foto: berkasnya MENGAKU tidak membawanya', ex.omitted.map(o => o.key + ':' + o.why),
-          ['damagePhotos:tidak disertakan', 'workLogPhotos:tidak disertakan', 'leaveDocs:tidak disertakan']);
-        t('dan toast-nya menyebutnya', /TIDAK termasuk: .*Foto kerusakan/.test(toasts[toasts.length - 1]), true);
+          ['damagePhotos:not included', 'workLogPhotos:not included', 'leaveDocs:not included']);
+        t('dan toast-nya menyebutnya', /NOT included: .*Damage photos/.test(toasts[toasts.length - 1]), true);
 
         globalDamages = [{ id: 'd2', unitId: 'u1' }]; workLogs = []; leaveRequests = [];
         asked.length = 0;
@@ -110,7 +110,7 @@ const { launch, BASE_URL } = require('./_env');
           writes.wl.map(w => w[0]).sort(), ['l1', 'w1']);
         const rows = [...document.querySelectorAll('#restoreReportBody tr')].map(tr => tr.textContent);
         t('laporan restore menyebut ketiganya',
-          ['Foto kerusakan', 'Foto laporan harian', 'Surat izin'].every(l => rows.some(r => r.includes(l))), true);
+          ['Damage photos', 'Daily report photos', 'Leave / sick letters'].every(l => rows.some(r => r.includes(l))), true);
         closeRestoreReport();
 
         // Berkas yang catatannya berfoto tapi fotonya tidak ikut: dikatakan.
@@ -121,7 +121,7 @@ const { launch, BASE_URL } = require('./_env');
         await tick(400);
         const rows2 = [...document.querySelectorAll('#restoreReportBody tr')].map(tr => tr.textContent);
         t('restore tanpa foto di berkas: laporannya berkata begitu',
-          rows2.some(r => /Foto kerusakan.*fotonya tidak/.test(r)), true);
+          rows2.some(r => /Damage photos.*the photos are not/.test(r)), true);
         closeRestoreReport();
 
         // =============== 6. RESTORE GANTI TIDAK MENINGGALKAN DOKUMEN FOTO ===============
@@ -148,7 +148,7 @@ const { launch, BASE_URL } = require('./_env');
         importBackup(new File([JSON.stringify({ version: 4, units: globalData.slice(), damages: [] })], 'k.json', { type: 'application/json' }));
         await tick(400);
         t('restore GANTI dengan koleksi kosong tidak menghapus apa pun', [globalDamages.length, writes.delDmg.length], [2, 0]);
-        t('dan laporannya menjelaskan', [...document.querySelectorAll('#restoreReportBody tr')].some(tr => /berkas berisi 0 baris; 2 yang ada tidak dihapus/.test(tr.textContent)), true);
+        t('dan laporannya menjelaskan', [...document.querySelectorAll('#restoreReportBody tr')].some(tr => /the file has 0 rows; the 2 existing ones were not deleted/.test(tr.textContent)), true);
         closeRestoreReport();
 
         // =============== 7. AKUN KHUSUS MENYETUJUI ===============

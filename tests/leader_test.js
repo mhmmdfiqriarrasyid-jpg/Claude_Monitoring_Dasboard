@@ -61,10 +61,10 @@ const { launch, BASE_URL } = require('./_env');
         t('laporan perlu revisi = 1', byKey('revision').total, 1);
         t('unit rusak >3 hari = 1 (yang 1 hari tidak dihitung)', byKey('breakdown').total, 1);
         t('detail unit rusak menyebut lama dan alasan',
-          byKey('breakdown').items[0].sub.includes('5 hari') && byKey('breakdown').items[0].sub.includes('Sensor mati'), true);
+          byKey('breakdown').items[0].sub.includes('5 day(s)') && byKey('breakdown').items[0].sub.includes('Sensor mati'), true);
         t('perangkat rusak/perbaikan = 2', byKey('devices').total, 2);
         t('stok habis/menipis = 2 (Oli aman)', byKey('stock').total, 2);
-        t('stok habis ditandai', byKey('stock').items.some(i => i.sub === 'habis'), true);
+        t('stok habis ditandai', byKey('stock').items.some(i => i.sub === 'out of stock'), true);
         t('pendaftar menunggu = 1', byKey('users').total, 1);
         t('akun aktif tanpa akses = 1', byKey('noaccess').total, 1);
         t('owner sendiri tidak dihitung tanpa-akses',

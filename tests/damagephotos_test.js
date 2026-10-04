@@ -186,7 +186,7 @@ const { launch, BASE_URL } = require('./_env');
         _autoBackupFailed = false;
         writeAutoBackup([{ id:'u_1' }]);
         t('kegagalan cadangan diberitahukan',
-          toasts.some(x => /Cadangan otomatis berhenti/.test(x)), true);
+          toasts.some(x => /Automatic backup stopped/.test(x)), true);
         const n1 = toasts.length;
         writeAutoBackup([{ id:'u_1' }]);
         t('tapi tidak diulang-ulang jadi dinding toast', toasts.length, n1);

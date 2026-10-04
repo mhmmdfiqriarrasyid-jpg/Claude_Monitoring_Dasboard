@@ -109,7 +109,7 @@ const { launch, BASE_URL } = require('./_env');
         t('perubahan tetap dicatat lebih dulu (tahan offline)', upd.length, 1);
         t('penolakan meninggalkan catatan gagal', errs.length, 1);
         t('catatan gagal menyebut kodenya',
-          /GAGAL \\(permission-denied\\)/.test(errs[0] ? errs[0].after : ''), true);
+          /FAILED \\(permission-denied\\)/.test(errs[0] ? errs[0].after : ''), true);
         // Tanpa ini layar terus menampilkan nilai yang tidak ada di mana pun.
         t('data lokal ditarik ulang dari server', globalData[0].name, 'GGTR147G_OHZ');
 
@@ -191,11 +191,11 @@ const { launch, BASE_URL } = require('./_env');
         t('yang sudah ada sebelumnya tidak ikut hilang',
           globalImplements.some(o => o.id === 'lama1' || o.id === 'srv1'), true);
         t('penolakan meninggalkan baris audit GAGAL',
-          getAuditLog().some(e => e.action === 'error' && /GAGAL/.test(e.after || '')), true);
+          getAuditLog().some(e => e.action === 'error' && /FAILED/.test(e.after || '')), true);
         t('dan toastnya tidak lagi berbunyi "tersimpan lokal"',
-          pesanImpor.some(m => /tersimpan lokal/i.test(m)), false);
+          pesanImpor.some(m => /saved locally/i.test(m)), false);
         t('melainkan mengatakan perubahannya dikembalikan',
-          pesanImpor.some(m => /dikembalikan/i.test(m)), true);
+          pesanImpor.some(m => /reverted/i.test(m)), true);
 
         // Dan kalau cloudnya menerima, barisnya memang harus tinggal.
         tolakImpor = false;

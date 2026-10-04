@@ -41,7 +41,7 @@ const { launch, BASE_URL } = require('./_env');
         t('addDays lintas tahun', addDaysISO('2026-12-31', 1), '2027-01-01');
         t('addDays mundur', addDaysISO('2026-01-01', -1), '2025-12-31');
         t('weekRange satu bulan', weekRangeLabel('2026-09-14'), '14 – 20 Sep 2026');
-        t('weekRange lintas bulan', weekRangeLabel('2026-09-28'), '28 Sep – 4 Okt 2026');
+        t('weekRange lintas bulan', weekRangeLabel('2026-09-28'), '28 Sep – 4 Oct 2026');
 
         // ---------- seed data + stub cloud ----------
         const writes = [];
@@ -99,7 +99,7 @@ const { launch, BASE_URL } = require('./_env');
 
         // Member deleted from the list still reads sensibly on old rows.
         t('anggota terhapus: pakai nama tersimpan', memberNameOf({ memberId: 'm9', memberName: 'Dedi' }), 'Dedi');
-        t('anggota terhapus tanpa nama tersimpan', memberNameOf({ memberId: 'm9' }), '(anggota dihapus)');
+        t('anggota terhapus tanpa nama tersimpan', memberNameOf({ memberId: 'm9' }), '(deleted member)');
         t('nama anggota hidup', memberNameOf({ memberId: 'm1', memberName: 'basi' }), 'Andi');
 
         // ---------- setShift ----------

@@ -161,7 +161,7 @@ const { launch, BASE_URL } = require('./_env');
         saveToStorage(globalData);
         renderNarrative(globalData);
         const nar = document.getElementById('dashNarrative').textContent;
-        t('ringkasan memisahkan yang sudah dan akan expire', [/1 lisensi sudah expire/.test(nar), /1 lisensi akan expire/.test(nar)], [true, true]);
+        t('ringkasan memisahkan yang sudah dan akan expire', [/1 license has expired/.test(nar), /1 license expiring/.test(nar)], [true, true]);
 
         // =============== 15. impor implement ganda ===============
         navigateTo('implements');
@@ -171,7 +171,7 @@ const { launch, BASE_URL } = require('./_env');
         toasts.length = 0;
         handleImplementCSVImport(new File(['x'], 'i.csv'));
         window.Papa = realPapa;
-        t('impor implement melewati yang sudah ada dan yang ganda', [globalImplements.length, toasts.some(m => /2 dilewati \\(Profile Name \\+ Code sudah ada\\)/.test(m))], [2, true]);
+        t('impor implement melewati yang sudah ada dan yang ganda', [globalImplements.length, toasts.some(m => /2 skipped \\(Profile Name \\+ Code already exist\\)/.test(m))], [2, true]);
 
         // =============== 16. lampiran dua penghapusan ===============
         const purged = [];

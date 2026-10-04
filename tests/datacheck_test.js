@@ -197,7 +197,7 @@ const { launch, BASE_URL } = require('./_env');
         t('data bersih: tabelnya kosong',
           document.getElementById('dataCheckBody').innerHTML, '');
         t('dan dikatakan bersih',
-          /bersih/.test(document.getElementById('dataCheckSummary').textContent), true);
+          /clean/.test(document.getElementById('dataCheckSummary').textContent), true);
         t('tombol perbaiki disembunyikan kalau tidak ada yang bisa diperbaiki',
           document.getElementById('dataCheckFixBtn').style.display, 'none');
 

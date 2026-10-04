@@ -136,7 +136,7 @@ const { launch, BASE_URL } = require('./_env');
           exported.omitted.map(o => o.key).sort(),
           ['devices', 'inspectionPlans', 'inspections', 'leaveRequests', 'shifts', 'stockItems', 'teamMembers', 'workLogs']);
         t('toastnya menyebut yang tidak termasuk',
-          toasts.some(m => /TIDAK termasuk/.test(m)), true);
+          toasts.some(m => /NOT included/.test(m)), true);
 
         currentUserDoc = { role: 'owner', status: 'active', email: 'o@x.id' };
         applyRoleGating();
@@ -159,13 +159,13 @@ const { launch, BASE_URL } = require('./_env');
         // koleksi lainnya (termasuk jadwal & laporan pengecekan) tidak ada di
         // dalamnya, dan semuanya harus tertulis.
         t('koleksi yang tidak ada di berkas DILAPORKAN, bukan didiamkan',
-          barisLaporan.filter(x => /tidak ada di berkas ini/.test(x)).length, 10);
+          barisLaporan.filter(x => /not in this file/.test(x)).length, 10);
         t('anggota tim termasuk yang dilaporkan hilang',
-          barisLaporan.some(x => /Anggota Tim.*tidak ada di berkas ini/.test(x)), true);
+          barisLaporan.some(x => /Team Members.*not in this file/.test(x)), true);
         t('peringatan cadangan lama tampil',
-          /Cadangan lama/.test(document.getElementById('restoreReportNote').innerHTML), true);
+          /Old backup/.test(document.getElementById('restoreReportNote').innerHTML), true);
         t('akun dan riwayat disebut tidak pernah dicadangkan',
-          barisLaporan.filter(x => /tidak pernah dicadangkan/.test(x)).length, 2);
+          barisLaporan.filter(x => /never backed up/.test(x)).length, 2);
         t('restore v3 tidak menghapus anggota tim yang ada', teamMembers.length, 1);
         closeRestoreReport();
 
@@ -211,7 +211,7 @@ const { launch, BASE_URL } = require('./_env');
         const barisV4 = [...document.querySelectorAll('#restoreReportBody tr')]
             .map(tr => tr.textContent.replace(/\\s+/g, ' ').trim());
         t('tidak ada lagi koleksi yang hilang dari berkas v4',
-          barisV4.filter(x => /tidak ada di berkas ini/.test(x)).length, 0);
+          barisV4.filter(x => /not in this file/.test(x)).length, 0);
         t('peringatan cadangan lama tidak muncul untuk v4',
           document.getElementById('restoreReportNote').style.display, 'none');
         closeRestoreReport();

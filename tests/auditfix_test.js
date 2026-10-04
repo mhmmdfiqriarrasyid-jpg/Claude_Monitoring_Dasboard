@@ -77,7 +77,7 @@ const { launch, BASE_URL } = require('./_env');
         t('T6: status yang diubah perangkat lain saat form terbuka tetap', [globalData[0].status, globalData[0].breakdownReason, globalData[0].remarks],
           ['Breakdown', 'Hidrolik bocor', 'catatan']);
         editUnit('g'); saveUnit(new Event('submit'));
-        t('T6: simpan tanpa perubahan tidak menulis', toasts[toasts.length - 1], 'Tidak ada perubahan');
+        t('T6: simpan tanpa perubahan tidak menulis', toasts[toasts.length - 1], 'No changes');
 
         // ===== T7: tandai selesai kerusakan =====
         navigateTo('damage');
@@ -129,7 +129,7 @@ const { launch, BASE_URL } = require('./_env');
         const ex = JSON.parse(await window.__blob.text());
         cloudInitialized = prevInit;
         t('S12: koleksi yang belum termuat tidak ditulis sebagai kosong', ['workLogs' in ex, 'damages' in ex], [false, true]);
-        t('S12: dan berkasnya mengaku', ex.omitted.some(o => o.key === 'workLogs' && /belum termuat/.test(o.why)), true);
+        t('S12: dan berkasnya mengaku', ex.omitted.some(o => o.key === 'workLogs' && /not loaded yet/.test(o.why)), true);
 
         // ===== S13: nama perusahaan beda huruf =====
         teamMembers = [{ id: 'm1', name: 'A', company: 'PT. Global Papua Abadi', active: true },

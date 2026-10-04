@@ -80,12 +80,12 @@ const { launch, BASE_URL } = require('./_env');
         t('tanggal terbalik DITOLAK, bukan ditanya',
           [checkLeaveRange('m1', 'izin', '2026-09-23', '2026-09-21', null, 0), asked.length], [false, 0]);
         t('penolakannya menjelaskan sebabnya',
-          /lebih awal/.test(toasts[toasts.length - 1] || ''), true);
+          /earlier than the start/.test(toasts[toasts.length - 1] || ''), true);
 
         freshAsk(); answer = false;
         t('rentang lebih dari sebulan minta konfirmasi, bukan ditolak diam-diam',
           checkLeaveRange('m1', 'sakit', '2026-01-01', '2026-03-01', null, 0), false);
-        t('dan dialognya menyebut jumlah harinya', /60 hari/.test(asked[0] || ''), true);
+        t('dan dialognya menyebut jumlah harinya', /60 days/.test(asked[0] || ''), true);
         freshAsk(); answer = true;
         t('kalau dikonfirmasi, rentang panjang tetap boleh',
           checkLeaveRange('m1', 'sakit', '2026-01-01', '2026-03-01', null, 0), true);
@@ -232,7 +232,7 @@ const { launch, BASE_URL } = require('./_env');
         // Toast suksesnya baru muncul setelah tulisannya selesai, jadi beri
         // satu putaran microtask sebelum memeriksanya.
         await Promise.resolve(); await Promise.resolve();
-        t('penggunanya diberi tahu', toasts.some(m => /dikirim ulang/i.test(m)), true);
+        t('penggunanya diberi tahu', toasts.some(m => /resubmitted/i.test(m)), true);
 
         // ---------- HAK AKSES ----------
         currentUserDoc = { role: 'khl', status: 'active', access: { teamLog: 'view' } };

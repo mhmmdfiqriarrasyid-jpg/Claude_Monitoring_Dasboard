@@ -102,11 +102,11 @@ const { launch, BASE_URL } = require('./_env');
         workLogs = [{ id:'w1', date:'2026-09-14', memberId:'m1', memberName:'Andi',
                       start:'07:00', end:'16:00', task:'x' }];
         deleteTeamMember('m1');
-        t('tidak menyebut angka jadwal shift', /\\d+ jadwal shift/.test(ditanya), false);
+        t('tidak menyebut angka jadwal shift', /\\d+ shift schedule/.test(ditanya), false);
         t('tetap menyebut jumlah laporan yang memang lengkap',
-          /1 laporan harian/.test(ditanya), true);
+          /1 daily report/.test(ditanya), true);
         t('dan tetap menjelaskan akibatnya',
-          /anggota dihapus/.test(ditanya), true);
+          /deleted member/.test(ditanya), true);
 
         // ---------- keluar sesi membersihkan penanda jendela ----------
         tearDownCloudSync();
@@ -132,7 +132,7 @@ const { launch, BASE_URL } = require('./_env');
           typeof cloudFn('saveDevice'), 'function');
         pesan.length = 0;
         t('cloudFn mengembalikan null kalau tidak ada', cloudFn('saveDeviceBaru'), null);
-        t('dan menyuruh muat ulang', /[Mm]uat ulang/.test(pesan.join(' ')), true);
+        t('dan menyuruh muat ulang', /[Rr]eload/.test(pesan.join(' ')), true);
 
         // cloudCall dipakai di posisi ARGUMEN cloudWrite(...), tempat lemparan
         // terjadi sebelum cloudWrite sempat berbuat apa pun. Jadi ia harus

@@ -91,7 +91,7 @@ const { launch, BASE_URL } = require('./_env');
         t('Kirim → pending', p.approval, 'pending');
         t('Kirim mencatat waktu kirim', p.submittedAt > 0, true);
         await tick();
-        t('Kirim: pesan menunggu persetujuan', toasts.some(m => /menunggu persetujuan/.test(m)), true);
+        t('Kirim: pesan menunggu persetujuan', toasts.some(m => /pending approval/.test(m)), true);
         workLogs = [p];
 
         // =============== Terkunci ===============
@@ -102,7 +102,7 @@ const { launch, BASE_URL } = require('./_env');
         t('menunggu: pengirim bisa tarik kembali', !!row.querySelector('button[title="Withdraw to draft"]'), true);
         toasts.length = 0;
         editWorkLog(p.id);
-        t('menunggu: edit ditolak dengan alasan', [document.getElementById('workLogModal').classList.contains('open'), toasts.some(m => /tarik kembali/.test(m))], [false, true]);
+        t('menunggu: edit ditolak dengan alasan', [document.getElementById('workLogModal').classList.contains('open'), toasts.some(m => /withdraw it first/.test(m))], [false, true]);
         const n1 = calls.length;
         deleteWorkLog(p.id);
         t('menunggu: hapus ditolak', calls.length, n1);
@@ -145,7 +145,7 @@ const { launch, BASE_URL } = require('./_env');
         t('disetujui: pengirim hanya melihat gembok', [!!row.querySelector('button[title="Edit"]'), !!row.querySelector('button[title="Withdraw to draft"]'), !!row.querySelector('.row-lock')], [false, false, true]);
         toasts.length = 0;
         editWorkLog(p.id);
-        t('disetujui: edit ditolak, disuruh minta atasan', toasts.some(m => /Minta Revisi/.test(m)), true);
+        t('disetujui: edit ditolak, disuruh minta atasan', toasts.some(m => /Request Revision/.test(m)), true);
 
         // Atasan membuka kembali.
         as('boss', BOSS);
@@ -164,7 +164,7 @@ const { launch, BASE_URL } = require('./_env');
         const badge = document.getElementById('teamBadge');
         t('badge Tim menghitung yang perlu direvisi', [badge.style.display, badge.textContent], ['', '1']);
         t('badge tab Laporan Harian', document.getElementById('wlTabBadge').textContent, '1');
-        t('saat dibuka: toast perlu direvisi', toasts.some(m => /perlu direvisi/.test(m)), true);
+        t('saat dibuka: toast perlu direvisi', toasts.some(m => /need revision/.test(m)), true);
         renderTeamView();
         const box = document.getElementById('wlMyNotice');
         t('kotak Perlu direvisi tampil', box.style.display, '');
@@ -195,7 +195,7 @@ const { launch, BASE_URL } = require('./_env');
         toasts.length = 0;
         workLogs = [{ ...workLogs[0], approval: 'approved', approvedBy: 'Boss', approvedAt: Date.now() + 5000 }];
         updateMyTeamNotices();
-        t('toast disetujui', toasts.some(m => /disetujui oleh Boss/.test(m)), true);
+        t('toast disetujui', toasts.some(m => /approved by Boss/.test(m)), true);
         toasts.length = 0;
         updateMyTeamNotices();
         t('toast disetujui tidak diulang', toasts.length, 0);
@@ -204,7 +204,7 @@ const { launch, BASE_URL } = require('./_env');
         toasts.length = 0;
         workLogs = [{ ...workLogs[0], approval: 'revision', revisionNote: 'Foto kurang', approvedAt: 0 }];
         updateMyTeamNotices();
-        t('revisi baru: toast dengan catatannya', toasts.some(m => /diminta revisi: Foto kurang/.test(m)), true);
+        t('revisi baru: toast dengan catatannya', toasts.some(m => /needs revision: Foto kurang/.test(m)), true);
 
         // Filter Milik saya.
         workLogs.push({ id: 'wl_lain', date: toISODate(), memberId: 'm1', task: 'punya budi', approval: 'pending', createdByUid: 'budi' });

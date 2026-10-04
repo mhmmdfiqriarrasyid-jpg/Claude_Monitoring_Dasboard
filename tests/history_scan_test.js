@@ -129,7 +129,7 @@ const { launch, BASE_URL } = require('./_env');
         t('pratinjau menampilkan tiap barisnya',
           document.querySelectorAll('#phantomHistoryBody tr').length, 2);
         t('pratinjau menyebut jumlah pelaku',
-          /2 pelaku/.test(document.getElementById('phantomHistorySummary').textContent), true);
+          /2 actor\\(s\\)/.test(document.getElementById('phantomHistorySummary').textContent), true);
 
         // ---------- menghapus dari cloud DAN cache lokal ----------
         // Kalau cache lokal tidak ikut dipangkas, getAuditLog() memunculkannya

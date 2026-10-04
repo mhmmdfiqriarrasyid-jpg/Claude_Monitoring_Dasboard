@@ -36,7 +36,15 @@ const UI_LABELS_EN = [
     ['aria-label="Filter jenis masalah"', 'aria-label="Filter issue type"'],
     ['aria-label="Pilih semua unit"', 'aria-label="Select all units"'],
     ['title="Profil"', 'title="Profile"'],
-    ['Lisensi segera habis', 'Licenses expiring soon']
+    ['Lisensi segera habis', 'Licenses expiring soon'],
+    ['Rata-rata jarak antar kerusakan · diamati ', 'Average time between failures · observed over '],
+    ['8 unit di 2 site — 1 unit sedang breakdown, 3 berjalan dengan gangguan komponen, dan 2 lisensi akan expire dalam 30 hari ke depan.',
+     '8 units across 2 sites — 1 unit is in breakdown, 3 running with component issues, and 2 licenses expiring in the next 30 days.'],
+    ['"Site","Tahun Penerimaan","User Category"', '"Site","Year Received","User Category"'],
+    ['YearReceived diperbarui|success', 'YearReceived updated|success'],
+    // Label bulan grafik tren kerusakan: lokal tanggal kini 'en-GB'
+    // (masing-masing muncul tepat sekali di golden).
+    ['Mei', 'May'], ['Agu', 'Aug'], ['Sep', 'Sept']
 ].map(([a, b]) => [JSON.stringify(a).slice(1, -1), JSON.stringify(b).slice(1, -1)]);
 const golden = JSON.parse(UI_LABELS_EN.reduce((s, [a, b]) => s.split(a).join(b), JSON.stringify(goldenRaw).replace(
     /onclick=\\"showBreakdownPopover\(event, '([^']*)'\)\\"/g,
@@ -349,7 +357,7 @@ const SETUP = `(() => {
         // ---------- 14. FA1: profil ----------
         showUnitProfile('u_h1');
         const body = document.getElementById('unitProfileBody').innerHTML;
-        r.profile = [/Lisensi/.test(body), /Distribusi Lisensi/.test(body), (body.match(/profile-comp /g) || []).length, /Camera AI/.test(body)];
+        r.profile = [/License/.test(body), /License Distribution/.test(body), (body.match(/profile-comp /g) || []).length, /Camera AI/.test(body)];
         closeUnitProfile();
 
         // ---------- 16. Periksa Data ----------
@@ -394,8 +402,8 @@ const SETUP = `(() => {
         t('firewall: yang ditolak tidak menulis apa pun', R.fwWrites, 0);
         t('firewall: suntingan biasa tetap jalan', R.fwNormal, true);
         t('firewall: suntingan biasa tidak menambah kunci kelompok', R.fwNoGroupKey, true);
-        t('addUnits menolak kelompok tak dikenal', R.addUnknown, ['Kelompok "Heavyy" tidak dikenal']);
-        t('addUnits menolak id milik kelompok lain', R.addCross, ['ID dipakai unit kelompok lain']);
+        t('addUnits menolak kelompok tak dikenal', R.addUnknown, ['Group "Heavyy" not recognized']);
+        t('addUnits menolak id milik kelompok lain', R.addCross, ['ID already used by a unit in the other group']);
         t('clearStray hanya boleh mengosongkan', R.clearStrayBlocked, false);
 
         t('DC1: komponen alat berat kosong tampil "belum diisi"', R.blankShown, '');
@@ -421,7 +429,7 @@ const SETUP = `(() => {
         t('breakdown Camera AI menulis ke komponennya', R.camBreak, 'Breakdown');
         t('DC5: menyelesaikan catatan lama GPS pada alat berat tidak menulis ke unit', R.legacyResolveWrites, 0);
         t('DC5: catatan itu tetap tertandai selesai', R.legacyResolved, true);
-        t('komponen kustom bernama Camera AI ditolak', /bawaan Alat Berat/.test(R.addCamComponent), true);
+        t('komponen kustom bernama Camera AI ditolak', /"Camera AI" is already built in for Heavy Equipment/.test(R.addCamComponent), true);
         t('pilihan komponen alat berat = komponennya sendiri',
           R.heavyOpts.slice(0, 4), ['Camera AI', 'Telematic Box', 'Switch Limiter', 'Rotary Lamp']);
         t('pilihan komponen alat berat tidak memuat GPS', R.heavyOpts.includes('GPS'), false);
@@ -439,7 +447,7 @@ const SETUP = `(() => {
         t('kolom "Kelompok" di CSV traktor tidak dibaca sebagai kelompok', R.inferTractorKelompok, 'tractor');
         t('"Kelompok" bukan kolom kelompok unit', R.kelompokIgnored, ['tractor', 0]);
         t('Unit Group tak dikenal jatuh ke tab dan diperingatkan', R.unknownGroup, ['heavy', 1]);
-        t('CSV tidak bisa memindah unit antar kelompok', R.mismatch, ['Kelompok di CSV berbeda dengan unit — tidak dipindah']);
+        t('CSV tidak bisa memindah unit antar kelompok', R.mismatch, ['Group in the CSV differs from the unit — not moved']);
 
         t('WN1: cakupan Pertanian tidak menghitung alat berat yang rusak', R.tractorScope, ['2', '0']);
         t('WN2: ring traktor tetap 100% meski ada alat berat', R.ringsTractor, ['100%', '100%', '100%', '100%']);

@@ -104,7 +104,7 @@ const { launch, BASE_URL } = require('./_env');
           [checkStockBalance('Filter Oli', 6, null), asked.length], [true, 0]);
         freshAsk(); answer = false;
         t('keluar melebihi saldo ditanya dulu', checkStockBalance('Filter Oli', 7, null), false);
-        t('dialognya menyebut sisa saldonya', /tinggal 6/.test(asked[0] || ''), true);
+        t('dialognya menyebut sisa saldonya', /Only 6 of/.test(asked[0] || ''), true);
         freshAsk(); answer = true;
         t('kalau dikonfirmasi tetap boleh', checkStockBalance('Filter Oli', 7, null), true);
         // Menyunting transaksi keluar yang sudah ada harus mengembalikan
@@ -114,7 +114,7 @@ const { launch, BASE_URL } = require('./_env');
           [checkStockBalance('Filter Oli', 10, stockLedger[1]), asked.length], [true, 0]);
         freshAsk(); answer = true;
         t('barang yang belum pernah masuk saldonya nol',
-          [checkStockBalance('Barang Hantu', 1, null), /tinggal 0/.test(asked[0] || '')], [true, true]);
+          [checkStockBalance('Barang Hantu', 1, null), /Only 0 of/.test(asked[0] || '')], [true, true]);
 
         // ---------- Escape tidak membuang isi form ----------
         document.getElementById('unitModal').classList.add('open');
@@ -139,7 +139,7 @@ const { launch, BASE_URL } = require('./_env');
         closeWorkLogModal();
         t('menutup dengan foto belum tersimpan minta konfirmasi',
           document.getElementById('workLogModal').classList.contains('open'), true);
-        t('dialognya menyebut jumlah fotonya', /2 foto/.test(asked[0] || ''), true);
+        t('dialognya menyebut jumlah fotonya', /2 photo\\(s\\)/.test(asked[0] || ''), true);
         answer = true;
         closeWorkLogModal();
         t('kalau dikonfirmasi, tertutup',
