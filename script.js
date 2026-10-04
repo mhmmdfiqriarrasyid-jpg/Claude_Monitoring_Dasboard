@@ -92,7 +92,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v137';
+const APP_VERSION = 'v138';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -3591,7 +3591,7 @@ function sendLicenseAlertEmail() {
         showToast('No license alerts to send', 'info'); return;
     }
 
-    const today = new Date().toLocaleDateString('id-ID', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+    const today = new Date().toLocaleDateString('en-GB', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
     const lowStock = _lowStockList();
     const body = [
         `License Alert Report — ${today}`,
@@ -3856,7 +3856,7 @@ function renderDamageStats() {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         months.push({
             key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
-            label: d.toLocaleDateString('id-ID', { month: 'short' })
+            label: d.toLocaleDateString('en-GB', { month: 'short' })
         });
     }
     const byMonth = months.map(m => recs.filter(r => (r.date || '').startsWith(m.key)).length);
@@ -4312,7 +4312,7 @@ function showAutoBackups() {
         list.innerHTML = ring.length === 0
             ? '<li style="color:var(--text-secondary);padding:8px 0">No automatic backups on this device yet.</li>'
             : ring.map((b, i) => {
-                const when = b.at ? new Date(b.at).toLocaleString('id-ID',
+                const when = b.at ? new Date(b.at).toLocaleString('en-GB',
                     { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
                 return `<li>
                     <span><strong>${escapeHtml(when)}</strong>
@@ -4376,7 +4376,7 @@ function restoreAutoBackup(index) {
     if (!entry || !Array.isArray(entry.units)) { showToast('That backup cannot be read', 'error'); return; }
 
     if (_refuseCrossGroupRestore(entry.units, { auto: true })) return;
-    const when = entry.at ? new Date(entry.at).toLocaleString('id-ID') : 'unknown time';
+    const when = entry.at ? new Date(entry.at).toLocaleString('en-GB') : 'unknown time';
     if (!confirm(`Restore ${entry.units.length} unit(s) to their state at ${when}?\n\n`
         + `The ${globalData.length} current unit(s) will be replaced. Other data (damage, licenses, team, inventory) is not changed.`)) return;
 
@@ -9780,7 +9780,7 @@ function formatUserTime(ms) {
     if (!ms) return '—';
     const d = new Date(ms);
     if (isNaN(d.getTime())) return '—';
-    return d.toLocaleString('id-ID', {
+    return d.toLocaleString('en-GB', {
         day: '2-digit', month: 'short', year: 'numeric',
         hour: '2-digit', minute: '2-digit'
     });
@@ -10654,7 +10654,7 @@ function shiftFor(memberId, date) {
 function shiftSetByLabel(memberId, date) {
     const rec = teamShifts.find(s => s.id === `${date}_${memberId}`);
     if (!rec || !rec.updatedBy) return '';
-    const when = rec.updatedAt ? new Date(rec.updatedAt).toLocaleString('id-ID',
+    const when = rec.updatedAt ? new Date(rec.updatedAt).toLocaleString('en-GB',
         { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
     return `Set by ${rec.updatedBy}${when ? ' · ' + when : ''}`;
 }

@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.349 pemeriksaan di tiga puluh dua suite, menggerakkan Chromium sungguhan terhadap
+1.371 pemeriksaan di tiga puluh tiga suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -255,15 +255,24 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   persetujuan baru (penanda per akun di localStorage
   `teamApprovalSeen:<uid>:<jenis>`). Foto/surat ditulis SEBELUM laporannya,
   karena rules hanya mengizinkan foto berubah selama laporannya terbuka.
-- **Bahasa antarmuka.** Label tampilan berbahasa Inggris: menu, judul
-  halaman/tab, judul kolom dan `data-label`, tombol, label form, judul
-  kartu/KPI, label status (`APPROVAL_STATES`, `LEAVE_TYPES`, shift, status
-  perangkat, `INS_RESULT`, `shortLabel` kelompok). Pesan (toast, confirm,
-  prompt), paragraf penjelasan, header CSV dan teks riwayat tetap bahasa
-  Indonesia. **Nilai tersimpan tidak pernah diterjemahkan** — kunci seperti
-  `izin`, `pagi`, `pending`, `Mekanis` tetap; yang tampil lewat peta label
-  (mis. `DAMAGE_TYPE_LABEL`). Selector `data-label` di style.css harus ikut
-  nama kolom yang sama.
+- **Bahasa antarmuka.** Seluruh teks yang dilihat pengguna berbahasa Inggris:
+  menu, judul, kolom dan `data-label`, tombol, form, label status, toast,
+  confirm/prompt, paragraf penjelasan, header CSV ekspor, label riwayat baru
+  (`[Damage]`, `[Inspection]`, `FAILED (code) — change not saved`) dan format
+  tanggal (`en-GB`). **Nilai tersimpan tidak pernah diterjemahkan** — kunci
+  seperti `izin`, `pagi`, `pending`, `Mekanis`, `breakdownReason` 'Diset via
+  impor CSV' tetap; yang tampil lewat peta label (mis. `DAMAGE_TYPE_LABEL`).
+  Impor CSV tetap menerima header lama berbahasa Indonesia. Riwayat lama
+  tetap tampil apa adanya. Selector `data-label` di style.css harus ikut nama
+  kolom yang sama.
+- **Laporan cek tanpa sinyal (dijaga `tests/offline_test.js`).** Firestore
+  menyimpan tulisan offline di antrean perangkat (cache persisten, bertahan
+  saat aplikasi ditutup) dan mengirimnya sendiri. `subscribeInspections`
+  memakai `includeMetadataChanges` dan memberi daftar id yang
+  `hasPendingWrites` → `insQueuedIds`: baris laporan bertanda "Waiting to
+  send", kotak `#insSyncNotice` menyebut jumlahnya, form memberi tahu saat
+  offline, toast saat antrean habis, dan Sign out meminta konfirmasi bila
+  masih ada antrean (Firestore menahannya sampai akun yang sama masuk lagi).
 - **Ringkasan unit per Implement / Alat Kerja (dijaga `tests/toolsummary_test.js`).**
   Kartu di atas tabel Unit Database: tab Agricultural menghitung per
   `implement`, tab Heavy per `workTool`. Ikut filter status & site (bukan
@@ -272,8 +281,9 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   (`editToolFilter`, ikut ke Export CSV, direset saat pindah tab).
 - **Menu samping per kelompok alat (dijaga `tests/navgroups_test.js`).**
   Ringkasan · Agricultural Equipment · Heavy Equipment · Tim · Inventaris ·
-  Admin. Dashboard, Unit Database dan Kerusakan tetap SATU halaman dengan
-  pemilih kelompok; tautannya (`data-group`, `goNav`) membuka halaman itu
+  Admin. Dashboard, Unit Database dan Kerusakan tetap SATU halaman; kelompok
+  dipilih HANYA dari menu samping (tab kelompok di Dashboard dan Unit
+  Database sudah dihapus — judul tabel menyebut kelompoknya); tautannya (`data-group`, `goNav`) membuka halaman itu
   pada kelompoknya dan `markActiveNav` menyalakan tautan kelompok yang sedang
   tampil. Kerusakan punya filter kelompok (`damageGroup`; catatan mengikuti
   unit hidupnya, unit yang sudah dihapus memakai `unitGroup` di catatan).
