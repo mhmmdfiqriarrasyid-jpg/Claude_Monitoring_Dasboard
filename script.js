@@ -3316,26 +3316,26 @@ function renderNarrative(data) {
     const soon = al.soonCount != null ? al.soonCount : Math.max(0, al.total - expired);
 
     const clauses = [
-        breakdown === 0 ? 'semua unit beroperasi hari ini' : `${breakdown} unit sedang breakdown`
+        breakdown === 0 ? 'all units are operating today' : `${breakdown} unit${breakdown === 1 ? ' is' : 's are'} in breakdown`
     ];
-    if (issues > 0) clauses.push(`${issues} berjalan dengan gangguan komponen`);
-    if (expired > 0) clauses.push(`${expired} lisensi sudah expire`);
-    if (soon > 0) clauses.push(`${soon} lisensi akan expire dalam 30 hari ke depan`);
+    if (issues > 0) clauses.push(`${issues} running with component issues`);
+    if (expired > 0) clauses.push(`${expired} license${expired === 1 ? ' has' : 's have'} expired`);
+    if (soon > 0) clauses.push(`${soon} license${soon === 1 ? '' : 's'} expiring in the next 30 days`);
 
     let tail;
     if (clauses.length === 1) tail = clauses[0];
-    else tail = clauses.slice(0, -1).join(', ') + ', dan ' + clauses[clauses.length - 1];
+    else tail = clauses.slice(0, -1).join(', ') + ', and ' + clauses[clauses.length - 1];
 
     // The noun names the group only when the dashboard is not the plain
     // agricultural view, so that sentence reads exactly as it always has.
     const scope = effectiveDashGroup();
-    let noun = 'unit';
-    if (scope === 'heavy') noun = `unit ${UNIT_GROUPS.heavy.shortLabel}`;
+    let noun = total === 1 ? 'unit' : 'units';
+    if (scope === 'heavy') noun = `${UNIT_GROUPS.heavy.shortLabel} units`;
     else if (scope === 'all') {
         const nH = data.filter(isHeavy).length;
-        noun = `unit (${total - nH} ${UNIT_GROUPS.tractor.shortLabel}, ${nH} ${UNIT_GROUPS.heavy.shortLabel})`;
+        noun = `units (${total - nH} ${UNIT_GROUPS.tractor.shortLabel}, ${nH} ${UNIT_GROUPS.heavy.shortLabel})`;
     }
-    el.textContent = `${total} ${noun} di ${sites} site — ${tail}.`;
+    el.textContent = `${total} ${noun} across ${sites} site${sites === 1 ? '' : 's'} — ${tail}.`;
     el.style.display = '';
 }
 
@@ -3542,11 +3542,11 @@ function saveEmailSettings() {
         autoDaily:  document.getElementById('emailjsAutoDaily').checked
     };
     if (!s.publicKey || !s.serviceId || !s.templateId || !s.recipient) {
-        showToast('Lengkapi semua kolom EmailJS', 'warning'); return;
+        showToast('Fill in all EmailJS fields', 'warning'); return;
     }
     localStorage.setItem('emailjs_settings', JSON.stringify(s));
     closeEmailSettingsModal();
-    showToast('Pengaturan email disimpan', 'success');
+    showToast('Email settings saved', 'success');
 }
 
 // SF/G5 licences are John Deere only, so heavy units never produce an alert.
@@ -3581,14 +3581,14 @@ function _buildAlertList(units) {
 function sendLicenseAlertEmail() {
     const s = _getEmailSettings();
     if (!s.publicKey || !s.serviceId || !s.templateId || !s.recipient) {
-        showToast('Atur EmailJS dulu — klik ikon gerigi', 'warning');
+        showToast('Set up EmailJS first — click the gear icon', 'warning');
         openEmailSettingsModal();
         return;
     }
 
     const report = _buildAlertList();
     if (report.total === 0) {
-        showToast('Tidak ada peringatan lisensi untuk dikirim', 'info'); return;
+        showToast('No license alerts to send', 'info'); return;
     }
 
     const today = new Date().toLocaleDateString('id-ID', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
@@ -3600,7 +3600,7 @@ function sendLicenseAlertEmail() {
         'Status | Unit | Model | Serial Number | License | Site | Expiry Date | Remaining',
         '—'.repeat(60),
         ...report.lines,
-        ...(lowStock.length ? ['', 'STOK LISENSI MENIPIS', ...lowStock.map(l => `${l.type} | sisa ${l.sisa}`)] : [])
+        ...(lowStock.length ? ['', 'LOW LICENSE STOCK', ...lowStock.map(l => `${l.type} | ${l.sisa} left`)] : [])
     ].join('\n');
 
     const btn = document.getElementById('btnEmailAlert');
@@ -3617,7 +3617,7 @@ function sendLicenseAlertEmail() {
         localStorage.setItem('emailjs_last_sent', new Date().toDateString());
     }).catch(err => {
         console.error('[emailjs]', err);
-        showToast('Gagal mengirim email — periksa pengaturan EmailJS', 'error');
+        showToast('Failed to send email — check the EmailJS settings', 'error');
     }).finally(() => {
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-envelope"></i> Email Report';
@@ -3875,7 +3875,7 @@ function renderDamageStats() {
     const perUnit = {};
     recs.forEach(r => {
         const lu = liveUnitFor(r);
-        const name = (lu ? lu.name : r.unitName) || '(tanpa nama)';
+        const name = (lu ? lu.name : r.unitName) || '(no name)';
         perUnit[name] = (perUnit[name] || 0) + 1;
     });
     const top = Object.entries(perUnit).sort((a, b) => b[1] - a[1]).slice(0, 5);
@@ -4034,7 +4034,7 @@ function exportCSV(data) {
     const heavyN = exportData.filter(isHeavy).length;
     if (heavyN) { exportUnitsCSVGrouped(exportData, heavyN === exportData.length); return; }
     const headers = ['No', 'Nickname', 'Model', 'Serial Number', 'Implement', 'Status', 'Display', 'GPS', 'Steering', 'JDLink', 'Site',
-                     'Tahun Penerimaan', 'User Category', 'GPS License', 'Display License',
+                     'Year Received', 'User Category', 'GPS License', 'Display License',
                      'GPS License Start Date', 'GPS License Expiration Date',
                      'Display License Start Date', 'Display License Expiration Date', 'Remarks', 'Breakdown Reason'];
     const rows = exportData.map((d, i) => [i + 1, d.name, d.model, d.sn, d.implement || '', d.status, d.display, d.gps, d.steering, d.jdlink, d.site,
@@ -4054,18 +4054,18 @@ function exportCSV(data) {
     a.download = `tractor_monitoring_${toISODate()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`${exportData.length} unit diekspor ke CSV`, 'success');
+    showToast(`${exportData.length} unit(s) exported to CSV`, 'success');
 }
 
 function exportUnitsCSVGrouped(exportData, heavyOnly) {
-    const HEAVY_COLS = ['Jenis Alat', 'Nomor Lambung', 'Alat Kerja', ...UNIT_GROUPS.heavy.components.map(c => c.label)];
+    const HEAVY_COLS = ['Machine Type', 'Asset Code', 'Work Tool', ...UNIT_GROUPS.heavy.components.map(c => c.label)];
     const heavyCells = d => [d.machineType || '', d.assetCode || '', d.workTool || '',
                              ...UNIT_GROUPS.heavy.components.map(c => d[c.key] || '')];
     let headers, rows, prefix;
     if (heavyOnly) {
-        headers = ['No', 'Unit Group', 'Nickname', 'Model', 'Serial Number', 'Jenis Alat', 'Nomor Lambung', 'Alat Kerja', 'Status',
+        headers = ['No', 'Unit Group', 'Nickname', 'Model', 'Serial Number', 'Machine Type', 'Asset Code', 'Work Tool', 'Status',
                    ...UNIT_GROUPS.heavy.components.map(c => c.label),
-                   'Site', 'Tahun Penerimaan', 'User Category', 'Remarks', 'Breakdown Reason'];
+                   'Site', 'Year Received', 'User Category', 'Remarks', 'Breakdown Reason'];
         rows = exportData.map((d, i) => [i + 1, 'heavy', d.name, d.model, d.sn, d.machineType || '', d.assetCode || '', d.workTool || '',
                    d.status, ...UNIT_GROUPS.heavy.components.map(c => d[c.key] || ''),
                    d.site, d.yearReceived || '', d.userCategory || '', d.remarks || '',
@@ -4073,7 +4073,7 @@ function exportUnitsCSVGrouped(exportData, heavyOnly) {
         prefix = UNIT_GROUPS.heavy.csvPrefix;
     } else {
         headers = ['No', 'Nickname', 'Model', 'Serial Number', 'Implement', 'Status', 'Display', 'GPS', 'Steering', 'JDLink', 'Site',
-                   'Tahun Penerimaan', 'User Category', 'GPS License', 'Display License',
+                   'Year Received', 'User Category', 'GPS License', 'Display License',
                    'GPS License Start Date', 'GPS License Expiration Date',
                    'Display License Start Date', 'Display License Expiration Date', 'Remarks', 'Breakdown Reason',
                    'Unit Group', ...HEAVY_COLS];
@@ -4100,7 +4100,7 @@ function exportUnitsCSVGrouped(exportData, heavyOnly) {
     a.download = `${prefix}_${toISODate()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`${exportData.length} unit diekspor ke CSV`, 'success');
+    showToast(`${exportData.length} unit(s) exported to CSV`, 'success');
 }
 
 // Export the units currently visible in the Edit Units table (honors its
@@ -4166,16 +4166,16 @@ function handleEditCSVImport(file) {
             // group other than the open tab. Cancel aborts the whole import.
             const offTab = newUnits.filter(u => u.unitGroup !== tab);
             if (offTab.length && !confirm(
-                `${offTab.length} unit baru akan ditambahkan sebagai ${groupDef(otherGroup(tab).key).label}, bukan ${groupDef(tab).label}. Lanjutkan?\n\n` +
-                `Batal = batalkan seluruh impor (tidak ada yang ditulis).`)) {
+                `${offTab.length} new unit(s) will be added as ${groupDef(otherGroup(tab).key).label}, not ${groupDef(tab).label}. Continue?\n\n` +
+                `Cancel = cancel the whole import (nothing is written).`)) {
                 showLoading(false);
                 document.getElementById('importPanel').classList.remove('open');
-                showToast('Impor dibatalkan — tidak ada yang ditulis', 'info');
+                showToast('Import cancelled — nothing was written', 'info');
                 return;
             }
             const notes = [];
             groupWarnings.forEach(w => notes.push({ name: w.name, sn: w.sn,
-                reason: `Unit Group "${w.value}" tidak dikenal — dibaca sebagai ${groupDef(w.group || tab).label}` }));
+                reason: `Unknown Unit Group "${w.value}" — read as ${groupDef(w.group || tab).label}` }));
             valid.forEach(u => {
                 const g = unitGroupOf(u);
                 // Tractor sheets keep their own "Nomor Lambung" and "Jenis
@@ -4184,19 +4184,19 @@ function handleEditCSVImport(file) {
                 const ignored = otherGroup(g).onlyFields.filter(f => !sameStoredValue(u[f], ''))
                     .filter(f => !(g === 'tractor' && CSV_SHARED_HEADER_FIELDS.includes(f)));
                 if (ignored.length) notes.push({ name: u.name, sn: u.sn,
-                    reason: `kolom ${ignored.join(', ')} diabaikan: bukan milik ${groupDef(g).shortLabel}` });
+                    reason: `column(s) ${ignored.join(', ')} ignored: not used by ${groupDef(g).shortLabel}` });
             });
             const blank = newUnits.filter(u => u.unitGroup === 'heavy' && HEAVY_COMPONENT_KEYS.every(k => sameStoredValue(u[k], ''))).length;
             if (blank) notes.push({ name: `${blank} unit`, sn: '-',
-                reason: `${UNIT_GROUPS.heavy.shortLabel} tanpa status komponen — dihitung bermasalah sampai diisi` });
+                reason: `${UNIT_GROUPS.heavy.shortLabel} with no component status — counted as having issues until filled in` });
 
             let updateResult = { updated: 0, unchanged: 0, failed: [] };
             let updatesAsSkipped = [];
             if (updateCandidates.length > 0) {
                 const doUpdate = confirm(
-                    `${updateCandidates.length} unit dengan Serial Number yang sama sudah ada di database.\n\n` +
-                    `OK = UPDATE field yang terisi di CSV\n` +
-                    `Cancel = SKIP (hanya tambah unit baru)`
+                    `${updateCandidates.length} unit(s) with the same Serial Number already exist in the database.\n\n` +
+                    `OK = UPDATE the fields filled in the CSV\n` +
+                    `Cancel = SKIP (only add new units)`
                 );
                 if (doUpdate) {
                     updateResult = bulkUpdateUnitsFromCSV(updateCandidates);
@@ -4221,7 +4221,7 @@ function handleEditCSVImport(file) {
             document.getElementById('importPanel').classList.remove('open');
         },
         error: err => {
-            showToast('Gagal membaca CSV: ' + err.message, 'error');
+            showToast('Failed to read CSV: ' + err.message, 'error');
             showLoading(false);
         }
     });
@@ -4241,7 +4241,7 @@ function showImportReport({ total, added, skipped, skippedDetails, rejected, upd
     if (rejected.length > 0) parts.push(`${rejected.length} rejected`);
     if (updateFailed.length > 0) parts.push(`${updateFailed.length} update failed`);
     const summary = parts.join(' · ');
-    showToast(`Impor: ${summary} (dari ${total} baris)`, type);
+    showToast(`Import: ${summary} (from ${total} rows)`, type);
 
     if (!hasIssues) return;
 
@@ -4265,11 +4265,11 @@ function showImportReport({ total, added, skipped, skippedDetails, rejected, upd
 function showRestoreReport(rows, version, merge) {
     const missing = rows.filter(r => r.note === 'tidak ada di berkas ini').length;
     const done = rows.filter(r => r.note === 'digabung' || r.note === 'diganti').length;
-    const summary = `${done} koleksi ${merge ? 'digabung' : 'diganti'}`
-        + (missing ? ` · ${missing} koleksi tidak ada di berkas ini` : '');
+    const summary = `${done} collection(s) ${merge ? 'merged' : 'replaced'}`
+        + (missing ? ` · ${missing} collection(s) not in this file` : '');
 
     const excluded = BACKUP_EXCLUDED.map(e =>
-        `<tr><td>${escapeHtml(e.label)}</td><td>—</td><td>tidak pernah dicadangkan — ${escapeHtml(e.why)}</td></tr>`).join('');
+        `<tr><td>${escapeHtml(e.label)}</td><td>—</td><td>never backed up — ${escapeHtml(e.why)}</td></tr>`).join('');
     const body = rows.map(r =>
         `<tr><td data-label="Collection">${escapeHtml(r.label)}</td>`
         + `<td data-label="Count">${escapeHtml(String(r.count))}</td>`
@@ -4278,7 +4278,7 @@ function showRestoreReport(rows, version, merge) {
     const note = document.getElementById('restoreReportNote');
     if (note) {
         note.innerHTML = version < 4
-            ? `<strong>Cadangan lama (v${version || '?'}).</strong> Berkas ini dibuat sebelum data Tim dan Gudang ikut dicadangkan, jadi data itu tidak ada di dalamnya dan tidak diubah sama sekali.`
+            ? `<strong>Old backup (v${version || '?'}).</strong> This file was made before Team and Inventory data were included in backups, so that data is not in it and was not changed at all.`
             : '';
         note.style.display = version < 4 ? '' : 'none';
     }
@@ -4305,7 +4305,7 @@ function readAutoBackups() {
 }
 
 function showAutoBackups() {
-    if (!isOwner || !isOwner()) { showToast('Hanya owner yang bisa memulihkan cadangan otomatis', 'warning'); return; }
+    if (!isOwner || !isOwner()) { showToast('Only the owner can restore automatic backups', 'warning'); return; }
     const ring = readAutoBackups();
     const list = document.getElementById('autoBackupList');
     if (list) {
@@ -4316,7 +4316,7 @@ function showAutoBackups() {
                     { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
                 return `<li>
                     <span><strong>${escapeHtml(when)}</strong>
-                        <span style="color:var(--text-secondary)"> · ${Number(b.count) || 0} unit</span></span>
+                        <span style="color:var(--text-secondary)"> · ${Number(b.count) || 0} units</span></span>
                     <button class="btn btn-secondary btn-sm" onclick="restoreAutoBackup(${i})">
                         <i class="fas fa-rotate-left"></i> Restore</button>
                 </li>`;
@@ -4351,8 +4351,8 @@ function _refuseCrossGroupRestore(units, opts) {
     if (unreadable.length) {
         const kinds = [...new Set(unreadable.map(u => String(u.unitGroup)))].slice(0, 3)
             .map(v => `"${v}"`).join(', ');
-        showToast(`Pemulihan dibatalkan: ${unreadable.length} unit di cadangan punya kelompok yang tidak dikenal (${kinds}). `
-            + `Ubah nilainya di berkas menjadi "tractor" atau "heavy", atau pilih GABUNG — unit itu akan dilewati.`, 'error');
+        showToast(`Restore cancelled: ${unreadable.length} unit(s) in the backup have an unknown group (${kinds}). `
+            + `Change the value in the file to "tractor" or "heavy", or choose MERGE — those units will be skipped.`, 'error');
         return true;
     }
     // Only two READABLE groups can conflict. A side whose group is unreadable
@@ -4363,8 +4363,8 @@ function _refuseCrossGroupRestore(units, opts) {
         && !hasUnreadableGroup(u) && !hasUnreadableGroup(live.get(u.id))
         && unitGroupOf(live.get(u.id)) !== unitGroupOf(u));
     if (!conflicts.length) return false;
-    showToast(`Pemulihan dibatalkan: ${conflicts.length} unit di cadangan punya kelompok berbeda dengan data sekarang (id sama). `
-        + (auto ? 'Hapus unit itu dulu, atau pulihkan dari berkas cadangan.' : 'Hapus unit itu dulu, atau pilih GABUNG.'), 'error');
+    showToast(`Restore cancelled: ${conflicts.length} unit(s) in the backup have a different group from the current data (same id). `
+        + (auto ? 'Delete those units first, or restore from a backup file.' : 'Delete those units first, or choose MERGE.'), 'error');
     return true;
 }
 
@@ -4373,12 +4373,12 @@ function restoreAutoBackup(index) {
     if (!canWriteUnits('restore cadangan otomatis')) return;
     const ring = readAutoBackups();
     const entry = ring[index];
-    if (!entry || !Array.isArray(entry.units)) { showToast('Cadangan itu tidak terbaca', 'error'); return; }
+    if (!entry || !Array.isArray(entry.units)) { showToast('That backup cannot be read', 'error'); return; }
 
     if (_refuseCrossGroupRestore(entry.units, { auto: true })) return;
-    const when = entry.at ? new Date(entry.at).toLocaleString('id-ID') : 'waktu tidak diketahui';
-    if (!confirm(`Kembalikan ${entry.units.length} unit ke keadaan ${when}?\n\n`
-        + `${globalData.length} unit yang ada sekarang akan diganti. Data lain (kerusakan, lisensi, tim, gudang) tidak ikut berubah.`)) return;
+    const when = entry.at ? new Date(entry.at).toLocaleString('id-ID') : 'unknown time';
+    if (!confirm(`Restore ${entry.units.length} unit(s) to their state at ${when}?\n\n`
+        + `The ${globalData.length} current unit(s) will be replaced. Other data (damage, licenses, team, inventory) is not changed.`)) return;
 
     const previousIds = globalData.map(u => u.id);
     globalData = entry.units.map(u => ({ ...u, id: u.id || generateId() }));
@@ -4386,12 +4386,12 @@ function restoreAutoBackup(index) {
     saveToStorage(globalData);
     cloudDeleteUnits(previousIds.filter(id => !keptIds.has(id)));
     cloudPushUnits(globalData);
-    logEvent({ action: 'restore', unitName: '-', after: `${globalData.length} unit dikembalikan dari cadangan otomatis (${when})` });
+    logEvent({ action: 'restore', unitName: '-', after: `${globalData.length} unit(s) restored from automatic backup (${when})` });
     closeAutoBackups();
     renderEditTable();
     filteredData = scopeDashUnits();
     updateDashboard(filteredData);
-    showToast(`${globalData.length} unit dikembalikan ke keadaan ${when}`, 'success');
+    showToast(`${globalData.length} unit(s) restored to their state at ${when}`, 'success');
 }
 
 function closeRestoreReport() {
@@ -4567,7 +4567,7 @@ function renderEditGroupTabs() {
     if (hint) {
         if (!hint.dataset.tractor) hint.dataset.tractor = hint.innerHTML;
         hint.innerHTML = g === 'heavy'
-            ? `Unit baru masuk ke ${escapeHtml(UNIT_GROUPS.heavy.label)} kecuali kolom "Unit Group" berkata lain. Serial number duplikat dilewati.`
+            ? `New units go into ${escapeHtml(UNIT_GROUPS.heavy.label)} unless the "Unit Group" column says otherwise. Duplicate serial numbers are skipped.`
             : hint.dataset.tractor;
     }
 }
@@ -4746,7 +4746,7 @@ function saveInlineEdit(el) {
     if (changed && hasUnreadableGroup(unit)
         && (TRACTOR_ONLY_FIELDS.includes(field) || HEAVY_ONLY_FIELDS.includes(field))) {
         el.textContent = unit[field] || '';
-        showToast(`Kelompok unit ini ("${plainText(unit.unitGroup)}") tidak dikenal — tetapkan dulu lewat Periksa Data`, 'warning');
+        showToast(`This unit's group ("${plainText(unit.unitGroup)}") is unknown — set it first via Data Check`, 'warning');
         return;
     }
     if (changed) {
@@ -4758,7 +4758,7 @@ function saveInlineEdit(el) {
             return;
         }
         if (updateUnit(id, { [field]: newValue })) {
-            showToast(`${COMPONENT_LABELS[field] || UNIT_FIELD_LABELS[field] || field.charAt(0).toUpperCase() + field.slice(1)} diperbarui`, 'success');
+            showToast(`${COMPONENT_LABELS[field] || UNIT_FIELD_LABELS[field] || field.charAt(0).toUpperCase() + field.slice(1)} updated`, 'success');
         }
     }
 }
@@ -4767,7 +4767,7 @@ function saveInlineEdit(el) {
 function confirmBreakdownReason() {
     const reason = (document.getElementById('breakdownReasonText').value || '').trim();
     if (!reason) {
-        showToast('Isi alasan breakdown', 'warning');
+        showToast('Enter a breakdown reason', 'warning');
         document.getElementById('breakdownReasonText').focus();
         return;
     }
@@ -4779,7 +4779,7 @@ function confirmBreakdownReason() {
     p.fields.breakdownReason = reason;
     if (p.isInline) {
         updateUnit(p.unitId, p.fields);
-        showToast('Status diperbarui — alasan breakdown dicatat', 'success');
+        showToast('Status updated — breakdown reason recorded', 'success');
     } else {
         _commitSaveUnit(p.unitId, p.fields);
     }
@@ -4880,20 +4880,20 @@ function applyBulkEdit() {
     if (bg !== 'heavy' && document.getElementById('bulkChkImplement').checked) fields.implement = document.getElementById('bulkImplement').value.trim();
     if (bg === 'heavy' && document.getElementById('bulkChkWorkTool')?.checked) fields.workTool = document.getElementById('bulkWorkTool').value.trim();
 
-    if (Object.keys(fields).length === 0) { showToast('Centang minimal satu field untuk diubah', 'warning'); return; }
+    if (Object.keys(fields).length === 0) { showToast('Tick at least one field to change', 'warning'); return; }
 
     // A ticked box with an empty input clears that field on every selected unit
     // and there is no undo, so make the destructive part explicit rather than
     // hiding it behind the generic confirm.
     const labels = { site: 'Site', status: 'Status', userCategory: 'User Category',
-                     yearReceived: 'Tahun Penerimaan', implement: 'Implement', workTool: 'Alat Kerja' };
+                     yearReceived: 'Year Received', implement: 'Implement', workTool: 'Work Tool' };
     const cleared = Object.keys(fields).filter(k => fields[k] === '');
     if (cleared.length) {
         const names = cleared.map(k => labels[k] || k).join(', ');
-        if (!confirm(`Field berikut akan DIKOSONGKAN pada ${ids.length} unit: ${names}.\n\n` +
-                     `Tindakan ini tidak bisa dibatalkan. Lanjutkan?`)) return;
+        if (!confirm(`The following fields will be CLEARED on ${ids.length} unit(s): ${names}.\n\n` +
+                     `This cannot be undone. Continue?`)) return;
     }
-    if (!confirm(`Terapkan perubahan ke ${ids.length} unit?`)) return;
+    if (!confirm(`Apply changes to ${ids.length} unit(s)?`)) return;
 
     let n = 0;
     ids.forEach(id => {
@@ -4912,7 +4912,7 @@ function applyBulkEdit() {
     });
     closeBulkEdit();
     renderEditTable();
-    showToast(`${n} unit diperbarui`, 'success');
+    showToast(`${n} unit(s) updated`, 'success');
 }
 
 function deleteUnit(id) {
@@ -4969,7 +4969,7 @@ function undoDelete() {
     restored.forEach(u => logEvent({ action: 'restore', unitId: u.id, unitName: u.name, after: 'undelete' }));
     recordChange({ type: 'restored', detail: `${restored.length} unit(s) restored` });
     renderEditTable();
-    showToast(`${restored.length} unit dipulihkan`, 'success');
+    showToast(`${restored.length} unit(s) restored`, 'success');
     lastDeletedUnits = null;
     if (undoTimer) { clearTimeout(undoTimer); undoTimer = null; }
     document.querySelectorAll('.undo-toast').forEach(t => t.remove());
@@ -5069,7 +5069,7 @@ function editUnit(id) {
     if (hasUnreadableGroup(unit)) {
         // showToast renders HTML, and this value is by definition one nobody
         // vetted — escape it.
-        showToast(`Kelompok unit ini ("${plainText(unit.unitGroup)}") tidak dikenal. Tetapkan dulu lewat Kotak Keputusan → Periksa Data.`, 'warning');
+        showToast(`This unit's group ("${plainText(unit.unitGroup)}") is unknown. Set it first via Decision Inbox → Data Check.`, 'warning');
         return;
     }
 
@@ -5166,7 +5166,7 @@ function checkUnitFields(id, fields) {
             const self = id ? globalData.find(u => u.id === id) : null;
             const mine = self ? unitGroupOf(self) : normalizeGroupKey(fields.unitGroup) || 'tractor';
             const where = unitGroupOf(clash) !== mine ? ` (${groupDef(unitGroupOf(clash)).shortLabel})` : '';
-            showToast(`SN "${sn}" sudah dipakai unit "${clash.name || '-'}"${where}`, 'warning');
+            showToast(`SN "${sn}" is already used by unit "${clash.name || '-'}"${where}`, 'warning');
             return false;
         }
     }
@@ -5175,7 +5175,7 @@ function checkUnitFields(id, fields) {
     const code = (fields.assetCode || '').trim();
     if (code) {
         const dup = globalData.find(u => u.id !== id && isHeavy(u) && (u.assetCode || '').trim().toLowerCase() === code.toLowerCase());
-        if (dup && !confirm(`Nomor lambung "${code}" sudah dipakai "${dup.name || '-'}". Tetap simpan?`)) return false;
+        if (dup && !confirm(`Asset number "${code}" is already used by "${dup.name || '-'}". Save anyway?`)) return false;
     }
     // An end date before its start date leaves the unit reading "expired" while
     // its licence has not begun — and applyExpiredLicenseDowngrades acts on it.
@@ -5185,7 +5185,7 @@ function checkUnitFields(id, fields) {
     ];
     for (const [label, from, to] of ranges) {
         if (from && to && to < from) {
-            showToast(`Tanggal habis lisensi ${label} lebih awal dari tanggal mulainya`, 'warning');
+            showToast(`The ${label} license expiry date is earlier than its start date`, 'warning');
             return false;
         }
     }
@@ -5230,7 +5230,7 @@ function saveUnit(event) {
         fields = {};
         Object.keys(full).forEach(k => { if (full[k] !== _unitFormShown[k]) fields[k] = full[k]; });
         if (!Object.keys(fields).length) {
-            showToast('Tidak ada perubahan', 'info');
+            showToast('No changes', 'info');
             closeModal();
             return;
         }
@@ -5288,7 +5288,7 @@ function _commitSaveUnit(id, fields) {
     if (id) {
         const nm = fields.name || ((globalData.find(d => d.id === id) || {}).name) || '';
         if (updateUnit(id, fields)) showToast(`Unit "${nm}" updated`, 'success');
-        else showToast(`Unit "${nm}" tidak disimpan — tidak ada perubahan yang boleh ditulis`, 'warning');
+        else showToast(`Unit "${nm}" not saved — no changes you are allowed to write`, 'warning');
     } else {
         const firstHeavy = fields.unitGroup === 'heavy' && !hasHeavyUnits();
         const newUnit = { id: generateId(), ...fields, downtimeHistory: [], breakdownStartedAt: null };
@@ -5299,12 +5299,12 @@ function _commitSaveUnit(id, fields) {
             // The scope selector exists only when both groups do; with
             // heavy units alone the dashboard simply shows them.
             if (firstHeavy) showToast(hasTractorUnits()
-                ? `${UNIT_GROUPS.heavy.label} tampil di Dashboard lewat tab ${UNIT_GROUPS.heavy.label} / Semua`
-                : `${UNIT_GROUPS.heavy.label} langsung tampil di Dashboard`, 'info');
+                ? `${UNIT_GROUPS.heavy.label} shows on the Dashboard via the ${UNIT_GROUPS.heavy.label} / All scope`
+                : `${UNIT_GROUPS.heavy.label} now shows on the Dashboard`, 'info');
         } else if (!reason || reason === 'Duplicate serial number') {
             showToast(`Duplicate serial number "${fields.sn}" — unit not added`, 'warning');
         } else {
-            showToast(`${reason} — unit tidak ditambahkan`, 'warning');
+            showToast(`${reason} — unit not added`, 'warning');
         }
     }
 
@@ -5412,7 +5412,7 @@ function applyExpiredLicenseDowngrades() {
         if (Object.keys(fields).length && updateUnit(u.id, fields)) n++;
     });
     if (n > 0) {
-        showToast(`${n} unit turun otomatis ke tier fallback (lisensi sudah habis)`, 'info');
+        showToast(`${n} unit(s) automatically moved to the fallback tier (license expired)`, 'info');
         if (currentView === 'editUnits') renderEditTable();
         else if (currentView === 'dashboard') updateDashboard(filteredData);
     }
@@ -5551,7 +5551,7 @@ function saveImplements() {
     try {
         localStorage.setItem(IMPLEMENTS_STORAGE_KEY, JSON.stringify(globalImplements));
     } catch (e) {
-        showToast('Penyimpanan penuh. Implement tidak tersimpan.', 'error');
+        showToast('Storage is full. Implement not saved.', 'error');
     }
 }
 
@@ -5731,7 +5731,7 @@ function saveImplement(event) {
             unitName: `[Implement] ${newImp.profileName}`,
             after: newImp.equipmentType || newImp.profileName
         });
-        showToast(`Implement "${newImp.profileName}" ditambahkan`, 'success');
+        showToast(`Implement "${newImp.profileName}" added`, 'success');
     }
 
     closeImplementModal();
@@ -5747,7 +5747,7 @@ function deleteImplement(id) {
     if (!requireEdit('implements')) return;
     const imp = globalImplements.find(d => d.id === id);
     if (!imp) return;
-    if (!confirm(`Hapus implement "${imp.profileName}"?`)) return;
+    if (!confirm(`Delete implement "${imp.profileName}"?`)) return;
 
     globalImplements = globalImplements.filter(d => d.id !== id);
     saveImplements();
@@ -5766,7 +5766,7 @@ function deleteSelectedImplements() {
     if (!requireEdit('implements')) return;
     const count = selectedImplementIds.size;
     if (count === 0) return;
-    if (!confirm(`Hapus ${count} implement terpilih?`)) return;
+    if (!confirm(`Delete ${count} selected implement(s)?`)) return;
 
     const idSet = new Set(selectedImplementIds);
     const removed = globalImplements.filter(d => idSet.has(d.id));
@@ -5797,7 +5797,7 @@ function _implementColAliases(field) {
 
 function exportImplementsCSV() {
     if (!canCsv('export')) return;
-    if (globalImplements.length === 0) { showToast('Tidak ada implement untuk diekspor', 'warning'); return; }
+    if (globalImplements.length === 0) { showToast('No implements to export', 'warning'); return; }
     const headers = ['No', ...IMPLEMENT_FIELDS.map(f => f.label), 'Chart of Account'];
     const rows = globalImplements.map((d, i) => [
         i + 1,
@@ -5813,7 +5813,7 @@ function exportImplementsCSV() {
     a.download = `implements_${toISODate()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(`${globalImplements.length} implement diekspor ke CSV`, 'success');
+    showToast(`${globalImplements.length} implement(s) exported to CSV`, 'success');
 }
 
 function downloadImplementTemplate() {
@@ -5878,23 +5878,23 @@ function handleImplementCSVImport(file) {
                         saveImplements();
                         renderImplementsTable();
                         cloudWriteFailed(err, {
-                            what: `impor ${added.length} implement`,
+                            what: `import of ${added.length} implement(s)`,
                             label: '[Implement] Import CSV',
                             resync: resyncImplements
                         });
                     });
                 }
-                logEvent({ action: 'add', unitName: '[Implement] Import CSV', after: `${added.length} implement` });
+                logEvent({ action: 'add', unitName: '[Implement] Import CSV', after: `${added.length} implement(s)` });
                 renderImplementsTable();
             }
 
             showLoading(false);
-            const msg = `Import implement: ${added.length} ditambahkan` + (rejected ? `, ${rejected} dilewati (Profile Name kosong)` : '')
-                + (duplicates ? `, ${duplicates} dilewati (Profile Name + Code sudah ada)` : '');
+            const msg = `Implement import: ${added.length} added` + (rejected ? `, ${rejected} skipped (Profile Name empty)` : '')
+                + (duplicates ? `, ${duplicates} skipped (Profile Name + Code already exist)` : '');
             showToast(msg, added.length ? 'success' : 'warning');
         },
         error: err => {
-            showToast('Gagal membaca CSV: ' + err.message, 'error');
+            showToast('Failed to read CSV: ' + err.message, 'error');
             showLoading(false);
         }
     });
@@ -5919,10 +5919,10 @@ function compressImageToDataURL(file, opts = {}) {
     const startQuality = opts.quality || DAMAGE_PHOTO_QUALITY;
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onerror = () => reject(new Error('Gagal membaca file'));
+        reader.onerror = () => reject(new Error('Failed to read the file'));
         reader.onload = () => {
             const img = new Image();
-            img.onerror = () => reject(new Error('File bukan gambar yang valid'));
+            img.onerror = () => reject(new Error('The file is not a valid image'));
             img.onload = () => {
                 let { width, height } = img;
                 const max = maxDim;
@@ -5950,7 +5950,7 @@ async function handleDamagePhotoChange(event) {
     event.target.value = '';
     if (!file) return;
     if (!file.type.startsWith('image/')) {
-        showToast('File harus berupa gambar (foto)', 'warning');
+        showToast('The file must be an image (photo)', 'warning');
         return;
     }
     try {
@@ -5958,7 +5958,7 @@ async function handleDamagePhotoChange(event) {
         _dmgPhotoDirty = true;
         setDamagePhotoPreview();
     } catch (err) {
-        showToast(err.message || 'Gagal memproses foto', 'error');
+        showToast(err.message || 'Failed to process the photo', 'error');
     }
 }
 
@@ -6026,13 +6026,13 @@ async function openDamagePhoto(id, btn) {
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
     try {
         const photo = await loadDamagePhoto(id);
-        if (!photo) { showToast('Foto tidak ditemukan', 'warning'); return; }
+        if (!photo) { showToast('Photo not found', 'warning'); return; }
         openPhotoLightbox(photo);
     } catch (err) {
         console.error('[damage] photo load failed:', err);
         showToast(navigator.onLine
-            ? 'Gagal memuat foto kerusakan'
-            : 'Foto perlu sinyal untuk dimuat', 'error');
+            ? 'Failed to load the damage photo'
+            : 'The photo needs a signal to load', 'error');
     } finally {
         if (btn) { btn.disabled = false; btn.innerHTML = original; }
     }
@@ -6079,8 +6079,8 @@ function migrateDamagePhotosIfNeeded() {
             logEvent({
                 action: 'migrate',
                 unitName: '-',
-                field: 'foto kerusakan',
-                after: `${moved} catatan dipindah ke koleksi damagePhotos`
+                field: 'damage photo',
+                after: `${moved} record(s) moved to the damagePhotos collection`
             });
         } catch (e) {}
         console.log(`[dmg-photos] done — ${moved} damage records migrated`);
@@ -6203,7 +6203,7 @@ function openUnitFromSearch(id) {
 
 function showUnitProfile(id) {
     const u = globalData.find(d => d.id === id);
-    if (!u) { showToast('Unit tidak ditemukan', 'warning'); return; }
+    if (!u) { showToast('Unit not found', 'warning'); return; }
 
     document.getElementById('unitProfileTitle').textContent = u.name || u.sn || 'Unit Profile';
     document.getElementById('unitProfileEditBtn').onclick = () => { closeUnitProfile(); editUnit(id); };
@@ -6260,7 +6260,7 @@ function showUnitProfile(id) {
         ? `<div class="profile-note"><i class="fas fa-triangle-exclamation"></i> ${escapeHtml(u.breakdownReason)}</div>` : '';
     const stray = strayGroupFields(u);
     const strayNote = stray.length
-        ? `<div class="profile-note"><i class="fas fa-triangle-exclamation"></i> Unit ini membawa ${stray.length} field milik kelompok lain — lihat Kotak Keputusan → Periksa Data.</div>` : '';
+        ? `<div class="profile-note"><i class="fas fa-triangle-exclamation"></i> This unit carries ${stray.length} field(s) belonging to another group — see Decision Inbox → Data Check.</div>` : '';
 
     const licenses = ['gps', 'display'].map(kind => {
         const label = kind === 'gps' ? 'GPS License' : 'Display License';
@@ -6384,7 +6384,7 @@ function saveDamages() {
         localStorage.setItem(DAMAGE_STORAGE_KEY, JSON.stringify(globalDamages));
         checkStorageUsage(); // photos are the main storage driver
     } catch (e) {
-        showToast('Penyimpanan penuh. Catatan kerusakan tidak tersimpan.', 'error');
+        showToast('Storage is full. Damage record not saved.', 'error');
     }
 }
 
