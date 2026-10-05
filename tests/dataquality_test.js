@@ -29,7 +29,7 @@ const { launch, BASE_URL } = require('./_env');
         const TR = (i, implement, extra) => ({ id: 't' + i, name: 'TR' + i, sn: 'ST' + i, status: 'Good', site: 'PT. GPA',
             model: '6110B', yearReceived: '2024', display: 'Good', gps: 'Good', steering: 'Good', jdlink: 'Good', implement, ...extra });
         const HV = (i, extra) => ({ id: 'h' + i, name: 'EX' + i, sn: 'SH' + i, unitGroup: 'heavy', status: 'Good', site: 'PT. GPA',
-            model: 'PC200', machineType: 'Excavator', assetCode: 'LB-' + i, workTool: 'Bucket', yearReceived: '2025', ...extra });
+            brand: 'Komatsu', model: 'PC200', machineType: 'Excavator', assetCode: 'LB-' + i, workTool: 'Bucket', yearReceived: '2025', ...extra });
         globalData = [
             TR(1, 'Zonal Ripper — Gessner'), TR(2, 'Zonal Ripper — Gessner'), TR(3, 'Zonal Ripper — Geesner'),
             TR(4, 'Bed Ripper — Gessner'), TR(5, 'ISS — Final Cultivator'), TR(6, 'Final Cultivator — ISS'),
@@ -67,7 +67,7 @@ const { launch, BASE_URL } = require('./_env');
         goNav('editUnits', 'heavy');
         t('pindah kelompok mereset filter', editMissingFilter, '');
         t('Heavy: chip work tool', chips(), ['1 no work tool']);
-        t('Heavy: persen', dq().querySelector('.dq__pct').textContent, '94%');
+        t('Heavy: persen (20 dari 21 field)', dq().querySelector('.dq__pct').textContent, '95%');
         t('tombol Clean Up Values ada untuk editor', !!dq().querySelector('.dq__merge'), true);
 
         // =============== (2) Data Check ===============

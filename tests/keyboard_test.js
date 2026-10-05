@@ -102,7 +102,7 @@ const { launch, BASE_URL } = require('./_env');
         navigateTo('editUnits');
         switchEditUnitsGroup('heavy');
         const heavyTh = [...document.querySelectorAll('#editTable th[onclick*="sortEditTable"]')];
-        t('tab alat berat: 15 header yang bisa diurut', heavyTh.length, 15);
+        t('tab alat berat: 16 header yang bisa diurut', heavyTh.length, 16);
         t('dan semuanya bisa di-tab', heavyTh.filter(th => th.getAttribute('tabindex') !== '0' || th.getAttribute('role') !== 'button').length, 0);
         switchEditUnitsGroup('tractor');
         t('kembali ke Pertanian: 34 header lagi',

@@ -75,12 +75,12 @@ const MASTER_DEF = {
     site:    { label: 'Site',    plural: 'Sites',     edit: ['editUnits'],              view: ['editUnits'],
                hint: 'Used by every unit (both groups).' },
     brand:   { label: 'Brand',   plural: 'Brands',    edit: ['implements', 'editUnits'], view: ['implements', 'editUnits'],
-               hint: 'Used by the Implements list (Type — Brand).' },
+               hint: 'Used by the Implements list (Type — Brand) and by Heavy Equipment units.' },
     company: { label: 'Company', plural: 'Companies', edit: ['teamMembers'],            view: ['teamMembers'],
                hint: 'Used by team members, their shifts and reports.' }
 };
 // Clean Up Values fields whose target must come from a master list.
-const MERGE_MASTER_KIND = { site: 'site', implBrand: 'brand', company: 'company' };
+const MERGE_MASTER_KIND = { site: 'site', implBrand: 'brand', brand: 'brand', company: 'company' };
 let cloudInspectionsUnsub = null;
 
 // ---- Warehouse (cloud-only, same pattern as the team collections) ----
@@ -106,7 +106,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v143';
+const APP_VERSION = 'v144';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -303,7 +303,7 @@ const TRACTOR_ONLY_FIELDS = ['implement', 'display', 'gps', 'steering', 'jdlink'
     'displayLicenseStartDate', 'displayLicenseEndDate', 'licenseStartDate', 'licenseEndDate',
     'gpsLicenseExpiredAt', 'displayLicenseExpiredAt'];
 const HEAVY_COMPONENT_KEYS = ['cameraAi', 'telematicBox', 'switchLimiter', 'rotaryLamp'];
-const HEAVY_ONLY_FIELDS = ['machineType', 'assetCode', 'workTool', ...HEAVY_COMPONENT_KEYS];
+const HEAVY_ONLY_FIELDS = ['brand', 'machineType', 'assetCode', 'workTool', ...HEAVY_COMPONENT_KEYS];
 const UNIT_GROUPS = {
     tractor: {
         key: 'tractor', label: 'Agricultural Equipment', shortLabel: 'Agricultural', icon: 'fa-tractor',
@@ -326,11 +326,11 @@ const UNIT_GROUP_KEYS = ['tractor', 'heavy'];
 const DASH_GROUP_KEYS = ['tractor', 'heavy', 'all'];
 const HEAVY_MACHINE_TYPES = ['Excavator', 'Bulldozer', 'Motor Grader', 'Wheel Loader'];
 const HEAVY_WORK_TOOLS = ['Bucket', 'Ripper', 'Blade', 'Breaker', 'Root Plough', 'Root Rake'];
-const HEAVY_CSV_UPDATABLE_FIELDS = ['name', 'model', 'machineType', 'assetCode', 'workTool', 'status',
+const HEAVY_CSV_UPDATABLE_FIELDS = ['name', 'brand', 'model', 'machineType', 'assetCode', 'workTool', 'status',
     ...HEAVY_COMPONENT_KEYS, 'site', 'yearReceived', 'userCategory', 'remarks', 'breakdownReason'];
 // "Alat Kerja", never "Attachment": units already have an "Attachments" file
 // column, and the two side by side read as the same thing.
-const UNIT_FIELD_LABELS = { machineType: 'Machine Type', assetCode: 'Asset Code', workTool: 'Work Tool' };
+const UNIT_FIELD_LABELS = { brand: 'Brand', machineType: 'Machine Type', assetCode: 'Asset Code', workTool: 'Work Tool' };
 
 function normalizeGroupKey(raw) {
     const v = String(raw == null ? '' : raw).trim().toLowerCase().replace(/\s+/g, ' ');
@@ -3086,6 +3086,7 @@ function renderDowntimeKPIs(units) {
 // ordinary column names in a plantation tractor sheet (a crew, a block), and
 // must never be read as a unit group.
 const CSV_HEAVY_COLUMNS = {
+    brand: ['Merek', 'Brand'],
     machineType: ['Jenis Alat', 'Machine Type'],
     assetCode: ['Nomor Lambung', 'Kode Aset', 'Asset Code'],
     workTool: ['Alat Kerja', 'Work Tool'],
@@ -3093,7 +3094,7 @@ const CSV_HEAVY_COLUMNS = {
     switchLimiter: ['Switch Limiter'], rotaryLamp: ['Rotary Lamp']
 };
 // Heavy fields whose headers tractor sheets also use for their own purposes.
-const CSV_SHARED_HEADER_FIELDS = ['assetCode', 'machineType'];
+const CSV_SHARED_HEADER_FIELDS = ['assetCode', 'machineType', 'brand'];
 
 // Infer the file's group from its headers, using only unambiguous markers: the
 // four heavy component headers on one side, the John Deere headers on the
@@ -3705,13 +3706,13 @@ function dashboardFilterActive() {
 // Agricultural: today's 17 columns, header captured from the static markup.
 // Heavy: its own 15. "Semua": 10 columns with a Kelompok column and one
 // "Komponen" cell summarising whatever each unit's group monitors.
-const DETAIL_COLSPAN = { tractor: 17, heavy: 15, all: 10 };
+const DETAIL_COLSPAN = { tractor: 17, heavy: 16, all: 10 };
 function renderDetailHead(scope) {
     const head = document.querySelector('#detailTable thead');
     if (!head || _detailHeadGroup === scope) return;
     const s = (k, l) => sortTh(k, l, 'sortTable');
     if (scope === 'tractor') head.innerHTML = DETAIL_HEADS.tractor;
-    else if (scope === 'heavy') head.innerHTML = `<tr>${s('no', 'No')}${s('name', 'Nickname')}${s('model', 'Model')}${s('sn', 'Serial Number')}
+    else if (scope === 'heavy') head.innerHTML = `<tr>${s('no', 'No')}${s('name', 'Nickname')}${s('brand', 'Brand')}${s('model', 'Model')}${s('sn', 'Serial Number')}
         ${s('machineType', 'Machine Type')}${s('assetCode', 'Asset No.')}${s('workTool', 'Work Tool')}${s('status', 'Status')}
         ${UNIT_GROUPS.heavy.components.map(c => s(c.key, c.label)).join('')}
         ${s('site', 'Site')}${s('yearReceived', 'Year Received')}${s('userCategory', 'User Category')}</tr>`;
@@ -3735,6 +3736,7 @@ function _detailRowHeavy(d, i) {
         <tr class="${!isGood(d.status) ? 'row-breakdown' : ''}">
             <td>${i + 1}</td>
             <td><strong class="unit-link" title="View unit profile" onclick="showUnitProfile(${jsArg(d.id)})">${escapeHtml(d.name)}</strong></td>
+            <td>${_dash(d.brand)}</td>
             <td>${escapeHtml(d.model)}</td>
             <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
             <td>${_dash(d.machineType)}</td><td>${_dash(d.assetCode)}</td><td>${_dash(d.workTool)}</td>
@@ -4008,7 +4010,7 @@ function applyFilterLogic() {
     return scopeDashUnits().filter(d => {
         if (statusVal && d.status !== statusVal) return false;
         if (siteVal && d.site !== siteVal) return false;
-        const hay = isHeavy(d) ? `${d.name} ${d.model} ${d.sn} ${d.machineType || ''} ${d.assetCode || ''}` : `${d.name} ${d.model} ${d.sn}`;
+        const hay = isHeavy(d) ? `${d.name} ${d.brand || ''} ${d.model} ${d.sn} ${d.machineType || ''} ${d.assetCode || ''}` : `${d.name} ${d.model} ${d.sn}`;
         if (keyword && !hay.toLowerCase().includes(keyword)) return false;
         if (compVal && !detectIssues(d).includes(compVal)) return false;
         return true;
@@ -4076,15 +4078,15 @@ function exportCSV(data) {
 }
 
 function exportUnitsCSVGrouped(exportData, heavyOnly) {
-    const HEAVY_COLS = ['Machine Type', 'Asset Code', 'Work Tool', ...UNIT_GROUPS.heavy.components.map(c => c.label)];
-    const heavyCells = d => [d.machineType || '', d.assetCode || '', d.workTool || '',
+    const HEAVY_COLS = ['Brand', 'Machine Type', 'Asset Code', 'Work Tool', ...UNIT_GROUPS.heavy.components.map(c => c.label)];
+    const heavyCells = d => [d.brand || '', d.machineType || '', d.assetCode || '', d.workTool || '',
                              ...UNIT_GROUPS.heavy.components.map(c => d[c.key] || '')];
     let headers, rows, prefix;
     if (heavyOnly) {
-        headers = ['No', 'Unit Group', 'Nickname', 'Model', 'Serial Number', 'Machine Type', 'Asset Code', 'Work Tool', 'Status',
+        headers = ['No', 'Unit Group', 'Nickname', 'Brand', 'Model', 'Serial Number', 'Machine Type', 'Asset Code', 'Work Tool', 'Status',
                    ...UNIT_GROUPS.heavy.components.map(c => c.label),
                    'Site', 'Year Received', 'User Category', 'Remarks', 'Breakdown Reason'];
-        rows = exportData.map((d, i) => [i + 1, 'heavy', d.name, d.model, d.sn, d.machineType || '', d.assetCode || '', d.workTool || '',
+        rows = exportData.map((d, i) => [i + 1, 'heavy', d.name, d.brand || '', d.model, d.sn, d.machineType || '', d.assetCode || '', d.workTool || '',
                    d.status, ...UNIT_GROUPS.heavy.components.map(c => d[c.key] || ''),
                    d.site, d.yearReceived || '', d.userCategory || '', d.remarks || '',
                    (!isGood(d.status) && d.breakdownReason) ? d.breakdownReason : '']);
@@ -4201,6 +4203,14 @@ function handleEditCSVImport(file) {
                 notes.push({ name: u.name, sn: u.sn, reason: `Implement "${r.value}" is not in the Implements list — `
                     + (existingSNs.has((u.sn || '').toLowerCase()) ? 'left unchanged' : 'left empty') });
                 u.implement = '';
+            });
+            if (masterListActive('brand')) valid.forEach(u => {
+                if (unitGroupOf(u) !== 'heavy' || !u.brand) return;
+                const r = checkMasterValue('brand', u.brand, null);
+                if (r.ok) { u.brand = r.value; return; }
+                notes.push({ name: u.name, sn: u.sn, reason: `Brand "${r.value}" is not in the Brand list — `
+                    + (existingSNs.has((u.sn || '').toLowerCase()) ? 'left unchanged' : 'left empty') });
+                delete u.brand;
             });
             if (masterListActive('site')) valid.forEach(u => {
                 if (!u.site) return;
@@ -4462,10 +4472,10 @@ let editMissingFilter = '';        // a REQUIRED_UNIT_FIELDS key: only units mis
 // split and the inspection list to be right.
 const REQUIRED_UNIT_FIELDS = {
     tractor: ['model', 'implement', 'site', 'yearReceived'],
-    heavy:   ['model', 'machineType', 'assetCode', 'workTool', 'site', 'yearReceived']
+    heavy:   ['brand', 'model', 'machineType', 'assetCode', 'workTool', 'site', 'yearReceived']
 };
 const REQUIRED_FIELD_LABEL = {
-    model: 'model', implement: 'implement', site: 'site', yearReceived: 'year received',
+    brand: 'brand', model: 'model', implement: 'implement', site: 'site', yearReceived: 'year received',
     machineType: 'machine type', assetCode: 'asset no.', workTool: 'work tool'
 };
 
@@ -4641,7 +4651,7 @@ function getEditTableRows() {
     const g = effectiveEditGroup();
     let rows = unitsOfGroup(globalData, g);
     if (query) rows = rows.filter(d => (g === 'heavy'
-        ? `${d.name} ${d.model} ${d.sn} ${d.machineType || ''} ${d.assetCode || ''} ${d.workTool || ''} ${d.site}`
+        ? `${d.name} ${d.brand || ''} ${d.model} ${d.sn} ${d.machineType || ''} ${d.assetCode || ''} ${d.workTool || ''} ${d.site}`
         : `${d.name} ${d.model} ${d.sn} ${d.implement || ''} ${d.site}`).toLowerCase().includes(query));
     if (statusVal) rows = rows.filter(d => d.status === statusVal);
     if (siteVal) rows = rows.filter(d => d.site === siteVal);
@@ -4677,7 +4687,7 @@ function toggleCompactMode() {
 // ---- Edit Units: one table per group ----
 // The tractor header is captured from the static markup at startup and put
 // back verbatim; only the heavy tab gets a header built here.
-const EDIT_COLSPAN = { tractor: 21, heavy: 19 };
+const EDIT_COLSPAN = { tractor: 21, heavy: 20 };
 function sortTh(key, label, fn) {
     return `<th tabindex="0" role="button" onclick="${fn}('${key}')">${label} <span class="sort-icon"><i class="fas fa-sort"></i></span></th>`;
 }
@@ -4685,7 +4695,7 @@ function heavyEditHead() {
     const s = (k, l) => sortTh(k, l, 'sortEditTable');
     return `<tr>
         <th class="col-check"><input type="checkbox" id="selectAll" aria-label="Select all units" onchange="toggleSelectAll()"></th>
-        ${s('no', 'No')}${s('name', 'Nickname')}${s('model', 'Model')}${s('sn', 'Serial Number')}
+        ${s('no', 'No')}${s('name', 'Nickname')}${s('brand', 'Brand')}${s('model', 'Model')}${s('sn', 'Serial Number')}
         ${s('machineType', 'Machine Type')}${s('assetCode', 'Asset No.')}${s('workTool', 'Work Tool')}${s('status', 'Status')}
         ${UNIT_GROUPS.heavy.components.map(c => s(c.key, c.label)).join('')}
         ${s('site', 'Site')}${s('yearReceived', 'Year Received')}${s('userCategory', 'User Category')}
@@ -4743,7 +4753,7 @@ function _editRowHeavy(d, i, ce) {
         <tr>
             <td class="col-check"><input type="checkbox" class="unit-check" data-id="${id}" onchange="updateSelectedCount()"></td>
             <td>${i + 1}</td>
-            <td data-label="Nickname"><span class="inline-edit" contenteditable="${ce}" data-id="${id}" data-field="name" onblur="saveInlineEdit(this)">${escapeHtml(d.name == null ? '' : d.name)}</span>${inspectionChipFor(d)}</td>${cell('Model', 'model')}
+            <td data-label="Nickname"><span class="inline-edit" contenteditable="${ce}" data-id="${id}" data-field="name" onblur="saveInlineEdit(this)">${escapeHtml(d.name == null ? '' : d.name)}</span>${inspectionChipFor(d)}</td>${cell('Brand', 'brand')}${cell('Model', 'model')}
             <td data-label="SN" style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
             ${cell('Machine Type', 'machineType')}${cell('Asset No.', 'assetCode')}${cell('Work Tool', 'workTool')}
             ${cell('Status', 'status')}
@@ -4896,16 +4906,16 @@ function saveInlineEdit(el) {
         showToast(`This unit's group ("${plainText(unit.unitGroup)}") is unknown — set it first via Data Check`, 'warning');
         return;
     }
-    if (changed && field === 'site') {
-        const r = checkMasterValue('site', newValue, unit.site);
+    if (changed && (field === 'site' || field === 'brand') && !hasUnreadableGroup(unit)) {
+        const r = checkMasterValue(field, newValue, unit[field]);
         if (!r.ok) {
-            el.textContent = unit.site || '';
-            showToast(`Site "${r.value}" ${masterNotInList('site')}`, 'warning');
+            el.textContent = unit[field] || '';
+            showToast(`${MASTER_DEF[field].label} "${r.value}" ${masterNotInList(field)}`, 'warning');
             return;
         }
         if (r.value !== newValue) el.textContent = r.value;
-        if (r.value === unit.site) return;
-        if (updateUnit(id, { site: r.value })) showToast('Site updated', 'success');
+        if (r.value === (unit[field] || '')) return;
+        if (updateUnit(id, { [field]: r.value })) showToast(`${MASTER_DEF[field].label} updated`, 'success');
         return;
     }
     if (changed && field === 'implement') {
@@ -5181,7 +5191,8 @@ function populateImplementUnitList() {
         .sort((a, b) => a.localeCompare(b));
     list.innerHTML = labels.map(l => `<option value="${escapeHtml(l)}"></option>`).join('');
     const input = document.getElementById('formImplement');
-    if (input) input.placeholder = implementListActive() ? 'Pick from the Implements list…' : 'Type the implement…';    populateMasterDatalists();
+    if (input) input.placeholder = implementListActive() ? 'Pick from the Implements list…' : 'Type the implement…';
+    populateMasterDatalists();
 }
 
 // Find the implement record a unit's free-text implement value refers to.
@@ -5370,6 +5381,7 @@ function editHeavyUnit(unit) {
     document.getElementById('modalTitle').textContent = `Edit ${UNIT_GROUPS.heavy.label}`;
     set('editUnitId', unit.id);
     set('formName', unit.name); set('formModel', unit.model); set('formSN', unit.sn);
+    set('formHeavyBrand', unit.brand);
     set('formMachineType', unit.machineType); set('formAssetCode', unit.assetCode); set('formWorkTool', unit.workTool);
     set('formSite', unit.site); set('formYearReceived', unit.yearReceived);
     document.getElementById('formStatus').value = isGood(unit.status) ? 'Good' : 'Breakdown';
@@ -5408,6 +5420,17 @@ function checkUnitFields(id, fields) {
             return false;
         }
         fields.implement = r.value;
+    }
+    if (fields.brand !== undefined) {
+        const unit = id ? globalData.find(u => u.id === id) : null;
+        const r = checkMasterValue('brand', fields.brand, unit ? unit.brand : null);
+        if (!r.ok) {
+            showToast(`Brand "${r.value}" ${masterNotInList('brand')}`, 'warning');
+            const el = document.getElementById('formHeavyBrand');
+            if (el) el.focus();
+            return false;
+        }
+        fields.brand = r.value;
     }
     if (fields.site !== undefined) {
         const unit = id ? globalData.find(u => u.id === id) : null;
@@ -5459,7 +5482,7 @@ function checkUnitFields(id, fields) {
 function heavyFormFields() {
     const val = id => document.getElementById(id).value.trim();
     const f = {
-        name: val('formName'), model: val('formModel'), sn: val('formSN'),
+        name: val('formName'), model: val('formModel'), sn: val('formSN'), brand: val('formHeavyBrand'),
         machineType: val('formMachineType'), assetCode: val('formAssetCode'), workTool: val('formWorkTool'),
         site: val('formSite'), yearReceived: val('formYearReceived'),
         status: document.getElementById('formStatus').value,
@@ -5509,6 +5532,7 @@ function saveUnit(event) {
     // checkUnitFields stores the Implements list's own spelling.
     if (fields.implement !== undefined) fields.implement = checked.implement;
     if (fields.site !== undefined) fields.site = checked.site;
+    if (fields.brand !== undefined) fields.brand = checked.brand;
 
     // If status is changing TO Breakdown, prompt for a reason first.
     if (fields.status !== undefined && !isGood(fields.status)) {
@@ -6467,7 +6491,7 @@ function renderGlobalSearchResults() {
     const q = input.value.toLowerCase().trim();
     if (!q) { closeGlobalSearch(); return; }
     const hits = globalData.filter(u => (isHeavy(u)
-        ? `${u.name} ${u.sn} ${u.model} ${u.site} ${u.machineType || ''} ${u.assetCode || ''}`
+        ? `${u.name} ${u.sn} ${u.brand || ''} ${u.model} ${u.site} ${u.machineType || ''} ${u.assetCode || ''}`
         : `${u.name} ${u.sn} ${u.model} ${u.site}`).toLowerCase().includes(q)).slice(0, 8);
     if (!hits.length) {
         box.innerHTML = '<div class="global-search__empty">No matching units</div>';
@@ -6517,6 +6541,7 @@ function showUnitProfile(id) {
     const catCell = u.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(u.userCategory)}</span>` : dash;
     const identity = (heavyUnit ? [
         ['Group', `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(UNIT_GROUPS.heavy.label)}</span>`],
+        ['Brand', val(u.brand)],
         ['Model', val(u.model)],
         ['Serial Number', snCell],
         ['Machine Type', val(u.machineType)],
@@ -16045,6 +16070,7 @@ const MERGE_FIELDS = {
     implBrand:   { label: 'Implement brand', group: 'tractor' },
     implement:   { label: 'Implement (full text)', group: 'tractor' },
     workTool:    { label: 'Work tool',       group: 'heavy' },
+    brand:       { label: 'Brand',           group: 'heavy' },
     machineType: { label: 'Machine type',    group: 'heavy' },
     model:       { label: 'Model',           group: null },
     site:        { label: 'Site',            group: null },
@@ -16331,7 +16357,7 @@ function _afterDataFix() {
 // ---- Data Check: the new checks ----
 function dcSimilarSpellings() {
     const out = [];
-    ['implType', 'implBrand', 'workTool', 'machineType', 'model', 'site', 'company'].forEach(field => {
+    ['implType', 'implBrand', 'brand', 'workTool', 'machineType', 'model', 'site', 'company'].forEach(field => {
         similarValueClusters(mergeValueCounts(field)).forEach(cl => {
             // Case / punctuation-only site variants are dcSiteVariants' job.
             if (field === 'site' && new Set(cl.map(([v]) => _simKey(v))).size < 2) return;
@@ -16501,11 +16527,11 @@ function masterUsage(kind) {
     const counts = new Map();
     const add = v => { v = _toolNorm(v); if (v) counts.set(v, (counts.get(v) || 0) + 1); };
     if (kind === 'site') globalData.forEach(u => add(u.site));
-    if (kind === 'brand') globalImplements.forEach(i => add(i.brand));
+    if (kind === 'brand') { globalImplements.forEach(i => add(i.brand)); unitsOfGroup(globalData, 'heavy').forEach(u => add(u.brand)); }
     if (kind === 'company') (teamMembers || []).forEach(m => add(companyOf(m)));
     return counts;
 }
-const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', company: 'member' };
+const MASTER_USED_NOUN = { site: 'unit', brand: 'use', company: 'member' };
 
 function applyMasterListsSnapshot(docs) {
     const next = { site: [], brand: [], company: [] };
@@ -16678,6 +16704,7 @@ function renameMasterValue(v) {
     } else if (kind === 'brand') {
         const imps = globalImplements.filter(i => uses(i.brand));
         if (imps.length && !requireEdit('implements')) return;
+        n = 0;
         // Units name an implement by "Type — Brand", so they follow it.
         const unitChanges = new Map();
         imps.forEach(imp => {
@@ -16694,8 +16721,11 @@ function renameMasterValue(v) {
             logEvent({ action: 'update', unitId: imp.id, unitName: `[Implement] ${imp.profileName || ''}`, field: 'Brand', before: imp.brand, after: to });
         });
         if (imps.length) { saveImplements(); if (currentView === 'implements') renderImplementsTable(); }
-        if (unitChanges.size && hasAccess('editUnits', 'edit')) updateUnitsBatch(unitChanges);
-        n = imps.length;
+        if (hasAccess('editUnits', 'edit')) {
+            unitsOfGroup(globalData, 'heavy').filter(u => uses(u.brand)).forEach(u => unitChanges.set(u.id, { brand: to }));
+            if (unitChanges.size) n += updateUnitsBatch(unitChanges).filter(d => isHeavy(d.unit)).length;
+        }
+        n += imps.length;
     }
     _saveMasterList(kind, masterLists[kind].map(x => (x === v ? to : x)), `Renamed "${v}" → "${to}"`);
     showToast(`Renamed to "${to}"${n ? ` — ${n} ${MASTER_USED_NOUN[kind]}(s) updated` : ''}`, 'success');

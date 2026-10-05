@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.524 pemeriksaan di tiga puluh tujuh suite, menggerakkan Chromium sungguhan terhadap
+1.547 pemeriksaan di tiga puluh delapan suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -294,6 +294,14 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   data, ejaan mirip dilipat ke yang terbanyak. Data Check "Not in a master
   list". Belum termasuk Backup JSON (daftarnya kecil dan bisa diisi ulang
   dari data).
+- **Brand pada unit Heavy Equipment (dijaga `tests/heavybrand_test.js`).**
+  Field `brand` (heavy saja — ada di `HEAVY_ONLY_FIELDS`, jadi firewall
+  kelompok menolaknya pada traktor): kolom sebelum Model di Unit Database
+  dan dashboard, form, profil, ekspor/impor CSV (`Brand`/`Merek`; header
+  bersama, jadi kolom Brand di sheet traktor diabaikan tanpa peringatan),
+  field kunci di kartu kelengkapan, Clean Up Values. Memakai daftar Brand
+  yang sama dengan Implements di Master Lists (pemakaian & rename mencakup
+  keduanya).
 - **Implement wajib dari daftar Implements (dijaga `tests/implpick_test.js`).**
   Begitu daftar Implements berisi, `checkImplementValue` menjaga form unit
   (lewat `checkUnitFields`, dengan hint di bawah kolom), Bulk Edit, edit

@@ -249,7 +249,7 @@ async function run(page, width, body) {
     t('kolom Camera AI terlihat di ponsel', berat.camera, true);
     t('kolom Nomor Lambung terlihat di ponsel', berat.lambung, true);
     t('tab alat berat tidak memaksa halaman menggeser', berat.geser, false);
-    t('colspan baris kosong alat berat = 19 kolom', berat.colspan, '19');
+    t('colspan baris kosong alat berat = 20 kolom', berat.colspan, '20');
     t('judul tabel menyebut kelompoknya (tab kelompok sudah dihapus)', berat.judul, 'Unit Database — Heavy Equipment');
 
     // Jadwal shift: satu-satunya yang memang menggeser, jadi nama harus menempel.
