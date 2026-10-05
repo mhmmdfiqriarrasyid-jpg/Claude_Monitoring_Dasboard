@@ -92,7 +92,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v138';
+const APP_VERSION = 'v139';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -4412,14 +4412,71 @@ function closeImportReport() {
 // Kerja). The summary counts the open tab's units by that field, under the
 // status and site filters but not the search box, and a row of it filters
 // the table. Spellings that differ only in case or spacing count together.
-let editToolFilter = '';           // '' = all, TOOL_NONE = none set, else a toolKeyOf()
+//
+// An implement reads "Type — Brand" (implementOptionLabel), so the summary
+// counts per TYPE and lists the brands under each one: "Bed Ripper 2 —
+// Gessner 1 · ISJ 1". Clicking the type filters every unit of that type,
+// clicking a brand only that brand's. Work tools have no brand.
+let editToolFilter = '';           // '' = all, TOOL_NONE = none set, typeKey, or typeKey + TOOL_SEP + brandKey
 const TOOL_NONE = '__none__';
+const TOOL_SEP = '\u0001';
 let _toolSummaryOpen = false;
 
 function toolFieldOf(g) { return g === 'heavy' ? 'workTool' : 'implement'; }
-function toolKeyOf(u, g) {
-    const v = String((u && u[toolFieldOf(g)]) || '').trim().replace(/\s+/g, ' ').toLowerCase();
-    return v || TOOL_NONE;
+const _toolNorm = v => String(v || '').trim().replace(/\s+/g, ' ');
+
+const _splitTool = raw => raw.split(/\s+[—–]\s+|\s+-\s+/).map(_toolNorm).filter(Boolean);
+
+// How "brand-like" each name is: + each time it is the brand half of a
+// unit's "Type — Brand", − each time it is the type half, and decisively so
+// when the Implements database says. Used to recognise an old "Brand — Type"
+// value written the other way round ("ISS — Final Cultivator").
+function _knownImplementBrands() {
+    const score = new Map();
+    const add = (name, n) => { const k = _toolNorm(name).toLowerCase(); if (k) score.set(k, (score.get(k) || 0) + n); };
+    globalImplements.forEach(i => { add(i.brand, 1000); add(i.equipmentType, -1000); });
+    globalData.forEach(u => {
+        const parts = _splitTool(_toolNorm(u && u.implement));
+        if (parts.length === 2) { add(parts[0], -1); add(parts[1], 1); }
+    });
+    return score;
+}
+
+// { type, brand } of one unit's implement / work tool. Prefers the
+// Implements record the text refers to; otherwise splits "Type — Brand".
+function toolPartsOf(u, g, brands) {
+    const raw = _toolNorm(u && u[toolFieldOf(g)]);
+    if (!raw) return { type: '', brand: '' };
+    if (g === 'heavy') return { type: raw, brand: '' };
+    const imp = matchImplementForUnit(raw);
+    if (imp && _toolNorm(imp.equipmentType)) return { type: _toolNorm(imp.equipmentType), brand: _toolNorm(imp.brand) };
+    const parts = _splitTool(raw);
+    if (parts.length < 2) return { type: raw, brand: '' };
+    let [type, brand] = [parts[0], parts.slice(1).join(' — ')];
+    const known = brands || _knownImplementBrands();
+    const sc = n => known.get(n.toLowerCase()) || 0;
+    if (sc(type) > 0 && sc(type) > sc(brand)) [type, brand] = [brand, type];
+    return { type, brand };
+}
+
+function toolKeyOf(u, g, brands) {
+    const t = toolPartsOf(u, g, brands).type.toLowerCase();
+    return t || TOOL_NONE;
+}
+function _toolFullKey(u, g, brands) {
+    const p = toolPartsOf(u, g, brands);
+    if (!p.type) return TOOL_NONE;
+    return p.type.toLowerCase() + TOOL_SEP + p.brand.toLowerCase();
+}
+// Does unit u pass the summary filter?
+function toolFilterMatch(u, g, filter, brands) {
+    if (!filter) return true;
+    return filter.includes(TOOL_SEP) ? _toolFullKey(u, g, brands) === filter : toolKeyOf(u, g, brands) === filter;
+}
+
+// Most common spelling wins as the label.
+function _pickLabel(spellings) {
+    return [...spellings.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0];
 }
 
 function toolSummaryRows(g) {
@@ -4427,14 +4484,29 @@ function toolSummaryRows(g) {
     const siteVal = document.getElementById('editSiteFilter')?.value || '';
     const units = unitsOfGroup(globalData, g)
         .filter(d => (!statusVal || d.status === statusVal) && (!siteVal || d.site === siteVal));
+    const known = _knownImplementBrands();
     const map = new Map();
     units.forEach(u => {
-        const k = toolKeyOf(u, g);
-        const cur = map.get(k) || { key: k, label: k === TOOL_NONE ? '' : String(u[toolFieldOf(g)]).trim().replace(/\s+/g, ' '), count: 0 };
+        const p = toolPartsOf(u, g, known);
+        const k = p.type ? p.type.toLowerCase() : TOOL_NONE;
+        const cur = map.get(k) || { key: k, spell: new Map(), count: 0, brands: new Map() };
         cur.count++;
+        if (p.type) {
+            cur.spell.set(p.type, (cur.spell.get(p.type) || 0) + 1);
+            const bk = p.brand.toLowerCase();
+            const b = cur.brands.get(bk) || { key: k + TOOL_SEP + bk, spell: new Map(), count: 0, none: !p.brand };
+            b.count++;
+            if (p.brand) b.spell.set(p.brand, (b.spell.get(p.brand) || 0) + 1);
+            cur.brands.set(bk, b);
+        }
         map.set(k, cur);
     });
-    const rows = [...map.values()].sort((a, b) =>
+    const rows = [...map.values()].map(r => ({
+        key: r.key, count: r.count,
+        label: r.key === TOOL_NONE ? '' : _pickLabel(r.spell),
+        brands: [...r.brands.values()].map(b => ({ key: b.key, count: b.count, none: b.none, label: b.none ? '' : _pickLabel(b.spell) }))
+            .sort((a, b) => a.none - b.none || b.count - a.count || a.label.localeCompare(b.label))
+    })).sort((a, b) =>
         (a.key === TOOL_NONE) - (b.key === TOOL_NONE) || b.count - a.count || a.label.localeCompare(b.label));
     return { rows, total: units.length };
 }
@@ -4445,21 +4517,32 @@ function renderToolSummary() {
     const g = effectiveEditGroup();
     const { rows, total } = toolSummaryRows(g);
     if (!total) { box.style.display = 'none'; box.innerHTML = ''; return; }
-    const noun = g === 'heavy' ? 'Alat Kerja' : 'Implement';
     const nounEn = g === 'heavy' ? 'Work Tool' : 'Implement';
-    const withTool = rows.filter(r => r.key !== TOOL_NONE).reduce((n, r) => n + r.count, 0);
-    const kinds = rows.filter(r => r.key !== TOOL_NONE).length;
-    const LIMIT = 8;
-    // "Tanpa …" always shows: units missing the field are the thing to fix.
     const named = rows.filter(r => r.key !== TOOL_NONE);
     const none = rows.filter(r => r.key === TOOL_NONE);
+    const withTool = named.reduce((n, r) => n + r.count, 0);
+    const kinds = named.length;
+    const brandCount = new Set(named.flatMap(r => r.brands.filter(b => !b.none).map(b => b.label.toLowerCase()))).size;
+    const LIMIT = 8;
+    // "No …" always shows: units missing the field are the thing to fix.
     const shown = (_toolSummaryOpen || named.length <= LIMIT ? named : named.slice(0, LIMIT)).concat(none);
     const max = Math.max(...rows.map(r => r.count));
+    const brandLine = r => {
+        // A type nobody gave a brand has nothing to break down.
+        if (!r.brands.length || (r.brands.length === 1 && r.brands[0].none)) return '';
+        return `<div class="tool-brands">${r.brands.map(b => {
+            const on = editToolFilter === b.key;
+            return `<button type="button" class="tool-brand${on ? ' is-on' : ''}${b.none ? ' tool-brand--none' : ''}" aria-pressed="${on}"
+                title="${on ? 'Click again to show all' : 'Show only these units in the table'}" onclick="setEditToolFilter(${jsArg(b.key)})">${
+                escapeHtml(b.none ? 'No brand' : b.label)} <b>${b.count}</b></button>`;
+        }).join('')}</div>`;
+    };
     box.innerHTML = `
         <div class="tool-summary__head">
             <div class="tool-summary__title"><i class="fas ${g === 'heavy' ? 'fa-screwdriver-wrench' : 'fa-trailer'}"></i>
-                Units per ${nounEn}</div>
-            <div class="tool-summary__meta">${withTool} of ${total} units have ${nounEn === 'Implement' ? 'an implement' : 'a work tool'} · ${kinds} ${kinds === 1 ? 'type' : 'types'}
+                Units per ${nounEn}${g === 'heavy' ? '' : ' Type'}</div>
+            <div class="tool-summary__meta">${withTool} of ${total} units have ${nounEn === 'Implement' ? 'an implement' : 'a work tool'} · ${kinds} ${kinds === 1 ? 'type' : 'types'}${
+                brandCount ? ` · ${brandCount} ${brandCount === 1 ? 'brand' : 'brands'}` : ''}
                 ${editToolFilter ? `<button type="button" class="btn btn-secondary btn-sm" onclick="setEditToolFilter('')">
                     <i class="fas fa-filter-circle-xmark"></i> Show all</button>` : ''}</div>
         </div>
@@ -4468,13 +4551,14 @@ function renderToolSummary() {
                 const pct = Math.round(r.count / total * 100);
                 const on = editToolFilter === r.key;
                 const name = r.key === TOOL_NONE ? `No ${nounEn.toLowerCase()}` : r.label;
-                return `<button type="button" class="tool-row${on ? ' is-on' : ''}${r.key === TOOL_NONE ? ' tool-row--none' : ''}"
+                return `<div class="tool-item">
+                    <button type="button" class="tool-row${on ? ' is-on' : ''}${r.key === TOOL_NONE ? ' tool-row--none' : ''}"
                         aria-pressed="${on}" title="${on ? 'Click again to show all' : 'Show only these units in the table'}"
                         onclick="setEditToolFilter(${jsArg(r.key)})">
                     <span class="tool-row__name">${escapeHtml(name)}</span>
                     <span class="tool-row__bar"><span style="width:${Math.max(3, Math.round(r.count / max * 100))}%"></span></span>
                     <span class="tool-row__count">${r.count}<small>${pct}%</small></span>
-                </button>`;
+                </button>${brandLine(r)}</div>`;
             }).join('')}
         </div>
         ${named.length > LIMIT ? `<button type="button" class="tool-summary__more" onclick="toggleToolSummary()">
@@ -4504,7 +4588,10 @@ function getEditTableRows() {
         : `${d.name} ${d.model} ${d.sn} ${d.implement || ''} ${d.site}`).toLowerCase().includes(query));
     if (statusVal) rows = rows.filter(d => d.status === statusVal);
     if (siteVal) rows = rows.filter(d => d.site === siteVal);
-    if (editToolFilter) rows = rows.filter(d => toolKeyOf(d, g) === editToolFilter);
+    if (editToolFilter) {
+        const known = _knownImplementBrands();
+        rows = rows.filter(d => toolFilterMatch(d, g, editToolFilter, known));
+    }
 
     if (editSortState.key && editSortState.key !== 'no') {
         const k = editSortState.key;

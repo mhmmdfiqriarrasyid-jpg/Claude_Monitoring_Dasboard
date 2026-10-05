@@ -4096,6 +4096,19 @@ td[data-label="Approval"] { vertical-align: middle; }
 .tool-row--none .tool-row__bar span { background: var(--text-light); }
 .tool-row__count { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 56px; text-align: right; }
 .tool-row__count small { font-weight: 400; color: var(--text-light); margin-left: 6px; font-size: 11px; }
+.tool-summary__list { align-items: start; }
+.tool-item { min-width: 0; }
+.tool-row { width: 100%; }
+.tool-brands { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 6px; }
+.tool-brand {
+    border: 1px solid var(--border-light); background: var(--bg); color: var(--text-secondary);
+    border-radius: 999px; padding: 1px 8px; font: inherit; font-size: 11px; cursor: pointer;
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tool-brand b { color: var(--text); font-weight: 700; margin-left: 2px; }
+.tool-brand:hover { border-color: var(--accent); }
+.tool-brand.is-on { border-color: var(--accent); background: var(--primary-lighter, var(--bg)); color: var(--text); }
+.tool-brand--none { font-style: italic; }
 .tool-summary__more {
     margin-top: 8px; border: none; background: none; color: var(--accent-text);
     font: inherit; font-size: 12px; cursor: pointer; padding: 4px 8px;
@@ -4103,4 +4116,5 @@ td[data-label="Approval"] { vertical-align: middle; }
 @media (max-width: 700px) {
     .tool-summary__list { grid-template-columns: 1fr; }
     .tool-row { min-height: 40px; }
+    .tool-brand { padding: 4px 10px; font-size: 12px; }
 }

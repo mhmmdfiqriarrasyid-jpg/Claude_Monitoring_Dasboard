@@ -31,8 +31,8 @@ const { launch, BASE_URL } = require('./_env');
         const rows = () => [...document.querySelectorAll('#toolSummary .tool-row')].map(r => [
             r.querySelector('.tool-row__name').textContent.trim(), Number(r.querySelector('.tool-row__count').firstChild.textContent)]);
         let r = rows();
-        t('judul Agricultural', document.querySelector('.tool-summary__title').textContent.trim(), 'Units per Implement');
-        t('terbanyak di atas, ejaan beda huruf/spasi digabung', r[0], ['Offset Harrow — Grizzly', 3]);
+        t('judul Agricultural', document.querySelector('.tool-summary__title').textContent.trim(), 'Units per Implement Type');
+        t('terbanyak di atas, ejaan beda huruf/spasi digabung', r[0], ['Offset Harrow', 3]);
         t('tanpa implement selalu tampil, paling bawah', r[r.length - 1], ['No implement', 2]);
         t('daftar diringkas 8 jenis + tombol lainnya', [r.length, document.querySelector('.tool-summary__more').textContent.trim()], [9, '+4 more types']);
         toggleToolSummary();
@@ -43,7 +43,7 @@ const { launch, BASE_URL } = require('./_env');
         document.querySelector('#toolSummary .tool-row').click();
         const shown = () => [...document.querySelectorAll('#editBody tr')].map(tr => tr.querySelector('[data-field="name"]')?.textContent);
         t('klik baris memfilter tabel', shown(), ['TR1', 'TR2', 'TR3']);
-        t('baris aktif ditandai', document.querySelector('#toolSummary .tool-row.is-on .tool-row__name').textContent.trim(), 'Offset Harrow — Grizzly');
+        t('baris aktif ditandai', document.querySelector('#toolSummary .tool-row.is-on .tool-row__name').textContent.trim(), 'Offset Harrow');
         document.querySelector('#toolSummary .tool-row.is-on').click();
         t('klik lagi menampilkan semua', shown().length, 16);
         [...document.querySelectorAll('#toolSummary .tool-row')].find(b => /No implement/.test(b.textContent)).click();
@@ -53,12 +53,46 @@ const { launch, BASE_URL } = require('./_env');
         // status & site
         document.getElementById('editSiteFilter').value = 'B';
         renderEditTable();
-        t('mengikuti filter site', rows(), [['Offset Harrow — Grizzly', 1]]);
+        t('mengikuti filter site', rows(), [['Offset Harrow', 1]]);
         document.getElementById('editSiteFilter').value = '';
         document.getElementById('editStatusFilter').value = 'Breakdown';
         renderEditTable();
-        t('mengikuti filter status', rows(), [['HDR Ripper — Gessner', 1]]);
+        t('mengikuti filter status', rows(), [['HDR Ripper', 1]]);
         document.getElementById('editStatusFilter').value = '';
+
+        // =============== jenis → brand ===============
+        globalImplements = [{ id: 'i1', profileName: 'ISS', equipmentType: 'Final Cultivator', brand: 'ISS' },
+                            { id: 'i2', profileName: 'GS', equipmentType: 'Bed Ripper', brand: 'Gessner' }];
+        const keep = globalData;
+        globalData = [TR(1, 'Bed Ripper — Gessner'), TR(2, 'Bed Ripper — ISJ'), TR(3, 'bed ripper — GESSNER'),
+                      TR(4, 'ISS — Final Cultivator'), TR(5, 'Final Cultivator — ISS'), TR(6, 'Speed Tiller'),
+                      TR(7, 'Zonal Ripper — Gessner'), TR(8, 'Zonal Ripper'), TR(9, 'Haulout Bin - TT')];
+        saveToStorage(globalData);
+        setEditToolFilter('');
+        const brands = name => {
+            const item = [...document.querySelectorAll('#toolSummary .tool-item')].find(x => x.querySelector('.tool-row__name').textContent.trim() === name);
+            return item ? [...item.querySelectorAll('.tool-brand')].map(b => b.textContent.trim().replace(/\\s+/g, ' ')) : null;
+        };
+        t('dikelompokkan per jenis', rows(), [['Bed Ripper', 3], ['Final Cultivator', 2], ['Zonal Ripper', 2], ['Haulout Bin', 1], ['Speed Tiller', 1]]);
+        t('brand di bawah jenisnya, terbanyak dulu', brands('Bed Ripper'), ['Gessner 2', 'ISJ 1']);
+        t('format lama "Brand — Jenis" dikenali lewat database Implements', brands('Final Cultivator'), ['ISS 2']);
+        t('campuran ada & tanpa brand: "No brand" paling akhir', brands('Zonal Ripper'), ['Gessner 1', 'No brand 1']);
+        t('jenis tanpa brand sama sekali: tanpa rincian', brands('Speed Tiller'), []);
+        t('pemisah "-" juga dikenali', brands('Haulout Bin'), ['TT 1']);
+        t('ringkasan menyebut jumlah brand', /· 5 types · 4 brands/.test(document.querySelector('.tool-summary__meta').textContent.replace(/\\s+/g, ' ')), true);
+        [...document.querySelectorAll('#toolSummary .tool-item')][0].querySelector('.tool-row').click();
+        t('klik jenis: semua brand jenis itu', shown(), ['TR1', 'TR2', 'TR3']);
+        [...document.querySelectorAll('#toolSummary .tool-brand')].find(b => /^Gessner/.test(b.textContent.trim())).click();
+        t('klik brand: hanya brand itu', shown(), ['TR1', 'TR3']);
+        t('brand aktif ditandai', document.querySelector('#toolSummary .tool-brand.is-on').textContent.trim().replace(/\\s+/g, ' '), 'Gessner 2');
+        document.querySelector('#toolSummary .tool-brand.is-on').click();
+        t('klik lagi menampilkan semua', shown().length, 9);
+        [...document.querySelectorAll('#toolSummary .tool-brand')].find(b => /No brand/.test(b.textContent)).click();
+        t('klik "No brand"', shown(), ['TR8']);
+        setEditToolFilter('');
+        globalImplements = []; globalData.push(TR(20, 'Spring Grubber — ISS')); setEditToolFilter('');
+        t('tanpa database Implements: "ISS — Final Cultivator" tetap dikenali dari data unit lain', brands('Final Cultivator'), ['ISS 2']);
+        globalData = keep; saveToStorage(globalData);
 
         // heavy
         setEditToolFilter(globalData[0] && toolKeyOf(globalData[0], 'tractor'));

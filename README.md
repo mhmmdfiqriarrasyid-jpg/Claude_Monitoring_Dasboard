@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.371 pemeriksaan di tiga puluh tiga suite, menggerakkan Chromium sungguhan terhadap
+1.384 pemeriksaan di tiga puluh tiga suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -277,7 +277,11 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Kartu di atas tabel Unit Database: tab Agricultural menghitung per
   `implement`, tab Heavy per `workTool`. Ikut filter status & site (bukan
   kotak cari); ejaan yang hanya beda huruf besar/spasi digabung
-  (`toolKeyOf`); "Tanpa …" selalu tampil. Klik baris = filter tabel
+  (`toolKeyOf`); "Tanpa …" selalu tampil. Agricultural dihitung per JENIS
+  implement dengan rincian brand di bawahnya (`toolPartsOf`: record
+  Implements bila cocok, jika tidak dipecah dari "Jenis — Brand"; urutan
+  terbalik "Brand — Jenis" dikenali dari skor `_knownImplementBrands`). Klik
+  jenis = semua brand-nya, klik brand = hanya brand itu (`TOOL_SEP`). Klik baris = filter tabel
   (`editToolFilter`, ikut ke Export CSV, direset saat pindah tab).
 - **Menu samping per kelompok alat (dijaga `tests/navgroups_test.js`).**
   Ringkasan · Agricultural Equipment · Heavy Equipment · Tim · Inventaris ·
