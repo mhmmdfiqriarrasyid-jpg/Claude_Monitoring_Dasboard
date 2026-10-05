@@ -92,7 +92,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v141';
+const APP_VERSION = 'v142';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -4177,6 +4177,16 @@ function handleEditCSVImport(file) {
                 return;
             }
             const notes = [];
+            // Implements list: the list's spelling, or nothing. A new unit
+            // lands with no implement; an update leaves the old one.
+            if (implementListActive()) valid.forEach(u => {
+                if (unitGroupOf(u) !== 'tractor' || !u.implement) return;
+                const r = checkImplementValue(u.implement, null);
+                if (r.ok) { u.implement = r.value; return; }
+                notes.push({ name: u.name, sn: u.sn, reason: `Implement "${r.value}" is not in the Implements list — `
+                    + (existingSNs.has((u.sn || '').toLowerCase()) ? 'left unchanged' : 'left empty') });
+                u.implement = '';
+            });
             groupWarnings.forEach(w => notes.push({ name: w.name, sn: w.sn,
                 reason: `Unknown Unit Group "${w.value}" — read as ${groupDef(w.group || tab).label}` }));
             valid.forEach(u => {
@@ -4863,6 +4873,18 @@ function saveInlineEdit(el) {
         showToast(`This unit's group ("${plainText(unit.unitGroup)}") is unknown — set it first via Data Check`, 'warning');
         return;
     }
+    if (changed && field === 'implement') {
+        const r = checkImplementValue(newValue, unit.implement);
+        if (!r.ok) {
+            el.textContent = unit.implement || '';
+            showToast(`Implement "${r.value}" ${IMPLEMENT_NOT_IN_LIST}`, 'warning');
+            return;
+        }
+        if (r.value !== newValue) el.textContent = r.value;
+        if (r.value === unit.implement) return;
+        if (updateUnit(id, { implement: r.value })) showToast('Implement updated', 'success');
+        return;
+    }
     if (changed) {
         // Intercept status changing TO Breakdown → prompt for reason
         if (field === 'status' && !isGood(newValue) && isGood(unit.status)) {
@@ -4995,6 +5017,11 @@ function applyBulkEdit() {
     if (bg === 'heavy' && document.getElementById('bulkChkWorkTool')?.checked) fields.workTool = document.getElementById('bulkWorkTool').value.trim();
 
     if (Object.keys(fields).length === 0) { showToast('Tick at least one field to change', 'warning'); return; }
+    if (fields.implement) {
+        const r = checkImplementValue(fields.implement, null);
+        if (!r.ok) { showToast(`Implement "${r.value}" ${IMPLEMENT_NOT_IN_LIST}`, 'warning'); return; }
+        fields.implement = r.value;
+    }
 
     // A ticked box with an empty input clears that field on every selected unit
     // and there is no undo, so make the destructive part explicit rather than
@@ -5113,6 +5140,8 @@ function populateImplementUnitList() {
         .filter(Boolean))]
         .sort((a, b) => a.localeCompare(b));
     list.innerHTML = labels.map(l => `<option value="${escapeHtml(l)}"></option>`).join('');
+    const input = document.getElementById('formImplement');
+    if (input) input.placeholder = implementListActive() ? 'Pick from the Implements list…' : 'Type the implement…';
 }
 
 // Find the implement record a unit's free-text implement value refers to.
@@ -5123,6 +5152,62 @@ function matchImplementForUnit(text) {
         implementOptionLabel(imp).toLowerCase() === t ||
         _implementLegacyLabel(imp).toLowerCase() === t ||
         (imp.profileName || '').toLowerCase() === t) || null;
+}
+
+// ---- Implement must come from the Implements list ----
+// Once the Implements list has entries, a unit's implement is one of them:
+// the form, Bulk Edit, inline edit and CSV import all refuse anything else,
+// and save the list's own spelling ("bed ripper - gessner" is stored as
+// "Bed Ripper — Gessner"). A value already on a unit is never forced off it —
+// it stays until someone changes it; Data Check lists those.
+function implementListActive() { return globalImplements.length > 0; }
+
+// The list record a typed value means: exact label first, then by type and
+// brand (any case, either order, "-" or "—").
+function findImplementRecord(text) {
+    const t = _toolNorm(text);
+    if (!t) return null;
+    const exact = matchImplementForUnit(t);
+    if (exact) return exact;
+    const p = toolPartsOf({ implement: t }, 'tractor');
+    const type = p.type.toLowerCase(), brand = p.brand.toLowerCase();
+    return globalImplements.find(imp => _toolNorm(imp.equipmentType).toLowerCase() === type
+        && _toolNorm(imp.brand).toLowerCase() === brand) || null;
+}
+
+// { ok, value } for a new implement value. `previous` is what the unit holds
+// now: keeping an old off-list value is allowed, choosing a new one is not.
+function checkImplementValue(text, previous) {
+    const t = _toolNorm(text);
+    if (!t) return { ok: true, value: '' };
+    if (!implementListActive()) return { ok: true, value: t };
+    const imp = findImplementRecord(t);
+    if (imp) return { ok: true, value: implementOptionLabel(imp) };
+    if (previous != null && _toolNorm(previous) === t) return { ok: true, value: previous };
+    return { ok: false, value: t };
+}
+
+const IMPLEMENT_NOT_IN_LIST = 'is not in the Implements list — pick one from the list, or add it in the Implements menu first';
+
+function updateImplementHint() {
+    const hint = document.getElementById('formImplementHint');
+    const input = document.getElementById('formImplement');
+    if (!hint || !input) return;
+    const t = _toolNorm(input.value);
+    if (!implementListActive()) {
+        hint.className = 'form-hint';
+        hint.textContent = 'The Implements list is empty, so any text is accepted.';
+        return;
+    }
+    const id = document.getElementById('editUnitId').value;
+    const unit = id ? globalData.find(u => u.id === id) : null;
+    const r = checkImplementValue(t, unit ? unit.implement : null);
+    const imp = t ? findImplementRecord(t) : null;
+    hint.className = 'form-hint' + (r.ok ? (imp ? ' form-hint--ok' : '') : ' form-hint--bad');
+    hint.textContent = !t ? 'Pick from the Implements list, or leave empty.'
+        : imp ? `In the Implements list${imp.code ? ' · code ' + imp.code : ''}${r.value !== t ? ' · saved as "' + r.value + '"' : ''}`
+        : r.ok ? 'Current value — not in the Implements list. Pick one from the list when you can.'
+        : `"${t}" ${IMPLEMENT_NOT_IN_LIST}.`;
 }
 
 // One form, two groups. The other group's sections are hidden AND disabled,
@@ -5171,6 +5256,7 @@ function showAddForm() {
     setUnitFormGroup(g);
     renderUserCategoryOptions();
     populateImplementUnitList();
+    updateImplementHint();
     document.getElementById('unitModal').classList.add('open');
 }
 
@@ -5235,6 +5321,7 @@ function editUnit(id) {
     }
 
     _unitFormShown = readUnitForm('tractor');
+    updateImplementHint();
     document.getElementById('unitModal').classList.add('open');
 }
 
@@ -5256,6 +5343,7 @@ function editHeavyUnit(unit) {
     bdInfo.textContent = show ? unit.breakdownReason : '';
     bdBox.style.display = show ? '' : 'none';
     _unitFormShown = readUnitForm('heavy');
+    updateImplementHint();
     document.getElementById('unitModal').classList.add('open');
 }
 const HEAVY_FORM_SELECTS = [['cameraAi', 'formCameraAi'], ['telematicBox', 'formTelematicBox'],
@@ -5270,6 +5358,17 @@ const HEAVY_FORM_SELECTS = [['cameraAi', 'formCameraAi'], ['telematicBox', 'form
 // matches on, so a duplicate makes every later import ambiguous about which
 // unit it is updating. saveDevice already does this correctly.
 function checkUnitFields(id, fields) {
+    if (fields.implement !== undefined) {
+        const unit = id ? globalData.find(u => u.id === id) : null;
+        const r = checkImplementValue(fields.implement, unit ? unit.implement : null);
+        if (!r.ok) {
+            showToast(`Implement "${r.value}" ${IMPLEMENT_NOT_IN_LIST}`, 'warning');
+            const el = document.getElementById('formImplement');
+            if (el) el.focus();
+            return false;
+        }
+        fields.implement = r.value;
+    }
     const sn = (fields.sn || '').trim();
     if (sn) {
         const clash = globalData.find(u => u.id !== id && (u.sn || '').toLowerCase() === sn.toLowerCase());
@@ -5354,7 +5453,10 @@ function saveUnit(event) {
     // stamping afterwards would be lost and the unit would land as a tractor.
     if (!id) fields.unitGroup = g;
 
-    if (!checkUnitFields(id, { ...full, ...fields })) return;
+    const checked = { ...full, ...fields };
+    if (!checkUnitFields(id, checked)) return;
+    // checkUnitFields stores the Implements list's own spelling.
+    if (fields.implement !== undefined) fields.implement = checked.implement;
 
     // If status is changing TO Breakdown, prompt for a reason first.
     if (fields.status !== undefined && !isGood(fields.status)) {
@@ -14670,6 +14772,12 @@ function renderDataCheck() {
             ? 'Nothing suspicious — your data is clean.'
             : `${total} item(s) to look at, in ${groups.filter(g => g.items.length).length} group(s).`;
     }
+    const implFix = groups.reduce((n, g) => n + g.items.filter(i => i.implFix).length, 0);
+    const implBtn = document.getElementById('dataCheckImplFixBtn');
+    if (implBtn) {
+        implBtn.style.display = implFix && hasAccess('editUnits', 'edit') ? '' : 'none';
+        implBtn.textContent = 'Match implements to the Implements list';
+    }
     const fixBtn = document.getElementById('dataCheckFixBtn');
     if (fixBtn) {
         fixBtn.style.display = fixable ? '' : 'none';
@@ -16020,7 +16128,11 @@ function renderValueMerge() {
             <span class="vm-row__count">${n} ${noun}${n === 1 ? '' : 's'}</span>
         </label>`).join('')
         : '<div class="vm-suggest__none">No values match.</div>';
-    document.getElementById('vmTargetList').innerHTML = [...counts.keys()].sort()
+    // A full implement can only become one the Implements list knows.
+    const targets = _vmField === 'implement' && implementListActive()
+        ? [...new Set(globalImplements.map(implementOptionLabel).filter(Boolean))]
+        : [...counts.keys()];
+    document.getElementById('vmTargetList').innerHTML = targets.sort()
         .map(v => `<option value="${escapeHtml(v)}"></option>`).join('');
 
     const target = _toolNorm(document.getElementById('vmTarget').value);
@@ -16035,8 +16147,13 @@ function renderValueMerge() {
 function applyValueMerge() {
     const f = MERGE_FIELDS[_vmField];
     if (!requireEdit(f.members ? 'teamMembers' : 'editUnits')) return;
-    const target = _toolNorm(document.getElementById('vmTarget').value);
+    let target = _toolNorm(document.getElementById('vmTarget').value);
     if (!target) { showToast('Type the spelling to keep', 'warning'); return; }
+    if (_vmField === 'implement') {
+        const r = checkImplementValue(target, null);
+        if (!r.ok) { showToast(`Implement "${target}" ${IMPLEMENT_NOT_IN_LIST}`, 'warning'); return; }
+        target = r.value;
+    }
     const values = [..._vmSelected];
     const plan = mergePlan(_vmField, values, target);
     if (!plan.length) { showToast('Nothing to change', 'info'); return; }
@@ -16147,17 +16264,47 @@ function dcMissingKeyFields() {
     return out;
 }
 
-// Only meaningful once the Implements list is in use.
+// Only meaningful once the Implements list is in use. A value the list
+// recognises under another spelling ("ISS — Final Cultivator" for "Final
+// Cultivator — ISS") is fixable in one click; one it does not know is not.
 function dcImplementNotInList() {
-    if (!globalImplements.length) return [];
-    const counts = new Map();
+    if (!implementListActive()) return [];
+    const unknown = new Map(), respell = new Map();
     unitsOfGroup(globalData, 'tractor').forEach(u => {
         const v = _toolNorm(u.implement);
-        if (v && !matchImplementForUnit(v)) counts.set(v, (counts.get(v) || 0) + 1);
+        if (!v) return;
+        const imp = findImplementRecord(v);
+        if (!imp) unknown.set(v, (unknown.get(v) || 0) + 1);
+        else if (implementOptionLabel(imp) !== u.implement) {
+            const k = `${v}\u0001${implementOptionLabel(imp)}`;
+            respell.set(k, (respell.get(k) || 0) + 1);
+        }
     });
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([v, n]) =>
+    const out = [...unknown.entries()].sort((a, b) => b[1] - a[1]).map(([v, n]) =>
         dc('impl-tak-dikenal', `Implement: ${v}`, `${n} unit(s) — not in the Implements list`, 'implements',
             { merge: { field: 'implement', values: [v] } }));
+    respell.forEach((n, k) => {
+        const [from, to] = k.split('\u0001');
+        out.push(dc('impl-ejaan', `Implement: ${from}`, `${n} unit(s) — the Implements list spells it "${to}"`,
+            'editUnits:tractor', { implFix: true }));
+    });
+    return out;
+}
+
+// Rewrites every implement the list recognises to the list's own spelling.
+function matchImplementsToList() {
+    if (!requireEdit('editUnits')) return;
+    const changes = new Map();
+    unitsOfGroup(globalData, 'tractor').forEach(u => {
+        const imp = u.implement ? findImplementRecord(u.implement) : null;
+        if (imp && implementOptionLabel(imp) !== u.implement) changes.set(u.id, { implement: implementOptionLabel(imp) });
+    });
+    if (!changes.size) { showToast('Every implement already uses the list spelling', 'info'); return; }
+    if (!confirm(`Rewrite the implement of ${changes.size} unit(s) to the Implements list spelling?\n\n`
+        + 'Only the spelling changes — each unit keeps the same implement.')) return;
+    const done = updateUnitsBatch(changes);
+    showToast(`${done.length} unit(s) now use the Implements list spelling`, 'success');
+    _afterDataFix();
 }
 
 // ---- Data Completeness card (Unit Database) ----

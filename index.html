@@ -1240,6 +1240,8 @@
                     <button class="btn btn-secondary btn-sm" onclick="renderDataCheck()">
                         <i class="fas fa-rotate"></i> Re-check
                     </button>
+                    <button class="btn btn-primary btn-sm" id="dataCheckImplFixBtn" style="display:none"
+                            onclick="matchImplementsToList()"></button>
                     <button class="btn btn-primary btn-sm" id="dataCheckFixBtn" style="display:none"
                             onclick="fixInvisibleCharacters()"></button>
                     <button class="btn btn-primary btn-sm" id="dataCheckGroupSetBtn" style="display:none"
@@ -1682,8 +1684,10 @@
                     </div>
                     <div class="form-group" data-group-only="tractor">
                         <label class="form-label" for="formImplement">Implement</label>
-                        <input class="form-input" id="formImplement" list="implementUnitList" placeholder="Pick from Implements or type…" autocomplete="off">
+                        <input class="form-input" id="formImplement" list="implementUnitList" placeholder="Pick from the Implements list…" autocomplete="off"
+                               oninput="updateImplementHint()" aria-describedby="formImplementHint">
                         <datalist id="implementUnitList"></datalist>
+                        <div class="form-hint" id="formImplementHint" aria-live="polite"></div>
                     </div>
                     <div class="form-group" data-group-only="heavy" style="display:none">
                         <label class="form-label" for="formMachineType">Machine Type</label>

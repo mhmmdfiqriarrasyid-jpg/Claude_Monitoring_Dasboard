@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.454 pemeriksaan di tiga puluh lima suite, menggerakkan Chromium sungguhan terhadap
+1.486 pemeriksaan di tiga puluh enam suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -280,6 +280,18 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   per kekurangan memfilter tabel (`editMissingFilter`, direset saat pindah
   kelompok). Implement terbalik "Brand — Jenis" dinilai per pasangan dari
   ejaan LAIN (`_knownImplementBrands().pairs`).
+- **Implement wajib dari daftar Implements (dijaga `tests/implpick_test.js`).**
+  Begitu daftar Implements berisi, `checkImplementValue` menjaga form unit
+  (lewat `checkUnitFields`, dengan hint di bawah kolom), Bulk Edit, edit
+  langsung di tabel, impor CSV (unit baru → kosong, update → tetap; dicatat
+  di laporan impor) dan target Clean Up Values. Nilai dikenali lewat label,
+  nama profil, atau jenis+brand dalam huruf/urutan/pemisah apa pun
+  (`findImplementRecord`), lalu disimpan dengan ejaan daftar
+  (`implementOptionLabel`). Nilai lama di luar daftar tidak dipaksa hilang —
+  boleh dipertahankan, tidak boleh diganti ke nilai asing lain. Data Check
+  membedakan "tidak dikenal" (Merge…) dan "beda ejaan" (tombol Match
+  implements to the Implements list → `matchImplementsToList`). Daftar
+  kosong = bebas seperti dulu.
 - **Isi jadwal shift cepat (dijaga `tests/shiftfill_test.js`).** Tiap
   anggota punya pilihan "Fill week…" (Morning/Afternoon/Night Senin–Sabtu +
   Minggu Off, Morning/Night setiap hari, Same as last week, Clear this
