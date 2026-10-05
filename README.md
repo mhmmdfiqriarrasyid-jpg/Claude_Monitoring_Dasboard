@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.384 pemeriksaan di tiga puluh tiga suite, menggerakkan Chromium sungguhan terhadap
+1.408 pemeriksaan di tiga puluh empat suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -265,6 +265,14 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Impor CSV tetap menerima header lama berbahasa Indonesia. Riwayat lama
   tetap tampil apa adanya. Selector `data-label` di style.css harus ikut nama
   kolom yang sama.
+- **Isi jadwal shift cepat (dijaga `tests/shiftfill_test.js`).** Tiap
+  anggota punya pilihan "Fill week…" (Morning/Afternoon/Night Senin–Sabtu +
+  Minggu Off, Morning/Night setiap hari, Same as last week, Clear this
+  week), dan toolbar punya **Copy Last Week** untuk seluruh tim (hanya sel
+  yang minggu lalu terisi; konfirmasi menyebut berapa sel yang ditimpa).
+  Semuanya lewat `applyShiftChanges` → `saveShiftChanges` (satu batch, satu
+  baris riwayat), dengan rollback bila ditolak server. Rules shifts tidak
+  berubah.
 - **Laporan cek tanpa sinyal (dijaga `tests/offline_test.js`).** Firestore
   menyimpan tulisan offline di antrean perangkat (cache persisten, bertahan
   saat aplikasi ditutup) dan mengirimnya sendiri. `subscribeInspections`

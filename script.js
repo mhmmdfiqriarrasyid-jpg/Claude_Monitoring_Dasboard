@@ -92,7 +92,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v139';
+const APP_VERSION = 'v140';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -10873,10 +10873,16 @@ function renderShiftGrid() {
                         onchange="setShift(${jsArg(m.id)},${jsArg(d)},this.value)">${opts}</select>
             </td>`;
         }).join('');
+        const fill = canEdit ? `<select class="shift-fill" aria-label="Fill the week for ${escapeHtml(m.name)}"
+                title="Fill the whole week in one click" onchange="quickFillShiftRow(${jsArg(m.id)}, this.value); this.value=''">
+                <option value="">Fill week…</option>
+                ${SHIFT_FILL_PATTERNS.map(p => `<option value="${p.key}">${escapeHtml(p.label)}</option>`).join('')}
+            </select>` : '';
         return `<tr>
             <th scope="row" class="shift-grid__member">
                 <strong>${escapeHtml(m.name)}</strong>
                 ${m.jobTitle ? `<span class="shift-grid__job" title="${escapeHtml(m.jobTitle)}">${escapeHtml(m.jobTitle)}</span>` : ''}
+                ${fill}
             </th>${cells}
         </tr>`;
     };
@@ -10996,6 +11002,123 @@ function setShift(memberId, date, shiftKey) {
             showToast('Failed to save shift — change reverted', 'error');
         }
     );
+}
+
+// ---- Quick fill ----
+// Filling a week cell by cell is 7 clicks per person. A row can be filled
+// with one pattern, and the whole week copied from the week before. Each is
+// ONE batch write and ONE history row, not one per cell.
+const SHIFT_FILL_PATTERNS = [
+    { key: 'pagi',  label: 'Morning Mon–Sat · Sun Off' },
+    { key: 'siang', label: 'Afternoon Mon–Sat · Sun Off' },
+    { key: 'malam', label: 'Night Mon–Sat · Sun Off' },
+    { key: 'pagi7',  label: 'Morning every day' },
+    { key: 'malam7', label: 'Night every day' },
+    { key: 'copy',  label: 'Same as last week' },
+    { key: 'clear', label: 'Clear this week' }
+];
+
+// changes: [{ memberId, date, shift }] — shift '' clears the cell.
+function applyShiftChanges(changes, what) {
+    if (!requireEdit('teamShift')) { renderShiftGrid(); return 0; }
+    const real = [];
+    changes.forEach(c => {
+        const m = memberById(c.memberId);
+        if (!m) return;
+        const id = `${c.date}_${c.memberId}`;
+        const prev = teamShifts.find(s => s.id === id) || null;
+        if ((prev ? prev.shift : '') === (c.shift || '')) return;
+        real.push({ ...c, id, m, prev });
+    });
+    if (!real.length) { showToast('Nothing to change — the week already looks like that', 'info'); return 0; }
+
+    const snapshot = teamShifts.slice();
+    const ids = new Set(real.map(c => c.id));
+    teamShifts = teamShifts.filter(s => !ids.has(s.id));
+    const sets = [], dels = [];
+    const now = Date.now();
+    real.forEach(c => {
+        if (c.shift) {
+            const rec = { id: c.id, date: c.date, memberId: c.memberId, memberName: c.m.name, shift: c.shift,
+                createdAt: c.prev ? (c.prev.createdAt || now) : now, updatedAt: now,
+                updatedBy: shiftActorName(), updatedByUid: (currentUser && currentUser.uid) || '' };
+            teamShifts.push(rec);
+            sets.push(rec);
+        } else {
+            dels.push(c.id);
+        }
+        _shiftPendingWrites.set(c.id, { shift: c.shift || '', at: now, memberName: c.m.name, date: c.date });
+    });
+    renderShiftGrid();
+
+    const people = new Set(real.map(c => c.m.name));
+    cloudWrite(
+        { action: 'update', unitName: people.size === 1 ? `[Team] ${[...people][0]}` : '[Team] Shift schedule',
+          field: `Shift ${weekRangeLabel(teamWeekStart)}`, before: '', after: `${what} — ${real.length} cell(s)` },
+        cloudCall('saveShiftChanges', sets, dels),
+        `${real.length} shift cell(s) saved`,
+        err => {
+            console.error('[team] shift batch failed:', err);
+            real.forEach(c => _shiftPendingWrites.delete(c.id));
+            teamShifts = snapshot;
+            renderShiftGrid();
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+            showToast('Failed to save the shifts — changes reverted', 'error');
+        }
+    );
+    return real.length;
+}
+
+function _lastWeekChanges(members) {
+    const dates = weekDates(teamWeekStart);
+    const out = [];
+    members.forEach(m => dates.forEach(d => {
+        const prev = shiftFor(m.id, addDaysISO(d, -7));
+        if (prev) out.push({ memberId: m.id, date: d, shift: prev });
+    }));
+    return out;
+}
+
+function quickFillShiftRow(memberId, key) {
+    if (!key) return;
+    const m = memberById(memberId);
+    if (!m) return;
+    if (!teamWeekStart) teamWeekStart = startOfWeekISO(toISODate());
+    const dates = weekDates(teamWeekStart);
+    let changes;
+    if (key === 'copy') {
+        ensureShiftWindowCovers(addDaysISO(teamWeekStart, -7));
+        changes = _lastWeekChanges([m]);
+        if (!changes.length) { showToast(`${m.name} has no shifts last week to copy`, 'warning'); renderShiftGrid(); return; }
+    } else if (key === 'clear') {
+        if (!dates.some(d => shiftFor(m.id, d))) { renderShiftGrid(); return; }
+        if (!confirm(`Clear every shift of ${m.name} for ${weekRangeLabel(teamWeekStart)}?`)) { renderShiftGrid(); return; }
+        changes = dates.map(d => ({ memberId: m.id, date: d, shift: '' }));
+    } else {
+        const every = key.endsWith('7');
+        const shift = every ? key.slice(0, -1) : key;
+        const sunday = d => { const x = parseLocalDate(d); return !!x && x.getDay() === 0; };
+        changes = dates.map(d => ({ memberId: m.id, date: d, shift: !every && sunday(d) ? 'libur' : shift }));
+    }
+    const pat = SHIFT_FILL_PATTERNS.find(p => p.key === key);
+    applyShiftChanges(changes, pat ? pat.label : key);
+}
+
+function copyLastWeekShifts() {
+    if (!requireEdit('teamShift')) return;
+    if (!teamWeekStart) teamWeekStart = startOfWeekISO(toISODate());
+    ensureShiftWindowCovers(addDaysISO(teamWeekStart, -7));
+    const members = activeMembers();
+    const changes = _lastWeekChanges(members);
+    if (!changes.length) { showToast('Last week has no shifts to copy', 'warning'); return; }
+    const differ = changes.filter(c => shiftFor(c.memberId, c.date) !== c.shift);
+    if (!differ.length) { showToast('This week already matches last week', 'info'); return; }
+    const replaced = differ.filter(c => shiftFor(c.memberId, c.date)).length;
+    if (!confirm(`Copy last week's schedule into ${weekRangeLabel(teamWeekStart)}?\n\n`
+        + `${differ.length} cell(s) will be filled`
+        + (replaced ? `, ${replaced} of them replacing a shift already set this week.` : '.')
+        + `\nCells that were empty last week are left as they are.`)) return;
+    applyShiftChanges(differ, 'Copied from last week');
 }
 
 function exportShiftCSV() {

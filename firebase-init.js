@@ -587,6 +587,15 @@ window.cloud = {
     async deleteShift(id) {
         await deleteDoc(doc(db, SHIFTS_COL, id));
     },
+    // A whole week's quick-fill in one go: shifts to write and cell ids to
+    // clear, committed in batches instead of one round-trip per cell.
+    async saveShiftChanges(sets, deleteIds) {
+        const ops = (sets || []).map(r => ({ set: r })).concat((deleteIds || []).map(id => ({ del: id })));
+        if (!ops.length) return;
+        await batchInChunks(ops, (batch, op) => op.set
+            ? batch.set(doc(db, SHIFTS_COL, op.set.id), op.set, { merge: true })
+            : batch.delete(doc(db, SHIFTS_COL, op.del)));
+    },
     async getAllShifts() {
         const snap = await getDocs(collection(db, SHIFTS_COL));
         return snap.docs.map(withDocId);

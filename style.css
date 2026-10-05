@@ -4118,3 +4118,11 @@ td[data-label="Approval"] { vertical-align: middle; }
     .tool-row { min-height: 40px; }
     .tool-brand { padding: 4px 10px; font-size: 12px; }
 }
+
+/* Shift grid: one-click fill for a member's week. */
+.shift-fill {
+    display: block; margin-top: 4px; width: 100%; max-width: 170px;
+    font: inherit; font-size: 11px; color: var(--accent-text);
+    background: transparent; border: 1px dashed var(--border); border-radius: 6px; padding: 2px 4px; cursor: pointer;
+}
+.shift-fill:hover, .shift-fill:focus { border-style: solid; border-color: var(--accent); }
