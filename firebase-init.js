@@ -28,6 +28,7 @@ import {
     onAuthStateChanged,
     createUserWithEmailAndPassword,
     signInWithEmailAndPassword,
+    sendPasswordResetEmail,
     signOut,
     updateProfile,
     setPersistence,
@@ -286,6 +287,10 @@ window.cloud = {
     async signIn(email, password) {
         const cred = await signInWithEmailAndPassword(auth, email, password);
         return cred.user;
+    },
+    // Firebase sends the reset link itself; the app never sees the password.
+    async sendPasswordReset(email) {
+        await sendPasswordResetEmail(auth, email);
     },
     async signUp(email, password, displayName) {
         const cred = await createUserWithEmailAndPassword(auth, email, password);

@@ -11,7 +11,7 @@ const PORT = Number(process.env.PORT) || 8765;
 const SUITES = [
     'team_logic', 'roles_test', 'company_test', 'adjust_test',
     'session_test', 'warehouse_test', 'approval_test', 'leader_test', 'recap_test',
-    'photos_test', 'migration_test', 'history_scan_test', 'validation_test', 'datacheck_test', 'damagephotos_test', 'mobile_test', 'window_test', 'backup_test', 'keyboard_test', 'leave_test', 'unitgroups_test', 'hardening_test', 'followup_test', 'licsync_test', 'xss_test', 'auditfix_test', 'workflow_test', 'lowfix_test', 'inspection_test', 'navgroups_test', 'toolsummary_test', 'offline_test', 'shiftfill_test', 'dataquality_test', 'implpick_test', 'masterlist_test', 'heavybrand_test', 'regress'
+    'photos_test', 'migration_test', 'history_scan_test', 'validation_test', 'datacheck_test', 'damagephotos_test', 'mobile_test', 'window_test', 'backup_test', 'keyboard_test', 'leave_test', 'unitgroups_test', 'hardening_test', 'followup_test', 'licsync_test', 'xss_test', 'auditfix_test', 'workflow_test', 'lowfix_test', 'inspection_test', 'navgroups_test', 'toolsummary_test', 'offline_test', 'shiftfill_test', 'dataquality_test', 'implpick_test', 'masterlist_test', 'heavybrand_test', 'signin_test', 'regress'
 ];
 
 const TYPES = {

@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.552 pemeriksaan di tiga puluh delapan suite, menggerakkan Chromium sungguhan terhadap
+1.568 pemeriksaan di tiga puluh sembilan suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -305,6 +305,15 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
   Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
   **Implement Brands** (`masterLists/brand`) untuk Agricultural.
+- **Masuk akun (dijaga `tests/signin_test.js`).** Jam sesi 24 jam di-reset
+  SEBELUM `signIn()` — Firebase memanggil listener auth sebelum promise-nya
+  selesai, dan cap waktu basi (sengaja disimpan saat sesi kedaluwarsa
+  offline) dulu langsung mengeluarkan orang lagi dengan "Daily session
+  ended". Kolom email/password tanpa huruf kapital otomatis, tombol mata,
+  petunjuk spesifik saat password ditolak (spasi di ujung, kapital pertama,
+  Caps Lock), "Forgot password?" (`sendPasswordResetEmail`, pesan sama untuk
+  email terdaftar/tidak), pesan untuk akun terkunci sementara dan
+  dinonaktifkan.
 - **Implement wajib dari daftar Implements (dijaga `tests/implpick_test.js`).**
   Begitu daftar Implements berisi, `checkImplementValue` menjaga form unit
   (lewat `checkUnitFields`, dengan hint di bawah kolom), Bulk Edit, edit

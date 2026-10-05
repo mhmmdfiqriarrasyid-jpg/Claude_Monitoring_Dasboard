@@ -110,7 +110,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v146';
+const APP_VERSION = 'v147';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -9595,9 +9595,66 @@ function friendlyAuthError(err) {
         'auth/email-already-in-use': 'An account with that email already exists.',
         'auth/weak-password': 'Password is too weak (min 6 characters).',
         'auth/network-request-failed': 'Network error — check your connection.',
-        'auth/too-many-requests': 'Too many failed attempts. Try again later.'
+        'auth/too-many-requests': 'Too many failed attempts — this account is locked for a while. Wait 15–30 minutes, or use "Forgot password?" to reset it.',
+        'auth/user-disabled': 'This account has been disabled. Ask the owner to enable it.',
+        'auth/missing-password': 'Enter your password.',
+        'auth/invalid-login-credentials': 'Email or password is incorrect.'
     };
     return map[code] || (err && err.message) || 'Authentication failed.';
+}
+
+// "The password is right but it won't let me in" is nearly always the text
+// in the box not being what the person thinks: a capital letter the phone
+// added, a space a keyboard or password manager appended, Caps Lock. Say
+// which, instead of only "incorrect".
+function signInHint(email, password) {
+    const tips = [];
+    if (/^\s|\s$/.test(password)) tips.push('your password starts or ends with a space');
+    if (/^[A-Z][^A-Z]*$/.test(password)) tips.push('only the first letter is a capital — the phone may have added it');
+    if (password && password === password.toUpperCase() && /[A-Z]/.test(password) && !/[a-z]/.test(password)) tips.push('it is all capitals — is Caps Lock on?');
+    if (email !== email.toLowerCase()) tips.push('the email has capital letters (that is fine, but check the spelling)');
+    return tips.length ? ` Check: ${tips.join('; ')}. Tap the eye icon to see what you typed.` : ' Tap the eye icon to see what you typed, or use "Forgot password?".';
+}
+
+function togglePasswordVisibility(inputId, btn) {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    const show = el.type === 'password';
+    el.type = show ? 'text' : 'password';
+    if (btn) {
+        btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+        btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+        btn.innerHTML = `<i class="fas ${show ? 'fa-eye-slash' : 'fa-eye'}"></i>`;
+    }
+}
+
+async function handleForgotPassword() {
+    showAuthError('signInError', '');
+    const email = (document.getElementById('signInEmail').value || '').trim();
+    if (!email) { showAuthError('signInError', 'Type your email above first, then tap "Forgot password?".'); document.getElementById('signInEmail').focus(); return; }
+    if (!window.cloud?.sendPasswordReset) { showAuthError('signInError', STALE_CLIENT_MSG); return; }
+    try {
+        showLoading(true);
+        await window.cloud.sendPasswordReset(email);
+        showAuthNotice(`If an account exists for ${email}, a password-reset link has been sent. Check the inbox and the spam folder.`);
+    } catch (err) {
+        // Not revealing whether an address has an account: only real
+        // problems (bad address, network, rate limit) are reported.
+        if (err && (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential')) {
+            showAuthNotice(`If an account exists for ${email}, a password-reset link has been sent. Check the inbox and the spam folder.`);
+        } else {
+            showAuthError('signInError', friendlyAuthError(err));
+        }
+    } finally {
+        showLoading(false);
+    }
+}
+
+function showAuthNotice(msg) {
+    const el = document.getElementById('signInNotice');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.style.display = msg ? '' : 'none';
 }
 
 // ---- Daily session expiry (re-login required after 24h) ----
@@ -9798,17 +9855,27 @@ watchSessionOnResume();
 async function handleSignIn(event) {
     event.preventDefault();
     showAuthError('signInError', '');
+    showAuthNotice('');
     const email = document.getElementById('signInEmail').value.trim();
     const password = document.getElementById('signInPassword').value;
     try {
         showLoading(true);
         _explicitSignIn = true;
+        // A fresh 24h window BEFORE signing in: Firebase calls the auth
+        // listener before signIn() resolves, and the listener checks the
+        // window. A stamp left over from an expired session (an offline
+        // expiry keeps it on purpose) signed the person straight back out
+        // with "Daily session ended", whatever password they typed.
+        startSessionClock();
         await window.cloud.signIn(email, password);
         startSessionClock(); // fresh 24h window
         // onAuthChange will take over from here.
     } catch (err) {
         _explicitSignIn = false;
-        showAuthError('signInError', friendlyAuthError(err));
+        clearSessionClock();
+        const code = err && err.code;
+        const wrong = code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/invalid-login-credentials';
+        showAuthError('signInError', friendlyAuthError(err) + (wrong ? signInHint(email, password) : ''));
     } finally {
         showLoading(false);
     }
