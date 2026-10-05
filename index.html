@@ -774,6 +774,42 @@
 
         <div class="license-rules-slot"></div>
 
+        <div class="team-tabbar">
+            <div class="team-tabs" role="tablist" aria-label="License sections">
+                <button class="team-tab lic-tab active" data-tab="stock" role="tab" aria-selected="true"
+                        aria-controls="licStockPanel" onclick="switchLicenseTab('stock')">
+                    <i class="fas fa-boxes-stacked"></i> Stock
+                </button>
+                <button class="team-tab lic-tab" data-tab="plan" role="tab" aria-selected="false"
+                        aria-controls="licPlanPanel" onclick="switchLicenseTab('plan')">
+                    <i class="fas fa-cart-shopping"></i> Purchase Plan
+                    <span class="team-tab__count team-tab__count--alert" id="licPlanBadge" style="display:none" title="Licenses to buy">0</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- ---------- Purchase plan ---------- -->
+        <div id="licPlanPanel" role="tabpanel" aria-label="Purchase Plan" style="display:none">
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <label class="lp-until" for="lpUntil">Plan until
+                        <input type="date" class="form-input form-input--sm" id="lpUntil" onchange="renderLicensePlan()">
+                    </label>
+                    <label class="mine-filter"><input type="checkbox" id="lpGapsOnly" checked onchange="renderLicensePlan()"> Units with a gap only</label>
+                </div>
+                <div class="edit-toolbar__right">
+                    <button class="btn btn-secondary" id="lpRulesBtn" onclick="openLicenseRequirements()">
+                        <i class="fas fa-sliders"></i> License Requirements
+                    </button>
+                    <button class="btn btn-secondary csv-export" onclick="exportLicensePlanCSV()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+            </div>
+            <div id="lpBody"></div>
+        </div>
+
+        <div id="licStockPanel" role="tabpanel" aria-label="Stock">
         <!-- Stock summary per license type -->
         <div class="table-card" style="margin-bottom:16px;">
             <div class="table-card__header">
@@ -852,6 +888,8 @@
                 </table>
             </div>
         </div>
+
+        </div><!-- /licStockPanel -->
 
     </div><!-- /viewLicenseStock -->
 
@@ -2733,6 +2771,27 @@
         <div class="form-actions">
             <button type="button" class="btn btn-secondary" onclick="closeBulkEdit()">Cancel</button>
             <button type="button" class="btn btn-primary" onclick="applyBulkEdit()"><i class="fas fa-check"></i> Apply</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== LICENSE REQUIREMENTS (per implement type) ===== -->
+<div class="modal-overlay" id="licenseReqModal">
+    <div class="modal-card modal-card--vm">
+        <div class="modal-header">
+            <h3><i class="fas fa-sliders"></i> License Requirements</h3>
+            <button class="btn-icon" onclick="closeLicenseRequirements()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:12.5px;color:var(--text-secondary);margin-bottom:12px">
+                Choose the GPS and display license each implement type needs. Every unit using that
+                implement type is then checked against it. SF-1 and G5 Basic are free, so only
+                SF-RTK and G5 Advance are counted for purchase. G5 Advance also covers G5 Basic.
+            </p>
+            <div class="lr-list" id="lrList"></div>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeLicenseRequirements()">Close</button>
         </div>
     </div>
 </div>

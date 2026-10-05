@@ -110,6 +110,7 @@ const USERS_COL = 'users';
 const HISTORY_COL = 'history';
 const USER_CATEGORIES_COL = 'userCategories';
 const MASTER_LISTS_COL = 'masterLists';
+const LICENSE_REQ_COL = 'licenseRequirements';
 const DAMAGE_COMPONENTS_COL = 'damageComponents';
 const DEVICES_COL = 'devices';
 const STOCK_ITEMS_COL = 'stockItems';
@@ -750,6 +751,25 @@ window.cloud = {
             snap => callback(snap.docs.map(withDocId)),
             err => {
                 console.error('[cloud] masterLists subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
+    },
+
+    // ---- License requirements: one document per implement type ----
+    // { id (type key), type, gps: ''|'SF-1'|'SF-RTK', display: ''|'G5 Basic'|'G5 Advance' }
+    async saveLicenseRequirement(rec) {
+        await setDoc(doc(db, LICENSE_REQ_COL, rec.id), rec);
+    },
+    async deleteLicenseRequirement(id) {
+        await deleteDoc(doc(db, LICENSE_REQ_COL, id));
+    },
+    subscribeLicenseRequirements(callback, errorCallback) {
+        return onSnapshot(
+            collection(db, LICENSE_REQ_COL),
+            snap => callback(snap.docs.map(withDocId)),
+            err => {
+                console.error('[cloud] licenseRequirements subscription error:', err);
                 if (errorCallback) errorCallback(err);
             }
         );

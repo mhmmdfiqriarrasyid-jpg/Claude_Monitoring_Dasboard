@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.568 pemeriksaan di tiga puluh sembilan suite, menggerakkan Chromium sungguhan terhadap
+1.596 pemeriksaan di empat puluh suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -305,6 +305,17 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
   Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
   **Implement Brands** (`masterLists/brand`) untuk Agricultural.
+- **License Purchase Plan (dijaga `tests/licplan_test.js`).** Tab di License
+  Stock. Syarat lisensi per JENIS implement (tanpa brand) di koleksi
+  `licenseRequirements/{slug jenis}` `{type, gps: ''|SF-1|SF-RTK, display:
+  ''|G5 Basic|G5 Advance}`, diubah oleh akses edit License Stock (rules
+  membatasi nilainya). Setiap unit Agricultural dicek pada tanggal rencana
+  (`lpCheck`): SF-RTK/G5 Advance berbayar (tidak punya, tier lebih rendah, atau
+  habis sebelum tanggal → beli/perpanjang); SF-1/G5 Basic gratis ("Set …
+  (free)"); G5 Advance mencakup G5 Basic, SF-RTK mencakup SF-1. Harus dibeli =
+  kebutuhan − sisa stok (`computeLicenseSummary`). Kartu per kombinasi, tabel
+  per jenis, daftar unit, Export CSV, badge tab. Distribusi lisensi ke unit
+  otomatis mengurangi rencana.
 - **Masuk akun (dijaga `tests/signin_test.js`).** Jam sesi 24 jam di-reset
   SEBELUM `signIn()` — Firebase memanggil listener auth sebelum promise-nya
   selesai, dan cap waktu basi (sengaja disimpan saat sesi kedaluwarsa
@@ -379,7 +390,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   stempel `appliedAt` supaya hanya sekali); tanpa akses itu muncul di Kotak
   Keputusan. Foto di `inspectionPhotos/{id}` (tidak di-subscribe), ditulis
   SEBELUM laporannya.
-- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (105 skenario;
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (111 skenario;
   bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
   kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
   alur persetujuan laporan/izin (transisi status di atas, kunci isi dan foto

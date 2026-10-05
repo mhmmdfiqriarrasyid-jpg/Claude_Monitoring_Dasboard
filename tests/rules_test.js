@@ -204,6 +204,19 @@ async function check(name, p, expectOk) {
     await check('master: lebih dari 500 nilai DITOLAK', setDoc(doc(O, 'masterLists', 'site'), ml('site', Array.from({ length: 501 }, (_, i) => 'S' + i))), false);
     await check('master: owner menulis apa pun dari tiga daftar', setDoc(doc(O, 'masterLists', 'company'), ml('company')), true);
 
+    // ---- syarat lisensi per jenis implement ----
+    await env.withSecurityRulesDisabled(async ctx => {
+        await setDoc(doc(ctx.firestore(), 'users', 'lic'), { uid: 'lic', email: 'lic@x.id', role: 'staff', status: 'active', access: { licenseStock: 'edit' } });
+    });
+    const LI = as('lic');
+    const lr = (id, gps, display) => ({ id, type: 'Bed Ripper', gps, display, updatedAt: 1 });
+    await check('lisensi: semua akun aktif bisa membaca syarat', getDoc(doc(N, 'licenseRequirements', 'bed-ripper')), true);
+    await check('lisensi: editor License Stock menulis syarat', setDoc(doc(LI, 'licenseRequirements', 'bed-ripper'), lr('bed-ripper', 'SF-RTK', 'G5 Advance')), true);
+    await check('lisensi: editor unit TIDAK bisa menulis syarat', setDoc(doc(S, 'licenseRequirements', 'bed-ripper'), lr('bed-ripper', 'SF-RTK', 'G5 Basic')), false);
+    await check('lisensi: nilai lisensi asing DITOLAK', setDoc(doc(LI, 'licenseRequirements', 'bed-ripper'), lr('bed-ripper', 'SF-RTK<x>', 'G5 Advance')), false);
+    await check('lisensi: id beda dengan dokumen DITOLAK', setDoc(doc(LI, 'licenseRequirements', 'bed-ripper'), lr('other', 'SF-RTK', '')), false);
+    await check('lisensi: editor License Stock menghapus syarat', deleteDoc(doc(LI, 'licenseRequirements', 'bed-ripper')), true);
+
     await env.cleanup();
     let pass = 0;
     T.forEach(x => { if (x.pass) pass++; else console.log('FAIL', x.name, '\n   ', x.err || ''); });

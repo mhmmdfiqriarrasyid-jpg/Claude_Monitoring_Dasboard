@@ -4219,3 +4219,34 @@ td[data-label="Approval"] { vertical-align: middle; }
     display: block; margin: 10px auto 0; border: none; background: none; cursor: pointer;
     font: inherit; font-size: 12.5px; color: var(--accent-text); text-decoration: underline; padding: 6px;
 }
+
+/* License purchase plan. */
+.lp-until { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.lp-until .form-input { width: auto; }
+.lp-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.lp-card { background: var(--card); border: 1px solid var(--border-light); border-radius: var(--radius); padding: 12px 14px; min-width: 0; }
+.lp-card--buy { border-color: var(--danger); }
+.lp-card--combo { background: var(--bg); }
+.lp-card__type { font-weight: 700; font-size: 13px; overflow-wrap: anywhere; }
+.lp-card__big { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 4px; }
+.lp-card--buy .lp-card__big { color: var(--danger); }
+.lp-card__big small { font-size: 12px; font-weight: 400; color: var(--text-secondary); margin-left: 4px; }
+.lp-card__sub { font-size: 12px; color: var(--text-secondary); }
+.lp-empty { padding: 24px; text-align: center; color: var(--text-secondary); font-size: 13px; }
+.lp-chip { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11.5px; margin: 1px 0; white-space: nowrap; }
+.lp-chip--buy { background: var(--danger-bg); color: var(--danger); }
+.lp-chip--renew { background: var(--warning-bg); color: var(--warning); }
+.lp-chip--free { background: var(--info-bg); color: var(--info); }
+.lp-chip--ok { background: var(--success-bg); color: var(--success); }
+.lr-list { max-height: 60vh; overflow-y: auto; }
+.lr-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: center; padding: 6px 4px; border-bottom: 1px solid var(--border-light); }
+.lr-row--head { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary); font-weight: 700; }
+.lr-row__type { min-width: 0; overflow-wrap: anywhere; }
+.lr-row__type small { display: block; color: var(--text-light); font-size: 11px; }
+@media (max-width: 600px) {
+    .lr-row { grid-template-columns: 1fr 1fr; }
+    .lr-row__type { grid-column: 1 / -1; }
+    .lr-row--head { display: none; }
+}
+#lpUnitTable td[data-label="To Do"] { white-space: normal; min-width: 240px; }
+#lpUnitTable td[data-label="To Do"] .lp-chip { margin: 2px 2px 2px 0; }

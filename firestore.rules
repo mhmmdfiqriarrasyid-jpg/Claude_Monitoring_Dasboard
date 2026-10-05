@@ -107,6 +107,19 @@ service cloud.firestore {
         && request.resource.data.values.size() <= 500;
     }
 
+    // ---- License requirements per implement type (purchase plan) ----
+    // Set by whoever manages license stock; only the known license values.
+    match /licenseRequirements/{id} {
+      allow read: if isActive();
+      allow delete: if canEditArea('licenseStock');
+      allow create, update: if canEditArea('licenseStock')
+        && request.resource.data.id == id
+        && request.resource.data.get('gps', '') in ['', 'SF-1', 'SF-RTK']
+        && request.resource.data.get('display', '') in ['', 'G5 Basic', 'G5 Advance']
+        && request.resource.data.get('type', '') is string
+        && request.resource.data.get('type', '').size() <= 120;
+    }
+
     // ---- Team operations (one area each) ----
     // Split three ways on purpose: someone may read the schedule without
     // setting it, and file their daily report without touching the roster.

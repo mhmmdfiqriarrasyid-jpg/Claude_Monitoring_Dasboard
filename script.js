@@ -68,6 +68,12 @@ let inspectionPlans = [];            // [{ id, date, unitIds[], note, createdBy�
 let inspections = [];                // [{ id, unitId, date, planId, results{}, notes{}, approval… }]
 let cloudInspectionPlansUnsub = null;
 let cloudMasterListsUnsub = null;
+let cloudLicenseReqUnsub = null;
+// Per implement type: { id, type, gps, display } — see LICENSE PURCHASE PLAN.
+let licenseRequirements = [];
+const LIC_PAID = ['SF-RTK', 'G5 Advance'];
+const LIC_REQ_OPTIONS = { gps: ['', 'SF-1', 'SF-RTK'], display: ['', 'G5 Basic', 'G5 Advance'] };
+let licenseTab = 'stock';
 // Master lists (Site / Brand / Company). An empty list means "anything goes".
 let masterLists = { site: [], brand: [], heavyBrand: [], company: [] };
 const MASTER_KINDS = ['site', 'brand', 'heavyBrand', 'company'];
@@ -110,7 +116,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v147';
+const APP_VERSION = 'v148';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -666,6 +672,7 @@ const MODAL_CLOSERS = {
     licenseModal:         'closeLicenseModal',
     licSyncModal:         'closeLicSyncModal',
     inspectionModal:      'closeInspectionModal',
+    licenseReqModal:      'closeLicenseRequirements',
     valueMergeModal:      'closeValueMerge',
     masterListsModal:     'closeMasterLists',
     inspectionPlanModal:  'closeInspectionPlanModal',
@@ -7499,6 +7506,7 @@ function renderLicenseSummary() {
             </div>
         </div>`;
     }).join('');
+    refreshLicensePlan();
 }
 
 // ---- Filtering / sort (newest date first) ----
@@ -9352,6 +9360,12 @@ function initCloudSync() {
                 }
             );
         }
+        if (window.cloud.subscribeLicenseRequirements) {
+            cloudLicenseReqUnsub = window.cloud.subscribeLicenseRequirements(
+                applyLicenseRequirementsSnapshot,
+                err => console.warn('[cloud] licenseRequirements offline:', err && err.code)
+            );
+        }
         if (window.cloud.subscribeMasterLists) {
             cloudMasterListsUnsub = window.cloud.subscribeMasterLists(
                 applyMasterListsSnapshot,
@@ -9491,6 +9505,8 @@ function tearDownCloudSync() {
     _shiftPendingWrites.clear();
     if (cloudUserCategoriesUnsub) { try { cloudUserCategoriesUnsub(); } catch (_) {} cloudUserCategoriesUnsub = null; }
     if (cloudMasterListsUnsub) { try { cloudMasterListsUnsub(); } catch (_) {} cloudMasterListsUnsub = null; }
+    if (cloudLicenseReqUnsub) { try { cloudLicenseReqUnsub(); } catch (_) {} cloudLicenseReqUnsub = null; }
+    licenseRequirements = [];
     masterLists = { site: [], brand: [], heavyBrand: [], company: [] };
     if (cloudDamageComponentsUnsub) { try { cloudDamageComponentsUnsub(); } catch (_) {} cloudDamageComponentsUnsub = null; }
     if (cloudDevicesUnsub) { try { cloudDevicesUnsub(); } catch (_) {} cloudDevicesUnsub = null; }
@@ -16828,6 +16844,311 @@ function dcNotInMasterLists() {
         });
     });
     return out;
+}
+
+// ============================================================
+// LICENSE PURCHASE PLAN — what to buy, from what each implement needs
+// ------------------------------------------------------------
+// Each implement TYPE (no brand) carries a GPS and a display requirement,
+// set by the owner of license stock (licenseRequirements/{type key}). Every
+// agricultural unit using that type is checked against it on the plan date:
+//   - SF-RTK and G5 Advance are paid: missing, a lower tier, or ending before
+//     the plan date → one to buy.
+//   - SF-1 and G5 Basic are free: a gap there is a setting to fix, not a buy.
+//   - G5 Advance covers G5 Basic, SF-RTK covers SF-1.
+// What to buy = needed − remaining stock. Distributing a license through the
+// stock ledger writes it to the unit, so the plan shrinks by itself.
+// ============================================================
+
+
+function lrSlug(type) {
+    return String(type || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120) || 'type';
+}
+
+function applyLicenseRequirementsSnapshot(list) {
+    licenseRequirements = (list || []).filter(r => r && r.id);
+    refreshLicensePlan();
+    if (document.getElementById('licenseReqModal')?.classList.contains('open')) renderLicenseRequirements();
+}
+
+function licenseRequirementFor(type) {
+    return licenseRequirements.find(r => r.id === lrSlug(type)) || null;
+}
+
+function switchLicenseTab(tab) {
+    licenseTab = tab === 'plan' ? 'plan' : 'stock';
+    document.querySelectorAll('#viewLicenseStock .lic-tab').forEach(b => {
+        const on = b.dataset.tab === licenseTab;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    const stock = document.getElementById('licStockPanel'), plan = document.getElementById('licPlanPanel');
+    if (stock) stock.style.display = licenseTab === 'stock' ? '' : 'none';
+    if (plan) plan.style.display = licenseTab === 'plan' ? '' : 'none';
+    if (licenseTab === 'plan') renderLicensePlan();
+}
+
+function _lpUntil() {
+    const el = document.getElementById('lpUntil');
+    if (el && !el.value) el.value = `${new Date().getFullYear()}-12-31`;
+    return (el && el.value) || `${new Date().getFullYear()}-12-31`;
+}
+
+// One component (gps / display) of one unit against its requirement.
+function lpCheck(unit, kind, need, until) {
+    if (!need) return { state: 'na' };
+    const have = canonicalLicenseType(kind === 'gps' ? unit.gpsLicense : unit.licenseDisplay);
+    const end = getLicenseEndDate(unit, kind);
+    const covers = kind === 'gps'
+        ? (need === 'SF-1' ? ['SF-1', 'SF-RTK'] : ['SF-RTK'])
+        : (need === 'G5 Basic' ? ['G5 Basic', 'G5 Advance'] : ['G5 Advance']);
+    const paid = LIC_PAID.includes(need);
+    if (covers.includes(have)) {
+        if (paid && have === need && isoDistributionDate(end) && end < until) return { state: 'renew', buy: need, have, end };
+        return { state: 'ok', have, end };
+    }
+    if (paid) return { state: have ? 'upgrade' : 'missing', buy: need, have, end };
+    return { state: 'free', need, have, end };
+}
+
+function licensePlanCompute(until) {
+    const known = _knownImplementBrands();
+    const rows = [], noReq = new Map();
+    unitsOfGroup(globalData, 'tractor').forEach(u => {
+        const type = toolPartsOf(u, 'tractor', known).type;
+        if (!type) return;
+        const req = licenseRequirementFor(type);
+        if (!req || (!req.gps && !req.display)) { noReq.set(type, (noReq.get(type) || 0) + 1); return; }
+        const gps = lpCheck(u, 'gps', req.gps, until);
+        const display = lpCheck(u, 'display', req.display, until);
+        rows.push({ u, type, req, gps, display,
+            gap: [gps, display].some(c => c.state !== 'ok' && c.state !== 'na') });
+    });
+    const need = { 'SF-RTK': 0, 'G5 Advance': 0 };
+    rows.forEach(r => [r.gps, r.display].forEach(c => { if (c.buy) need[c.buy]++; }));
+    const summary = computeLicenseSummary();
+    const stockOf = t => {
+        const k = Object.keys(summary).find(x => licenseTypeKey(x) === licenseTypeKey(t));
+        return k ? Math.max(0, summary[k].sisa) : 0;
+    };
+    const buy = LIC_PAID.map(t => ({ type: t, need: need[t], stock: stockOf(t), toBuy: Math.max(0, need[t] - stockOf(t)) }));
+    return { rows, noReq, buy };
+}
+
+function _lpCombo(req) { return [req.gps, req.display].filter(Boolean).join(' + ') || '—'; }
+
+function _lpAction(c, kind) {
+    if (c.state === 'ok' || c.state === 'na') return '';
+    if (c.state === 'renew') return `<span class="lp-chip lp-chip--renew">Renew ${escapeHtml(c.buy)} (ends ${escapeHtml(c.end)})</span>`;
+    if (c.state === 'upgrade') return `<span class="lp-chip lp-chip--buy">Buy ${escapeHtml(c.buy)} (has ${escapeHtml(c.have)})</span>`;
+    if (c.state === 'missing') return `<span class="lp-chip lp-chip--buy">Buy ${escapeHtml(c.buy)}</span>`;
+    return `<span class="lp-chip lp-chip--free">Set ${escapeHtml(c.need)} (free)</span>`;
+}
+
+function _lpHave(c, unit, kind) {
+    const have = canonicalLicenseType(kind === 'gps' ? unit.gpsLicense : unit.licenseDisplay);
+    const end = getLicenseEndDate(unit, kind);
+    return have ? `${escapeHtml(have)}${isoDistributionDate(end) ? `<div class="ins-sub">until ${escapeHtml(end)}</div>` : ''}` : '<span style="color:var(--text-light)">—</span>';
+}
+
+function refreshLicensePlan() {
+    const badge = document.getElementById('licPlanBadge');
+    if (badge) {
+        const n = licenseRequirements.length ? licensePlanCompute(_lpUntil()).buy.reduce((a, b) => a + b.toBuy, 0) : 0;
+        badge.textContent = n;
+        badge.style.display = n ? '' : 'none';
+    }
+    if (currentView === 'licenseStock' && licenseTab === 'plan') renderLicensePlan();
+}
+
+function renderLicensePlan() {
+    const host = document.getElementById('lpBody');
+    if (!host) return;
+    const until = _lpUntil();
+    const btn = document.getElementById('lpRulesBtn');
+    if (btn) btn.innerHTML = `<i class="fas fa-sliders"></i> License Requirements${licenseRequirements.length ? ` (${licenseRequirements.length})` : ''}`;
+    const { rows, noReq, buy } = licensePlanCompute(until);
+    const noReqUnits = [...noReq.values()].reduce((a, b) => a + b, 0);
+    const noReqNote = noReq.size ? `<div class="ins-sync ins-sync--offline"><i class="fas fa-circle-info"></i>
+        ${noReq.size} implement type(s) in use have no requirement yet (${noReqUnits} unit(s)): ${escapeHtml([...noReq.keys()].slice(0, 6).join(', '))}${noReq.size > 6 ? ', …' : ''}.
+        Set them under <strong>License Requirements</strong>.</div>` : '';
+    if (!rows.length) {
+        host.innerHTML = noReqNote + `<div class="table-card"><div class="lp-empty">${licenseRequirements.length
+            ? 'No unit uses an implement type that has a requirement.'
+            : 'No requirements yet. Click <strong>License Requirements</strong> and choose, per implement type, which GPS and display license it needs.'}</div></div>`;
+        refreshLicensePlanBadgeOnly(buy);
+        return;
+    }
+
+    // Per combination
+    const combos = new Map();
+    rows.forEach(r => {
+        const k = _lpCombo(r.req);
+        const c = combos.get(k) || { units: 0, gaps: 0 };
+        c.units++; if (r.gap) c.gaps++;
+        combos.set(k, c);
+    });
+    // Per implement type
+    const types = new Map();
+    rows.forEach(r => {
+        const t = types.get(r.type) || { req: r.req, units: 0, rtk: 0, adv: 0, free: 0 };
+        t.units++;
+        [r.gps, r.display].forEach(c => {
+            if (c.buy === 'SF-RTK') t.rtk++;
+            if (c.buy === 'G5 Advance') t.adv++;
+            if (c.state === 'free') t.free++;
+        });
+        types.set(r.type, t);
+    });
+    const gapsOnly = !!document.getElementById('lpGapsOnly')?.checked;
+    const unitRows = rows.filter(r => !gapsOnly || r.gap)
+        .sort((a, b) => b.gap - a.gap || a.type.localeCompare(b.type) || String(a.u.name).localeCompare(String(b.u.name)));
+
+    host.innerHTML = noReqNote + `
+        <div class="lp-cards">
+            ${buy.map(b => `<div class="lp-card${b.toBuy ? ' lp-card--buy' : ''}">
+                <div class="lp-card__type">${escapeHtml(b.type)}</div>
+                <div class="lp-card__big">${b.toBuy}<small> to buy</small></div>
+                <div class="lp-card__sub">${b.need} needed · ${b.stock} in stock</div>
+            </div>`).join('')}
+            ${[...combos.entries()].map(([k, c]) => `<div class="lp-card lp-card--combo">
+                <div class="lp-card__type">${escapeHtml(k)}</div>
+                <div class="lp-card__big">${c.units}<small> unit(s)</small></div>
+                <div class="lp-card__sub">${c.gaps ? `${c.gaps} with a gap` : 'all covered'}</div>
+            </div>`).join('')}
+        </div>
+        <div class="table-card" style="margin-bottom:16px">
+            <div class="table-card__header"><div class="table-card__title"><i class="fas fa-layer-group"></i> Per Implement Type</div></div>
+            <div class="table-wrapper"><table class="data-table table--cardable">
+                <thead><tr><th>Implement Type</th><th>Requirement</th><th>Units</th><th>Buy SF-RTK</th><th>Buy G5 Advance</th><th>Free to set</th></tr></thead>
+                <tbody>${[...types.entries()].sort((a, b) => (b[1].rtk + b[1].adv) - (a[1].rtk + a[1].adv) || a[0].localeCompare(b[0])).map(([t, v]) => `<tr>
+                    <td data-label="Implement Type"><strong>${escapeHtml(t)}</strong></td>
+                    <td data-label="Requirement">${escapeHtml(_lpCombo(v.req))}</td>
+                    <td data-label="Units">${v.units}</td>
+                    <td data-label="Buy SF-RTK">${v.rtk || '—'}</td>
+                    <td data-label="Buy G5 Advance">${v.adv || '—'}</td>
+                    <td data-label="Free to set">${v.free || '—'}</td>
+                </tr>`).join('')}</tbody>
+            </table></div>
+        </div>
+        <div class="table-card">
+            <div class="table-card__header"><div class="table-card__title"><i class="fas fa-tractor"></i> Units (${unitRows.length})</div></div>
+            <div class="table-wrapper" style="max-height:600px"><table class="data-table table--cardable" id="lpUnitTable">
+                <thead><tr><th>Unit</th><th>Implement Type</th><th>Site</th><th>Needs</th><th>GPS Now</th><th>Display Now</th><th>To Do</th></tr></thead>
+                <tbody>${unitRows.length ? unitRows.map(r => `<tr>
+                    <td data-label="Unit"><strong class="unit-link" title="View unit profile" onclick="showUnitProfile(${jsArg(r.u.id)})">${escapeHtml(r.u.name || r.u.sn || '-')}</strong></td>
+                    <td data-label="Implement Type">${escapeHtml(r.type)}</td>
+                    <td data-label="Site">${escapeHtml(r.u.site || '—')}</td>
+                    <td data-label="Needs">${escapeHtml(_lpCombo(r.req))}</td>
+                    <td data-label="GPS Now">${_lpHave(r.gps, r.u, 'gps')}</td>
+                    <td data-label="Display Now">${_lpHave(r.display, r.u, 'display')}</td>
+                    <td data-label="To Do">${[_lpAction(r.gps, 'gps'), _lpAction(r.display, 'display')].filter(Boolean).join(' ') || '<span class="lp-chip lp-chip--ok">Covered</span>'}</td>
+                </tr>`).join('') : '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-secondary)">Every unit is covered until this date.</td></tr>'}</tbody>
+            </table></div>
+        </div>`;
+    refreshLicensePlanBadgeOnly(buy);
+}
+
+function refreshLicensePlanBadgeOnly(buy) {
+    const badge = document.getElementById('licPlanBadge');
+    if (!badge) return;
+    const n = buy.reduce((a, b) => a + b.toBuy, 0);
+    badge.textContent = n;
+    badge.style.display = n ? '' : 'none';
+}
+
+function exportLicensePlanCSV() {
+    if (!canCsv('export')) return;
+    const until = _lpUntil();
+    const { rows, buy } = licensePlanCompute(until);
+    if (!rows.length) { showToast('Nothing to export — set License Requirements first', 'warning'); return; }
+    const say = c => c.state === 'renew' ? `Renew ${c.buy} (ends ${c.end})` : c.state === 'upgrade' ? `Buy ${c.buy} (has ${c.have})`
+        : c.state === 'missing' ? `Buy ${c.buy}` : c.state === 'free' ? `Set ${c.need} (free)` : '';
+    const headers = ['Unit', 'Serial Number', 'Implement Type', 'Site', 'Needs', 'GPS Now', 'GPS Until', 'Display Now', 'Display Until', 'To Do'];
+    const lines = rows.map(r => [r.u.name || '', r.u.sn || '', r.type, r.u.site || '', _lpCombo(r.req),
+        canonicalLicenseType(r.u.gpsLicense) || '', getLicenseEndDate(r.u, 'gps') || '',
+        canonicalLicenseType(r.u.licenseDisplay) || '', getLicenseEndDate(r.u, 'display') || '',
+        [say(r.gps), say(r.display)].filter(Boolean).join('; ') || 'Covered']);
+    lines.push([]);
+    lines.push([`Plan until ${until}`]);
+    buy.forEach(b => lines.push([b.type, `${b.need} needed`, `${b.stock} in stock`, `${b.toBuy} to buy`]));
+    const csv = [headers, ...lines].map(row => row.map(csvCell).join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `license_purchase_plan_${until}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    showToast(`Purchase plan exported (${rows.length} unit(s))`, 'success');
+}
+
+// ---- Requirements modal ----
+function openLicenseRequirements() {
+    renderLicenseRequirements();
+    document.getElementById('licenseReqModal').classList.add('open');
+}
+function closeLicenseRequirements() { document.getElementById('licenseReqModal').classList.remove('open'); }
+
+function renderLicenseRequirements() {
+    const host = document.getElementById('lrList');
+    if (!host) return;
+    const canEdit = hasAccess('licenseStock', 'edit');
+    const known = _knownImplementBrands();
+    // Every implement type: from the Implements list and from what units use.
+    const types = new Map();
+    globalImplements.forEach(i => { const t = _toolNorm(i.equipmentType); if (t && !types.has(lrSlug(t))) types.set(lrSlug(t), { type: t, units: 0 }); });
+    unitsOfGroup(globalData, 'tractor').forEach(u => {
+        const t = toolPartsOf(u, 'tractor', known).type;
+        if (!t) return;
+        const e = types.get(lrSlug(t)) || { type: t, units: 0 };
+        e.units++;
+        types.set(lrSlug(t), e);
+    });
+    licenseRequirements.forEach(r => { if (!types.has(r.id)) types.set(r.id, { type: r.type || r.id, units: 0 }); });
+    const list = [...types.entries()].sort((a, b) => b[1].units - a[1].units || a[1].type.localeCompare(b[1].type));
+    if (!list.length) { host.innerHTML = '<div class="lp-empty">No implement types yet — add implements first.</div>'; return; }
+    const sel = (id, kind, cur) => `<select class="form-select form-select--sm" ${canEdit ? '' : 'disabled'}
+        aria-label="${kind === 'gps' ? 'GPS' : 'Display'} license for ${escapeHtml(id)}"
+        onchange="setLicenseRequirement(${jsArg(id)}, ${jsArg(kind)}, this.value)">
+        ${LIC_REQ_OPTIONS[kind].map(v => `<option value="${escapeHtml(v)}"${v === (cur || '') ? ' selected' : ''}>${v ? escapeHtml(v) : (kind === 'gps' ? 'No GPS license' : 'No display license')}</option>`).join('')}
+    </select>`;
+    host.innerHTML = `<div class="lr-row lr-row--head"><span>Implement type</span><span>GPS</span><span>Display</span></div>` + list.map(([id, e]) => {
+        const r = licenseRequirements.find(x => x.id === id) || {};
+        return `<div class="lr-row">
+            <span class="lr-row__type"><strong>${escapeHtml(e.type)}</strong><small>${e.units} unit(s)</small></span>
+            ${sel(e.type, 'gps', r.gps)}${sel(e.type, 'display', r.display)}
+        </div>`;
+    }).join('');
+}
+
+function setLicenseRequirement(type, kind, value) {
+    if (!requireEdit('licenseStock')) { renderLicenseRequirements(); return; }
+    if (!LIC_REQ_OPTIONS[kind] || !LIC_REQ_OPTIONS[kind].includes(value)) return;
+    const id = lrSlug(type);
+    const prev = licenseRequirements.find(r => r.id === id) || null;
+    const next = { id, type: _toolNorm(type), gps: prev ? (prev.gps || '') : '', display: prev ? (prev.display || '') : '',
+        updatedAt: Date.now(), updatedBy: (currentUser && currentUser.email) || '' };
+    next[kind] = value;
+    const before = licenseRequirements.slice();
+    const empty = !next.gps && !next.display;
+    licenseRequirements = licenseRequirements.filter(r => r.id !== id).concat(empty ? [] : [next]);
+    refreshLicensePlan();
+    renderLicenseRequirements();
+    cloudWrite(
+        { action: 'update', unitName: `[License] Requirement ${next.type}`, field: kind === 'gps' ? 'GPS' : 'Display',
+          before: prev ? (prev[kind] || '—') : '—', after: value || '—' },
+        empty ? cloudCall('deleteLicenseRequirement', id) : cloudCall('saveLicenseRequirement', next),
+        null,
+        err => {
+            console.error('[license] requirement save failed:', err);
+            licenseRequirements = before;
+            refreshLicensePlan();
+            renderLicenseRequirements();
+            showToast(err && err.code === 'permission-denied'
+                ? 'Refused by the server — publish the latest firestore.rules (License Requirements)'
+                : 'Failed to save the requirement — change reverted', 'error');
+        }
+    );
 }
 
 if (window.cloudReady) {
