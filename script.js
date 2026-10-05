@@ -106,7 +106,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v144';
+const APP_VERSION = 'v145';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -5020,13 +5020,14 @@ function openBulkEdit() {
     if (!requireEdit('editUnits')) return;
     if (selectedUnitIds.size === 0) return;
     document.getElementById('bulkEditTitle').textContent = `${selectedUnitIds.size} unit(s)`;
-    ['bulkChkSite', 'bulkChkStatus', 'bulkChkCategory', 'bulkChkYear', 'bulkChkImplement', 'bulkChkWorkTool'].forEach(id => {
+    ['bulkChkSite', 'bulkChkStatus', 'bulkChkCategory', 'bulkChkYear', 'bulkChkImplement', 'bulkChkWorkTool', 'bulkChkBrand'].forEach(id => {
         const el = document.getElementById(id); if (el) el.checked = false;
     });
     document.getElementById('bulkSite').value = '';
     document.getElementById('bulkYear').value = '';
     document.getElementById('bulkImplement').value = '';
     const wt = document.getElementById('bulkWorkTool'); if (wt) wt.value = '';
+    const br = document.getElementById('bulkBrand'); if (br) br.value = '';
     // The selection is always one tab's rows (renderEditTable clears it), so
     // only that group's own field is offered: Implement for agricultural units,
     // Alat Kerja for heavy equipment.
@@ -5040,6 +5041,7 @@ function openBulkEdit() {
     cat.innerHTML = '<option value="">—</option>' +
         (userCategories || []).map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
     populateImplementUnitList();
+    populateMasterDatalists();
     document.getElementById('bulkEditModal').classList.add('open');
 }
 
@@ -5060,12 +5062,18 @@ function applyBulkEdit() {
     const bg = effectiveEditGroup();
     if (bg !== 'heavy' && document.getElementById('bulkChkImplement').checked) fields.implement = document.getElementById('bulkImplement').value.trim();
     if (bg === 'heavy' && document.getElementById('bulkChkWorkTool')?.checked) fields.workTool = document.getElementById('bulkWorkTool').value.trim();
+    if (bg === 'heavy' && document.getElementById('bulkChkBrand')?.checked) fields.brand = document.getElementById('bulkBrand').value.trim();
 
     if (Object.keys(fields).length === 0) { showToast('Tick at least one field to change', 'warning'); return; }
     if (fields.site) {
         const r = checkMasterValue('site', fields.site, null);
         if (!r.ok) { showToast(`Site "${r.value}" ${masterNotInList('site')}`, 'warning'); return; }
         fields.site = r.value;
+    }
+    if (fields.brand) {
+        const r = checkMasterValue('brand', fields.brand, null);
+        if (!r.ok) { showToast(`Brand "${r.value}" ${masterNotInList('brand')}`, 'warning'); return; }
+        fields.brand = r.value;
     }
     if (fields.implement) {
         const r = checkImplementValue(fields.implement, null);
@@ -5077,7 +5085,7 @@ function applyBulkEdit() {
     // and there is no undo, so make the destructive part explicit rather than
     // hiding it behind the generic confirm.
     const labels = { site: 'Site', status: 'Status', userCategory: 'User Category',
-                     yearReceived: 'Year Received', implement: 'Implement', workTool: 'Work Tool' };
+                     yearReceived: 'Year Received', implement: 'Implement', workTool: 'Work Tool', brand: 'Brand' };
     const cleared = Object.keys(fields).filter(k => fields[k] === '');
     if (cleared.length) {
         const names = cleared.map(k => labels[k] || k).join(', ');

@@ -92,6 +92,26 @@ const { launch, BASE_URL } = require('./_env');
         t('Clean Up Values: field Brand (Heavy)', document.getElementById('vmField').value, 'brand');
         closeValueMerge();
 
+        // =============== Bulk Edit ===============
+        goNav('editUnits', 'heavy');
+        selectedUnitIds = new Set(['h1', 'h2']);
+        openBulkEdit();
+        t('Bulk Edit alat berat punya Brand', document.getElementById('bulkRowBrand').style.display, '');
+        document.getElementById('bulkChkBrand').checked = true;
+        document.getElementById('bulkBrand').value = 'Not A Brand';
+        applyBulkEdit();
+        t('bulk: brand di luar daftar ditolak', [globalData.find(u => u.id === 'h2').brand, /not in the Brand list/.test(last())], ['Komatsu', true]);
+        document.getElementById('bulkBrand').value = 'gessner';
+        applyBulkEdit();
+        t('bulk: brand diisi untuk semua unit terpilih, ejaan daftar', ['h1', 'h2'].map(id => globalData.find(u => u.id === id).brand), ['Gessner', 'Gessner']);
+        selectedUnitIds = new Set();
+        goNav('editUnits', 'tractor');
+        selectedUnitIds = new Set(['t1']);
+        openBulkEdit();
+        t('Bulk Edit Agricultural tanpa Brand', document.getElementById('bulkRowBrand').style.display, 'none');
+        closeBulkEdit();
+        selectedUnitIds = new Set();
+
         // =============== CSV ===============
         let csv = null;
         const RealBlob = window.Blob;
