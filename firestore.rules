@@ -89,6 +89,23 @@ service cloud.firestore {
     match /userCategories/{catId} { allow read: if isActive(); allow write: if canEditArea('editUnits'); }
     match /damageComponents/{id}  { allow read: if isActive(); allow write: if canEditArea('damage'); }
 
+    // ---- Master lists: Site, Brand (implements), Company (team) ----
+    // One document per list. Sites belong to the unit editors, brands to
+    // whoever edits implements or units, companies to the team-member editors.
+    function canEditMasterList(kind) {
+      return (kind == 'site' && canEditArea('editUnits'))
+          || (kind == 'brand' && (canEditArea('implements') || canEditArea('editUnits')))
+          || (kind == 'company' && canEditArea('teamMembers'));
+    }
+    match /masterLists/{kind} {
+      allow read: if isActive();
+      allow delete: if canEditMasterList(kind);
+      allow create, update: if canEditMasterList(kind)
+        && request.resource.data.id == kind
+        && request.resource.data.values is list
+        && request.resource.data.values.size() <= 500;
+    }
+
     // ---- Team operations (one area each) ----
     // Split three ways on purpose: someone may read the schedule without
     // setting it, and file their daily report without touching the roster.

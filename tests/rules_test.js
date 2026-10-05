@@ -180,6 +180,28 @@ async function check(name, p, expectOk) {
     await check('shift: nilai di luar daftar DITOLAK', setDoc(doc(O, 'shifts', '2026-09-30_m1'), { id: '2026-09-30_m1', shift: 'pagi"><img>' }), false);
     await check('shift: nilai sah diterima', setDoc(doc(O, 'shifts', '2026-09-30_m1'), { id: '2026-09-30_m1', shift: 'pagi' }), true);
 
+    // ---- daftar master (Site / Brand / Company) ----
+    await env.withSecurityRulesDisabled(async ctx => {
+        const db = ctx.firestore();
+        await setDoc(doc(db, 'users', 'impl'), { uid: 'impl', email: 'impl@x.id', role: 'staff', status: 'active', access: { implements: 'edit' } });
+        await setDoc(doc(db, 'users', 'team'), { uid: 'team', email: 'team@x.id', role: 'staff', status: 'active', access: { teamMembers: 'edit' } });
+    });
+    const IM = as('impl'), TM = as('team');
+    const ml = (kind, values) => ({ id: kind, values: values || ['A'], updatedAt: 1, updatedBy: 'x' });
+    await check('master: semua akun aktif bisa membaca', getDoc(doc(N, 'masterLists', 'site')), true);
+    await check('master: editor unit menulis daftar Site', setDoc(doc(S, 'masterLists', 'site'), ml('site', ['PT. GPA'])), true);
+    await check('master: editor unit menulis daftar Brand', setDoc(doc(S, 'masterLists', 'brand'), ml('brand')), true);
+    await check('master: editor unit TIDAK bisa menulis Company', setDoc(doc(S, 'masterLists', 'company'), ml('company')), false);
+    await check('master: editor Implements menulis Brand', setDoc(doc(IM, 'masterLists', 'brand'), ml('brand', ['Gessner'])), true);
+    await check('master: editor Implements TIDAK bisa menulis Site', setDoc(doc(IM, 'masterLists', 'site'), ml('site')), false);
+    await check('master: editor anggota tim menulis Company', setDoc(doc(TM, 'masterLists', 'company'), ml('company', ['PT. GPA'])), true);
+    await check('master: tanpa akses TIDAK bisa menulis', setDoc(doc(N, 'masterLists', 'site'), ml('site')), false);
+    await check('master: daftar lain di luar site/brand/company DITOLAK', setDoc(doc(O, 'masterLists', 'role'), ml('role')), false);
+    await check('master: id beda dengan dokumen DITOLAK', setDoc(doc(O, 'masterLists', 'site'), ml('brand')), false);
+    await check('master: values bukan list DITOLAK', setDoc(doc(O, 'masterLists', 'site'), { id: 'site', values: 'PT. GPA' }), false);
+    await check('master: lebih dari 500 nilai DITOLAK', setDoc(doc(O, 'masterLists', 'site'), ml('site', Array.from({ length: 501 }, (_, i) => 'S' + i))), false);
+    await check('master: owner menulis apa pun dari tiga daftar', setDoc(doc(O, 'masterLists', 'company'), ml('company')), true);
+
     await env.cleanup();
     let pass = 0;
     T.forEach(x => { if (x.pass) pass++; else console.log('FAIL', x.name, '\n   ', x.err || ''); });

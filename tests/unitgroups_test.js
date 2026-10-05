@@ -110,7 +110,7 @@ const SETUP = `(() => {
         expCsv.groupWarnings = [];
         // v141: tiga pemeriksaan kualitas data. Armada golden punya satu
         // field kunci yang kosong (dilaporkan sebagai satu ringkasan).
-        const expChecks = golden.dataChecks.concat([['kelompok', 0], ['kelompok-ref', 0], ['mirip', 0], ['kurang', 1], ['impl-db', 0]]);
+        const expChecks = golden.dataChecks.concat([['kelompok', 0], ['kelompok-ref', 0], ['mirip', 0], ['kurang', 1], ['impl-db', 0], ['master', 0]]);
         Object.keys(golden).forEach(k => {
             const want = k === 'csvImport' ? expCsv : k === 'dataChecks' ? expChecks : golden[k];
             t(`tanpa alat berat identik dengan kode lama: ${k}`, out[k], want);

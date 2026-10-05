@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.486 pemeriksaan di tiga puluh enam suite, menggerakkan Chromium sungguhan terhadap
+1.524 pemeriksaan di tiga puluh tujuh suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -280,6 +280,20 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   per kekurangan memfilter tabel (`editMissingFilter`, direset saat pindah
   kelompok). Implement terbalik "Brand — Jenis" dinilai per pasangan dari
   ejaan LAIN (`_knownImplementBrands().pairs`).
+- **Master Lists: Site, Brand, Company (dijaga `tests/masterlist_test.js`
+  dan rules_test).** Koleksi `masterLists` (dokumen `site`, `brand`,
+  `company`; `{id, values[]}` ≤ 500), dibuka dari Admin → Master Lists atau
+  kartu Data Completeness. Hak ubah: Site = editUnits, Brand = implements
+  atau editUnits, Company = teamMembers (sama di `firestore.rules`
+  `canEditMasterList`). Daftar kosong = bebas; daftar berisi = satu-satunya
+  pilihan (`checkMasterValue`, cocok tanpa peduli huruf/spasi/tanda baca,
+  menyimpan ejaan daftar) di form unit, Bulk Edit, edit langsung, impor CSV
+  unit (Site), form & impor Implements (Brand), anggota tim (Company) dan
+  target Clean Up Values. Rename ikut mengubah record (unit, Implements +
+  teks implement unit, anggota). "Add the values in use" mengisi daftar dari
+  data, ejaan mirip dilipat ke yang terbanyak. Data Check "Not in a master
+  list". Belum termasuk Backup JSON (daftarnya kecil dan bisa diisi ulang
+  dari data).
 - **Implement wajib dari daftar Implements (dijaga `tests/implpick_test.js`).**
   Begitu daftar Implements berisi, `checkImplementValue` menjaga form unit
   (lewat `checkUnitFields`, dengan hint di bawah kolom), Bulk Edit, edit
@@ -345,7 +359,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   stempel `appliedAt` supaya hanya sekali); tanpa akses itu muncul di Kotak
   Keputusan. Foto di `inspectionPhotos/{id}` (tidak di-subscribe), ditulis
   SEBELUM laporannya.
-- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (90 skenario;
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (103 skenario;
   bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
   kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
   alur persetujuan laporan/izin (transisi status di atas, kunci isi dan foto

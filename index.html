@@ -192,6 +192,9 @@
             <a class="nav__link" data-view="users" data-owner-only style="display:none" onclick="navigateTo('users')">
                 <i class="fas fa-users-gear"></i> Users
             </a>
+            <a class="nav__link" id="navMasterLists" style="display:none" onclick="openMasterLists()" title="Site, Brand and Company lists">
+                <i class="fas fa-list-check"></i> Master Lists
+            </a>
             <a class="nav__link" id="navHistory" onclick="showHistory()" title="Change History">
                 <i class="fas fa-clock-rotate-left"></i> History
             </a>
@@ -1703,7 +1706,8 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="formSite">Site</label>
-                        <input class="form-input" id="formSite">
+                        <input class="form-input" id="formSite" list="siteList" autocomplete="off" placeholder="Pick from the Site list…">
+                        <datalist id="siteList"></datalist>
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="formYearReceived">Year Received</label>
@@ -2058,7 +2062,8 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="implBrand">Brand</label>
-                        <input class="form-input" id="implBrand" placeholder="e.g. John Deere, Baldan, Gessner">
+                        <input class="form-input" id="implBrand" list="brandList" autocomplete="off" placeholder="e.g. John Deere, Baldan, Gessner">
+                        <datalist id="brandList"></datalist>
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="implEquipmentType">Type of Equipment</label>
@@ -2676,7 +2681,7 @@
             </p>
             <div class="bulk-row">
                 <label><input type="checkbox" id="bulkChkSite"> Site</label>
-                <input class="form-input" id="bulkSite" aria-label="New site for selected units" placeholder="New site…">
+                <input class="form-input" id="bulkSite" aria-label="New site for selected units" list="siteList" autocomplete="off" placeholder="New site…">
             </div>
             <div class="bulk-row">
                 <label><input type="checkbox" id="bulkChkStatus"> Unit Status</label>
@@ -2705,6 +2710,30 @@
         <div class="form-actions">
             <button type="button" class="btn btn-secondary" onclick="closeBulkEdit()">Cancel</button>
             <button type="button" class="btn btn-primary" onclick="applyBulkEdit()"><i class="fas fa-check"></i> Apply</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== MASTER LISTS (Site / Brand / Company) ===== -->
+<div class="modal-overlay" id="masterListsModal">
+    <div class="modal-card modal-card--vm">
+        <div class="modal-header">
+            <h3><i class="fas fa-list-check"></i> Master Lists</h3>
+            <button class="btn-icon" onclick="closeMasterLists()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <div class="team-tabs ml-tabs" id="mlTabs" role="tablist" aria-label="Master lists"></div>
+            <p id="mlIntro" style="font-size:12.5px;color:var(--text-secondary);margin:10px 0 12px"></p>
+            <form class="category-add-form" id="mlAddForm" onsubmit="event.preventDefault(); addMasterValue()">
+                <input type="text" class="form-input" id="mlNewValue" aria-label="New entry" placeholder="New entry…" maxlength="80" autocomplete="off">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> Add</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="mlFillBtn" style="display:none" onclick="fillMasterFromUsage()"></button>
+            </form>
+            <ul class="categories-list ml-list" id="mlList"></ul>
+            <div class="ml-outside" id="mlOutside"></div>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeMasterLists()">Close</button>
         </div>
     </div>
 </div>

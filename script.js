@@ -67,6 +67,20 @@ let leaveRequests = [];              // [{ id, memberId, type, dateFrom, dateTo,
 let inspectionPlans = [];            // [{ id, date, unitIds[], note, createdBy… }]
 let inspections = [];                // [{ id, unitId, date, planId, results{}, notes{}, approval… }]
 let cloudInspectionPlansUnsub = null;
+let cloudMasterListsUnsub = null;
+// Master lists (Site / Brand / Company). An empty list means "anything goes".
+let masterLists = { site: [], brand: [], company: [] };
+const MASTER_KINDS = ['site', 'brand', 'company'];
+const MASTER_DEF = {
+    site:    { label: 'Site',    plural: 'Sites',     edit: ['editUnits'],              view: ['editUnits'],
+               hint: 'Used by every unit (both groups).' },
+    brand:   { label: 'Brand',   plural: 'Brands',    edit: ['implements', 'editUnits'], view: ['implements', 'editUnits'],
+               hint: 'Used by the Implements list (Type — Brand).' },
+    company: { label: 'Company', plural: 'Companies', edit: ['teamMembers'],            view: ['teamMembers'],
+               hint: 'Used by team members, their shifts and reports.' }
+};
+// Clean Up Values fields whose target must come from a master list.
+const MERGE_MASTER_KIND = { site: 'site', implBrand: 'brand', company: 'company' };
 let cloudInspectionsUnsub = null;
 
 // ---- Warehouse (cloud-only, same pattern as the team collections) ----
@@ -92,7 +106,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v142';
+const APP_VERSION = 'v143';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -649,6 +663,7 @@ const MODAL_CLOSERS = {
     licSyncModal:         'closeLicSyncModal',
     inspectionModal:      'closeInspectionModal',
     valueMergeModal:      'closeValueMerge',
+    masterListsModal:     'closeMasterLists',
     inspectionPlanModal:  'closeInspectionPlanModal',
     categoriesModal:      'closeCategoriesModal',
     damageComponentsModal:'closeDamageComponentsModal',
@@ -4187,6 +4202,14 @@ function handleEditCSVImport(file) {
                     + (existingSNs.has((u.sn || '').toLowerCase()) ? 'left unchanged' : 'left empty') });
                 u.implement = '';
             });
+            if (masterListActive('site')) valid.forEach(u => {
+                if (!u.site) return;
+                const r = checkMasterValue('site', u.site, null);
+                if (r.ok) { u.site = r.value; return; }
+                notes.push({ name: u.name, sn: u.sn, reason: `Site "${r.value}" is not in the Site list — `
+                    + (existingSNs.has((u.sn || '').toLowerCase()) ? 'left unchanged' : 'left empty') });
+                u.site = '';
+            });
             groupWarnings.forEach(w => notes.push({ name: w.name, sn: w.sn,
                 reason: `Unknown Unit Group "${w.value}" — read as ${groupDef(w.group || tab).label}` }));
             valid.forEach(u => {
@@ -4873,6 +4896,18 @@ function saveInlineEdit(el) {
         showToast(`This unit's group ("${plainText(unit.unitGroup)}") is unknown — set it first via Data Check`, 'warning');
         return;
     }
+    if (changed && field === 'site') {
+        const r = checkMasterValue('site', newValue, unit.site);
+        if (!r.ok) {
+            el.textContent = unit.site || '';
+            showToast(`Site "${r.value}" ${masterNotInList('site')}`, 'warning');
+            return;
+        }
+        if (r.value !== newValue) el.textContent = r.value;
+        if (r.value === unit.site) return;
+        if (updateUnit(id, { site: r.value })) showToast('Site updated', 'success');
+        return;
+    }
     if (changed && field === 'implement') {
         const r = checkImplementValue(newValue, unit.implement);
         if (!r.ok) {
@@ -5017,6 +5052,11 @@ function applyBulkEdit() {
     if (bg === 'heavy' && document.getElementById('bulkChkWorkTool')?.checked) fields.workTool = document.getElementById('bulkWorkTool').value.trim();
 
     if (Object.keys(fields).length === 0) { showToast('Tick at least one field to change', 'warning'); return; }
+    if (fields.site) {
+        const r = checkMasterValue('site', fields.site, null);
+        if (!r.ok) { showToast(`Site "${r.value}" ${masterNotInList('site')}`, 'warning'); return; }
+        fields.site = r.value;
+    }
     if (fields.implement) {
         const r = checkImplementValue(fields.implement, null);
         if (!r.ok) { showToast(`Implement "${r.value}" ${IMPLEMENT_NOT_IN_LIST}`, 'warning'); return; }
@@ -5141,7 +5181,7 @@ function populateImplementUnitList() {
         .sort((a, b) => a.localeCompare(b));
     list.innerHTML = labels.map(l => `<option value="${escapeHtml(l)}"></option>`).join('');
     const input = document.getElementById('formImplement');
-    if (input) input.placeholder = implementListActive() ? 'Pick from the Implements list…' : 'Type the implement…';
+    if (input) input.placeholder = implementListActive() ? 'Pick from the Implements list…' : 'Type the implement…';    populateMasterDatalists();
 }
 
 // Find the implement record a unit's free-text implement value refers to.
@@ -5369,6 +5409,17 @@ function checkUnitFields(id, fields) {
         }
         fields.implement = r.value;
     }
+    if (fields.site !== undefined) {
+        const unit = id ? globalData.find(u => u.id === id) : null;
+        const r = checkMasterValue('site', fields.site, unit ? unit.site : null);
+        if (!r.ok) {
+            showToast(`Site "${r.value}" ${masterNotInList('site')}`, 'warning');
+            const el = document.getElementById('formSite');
+            if (el) el.focus();
+            return false;
+        }
+        fields.site = r.value;
+    }
     const sn = (fields.sn || '').trim();
     if (sn) {
         const clash = globalData.find(u => u.id !== id && (u.sn || '').toLowerCase() === sn.toLowerCase());
@@ -5457,6 +5508,7 @@ function saveUnit(event) {
     if (!checkUnitFields(id, checked)) return;
     // checkUnitFields stores the Implements list's own spelling.
     if (fields.implement !== undefined) fields.implement = checked.implement;
+    if (fields.site !== undefined) fields.site = checked.site;
 
     // If status is changing TO Breakdown, prompt for a reason first.
     if (fields.status !== undefined && !isGood(fields.status)) {
@@ -5865,6 +5917,7 @@ function showAddImplementForm() {
     document.getElementById('editImplementId').value = '';
     document.getElementById('implementForm').reset();
     renderChartOfAccountsInputs(['']);
+    populateMasterDatalists();
     document.getElementById('implementModal').classList.add('open');
 }
 
@@ -5880,6 +5933,7 @@ function editImplement(id) {
         if (el) el.value = imp[f.key] || '';
     });
     renderChartOfAccountsInputs(imp.chartOfAccounts || ['']);
+    populateMasterDatalists();
     document.getElementById('implementModal').classList.add('open');
 }
 
@@ -5894,6 +5948,17 @@ function saveImplement(event) {
         data[f.key] = el ? el.value.trim() : '';
     });
     data.chartOfAccounts = collectChartOfAccounts();
+    {
+        const prev = id ? (globalImplements.find(d => d.id === id) || {}).brand : null;
+        const r = checkMasterValue('brand', data.brand, prev);
+        if (!r.ok) {
+            showToast(`Brand "${r.value}" ${masterNotInList('brand')}`, 'warning');
+            const el = document.getElementById('implBrand');
+            if (el) el.focus();
+            return;
+        }
+        data.brand = r.value;
+    }
 
     if (id) {
         // Update existing
@@ -6061,6 +6126,7 @@ function handleImplementCSVImport(file) {
             const added = [];
             let rejected = 0;
             let duplicates = 0;
+            let badBrand = 0;
             // Profile name + code identify an implement. Without this,
             // re-importing an export doubled the whole list.
             const implKey = o => `${String(o.profileName || '').trim().toLowerCase()}|${String(o.code || '').trim().toLowerCase()}`;
@@ -6071,6 +6137,11 @@ function handleImplementCSVImport(file) {
                     obj[f.key] = (getValAny(row, _implementColAliases(f)) || '').toString().trim();
                 });
                 if (!obj.profileName) { rejected++; return; }
+                if (obj.brand) {
+                    const r = checkMasterValue('brand', obj.brand, null);
+                    if (!r.ok) { badBrand++; return; }
+                    obj.brand = r.value;
+                }
                 if (seenImpl.has(implKey(obj))) { duplicates++; return; }
                 seenImpl.add(implKey(obj));
                 const coaRaw = (getValAny(row, ['Chart of Account', 'Chart of Accounts', 'COA']) || '').toString();
@@ -6106,7 +6177,8 @@ function handleImplementCSVImport(file) {
 
             showLoading(false);
             const msg = `Implement import: ${added.length} added` + (rejected ? `, ${rejected} skipped (Profile Name empty)` : '')
-                + (duplicates ? `, ${duplicates} skipped (Profile Name + Code already exist)` : '');
+                + (duplicates ? `, ${duplicates} skipped (Profile Name + Code already exist)` : '')
+                + (badBrand ? `, ${badBrand} skipped (brand not in the Brand list)` : '');
             showToast(msg, added.length ? 'success' : 'warning');
         },
         error: err => {
@@ -9241,6 +9313,12 @@ function initCloudSync() {
                 }
             );
         }
+        if (window.cloud.subscribeMasterLists) {
+            cloudMasterListsUnsub = window.cloud.subscribeMasterLists(
+                applyMasterListsSnapshot,
+                err => console.warn('[cloud] masterLists offline:', err && err.code)
+            );
+        }
         if (window.cloud.subscribeUserCategories) {
             cloudUserCategoriesUnsub = window.cloud.subscribeUserCategories(
                 applyCloudUserCategoriesSnapshot,
@@ -9373,6 +9451,8 @@ function tearDownCloudSync() {
     // inherit them and warn about its own writes.
     _shiftPendingWrites.clear();
     if (cloudUserCategoriesUnsub) { try { cloudUserCategoriesUnsub(); } catch (_) {} cloudUserCategoriesUnsub = null; }
+    if (cloudMasterListsUnsub) { try { cloudMasterListsUnsub(); } catch (_) {} cloudMasterListsUnsub = null; }
+    masterLists = { site: [], brand: [], company: [] };
     if (cloudDamageComponentsUnsub) { try { cloudDamageComponentsUnsub(); } catch (_) {} cloudDamageComponentsUnsub = null; }
     if (cloudDevicesUnsub) { try { cloudDevicesUnsub(); } catch (_) {} cloudDevicesUnsub = null; }
     if (cloudStockUnsub) { try { cloudStockUnsub(); } catch (_) {} cloudStockUnsub = null; }
@@ -9939,6 +10019,8 @@ function applyAccessVisibility() {
     updateDecisionBadge();
     const navHistory = document.getElementById('navHistory');
     if (navHistory) navHistory.style.display = hasAccess('history', 'view') ? '' : 'none';
+    const navMaster = document.getElementById('navMasterLists');
+    if (navMaster) navMaster.style.display = MASTER_KINDS.some(k => canViewMasterList(k)) ? '' : 'none';
     // The owner can change someone's access while they are signed in. Hiding
     // the menu is not enough — the stream has to stop too.
     if (!hasAccess('history', 'view')) stopHistorySubscription();
@@ -11297,7 +11379,7 @@ function renderTeamMembersList() {
     // Keep the shared company suggestions current — a company typed on one row
     // should be offered on the next.
     const dl = document.getElementById('companyList');
-    if (dl) dl.innerHTML = allCompanies().map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
+    if (dl) dl.innerHTML = companySuggestions().map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
     if (teamMembers.length === 0) {
         list.innerHTML = `<li class="category-empty">No team members yet.</li>`;
         return;
@@ -11337,9 +11419,15 @@ function setMemberCompany(id, value) {
     if (!requireEdit('teamMembers')) { renderTeamMembersList(); return; }
     const m = memberById(id);
     if (!m) return;
-    const company = (value || '').trim();
+    const rc = checkMasterValue('company', value, companyOf(m));
+    if (!rc.ok) {
+        showToast(`Company "${rc.value}" ${masterNotInList('company')}`, 'warning');
+        renderTeamMembersList();
+        return;
+    }
+    const company = rc.value;
     const before = companyOf(m);
-    if (before === company) return;
+    if (before === company) { renderTeamMembersList(); return; }
 
     // Optimistic, like setShift: replace the record rather than mutate it, so
     // the rollback snapshot stays a valid earlier state. Without this the grid
@@ -11375,7 +11463,9 @@ function addTeamMember(event) {
     const compEl = document.getElementById('newMemberCompany');
     const name = (nameEl.value || '').trim();
     const jobTitle = (jobEl.value || '').trim();
-    const company = ((compEl && compEl.value) || '').trim();
+    const rc = checkMasterValue('company', (compEl && compEl.value) || '', null);
+    if (!rc.ok) { showToast(`Company "${rc.value}" ${masterNotInList('company')}`, 'warning'); if (compEl) compEl.focus(); return; }
+    const company = rc.value;
     if (!name) { showToast('Member name cannot be empty', 'warning'); return; }
     if (teamMembers.some(m => (m.name || '').toLowerCase() === name.toLowerCase())) {
         showToast(`Member "${name}" already exists`, 'warning');
@@ -11530,7 +11620,7 @@ function populateWorkLogFilters() {
     // Company suggestions, shared by the roster modal and the report filter.
     const comps = allCompanies();
     const dl = document.getElementById('companyList');
-    if (dl) dl.innerHTML = comps.map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
+    if (dl) dl.innerHTML = companySuggestions().map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
     const pdl = document.getElementById('paddockList');
     if (pdl) pdl.innerHTML = allPaddocks().map(p => `<option value="${escapeHtml(p)}"></option>`).join('');
     const compFilter = document.getElementById('wlCompanyFilter');
@@ -14732,7 +14822,8 @@ const DATA_CHECKS = [
     { key: 'kelompok-ref', label: 'License / damage in wrong group', run: dcGroupReferences },
     { key: 'mirip',    label: 'Similar spellings',          run: dcSimilarSpellings },
     { key: 'kurang',   label: 'Key fields not filled',      run: dcMissingKeyFields },
-    { key: 'impl-db',  label: 'Implement not in the Implements list', run: dcImplementNotInList }
+    { key: 'impl-db',  label: 'Implement not in the Implements list', run: dcImplementNotInList },
+    { key: 'master',   label: 'Not in a master list',       run: dcNotInMasterLists }
 ];
 
 function runDataChecks() {
@@ -16129,8 +16220,10 @@ function renderValueMerge() {
         </label>`).join('')
         : '<div class="vm-suggest__none">No values match.</div>';
     // A full implement can only become one the Implements list knows.
+    const mkind = MERGE_MASTER_KIND[_vmField];
     const targets = _vmField === 'implement' && implementListActive()
         ? [...new Set(globalImplements.map(implementOptionLabel).filter(Boolean))]
+        : mkind && masterListActive(mkind) ? masterLists[mkind].slice()
         : [...counts.keys()];
     document.getElementById('vmTargetList').innerHTML = targets.sort()
         .map(v => `<option value="${escapeHtml(v)}"></option>`).join('');
@@ -16152,6 +16245,12 @@ function applyValueMerge() {
     if (_vmField === 'implement') {
         const r = checkImplementValue(target, null);
         if (!r.ok) { showToast(`Implement "${target}" ${IMPLEMENT_NOT_IN_LIST}`, 'warning'); return; }
+        target = r.value;
+    }
+    const mk = MERGE_MASTER_KIND[_vmField];
+    if (mk) {
+        const r = checkMasterValue(mk, target, null);
+        if (!r.ok) { showToast(`${MASTER_DEF[mk].label} "${target}" ${masterNotInList(mk)}`, 'warning'); return; }
         target = r.value;
     }
     const values = [..._vmSelected];
@@ -16349,8 +16448,273 @@ function renderDataCompleteness() {
             }).join('') : '<span class="dq__ok"><i class="fas fa-circle-check"></i> Every key field is filled</span>'}
             ${canFix ? `<button type="button" class="btn btn-secondary btn-sm dq__merge" onclick="openValueMerge()"
                 title="Merge spellings that mean the same thing"><i class="fas fa-broom"></i> Clean Up Values</button>` : ''}
+            ${canViewMasterList('site') ? `<button type="button" class="btn btn-secondary btn-sm dq__master" onclick="openMasterLists('site')"
+                title="The agreed list of sites (and brands, companies)"><i class="fas fa-list-check"></i> Master Lists</button>` : ''}
         </div>`;
     box.style.display = '';
+}
+
+// ============================================================
+// MASTER LISTS — one agreed spelling for Site, Brand and Company
+// ------------------------------------------------------------
+// Each list is one Firestore document (masterLists/{site|brand|company}).
+// While a list is empty anything goes, exactly as before. Once it has
+// entries, every place that writes that value — unit form, Bulk Edit,
+// inline edit, CSV import, the Implements form/import, team members,
+// Clean Up Values — accepts only a list entry and stores the list's own
+// spelling ("pt gpa" → "PT. GPA"). A value already on a record is never
+// forced off it; Data Check lists those.
+// ============================================================
+
+function canEditMasterList(kind) { return (MASTER_DEF[kind] || { edit: [] }).edit.some(a => hasAccess(a, 'edit')); }
+function canViewMasterList(kind) { return (MASTER_DEF[kind] || { view: [] }).view.some(a => hasAccess(a, 'view')) || canEditMasterList(kind); }
+function masterListActive(kind) { return !!(masterLists[kind] && masterLists[kind].length); }
+function masterNotInList(kind) {
+    return `is not in the ${MASTER_DEF[kind].label} list — pick one from the list, or add it under Admin → Master Lists first`;
+}
+
+// The list entry a typed value means: same text ignoring case, spacing and
+// punctuation ("PT GPA" = "PT. GPA"). Returns the entry or null.
+function masterMatch(kind, text) {
+    const t = _toolNorm(text);
+    if (!t) return null;
+    const list = masterLists[kind] || [];
+    const low = t.toLowerCase();
+    return list.find(v => v.toLowerCase() === low)
+        || (_simKey(t) ? list.find(v => _simKey(v) === _simKey(t)) : null) || null;
+}
+
+function checkMasterValue(kind, text, previous) {
+    const t = _toolNorm(text);
+    if (!t) return { ok: true, value: '' };
+    if (!masterListActive(kind)) return { ok: true, value: t };
+    const m = masterMatch(kind, t);
+    if (m) return { ok: true, value: m };
+    if (previous != null && _toolNorm(previous) === t) return { ok: true, value: previous };
+    return { ok: false, value: t };
+}
+
+function companySuggestions() { return masterListActive('company') ? masterLists.company.slice() : allCompanies(); }
+
+// Values in use, per list: Map spelling -> count.
+function masterUsage(kind) {
+    const counts = new Map();
+    const add = v => { v = _toolNorm(v); if (v) counts.set(v, (counts.get(v) || 0) + 1); };
+    if (kind === 'site') globalData.forEach(u => add(u.site));
+    if (kind === 'brand') globalImplements.forEach(i => add(i.brand));
+    if (kind === 'company') (teamMembers || []).forEach(m => add(companyOf(m)));
+    return counts;
+}
+const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', company: 'member' };
+
+function applyMasterListsSnapshot(docs) {
+    const next = { site: [], brand: [], company: [] };
+    (docs || []).forEach(d => {
+        if (MASTER_KINDS.includes(d.id) && Array.isArray(d.values)) next[d.id] = d.values.map(_toolNorm).filter(Boolean);
+    });
+    masterLists = next;
+    populateMasterDatalists();
+    if (document.getElementById('masterListsModal')?.classList.contains('open')) renderMasterLists();
+    if (currentView === 'editUnits') renderEditTable();
+}
+
+function populateMasterDatalists() {
+    const fill = (id, values) => {
+        const dl = document.getElementById(id);
+        if (dl) dl.innerHTML = values.map(v => `<option value="${escapeHtml(v)}"></option>`).join('');
+    };
+    const sorted = m => [...m.keys()].sort((a, b) => a.localeCompare(b));
+    fill('siteList', masterListActive('site') ? masterLists.site : sorted(masterUsage('site')));
+    fill('brandList', masterListActive('brand') ? masterLists.brand : sorted(masterUsage('brand')));
+    fill('companyList', companySuggestions());
+}
+
+// ---- Modal ----
+let _mlKind = 'site';
+
+function openMasterLists(kind) {
+    const kinds = MASTER_KINDS.filter(canViewMasterList);
+    if (!kinds.length) { showToast('You do not have access to any master list', 'warning'); return; }
+    _mlKind = kind && kinds.includes(kind) ? kind : (kinds.includes(_mlKind) ? _mlKind : kinds[0]);
+    document.getElementById('mlNewValue').value = '';
+    renderMasterLists();
+    document.getElementById('masterListsModal').classList.add('open');
+}
+function closeMasterLists() { document.getElementById('masterListsModal').classList.remove('open'); }
+function switchMasterList(kind) { _mlKind = kind; document.getElementById('mlNewValue').value = ''; renderMasterLists(); }
+
+function renderMasterLists() {
+    const tabs = document.getElementById('mlTabs');
+    tabs.innerHTML = MASTER_KINDS.filter(canViewMasterList).map(k => `<button type="button" role="tab"
+        class="team-tab${k === _mlKind ? ' active' : ''}" aria-selected="${k === _mlKind}" onclick="switchMasterList(${jsArg(k)})">
+        ${escapeHtml(MASTER_DEF[k].plural)} <span class="team-tab__count">${masterLists[k].length}</span></button>`).join('');
+    const def = MASTER_DEF[_mlKind];
+    const canEdit = canEditMasterList(_mlKind);
+    const usage = masterUsage(_mlKind);
+    const noun = MASTER_USED_NOUN[_mlKind];
+    const list = masterLists[_mlKind];
+    const usedBy = v => [...usage.entries()].filter(([u]) => _simKey(u) === _simKey(v) || u.toLowerCase() === v.toLowerCase())
+        .reduce((n, e) => n + e[1], 0);
+    const outside = [...usage.entries()].filter(([v]) => !masterMatch(_mlKind, v)).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+
+    document.getElementById('mlIntro').textContent = list.length
+        ? `${def.hint} Only these ${def.plural.toLowerCase()} can be chosen.`
+        : `${def.hint} The list is empty, so any text is accepted. Add entries — or fill it from the values in use — to make it the only choice.`;
+    document.getElementById('mlAddForm').style.display = canEdit ? '' : 'none';
+    const fillBtn = document.getElementById('mlFillBtn');
+    fillBtn.style.display = canEdit && outside.length ? '' : 'none';
+    fillBtn.textContent = `Add the ${outside.length} value(s) in use`;
+
+    document.getElementById('mlList').innerHTML = list.length ? list.map(v => {
+        const n = usedBy(v);
+        return `<li class="category-item ml-item">
+            <span class="category-item__name">${escapeHtml(v)} <small class="ml-used">${n ? `${n} ${noun}${n === 1 ? '' : 's'}` : 'not used'}</small></span>
+            ${canEdit ? `<span class="row-actions row-actions--labeled">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="renameMasterValue(${jsArg(v)})">Rename</button>
+                <button type="button" class="btn btn-secondary btn-sm row-actions__icon" title="Remove from the list" aria-label="Remove ${escapeHtml(v)}"
+                    onclick="removeMasterValue(${jsArg(v)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+            </span>` : ''}
+        </li>`;
+    }).join('') : `<li class="category-empty">No ${def.plural.toLowerCase()} in the list yet.</li>`;
+
+    const out = document.getElementById('mlOutside');
+    out.innerHTML = list.length && outside.length ? `
+        <div class="ml-outside__head"><i class="fas fa-triangle-exclamation"></i> In use but not in the list (${outside.length})</div>
+        <ul class="categories-list">${outside.map(([v, n]) => `<li class="category-item ml-item">
+            <span class="category-item__name">${escapeHtml(v)} <small class="ml-used">${n} ${noun}${n === 1 ? '' : 's'}</small></span>
+            ${canEdit ? `<span class="row-actions row-actions--labeled">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="addMasterValue(${jsArg(v)})">Add to list</button>
+                ${_mlKind !== 'brand' && canMergeField(_mlKind) ? `<button type="button" class="btn btn-secondary btn-sm"
+                    onclick="closeMasterLists(); openValueMerge(${jsArg(_mlKind)}, ${jsArgList([v])})">Merge…</button>` : ''}
+            </span>` : ''}</li>`).join('')}</ul>` : '';
+}
+
+function _saveMasterList(kind, values, what) {
+    const before = masterLists[kind].slice();
+    const next = [...new Set(values.map(_toolNorm).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    masterLists = { ...masterLists, [kind]: next };
+    populateMasterDatalists();
+    renderMasterLists();
+    cloudWrite(
+        { action: 'update', unitName: `[Master] ${MASTER_DEF[kind].plural}`, field: 'List', before: '', after: what },
+        cloudCall('saveMasterList', kind, next, (currentUser && currentUser.email) || ''),
+        null,
+        err => {
+            console.error('[master] save failed:', err);
+            masterLists = { ...masterLists, [kind]: before };
+            populateMasterDatalists();
+            renderMasterLists();
+            showToast(err && err.code === 'permission-denied'
+                ? 'Refused by the server — publish the latest firestore.rules (Master Lists) and check your access'
+                : `Failed to save the ${MASTER_DEF[kind].label} list — change reverted`, 'error');
+        }
+    );
+}
+
+function addMasterValue(value) {
+    const kind = _mlKind;
+    if (!canEditMasterList(kind)) { showToast('You do not have edit access to this list', 'warning'); return; }
+    const input = document.getElementById('mlNewValue');
+    const v = _toolNorm(value != null ? value : input.value);
+    if (!v) { showToast(`Type a ${MASTER_DEF[kind].label.toLowerCase()} name`, 'warning'); return; }
+    if (v.length > 80) { showToast('Keep it under 80 characters', 'warning'); return; }
+    const dup = masterMatch(kind, v);
+    if (dup) { showToast(`Already in the list as "${dup}"`, 'info'); return; }
+    if (masterLists[kind].length >= 500) { showToast('A list can hold at most 500 entries', 'warning'); return; }
+    _saveMasterList(kind, masterLists[kind].concat([v]), `Added "${v}"`);
+    if (value == null) input.value = '';
+    showToast(`"${v}" added to the ${MASTER_DEF[kind].label} list`, 'success');
+}
+
+// Seeds the list from what the records already say. Spellings of one thing
+// ("PT. GPA", "PT GPA", "PT. GPAA") go in once, as the most-used spelling.
+function fillMasterFromUsage() {
+    const kind = _mlKind;
+    if (!canEditMasterList(kind)) return;
+    const usage = masterUsage(kind);
+    const outside = new Map([...usage.entries()].filter(([v]) => !masterMatch(kind, v)));
+    if (!outside.size) return;
+    const merged = new Set();
+    const picks = [];
+    similarValueClusters(outside).forEach(cl => { picks.push(cl[0][0]); cl.forEach(([v]) => merged.add(v)); });
+    outside.forEach((n, v) => { if (!merged.has(v)) picks.push(v); });
+    picks.sort((a, b) => a.localeCompare(b));
+    const folded = outside.size - picks.length;
+    if (!confirm(`Add ${picks.length} ${MASTER_DEF[kind].label.toLowerCase()}(s) to the list?\n\n${picks.join('\n')}`
+        + (folded ? `\n\n${folded} look-alike spelling(s) were folded into the most-used one. Use Clean Up Values to rewrite the records.` : ''))) return;
+    _saveMasterList(kind, masterLists[kind].concat(picks), `Added ${picks.length} value(s) in use`);
+    showToast(`${picks.length} value(s) added to the ${MASTER_DEF[kind].label} list`, 'success');
+}
+
+function removeMasterValue(v) {
+    const kind = _mlKind;
+    if (!canEditMasterList(kind)) return;
+    const n = [...masterUsage(kind).entries()].filter(([u]) => masterMatch(kind, u) === v).reduce((a, e) => a + e[1], 0);
+    if (!confirm(`Remove "${v}" from the ${MASTER_DEF[kind].label} list?`
+        + (n ? `\n\n${n} ${MASTER_USED_NOUN[kind]}(s) still use it. They keep the value, and Data Check will list them.` : ''))) return;
+    _saveMasterList(kind, masterLists[kind].filter(x => x !== v), `Removed "${v}"`);
+}
+
+// Renames the entry AND every record that uses it.
+function renameMasterValue(v) {
+    const kind = _mlKind;
+    if (!canEditMasterList(kind)) return;
+    const raw = prompt(`New name for "${v}":`, v);
+    const to = _toolNorm(raw);
+    if (!to || to === v) return;
+    const clash = masterMatch(kind, to);
+    if (clash && clash !== v) { showToast(`"${clash}" is already in the list — use Clean Up Values to merge into it`, 'warning'); return; }
+    const uses = rec => !!rec && (_toolNorm(rec).toLowerCase() === v.toLowerCase() || _simKey(rec) === _simKey(v));
+    let n = 0;
+    if (kind === 'site') {
+        if (!requireEdit('editUnits')) return;
+        const changes = new Map(globalData.filter(u => uses(u.site)).map(u => [u.id, { site: to }]));
+        n = updateUnitsBatch(changes).length;
+    } else if (kind === 'company') {
+        if (!requireEdit('teamMembers')) return;
+        const recs = (teamMembers || []).filter(m => uses(companyOf(m))).map(m => ({ ...m, company: to, updatedAt: Date.now() }));
+        if (recs.length) _commitMembers(recs, `Company renamed "${v}" → "${to}"`);
+        n = recs.length;
+    } else if (kind === 'brand') {
+        const imps = globalImplements.filter(i => uses(i.brand));
+        if (imps.length && !requireEdit('implements')) return;
+        // Units name an implement by "Type — Brand", so they follow it.
+        const unitChanges = new Map();
+        imps.forEach(imp => {
+            const next = { ...imp, brand: to, updatedAt: Date.now() };
+            globalData.forEach(u => {
+                if (unitGroupOf(u) === 'tractor' && u.implement && findImplementRecord(u.implement) === imp)
+                    unitChanges.set(u.id, { implement: implementOptionLabel(next) });
+            });
+        });
+        imps.forEach(imp => {
+            const idx = globalImplements.findIndex(i => i.id === imp.id);
+            globalImplements[idx] = { ...imp, brand: to, updatedAt: Date.now() };
+            cloudPushImplement(globalImplements[idx]);
+            logEvent({ action: 'update', unitId: imp.id, unitName: `[Implement] ${imp.profileName || ''}`, field: 'Brand', before: imp.brand, after: to });
+        });
+        if (imps.length) { saveImplements(); if (currentView === 'implements') renderImplementsTable(); }
+        if (unitChanges.size && hasAccess('editUnits', 'edit')) updateUnitsBatch(unitChanges);
+        n = imps.length;
+    }
+    _saveMasterList(kind, masterLists[kind].map(x => (x === v ? to : x)), `Renamed "${v}" → "${to}"`);
+    showToast(`Renamed to "${to}"${n ? ` — ${n} ${MASTER_USED_NOUN[kind]}(s) updated` : ''}`, 'success');
+    _afterDataFix();
+}
+
+// ---- Data Check ----
+function dcNotInMasterLists() {
+    const out = [];
+    MASTER_KINDS.forEach(kind => {
+        if (!masterListActive(kind)) return;
+        [...masterUsage(kind).entries()].filter(([v]) => !masterMatch(kind, v)).sort((a, b) => b[1] - a[1]).forEach(([v, n]) => {
+            out.push(dc('master-luar', `${MASTER_DEF[kind].label}: ${v}`,
+                `${n} ${MASTER_USED_NOUN[kind]}(s) — not in the ${MASTER_DEF[kind].label} list`,
+                kind === 'brand' ? 'implements' : kind === 'company' ? 'team' : 'editUnits',
+                kind === 'brand' ? {} : { merge: { field: kind, values: [v] } }));
+        });
+    });
+    return out;
 }
 
 if (window.cloudReady) {

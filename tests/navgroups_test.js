@@ -40,7 +40,7 @@ const { launch, BASE_URL } = require('./_env');
         t('owner: semua grup', groups(), ['Overview', 'Agricultural Equipment', 'Heavy Equipment', 'Team', 'Inventory', 'Admin']);
         t('Agricultural: isi menu', links('Agricultural Equipment'), ['Dashboard', 'Unit Database', 'Implements', 'Damage', 'License Stock']);
         t('Heavy: isi menu', links('Heavy Equipment'), ['Dashboard', 'Unit Database', 'Damage', 'Inspection']);
-        t('Admin: Users dan History', links('Admin'), ['Users', 'History']);
+        t('Admin: Users, Master Lists dan History', links('Admin'), ['Users', 'Master Lists', 'History']);
 
         // =============== membuka halaman pada kelompoknya ===============
         goNav('editUnits', 'heavy');

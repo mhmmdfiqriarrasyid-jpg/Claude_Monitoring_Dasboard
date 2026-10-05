@@ -108,6 +108,7 @@ const LICENSE_COL = 'licenseStock';
 const USERS_COL = 'users';
 const HISTORY_COL = 'history';
 const USER_CATEGORIES_COL = 'userCategories';
+const MASTER_LISTS_COL = 'masterLists';
 const DAMAGE_COMPONENTS_COL = 'damageComponents';
 const DEVICES_COL = 'devices';
 const STOCK_ITEMS_COL = 'stockItems';
@@ -730,6 +731,23 @@ window.cloud = {
     },
     async deleteDamagePhoto(id) {
         await deleteDoc(doc(db, DAMAGE_PHOTOS_COL, id));
+    },
+
+    // ---- Master lists: one document per list (site, brand, company) ----
+    // { id, values: [name, …], updatedAt, updatedBy }. Small and read by
+    // everyone, so a whole list is one document and one write.
+    async saveMasterList(kind, values, by) {
+        await setDoc(doc(db, MASTER_LISTS_COL, kind), { id: kind, values, updatedAt: Date.now(), updatedBy: by || '' });
+    },
+    subscribeMasterLists(callback, errorCallback) {
+        return onSnapshot(
+            collection(db, MASTER_LISTS_COL),
+            snap => callback(snap.docs.map(withDocId)),
+            err => {
+                console.error('[cloud] masterLists subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
     },
 
     // ---- Heavy-equipment checks ----
