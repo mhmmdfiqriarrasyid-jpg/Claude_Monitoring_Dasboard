@@ -31,7 +31,7 @@ const { launch, BASE_URL } = require('./_env');
         hideAuthGates(); applyRoleGating();
 
         const U = (id, o) => Object.assign({
-            id, name:'GGTR'+id, sn:'SN-'+id, site:'PT. GPA', status:'Good',
+            id, name:'GGTR'+id, sn:'SN-'+id, site:'PT. GPA', status:'Good', model:'6110B', implement:'Bed Ripper — Gessner', yearReceived:'2024',
             gps:'Good', steering:'Good', jdlink:'Good', display:'Good'
         }, o);
 

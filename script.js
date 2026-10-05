@@ -92,7 +92,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v140';
+const APP_VERSION = 'v141';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -648,6 +648,7 @@ const MODAL_CLOSERS = {
     licenseModal:         'closeLicenseModal',
     licSyncModal:         'closeLicSyncModal',
     inspectionModal:      'closeInspectionModal',
+    valueMergeModal:      'closeValueMerge',
     inspectionPlanModal:  'closeInspectionPlanModal',
     categoriesModal:      'closeCategoriesModal',
     damageComponentsModal:'closeDamageComponentsModal',
@@ -955,6 +956,8 @@ function showLoading(show) {
 // stored value close the string and run code. JSON.stringify escapes quotes,
 // backslashes and line breaks; escapeHtml then protects the attribute.
 function jsArg(v) { return escapeHtml(JSON.stringify(String(v == null ? '' : v))); }
+// The same for a list of strings.
+function jsArgList(list) { return escapeHtml(JSON.stringify((list || []).map(v => String(v == null ? '' : v)))); }
 
 // A stored photo is only ever a base64 image data URL. Anything else — a
 // value written straight to Firestore with a quote in it — renders nothing
@@ -4421,6 +4424,17 @@ let editToolFilter = '';           // '' = all, TOOL_NONE = none set, typeKey, o
 const TOOL_NONE = '__none__';
 const TOOL_SEP = '\u0001';
 let _toolSummaryOpen = false;
+let editMissingFilter = '';        // a REQUIRED_UNIT_FIELDS key: only units missing it
+// Key fields per group: what a unit needs for the summaries, the per-company
+// split and the inspection list to be right.
+const REQUIRED_UNIT_FIELDS = {
+    tractor: ['model', 'implement', 'site', 'yearReceived'],
+    heavy:   ['model', 'machineType', 'assetCode', 'workTool', 'site', 'yearReceived']
+};
+const REQUIRED_FIELD_LABEL = {
+    model: 'model', implement: 'implement', site: 'site', yearReceived: 'year received',
+    machineType: 'machine type', assetCode: 'asset no.', workTool: 'work tool'
+};
 
 function toolFieldOf(g) { return g === 'heavy' ? 'workTool' : 'implement'; }
 const _toolNorm = v => String(v || '').trim().replace(/\s+/g, ' ');
@@ -4435,10 +4449,14 @@ function _knownImplementBrands() {
     const score = new Map();
     const add = (name, n) => { const k = _toolNorm(name).toLowerCase(); if (k) score.set(k, (score.get(k) || 0) + n); };
     globalImplements.forEach(i => { add(i.brand, 1000); add(i.equipmentType, -1000); });
-    globalData.forEach(u => {
-        const parts = _splitTool(_toolNorm(u && u.implement));
-        if (parts.length === 2) { add(parts[0], -1); add(parts[1], 1); }
+    // Each distinct spelling counts once, so ten units sharing one reversed
+    // value do not outvote the rest of the fleet.
+    const pairs = new Set();
+    new Set(globalData.map(u => _toolNorm(u && u.implement).toLowerCase())).forEach(raw => {
+        const parts = _splitTool(raw);
+        if (parts.length === 2) { add(parts[0], -1); add(parts[1], 1); pairs.add(parts[0] + '|' + parts[1]); }
     });
+    score.pairs = pairs;
     return score;
 }
 
@@ -4454,8 +4472,14 @@ function toolPartsOf(u, g, brands) {
     if (parts.length < 2) return { type: raw, brand: '' };
     let [type, brand] = [parts[0], parts.slice(1).join(' — ')];
     const known = brands || _knownImplementBrands();
-    const sc = n => known.get(n.toLowerCase()) || 0;
-    if (sc(type) > 0 && sc(type) > sc(brand)) [type, brand] = [brand, type];
+    // Judged on the OTHER spellings only: "A — B" and "B — A" vote for
+    // opposite answers about this very pair, so both are left out.
+    const a = type.toLowerCase(), b = brand.toLowerCase();
+    const pairs = known.pairs || new Set();
+    const ab = pairs.has(a + '|' + b) ? 1 : 0, ba = pairs.has(b + '|' + a) ? 1 : 0;
+    const scType = (known.get(a) || 0) + ab - ba;
+    const scBrand = (known.get(b) || 0) - ab + ba;
+    if (scType > 0 && scType > scBrand) [type, brand] = [brand, type];
     return { type, brand };
 }
 
@@ -4588,6 +4612,7 @@ function getEditTableRows() {
         : `${d.name} ${d.model} ${d.sn} ${d.implement || ''} ${d.site}`).toLowerCase().includes(query));
     if (statusVal) rows = rows.filter(d => d.status === statusVal);
     if (siteVal) rows = rows.filter(d => d.site === siteVal);
+    if (editMissingFilter) rows = rows.filter(d => isFieldMissing(d, editMissingFilter));
     if (editToolFilter) {
         const known = _knownImplementBrands();
         rows = rows.filter(d => toolFilterMatch(d, g, editToolFilter, known));
@@ -4666,6 +4691,7 @@ function switchEditUnitsGroup(g, opts) {
     if (!opts || opts.persist !== false) writePref('editUnitsGroup', g);
     editSortState = { key: null, asc: true };
     editToolFilter = '';
+    editMissingFilter = '';
     ['editSearch', 'editStatusFilter', 'editSiteFilter'].forEach(id => {
         const el = document.getElementById(id); if (el) el.value = '';
     });
@@ -4707,6 +4733,7 @@ function _editRowHeavy(d, i, ce) {
 function renderEditTable() {
     renderEditHead();
     renderEditGroupTabs();
+    renderDataCompleteness();
     renderToolSummary();
     updateEditCount();
     // A re-render (search, filter, a cloud snapshot) draws fresh, unticked
@@ -4731,7 +4758,7 @@ function renderEditTable() {
         const empty = group === 'heavy'
             ? `No ${escapeHtml(UNIT_GROUPS.heavy.label)} units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.`
             : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.';
-        tbody.innerHTML = `<tr><td colspan="${EDIT_COLSPAN[group]}" style="text-align:center;padding:24px;color:var(--text-secondary)">${(query || statusVal || siteVal || editToolFilter) ? 'No units match the filter' : empty}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${EDIT_COLSPAN[group]}" style="text-align:center;padding:24px;color:var(--text-secondary)">${(query || statusVal || siteVal || editToolFilter || editMissingFilter) ? 'No units match the filter' : empty}</td></tr>`;
         return;
     }
 
@@ -13787,6 +13814,14 @@ function goDecision(target) {
         if (currentView === 'editUnits') switchEditUnitsGroup(target.slice(10), { persist: false });
         return;
     }
+    if (typeof target === 'string' && target.startsWith('missing:')) {
+        const [, g, f] = target.split(':');
+        navigateTo('editUnits');
+        if (currentView !== 'editUnits') return;
+        switchEditUnitsGroup(g, { persist: false });
+        setEditMissingFilter(f, true);
+        return;
+    }
     if (typeof target === 'string' && target.startsWith('inspection:')) {
         navigateTo('inspection');
         if (currentView !== 'inspection') return;
@@ -14377,7 +14412,7 @@ function dcSiteVariants() {
             .sort((a, b) => b[1] - a[1])
             .map(([v, n]) => `"${v}" (${n})`);
         out.push(dc('site-beda-tipis', 'Site name spelled several ways',
-            parts.join(' · '), 'editUnits'));
+            parts.join(' · '), 'editUnits', { merge: { field: 'site', values: [...variants.keys()] } }));
     });
     return out;
 }
@@ -14592,7 +14627,10 @@ const DATA_CHECKS = [
     { key: 'surat',    label: 'Leave / sick without letter', run: dcLeaveWithoutDoc },
     { key: 'izin-tgl', label: 'Reversed leave range',        run: dcLeaveReversed },
     { key: 'kelompok', label: 'Unit group fields mismatch', run: dcUnitGroupFields },
-    { key: 'kelompok-ref', label: 'License / damage in wrong group', run: dcGroupReferences }
+    { key: 'kelompok-ref', label: 'License / damage in wrong group', run: dcGroupReferences },
+    { key: 'mirip',    label: 'Similar spellings',          run: dcSimilarSpellings },
+    { key: 'kurang',   label: 'Key fields not filled',      run: dcMissingKeyFields },
+    { key: 'impl-db',  label: 'Implement not in the Implements list', run: dcImplementNotInList }
 ];
 
 function runDataChecks() {
@@ -14648,7 +14686,9 @@ function renderDataCheck() {
                 <tbody>${g.items.map(i => `<tr>
                     <td data-label="Item">${escapeHtml(i.label)}</td>
                     <td data-label="Details">${escapeHtml(i.detail)}</td>
-                    <td data-label="" style="white-space:nowrap"><button type="button" class="btn btn-secondary btn-sm"
+                    <td data-label="" style="white-space:nowrap">${i.merge && canMergeField(i.merge.field)
+                        ? `<button type="button" class="btn btn-primary btn-sm" title="Merge these spellings into one"
+                            onclick="openValueMerge(${jsArg(i.merge.field)}, ${jsArgList(i.merge.values)})"><i class="fas fa-object-group"></i> Merge…</button> ` : ''}<button type="button" class="btn btn-secondary btn-sm"
                         onclick="goDecision(${jsArg(i.goTo)})">Open</button></td>
                 </tr>`).join('')}</tbody>
             </table>
@@ -15737,6 +15777,433 @@ function updateInspectionBadge() {
     const n = due + mine + waiting;
     el.textContent = n > 99 ? '99+' : String(n);
     el.style.display = n ? '' : 'none';
+}
+
+// ============================================================
+// DATA QUALITY — one spelling per thing, and the gaps made visible
+// ------------------------------------------------------------
+// Free text drifts: "Gessner" and "Geesner", "PT. GPA" and "PT GPA". Each
+// variant becomes its own row in every summary. Three tools:
+//   - Clean Up Values (valueMergeModal): pick the spellings that mean the
+//     same thing and rewrite every record to one of them, with Undo.
+//   - Data Check: similar spellings, units missing key fields, implements
+//     the Implements list does not know.
+//   - Data Completeness card above the Unit Database: % of key fields
+//     filled; a chip per gap filters the table to those units.
+// ============================================================
+
+// ---- Similar spellings ----
+function _simKey(v) { return String(v || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+
+function _levenshtein(a, b, max) {
+    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+        const cur = [i];
+        let best = i;
+        for (let j = 1; j <= b.length; j++) {
+            cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+            if (cur[j] < best) best = cur[j];
+        }
+        if (best > max) return max + 1;
+        prev = cur;
+    }
+    return prev[b.length];
+}
+
+// Same text once case and punctuation are ignored, or one or two typos
+// apart. Short names need an exact match (ISJ and ISS are different brands)
+// and numbers must agree (6110B and 6120B are different models).
+function similarSpelling(a, b) {
+    const x = _simKey(a), y = _simKey(b);
+    if (!x || !y) return false;
+    if (x === y) return true;
+    if (x.replace(/\D/g, '') !== y.replace(/\D/g, '')) return false;
+    const min = Math.min(x.length, y.length);
+    const lim = min >= 8 ? 2 : min >= 5 ? 1 : 0;
+    if (!lim || Math.abs(x.length - y.length) > lim) return false;
+    return _levenshtein(x, y, lim) <= lim;
+}
+
+// values: Map spelling -> count. Groups of 2+ spellings that look alike,
+// most-used first.
+function similarValueClusters(values) {
+    const list = [...values.entries()];
+    const parent = list.map((_, i) => i);
+    const find = i => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+    for (let i = 0; i < list.length; i++)
+        for (let j = i + 1; j < list.length; j++)
+            if (similarSpelling(list[i][0], list[j][0])) parent[find(i)] = find(j);
+    const groups = new Map();
+    list.forEach((e, i) => { const r = find(i); groups.set(r, (groups.get(r) || []).concat([e])); });
+    return [...groups.values()].filter(g => g.length > 1)
+        .map(g => g.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])))
+        .sort((a, b) => b.reduce((n, e) => n + e[1], 0) - a.reduce((n, e) => n + e[1], 0));
+}
+
+// ---- What can be merged ----
+const MERGE_FIELDS = {
+    implType:    { label: 'Implement type',  group: 'tractor' },
+    implBrand:   { label: 'Implement brand', group: 'tractor' },
+    implement:   { label: 'Implement (full text)', group: 'tractor' },
+    workTool:    { label: 'Work tool',       group: 'heavy' },
+    machineType: { label: 'Machine type',    group: 'heavy' },
+    model:       { label: 'Model',           group: null },
+    site:        { label: 'Site',            group: null },
+    company:     { label: 'Company (team members)', members: true }
+};
+
+function canMergeField(field) {
+    const f = MERGE_FIELDS[field];
+    return !!f && hasAccess(f.members ? 'teamMembers' : 'editUnits', 'edit');
+}
+
+function mergeRecords(field) {
+    const f = MERGE_FIELDS[field];
+    if (!f) return [];
+    if (f.members) return teamMembers || [];
+    return f.group ? unitsOfGroup(globalData, f.group) : globalData;
+}
+
+function mergeValueOf(rec, field, known) {
+    if (field === 'implType' || field === 'implBrand') {
+        const p = toolPartsOf(rec, 'tractor', known);
+        return field === 'implType' ? p.type : p.brand;
+    }
+    if (field === 'company') return _toolNorm(companyOf(rec));
+    return _toolNorm(rec[field]);
+}
+
+function mergeValueCounts(field) {
+    const known = _knownImplementBrands();
+    const counts = new Map();
+    mergeRecords(field).forEach(r => {
+        const v = mergeValueOf(r, field, known);
+        if (v) counts.set(v, (counts.get(v) || 0) + 1);
+    });
+    return counts;
+}
+
+// The unit fields that change when one record's value becomes `target`.
+function _mergedFields(rec, field, target, known) {
+    if (field === 'implType' || field === 'implBrand') {
+        const p = toolPartsOf(rec, 'tractor', known);
+        const type = field === 'implType' ? target : p.type;
+        const brand = field === 'implBrand' ? target : p.brand;
+        return { implement: brand ? `${type} — ${brand}` : type };
+    }
+    return { [field]: target };
+}
+
+// Records whose value is one of `values` and would actually change.
+function mergePlan(field, values, target) {
+    const known = _knownImplementBrands();
+    const set = new Set(values);
+    return mergeRecords(field).filter(r => {
+        const v = mergeValueOf(r, field, known);
+        return set.has(v) && v !== target;
+    }).map(r => ({ rec: r, fields: _mergedFields(r, field, target, known) }));
+}
+
+// Several units at once: one storage write, one cloud batch, and a history
+// row per changed field exactly as updateUnit writes them.
+function updateUnitsBatch(changes) {
+    if (!canWriteUnits('updateUnitsBatch')) return [];
+    const done = [];
+    changes.forEach((fields, id) => {
+        const idx = globalData.findIndex(d => d.id === id);
+        if (idx === -1) return;
+        const before = { ...globalData[idx] };
+        const guarded = guardUnitFields(before, fields);
+        const keys = Object.keys(guarded).filter(k => !sameStoredValue(before[k], guarded[k]));
+        if (!keys.length) return;
+        globalData[idx] = { ...before, ...guarded };
+        done.push({ before, unit: globalData[idx], keys });
+    });
+    if (!done.length) return done;
+    saveToStorage(globalData);
+    cloudPushUnits(done.map(d => d.unit));
+    recordChange({ type: 'updated', detail: `${done.length} unit(s) updated` });
+    done.forEach(d => d.keys.forEach(k => logEvent({
+        action: 'update', unitId: d.unit.id, unitName: d.unit.name, field: k, before: d.before[k], after: d.unit[k]
+    })));
+    return done;
+}
+
+// ---- Clean Up Values modal ----
+let _vmField = 'implType';
+let _vmSelected = new Set();
+let _vmAutoTarget = '';
+let _vmUndo = null;
+
+function openValueMerge(field, values) {
+    const options = Object.keys(MERGE_FIELDS).filter(canMergeField);
+    if (!options.length) { showToast('You need edit access to Unit Database or Team Members', 'warning'); return; }
+    _vmField = field && options.includes(field) ? field
+        : options.includes(effectiveEditGroup() === 'heavy' ? 'workTool' : 'implType')
+            ? (effectiveEditGroup() === 'heavy' ? 'workTool' : 'implType') : options[0];
+    const sel = document.getElementById('vmField');
+    sel.innerHTML = options.map(k => `<option value="${k}">${escapeHtml(MERGE_FIELDS[k].label)}${
+        MERGE_FIELDS[k].group ? ` (${escapeHtml(groupDef(MERGE_FIELDS[k].group).shortLabel)})` : ''}</option>`).join('');
+    sel.value = _vmField;
+    document.getElementById('vmSearch').value = '';
+    document.getElementById('vmTarget').value = '';
+    document.getElementById('vmResult').innerHTML = '';
+    _vmAutoTarget = '';
+    _vmSelected = new Set();
+    if (Array.isArray(values)) selectMergeValues(values, true);
+    renderValueMerge();
+    document.getElementById('valueMergeModal').classList.add('open');
+}
+
+function closeValueMerge() {
+    document.getElementById('valueMergeModal').classList.remove('open');
+}
+
+function switchMergeField(field) {
+    _vmField = field;
+    _vmSelected = new Set();
+    _vmAutoTarget = '';
+    document.getElementById('vmTarget').value = '';
+    document.getElementById('vmResult').innerHTML = '';
+    renderValueMerge();
+}
+
+// Default target = the most-used selected spelling, unless the person typed
+// their own.
+function _vmRefreshTarget() {
+    const input = document.getElementById('vmTarget');
+    if (input.value && input.value !== _vmAutoTarget) return;
+    const counts = mergeValueCounts(_vmField);
+    const best = [..._vmSelected].sort((a, b) => (counts.get(b) || 0) - (counts.get(a) || 0) || a.localeCompare(b))[0] || '';
+    input.value = best;
+    _vmAutoTarget = best;
+}
+
+function toggleMergeValue(v, on) {
+    if (on) _vmSelected.add(v); else _vmSelected.delete(v);
+    _vmRefreshTarget();
+    renderValueMerge();
+}
+
+function selectMergeValues(values, quiet) {
+    const counts = mergeValueCounts(_vmField);
+    _vmSelected = new Set((values || []).filter(v => counts.has(v)));
+    document.getElementById('vmTarget').value = '';
+    _vmAutoTarget = '';
+    _vmRefreshTarget();
+    if (!quiet) renderValueMerge();
+}
+
+function renderValueMerge() {
+    const counts = mergeValueCounts(_vmField);
+    // A selected spelling that no longer exists (merged away) drops out.
+    [..._vmSelected].forEach(v => { if (!counts.has(v)) _vmSelected.delete(v); });
+    const q = (document.getElementById('vmSearch').value || '').toLowerCase().trim();
+    const noun = MERGE_FIELDS[_vmField].members ? 'member' : 'unit';
+
+    const clusters = similarValueClusters(counts);
+    document.getElementById('vmSuggest').innerHTML = clusters.length
+        ? `<div class="vm-suggest__head"><i class="fas fa-lightbulb"></i> Looks like the same thing — ${clusters.length} suggestion(s)</div>${
+            clusters.map(cl => `<div class="vm-suggest__row">
+                <span>${cl.map(([v, n]) => `<b>${escapeHtml(v)}</b> <small>${n}</small>`).join(' · ')}</span>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="selectMergeValues(${jsArgList(cl.map(e => e[0]))})">Select</button>
+            </div>`).join('')}`
+        : '<div class="vm-suggest__none">No similar spellings found for this field.</div>';
+
+    const list = [...counts.entries()]
+        .filter(([v]) => !q || v.toLowerCase().includes(q) || _vmSelected.has(v))
+        .sort((a, b) => _vmSelected.has(b[0]) - _vmSelected.has(a[0]) || b[1] - a[1] || a[0].localeCompare(b[0]));
+    document.getElementById('vmList').innerHTML = list.length
+        ? list.map(([v, n]) => `<label class="vm-row${_vmSelected.has(v) ? ' is-on' : ''}">
+            <input type="checkbox" ${_vmSelected.has(v) ? 'checked' : ''} onchange="toggleMergeValue(${jsArg(v)}, this.checked)">
+            <span class="vm-row__name">${escapeHtml(v)}</span>
+            <span class="vm-row__count">${n} ${noun}${n === 1 ? '' : 's'}</span>
+        </label>`).join('')
+        : '<div class="vm-suggest__none">No values match.</div>';
+    document.getElementById('vmTargetList').innerHTML = [...counts.keys()].sort()
+        .map(v => `<option value="${escapeHtml(v)}"></option>`).join('');
+
+    const target = _toolNorm(document.getElementById('vmTarget').value);
+    const plan = target ? mergePlan(_vmField, [..._vmSelected], target) : [];
+    const preview = document.getElementById('vmPreview');
+    preview.textContent = !_vmSelected.size ? `Tick the spellings to merge (${counts.size} value(s) in use).`
+        : !target ? 'Type the spelling to keep.'
+        : `${_vmSelected.size} spelling(s) → "${target}" · ${plan.length} ${noun}(s) will change`;
+    document.getElementById('vmApplyBtn').disabled = !plan.length;
+}
+
+function applyValueMerge() {
+    const f = MERGE_FIELDS[_vmField];
+    if (!requireEdit(f.members ? 'teamMembers' : 'editUnits')) return;
+    const target = _toolNorm(document.getElementById('vmTarget').value);
+    if (!target) { showToast('Type the spelling to keep', 'warning'); return; }
+    const values = [..._vmSelected];
+    const plan = mergePlan(_vmField, values, target);
+    if (!plan.length) { showToast('Nothing to change', 'info'); return; }
+    const noun = f.members ? 'member' : 'unit';
+    if (!confirm(`Change ${plan.length} ${noun}(s)?\n\n${values.filter(v => v !== target).map(v => `"${v}"`).join(', ')}\n→ "${target}"`)) return;
+
+    let n = 0;
+    if (f.members) {
+        const prev = plan.map(p => ({ ...p.rec }));
+        const recs = plan.map(p => ({ ...p.rec, ...p.fields, updatedAt: Date.now() }));
+        n = recs.length;
+        _commitMembers(recs, `Company merged into "${target}"`, prev);
+        _vmUndo = { members: true, recs: prev, label: `"${target}"` };
+    } else {
+        const changes = new Map(plan.map(p => [p.rec.id, p.fields]));
+        const prevMap = new Map(plan.map(p => [p.rec.id, Object.fromEntries(Object.keys(p.fields).map(k => [k, p.rec[k] == null ? '' : p.rec[k]]))]));
+        const done = updateUnitsBatch(changes);
+        n = done.length;
+        _vmUndo = n ? { members: false, prev: new Map(done.map(d => [d.unit.id, prevMap.get(d.unit.id)])), label: `"${target}"` } : null;
+    }
+    _vmSelected = new Set();
+    _vmAutoTarget = '';
+    document.getElementById('vmTarget').value = '';
+    document.getElementById('vmResult').innerHTML = n
+        ? `<div class="vm-result"><i class="fas fa-check"></i> ${n} ${noun}(s) changed to "${escapeHtml(target)}".
+            <button type="button" class="btn btn-secondary btn-sm" onclick="undoValueMerge()"><i class="fas fa-rotate-left"></i> Undo</button></div>`
+        : '';
+    showToast(n ? `${n} ${noun}(s) changed to "${target}"` : 'Nothing changed', n ? 'success' : 'info');
+    _afterDataFix();
+    renderValueMerge();
+}
+
+function undoValueMerge() {
+    const u = _vmUndo;
+    if (!u) return;
+    _vmUndo = null;
+    let n = 0;
+    if (u.members) {
+        if (!requireEdit('teamMembers')) return;
+        n = u.recs.length;
+        _commitMembers(u.recs.map(r => ({ ...r, updatedAt: Date.now() })), `Company merge into ${u.label} undone`);
+    } else {
+        if (!requireEdit('editUnits')) return;
+        n = updateUnitsBatch(u.prev).length;
+    }
+    document.getElementById('vmResult').innerHTML = '';
+    showToast(n ? `Undone — ${n} record(s) restored` : 'Nothing to undo', n ? 'success' : 'info');
+    _afterDataFix();
+    renderValueMerge();
+}
+
+function _commitMembers(recs, what, rollback) {
+    const before = teamMembers.slice();
+    const byId = new Map(recs.map(r => [r.id, r]));
+    teamMembers = teamMembers.map(m => byId.get(m.id) || m);
+    cloudWrite(
+        { action: 'update', unitName: '[Team] Members', field: 'Company', before: '', after: `${what} — ${recs.length} member(s)` },
+        cloudCall('saveTeamMembers', recs),
+        null,
+        err => {
+            console.error('[merge] members save failed:', err);
+            teamMembers = before;
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+            showToast('Failed to save the members — change reverted', 'error');
+            _afterDataFix();
+        }
+    );
+}
+
+function _afterDataFix() {
+    if (currentView === 'editUnits') renderEditTable();
+    if (document.getElementById('dataCheckBody')) renderDataCheck();
+    if (currentView === 'team' && typeof renderShiftGrid === 'function') renderShiftGrid();
+}
+
+// ---- Data Check: the new checks ----
+function dcSimilarSpellings() {
+    const out = [];
+    ['implType', 'implBrand', 'workTool', 'machineType', 'model', 'site', 'company'].forEach(field => {
+        similarValueClusters(mergeValueCounts(field)).forEach(cl => {
+            // Case / punctuation-only site variants are dcSiteVariants' job.
+            if (field === 'site' && new Set(cl.map(([v]) => _simKey(v))).size < 2) return;
+            const def = MERGE_FIELDS[field];
+            out.push(dc('ejaan-mirip', `${def.label}${def.group ? ' (' + groupDef(def.group).shortLabel + ')' : ''}: similar spellings`,
+                cl.map(([v, n]) => `"${v}" (${n})`).join(' · '),
+                field === 'company' ? 'team' : `editUnits:${def.group || 'tractor'}`,
+                { merge: { field, values: cl.map(e => e[0]) } }));
+        });
+    });
+    return out;
+}
+
+function isFieldMissing(u, f) { return !_toolNorm(u && u[f]); }
+
+function dcMissingKeyFields() {
+    const out = [];
+    UNIT_GROUP_KEYS.forEach(g => {
+        const units = unitsOfGroup(globalData, g);
+        (REQUIRED_UNIT_FIELDS[g] || []).forEach(f => {
+            if (f === 'site') return;   // listed one by one under "Company / site not set"
+            const miss = units.filter(u => isFieldMissing(u, f));
+            if (!miss.length) return;
+            const names = miss.slice(0, 5).map(u => u.name || u.sn || u.id).join(', ');
+            out.push(dc('data-kurang', `${groupDef(g).shortLabel}: no ${REQUIRED_FIELD_LABEL[f]}`,
+                `${miss.length} unit(s) — ${names}${miss.length > 5 ? ', …' : ''}`, `missing:${g}:${f}`));
+        });
+    });
+    return out;
+}
+
+// Only meaningful once the Implements list is in use.
+function dcImplementNotInList() {
+    if (!globalImplements.length) return [];
+    const counts = new Map();
+    unitsOfGroup(globalData, 'tractor').forEach(u => {
+        const v = _toolNorm(u.implement);
+        if (v && !matchImplementForUnit(v)) counts.set(v, (counts.get(v) || 0) + 1);
+    });
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([v, n]) =>
+        dc('impl-tak-dikenal', `Implement: ${v}`, `${n} unit(s) — not in the Implements list`, 'implements',
+            { merge: { field: 'implement', values: [v] } }));
+}
+
+// ---- Data Completeness card (Unit Database) ----
+
+function setEditMissingFilter(f, force) {
+    editMissingFilter = force ? (f || '') : (editMissingFilter === f ? '' : (f || ''));
+    renderEditTable();
+}
+
+function renderDataCompleteness() {
+    const box = document.getElementById('dataQuality');
+    if (!box) return;
+    const g = effectiveEditGroup();
+    const units = unitsOfGroup(globalData, g);
+    const fields = REQUIRED_UNIT_FIELDS[g] || [];
+    if (!units.length || !fields.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    const missing = fields.map(f => ({ f, n: units.filter(u => isFieldMissing(u, f)).length }));
+    const gaps = missing.reduce((n, m) => n + m.n, 0);
+    const total = units.length * fields.length;
+    // Rounded down: 99.6% is not "100%" while one field is still empty.
+    const pct = Math.floor((total - gaps) / total * 100);
+    const complete = units.filter(u => fields.every(f => !isFieldMissing(u, f))).length;
+    const tone = pct >= 95 ? 'good' : pct >= 80 ? 'warn' : 'bad';
+    const canFix = Object.keys(MERGE_FIELDS).some(canMergeField) && hasAccess('editUnits', 'edit');
+    box.className = `dq dq--${tone}`;
+    box.innerHTML = `
+        <div class="dq__score">
+            <div class="dq__pct">${pct}%</div>
+            <div class="dq__text">
+                <div class="dq__title">Data Completeness</div>
+                <div class="dq__sub">${complete} of ${units.length} unit(s) have every key field
+                    (${fields.map(f => REQUIRED_FIELD_LABEL[f]).join(', ')})</div>
+                <div class="dq__bar"><span style="width:${pct}%"></span></div>
+            </div>
+        </div>
+        <div class="dq__gaps">
+            ${gaps ? missing.filter(m => m.n).map(m => {
+                const on = editMissingFilter === m.f;
+                return `<button type="button" class="dq-chip${on ? ' is-on' : ''}" aria-pressed="${on}"
+                    title="${on ? 'Click again to show all' : 'Show only these units in the table'}"
+                    onclick="setEditMissingFilter(${jsArg(m.f)})"><b>${m.n}</b> no ${escapeHtml(REQUIRED_FIELD_LABEL[m.f])}</button>`;
+            }).join('') : '<span class="dq__ok"><i class="fas fa-circle-check"></i> Every key field is filled</span>'}
+            ${canFix ? `<button type="button" class="btn btn-secondary btn-sm dq__merge" onclick="openValueMerge()"
+                title="Merge spellings that mean the same thing"><i class="fas fa-broom"></i> Clean Up Values</button>` : ''}
+        </div>`;
+    box.style.display = '';
 }
 
 if (window.cloudReady) {

@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.408 pemeriksaan di tiga puluh empat suite, menggerakkan Chromium sungguhan terhadap
+1.454 pemeriksaan di tiga puluh lima suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -265,6 +265,21 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Impor CSV tetap menerima header lama berbahasa Indonesia. Riwayat lama
   tetap tampil apa adanya. Selector `data-label` di style.css harus ikut nama
   kolom yang sama.
+- **Kualitas data (dijaga `tests/dataquality_test.js`).** Tiga alat:
+  (1) **Clean Up Values** (`valueMergeModal`, tombol di kartu kelengkapan
+  dan "Merge…" di Data Check): pilih ejaan yang maksudnya sama → semua
+  record diubah ke satu ejaan lewat `updateUnitsBatch` (satu simpan lokal,
+  satu batch cloud, baris riwayat per field seperti `updateUnit`), bisa
+  Undo. Field: jenis/brand/teks penuh Implement, Work Tool, Machine Type,
+  Model, Site, dan Company anggota tim (`saveTeamMembers`). (2) **Data
+  Check** baru: ejaan mirip (`similarSpelling`: sama setelah huruf/tanda
+  baca diabaikan atau 1–2 salah ketik; nama ≤4 huruf harus sama persis;
+  angka harus sama), field kunci kosong per kelompok, implement yang tidak
+  ada di daftar Implements. (3) **Data Completeness** di atas Unit Database:
+  % field kunci terisi (`REQUIRED_UNIT_FIELDS`, dibulatkan ke bawah), chip
+  per kekurangan memfilter tabel (`editMissingFilter`, direset saat pindah
+  kelompok). Implement terbalik "Brand — Jenis" dinilai per pasangan dari
+  ejaan LAIN (`_knownImplementBrands().pairs`).
 - **Isi jadwal shift cepat (dijaga `tests/shiftfill_test.js`).** Tiap
   anggota punya pilihan "Fill week…" (Morning/Afternoon/Night Senin–Sabtu +
   Minggu Off, Morning/Night setiap hari, Same as last week, Clear this
