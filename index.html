@@ -1694,7 +1694,8 @@
                     </div>
                     <div class="form-group" data-group-only="heavy" style="display:none">
                         <label class="form-label" for="formHeavyBrand">Brand</label>
-                        <input class="form-input" id="formHeavyBrand" list="brandList" placeholder="LiuGong, Komatsu, CAT, …" autocomplete="off">
+                        <input class="form-input" id="formHeavyBrand" list="heavyBrandList" placeholder="LiuGong, Komatsu, CAT, …" autocomplete="off">
+                        <datalist id="heavyBrandList"></datalist>
                     </div>
                     <div class="form-group" data-group-only="heavy" style="display:none">
                         <label class="form-label" for="formMachineType">Machine Type</label>
@@ -2708,7 +2709,7 @@
             </div>
             <div class="bulk-row" id="bulkRowBrand" data-group-only="heavy" style="display:none">
                 <label><input type="checkbox" id="bulkChkBrand"> Brand</label>
-                <input class="form-input" id="bulkBrand" aria-label="New brand for selected units" list="brandList" autocomplete="off" placeholder="Select/type brand…">
+                <input class="form-input" id="bulkBrand" aria-label="New brand for selected units" list="heavyBrandList" autocomplete="off" placeholder="Select/type brand…">
             </div>
             <div class="bulk-row" id="bulkRowWorkTool" data-group-only="heavy" style="display:none">
                 <label><input type="checkbox" id="bulkChkWorkTool"> Work Tool</label>

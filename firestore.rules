@@ -89,11 +89,12 @@ service cloud.firestore {
     match /userCategories/{catId} { allow read: if isActive(); allow write: if canEditArea('editUnits'); }
     match /damageComponents/{id}  { allow read: if isActive(); allow write: if canEditArea('damage'); }
 
-    // ---- Master lists: Site, Brand (implements), Company (team) ----
-    // One document per list. Sites belong to the unit editors, brands to
-    // whoever edits implements or units, companies to the team-member editors.
+    // ---- Master lists: Site, Implement Brand, Heavy Equipment Brand, Company ----
+    // One document per list. Sites and heavy-equipment brands belong to the
+    // unit editors, implement brands to whoever edits implements or units,
+    // companies to the team-member editors.
     function canEditMasterList(kind) {
-      return (kind == 'site' && canEditArea('editUnits'))
+      return (kind in ['site', 'heavyBrand'] && canEditArea('editUnits'))
           || (kind == 'brand' && (canEditArea('implements') || canEditArea('editUnits')))
           || (kind == 'company' && canEditArea('teamMembers'));
     }

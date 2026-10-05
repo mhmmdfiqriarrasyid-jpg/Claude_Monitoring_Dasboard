@@ -194,6 +194,8 @@ async function check(name, p, expectOk) {
     await check('master: editor unit TIDAK bisa menulis Company', setDoc(doc(S, 'masterLists', 'company'), ml('company')), false);
     await check('master: editor Implements menulis Brand', setDoc(doc(IM, 'masterLists', 'brand'), ml('brand', ['Gessner'])), true);
     await check('master: editor Implements TIDAK bisa menulis Site', setDoc(doc(IM, 'masterLists', 'site'), ml('site')), false);
+    await check('master: editor unit menulis Heavy Equipment Brand', setDoc(doc(S, 'masterLists', 'heavyBrand'), ml('heavyBrand', ['LiuGong'])), true);
+    await check('master: editor Implements TIDAK bisa menulis Heavy Equipment Brand', setDoc(doc(IM, 'masterLists', 'heavyBrand'), ml('heavyBrand')), false);
     await check('master: editor anggota tim menulis Company', setDoc(doc(TM, 'masterLists', 'company'), ml('company', ['PT. GPA'])), true);
     await check('master: tanpa akses TIDAK bisa menulis', setDoc(doc(N, 'masterLists', 'site'), ml('site')), false);
     await check('master: daftar lain di luar site/brand/company DITOLAK', setDoc(doc(O, 'masterLists', 'role'), ml('role')), false);

@@ -69,18 +69,22 @@ let inspections = [];                // [{ id, unitId, date, planId, results{}, 
 let cloudInspectionPlansUnsub = null;
 let cloudMasterListsUnsub = null;
 // Master lists (Site / Brand / Company). An empty list means "anything goes".
-let masterLists = { site: [], brand: [], company: [] };
-const MASTER_KINDS = ['site', 'brand', 'company'];
+let masterLists = { site: [], brand: [], heavyBrand: [], company: [] };
+const MASTER_KINDS = ['site', 'brand', 'heavyBrand', 'company'];
 const MASTER_DEF = {
     site:    { label: 'Site',    plural: 'Sites',     edit: ['editUnits'],              view: ['editUnits'],
                hint: 'Used by every unit (both groups).' },
-    brand:   { label: 'Brand',   plural: 'Brands',    edit: ['implements', 'editUnits'], view: ['implements', 'editUnits'],
-               hint: 'Used by the Implements list (Type — Brand) and by Heavy Equipment units.' },
+    brand:   { label: 'Implement Brand', plural: 'Implement Brands', edit: ['implements', 'editUnits'], view: ['implements', 'editUnits'],
+               hint: 'Brands of agricultural implements, used by the Implements list (Type — Brand).' },
+    heavyBrand: { label: 'Heavy Equipment Brand', plural: 'Heavy Equipment Brands', edit: ['editUnits'], view: ['editUnits'],
+               hint: 'Brands of Heavy Equipment units (LiuGong, Komatsu, …).' },
     company: { label: 'Company', plural: 'Companies', edit: ['teamMembers'],            view: ['teamMembers'],
                hint: 'Used by team members, their shifts and reports.' }
 };
 // Clean Up Values fields whose target must come from a master list.
-const MERGE_MASTER_KIND = { site: 'site', implBrand: 'brand', brand: 'brand', company: 'company' };
+const MERGE_MASTER_KIND = { site: 'site', implBrand: 'brand', brand: 'heavyBrand', company: 'company' };
+// …and the other way: the Clean Up Values field that rewrites a list's records.
+const MASTER_MERGE_FIELD = { site: 'site', heavyBrand: 'brand', company: 'company' };
 let cloudInspectionsUnsub = null;
 
 // ---- Warehouse (cloud-only, same pattern as the team collections) ----
@@ -106,7 +110,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v145';
+const APP_VERSION = 'v146';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -4204,11 +4208,11 @@ function handleEditCSVImport(file) {
                     + (existingSNs.has((u.sn || '').toLowerCase()) ? 'left unchanged' : 'left empty') });
                 u.implement = '';
             });
-            if (masterListActive('brand')) valid.forEach(u => {
+            if (masterListActive('heavyBrand')) valid.forEach(u => {
                 if (unitGroupOf(u) !== 'heavy' || !u.brand) return;
-                const r = checkMasterValue('brand', u.brand, null);
+                const r = checkMasterValue('heavyBrand', u.brand, null);
                 if (r.ok) { u.brand = r.value; return; }
-                notes.push({ name: u.name, sn: u.sn, reason: `Brand "${r.value}" is not in the Brand list — `
+                notes.push({ name: u.name, sn: u.sn, reason: `Brand "${r.value}" is not in the Heavy Equipment Brand list — `
                     + (existingSNs.has((u.sn || '').toLowerCase()) ? 'left unchanged' : 'left empty') });
                 delete u.brand;
             });
@@ -4907,15 +4911,17 @@ function saveInlineEdit(el) {
         return;
     }
     if (changed && (field === 'site' || field === 'brand') && !hasUnreadableGroup(unit)) {
-        const r = checkMasterValue(field, newValue, unit[field]);
+        const kind = field === 'brand' ? 'heavyBrand' : 'site';
+        const label = field === 'brand' ? 'Brand' : 'Site';
+        const r = checkMasterValue(kind, newValue, unit[field]);
         if (!r.ok) {
             el.textContent = unit[field] || '';
-            showToast(`${MASTER_DEF[field].label} "${r.value}" ${masterNotInList(field)}`, 'warning');
+            showToast(`${label} "${r.value}" ${masterNotInList(kind)}`, 'warning');
             return;
         }
         if (r.value !== newValue) el.textContent = r.value;
         if (r.value === (unit[field] || '')) return;
-        if (updateUnit(id, { [field]: r.value })) showToast(`${MASTER_DEF[field].label} updated`, 'success');
+        if (updateUnit(id, { [field]: r.value })) showToast(`${label} updated`, 'success');
         return;
     }
     if (changed && field === 'implement') {
@@ -5071,8 +5077,8 @@ function applyBulkEdit() {
         fields.site = r.value;
     }
     if (fields.brand) {
-        const r = checkMasterValue('brand', fields.brand, null);
-        if (!r.ok) { showToast(`Brand "${r.value}" ${masterNotInList('brand')}`, 'warning'); return; }
+        const r = checkMasterValue('heavyBrand', fields.brand, null);
+        if (!r.ok) { showToast(`Brand "${r.value}" ${masterNotInList('heavyBrand')}`, 'warning'); return; }
         fields.brand = r.value;
     }
     if (fields.implement) {
@@ -5431,9 +5437,9 @@ function checkUnitFields(id, fields) {
     }
     if (fields.brand !== undefined) {
         const unit = id ? globalData.find(u => u.id === id) : null;
-        const r = checkMasterValue('brand', fields.brand, unit ? unit.brand : null);
+        const r = checkMasterValue('heavyBrand', fields.brand, unit ? unit.brand : null);
         if (!r.ok) {
-            showToast(`Brand "${r.value}" ${masterNotInList('brand')}`, 'warning');
+            showToast(`Brand "${r.value}" ${masterNotInList('heavyBrand')}`, 'warning');
             const el = document.getElementById('formHeavyBrand');
             if (el) el.focus();
             return false;
@@ -9485,7 +9491,7 @@ function tearDownCloudSync() {
     _shiftPendingWrites.clear();
     if (cloudUserCategoriesUnsub) { try { cloudUserCategoriesUnsub(); } catch (_) {} cloudUserCategoriesUnsub = null; }
     if (cloudMasterListsUnsub) { try { cloudMasterListsUnsub(); } catch (_) {} cloudMasterListsUnsub = null; }
-    masterLists = { site: [], brand: [], company: [] };
+    masterLists = { site: [], brand: [], heavyBrand: [], company: [] };
     if (cloudDamageComponentsUnsub) { try { cloudDamageComponentsUnsub(); } catch (_) {} cloudDamageComponentsUnsub = null; }
     if (cloudDevicesUnsub) { try { cloudDevicesUnsub(); } catch (_) {} cloudDevicesUnsub = null; }
     if (cloudStockUnsub) { try { cloudStockUnsub(); } catch (_) {} cloudStockUnsub = null; }
@@ -16535,14 +16541,15 @@ function masterUsage(kind) {
     const counts = new Map();
     const add = v => { v = _toolNorm(v); if (v) counts.set(v, (counts.get(v) || 0) + 1); };
     if (kind === 'site') globalData.forEach(u => add(u.site));
-    if (kind === 'brand') { globalImplements.forEach(i => add(i.brand)); unitsOfGroup(globalData, 'heavy').forEach(u => add(u.brand)); }
+    if (kind === 'brand') globalImplements.forEach(i => add(i.brand));
+    if (kind === 'heavyBrand') unitsOfGroup(globalData, 'heavy').forEach(u => add(u.brand));
     if (kind === 'company') (teamMembers || []).forEach(m => add(companyOf(m)));
     return counts;
 }
-const MASTER_USED_NOUN = { site: 'unit', brand: 'use', company: 'member' };
+const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', heavyBrand: 'unit', company: 'member' };
 
 function applyMasterListsSnapshot(docs) {
-    const next = { site: [], brand: [], company: [] };
+    const next = { site: [], brand: [], heavyBrand: [], company: [] };
     (docs || []).forEach(d => {
         if (MASTER_KINDS.includes(d.id) && Array.isArray(d.values)) next[d.id] = d.values.map(_toolNorm).filter(Boolean);
     });
@@ -16560,6 +16567,7 @@ function populateMasterDatalists() {
     const sorted = m => [...m.keys()].sort((a, b) => a.localeCompare(b));
     fill('siteList', masterListActive('site') ? masterLists.site : sorted(masterUsage('site')));
     fill('brandList', masterListActive('brand') ? masterLists.brand : sorted(masterUsage('brand')));
+    fill('heavyBrandList', masterListActive('heavyBrand') ? masterLists.heavyBrand : sorted(masterUsage('heavyBrand')));
     fill('companyList', companySuggestions());
 }
 
@@ -16618,8 +16626,8 @@ function renderMasterLists() {
             <span class="category-item__name">${escapeHtml(v)} <small class="ml-used">${n} ${noun}${n === 1 ? '' : 's'}</small></span>
             ${canEdit ? `<span class="row-actions row-actions--labeled">
                 <button type="button" class="btn btn-secondary btn-sm" onclick="addMasterValue(${jsArg(v)})">Add to list</button>
-                ${_mlKind !== 'brand' && canMergeField(_mlKind) ? `<button type="button" class="btn btn-secondary btn-sm"
-                    onclick="closeMasterLists(); openValueMerge(${jsArg(_mlKind)}, ${jsArgList([v])})">Merge…</button>` : ''}
+                ${MASTER_MERGE_FIELD[_mlKind] && canMergeField(MASTER_MERGE_FIELD[_mlKind]) ? `<button type="button" class="btn btn-secondary btn-sm"
+                    onclick="closeMasterLists(); openValueMerge(${jsArg(MASTER_MERGE_FIELD[_mlKind])}, ${jsArgList([v])})">Merge…</button>` : ''}
             </span>` : ''}</li>`).join('')}</ul>` : '';
 }
 
@@ -16712,7 +16720,6 @@ function renameMasterValue(v) {
     } else if (kind === 'brand') {
         const imps = globalImplements.filter(i => uses(i.brand));
         if (imps.length && !requireEdit('implements')) return;
-        n = 0;
         // Units name an implement by "Type — Brand", so they follow it.
         const unitChanges = new Map();
         imps.forEach(imp => {
@@ -16729,11 +16736,12 @@ function renameMasterValue(v) {
             logEvent({ action: 'update', unitId: imp.id, unitName: `[Implement] ${imp.profileName || ''}`, field: 'Brand', before: imp.brand, after: to });
         });
         if (imps.length) { saveImplements(); if (currentView === 'implements') renderImplementsTable(); }
-        if (hasAccess('editUnits', 'edit')) {
-            unitsOfGroup(globalData, 'heavy').filter(u => uses(u.brand)).forEach(u => unitChanges.set(u.id, { brand: to }));
-            if (unitChanges.size) n += updateUnitsBatch(unitChanges).filter(d => isHeavy(d.unit)).length;
-        }
-        n += imps.length;
+        if (unitChanges.size && hasAccess('editUnits', 'edit')) updateUnitsBatch(unitChanges);
+        n = imps.length;
+    } else if (kind === 'heavyBrand') {
+        if (!requireEdit('editUnits')) return;
+        const changes = new Map(unitsOfGroup(globalData, 'heavy').filter(u => uses(u.brand)).map(u => [u.id, { brand: to }]));
+        n = updateUnitsBatch(changes).length;
     }
     _saveMasterList(kind, masterLists[kind].map(x => (x === v ? to : x)), `Renamed "${v}" → "${to}"`);
     showToast(`Renamed to "${to}"${n ? ` — ${n} ${MASTER_USED_NOUN[kind]}(s) updated` : ''}`, 'success');
@@ -16748,8 +16756,8 @@ function dcNotInMasterLists() {
         [...masterUsage(kind).entries()].filter(([v]) => !masterMatch(kind, v)).sort((a, b) => b[1] - a[1]).forEach(([v, n]) => {
             out.push(dc('master-luar', `${MASTER_DEF[kind].label}: ${v}`,
                 `${n} ${MASTER_USED_NOUN[kind]}(s) — not in the ${MASTER_DEF[kind].label} list`,
-                kind === 'brand' ? 'implements' : kind === 'company' ? 'team' : 'editUnits',
-                kind === 'brand' ? {} : { merge: { field: kind, values: [v] } }));
+                kind === 'brand' ? 'implements' : kind === 'company' ? 'team' : kind === 'heavyBrand' ? 'editUnits:heavy' : 'editUnits',
+                MASTER_MERGE_FIELD[kind] ? { merge: { field: MASTER_MERGE_FIELD[kind], values: [v] } } : {}));
         });
     });
     return out;

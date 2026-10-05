@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.551 pemeriksaan di tiga puluh delapan suite, menggerakkan Chromium sungguhan terhadap
+1.552 pemeriksaan di tiga puluh delapan suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -302,6 +302,9 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   field kunci di kartu kelengkapan, Clean Up Values. Memakai daftar Brand
   yang sama dengan Implements di Master Lists (pemakaian & rename mencakup
   keduanya).
+  Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
+  Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
+  **Implement Brands** (`masterLists/brand`) untuk Agricultural.
 - **Implement wajib dari daftar Implements (dijaga `tests/implpick_test.js`).**
   Begitu daftar Implements berisi, `checkImplementValue` menjaga form unit
   (lewat `checkUnitFields`, dengan hint di bawah kolom), Bulk Edit, edit
@@ -367,7 +370,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   stempel `appliedAt` supaya hanya sekali); tanpa akses itu muncul di Kotak
   Keputusan. Foto di `inspectionPhotos/{id}` (tidak di-subscribe), ditulis
   SEBELUM laporannya.
-- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (103 skenario;
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (105 skenario;
   bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
   kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
   alur persetujuan laporan/izin (transisi status di atas, kunci isi dan foto

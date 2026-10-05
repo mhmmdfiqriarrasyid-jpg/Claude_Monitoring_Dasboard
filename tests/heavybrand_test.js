@@ -27,7 +27,7 @@ const { launch, BASE_URL } = require('./_env');
         globalData = [HV(1, { brand: 'LiuGong' }), HV(2), { id: 't1', name: 'TR1', sn: 'ST1', status: 'Good', site: 'PT. GPA' }];
         globalImplements = [{ id: 'i1', profileName: 'GS', equipmentType: 'Bed Ripper', brand: 'Gessner' }];
         saveToStorage(globalData); saveImplements();
-        masterLists = { site: [], brand: [], company: [] };
+        masterLists = { site: [], brand: [], heavyBrand: [], company: [] };
 
         // =============== tabel ===============
         goNav('editUnits', 'heavy');
@@ -64,14 +64,16 @@ const { launch, BASE_URL } = require('./_env');
         t('Agricultural: brand ditolak oleh firewall kelompok', updateUnit('t1', { brand: 'John Deere' }), false);
 
         // =============== daftar Brand (Master Lists) ===============
-        masterLists.brand = ['Gessner', 'LiuGong'];
-        t('pemakaian Brand menghitung Implements + alat berat', [...masterUsage('brand').entries()], [['Gessner', 1], ['LiuGong', 1], ['Komatsu', 1]]);
+        masterLists.brand = ['Gessner'];
+        masterLists.heavyBrand = ['LiuGong', 'Gessner'];
+        t('daftar brand terpisah: Implements', [...masterUsage('brand').entries()], [['Gessner', 1]]);
+        t('daftar brand terpisah: alat berat', [...masterUsage('heavyBrand').entries()], [['LiuGong', 1], ['Komatsu', 1]]);
         goNav('editUnits', 'heavy');
         editUnit('h2');
         document.getElementById('formHeavyBrand').value = 'Sany';
         document.getElementById('formSite').value = 'PT. MNM';
         saveUnit(new Event('submit'));
-        t('daftar Brand berisi: brand baru di luar daftar ditolak', [globalData.find(u => u.id === 'h2').site, /not in the Brand list/.test(last())], ['PT. GPA', true]);
+        t('daftar Brand berisi: brand baru di luar daftar ditolak', [globalData.find(u => u.id === 'h2').site, /not in the Heavy Equipment Brand list/.test(last())], ['PT. GPA', true]);
         document.getElementById('formHeavyBrand').value = 'Komatsu';
         saveUnit(new Event('submit'));
         t('nilai lama di luar daftar boleh dipertahankan', globalData.find(u => u.id === 'h2').site, 'PT. MNM');
@@ -79,7 +81,7 @@ const { launch, BASE_URL } = require('./_env');
         cell('h1').textContent = 'liugong';
         saveInlineEdit(cell('h1'));
         t('edit langsung: ejaan daftar', globalData.find(u => u.id === 'h1').brand, 'LiuGong');
-        openMasterLists('brand');
+        openMasterLists('heavyBrand');
         promptAnswer = 'Liugong';
         // rename yang hanya beda huruf tetap dianggap entri yang sama
         promptAnswer = 'LiuGong Machinery';
@@ -87,7 +89,7 @@ const { launch, BASE_URL } = require('./_env');
         t('rename brand mengubah unit alat berat', globalData.find(u => u.id === 'h1').brand, 'LiuGong Machinery');
         t('Implements tidak tersentuh', globalImplements[0].brand, 'Gessner');
         closeMasterLists();
-        t('Data Check: Komatsu di luar daftar', dcNotInMasterLists().map(i => i.label), ['Brand: Komatsu']);
+        t('Data Check: Komatsu di luar daftar alat berat', dcNotInMasterLists().map(i => i.label), ['Heavy Equipment Brand: Komatsu']);
         openValueMerge('brand', ['Komatsu']);
         t('Clean Up Values: field Brand (Heavy)', document.getElementById('vmField').value, 'brand');
         closeValueMerge();
@@ -100,7 +102,7 @@ const { launch, BASE_URL } = require('./_env');
         document.getElementById('bulkChkBrand').checked = true;
         document.getElementById('bulkBrand').value = 'Not A Brand';
         applyBulkEdit();
-        t('bulk: brand di luar daftar ditolak', [globalData.find(u => u.id === 'h2').brand, /not in the Brand list/.test(last())], ['Komatsu', true]);
+        t('bulk: brand di luar daftar ditolak', [globalData.find(u => u.id === 'h2').brand, /not in the Heavy Equipment Brand list/.test(last())], ['Komatsu', true]);
         document.getElementById('bulkBrand').value = 'gessner';
         applyBulkEdit();
         t('bulk: brand diisi untuk semua unit terpilih, ejaan daftar', ['h1', 'h2'].map(id => globalData.find(u => u.id === id).brand), ['Gessner', 'Gessner']);
@@ -131,7 +133,7 @@ const { launch, BASE_URL } = require('./_env');
         window.showImportReport = realReport; window.Papa = realPapa;
         t('impor: brand dikenali → ejaan daftar', (globalData.find(u => u.sn === 'LGCB9') || {}).brand, 'Gessner');
         t('impor: brand asing → kosong + dicatat', [(globalData.find(u => u.sn === 'LGCB10') || {}).brand || '',
-            report.notes.some(n => /Brand "Unknown" is not in the Brand list — left empty/.test(n.reason))], ['', true]);
+            report.notes.some(n => /Brand "Unknown" is not in the Heavy Equipment Brand list — left empty/.test(n.reason))], ['', true]);
         t('impor: kolom Brand pada traktor diabaikan tanpa peringatan', [(globalData.find(u => u.sn === 'ST9') || {}).brand,
             report.notes.filter(n => n.sn === 'ST9').map(n => n.reason)], [undefined, []]);
 

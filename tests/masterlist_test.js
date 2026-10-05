@@ -39,7 +39,7 @@ const { launch, BASE_URL } = require('./_env');
         teamMembers = [{ id: 'm1', name: 'A', company: 'PT. Global Papua Abadi', active: true },
                        { id: 'm2', name: 'B', company: 'PT Global Papua Abadi', active: true }];
         saveToStorage(globalData); saveImplements();
-        masterLists = { site: [], brand: [], company: [] };
+        masterLists = { site: [], brand: [], heavyBrand: [], company: [] };
 
         // =============== daftar kosong ===============
         t('daftar kosong: bebas', checkMasterValue('site', 'Apa Saja', null), { ok: true, value: 'Apa Saja' });
@@ -127,7 +127,7 @@ const { launch, BASE_URL } = require('./_env');
         document.getElementById('implBrand').value = 'Unknown Brand';
         const nImpl = globalImplements.length;
         saveImplement(new Event('submit'));
-        t('Implements: brand di luar daftar ditolak', [globalImplements.length, /not in the Brand list/.test(last())], [nImpl, true]);
+        t('Implements: brand di luar daftar ditolak', [globalImplements.length, /not in the Implement Brand list/.test(last())], [nImpl, true]);
         document.getElementById('implBrand').value = 'gessner';
         saveImplement(new Event('submit'));
         t('Implements: ejaan daftar disimpan', (globalImplements.find(i => i.profileName === 'New') || {}).brand, 'Gessner');
