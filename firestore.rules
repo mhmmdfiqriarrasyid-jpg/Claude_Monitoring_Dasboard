@@ -23,7 +23,11 @@ rules_version = '2';
 //
 //   activeSession : { id, startedAt, device } — the one device currently
 //   signed in. A user may write this one field on their own document; the
-//   newest sign-in wins and every other device signs itself out.
+//   newest sign-in wins and every other device signs itself out. An owner's
+//   remote sign-out writes the same three keys with an id starting
+//   'revoked_'. The app always REPLACES the whole map (never merges into it):
+//   a merge kept any other key already stored there, and this shape check
+//   then refused every later sign-in of that account.
 // ============================================================
 
 service cloud.firestore {
@@ -134,7 +138,7 @@ service cloud.firestore {
                               allow create, update: if canEditArea('teamShift') && idMatches(id)
                                 && request.resource.data.get('shift', '') in ['pagi', 'siang', 'malam', 'libur', '']; }
 
-    // ---- Approval (work logs and leave requests) ----
+    // ---- Approval (work logs, leave requests, heavy-equipment checks) ----
     // Enforced HERE, not only in the app: from the browser console anyone
     // with teamLog edit could otherwise write approval:'approved' under a
     // supervisor's name, and an approver could approve their own report.
@@ -145,20 +149,41 @@ service cloud.firestore {
     //            draft / revision are open to editors; pending and
     //            approved are locked until the checker acts.
     // Records written before approval existed have no field: pending.
+    //
+    // Two accounts are recorded, and the checker may be neither of them:
+    //   createdByUid   — who filed it. Required on create (no default — a
+    //                    create that left it out used to pass as "nobody's"),
+    //                    and never rewritten afterwards.
+    //   submittedByUid — who sent THIS version for checking. Stamped by the
+    //                    sender on every write that leaves the record
+    //                    pending. Needed because an open record (a draft, or
+    //                    one sent back for revision) may be changed by any
+    //                    editor: without it, someone holding both the edit
+    //                    and the approve grant could rewrite a colleague's
+    //                    sent-back report, send it, and approve their own
+    //                    words under the colleague's name.
+    // Records from before either field existed carry neither; those still
+    // follow the createdByUid check (an empty one matches nobody).
     function apprOf(d)     { return d.get('approval', 'pending'); }
     function isOpen(d)     { return apprOf(d) in ['draft', 'revision']; }
     function approvalKeys() {
       return ['approval', 'approvedBy', 'approvedByEmail', 'approvedAt',
               'revisionNote', 'reviewedBy', 'reviewedAt', 'updatedAt'];
     }
+    // Whoever leaves a record pending signs as its sender, with their own uid.
+    function sentBySelf() {
+      return apprOf(request.resource.data) != 'pending'
+          || request.resource.data.get('submittedByUid', '') == request.auth.uid;
+    }
     // An editor changes an OPEN record, and leaves it a draft or sends it —
     // never approved, never under someone's signature, and never as someone
-    // else's: the author cannot be rewritten.
+    // else's: the author cannot be rewritten, and the sender is the editor.
     function editorWrite() {
       return isOpen(resource.data)
           && apprOf(request.resource.data) in ['draft', 'pending']
           && request.resource.data.get('approvedByEmail', '') == ''
-          && request.resource.data.get('createdByUid', '') == resource.data.get('createdByUid', '');
+          && request.resource.data.get('createdByUid', '') == resource.data.get('createdByUid', '')
+          && sentBySelf();
     }
     // Tarik kembali: the sender pulls a pending record back to a draft before
     // anyone has checked it, and changes nothing else on the way.
@@ -168,12 +193,14 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approval', 'updatedAt'])
           && resource.data.get('createdByUid', '') in ['', request.auth.uid];
     }
-    // An approver touches the approval fields only, never checks their own
-    // record, approves only what was sent, signs with their own e-mail, and
-    // sends back — with a reason — only what was sent or already approved.
+    // An approver touches the approval fields only, never checks a record
+    // they filed or sent themselves, approves only what was sent, signs with
+    // their own e-mail, and sends back — with a reason — only what was sent
+    // or already approved.
     function approverWrite() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(approvalKeys())
           && resource.data.get('createdByUid', '') != request.auth.uid
+          && resource.data.get('submittedByUid', '') != request.auth.uid
           && ((request.resource.data.get('approval', '') == 'approved'
                 && apprOf(resource.data) == 'pending'
                 && request.resource.data.get('approvedByEmail', '') == request.auth.token.email)
@@ -182,11 +209,14 @@ service cloud.firestore {
                 && request.resource.data.get('revisionNote', '') is string
                 && request.resource.data.get('revisionNote', '').size() > 0));
     }
+    // A new record names its author — the signed-in account — and, when it
+    // is sent straight away, its sender too.
     function newRecord(id) {
       return idMatches(id)
           && apprOf(request.resource.data) in ['draft', 'pending']
           && request.resource.data.get('approvedByEmail', '') == ''
-          && request.resource.data.get('createdByUid', request.auth.uid) == request.auth.uid;
+          && request.resource.data.get('createdByUid', '') == request.auth.uid
+          && sentBySelf();
     }
     function teamLogReader() {
       return canViewArea('teamLog') || canViewArea('teamLogApprove') || canViewArea('leader');
@@ -372,7 +402,10 @@ service cloud.firestore {
                         && request.resource.data.diff(resource.data)
                              .affectedKeys().hasOnly(['activeSession'])
                         // The session record is shown on the owner's Users
-                        // page: a fixed, small shape.
+                        // page: a fixed, small shape. Checked on the RESULT,
+                        // so a claim must replace the whole map — merged
+                        // into, any stray key already stored would refuse
+                        // this account's every sign-in from then on.
                         && request.resource.data.activeSession.keys().hasOnly(['id', 'startedAt', 'device'])
                         && request.resource.data.activeSession.get('id', '') is string
                         && request.resource.data.activeSession.get('id', '').size() <= 80

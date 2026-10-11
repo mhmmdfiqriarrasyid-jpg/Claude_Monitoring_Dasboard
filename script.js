@@ -2392,6 +2392,19 @@ const BACKUP_PARTS = [
       saveLocal: () => saveLicenseStockLocal(), bulk: 'saveLicenses',
       deleteOne: id => cloudDeleteLicense(id), resync: () => resyncLicenses() },
 
+    // What each implement type needs — the whole Purchase Plan hangs on it,
+    // and a lost set empties the plan without a word.
+    { key: 'licenseRequirements', label: 'License Requirements', area: 'licenseStock',
+      read: () => licenseRequirements,
+      write: l => { licenseRequirements = l; refreshLicensePlan(); },
+      // firestore.rules accept only the known licence values; one odd row in a
+      // hand-edited file would sink the whole batch it rides in.
+      accept: r => LIC_REQ_OPTIONS.gps.includes(r.gps || '') && LIC_REQ_OPTIONS.display.includes(r.display || '')
+          && typeof (r.type || '') === 'string' && String(r.type || '').length <= 120,
+      bulk: 'saveLicenseRequirements',
+      deleteOne: id => cloudCall('deleteLicenseRequirement', id)
+          .catch(err => console.warn(`[restore] deleteLicenseRequirement(${id}) gagal:`, err)) },
+
     { key: 'userCategories', label: 'User Categories', area: 'editUnits',
       read: () => userCategories, write: l => { userCategories = l; },
       bulk: 'saveUserCategories', deleteOne: id => window.cloud.deleteUserCategory(id) },
@@ -2399,6 +2412,17 @@ const BACKUP_PARTS = [
     { key: 'damageComponents', label: 'Damage Components', area: 'damage',
       read: () => damageComponents, write: l => { damageComponents = l; },
       bulk: 'saveDamageComponents', deleteOne: id => window.cloud.deleteDamageComponent(id) },
+
+    // The agreed spellings (Site, Brand, Company). Four documents keyed by
+    // kind, each with its own edit area, so this one restores through
+    // _restoreMasterLists instead of the per-id path. Every active account
+    // reads these lists (firestore.rules), so backing them up shows nobody
+    // anything new.
+    { key: 'masterLists', label: 'Master Lists',
+      canView: () => true,
+      canEdit: () => MASTER_KINDS.some(canEditMasterList),
+      read: () => MASTER_KINDS.map(k => ({ id: k, values: (masterLists[k] || []).slice() })),
+      restore: (rows, merge) => _restoreMasterLists(rows, merge) },
 
     { key: 'teamMembers', label: 'Team Members', area: 'teamMembers',
       read: () => teamMembers, write: l => { teamMembers = l; },
@@ -9483,7 +9507,7 @@ function setupAuth() {
         // opened offline (or on a weak signal) never started cloud sync at
         // all. The local write lands in the cache at once, so the watcher
         // below already sees this device's id.
-        if (!held || held.id !== mine) claimActiveSession(user.uid);
+        if (!held || held.id !== mine) claimActiveSession(user.uid, held);
         watchOwnUserDoc(user.uid);
         maybeInitCloudSync();
     });
@@ -9705,6 +9729,9 @@ let _mySessionId = '';
 let _userDocUnsub = null;
 let _sessionTakenOver = false;
 let _explicitSignIn = false;   // set by the sign-in / sign-up forms
+// The session id the server still holds after this device's claim was
+// refused. Not a takeover: it was there before this sign-in.
+let _claimRefusedId = null;
 
 function mySessionId() {
     if (_mySessionId) return _mySessionId;
@@ -9735,8 +9762,10 @@ function deviceLabel() {
     return `${browser} · ${os}`;
 }
 
-async function claimActiveSession(uid) {
+// `held` is the session the account document held when this sign-in began.
+async function claimActiveSession(uid, held) {
     if (!window.cloud?.claimSession) return;
+    _claimRefusedId = null;
     try {
         await window.cloud.claimSession(uid, {
             id: mySessionId(),
@@ -9744,13 +9773,32 @@ async function claimActiveSession(uid) {
             device: deviceLabel()
         });
     } catch (e) {
-        // Old rules that do not allow a self-update of activeSession land here.
-        // Sign-in still works; the single-session rule just is not enforced.
+        // Sign-in still works; the single-session rule just is not enforced
+        // for this device.
         console.warn('[session] could not claim session:', e && e.code);
         if (e && e.code === 'permission-denied') {
-            showToast('Single-session rule is not active yet — re-publish firestore.rules', 'warning');
+            // The refused write is rolled back in the cache, so the watcher
+            // is about to see the old id again. Without this it read that as
+            // a takeover and signed out a sign-in that had just succeeded.
+            // Set before the watcher hears of it: Firestore settles the write
+            // promise ahead of the listener events for the same rollback.
+            if (currentUser && currentUser.uid === uid) _claimRefusedId = (held && held.id) || null;
+            showToast(claimRefusedMessage(held), 'warning');
         }
     }
+}
+
+// Blame the published rules only when nothing shows they ever accepted a
+// claim. A live (not revoked) session id on the account was written by one of
+// its own sign-ins, so the rules took that claim — re-publishing them would
+// change nothing, and telling someone to would send them looking in the wrong
+// place.
+function claimRefusedMessage(held) {
+    const claimedBefore = !!(held && held.id && !String(held.id).startsWith('revoked_'));
+    if (claimedBefore) return 'This device could not take over the session for this account — another device may still be signed in';
+    return isOwner()
+        ? 'Single-session rule is not active yet — re-publish firestore.rules'
+        : 'Single-session rule is not active yet — ask the Super Admin to re-publish firestore.rules';
 }
 
 // Watch this user's own document: session takeovers, plus role and access
@@ -9764,7 +9812,7 @@ function watchOwnUserDoc(uid) {
         if (!doc) { handleSessionTakenOver({ id: 'revoked_deleted' }); return; }
 
         const active = doc.activeSession;
-        if (active && active.id && active.id !== mySessionId()) {
+        if (active && active.id && active.id !== mySessionId() && active.id !== _claimRefusedId) {
             handleSessionTakenOver(active);
             return;
         }
@@ -9788,6 +9836,7 @@ function watchOwnUserDoc(uid) {
 
 function stopWatchingOwnUserDoc() {
     if (_userDocUnsub) { try { _userDocUnsub(); } catch (_) {} _userDocUnsub = null; }
+    _claimRefusedId = null;
 }
 
 async function handleSessionTakenOver(active) {
@@ -10511,7 +10560,10 @@ async function forceSignOutUser(uid) {
         return;
     }
     const sess = user.activeSession;
-    const where = (sess && sess.device) ? `\n\nActive device: ${sess.device}` : '';
+    // A revoked slot carries "Signed out by …" in its device field: not a
+    // device, so it is neither shown as one nor logged as the one signed out.
+    const live = sess && sess.id && !String(sess.id).startsWith('revoked_');
+    const where = (live && sess.device) ? `\n\nActive device: ${sess.device}` : '';
     if (!confirm(`Sign ${user.email} out of all devices?${where}\n\nThey will have to sign in again. Their data is not deleted.`)) return;
     try {
         const fn = cloudFn('revokeUserSession');
@@ -10522,7 +10574,7 @@ async function forceSignOutUser(uid) {
             unitId: uid,
             unitName: `[User] ${user.displayName || user.email}`,
             field: 'Session',
-            before: (sess && sess.device) || 'active',
+            before: (live && sess.device) || 'active',
             after: 'signed out'
         });
         showToast(`${user.email} signed out of all devices`, 'success');
@@ -10774,13 +10826,45 @@ function canApproveWorkLogs(areas = TEAM_AREAS) {
 }
 
 // Checking your own work is not a check. Blocked on the account that filed the
-// report, not on the team member it is about — an admin may legitimately file
+// report AND on the account that sent this version of it: an open record (a
+// draft, or one sent back) may be changed by any editor, so the filer alone
+// does not say whose words are waiting — someone holding both grants could
+// otherwise rewrite a colleague's sent-back report, send it, and approve it.
+// Not blocked on the team member it is about — an admin may legitimately file
 // on someone else's behalf. Owners are exempt so a one-person setup is not
-// deadlocked, and older reports have no author recorded, so they pass.
+// deadlocked. firestore.rules holds the same line, and since v149 refuses a
+// new record without its author — so a record with none is an old one, from
+// before authors were recorded, and stays checkable as it always was.
+//
+// Returns why the signed-in account may not check `w`, or '' when it may.
+function selfCheckBlock(w) {
+    const me = myUid();
+    if (!w || !me) return 'unknown';
+    if (w.createdByUid && w.createdByUid === me) return 'filed';
+    if (w.submittedByUid && w.submittedByUid === me) return 'sent';
+    return '';
+}
+
 function canApproveThisLog(w, areas = TEAM_AREAS) {
     if (!canApproveWorkLogs(areas)) return false;
     if (isOwner()) return true;
-    return !(w && w.createdByUid && currentUser && w.createdByUid === currentUser.uid);
+    return !selfCheckBlock(w);
+}
+
+// The refusal in the words the person needs. `verb` is approve / review.
+function selfCheckMessage(w, noun, verb) {
+    const why = selfCheckBlock(w);
+    if (why === 'unknown') return `You must be signed in to ${verb} this ${noun}`;
+    if (why === 'sent') return `You submitted this ${noun} yourself — someone else must ${verb} it`;
+    return `You filed this ${noun} yourself — someone else must ${verb} it`;
+}
+
+// Who sends a record for checking signs as its sender (firestore.rules checks
+// it is the signed-in account). A draft has not been sent, so it keeps
+// whatever an earlier round recorded.
+function submittedByFor(existing, asDraft) {
+    if (!asDraft) return myUid();
+    return (existing && existing.submittedByUid) || '';
 }
 
 // ---- Paddock area ----
@@ -12265,7 +12349,8 @@ function saveWorkLog(event, mode) {
         approval: asDraft ? 'draft' : 'pending',
         approvedBy: '', approvedByEmail: '', approvedAt: 0,
         revisionNote: asDraft && existing ? (existing.revisionNote || '') : '',
-        submittedAt: asDraft ? (existing ? (existing.submittedAt || 0) : 0) : Date.now()
+        submittedAt: asDraft ? (existing ? (existing.submittedAt || 0) : 0) : Date.now(),
+        submittedByUid: submittedByFor(existing, asDraft)
     };
     // Untouched photos are left exactly as they are — not re-read, not
     // rewritten, not cleared. That is what makes it safe to save while the
@@ -12378,7 +12463,7 @@ function approveWorkLog(id) {
         return;
     }
     if (!canApproveThisLog(w)) {
-        showToast('A report you filed yourself must be approved by someone else', 'warning');
+        showToast(selfCheckMessage(w, 'report', 'approve'), 'warning');
         return;
     }
     if (workLogApproval(w) !== 'pending') {
@@ -12419,7 +12504,7 @@ function reviseWorkLog(id) {
         return;
     }
     if (!canApproveThisLog(w)) {
-        showToast('A report you filed yourself must be reviewed by someone else', 'warning');
+        showToast(selfCheckMessage(w, 'report', 'review'), 'warning');
         return;
     }
     const stNow = workLogApproval(w);
@@ -12997,6 +13082,7 @@ function saveLeave(event, mode) {
         approvedBy: '', approvedByEmail: '', approvedAt: 0,
         revisionNote: asDraft && existing ? (existing.revisionNote || '') : '',
         submittedAt: asDraft ? (existing ? (existing.submittedAt || 0) : 0) : Date.now(),
+        submittedByUid: submittedByFor(existing, asDraft),
         createdBy: existing ? (existing.createdBy || '') : ((currentUserDoc && currentUserDoc.displayName) || (currentUser && currentUser.email) || ''),
         createdByUid: existing ? (existing.createdByUid || '') : ((currentUser && currentUser.uid) || ''),
         createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),
@@ -13103,7 +13189,7 @@ function approveLeave(id) {
         return;
     }
     if (!canApproveThisLog(r)) {
-        showToast('A request you filed yourself must be approved by someone else', 'warning');
+        showToast(selfCheckMessage(r, 'request', 'approve'), 'warning');
         return;
     }
     if (workLogApproval(r) !== 'pending') {
@@ -13139,8 +13225,12 @@ function approveLeave(id) {
 function reviseLeave(id) {
     const r = leaveRequests.find(x => x.id === id);
     if (!r) return;
-    if (!canApproveThisLog(r)) {
+    if (!canApproveWorkLogs()) {
         showToast('You do not have the right to review this request', 'warning');
+        return;
+    }
+    if (!canApproveThisLog(r)) {
+        showToast(selfCheckMessage(r, 'request', 'review'), 'warning');
         return;
     }
     const stNow = workLogApproval(r);
@@ -15847,6 +15937,7 @@ function saveInspection(event, mode) {
         approvedBy: '', approvedByEmail: '', approvedAt: 0,
         revisionNote: asDraft && existing ? (existing.revisionNote || '') : '',
         submittedAt: asDraft ? (existing ? (existing.submittedAt || 0) : 0) : Date.now(),
+        submittedByUid: submittedByFor(existing, asDraft),
         createdBy: existing ? (existing.createdBy || '') : ((currentUserDoc && currentUserDoc.displayName) || (currentUser && currentUser.email) || ''),
         createdByUid: existing ? (existing.createdByUid || '') : myUid(),
         createdByEmail: existing ? (existing.createdByEmail || '') : ((currentUser && currentUser.email) || ''),
@@ -15924,7 +16015,7 @@ function approveInspection(id) {
     const r = inspections.find(x => x.id === id);
     if (!r) return;
     if (!canApproveWorkLogs(INS_AREAS)) { showToast('You do not have the right to approve inspection reports', 'warning'); return; }
-    if (!canApproveThisLog(r, INS_AREAS)) { showToast('An inspection report you filed yourself must be approved by someone else', 'warning'); return; }
+    if (!canApproveThisLog(r, INS_AREAS)) { showToast(selfCheckMessage(r, 'inspection report', 'approve'), 'warning'); return; }
     if (workLogApproval(r) !== 'pending') { showToast('Only submitted reports can be approved', 'warning'); return; }
     const rec = {
         ...r,
@@ -15956,7 +16047,8 @@ function approveInspection(id) {
 function reviseInspection(id) {
     const r = inspections.find(x => x.id === id);
     if (!r) return;
-    if (!canApproveThisLog(r, INS_AREAS)) { showToast('You do not have the right to review this inspection report', 'warning'); return; }
+    if (!canApproveWorkLogs(INS_AREAS)) { showToast('You do not have the right to review this inspection report', 'warning'); return; }
+    if (!canApproveThisLog(r, INS_AREAS)) { showToast(selfCheckMessage(r, 'inspection report', 'review'), 'warning'); return; }
     const st = workLogApproval(r);
     if (st !== 'pending' && st !== 'approved') { showToast('This inspection report has not been submitted or was already sent back', 'warning'); return; }
     const note = prompt(`What needs fixing in the inspection report for ${inspectionUnitLabel(r)} (${r.date})?`, r.revisionNote || '');

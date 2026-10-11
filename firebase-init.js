@@ -8,6 +8,7 @@ import {
     collection,
     doc,
     setDoc,
+    updateDoc,
     deleteDoc,
     getDoc,
     getDocs,
@@ -355,19 +356,27 @@ window.cloud = {
     // ---- Single active session per account ----
     // Writes ONLY activeSession, because the security rules let a non-owner
     // touch that one field on their own document and nothing else.
+    //
+    // updateDoc, not setDoc with merge: the map is REPLACED, never merged
+    // into. A merge kept every key already stored inside activeSession — the
+    // old remote sign-out left revokedAt/revokedBy there — and the rules
+    // accept only {id, startedAt, device}, so every later claim was refused
+    // and the account was signed out again on every sign-in. Replacing the
+    // map also heals a document already stuck that way.
     async claimSession(uid, session) {
-        await setDoc(doc(db, USERS_COL, uid), { activeSession: session }, { merge: true });
+        await updateDoc(doc(db, USERS_COL, uid), { activeSession: session });
     },
     // Owner-initiated remote sign-out: no device can ever hold this id, so
-    // whoever is signed in is dropped on their next snapshot.
+    // whoever is signed in is dropped on their next snapshot. Same three keys
+    // as a claim (the Users page shows `device`), and replaced the same way.
     async revokeUserSession(uid, revokedByEmail) {
-        await setDoc(doc(db, USERS_COL, uid), {
+        await updateDoc(doc(db, USERS_COL, uid), {
             activeSession: {
                 id: 'revoked_' + Date.now(),
-                revokedAt: Date.now(),
-                revokedBy: revokedByEmail || null
+                startedAt: Date.now(),
+                device: ('Signed out by ' + (revokedByEmail || 'an admin')).slice(0, 80)
             }
-        }, { merge: true });
+        });
     },
     // Live view of one user's own document — session takeovers, and role or
     // access changes, reach the signed-in user without a reload.
@@ -761,6 +770,12 @@ window.cloud = {
     async saveLicenseRequirement(rec) {
         await setDoc(doc(db, LICENSE_REQ_COL, rec.id), rec);
     },
+    // Bulk form for a backup restore. Whole documents, like the single saver:
+    // a requirement is two fields, there is nothing to merge into.
+    async saveLicenseRequirements(items) {
+        if (!items || !items.length) return;
+        await batchInChunks(items, (batch, r) => batch.set(doc(db, LICENSE_REQ_COL, r.id), r));
+    },
     async deleteLicenseRequirement(id) {
         await deleteDoc(doc(db, LICENSE_REQ_COL, id));
     },
@@ -842,6 +857,28 @@ window.cloud = {
     },
     async deleteInspectionPhotos(id) {
         await deleteDoc(doc(db, INSPECTION_PHOTOS_COL, id));
+    },
+
+    // A REPLACE restore: each record written as the WHOLE document. The bulk
+    // savers above upsert with merge:true — right for an edit, wrong here: a
+    // field added after the backup was taken survived the "replace", leaving
+    // a record that is half backup and half today (the backup's text next to
+    // today's approval stamp). A method of its own, not a flag on those
+    // savers, so a stale copy of this file is detectable: an old saver would
+    // ignore the flag and merge anyway, an absent method is caught by
+    // cloudFn. Names come from a fixed map, like isCollectionEmpty below.
+    async replaceDocs(which, items) {
+        const cols = {
+            units: UNITS_COL, implements: IMPL_COL, damages: DAMAGE_COL, licenseStock: LICENSE_COL,
+            userCategories: USER_CATEGORIES_COL, damageComponents: DAMAGE_COMPONENTS_COL,
+            teamMembers: TEAM_MEMBERS_COL, shifts: SHIFTS_COL, workLogs: WORK_LOGS_COL,
+            leaveRequests: LEAVE_COL, inspectionPlans: INSPECTION_PLANS_COL, inspections: INSPECTIONS_COL,
+            devices: DEVICES_COL, stockItems: STOCK_ITEMS_COL, licenseRequirements: LICENSE_REQ_COL
+        };
+        const name = cols[which];
+        if (!name) throw new Error(`unknown collection: ${which}`);
+        if (!items || !items.length) return;
+        await batchInChunks(items, (batch, r) => batch.set(doc(db, name, r.id), r));
     },
 
     // "Is this collection empty?" without downloading it.
