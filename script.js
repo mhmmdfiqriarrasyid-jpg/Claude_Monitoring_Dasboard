@@ -6160,9 +6160,22 @@ function saveImplement(event) {
         const idx = globalImplements.findIndex(d => d.id === id);
         if (idx !== -1) {
             const before = { ...globalImplements[idx] };
+            // Units name an implement by its "Type — Brand" label. Found
+            // BEFORE the record changes: afterwards their text no longer
+            // resolves to it, and they would read as off-list.
+            const oldRec = globalImplements[idx];
+            const followers = (_toolNorm(before.equipmentType) !== _toolNorm(data.equipmentType) || _toolNorm(before.brand) !== _toolNorm(data.brand))
+                ? unitsOfGroup(globalData, 'tractor').filter(u => u.implement && findImplementRecord(u.implement) === oldRec) : [];
             globalImplements[idx] = { ...before, ...data, updatedAt: Date.now() };
             saveImplements();
             cloudPushImplement(globalImplements[idx]);
+            if (followers.length && hasAccess('editUnits', 'edit')) {
+                const label = implementOptionLabel(globalImplements[idx]);
+                updateUnitsBatch(new Map(followers.map(u => [u.id, { implement: label }])));
+            }
+            const moved = _toolNorm(before.equipmentType) !== _toolNorm(data.equipmentType)
+                ? _carryLicenseRequirement(before.equipmentType, data.equipmentType) : '';
+            if (followers.length || moved) showToast([followers.length ? `${followers.length} unit(s) now use the new name` : '', moved].filter(Boolean).join(' · '), 'info');
             // Audit log per changed field
             IMPLEMENT_FIELDS.forEach(f => {
                 if (before[f.key] !== data[f.key]) {
@@ -8758,6 +8771,21 @@ function cloudPushUnits(units) {
         what: 'unit',
         label: units.length === 1 ? (units[0].name || '-') : `${units.length} unit`,
         unitId: units.length === 1 ? units[0].id : '',
+        resync: resyncUnits
+    }));
+}
+
+// The changed fields of several units, as [{ id, field: value }]. Falls back to
+// the merging saver (same fields, still partial) on an older firebase-init.js.
+function cloudPushUnitFields(partials) {
+    if (suppressCloudWrites || !window.cloud?.isReady || !partials?.length) return;
+    if (!canWriteUnits('cloudPushUnitFields')) return;
+    const send = typeof window.cloud.updateUnitsFields === 'function'
+        ? list => window.cloud.updateUnitsFields(list) : list => window.cloud.saveUnits(list);
+    send(partials).catch(err => cloudWriteFailed(err, {
+        what: 'unit',
+        label: partials.length === 1 ? (((globalData.find(u => u.id === partials[0].id) || {}).name) || '-') : `${partials.length} unit`,
+        unitId: partials.length === 1 ? partials[0].id : '',
         resync: resyncUnits
     }));
 }
@@ -16370,18 +16398,32 @@ function _levenshtein(a, b, max) {
     return prev[b.length];
 }
 
-// Same text once case and punctuation are ignored, or one or two typos
-// apart. Short names need an exact match (ISJ and ISS are different brands)
-// and numbers must agree (6110B and 6120B are different models).
+// Words of a name, with letters and digits split apart ("A1" → "a", "1").
+function _simTokens(v) {
+    return String(v || '').toLowerCase()
+        .replace(/([a-z])(\d)/g, '$1 $2').replace(/(\d)([a-z])/g, '$1 $2')
+        .split(/[^a-z0-9]+/).filter(Boolean);
+}
+const _ROMAN_RE = /^(i|ii|iii|iv|v|vi|vii|viii|ix|x|xi|xii|xiii|xiv|xv|xvi|xvii|xviii|xix|xx)$/;
+// A token that says WHICH one — a number, a numeral, a letter, a short code
+// (Afdeling I / II, Blok A / B, 6110B / 6110M, ISJ / ISS, PT. GPA / GPB). Two
+// of those that differ are two different things, never a typo of each other.
+const _idToken = t => t.length <= 3 || /\d/.test(t) || _ROMAN_RE.test(t);
+
+// Same text once case and punctuation are ignored, or the same identifiers
+// with one or two typos in the longer words ("Gessner" / "Geesner").
 function similarSpelling(a, b) {
     const x = _simKey(a), y = _simKey(b);
     if (!x || !y) return false;
     if (x === y) return true;
-    if (x.replace(/\D/g, '') !== y.replace(/\D/g, '')) return false;
-    const min = Math.min(x.length, y.length);
+    const ta = _simTokens(a), tb = _simTokens(b);
+    if (ta.filter(_idToken).join(' ') !== tb.filter(_idToken).join(' ')) return false;
+    const wa = ta.filter(t => !_idToken(t)).join(''), wb = tb.filter(t => !_idToken(t)).join('');
+    if (!wa || !wb || wa === wb) return wa === wb && !!wa;
+    const min = Math.min(wa.length, wb.length);
     const lim = min >= 8 ? 2 : min >= 5 ? 1 : 0;
-    if (!lim || Math.abs(x.length - y.length) > lim) return false;
-    return _levenshtein(x, y, lim) <= lim;
+    if (!lim || Math.abs(wa.length - wb.length) > lim) return false;
+    return _levenshtein(wa, wb, lim) <= lim;
 }
 
 // values: Map spelling -> count. Groups of 2+ spellings that look alike,
@@ -16482,7 +16524,8 @@ function updateUnitsBatch(changes) {
     });
     if (!done.length) return done;
     saveToStorage(globalData);
-    cloudPushUnits(done.map(d => d.unit));
+    // Only what changed goes to the cloud — see updateUnitsFields.
+    cloudPushUnitFields(done.map(d => ({ id: d.unit.id, ...Object.fromEntries(d.keys.map(k => [k, d.unit[k] == null ? '' : d.unit[k]])) })));
     recordChange({ type: 'updated', detail: `${done.length} unit(s) updated` });
     done.forEach(d => d.keys.forEach(k => logEvent({
         action: 'update', unitId: d.unit.id, unitName: d.unit.name, field: k, before: d.before[k], after: d.unit[k]
@@ -16599,6 +16642,52 @@ function renderValueMerge() {
     document.getElementById('vmApplyBtn').disabled = !plan.length;
 }
 
+// A licence requirement is keyed by its implement type's NAME. When that name
+// changes (Implements edit, or a Clean Up Values merge), the requirement moves
+// with it — or the units drop out of the Purchase Plan as "no requirement".
+// The new name keeps its own requirement if it already has one. The old one
+// is removed only when no implement still carries the old name.
+// Returns a sentence for the person, or '' when nothing was there to move.
+function _carryLicenseRequirement(fromType, toType) {
+    const from = licenseRequirementFor(fromType);
+    if (!from || lrSlug(fromType) === lrSlug(toType)) return '';
+    if (!hasAccess('licenseStock', 'edit')) return `License requirement of "${_toolNorm(fromType)}" was not moved (needs License Stock edit access)`;
+    const to = licenseRequirementFor(toType);
+    const oldStillUsed = globalImplements.some(i => lrSlug(i.equipmentType) === lrSlug(fromType));
+    let msg;
+    if (!to) {
+        const rec = { id: lrSlug(toType), type: _toolNorm(toType), gps: from.gps || '', display: from.display || '',
+                      updatedAt: Date.now(), updatedBy: (currentUser && currentUser.email) || '' };
+        licenseRequirements = licenseRequirements.filter(r => r.id !== rec.id).concat([rec]);
+        cloudCall('saveLicenseRequirement', rec).catch(err => cloudWriteFailed(err, { what: 'license requirement', label: `[License] Requirement ${rec.type}` }));
+        msg = `License requirement moved to "${rec.type}"`;
+    } else {
+        msg = `"${_toolNorm(toType)}" kept its own license requirement`;
+    }
+    if (!oldStillUsed) {
+        licenseRequirements = licenseRequirements.filter(r => r.id !== from.id);
+        cloudCall('deleteLicenseRequirement', from.id).catch(err => cloudWriteFailed(err, { what: 'license requirement', label: `[License] Requirement ${from.type}` }));
+    }
+    logEvent({ action: 'update', unitName: `[License] Requirement ${_toolNorm(fromType)}`, field: 'Implement type',
+               before: _toolNorm(fromType), after: _toolNorm(toType) });
+    refreshLicensePlan();
+    return msg;
+}
+
+// Puts the requirement set back as it was (Undo of a merge).
+function _restoreLicenseRequirements(prev) {
+    if (!hasAccess('licenseStock', 'edit')) return;
+    const now = new Map(licenseRequirements.map(r => [r.id, r]));
+    const was = new Map(prev.map(r => [r.id, r]));
+    now.forEach((r, id) => { if (!was.has(id)) cloudCall('deleteLicenseRequirement', id).catch(() => {}); });
+    was.forEach((r, id) => {
+        const cur = now.get(id);
+        if (!cur || cur.gps !== r.gps || cur.display !== r.display) cloudCall('saveLicenseRequirement', r).catch(() => {});
+    });
+    licenseRequirements = prev.map(r => ({ ...r }));
+    refreshLicensePlan();
+}
+
 function applyValueMerge() {
     const f = MERGE_FIELDS[_vmField];
     if (!requireEdit(f.members ? 'teamMembers' : 'editUnits')) return;
@@ -16617,9 +16706,38 @@ function applyValueMerge() {
     }
     const values = [..._vmSelected];
     const plan = mergePlan(_vmField, values, target);
-    if (!plan.length) { showToast('Nothing to change', 'info'); return; }
+    // With an Implements list in use, an implement's type and brand live on
+    // its RECORD there: rewriting only the units' text made them point at a
+    // "Type — Brand" the list does not have — off-list, and out of the
+    // License Purchase Plan. Rename the records too, and carry the licence
+    // requirement over to the new type name.
+    const onRecords = (_vmField === 'implType' || _vmField === 'implBrand') && implementListActive();
+    const recKey = _vmField === 'implType' ? 'equipmentType' : 'brand';
+    const recs = onRecords ? globalImplements.filter(i => values.includes(_toolNorm(i[recKey])) && _toolNorm(i[recKey]) !== target) : [];
+    if (recs.length && !requireEdit('implements')) return;
+    if (!plan.length && !recs.length) { showToast('Nothing to change', 'info'); return; }
     const noun = f.members ? 'member' : 'unit';
-    if (!confirm(`Change ${plan.length} ${noun}(s)?\n\n${values.filter(v => v !== target).map(v => `"${v}"`).join(', ')}\n→ "${target}"`)) return;
+    if (!confirm(`Change ${plan.length} ${noun}(s)${recs.length ? ` and ${recs.length} record(s) in the Implements list` : ''}?\n\n`
+        + `${values.filter(v => v !== target).map(v => `"${v}"`).join(', ')}\n→ "${target}"`)) return;
+    let recNote = '';
+    let recUndo = null;
+    if (recs.length) {
+        const reqBefore = licenseRequirements.map(r => ({ ...r }));
+        const prevRecs = recs.map(r => ({ ...r }));
+        recs.forEach(rec => {
+            const idx = globalImplements.findIndex(i => i.id === rec.id);
+            globalImplements[idx] = { ...rec, [recKey]: target, updatedAt: Date.now() };
+            cloudPushImplement(globalImplements[idx]);
+            logEvent({ action: 'update', unitId: rec.id, unitName: `[Implement] ${rec.profileName || ''}`,
+                       field: recKey === 'brand' ? 'Brand' : 'Type of Equipment', before: rec[recKey], after: target });
+        });
+        saveImplements();
+        if (currentView === 'implements') renderImplementsTable();
+        if (_vmField === 'implType') {
+            recNote = [...new Set(recs.map(r => _toolNorm(r.equipmentType)))].map(t => _carryLicenseRequirement(t, target)).filter(Boolean).join(' · ');
+        }
+        recUndo = { recs: prevRecs, reqs: reqBefore };
+    }
 
     let n = 0;
     if (f.members) {
@@ -16633,16 +16751,17 @@ function applyValueMerge() {
         const prevMap = new Map(plan.map(p => [p.rec.id, Object.fromEntries(Object.keys(p.fields).map(k => [k, p.rec[k] == null ? '' : p.rec[k]]))]));
         const done = updateUnitsBatch(changes);
         n = done.length;
-        _vmUndo = n ? { members: false, prev: new Map(done.map(d => [d.unit.id, prevMap.get(d.unit.id)])), label: `"${target}"` } : null;
+        _vmUndo = (n || recUndo) ? { members: false, prev: new Map(done.map(d => [d.unit.id, prevMap.get(d.unit.id)])), label: `"${target}"`, records: recUndo } : null;
     }
     _vmSelected = new Set();
     _vmAutoTarget = '';
     document.getElementById('vmTarget').value = '';
-    document.getElementById('vmResult').innerHTML = n
-        ? `<div class="vm-result"><i class="fas fa-check"></i> ${n} ${noun}(s) changed to "${escapeHtml(target)}".
+    const recBit = recs.length ? ` and ${recs.length} Implements record(s)` : '';
+    document.getElementById('vmResult').innerHTML = (n || recs.length)
+        ? `<div class="vm-result"><i class="fas fa-check"></i> ${n} ${noun}(s)${escapeHtml(recBit)} changed to "${escapeHtml(target)}".${recNote ? ` ${escapeHtml(recNote)}.` : ''}
             <button type="button" class="btn btn-secondary btn-sm" onclick="undoValueMerge()"><i class="fas fa-rotate-left"></i> Undo</button></div>`
         : '';
-    showToast(n ? `${n} ${noun}(s) changed to "${target}"` : 'Nothing changed', n ? 'success' : 'info');
+    showToast((n || recs.length) ? `${n} ${noun}(s)${recBit} changed to "${target}"${recNote ? ' · ' + recNote : ''}` : 'Nothing changed', (n || recs.length) ? 'success' : 'info');
     _afterDataFix();
     renderValueMerge();
 }
@@ -16659,6 +16778,18 @@ function undoValueMerge() {
     } else {
         if (!requireEdit('editUnits')) return;
         n = updateUnitsBatch(u.prev).length;
+        if (u.records && hasAccess('implements', 'edit')) {
+            u.records.recs.forEach(rec => {
+                const idx = globalImplements.findIndex(i => i.id === rec.id);
+                if (idx === -1) return;
+                globalImplements[idx] = { ...rec, updatedAt: Date.now() };
+                cloudPushImplement(globalImplements[idx]);
+                n++;
+            });
+            saveImplements();
+            if (currentView === 'implements') renderImplementsTable();
+            _restoreLicenseRequirements(u.records.reqs);
+        }
     }
     document.getElementById('vmResult').innerHTML = '';
     showToast(n ? `Undone — ${n} record(s) restored` : 'Nothing to undo', n ? 'success' : 'info');
@@ -16669,10 +16800,20 @@ function undoValueMerge() {
 function _commitMembers(recs, what, rollback) {
     const before = teamMembers.slice();
     const byId = new Map(recs.map(r => [r.id, r]));
+    // Only the fields that differ from this device's copy go to the cloud, so
+    // a merge (or its Undo) cannot put back a job title or an active flag
+    // another device changed in the meantime.
+    const partials = recs.map(r => {
+        const cur = before.find(m => m.id === r.id) || {};
+        const p = { id: r.id };
+        Object.keys(r).forEach(k => { if (k !== 'id' && !sameStoredValue(cur[k], r[k])) p[k] = r[k]; });
+        return p;
+    }).filter(p => Object.keys(p).length > 1);
     teamMembers = teamMembers.map(m => byId.get(m.id) || m);
+    const send = typeof window.cloud?.updateTeamMembersFields === 'function' ? 'updateTeamMembersFields' : 'saveTeamMembers';
     cloudWrite(
         { action: 'update', unitName: '[Team] Members', field: 'Company', before: '', after: `${what} — ${recs.length} member(s)` },
-        cloudCall('saveTeamMembers', recs),
+        cloudCall(send, partials),
         null,
         err => {
             console.error('[merge] members save failed:', err);
@@ -16999,14 +17140,24 @@ function fillMasterFromUsage() {
     const usage = masterUsage(kind);
     const outside = new Map([...usage.entries()].filter(([v]) => !masterMatch(kind, v)));
     if (!outside.size) return;
-    const merged = new Set();
-    const picks = [];
-    similarValueClusters(outside).forEach(cl => { picks.push(cl[0][0]); cl.forEach(([v]) => merged.add(v)); });
-    outside.forEach((n, v) => { if (!merged.has(v)) picks.push(v); });
-    picks.sort((a, b) => a.localeCompare(b));
+    // Only spellings that ARE the same entry to the list (case, spacing,
+    // punctuation — "PT GPA" / "PT. GPA") go in once, as the most-used one.
+    // Look-alikes are added as they are and only pointed out: folding them
+    // here once kept "Afdeling I" and dropped II to V, and every unit at
+    // those afdelings was then refused as off-list.
+    const byKey = new Map();
+    outside.forEach((n, v) => {
+        const k = _simKey(v) || v.toLowerCase();
+        const best = byKey.get(k);
+        if (!best || n > best[1] || (n === best[1] && v.localeCompare(best[0]) < 0)) byKey.set(k, [v, n]);
+    });
+    const picks = [...byKey.values()].map(e => e[0]).sort((a, b) => a.localeCompare(b));
     const folded = outside.size - picks.length;
+    const lookAlike = similarValueClusters(new Map(picks.map(v => [v, outside.get(v) || 0])))
+        .map(cl => cl.map(e => e[0]).join(' / '));
     if (!confirm(`Add ${picks.length} ${MASTER_DEF[kind].label.toLowerCase()}(s) to the list?\n\n${picks.join('\n')}`
-        + (folded ? `\n\n${folded} look-alike spelling(s) were folded into the most-used one. Use Clean Up Values to rewrite the records.` : ''))) return;
+        + (folded ? `\n\n${folded} spelling(s) that differ only in capitals, spaces or punctuation were added once.` : '')
+        + (lookAlike.length ? `\n\nThese look alike — check whether they are the same thing (Clean Up Values can merge them):\n${lookAlike.join('\n')}` : ''))) return;
     _saveMasterList(kind, masterLists[kind].concat(picks), `Added ${picks.length} value(s) in use`);
     showToast(`${picks.length} value(s) added to the ${MASTER_DEF[kind].label} list`, 'success');
 }

@@ -159,6 +159,16 @@ window.cloud = {
     async saveUnit(unit) {
         await setDoc(doc(db, UNITS_COL, unit.id), unit, { merge: true });
     },
+    // Only the named fields of existing units: [{ id, field: value, … }].
+    // A bulk tool (Clean Up Values, a master-list rename) used to send every
+    // field of every unit it touched, so a phone working from an hours-old
+    // copy put back status, licences and breakdown reasons other devices had
+    // changed since. update, not set: a unit deleted on another device is
+    // not brought back as a stub.
+    async updateUnitsFields(items) {
+        if (!items || !items.length) return;
+        await batchInChunks(items, (batch, u) => { const { id, ...f } = u; batch.update(doc(db, UNITS_COL, id), f); });
+    },
     async saveUnits(units) {
         if (!units.length) return;
         await batchInChunks(units, (batch, u) =>
@@ -568,6 +578,13 @@ window.cloud = {
     // Bulk upsert for restore. A backup can carry hundreds of rows and the
     // single-document savers would fire one request each; batchInChunks is the
     // same 400-per-batch path saveUnits already uses.
+    // Only the named fields of existing members — see updateTeamMembersFields
+    // in script.js (_commitMembers). update, not set: no stub is created for a
+    // member deleted elsewhere meanwhile.
+    async updateTeamMembersFields(items) {
+        if (!items || !items.length) return;
+        await batchInChunks(items, (batch, m) => { const { id, ...f } = m; batch.update(doc(db, TEAM_MEMBERS_COL, id), f); });
+    },
     async saveTeamMembers(items) {
         if (!items || !items.length) return;
         await batchInChunks(items, (batch, m) => batch.set(doc(db, TEAM_MEMBERS_COL, m.id), m, { merge: true }));
