@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.596 pemeriksaan di empat puluh suite, menggerakkan Chromium sungguhan terhadap
+1.671 pemeriksaan di empat puluh empat suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -305,6 +305,43 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
   Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
   **Implement Brands** (`masterLists/brand`) untuk Agricultural.
+- **Perbaikan grup 1 v149 (dijaga `tests/session_revoke_test.js`,
+  `restore_merge_test.js`, `dq_fixes_test.js`, `ui_safety_test.js` dan
+  rules_test).**
+  - *Sesi:* `claimSession`/`revokeUserSession` MENGGANTI seluruh map
+    `activeSession` (updateDoc), tidak menggabung. Dulu "Sign out of active
+    device" meninggalkan `revokedAt/revokedBy` di map, rules menolak setiap
+    klaim berikutnya, dan akun itu terkunci selamanya. Klaim yang ditolak
+    tidak lagi dibaca sebagai pengambilalihan (`_claimRefusedId`).
+  - *Persetujuan:* rules mewajibkan `createdByUid` saat membuat, dan
+    `submittedByUid` = akun sendiri setiap kali catatan menjadi pending;
+    pemeriksa tidak boleh penulis MAUPUN pengirim (`selfCheckBlock`). Catatan
+    lama tanpa penulis tetap bisa diperiksa.
+  - *Restore:* GABUNG = data sekarang menang, hanya id yang belum ada yang
+    ditambah (unit juga per id), hanya itu yang dikirim, foto hanya untuk
+    itu. GANTI menulis dokumen UTUH (`replaceDocs`). Satu baris History per
+    koleksi. Master Lists dan License Requirements ikut cadangan
+    (`_restoreMasterLists`; daftar kosong di berkas tidak menghapus).
+  - *Impor CSV lisensi:* baris yang sudah ada di ledger dilewati (dihitung
+    per kunci `licenseTxnKey`, jadi dua pengiriman identik tetap dua).
+  - *Ejaan mirip:* `similarSpelling` sadar-token — angka, angka romawi, huruf
+    tunggal dan kode ≤3 huruf harus sama persis; toleransi salah ketik hanya
+    untuk kata panjang. "Add the values in use" hanya melipat beda
+    huruf/spasi/tanda baca.
+  - *Merge jenis/brand implement* saat daftar Implements dipakai: rekaman
+    Implements ikut diganti nama, unit ditulis ulang ke label daftar, syarat
+    lisensi ikut pindah (`_carryLicenseRequirement`); Undo mengembalikan
+    semuanya. Mengubah jenis/brand di form Implements juga menulis ulang unit.
+  - *Tulis parsial:* `updateUnitsBatch` → `updateUnitsFields` (batch.update,
+    hanya field yang berubah); merge anggota → `updateTeamMembersFields`.
+  - *Versi baru:* tidak memuat ulang saat form terbuka (`userIsBusy`); banner
+    "A new version is ready — Reload", lalu memuat ulang sendiri setelah form
+    ditutup bila cache permanen.
+  - *Edit sel Unit Database:* tabel tidak digambar ulang selama sel fokus;
+    `saveInlineEdit` mengabaikan blur dari redraw/snapshot.
+  - *Hapus unit:* konfirmasi (lebih dari 10: ketik jumlahnya), History
+    menyimpan ringkasan unit (`deletedUnitSummary`), jadwal cek mengabaikan
+    unit yang sudah dihapus.
 - **License Purchase Plan (dijaga `tests/licplan_test.js`).** Tab di License
   Stock. Syarat lisensi per JENIS implement (tanpa brand) di koleksi
   `licenseRequirements/{slug jenis}` `{type, gps: ''|SF-1|SF-RTK, display:
@@ -390,7 +427,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   stempel `appliedAt` supaya hanya sekali); tanpa akses itu muncul di Kotak
   Keputusan. Foto di `inspectionPhotos/{id}` (tidak di-subscribe), ditulis
   SEBELUM laporannya.
-- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (111 skenario;
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (127 skenario;
   bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
   kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
   alur persetujuan laporan/izin (transisi status di atas, kunci isi dan foto
