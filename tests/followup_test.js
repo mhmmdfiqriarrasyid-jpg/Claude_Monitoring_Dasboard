@@ -101,8 +101,18 @@ const { launch, BASE_URL } = require('./_env');
         seed();
         answers = [true];
         const withPhotos = await exportNow();
+        // GABUNG mempertahankan catatan yang masih ada apa adanya — termasuk
+        // fotonya — jadi foto hanya ditulis untuk catatan yang ditambahkan.
         writes.dmg.length = 0; writes.wl.length = 0;
-        answers = [true];                              // GABUNG
+        answers = [true];                              // GABUNG, semua catatan masih ada
+        importBackup(new File([JSON.stringify(withPhotos)], 'b.json', { type: 'application/json' }));
+        await tick(400);
+        t('GABUNG: catatan yang masih ada tidak ditimpa fotonya', [writes.dmg.length, writes.wl.length], [0, 0]);
+        closeRestoreReport();
+        // Catatannya hilang → GABUNG menambahkannya kembali, beserta fotonya.
+        globalDamages = [{ id: 'd2', unitId: 'u1' }]; workLogs = []; leaveRequests = [];
+        writes.dmg.length = 0; writes.wl.length = 0;
+        answers = [true];
         importBackup(new File([JSON.stringify(withPhotos)], 'b.json', { type: 'application/json' }));
         await tick(400);
         t('restore mengembalikan foto kerusakan', writes.dmg, [['d1', PH('D1')]]);

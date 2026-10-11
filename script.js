@@ -2505,7 +2505,7 @@ async function exportBackup() {
             // A backup must not become a way around per-area 'none'. Skip what
             // this account may not read — and record it, so the file says what
             // it is missing instead of looking complete.
-            if (!hasAccess(part.area, 'view')) {
+            if (!(part.canView ? part.canView() : hasAccess(part.area, 'view'))) {
                 payload.omitted.push({ key: part.key, label: part.label, why: 'no access' });
                 continue;
             }
@@ -2648,14 +2648,95 @@ function triggerRestore() {
     document.getElementById('restoreFileInput').click();
 }
 
-// Merge (union by id, backup wins) or replace one auxiliary collection from a
-// backup file, mirroring the mode chosen for units.
+// Merge or replace one auxiliary collection from a backup file, mirroring the
+// mode chosen for units.
+//
+// MERGE keeps every record that exists now exactly as it is and only ADDS
+// what the file has and the app does not — what the dialog promises. The
+// backup copy used to win, so restoring a three-week-old file to recover one
+// deleted record quietly undid every approval, re-activated members and moved
+// devices back, and wrote nothing to History.
+// REPLACE returns the file's records; they are then written WHOLE (see
+// _replaceInCloud), not merged into what is there.
 function _restoreCollection(items, current, merge) {
     const valid = items.filter(r => r && r.id);
     if (!merge) return valid;
-    const map = new Map(current.map(r => [r.id, r]));
-    valid.forEach(r => map.set(r.id, r));
-    return [...map.values()];
+    const have = new Set(current.map(r => r.id));
+    return current.concat(valid.filter(r => !have.has(r.id)));
+}
+
+// The records of `items` that MERGE adds (ids not present in `current`).
+function _restoreAdded(items, current) {
+    const have = new Set(current.map(r => r && r.id));
+    return items.filter(r => r && r.id && !have.has(r.id));
+}
+
+// A REPLACE writes each record as the whole document. The bulk savers upsert
+// with merge:true — right for an edit, wrong here: a field added after the
+// backup survived the "replace", leaving a record half backup, half today.
+// Falls back to the merging saver only when firebase-init.js is an older copy.
+function _replaceInCloud(key, rows, fallbackBulk) {
+    const replace = window.cloud && typeof window.cloud.replaceDocs === 'function'
+        ? list => window.cloud.replaceDocs(key, list) : null;
+    return (replace || fallbackBulk)(rows);
+}
+
+// Master Lists come back one list at a time, each under its own edit right.
+// MERGE adds the file's entries a list does not have yet (same spelling rule
+// as the list itself: case, spacing and punctuation do not make a new entry).
+// REPLACE loads the file's list — except that an empty list in the file never
+// wipes a filled one, the same guard every other collection has.
+const _entries = n => `${n} ${n === 1 ? 'entry' : 'entries'}`;
+async function _restoreMasterLists(rows, merge) {
+    const done = [], skipped = [];
+    let total = 0;
+    for (const kind of MASTER_KINDS) {
+        const row = (rows || []).find(r => r && r.id === kind);
+        if (!row || !Array.isArray(row.values)) continue;
+        const fileVals = [...new Set(row.values.map(_toolNorm).filter(Boolean))].slice(0, 500);
+        if (!canEditMasterList(kind)) { skipped.push(MASTER_DEF[kind].plural); continue; }
+        const cur = masterLists[kind] || [];
+        let next;
+        if (merge) {
+            next = cur.slice();
+            fileVals.forEach(v => { if (!next.some(x => x.toLowerCase() === v.toLowerCase() || (_simKey(x) && _simKey(x) === _simKey(v)))) next.push(v); });
+        } else {
+            next = fileVals.length || !cur.length ? fileVals : cur;
+        }
+        next = [...new Set(next)].sort((a, b) => a.localeCompare(b)).slice(0, 500);
+        const changed = JSON.stringify(next) !== JSON.stringify(cur);
+        total += next.length;
+        if (!changed) { done.push(`${MASTER_DEF[kind].plural} unchanged`); continue; }
+        masterLists = { ...masterLists, [kind]: next };
+        const fn = cloudFn('saveMasterList');
+        if (fn && window.cloud?.isReady && !suppressCloudWrites) {
+            fn(kind, next, (currentUser && currentUser.email) || '').catch(err => cloudWriteFailed(err, {
+                what: `${MASTER_DEF[kind].label.toLowerCase()} list (restore)`, label: `[Master] ${MASTER_DEF[kind].plural}`
+            }));
+        }
+        logEvent({ action: 'restore', unitName: `[Restore] ${MASTER_DEF[kind].plural}`, field: merge ? 'MERGE' : 'REPLACE',
+                   before: _entries(cur.length), after: _entries(next.length) });
+        done.push(`${MASTER_DEF[kind].plural} ${cur.length} → ${next.length}`);
+    }
+    populateMasterDatalists();
+    if (!done.length && skipped.length) {
+        return { label: 'Master Lists', count: '—', note: `skipped — you do not have edit rights (${skipped.join(', ')})` };
+    }
+    return { label: 'Master Lists', count: total,
+             note: `${merge ? 'merged' : 'replaced'} — ${done.join(', ') || 'nothing in the file'}`
+                 + (skipped.length ? ` · skipped (no edit rights): ${skipped.join(', ')}` : '') };
+}
+
+// One History row per collection a restore touched, with what it did — a
+// restore can rewrite thousands of records and used to leave no trace.
+function _logRestore(label, merge, counts) {
+    // A collection the file holds no rows of, and that the restore left as it
+    // was, is not worth a History row.
+    if (!Object.values(counts).some(n => n > 0)) return;
+    const bits = merge
+        ? [`${counts.added} added`, `${counts.kept} kept as they are`]
+        : [`${counts.written} written from the file`, `${counts.deleted} deleted`];
+    logEvent({ action: 'restore', unitName: `[Restore] ${label}`, field: merge ? 'MERGE' : 'REPLACE', before: '', after: bits.join(', ') });
 }
 
 // The bulk cloud savers only upsert, so a REPLACE restore would leave the
@@ -2758,13 +2839,20 @@ function importBackup(file) {
             splitInlineBackupPhotos(data);
             const merge = confirm(
                 `Backup contains ${data.units.length} units.\n\n` +
-                `OK     = MERGE (add new ones, keep existing ones)\n` +
+                `OK     = MERGE (add only what is missing — every record that exists now is kept exactly as it is)\n` +
                 `Cancel = REPLACE (delete current data, load the backup)\n\n` +
                 `This choice applies to ALL collections in the file, not just units.`
             );
             if (merge) {
-                const result = addUnits(data.units);
-                showToast(`Backup merged: ${result.added} added, ${result.skipped} duplicates skipped`, 'success');
+                // By id as well as serial number: a unit whose SN was corrected
+                // since the backup has the same id and an old SN, and used to
+                // be added again on top of the live one.
+                const haveIds = new Set(globalData.map(u => u.id));
+                const fresh = data.units.filter(u => !(u && u.id && haveIds.has(u.id)));
+                const result = addUnits(fresh);
+                const kept = data.units.length - result.added;
+                _logRestore('Units', true, { added: result.added, kept });
+                showToast(`Backup merged: ${result.added} unit(s) added, ${kept} already there and kept as they are`, 'success');
             } else {
                 if (_refuseCrossGroupRestore(data.units)) return;
                 const nHeavy = data.units.filter(isHeavy).length;
@@ -2777,9 +2865,14 @@ function importBackup(file) {
                 globalData = data.units.map(u => ({ ...u, id: u.id || generateId() }));
                 const keptIds = new Set(globalData.map(u => u.id));
                 saveToStorage(globalData);
-                cloudDeleteUnits(previousIds.filter(id => !keptIds.has(id)));
-                cloudPushUnits(globalData);
+                const dropped = previousIds.filter(id => !keptIds.has(id));
+                cloudDeleteUnits(dropped);
+                if (!suppressCloudWrites && window.cloud?.isReady && canWriteUnits('restore')) {
+                    _replaceInCloud('units', globalData, list => window.cloud.saveUnits(list))
+                        .catch(err => cloudWriteFailed(err, { what: 'units (restore)', label: '[Units] restore', resync: resyncUnits }));
+                }
                 logEvent({ action: 'restore', unitName: '-', after: `${data.units.length} units restored from backup` });
+                _logRestore('Units', false, { written: globalData.length, deleted: dropped.length });
                 recordChange({ type: 'restored', detail: `${data.units.length} units restored from backup` });
                 showToast(`${data.units.length} units restored from backup`, 'success');
             }
@@ -2792,11 +2885,27 @@ function importBackup(file) {
             // the person restoring it has to know that rather than assume the
             // restore covered everything.
             const report = [];
+            // Records each collection actually wrote — photos are restored only
+            // for these (a MERGE keeps an existing record's photos too).
+            const writtenIds = new Map();
             for (const part of BACKUP_PARTS) {
-                const rows = data[part.key];
+                let rows = data[part.key];
                 if (!Array.isArray(rows)) {
                     report.push({ label: part.label, count: '—', note: 'not in this file' });
                     continue;
+                }
+                // A collection with its own shape (one document per list).
+                if (part.restore) {
+                    report.push(await part.restore(rows, merge));
+                    continue;
+                }
+                // Rows the server would refuse sink the whole batch they ride
+                // in; leave them out and say how many.
+                let refused = 0;
+                if (part.accept) {
+                    const ok = rows.filter(r => r && part.accept(r));
+                    refused = rows.length - ok.length;
+                    rows = ok;
                 }
                 if (!hasAccess(part.area, 'edit')) {
                     report.push({ label: part.label, count: rows.length, note: 'skipped — you do not have edit rights' });
@@ -2823,11 +2932,15 @@ function importBackup(file) {
                         console.warn(`[restore] ${part.key} full read failed:`, err);
                         report.push({ label: part.label, count: rows.length,
                                       note: 'added only — the old list could not be read, nothing was deleted' });
-                        part.write(_restoreCollection(rows, part.read() || [], true));
+                        const cur = part.read() || [];
+                        const added = _restoreAdded(rows, cur);
+                        part.write(cur.concat(added));
                         if (part.saveLocal) part.saveLocal();
-                        if (bulk) bulk(part.read()).catch(e => cloudWriteFailed(e, {
+                        if (bulk && added.length) bulk(added).catch(e => cloudWriteFailed(e, {
                             what: `${part.label.toLowerCase()} (restore)`,
                             label: `[${part.label}] restore`, resync: part.resync }));
+                        writtenIds.set(part.key, new Set(added.map(r => r.id)));
+                        _logRestore(part.label, true, { added: added.length, kept: rows.length - added.length });
                         continue;
                     }
                 }
@@ -2841,23 +2954,34 @@ function importBackup(file) {
                     continue;
                 }
                 const next = _restoreCollection(rows, before, merge);
+                // MERGE sends only what it adds; re-sending every existing
+                // record from this device's copy would overwrite whatever
+                // another device changed since it loaded.
+                const toWrite = merge ? _restoreAdded(rows, before) : next;
                 part.write(next);
                 if (part.saveLocal) part.saveLocal();
+                const nextIds = new Set(next.map(x => x.id));
+                const deleted = merge ? 0 : before.filter(r => r.id && !nextIds.has(r.id)).length;
                 _cloudDeleteRemoved(before, next, part.deleteOne);
-                if (bulk) {
-                    bulk(next).catch(err => cloudWriteFailed(err, {
+                if (bulk && toWrite.length) {
+                    (merge ? bulk(toWrite) : _replaceInCloud(part.key, toWrite, bulk)).catch(err => cloudWriteFailed(err, {
                         what: `${part.label.toLowerCase()} (restore)`,
                         label: `[${part.label}] restore`,
                         resync: part.resync
                     }));
                 }
-                report.push({ label: part.label, count: rows.length, note: merge ? 'merged' : 'replaced' });
+                writtenIds.set(part.key, new Set(toWrite.map(r => r.id)));
+                const counts = merge ? { added: toWrite.length, kept: rows.length - toWrite.length } : { written: next.length, deleted };
+                _logRestore(part.label, merge, counts);
+                const refusedNote = refused ? ` · ${refused} invalid row(s) left out` : '';
+                report.push({ label: part.label, count: rows.length + refused,
+                    note: (merge ? `merged — ${counts.added} added, ${counts.kept} kept as they are` : 'replaced') + refusedNote });
             }
             // Photos and letters, for the records this restore actually wrote.
             for (const k of BACKUP_PHOTO_KINDS) {
                 const rows = data[k.key];
                 const partLabel = (BACKUP_PARTS.find(p => p.key === k.part) || {}).label;
-                const partDone = report.some(r => r.label === partLabel && (r.note === 'merged' || r.note === 'replaced'));
+                const partDone = report.some(r => r.label === partLabel && /^(merged|replaced)/.test(r.note));
                 const recs = Array.isArray(data[k.part]) ? data[k.part] : [];
                 if (!rows || typeof rows !== 'object') {
                     // Only worth a line when the file's records expected one.
@@ -2866,7 +2990,9 @@ function importBackup(file) {
                     }
                     continue;
                 }
-                const ids = Object.keys(rows).filter(id => k.present(rows[id]) && recs.some(r => r && r.id === id));
+                const wrote = writtenIds.get(k.part);
+                const ids = Object.keys(rows).filter(id => k.present(rows[id]) && recs.some(r => r && r.id === id)
+                    && (!wrote || wrote.has(id)));
                 if (!partDone) {
                     report.push({ label: k.label, count: ids.length, note: 'skipped — the records were not restored' });
                     continue;
@@ -4345,7 +4471,7 @@ function showImportReport({ total, added, skipped, skippedDetails, rejected, upd
 // of rights — the two outcomes people most need to see.
 function showRestoreReport(rows, version, merge) {
     const missing = rows.filter(r => r.note === 'not in this file').length;
-    const done = rows.filter(r => r.note === 'merged' || r.note === 'replaced').length;
+    const done = rows.filter(r => /^(merged|replaced)/.test(r.note)).length;
     const summary = `${done} collection(s) ${merge ? 'merged' : 'replaced'}`
         + (missing ? ` · ${missing} collection(s) not in this file` : '');
 
@@ -8375,6 +8501,14 @@ function csvLicenseDate(raw) {
     return s;
 }
 
+// What makes two ledger rows the same transaction: day, direction, licence
+// type, quantity, the unit (by serial number, else name) and the note.
+function licenseTxnKey(r) {
+    const who = String((r && (r.sn || r.unitName)) || '').trim().toLowerCase();
+    return [r && r.date, r && r.txnType, licenseTypeKey(r && r.licenseType), Number(r && r.qty) || 0, who,
+            String((r && r.note) || '').trim().toLowerCase()].join('|');
+}
+
 function handleLicenseCSVImport(file) {
     if (!canCsv('full')) return;
     if (!requireEdit('licenseStock')) return;
@@ -8387,7 +8521,17 @@ function handleLicenseCSVImport(file) {
             const added = [];
             let rejected = 0;
             let heavyRejected = 0;
+            let duplicates = 0;
             const importSync = { applied: 0, newer: 0, noAccess: 0 };
+            // Re-importing the exported file (or importing it again because the
+            // first try seemed to hang on a weak signal) doubled every IN and
+            // OUT, and the Purchase Plan then subtracted the doubled stock and
+            // told the team to buy too few. A row identical to one already in
+            // the ledger is left out — counted, not just matched: two genuine
+            // identical deliveries on one day are two rows, and re-importing
+            // that file skips both, while importing it the first time adds both.
+            const inLedger = new Map();
+            globalLicenseStock.forEach(r => { const k = licenseTxnKey(r); inLedger.set(k, (inLedger.get(k) || 0) + 1); });
 
             result.data.forEach(row => {
                 // Same spelling rule as the Distribusi form: 'sf-rtk' is SF-RTK.
@@ -8431,6 +8575,8 @@ function handleLicenseCSVImport(file) {
                         rec.unitName = nameCsv; rec.sn = snCsv;
                     }
                 }
+                const key = licenseTxnKey(rec);
+                if (inLedger.get(key) > 0) { inLedger.set(key, inLedger.get(key) - 1); duplicates++; return; }
                 added.push(rec);
             });
 
@@ -8488,6 +8634,7 @@ function handleLicenseCSVImport(file) {
 
             showLoading(false);
             const msg = `License import: ${added.length} added` + (rejected ? `, ${rejected} skipped (empty license type)` : '')
+                + (duplicates ? `, ${duplicates} skipped (already in the ledger)` : '')
                 + (heavyRejected ? `, ${heavyRejected} skipped (Heavy Equipment unit — SF/G5 licenses are only for ${UNIT_GROUPS.tractor.shortLabel})` : '')
                 + (importSync.applied ? ` · licenses of ${importSync.applied} unit(s) updated too` : '')
                 + (importSync.newer ? ` · ${importSync.newer} unit(s) not changed (valid for longer)` : '')
@@ -16724,6 +16871,7 @@ function masterUsage(kind) {
 const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', heavyBrand: 'unit', company: 'member' };
 
 function applyMasterListsSnapshot(docs) {
+    _markLoaded('masterLists');
     const next = { site: [], brand: [], heavyBrand: [], company: [] };
     (docs || []).forEach(d => {
         if (MASTER_KINDS.includes(d.id) && Array.isArray(d.values)) next[d.id] = d.values.map(_toolNorm).filter(Boolean);
@@ -16958,6 +17106,7 @@ function lrSlug(type) {
 }
 
 function applyLicenseRequirementsSnapshot(list) {
+    _markLoaded('licenseRequirements');
     licenseRequirements = (list || []).filter(r => r && r.id);
     refreshLicensePlan();
     if (document.getElementById('licenseReqModal')?.classList.contains('open')) renderLicenseRequirements();

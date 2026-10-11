@@ -155,11 +155,12 @@ const { launch, BASE_URL } = require('./_env');
         const barisLaporan = [...document.querySelectorAll('#restoreReportBody tr')]
             .map(tr => tr.textContent.replace(/\\s+/g, ' ').trim());
         t('laporan restore muncul', barisLaporan.length > 0, true);
-        // v3 hanya membawa implement, kerusakan, dan stok lisensi — sepuluh
-        // koleksi lainnya (termasuk jadwal & laporan pengecekan) tidak ada di
-        // dalamnya, dan semuanya harus tertulis.
+        // v3 hanya membawa implement, kerusakan, dan stok lisensi — dua belas
+        // koleksi lainnya (termasuk jadwal & laporan pengecekan, Master Lists
+        // dan License Requirements) tidak ada di dalamnya, dan semuanya harus
+        // tertulis.
         t('koleksi yang tidak ada di berkas DILAPORKAN, bukan didiamkan',
-          barisLaporan.filter(x => /not in this file/.test(x)).length, 10);
+          barisLaporan.filter(x => /not in this file/.test(x)).length, 12);
         t('anggota tim termasuk yang dilaporkan hilang',
           barisLaporan.some(x => /Team Members.*not in this file/.test(x)), true);
         t('peringatan cadangan lama tampil',
