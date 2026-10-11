@@ -4250,3 +4250,15 @@ td[data-label="Approval"] { vertical-align: middle; }
 }
 #lpUnitTable td[data-label="To Do"] { white-space: normal; min-width: 240px; }
 #lpUnitTable td[data-label="To Do"] .lp-chip { margin: 2px 2px 2px 0; }
+
+/* A new version is ready while a form is open: offer, do not reload. */
+.update-banner {
+    position: fixed; z-index: 400; left: 50%; transform: translateX(-50%);
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 24px);
+    padding: 8px 10px 8px 14px; border-radius: 999px; font-size: 13px;
+    background: var(--card); color: var(--text); border: 1px solid var(--accent);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+}
+.update-banner i { color: var(--accent); }
+.update-banner .btn { border-radius: 999px; }

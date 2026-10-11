@@ -835,18 +835,69 @@ function showAppVersion() {
     if (el) el.textContent = APP_VERSION;
 }
 
+// Separate so tests can stand in for it.
+function appReload() { window.location.reload(); }
+
+let _updateWatch = null;
+let _swRefreshing = false;
+
+// A new service worker has taken over. Reload once so the fresh app shell is
+// shown — but never in the middle of something: a deploy used to reload the
+// page under an open daily report or inspection, and the text and photos
+// typed into it, which live only in memory, were gone.
+function handleControllerChange() {
+    if (_swRefreshing) return;
+    if (!userIsBusy()) { _swRefreshing = true; appReload(); return; }
+    showUpdateBanner();
+    // Reload by itself once the form is closed — but only when queued
+    // offline writes survive a reload (persistent cache). Otherwise the
+    // banner waits for the person to choose.
+    if (_updateWatch) return;
+    _updateWatch = setInterval(() => {
+        const durable = !window.cloud || !window.cloud.cacheMode || window.cloud.cacheMode === 'persistent-multitab';
+        if (!userIsBusy() && durable && !_swRefreshing) {
+            _swRefreshing = true;
+            clearInterval(_updateWatch); _updateWatch = null;
+            appReload();
+        }
+    }, 2000);
+}
+
+// Something open that a reload would throw away: a form or dialog, or a
+// Unit Database cell being typed into.
+function userIsBusy() {
+    if (document.querySelector('.modal-overlay.open')) return true;
+    const a = document.activeElement;
+    return !!(a && a.isContentEditable);
+}
+
+function showUpdateBanner() {
+    if (document.getElementById('updateBanner')) return;
+    const bar = document.createElement('div');
+    bar.id = 'updateBanner';
+    bar.className = 'update-banner';
+    bar.setAttribute('role', 'status');
+    bar.innerHTML = '<i class="fas fa-rotate"></i><span>A new version is ready.</span>'
+        + '<button type="button" class="btn btn-primary btn-sm" onclick="reloadForUpdate()">Reload</button>';
+    document.body.appendChild(bar);
+}
+
+function reloadForUpdate() {
+    if (userIsBusy() && !confirm('A form is still open. Reload now? Anything not saved yet — text and photos — will be lost.')) return;
+    if (_updateWatch) { clearInterval(_updateWatch); _updateWatch = null; }
+    _swRefreshing = true;
+    appReload();
+}
+
 function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
 
     // When a new service worker takes control, reload once so the fresh app
     // shell is shown. Guard against reload loops, and skip the very first
     // install (no previous controller = first visit, nothing to refresh).
-    let refreshing = false;
     const hadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (refreshing || !hadController) return;
-        refreshing = true;
-        window.location.reload();
+        if (hadController) handleControllerChange();
     });
 
     window.addEventListener('load', () => {
@@ -1895,6 +1946,25 @@ function watchConnection() {
     updateConnectionLabel();
 }
 
+// Enough of a deleted unit, in History, to put it back by hand: who it was,
+// where, what it carried and its licences. The serial number alone was all
+// that remained before.
+function deletedUnitSummary(u) {
+    const lic = (type, end) => type ? `${type}${end ? ' until ' + end : ''}` : '';
+    const bits = [
+        u.sn ? `SN ${u.sn}` : '',
+        [u.brand, u.model].filter(Boolean).join(' '),
+        u.machineType || '',
+        u.site ? `site ${u.site}` : '',
+        isHeavy(u) ? (u.workTool ? `work tool ${u.workTool}` : '') : (u.implement ? `implement ${u.implement}` : ''),
+        u.status ? `status ${u.status}` : '',
+        isHeavy(u) ? '' : lic(u.gpsLicense, u.gpsLicenseEndDate),
+        isHeavy(u) ? '' : lic(u.licenseDisplay, u.displayLicenseEndDate),
+        u.yearReceived ? `received ${u.yearReceived}` : ''
+    ].filter(Boolean);
+    return bits.join(' · ').slice(0, 400);
+}
+
 function deleteUnits(ids) {
     if (!canWriteUnits('deleteUnits')) return { count: 0, removed: [] };
     const idSet = new Set(ids);
@@ -1904,7 +1974,7 @@ function deleteUnits(ids) {
     saveToStorage(globalData);
     if (count > 0) {
         recordChange({ type: 'deleted', detail: `${count} unit(s) deleted` });
-        removed.forEach(u => logEvent({ action: 'delete', unitId: u.id, unitName: u.name, before: u.sn }));
+        removed.forEach(u => logEvent({ action: 'delete', unitId: u.id, unitName: u.name, before: deletedUnitSummary(u) }));
         cloudDeleteUnits(ids);
         // A second delete inside the undo window replaces the undo toast, so
         // the first batch can no longer be undone — purge its files now, or
@@ -4934,7 +5004,33 @@ function _editRowHeavy(d, i, ce) {
         </tr>`;
 }
 
+// While someone is typing in a Unit Database cell, the table is NOT rebuilt.
+// Rebuilding replaced the focused cell, the browser fired its blur, and the
+// half-typed value was saved (or, during a units snapshot, kept only on this
+// device under a success toast). The rebuild runs once the cell is left.
+let _editRenderPending = false;
+let _rebuildingEditTable = false;
+function _editCellFocused() {
+    const a = document.activeElement;
+    return !!(a && a.isContentEditable && a.closest && a.closest('#editBody'));
+}
+document.addEventListener('focusout', e => {
+    if (!_editRenderPending || !(e.target && e.target.closest && e.target.closest('#editBody'))) return;
+    // After the cell's own onblur save; and not while focus just moved to the
+    // next cell (Tab).
+    setTimeout(() => {
+        if (_editRenderPending && !_editCellFocused()) { _editRenderPending = false; renderEditTable(); }
+    }, 0);
+});
+
 function renderEditTable() {
+    if (_editCellFocused()) { _editRenderPending = true; return; }
+    // A blur fired by the rebuild itself must not count as an edit.
+    _rebuildingEditTable = true;
+    try { _renderEditTable(); } finally { _rebuildingEditTable = false; }
+}
+
+function _renderEditTable() {
     renderEditHead();
     renderEditGroupTabs();
     renderDataCompleteness();
@@ -5041,6 +5137,9 @@ function populateEditFilters() {
 
 // ---- Inline Edit ----
 function saveInlineEdit(el) {
+    // A blur caused by redrawing the table, or one that lands while a cloud
+    // snapshot is being applied, is not the person finishing an edit.
+    if (_rebuildingEditTable || suppressCloudWrites) return;
     if (!hasAccess('editUnits', 'edit')) {
         // Revert the DOM if a view-only user somehow triggered this
         const id = el.dataset.id;
@@ -5281,6 +5380,7 @@ function deleteUnit(id) {
     if (!requireEdit('editUnits')) return;
     const unit = globalData.find(d => d.id === id);
     if (!unit) return;
+    if (!confirm(`Delete unit "${unit.name || unit.sn}"${unit.sn ? ` (SN ${unit.sn})` : ''}?\n\nIt is removed on every device. You can undo for 10 seconds.`)) return;
     const { removed } = deleteUnits([id]);
     renderEditTable();
     showUndoToast(`Unit "${unit.name || unit.sn}" deleted`, removed);
@@ -5290,6 +5390,15 @@ function deleteSelected() {
     if (!requireEdit('editUnits')) return;
     const count = selectedUnitIds.size;
     if (count === 0) return;
+    // Implements and damage records already asked; units — the largest, and
+    // the ones every other record points at — went in one tap, on every
+    // device, with a 10-second undo on this one only.
+    const g = groupDef(effectiveEditGroup()).label;
+    if (!confirm(`Delete ${count} ${g} unit(s)?\n\nThey are removed on every device. You can undo for 10 seconds.`)) return;
+    if (count > 10) {
+        const typed = prompt(`To delete ${count} units, type the number ${count}:`, '');
+        if (String(typed == null ? '' : typed).trim() !== String(count)) { showToast('Not deleted — the number did not match', 'info'); return; }
+    }
     const { removed } = deleteUnits([...selectedUnitIds]);
     renderEditTable();
     showUndoToast(`${count} unit(s) deleted`, removed);
@@ -15490,7 +15599,11 @@ function planUnitDone(plan, unitId) {
 }
 
 function planProgress(plan) {
-    const ids = plan.unitIds || [];
+    // A unit deleted since the schedule was made can no longer be checked;
+    // left in, it held the plan at "x/y · overdue" for good. One already
+    // checked still counts — its report exists.
+    const known = globalData.length ? new Set(globalData.map(u => u.id)) : null;
+    const ids = (plan.unitIds || []).filter(id => !known || known.has(id) || planUnitDone(plan, id));
     const done = ids.filter(id => planUnitDone(plan, id)).length;
     return { done, total: ids.length };
 }
