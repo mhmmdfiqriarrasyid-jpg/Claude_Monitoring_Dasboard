@@ -42,6 +42,22 @@ import {
 // markup in it) steered the UI. The document id cannot be forged that way.
 const withDocId = d => ({ ...d.data(), id: d.id });
 
+// A listener that also reports which documents are still only on this device
+// (written offline, not yet acknowledged by the server): callback(list, ids).
+// includeMetadataChanges makes it fire again when they land; snapshots that
+// change nothing but metadata, and leave that set as it was, are skipped so a
+// list is not redrawn for nothing.
+function _onSnapshotWithPending(ref, callback, onError) {
+    let last = null;
+    return onSnapshot(ref, { includeMetadataChanges: true }, snap => {
+        const pending = snap.docs.filter(d => d.metadata.hasPendingWrites).map(d => d.id);
+        const key = pending.join(',');
+        if (last !== null && key === last && !snap.docChanges().length) return;
+        last = key;
+        callback(snap.docs.map(withDocId), pending);
+    }, onError);
+}
+
 const firebaseConfig = {
     apiKey: "AIzaSyB0rZdvv44jDErvA6dGCrivyueY-2UB-Mw",
     authDomain: "ot-monitoring-tractor.firebaseapp.com",
@@ -245,9 +261,9 @@ window.cloud = {
         return snap.docs.map(withDocId);
     },
     subscribeDamages(callback, errorCallback) {
-        return onSnapshot(
+        return _onSnapshotWithPending(
             collection(db, DAMAGE_COL),
-            snap => callback(snap.docs.map(withDocId)),
+            callback,
             err => {
                 console.error('[cloud] damage subscription error:', err);
                 if (errorCallback) errorCallback(err);
@@ -671,9 +687,9 @@ window.cloud = {
         return snap.docs.map(withDocId);
     },
     subscribeWorkLogs(callback, errorCallback) {
-        return onSnapshot(
+        return _onSnapshotWithPending(
             query(collection(db, WORK_LOGS_COL), orderBy('date', 'desc')),
-            snap => callback(snap.docs.map(withDocId)),
+            callback,
             err => {
                 console.error('[cloud] workLogs subscription error:', err);
                 if (errorCallback) errorCallback(err);
@@ -704,9 +720,9 @@ window.cloud = {
         return snap.docs.map(withDocId);
     },
     subscribeLeaveRequests(callback, errorCallback) {
-        return onSnapshot(
+        return _onSnapshotWithPending(
             query(collection(db, LEAVE_COL), orderBy('dateFrom', 'desc')),
-            snap => callback(snap.docs.map(withDocId)),
+            callback,
             err => {
                 console.error('[cloud] leaveRequests subscription error:', err);
                 if (errorCallback) errorCallback(err);

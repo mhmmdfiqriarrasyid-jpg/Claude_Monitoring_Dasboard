@@ -4262,3 +4262,57 @@ td[data-label="Approval"] { vertical-align: middle; }
 }
 .update-banner i { color: var(--accent); }
 .update-banner .btn { border-radius: 999px; }
+
+/* ============================================================
+   iPhone zooms the whole page in when a field under 16px gets focus, and
+   does not zoom back. The phone block above sets 16px for fields, but more
+   specific rules elsewhere (.filter-bar select, select.btn-sm, the shift
+   grid, date filters) won, so every filter outside a form still zoomed.
+   Last in the file and !important, so no later rule can undercut it.
+   ============================================================ */
+@media (max-width: 700px) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]),
+    select, textarea, [contenteditable="true"] {
+        font-size: 16px !important;
+    }
+    /* The shift grid keeps its narrow cells; the text just gets bigger. */
+    .shift-select { padding-left: 2px; padding-right: 0; }
+    .shift-fill { min-height: 40px; }
+}
+
+/* A save the server refused: kept, with a way back into the form. */
+.unsent-notice {
+    position: fixed; z-index: 450; left: 50%; transform: translateX(-50%);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+    width: min(640px, calc(100vw - 24px)); display: grid; gap: 8px;
+}
+.unsent-notice__row {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 12px; border-radius: 12px; font-size: 13px;
+    background: var(--danger-bg); color: var(--text); border: 1px solid var(--danger);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+}
+.unsent-notice__row > i { color: var(--danger); }
+.unsent-notice__text { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+.unsent-notice__acts { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Written offline, not on the server yet. */
+.q-tag { display: block; width: max-content; margin-top: 3px; }
+.queued-pill {
+    display: inline-flex; align-items: center; gap: 6px; margin-left: 8px;
+    padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+    background: var(--warning-bg); color: var(--warning); white-space: nowrap;
+}
+
+/* The daily session is about to end, or has ended and waits for the form. */
+.session-banner {
+    position: fixed; z-index: 420; left: 50%; transform: translateX(-50%);
+    top: calc(env(safe-area-inset-top, 0px) + 56px);
+    width: min(620px, calc(100vw - 24px));
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 12px; border-radius: 12px; font-size: 13px;
+    background: var(--warning-bg); color: var(--text); border: 1px solid var(--warning);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+}
+.session-banner > i { color: var(--warning); }
+.session-banner > span { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }

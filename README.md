@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.671 pemeriksaan di empat puluh empat suite, menggerakkan Chromium sungguhan terhadap
+1.705 pemeriksaan di empat puluh lima suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -305,6 +305,28 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
   Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
   **Implement Brands** (`masterLists/brand`) untuk Agricultural.
+- **Pemakaian di HP / lapangan v150 (dijaga `tests/field_phone_test.js`).**
+  - *Tombol Back:* setiap modal mendapat entri riwayat (`setupBackButton`,
+    lewat MutationObserver yang sama dengan fokus); Back menutup modal teratas
+    lewat closer-nya sendiri (peringatan foto tetap bertanya; batal = entri
+    dikembalikan), atau kembali ke halaman sebelumnya (`_pushViewHistory` di
+    navigateTo). Menutup lewat tombol hanya mundur bila entri teratas memang
+    entri modal — `history.back()` asinkron, dan mundur dari entri halaman
+    akan keluar dari aplikasi. Form kerusakan kini juga bertanya soal foto.
+  - *Simpan ditolak server:* isi form + foto disalin saat Simpan
+    (`captureFormState`, `_snapWorkLog/Leave/Inspection/Damage`); bila
+    ditolak, pemberitahuan tetap `#unsentNotice` dengan "Open it again" /
+    "Discard". Pesan dalam bahasa biasa (`plainSaveError`); petunjuk rules
+    hanya untuk owner.
+  - *Waiting to send:* laporan harian, izin dan kerusakan berlangganan dengan
+    `_onSnapshotWithPending` (hasPendingWrites); tanda di baris
+    (`queuedTag`), hitungan di bar atas (`#queuedPill`), sign out menyebut
+    semuanya (`queuedSummary`).
+  - *Sesi 24 jam:* peringatan 30 menit sebelumnya (`#sessionBanner`, tombol
+    Sign in again / Later); habis saat form terbuka atau tanpa sinyal →
+    ditunda (`requestExpiry`) sampai form ditutup dan ada sinyal.
+  - *iPhone zoom:* aturan terakhir di style.css memaksa 16px untuk semua
+    input/select/textarea/contenteditable di ≤700px.
 - **Perbaikan grup 1 v149 (dijaga `tests/session_revoke_test.js`,
   `restore_merge_test.js`, `dq_fixes_test.js`, `ui_safety_test.js` dan
   rules_test).**

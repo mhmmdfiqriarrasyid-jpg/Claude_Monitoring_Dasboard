@@ -116,7 +116,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v149';
+const APP_VERSION = 'v150';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -795,8 +795,95 @@ function markSortedHeader(theadSelector, key, asc) {
     });
 }
 
+// ============================================================
+// ANDROID BACK BUTTON
+// ------------------------------------------------------------
+// Installed as an app (display: standalone) there is no browser history of
+// its own, so Back with nothing to go back to closed the app — and the report
+// open in it, photos included, with no question asked. Each layer now has a
+// history entry: an open modal, and every page after the first. Back peels
+// one layer: it closes the top modal through its own closer (which still asks
+// about unsaved photos — cancelling keeps the modal and its entry), or goes
+// back to the previous page.
+// ============================================================
+let _histModals = 0;        // history entries pushed for modals still open
+let _popClosing = 0;        // modal closes started by Back (entry already gone)
+let _ignorePops = 0;        // pops caused by our own history.go()
+let _navFromHistory = false;
+
+function _openLayers() {
+    const lb = document.getElementById('photoLightbox');
+    return document.querySelectorAll('.modal-overlay.open').length + (lb && lb.classList.contains('open') ? 1 : 0);
+}
+
+function setupBackButton() {
+    if (!window.history || typeof history.pushState !== 'function' || typeof MutationObserver !== 'function') return;
+    try { history.replaceState({ ot: 'view', view: currentView || 'dashboard' }, ''); } catch (_) {}
+    let layers = _openLayers();
+    const obs = new MutationObserver(() => {
+        const now = _openLayers();
+        if (now > layers) {
+            for (let i = layers; i < now; i++) { history.pushState({ ot: 'modal' }, ''); _histModals++; }
+        } else if (now < layers) {
+            let closed = layers - now;
+            // Closed by Back: its entry is already gone.
+            const byBack = Math.min(closed, _popClosing);
+            _popClosing -= byBack; closed -= byBack;
+            // Closed by X / Cancel / Save: drop its entry too, or the next
+            // Back would seem to do nothing.
+            const drop = Math.min(closed, _histModals);
+            if (drop > 0) {
+                _histModals -= drop;
+                // Only ever step back over an entry that is ours and on top.
+                // history.back() is asynchronous: a modal opened (or closed)
+                // before it lands shifts what "back" means, and stepping back
+                // from a page entry would leave the app altogether.
+                if (history.state && history.state.ot === 'modal') { _ignorePops++; history.back(); }
+            }
+        }
+        layers = now;
+    });
+    document.querySelectorAll('.modal-overlay, #photoLightbox').forEach(el =>
+        obs.observe(el, { attributes: true, attributeFilter: ['class'] }));
+
+    window.addEventListener('popstate', e => {
+        if (_ignorePops > 0) { _ignorePops--; return; }
+        if (_openLayers() > 0) {
+            // Back always closes what is open on top, whatever the count says.
+            _histModals = Math.max(0, _histModals - 1);
+            const before = _openLayers();
+            _popClosing++;
+            closeTopModal();
+            if (_openLayers() >= before) {
+                // The closer asked and the person chose to stay: keep the
+                // modal, and give it its entry back.
+                _popClosing--;
+                history.pushState({ ot: 'modal' }, '');
+                _histModals++;
+            }
+            return;
+        }
+        const st = e.state;
+        if (st && st.ot === 'view' && st.view && st.view !== currentView) {
+            _navFromHistory = true;
+            try { navigateTo(st.view); } finally { _navFromHistory = false; }
+        }
+    });
+}
+
+// A page change gets its own entry (not while a modal is open — those sit on
+// top), so Back returns to the page before.
+function _pushViewHistory(view) {
+    if (_navFromHistory || !window.history || typeof history.pushState !== 'function') return;
+    if (_openLayers() > 0) return;
+    const st = history.state;
+    if (st && st.ot === 'view' && st.view === view) return;
+    try { history.pushState({ ot: 'view', view }, ''); } catch (_) {}
+}
+
 function setupKeyboardShortcuts() {
     watchModalFocus();
+    setupBackButton();
     setupSortableHeaders();
     document.addEventListener('keydown', e => {
         const tag = e.target.tagName;
@@ -1100,6 +1187,7 @@ function navigateTo(view) {
     if (usersView) usersView.style.display = (view === 'users') ? 'block' : 'none';
 
     currentView = view;
+    _pushViewHistory(view);
     markActiveNav();
 
     // Once cloud sync is live, the in-memory arrays ARE the data — the
@@ -7148,7 +7236,7 @@ function renderDamageTable() {
         <tr>
             <td class="col-check"><input type="checkbox" class="damage-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedDamageCount()"></td>
             <td>${i + 1}</td>
-            <td data-label="Date" style="white-space:nowrap">${escapeHtml(d.date || '')}</td>
+            <td data-label="Date" style="white-space:nowrap">${escapeHtml(d.date || '')}${queuedTag('damages', d.id)}</td>
             <td data-label="Unit"><strong>${escapeHtml(uName)}</strong></td>
             <td data-label="SN" style="font-family:monospace;font-size:12px">${escapeHtml(uSn)}</td>
             <td data-label="Site">${escapeHtml(uSite)}</td>
@@ -7329,13 +7417,17 @@ function saveDamage(event) {
     // resolving it later must not touch the new one.
     if (old && old.drove && (liveUnitFor(old) || {}).id !== unit.id) data.drove = '';
 
+    // Kept in case the server refuses the save — see rememberUnsent.
+    const snap = _snapDamage();
+    const unsentLabel = `damage record — ${data.unitName || data.sn || 'unit'}, ${data.date}`;
+    const onFail = err => rememberUnsent(unsentLabel, err, () => _reopenDamage(snap));
     let savedId = id;
     if (id) {
         const idx = globalDamages.findIndex(d => d.id === id);
         if (idx !== -1) {
             globalDamages[idx] = { ...globalDamages[idx], ...data, updatedAt: Date.now() };
             saveDamages();
-            cloudPushDamage(globalDamages[idx]);
+            cloudPushDamage(globalDamages[idx], onFail);
             logEvent({
                 action: 'update',
                 unitId: unit.id,
@@ -7357,7 +7449,7 @@ function saveDamage(event) {
         savedId = newRec.id;
         globalDamages.push(newRec);
         saveDamages();
-        cloudPushDamage(newRec);
+        cloudPushDamage(newRec, onFail);
         logEvent({
             action: 'add',
             unitId: unit.id,
@@ -7397,7 +7489,7 @@ function saveDamage(event) {
         }
     }
 
-    closeDamageModal();
+    closeDamageModal(true);
     renderDamageTable();
 }
 
@@ -7521,7 +7613,14 @@ function resolveDamage(id) {
     }
 }
 
-function closeDamageModal() {
+function closeDamageModal(force) {
+    // A photo taken for a damage record exists only on this phone until the
+    // record is saved; X, Cancel and the Back button used to drop it silently.
+    if (!force && _dmgPhotoDirty && document.getElementById('damageModal').classList.contains('open') &&
+        !confirm(_dmgPhotoData ? 'The photo is not saved yet and will be lost. Close anyway?'
+                               : 'The photo change is not saved yet. Close anyway?')) {
+        return;
+    }
     document.getElementById('damageModal').classList.remove('open');
 }
 
@@ -7609,14 +7708,17 @@ function exportDamageCSV() {
 }
 
 // ---- Cloud ----
-function cloudPushDamage(rec) {
+function cloudPushDamage(rec, onFail) {
     if (suppressCloudWrites || !window.cloud?.isReady || !rec) return;
-    window.cloud.saveDamage(rec).catch(err => cloudWriteFailed(err, {
-        what: 'damage',
-        label: `[Damage] ${rec.unitName || '-'}`,
-        unitId: rec.unitId || '',
-        resync: resyncDamages
-    }));
+    window.cloud.saveDamage(rec).catch(err => {
+        cloudWriteFailed(err, {
+            what: 'damage',
+            label: `[Damage] ${rec.unitName || '-'}`,
+            unitId: rec.unitId || '',
+            resync: resyncDamages
+        });
+        if (onFail) onFail(err);
+    });
 }
 
 function cloudDeleteDamage(id) {
@@ -9575,7 +9677,7 @@ function initCloudSync() {
             console.warn('[cloud] implements offline');
         });
         if (window.cloud.subscribeDamages) {
-            cloudDamageUnsub = window.cloud.subscribeDamages(applyCloudDamagesSnapshot, err => {
+            cloudDamageUnsub = window.cloud.subscribeDamages((list, queued) => { setQueued('damages', queued); applyCloudDamagesSnapshot(list); }, err => {
                 console.warn('[cloud] damage records offline:', err && err.code);
                 if (err && err.code === 'permission-denied') {
                     showDamageRulesBanner();
@@ -9639,7 +9741,7 @@ function initCloudSync() {
         const canReadLogs = ['teamLog', 'teamLogApprove', 'leader'].some(a => hasAccess(a, 'view'));
         if (window.cloud.subscribeWorkLogs && canReadLogs) {
             cloudWorkLogsUnsub = window.cloud.subscribeWorkLogs(
-                applyCloudWorkLogsSnapshot,
+                (list, queued) => { setQueued('workLogs', queued); applyCloudWorkLogsSnapshot(list); },
                 err => {
                     console.warn('[cloud] workLogs offline:', err && err.code);
                     if (err && err.code === 'permission-denied') showTeamRulesBanner();
@@ -9661,7 +9763,7 @@ function initCloudSync() {
         }
         if (window.cloud.subscribeLeaveRequests && (canReadLogs || hasAccess('teamShift', 'view'))) {
             cloudLeaveUnsub = window.cloud.subscribeLeaveRequests(
-                applyCloudLeaveSnapshot,
+                (list, queued) => { setQueued('leaveRequests', queued); applyCloudLeaveSnapshot(list); },
                 err => {
                     console.warn('[cloud] leaveRequests offline:', err && err.code);
                     if (err && err.code === 'permission-denied') showTeamRulesBanner();
@@ -9814,6 +9916,8 @@ function tearDownCloudSync() {
     if (cloudUserCategoriesUnsub) { try { cloudUserCategoriesUnsub(); } catch (_) {} cloudUserCategoriesUnsub = null; }
     if (cloudMasterListsUnsub) { try { cloudMasterListsUnsub(); } catch (_) {} cloudMasterListsUnsub = null; }
     if (cloudLicenseReqUnsub) { try { cloudLicenseReqUnsub(); } catch (_) {} cloudLicenseReqUnsub = null; }
+    // What was typed belongs to the account that typed it.
+    if (typeof clearUnsent === 'function') clearUnsent();
     licenseRequirements = [];
     masterLists = { site: [], brand: [], heavyBrand: [], company: [] };
     if (cloudDamageComponentsUnsub) { try { cloudDamageComponentsUnsub(); } catch (_) {} cloudDamageComponentsUnsub = null; }
@@ -9830,6 +9934,8 @@ function tearDownCloudSync() {
     if (cloudInspectionPlansUnsub) { try { cloudInspectionPlansUnsub(); } catch (_) {} cloudInspectionPlansUnsub = null; }
     inspections = [];
     insQueuedIds = new Set();
+    Object.keys(_queued).forEach(k => { _queued[k] = new Set(); });
+    renderQueuedPill();
     inspectionPlans = [];
     _insPhotoCache.clear();
     teamMembers = [];
@@ -10148,6 +10254,85 @@ async function handleSessionTakenOver(active) {
 function clearSessionClock() {
     localStorage.removeItem(SESSION_START_KEY);
     if (_sessionTimer) { clearTimeout(_sessionTimer); _sessionTimer = null; }
+    if (_sessionWarnTimer) { clearTimeout(_sessionWarnTimer); _sessionWarnTimer = null; }
+    if (_expiryWatch) { clearInterval(_expiryWatch); _expiryWatch = null; }
+    _expiryDue = false;
+    _sessionWarnSnoozed = false;
+    hideSessionBanner();
+}
+
+// ---- Warning before, and no sign-out in the middle of something ----
+// The day's session used to end without a word, at whatever hour yesterday's
+// sign-in had been — often first thing in the field. On return from the
+// camera app the sign-in screen covered a half-filled inspection, and with
+// no signal there was no signing in again: the offline queue built for that
+// place could not be used. Now there is a warning half an hour ahead, and an
+// ended session waits for the open form to be closed and for a signal.
+const SESSION_WARN_MS = 30 * 60 * 1000;
+let _sessionWarnTimer = null;
+let _expiryWatch = null;
+let _expiryDue = false;
+
+function _sessionEndsAt() {
+    const start = parseInt(localStorage.getItem(SESSION_START_KEY), 10);
+    return start && !isNaN(start) ? start + SESSION_MAX_MS : 0;
+}
+
+let _sessionWarnSnoozed = false;   // "Later" on the early warning
+
+function showSessionBanner(kind) {
+    if (kind === 'soon' && _sessionWarnSnoozed) return;
+    let bar = document.getElementById('sessionBanner');
+    if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'sessionBanner';
+        bar.className = 'session-banner';
+        bar.setAttribute('role', 'status');
+        document.body.appendChild(bar);
+    }
+    const end = _sessionEndsAt();
+    const hhmm = end ? new Date(end).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
+    const text = kind === 'ended'
+        ? (navigator.onLine
+            ? 'Your daily session has ended. Save or close what you are working on — you will then be asked to sign in again.'
+            : 'Your daily session has ended. Keep working — you will be asked to sign in again once you have signal and have closed the open form.')
+        : `Your daily session ends at ${hhmm}. Sign in again now while you have signal, so it does not end in the field.`;
+    bar.dataset.kind = kind;
+    bar.innerHTML = `<i class="fas fa-clock"></i><span>${escapeHtml(text)}</span>`
+        + '<button type="button" class="btn btn-primary btn-sm" onclick="renewSessionNow()">Sign in again</button>'
+        + (kind === 'soon' ? '<button type="button" class="btn btn-secondary btn-sm" onclick="snoozeSessionBanner()">Later</button>' : '');
+}
+function snoozeSessionBanner() { _sessionWarnSnoozed = true; hideSessionBanner(); }
+function hideSessionBanner() {
+    const bar = document.getElementById('sessionBanner');
+    if (bar) bar.remove();
+}
+
+// "Sign in again" from the banner: a fresh sign-in starts a fresh 24h day.
+async function renewSessionNow() {
+    if (!navigator.onLine) { showToast('No signal — signing in needs a connection. Try again when you have signal.', 'warning'); return; }
+    if (userIsBusy() && !confirm('A form is still open. Sign out now to sign in again? Anything not saved yet will be lost.')) return;
+    const email = (currentUser && currentUser.email) || '';
+    try { await window.cloud.signOutUser(); } catch (_) {}
+    const el = document.getElementById('signInEmail');
+    if (el && email) el.value = email;
+}
+
+// The 24 hours are up: sign out now, or as soon as nothing is open and there
+// is a signal to sign back in with. Returns true when it had to wait.
+function requestExpiry() {
+    if (!userIsBusy() && navigator.onLine) { expireSession(); return false; }
+    _expiryDue = true;
+    showSessionBanner('ended');
+    if (!_expiryWatch) {
+        _expiryWatch = setInterval(() => {
+            if (_expiryDue && !userIsBusy() && navigator.onLine) {
+                clearInterval(_expiryWatch); _expiryWatch = null;
+                expireSession();
+            }
+        }, 5000);
+    }
+    return true;
 }
 
 let _expiring = false;
@@ -10155,6 +10340,8 @@ let _expiring = false;
 async function expireSession() {
     if (_expiring) return;
     _expiring = true;
+    _expiryDue = false;
+    hideSessionBanner();
     if (_sessionTimer) { clearTimeout(_sessionTimer); _sessionTimer = null; }
     showToast('Daily session ended — please sign in again', 'warning');
     try {
@@ -10185,9 +10372,14 @@ function checkDailySession() {
         localStorage.setItem(SESSION_START_KEY, String(start));
     }
     const elapsed = Date.now() - start;
-    if (elapsed >= SESSION_MAX_MS) { expireSession(); return false; }
+    // Ended: out now, or — mid-form or with no signal — once that is over.
+    if (elapsed >= SESSION_MAX_MS) return requestExpiry();
     if (_sessionTimer) clearTimeout(_sessionTimer);
-    _sessionTimer = setTimeout(expireSession, SESSION_MAX_MS - elapsed);
+    _sessionTimer = setTimeout(requestExpiry, SESSION_MAX_MS - elapsed);
+    if (_sessionWarnTimer) clearTimeout(_sessionWarnTimer);
+    const left = SESSION_MAX_MS - elapsed;
+    if (left <= SESSION_WARN_MS) showSessionBanner('soon');
+    else { hideSessionBanner(); _sessionWarnTimer = setTimeout(() => showSessionBanner('soon'), left - SESSION_WARN_MS); }
     return true;
 }
 
@@ -10254,8 +10446,9 @@ async function handleSignUp(event) {
 async function handleSignOut() {
     // Firestore holds a signed-out account's queued writes until that same
     // account signs in here again — they are not lost, but they do not move.
-    const queued = inspections.filter(r => insQueuedIds.has(r.id)).length;
-    if (queued && !confirm(`${queued} inspection report(s) have not been sent yet. If you sign out now they stay on this device and are only sent after you sign in again here. Sign out anyway?`)) return;
+    const ins = inspections.filter(r => insQueuedIds.has(r.id)).length;
+    const parts = queuedSummary(ins);
+    if (parts.length && !confirm(`Not sent yet: ${parts.join(', ')}.\n\nIf you sign out now they stay on this device and are only sent after YOU sign in again here — not when someone else signs in. Sign out anyway?`)) return;
     try {
         await window.cloud.signOutUser();
     } catch (e) { /* ignore */ }
@@ -12215,7 +12408,7 @@ function renderWorkLogTable() {
         return `
         <tr>
             <td>${i + 1}</td>
-            <td data-label="Date" style="white-space:nowrap">${escapeHtml(w.date || '')}</td>
+            <td data-label="Date" style="white-space:nowrap">${escapeHtml(w.date || '')}${queuedTag('workLogs', w.id)}</td>
             <td data-label="Member"><strong>${escapeHtml(memberNameOf(w))}</strong></td>
             <td data-label="Company" style="font-size:12px">${(() => {
                 const c = companyOfRecord(w);
@@ -12669,6 +12862,7 @@ function saveWorkLog(event, mode) {
         }
     }
 
+    const snap = _snapWorkLog();
     cloudWrite(
         {
             action: existing ? 'update' : 'create',
@@ -12684,8 +12878,8 @@ function saveWorkLog(event, mode) {
             : 'Report submitted — pending approval',
         err => {
             console.error('[team] work log save failed:', err);
-            if (err && err.code === 'permission-denied') showTeamRulesBanner();
-            showToast('Failed to save report', 'error');
+            if (err && err.code === 'permission-denied' && isOwner()) showTeamRulesBanner();
+            rememberUnsent(`daily report — ${member.name}, ${rec.date}`, err, () => _reopenWorkLog(snap));
         }
     );
 
@@ -13123,7 +13317,7 @@ function renderLeaveTable() {
                         aria-label="View ${docs} letter page(s)"
                         onclick="openLeaveDocs(${jsArg(r.id)}, this)"><i class="fas fa-file-image"></i> ${docs}</button>`
                 : '<span style="color:var(--text-light)">—</span>'}</td>
-            <td data-label="Approval">${approvalCell(r, 'request', 'approveLeave', 'reviseLeave')}</td>
+            <td data-label="Approval">${queuedTag('leaveRequests', r.id)}${approvalCell(r, 'request', 'approveLeave', 'reviseLeave')}</td>
             <td class="col-actions">
                 ${canEdit ? rowActionsFor(r, 'Request', 'editLeave', 'deleteLeave', 'withdrawLeave') : ''}
             </td>
@@ -13392,6 +13586,7 @@ function saveLeave(event, mode) {
         }
     }
 
+    const snap = _snapLeave();
     cloudWrite(
         {
             action: existing ? 'update' : 'create',
@@ -13407,8 +13602,8 @@ function saveLeave(event, mode) {
             : 'Request submitted — pending approval',
         err => {
             console.error('[izin] save failed:', err);
-            if (err && err.code === 'permission-denied') showTeamRulesBanner();
-            showToast('Failed to save request', 'error');
+            if (err && err.code === 'permission-denied' && isOwner()) showTeamRulesBanner();
+            rememberUnsent(`${leaveTypeLabel(rec).toLowerCase()} request — ${member.name}, ${leaveRangeLabel(rec)}`, err, () => _reopenLeave(snap));
         }
     );
 
@@ -15627,6 +15822,7 @@ function applyCloudInspectionsSnapshot(list, queuedIds) {
     const before = insQueuedIds.size;
     insQueuedIds = new Set(queuedIds || []);
     if (before && !insQueuedIds.size) showToast('All inspection reports have been sent', 'success');
+    renderQueuedPill();
     inspections = (list || []).slice().sort((a, b) =>
         String(b.date || '').localeCompare(String(a.date || '')) || ((b.createdAt || 0) - (a.createdAt || 0)));
     if (currentView === 'inspection') renderInspectionView();
@@ -16249,6 +16445,7 @@ function saveInspection(event, mode) {
     }
 
     const bad = inspectionBadBits(rec);
+    const snap = _snapInspection(rec);
     cloudWrite(
         { action: existing ? 'update' : 'create', unitId,
           unitName: `[Inspection] ${rec.unitName}`,
@@ -16260,7 +16457,7 @@ function saveInspection(event, mode) {
             : `Inspection report submitted — next check ${addDaysISO(date, INSPECTION_INTERVAL_DAYS)}`,
         err => {
             console.error('[ins] save failed:', err);
-            showToast('Failed to save inspection report' + (err && err.code === 'permission-denied' ? ' — republish firestore.rules' : ''), 'error');
+            rememberUnsent(`inspection report — ${rec.unitName || rec.unitId}, ${date}`, err, () => _reopenInspection(snap));
         }
     );
     closeInspectionModal(true);
@@ -17655,6 +17852,197 @@ function setLicenseRequirement(type, kind, value) {
         }
     );
 }
+
+// ============================================================
+// NOT SAVED — keep what was typed when the server refuses a save
+// ------------------------------------------------------------
+// Forms close the moment Save is pressed: offline, the write is queued and
+// that IS saved. But when the server later REFUSES the write, the form was
+// long gone — the report, its photos, everything typed in the field — and
+// all that was left was a 4-second toast, sometimes in developer words. Now
+// the form's contents are kept, and a notice that stays until it is dealt
+// with offers to open the form again exactly as it was.
+// ============================================================
+const _unsent = new Map();   // key -> { label, reason, reopen }
+let _unsentSeq = 0;
+
+// Every field of a form, by id — enough to put it back as it was.
+function captureFormState(formId) {
+    const vals = {};
+    document.querySelectorAll(`#${formId} input, #${formId} select, #${formId} textarea`).forEach(el => {
+        if (!el.id || el.type === 'file') return;
+        vals[el.id] = (el.type === 'checkbox' || el.type === 'radio') ? el.checked : el.value;
+    });
+    return vals;
+}
+function applyFormState(vals) {
+    Object.keys(vals || {}).forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (el.type === 'checkbox' || el.type === 'radio') el.checked = !!vals[id];
+        else el.value = vals[id];
+    });
+}
+
+// Why a save did not land, in words for the person holding the phone. The
+// rules hint is for the one account that can act on it.
+function plainSaveError(err) {
+    const code = err && err.code;
+    if (code === 'stale-client') return 'an old version of the app is still running — reload the page, then open it again';
+    if (code === 'permission-denied') return isOwner()
+        ? 'the server refused it — check this account\'s access, or re-publish firestore.rules'
+        : 'the server refused it — your access may not allow this, or it was checked or locked in the meantime';
+    if (code === 'unavailable' || code === 'deadline-exceeded') return 'the server could not be reached';
+    return 'the server refused it';
+}
+
+function rememberUnsent(label, err, reopen) {
+    const key = 'u' + (++_unsentSeq);
+    _unsent.set(key, { label, reason: plainSaveError(err), reopen });
+    renderUnsentNotice();
+    return key;
+}
+function reopenUnsent(key) {
+    const u = _unsent.get(key);
+    if (!u) return;
+    _unsent.delete(key);
+    renderUnsentNotice();
+    u.reopen();
+}
+function dismissUnsent(key) {
+    if (!_unsent.has(key)) return;
+    if (!confirm('Discard this unsaved entry? What was typed — and any photos — will be lost.')) return;
+    _unsent.delete(key);
+    renderUnsentNotice();
+}
+function renderUnsentNotice() {
+    let box = document.getElementById('unsentNotice');
+    if (!_unsent.size) { if (box) box.remove(); return; }
+    if (!box) {
+        box = document.createElement('div');
+        box.id = 'unsentNotice';
+        box.className = 'unsent-notice';
+        box.setAttribute('role', 'alert');
+        document.body.appendChild(box);
+    }
+    box.innerHTML = [..._unsent.entries()].map(([k, u]) => `<div class="unsent-notice__row">
+        <i class="fas fa-triangle-exclamation"></i>
+        <span class="unsent-notice__text"><strong>Not saved:</strong> ${escapeHtml(u.label)} — ${escapeHtml(u.reason)}. What you typed is kept.</span>
+        <span class="unsent-notice__acts">
+            <button type="button" class="btn btn-primary btn-sm" onclick="reopenUnsent(${jsArg(k)})">Open it again</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="dismissUnsent(${jsArg(k)})">Discard</button>
+        </span></div>`).join('');
+}
+function clearUnsent() { _unsent.clear(); renderUnsentNotice(); }
+
+// ---- per form: what to keep, and how to open it again ----
+function _snapWorkLog() {
+    return { vals: captureFormState('workLogForm'), units: _wlUnits.map(u => ({ ...u })),
+             photos: _wlPhotosDirty ? _wlPhotos.slice() : null };
+}
+function _reopenWorkLog(snap) {
+    const id = snap.vals.editWorkLogId;
+    const w = id && workLogs.find(x => x.id === id);
+    if (w && !snap.photos && canEditTeamRecord(w)) editWorkLog(id); else showAddWorkLogForm();
+    applyFormState(snap.vals);
+    ensureMemberOption('wlMember', snap.vals.wlMember);
+    _wlUnits = snap.units.map(u => ({ ...u }));
+    if (snap.photos) { _wlPhotosGen++; _wlPhotos = snap.photos.slice(); _wlPhotosDirty = true; _wlPhotosLoading = false; }
+    renderWorkLogUnitChips();
+    renderWorkLogPhotos();
+}
+function _snapLeave() {
+    return { vals: captureFormState('leaveForm'), docs: _lvDocsDirty ? _lvDocs.slice() : null };
+}
+function _reopenLeave(snap) {
+    const id = snap.vals.editLeaveId;
+    const r = id && leaveRequests.find(x => x.id === id);
+    if (r && !snap.docs && canEditTeamRecord(r)) editLeave(id); else showAddLeaveForm();
+    applyFormState(snap.vals);
+    ensureMemberOption('lvMember', snap.vals.lvMember);
+    if (snap.docs) { _lvDocsGen++; _lvDocs = snap.docs.slice(); _lvDocsDirty = true; _lvDocsLoading = false; }
+    renderLeaveDocs();
+}
+function _snapInspection(rec) {
+    return { rec: { ...rec }, vals: captureFormState('inspectionForm'), results: { ..._insResults },
+             photos: _insPhotosDirty ? { ..._insPhotos } : null };
+}
+function _reopenInspection(snap) {
+    _openInspectionModal(snap.rec, snap.rec.unitId, snap.rec.planId);
+    applyFormState(snap.vals);
+    _insResults = { ...snap.results };
+    if (snap.photos) { _insGen++; _insPhotos = { ...snap.photos }; _insPhotosDirty = true; _insPhotosLoading = false; _insPhotosFailed = false; }
+    renderInspectionComponents(snap.rec);
+    inspectionComponents().forEach(c => renderInspectionPhoto(c.key));
+}
+function _snapDamage() {
+    return { vals: captureFormState('damageForm'), photo: _dmgPhotoDirty ? _dmgPhotoData : null, photoDirty: _dmgPhotoDirty };
+}
+function _reopenDamage(snap) {
+    const id = snap.vals.editDamageId;
+    if (id && globalDamages.some(d => d.id === id)) editDamage(id); else showAddDamageForm();
+    applyFormState(snap.vals);
+    if (snap.photoDirty) { _dmgPhotoData = snap.photo || ''; _dmgPhotoDirty = true; _dmgPhotoLoading = false; setDamagePhotoPreview(); }
+}
+
+// ============================================================
+// WAITING TO SEND — everything written offline, not just inspections
+// ------------------------------------------------------------
+// Daily reports, leave requests and damage records written with no signal
+// sit in Firestore's queue on this phone until it reaches the server. Only
+// inspections used to show it; the rest showed "Pending" like any sent report
+// — and signing out of a shared crew phone held them back unseen until the
+// same person signed in on it again. Now each list marks its rows, the top
+// bar counts them, and sign-out names them.
+// ============================================================
+const _queued = { workLogs: new Set(), leaveRequests: new Set(), damages: new Set() };
+const QUEUED_NOUN = { workLogs: 'daily report', leaveRequests: 'leave / sick request', damages: 'damage record' };
+let _queuedLast = 0;
+
+function setQueued(kind, ids) {
+    if (!_queued[kind]) return;
+    _queued[kind] = new Set(ids || []);
+    renderQueuedPill();
+}
+
+function queuedTag(kind, id) {
+    return _queued[kind] && _queued[kind].has(id)
+        ? '<span class="ins-tag ins-tag--queued q-tag" title="Saved on this device, not yet on the server"><i class="fas fa-cloud-arrow-up"></i> Waiting to send</span>'
+        : '';
+}
+
+// ["2 daily reports", "1 inspection report", …] — only what is waiting.
+function queuedSummary(insCount) {
+    const out = [];
+    Object.keys(_queued).forEach(k => { const n = _queued[k].size; if (n) out.push(`${n} ${QUEUED_NOUN[k]}${n === 1 ? '' : 's'}`); });
+    const ins = insCount == null ? insQueuedIds.size : insCount;
+    if (ins) out.push(`${ins} inspection report${ins === 1 ? '' : 's'}`);
+    return out;
+}
+
+function renderQueuedPill() {
+    const parts = queuedSummary();
+    const total = Object.values(_queued).reduce((n, s) => n + s.size, 0) + insQueuedIds.size;
+    let pill = document.getElementById('queuedPill');
+    if (!pill) {
+        const host = document.querySelector('.header__status');
+        if (!host) return;
+        pill = document.createElement('span');
+        pill.id = 'queuedPill';
+        pill.className = 'queued-pill';
+        pill.setAttribute('role', 'status');
+        host.appendChild(pill);
+    }
+    pill.style.display = total ? '' : 'none';
+    pill.innerHTML = total ? `<i class="fas fa-cloud-arrow-up"></i> ${total} waiting to send` : '';
+    pill.title = total ? `Saved on this device, sent when the signal returns: ${parts.join(', ')}` : '';
+    // Inspections say so themselves (applyCloudInspectionsSnapshot).
+    const others = total - insQueuedIds.size;
+    if (_queuedLast > 0 && total === 0 && _queuedLastOthers > 0) showToast('Everything saved offline has now been sent', 'success');
+    _queuedLast = total;
+    _queuedLastOthers = others;
+}
+let _queuedLastOthers = 0;
 
 if (window.cloudReady) {
     _cloudReadyFired = true;

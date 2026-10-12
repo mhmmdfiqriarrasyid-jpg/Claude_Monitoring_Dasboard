@@ -63,7 +63,7 @@ const { launch, BASE_URL } = require('./_env');
         // keluar akun
         confirmAnswer = false;
         await handleSignOut();
-        t('keluar akun dengan antrean: minta konfirmasi', [/2 inspection report\\(s\\) have not been sent yet/.test(confirmText), signedOut], [true, 0]);
+        t('keluar akun dengan antrean: minta konfirmasi', [/Not sent yet: 2 inspection reports\\./.test(confirmText), signedOut], [true, 0]);
         confirmAnswer = true; confirmText = '';
         await handleSignOut();
         t('dikonfirmasi: keluar', signedOut, 1);
