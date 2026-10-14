@@ -126,6 +126,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 | `firestore.rules` | Aturan keamanan — **di-publish manual** |
 | `service-worker.js` | Cache PWA; `CACHE_NAME` dinaikkan tiap deploy |
 | `tests/` | Uji browser |
+| `.claude/skills/` | Skill Claude Code (Ponytail v5.2.0, MIT): `/ponytail`, `/ponytail-review`, `/ponytail-audit`, `/ponytail-debt`, `/ponytail-gain`, `/ponytail-help`. Mode `/ponytail` hanya aktif bila dipanggil; asal dan perubahan lokal di `.claude/skills/ponytail/UPSTREAM.md` |
 
 ---
 
