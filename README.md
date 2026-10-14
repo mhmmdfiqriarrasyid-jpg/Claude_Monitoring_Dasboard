@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.773 pemeriksaan di empat puluh enam suite, menggerakkan Chromium sungguhan terhadap
+1.792 pemeriksaan di empat puluh enam suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -326,6 +326,18 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   - Foto After yang ditolak server masuk `#unsentNotice` dan bisa dibuka
     lagi dengan fotonya. Catatan yang berubah di perangkat lain membuang
     salinan foto di perangkat ini, dan hasil kosong tidak di-cache.
+  - *Perbaikan review v152:* Esc di penampil foto tidak lagi ikut menutup
+    dialog di bawahnya; tombol Simpan menunggu foto yang masih diproses
+    (`_repairBusy`, `_dmgPhotoBusy`); foto yang diproses untuk satu catatan
+    tidak bisa masuk form/dialog catatan lain (`_dmgFormGen`, `_repairGen`);
+    `hasAfterPhoto` hanya ditulis bila fotonya benar-benar bisa dikirim
+    (`damageAfterPhotoBlocker` — versi lama / belum tersambung menahan
+    simpan); membuka dialog lain tidak menimpa foto yang belum disimpan;
+    restore GANTI dari cadangan lama menghapus dokumen foto catatan yang di
+    berkasnya tidak berfoto (`_dropUnflaggedPhotos`); HP miring tetap
+    berdampingan. Batasan yang diterima: perangkat yang masih v150 dan
+    menghapus catatan meninggalkan dokumen `__after` — muat ulang semua
+    perangkat ke versi terbaru.
 - **Pemakaian di HP / lapangan v150 (dijaga `tests/field_phone_test.js`).**
   - *Tombol Back:* setiap modal mendapat entri riwayat (`setupBackButton`,
     lewat MutationObserver yang sama dengan fokus); Back menutup modal teratas

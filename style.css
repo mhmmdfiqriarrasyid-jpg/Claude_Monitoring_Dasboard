@@ -2362,8 +2362,9 @@ body[data-ro-editunits] .inline-edit { background: transparent !important; }
     border-radius: 999px;
     padding: 4px 12px;
 }
-/* A phone held upright has no room for two photos across: stack them. */
-@media (max-width: 700px), (orientation: portrait) and (max-width: 1024px) {
+/* A phone or tablet held upright has no room for two photos across: stack
+   them. Held sideways, they stay side by side. */
+@media (orientation: portrait) and (max-width: 1024px) {
     .photo-lightbox__compare { flex-direction: column; gap: 10px; }
     .photo-lightbox .photo-lightbox__fig img { max-height: 36vh; max-width: 100%; }
 }

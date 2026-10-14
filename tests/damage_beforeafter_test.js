@@ -352,6 +352,142 @@ const { launch, BASE_URL } = require('./_env');
         closeTopModal();
         t('Back menutup dialognya', isOpen('damageRepairModal'), false);
 
+        // =============== 11. TEMUAN REVIEW ===============
+        globalDamages = [mk('rA', { hasPhoto: true }), mk('rB', { hasPhoto: true, hasAfterPhoto: true, resolved: true, resolvedAt: '2026-10-14' }),
+                         mk('rC', {}), mk('rD', {})];
+        store.before.rA = PH('RA'); store.after.rB = PH('RB');
+        saveDamages(); renderDamageTable();
+
+        // a. Esc di penampil foto tidak ikut menutup dialog di bawahnya
+        openDamageRepair('rA');
+        _repairPhoto = PH('UNSAVED'); setRepairPhotoPreview();
+        openPhotoLightbox(_repairPhoto);
+        confirmText = '';
+        document.activeElement && document.activeElement.blur && document.activeElement.blur();
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        t('Esc menutup penampil saja; dialog dan fotonya tetap', [lb().classList.contains('open'), isOpen('damageRepairModal'), confirmText, _repairPhoto],
+          [false, true, '', PH('UNSAVED')]);
+
+        // b. membuka dialog untuk catatan lain saat foto belum disimpan: ditanya
+        confirmAnswer = false;
+        t('menolak mengganti: tetap di catatan semula', [openDamageRepair('rC'), _repairId, _repairPhoto], [false, 'rA', PH('UNSAVED')]);
+        confirmAnswer = true;
+        t('setuju: pindah ke catatan lain', [openDamageRepair('rC'), _repairId, _repairPhoto], [true, 'rC', '']);
+        closeDamageRepair(true);
+
+        // c/d. "Open it again" untuk foto After yang ditolak
+        _unsent.clear(); renderUnsentNotice();
+        openDamageRepair('rB'); _repairPhoto = PH('R1'); setRepairPhotoPreview();
+        failAfterSave = Object.assign(new Error('denied'), { code: 'permission-denied' });
+        saveDamageRepair(); await tick(40);
+        t('foto ditolak: tercatat', _unsent.size, 1);
+        openDamageRepair('rC'); _repairPhoto = PH('OTHER'); setRepairPhotoPreview();
+        confirmAnswer = false;
+        reopenUnsent([..._unsent.keys()][0]);
+        t('dibuka lagi saat foto lain belum disimpan dan ditolak: catatan tetap tersimpan', [_unsent.size, _repairId, _repairPhoto], [1, 'rC', PH('OTHER')]);
+        confirmAnswer = true;
+        closeDamageRepair(true);
+        globalDamages = globalDamages.filter(d => d.id !== 'rB');
+        toasts.length = 0;
+        reopenUnsent([..._unsent.keys()][0]);
+        t('catatannya sudah dihapus: dikatakan, tidak diam-diam', [/no longer exists/.test(toasts[toasts.length - 1] || ''), isOpen('damageRepairModal')], [true, false]);
+
+        // e. foto masih diproses: tombol simpan menunggu
+        // Pengecilan foto dibuat bisa ditahan, supaya jeda "sedang diproses"
+        // pasti teramati (foto uji yang kecil selesai dalam sekejap).
+        const realCompress = compressImageToDataURL;
+        let gate = null;
+        window.compressImageToDataURL = () => new Promise(r => { gate = () => r(PH('SHRUNK')); });
+        const jpg = () => ({ target: { files: [new File(['x'], 'cam.jpg', { type: 'image/jpeg' })], value: 'x' } });
+        openDamageRepair('rC');
+        const pending = handleRepairPhotoChange(jpg());
+        toasts.length = 0;
+        t('sedang diproses: tombol nonaktif, ada tanda', [document.getElementById('damageRepairSave').disabled, vis('dmgRepairLoading')], [true, true]);
+        saveDamageRepair();
+        t('menyimpan saat diproses ditolak, catatan belum ditandai', [/still being processed/.test(toasts[toasts.length - 1] || ''), !!globalDamages.find(d => d.id === 'rC').resolved], [true, false]);
+        gate(); await pending;
+        t('selesai diproses: tombol aktif, foto ada', [document.getElementById('damageRepairSave').disabled, vis('dmgRepairLoading'), !!_repairPhoto], [false, false, true]);
+        closeDamageRepair(true);
+        // diproses lalu dialog ditutup dan dibuka untuk catatan lain: foto tidak nyasar
+        openDamageRepair('rC');
+        const stray = handleRepairPhotoChange(jpg());
+        closeDamageRepair(true);
+        openDamageRepair('rD');
+        gate(); await stray;
+        t('foto yang diproses untuk dialog lama tidak masuk dialog baru', [_repairId, _repairPhoto, document.getElementById('damageRepairSave').disabled], ['rD', '', false]);
+        closeDamageRepair(true);
+
+        // f. sudah ditandai selesai di perangkat lain saat dialog terbuka
+        openDamageRepair('rD');
+        globalDamages.find(d => d.id === 'rD').resolved = true;
+        toasts.length = 0;
+        saveDamageRepair();
+        t('dialog "Mark as repaired" tanpa foto: ditutup, dikatakan sudah selesai', [isOpen('damageRepairModal'), toasts[toasts.length - 1]],
+          [false, 'Already marked as repaired (on another device)']);
+
+        // g. firebase-init lama (tanpa fungsi foto After): tidak ada tanda tanpa foto
+        const keepFn = window.cloud.saveDamageAfterPhoto; delete window.cloud.saveDamageAfterPhoto;
+        globalDamages.push(mk('rE', {})); saveDamages();
+        openDamageRepair('rE'); _repairPhoto = PH('OLDVER'); setRepairPhotoPreview();
+        calls.length = 0; toasts.length = 0;
+        saveDamageRepair();
+        const recE = globalDamages.find(d => d.id === 'rE');
+        t('versi lama: tidak ditandai selesai/berfoto, dialog tetap dengan fotonya, disuruh muat ulang',
+          [!!recE.resolved, !!recE.hasAfterPhoto, calls.length, isOpen('damageRepairModal'), _repairPhoto, /Reload the page/.test(toasts[toasts.length - 1] || '')],
+          [false, false, 0, true, PH('OLDVER'), true]);
+        closeDamageRepair(true);
+        editDamage('rE'); await tick(30);
+        _dmgAfterData = PH('OLDVER2'); _dmgAfterDirty = true;
+        toasts.length = 0; calls.length = 0;
+        saveDamage({ preventDefault() {} });
+        t('form Edit versi lama: tidak disimpan, form tetap terbuka', [calls.length, isOpen('damageModal'), !!globalDamages.find(d => d.id === 'rE').hasAfterPhoto, /Reload the page/.test(toasts[toasts.length - 1] || '')],
+          [0, true, false, true]);
+        closeDamageModal(true);
+        window.cloud.saveDamageAfterPhoto = keepFn;
+
+        // h. foto form yang diproses untuk catatan A tidak masuk form catatan B
+        globalDamages.push(mk('rF', { hasAfterPhoto: true, resolved: true })); store.after.rF = PH('RF'); saveDamages();
+        editDamage('rE'); await tick(20);
+        const strayForm = handleDamagePhotoChange(jpg(), 'after');
+        toasts.length = 0;
+        saveDamage({ preventDefault() {} });
+        t('form: menyimpan saat foto diproses ditolak', [/still being processed/.test(toasts[toasts.length - 1] || ''), isOpen('damageModal')], [true, true]);
+        closeDamageModal(true);
+        _dmgAfterCache.delete('rF');
+        editDamage('rF');
+        gate(); await strayForm; await tick(40);
+        window.compressImageToDataURL = realCompress;
+        t('foto untuk catatan lain tidak masuk form ini', [_dmgAfterDirty, _dmgAfterData, document.getElementById('dmgAfterPreview').src], [false, PH('RF'), PH('RF')]);
+        closeDamageModal(true);
+
+        // i. tanda "Loading photo…" tidak tertinggal
+        let release;
+        const slowGet = window.cloud.getDamageAfterPhoto;
+        window.cloud.getDamageAfterPhoto = () => new Promise(r => { release = () => r(PH('SLOW')); });
+        _dmgAfterCache.delete('rF');
+        editDamage('rF');
+        t('sedang dimuat', vis('dmgAfterLoading'), true);
+        removeDamagePhoto('after');
+        release(); await tick(20);
+        t('dihapus saat dimuat: tanda hilang, foto lama tidak kembali', [vis('dmgAfterLoading'), vis('dmgAfterPreviewWrap'), _dmgAfterData], [false, false, '']);
+        closeDamageModal(true);
+        window.cloud.getDamageAfterPhoto = slowGet;
+
+        // j. restore GANTI dari cadangan lama: catatan tetap, fotonya tidak ada di berkas
+        answers = [];
+        window.confirm = m => { confirmText = String(m); return answers.length ? answers.shift() : true; };
+        globalDamages = [mk('rG', { hasPhoto: true, hasAfterPhoto: true, resolved: true }), mk('rH', { hasAfterPhoto: true })];
+        saveDamages();
+        const oldFile = { version: 5, units: globalData.slice(), damages: [mk('rG', { resolved: true }), mk('rH', { hasAfterPhoto: true })] };
+        calls.length = 0;
+        answers = [false, true];
+        importBackup(new File([JSON.stringify(oldFile)], 'old.json', { type: 'application/json' }));
+        await tick(400);
+        t('restore GANTI: dokumen foto dari catatan yang di berkas tidak berfoto ikut dihapus',
+          calls.filter(c => /^del(Before|After)$/.test(c[0])).map(c => c.join(':')).sort(), ['delAfter:rG', 'delBefore:rG']);
+        closeRestoreReport();
+        window.confirm = m => { confirmText = String(m); return confirmAnswer; };
+
         window.__T = T;
     } catch (e) { window.__T = [{ n: 'EXCEPTION ' + e.message + ' ' + e.stack, pass: false }]; } })();` });
 
@@ -377,6 +513,16 @@ const { launch, BASE_URL } = require('./_env');
         return dir;
     });
     T.push({ n: 'layar lebar: berdampingan', g: desk, w: 'row', pass: desk === 'row' });
+    // HP miring: tetap berdampingan, bukan dua foto kecil bertumpuk.
+    await page.setViewportSize({ width: 640, height: 360 });
+    const land = await page.evaluate(() => {
+        openPhotoLightbox(['data:image/jpeg;base64,QQ==', 'data:image/jpeg;base64,Qg=='], 0, { captions: ['Before', 'After'], compare: true });
+        togglePhotoLightboxCompare();
+        const dir = getComputedStyle(document.getElementById('photoLightboxCompare')).flexDirection;
+        closePhotoLightbox();
+        return dir;
+    });
+    T.push({ n: 'HP miring: berdampingan', g: land, w: 'row', pass: land === 'row' });
 
     let pass = 0;
     T.forEach(x => { if (x.pass) pass++; else console.log('FAIL', x.n, '\n  dapat :', JSON.stringify(x.g), '\n  harap :', JSON.stringify(x.w)); });

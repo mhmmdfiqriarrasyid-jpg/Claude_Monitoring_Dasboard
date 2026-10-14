@@ -2310,6 +2310,9 @@
                     <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('dmgRepairInput').click()">
                         <i class="fas fa-camera"></i> Take / Choose Photo
                     </button>
+                    <span id="dmgRepairLoading" class="wl-photo__loading" style="display:none">
+                        <i class="fas fa-spinner fa-spin"></i> Processing photo…
+                    </span>
                     <div id="dmgRepairPreviewWrap" class="dmg-photo-preview" style="display:none">
                         <img id="dmgRepairPreview" alt="After photo preview" onclick="openPhotoLightbox(this.src)">
                         <button type="button" class="btn btn-secondary btn-sm" onclick="removeRepairPhoto()">

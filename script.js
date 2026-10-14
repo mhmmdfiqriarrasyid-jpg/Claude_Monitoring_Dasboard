@@ -26,6 +26,10 @@ let _dmgPhotoLoading = false;
 let _dmgAfterData = '';
 let _dmgAfterDirty = false;
 let _dmgAfterLoading = false;
+// Bumped every time the damage form opens: a photo still being shrunk when
+// the form was closed must not land in the next record's form.
+let _dmgFormGen = 0;
+let _dmgPhotoBusy = 0;     // photos being shrunk for the open form
 let globalLicenseStock = [];
 let selectedLicenseIds = new Set();
 
@@ -121,7 +125,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v151';
+const APP_VERSION = 'v152';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -2917,6 +2921,23 @@ function _cloudDeleteRemoved(previous, kept, deleteOne) {
     previous.forEach(r => { if (r.id && !keptIds.has(r.id)) deleteOne(r.id, r); });
 }
 
+// REPLACE keeps a record whose copy in the file has no photo of a kind the
+// current one has — a backup from before that photo was taken. The record
+// loses the flag, so drop the photo document as well; left behind, nothing
+// would ever list or delete it. Only kinds that name a delete ('del').
+function _dropUnflaggedPhotos(partKey, before, next) {
+    if (suppressCloudWrites || !window.cloud?.isReady) return;
+    const nextById = new Map(next.filter(r => r && r.id).map(r => [r.id, r]));
+    BACKUP_PHOTO_KINDS.filter(k => k.part === partKey && k.del).forEach(k => {
+        before.forEach(r => {
+            const n = r && r.id ? nextById.get(r.id) : null;
+            if (!n || !k.has(r) || k.has(n)) return;
+            k.cache().delete(r.id);
+            _dropPhotoDoc(k.del, r.id);
+        });
+    });
+}
+
 // A record's photo or letters live in a document of their own, keyed by the
 // record's id. Deleting only the record left that document behind for good —
 // nothing lists those collections, so nothing would ever find it again.
@@ -2933,10 +2954,10 @@ function _dropPhotoDoc(fnName, id) {
 // (an inline one already travels with the record itself).
 const BACKUP_PHOTO_KINDS = [
     { key: 'damagePhotos', label: 'Damage photos', part: 'damages', area: 'damage',
-      has: r => !r.photo && !!r.hasPhoto, get: 'getDamagePhoto', save: 'saveDamagePhoto',
+      has: r => !r.photo && !!r.hasPhoto, get: 'getDamagePhoto', save: 'saveDamagePhoto', del: 'deleteDamagePhoto',
       present: v => typeof v === 'string' && v.length > 0, cache: () => _dmgPhotoCache },
     { key: 'damageAfterPhotos', label: 'Damage photos after repair', part: 'damages', area: 'damage',
-      has: r => damageHasAfterPhoto(r), get: 'getDamageAfterPhoto', save: 'saveDamageAfterPhoto',
+      has: r => damageHasAfterPhoto(r), get: 'getDamageAfterPhoto', save: 'saveDamageAfterPhoto', del: 'deleteDamageAfterPhoto',
       present: v => typeof v === 'string' && v.length > 0, cache: () => _dmgAfterCache },
     { key: 'workLogPhotos', label: 'Daily report photos', part: 'workLogs', area: 'teamLog',
       has: r => !(Array.isArray(r.photos) && r.photos.length) && Number(r.photoCount) > 0,
@@ -3134,6 +3155,7 @@ function importBackup(file) {
                 const nextIds = new Set(next.map(x => x.id));
                 const deleted = merge ? 0 : before.filter(r => r.id && !nextIds.has(r.id)).length;
                 _cloudDeleteRemoved(before, next, part.deleteOne);
+                if (!merge) _dropUnflaggedPhotos(part.key, before, next);
                 if (bulk && toWrite.length) {
                     (merge ? bulk(toWrite) : _replaceInCloud(part.key, toWrite, bulk)).catch(err => cloudWriteFailed(err, {
                         what: `${part.label.toLowerCase()} (restore)`,
@@ -6667,13 +6689,19 @@ async function handleDamagePhotoChange(event, side) {
         showToast('The file must be an image (photo)', 'warning');
         return;
     }
+    const gen = _dmgFormGen;
+    _dmgPhotoBusy++;
     try {
         const data = await compressImageToDataURL(file);
-        if (side === 'after') { _dmgAfterData = data; _dmgAfterDirty = true; }
-        else { _dmgPhotoData = data; _dmgPhotoDirty = true; }
+        // The form was closed, or opened for another record, meanwhile.
+        if (gen !== _dmgFormGen || !document.getElementById('damageModal').classList.contains('open')) return;
+        if (side === 'after') { _dmgAfterData = data; _dmgAfterDirty = true; _dmgAfterLoading = false; }
+        else { _dmgPhotoData = data; _dmgPhotoDirty = true; _dmgPhotoLoading = false; }
         setDamagePhotoPreview(side === 'after' ? 'after' : 'before');
     } catch (err) {
         showToast(err.message || 'Failed to process the photo', 'error');
+    } finally {
+        if (gen === _dmgFormGen) _dmgPhotoBusy = Math.max(0, _dmgPhotoBusy - 1);
     }
 }
 
@@ -6699,8 +6727,9 @@ function setDamagePhotoPreview(side) {
 
 function removeDamagePhoto(side) {
     side = side === 'after' ? 'after' : 'before';
-    if (side === 'after') { _dmgAfterData = ''; _dmgAfterDirty = true; }
-    else { _dmgPhotoData = ''; _dmgPhotoDirty = true; }
+    // Removing also ends any wait for the old one: its load is ignored now.
+    if (side === 'after') { _dmgAfterData = ''; _dmgAfterDirty = true; _dmgAfterLoading = false; }
+    else { _dmgPhotoData = ''; _dmgPhotoDirty = true; _dmgPhotoLoading = false; }
     const input = document.getElementById(DMG_PHOTO_SLOTS[side].input);
     if (input) input.value = '';
     setDamagePhotoPreview(side);
@@ -7004,7 +7033,9 @@ function closePhotoLightbox() {
 document.addEventListener('keydown', e => {
     const box = document.getElementById('photoLightbox');
     if (!box || !box.classList.contains('open')) return;
-    if (e.key === 'Escape')     { closePhotoLightbox(); }
+    // Stopped here: the global Escape handler runs next and would close the
+    // dialog underneath too — with an unsaved photo in it.
+    if (e.key === 'Escape')     { closePhotoLightbox(); e.stopImmediatePropagation(); return; }
     if (e.key === 'ArrowLeft')  { stepPhotoLightbox(-1); }
     if (e.key === 'ArrowRight') { stepPhotoLightbox(1); }
 });
@@ -7450,6 +7481,8 @@ function showAddDamageForm() {
     populateDamageUnitSelect();
     renderDamageComponentOptions();
     onDamageTypeChange();
+    _dmgFormGen++;
+    _dmgPhotoBusy = 0;
     _dmgPhotoData = '';
     _dmgPhotoDirty = false;
     _dmgPhotoLoading = false;
@@ -7491,6 +7524,8 @@ function editDamage(id) {
     compSel.value = rec.component || '';
     document.getElementById('dmgDescription').value = rec.description || '';
     onDamageTypeChange();
+    _dmgFormGen++;
+    _dmgPhotoBusy = 0;
     _dmgPhotoData = rec.photo || '';
     _dmgPhotoDirty = false;
     _dmgPhotoLoading = !_dmgPhotoData && damageHasPhoto(rec);
@@ -7511,6 +7546,7 @@ function editDamage(id) {
     if (_dmgPhotoLoading) {
         loadDamagePhoto(id).then(photo => {
             if (document.getElementById('editDamageId').value !== id) return;
+            _dmgPhotoLoading = false;
             if (_dmgPhotoDirty) return;
             _dmgPhotoData = photo;
             _dmgPhotoLoading = false;
@@ -7525,6 +7561,7 @@ function editDamage(id) {
     if (_dmgAfterLoading) {
         loadDamageAfterPhoto(id).then(photo => {
             if (document.getElementById('editDamageId').value !== id) return;
+            _dmgAfterLoading = false;
             if (_dmgAfterDirty) return;
             _dmgAfterData = photo;
             _dmgAfterLoading = false;
@@ -7547,6 +7584,11 @@ function showDamageAfterSlot(show) {
 function saveDamage(event) {
     event.preventDefault();
     if (!requireEdit('damage')) return;
+    if (_dmgPhotoBusy > 0) { showToast('The photo is still being processed — save again in a moment', 'warning'); return; }
+    // Refused before anything is written, so the record never says it has an
+    // After photo that was not sent.
+    const afterBlock = _dmgAfterDirty && document.getElementById('editDamageId').value ? damageAfterPhotoBlocker() : '';
+    if (afterBlock) { showToast(afterBlock, 'warning'); return; }
 
     const id = document.getElementById('editDamageId').value;
     const unit = resolveDamageUnit(document.getElementById('dmgUnit').value);
@@ -7820,12 +7862,24 @@ function resolveDamage(id, opts) {
 let _repairId = '';
 let _repairMode = 'resolve';
 let _repairPhoto = '';
+let _repairGen = 0;
+let _repairBusy = 0;       // photos being shrunk for the open dialog
 
+// Returns true when the dialog is open for this record.
 function openDamageRepair(id, opts) {
-    if (!requireEdit('damage')) return;
+    if (!requireEdit('damage')) return false;
     const rec = globalDamages.find(d => d.id === id);
-    if (!rec) return;
+    if (!rec) return false;
     opts = opts || {};
+    // Already open with a photo not saved yet (the "not sent" notice stays
+    // clickable above dialogs): ask before it is replaced.
+    const modal = document.getElementById('damageRepairModal');
+    if (modal.classList.contains('open') && _repairPhoto && (_repairId !== id || (opts.photo && opts.photo !== _repairPhoto))) {
+        closeDamageRepair();
+        if (modal.classList.contains('open')) return false;
+    }
+    _repairGen++;
+    _repairBusy = 0;
     _repairId = id;
     _repairMode = (opts.mode === 'photo' || rec.resolved) ? 'photo' : 'resolve';
     _repairPhoto = opts.photo || '';
@@ -7857,7 +7911,8 @@ function openDamageRepair(id, opts) {
     const input = document.getElementById('dmgRepairInput');
     if (input) input.value = '';
     setRepairPhotoPreview();
-    document.getElementById('damageRepairModal').classList.add('open');
+    modal.classList.add('open');
+    return true;
 }
 
 async function handleRepairPhotoChange(event) {
@@ -7868,15 +7923,18 @@ async function handleRepairPhotoChange(event) {
         showToast('The file must be an image (photo)', 'warning');
         return;
     }
-    const forId = _repairId;
+    const gen = _repairGen;
+    _repairBusy++;
+    setRepairPhotoPreview();
     try {
         const data = await compressImageToDataURL(file);
         // Closed, or reopened for another record, while the photo was shrinking.
-        if (_repairId !== forId || !document.getElementById('damageRepairModal').classList.contains('open')) return;
+        if (gen !== _repairGen || !document.getElementById('damageRepairModal').classList.contains('open')) return;
         _repairPhoto = data;
-        setRepairPhotoPreview();
     } catch (err) {
         showToast(err.message || 'Failed to process the photo', 'error');
+    } finally {
+        if (gen === _repairGen) { _repairBusy = Math.max(0, _repairBusy - 1); setRepairPhotoPreview(); }
     }
 }
 
@@ -7884,6 +7942,12 @@ function setRepairPhotoPreview() {
     const wrap = document.getElementById('dmgRepairPreviewWrap');
     const img = document.getElementById('dmgRepairPreview');
     if (!wrap || !img) return;
+    // A camera photo takes a second or two to shrink on a phone; saving in
+    // that gap used to mark the repair done without its photo.
+    const busy = document.getElementById('dmgRepairLoading');
+    if (busy) busy.style.display = _repairBusy > 0 ? '' : 'none';
+    const save = document.getElementById('damageRepairSave');
+    if (save) save.disabled = _repairBusy > 0;
     if (_repairPhoto) { img.src = _repairPhoto; wrap.style.display = ''; }
     else { img.removeAttribute('src'); wrap.style.display = 'none'; }
 }
@@ -7902,6 +7966,8 @@ function closeDamageRepair(force) {
         return;
     }
     modal.classList.remove('open');
+    _repairGen++;
+    _repairBusy = 0;
     _repairId = '';
     _repairPhoto = '';
     setRepairPhotoPreview();
@@ -7915,7 +7981,12 @@ function saveDamageRepair() {
         showToast('This damage record no longer exists', 'warning');
         return;
     }
+    if (_repairBusy > 0) { showToast('The photo is still being processed — a moment', 'warning'); return; }
     const photo = _repairPhoto;
+    // Refused before anything is written: the record must never say it has an
+    // After photo that was never sent.
+    const block = photo ? damageAfterPhotoBlocker() : '';
+    if (block) { showToast(block, 'warning'); return; }
     if (_repairMode === 'resolve' && !rec.resolved) {
         // The photo goes first, so no device ever sees the record say it has
         // an After photo the server does not have yet.
@@ -7924,7 +7995,17 @@ function saveDamageRepair() {
         closeDamageRepair(true);
         return;
     }
-    if (!photo) { showToast('Choose a photo first', 'warning'); return; }
+    if (!photo) {
+        // Marked repaired on another device while this dialog was open.
+        if (_repairMode === 'resolve') {
+            closeDamageRepair(true);
+            renderDamageTable();
+            showToast('Already marked as repaired (on another device)', 'info');
+            return;
+        }
+        showToast('Choose a photo first', 'warning');
+        return;
+    }
     const had = damageHasAfterPhoto(rec);
     sendDamageAfterPhoto(rec, photo);
     rec.hasAfterPhoto = true;
@@ -7944,31 +8025,45 @@ function saveDamageRepair() {
     showToast(had ? 'After photo replaced' : 'After photo saved', 'success');
 }
 
-// Writes (or, with an empty photo, removes) a record's After photo. A refused
-// write keeps the photo: the "not sent" notice reopens the dialog with it.
+// Why an After photo cannot be sent from here right now, or '' when it can.
+// Asked BEFORE the record is touched — setting hasAfterPhoto for a photo that
+// only ever existed in this tab's memory would show every other device an
+// After button that answers "not found", for good.
+function damageAfterPhotoBlocker() {
+    if (!window.cloud?.isReady) return 'Not connected yet — the After photo cannot be sent. Try again in a moment';
+    // Offline, the service worker can still be serving a firebase-init.js
+    // from before the After photo existed.
+    if (typeof window.cloud.saveDamageAfterPhoto !== 'function' || typeof window.cloud.deleteDamageAfterPhoto !== 'function') {
+        return 'Reload the page — an old version is still active and cannot send the After photo';
+    }
+    return '';
+}
+
+// Writes (or, with an empty photo, removes) a record's After photo. Callers
+// check damageAfterPhotoBlocker() first. A refused write keeps the photo: the
+// "not sent" notice reopens the dialog with it.
 function sendDamageAfterPhoto(rec, photo) {
     if (!rec || !rec.id) return;
     const recId = rec.id;
+    if (suppressCloudWrites || damageAfterPhotoBlocker()) return;
     if (photo) _dmgAfterCache.set(recId, photo); else _dmgAfterCache.delete(recId);
-    if (suppressCloudWrites || !window.cloud?.isReady) return;
-    if (typeof window.cloud.saveDamageAfterPhoto !== 'function') {
-        // Offline, the service worker can still be serving a firebase-init.js
-        // from before the After photo existed.
-        showToast('Reload the page — an old version is still active, the After photo is not sent yet', 'warning');
-        return;
-    }
     const write = photo
         ? window.cloud.saveDamageAfterPhoto(recId, photo)
         : window.cloud.deleteDamageAfterPhoto(recId);
     Promise.resolve(write).catch(err => {
         console.error('[damage] after photo save failed:', err);
         if (err && err.code === 'permission-denied') showDamageRulesBanner();
-        if (photo) {
-            rememberUnsent(`After photo — ${rec.unitName || rec.sn || 'unit'}, ${rec.date || ''}`, err,
-                () => openDamageRepair(recId, { mode: 'photo', photo }));
-        } else {
-            showToast('Record saved, but removing the After photo failed', 'error');
-        }
+        if (!photo) { showToast('Record saved, but removing the After photo failed', 'error'); return; }
+        const label = `After photo — ${rec.unitName || rec.sn || 'unit'}, ${rec.date || ''}`;
+        const keep = () => rememberUnsent(label, err, () => {
+            if (!globalDamages.some(d => d.id === recId)) {
+                showToast('This damage record no longer exists — its After photo could not be kept', 'warning');
+                return;
+            }
+            // Declined (another unsaved photo is open): keep this one listed.
+            if (!openDamageRepair(recId, { mode: 'photo', photo })) keep();
+        });
+        keep();
     });
 }
 
