@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.792 pemeriksaan di empat puluh enam suite, menggerakkan Chromium sungguhan terhadap
+1.793 pemeriksaan di empat puluh enam suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -338,6 +338,9 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
     berdampingan. Batasan yang diterima: perangkat yang masih v150 dan
     menghapus catatan meninggalkan dokumen `__after` — muat ulang semua
     perangkat ke versi terbaru.
+  - *v153:* keluar / akses dicabut kini juga membuang salinan foto After di
+    memori (`tearDownCloudSync`), seperti foto Before — di HP bersama, akun
+    berikutnya tanpa akses Kerusakan tidak bisa membukanya.
 - **Pemakaian di HP / lapangan v150 (dijaga `tests/field_phone_test.js`).**
   - *Tombol Back:* setiap modal mendapat entri riwayat (`setupBackButton`,
     lewat MutationObserver yang sama dengan fokus); Back menutup modal teratas

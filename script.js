@@ -125,7 +125,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v152';
+const APP_VERSION = 'v153';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -10376,7 +10376,7 @@ function tearDownCloudSync() {
     _loadedParts.clear();
     // Photo caches belong to the session: the next account on this browser,
     // or this one later, must fetch what is on the server now.
-    try { _wlPhotoCache.clear(); _leaveDocCache.clear(); _dmgPhotoCache.clear(); } catch (_) {}
+    try { _wlPhotoCache.clear(); _leaveDocCache.clear(); _dmgPhotoCache.clear(); _dmgAfterCache.clear(); } catch (_) {}
     if (cloudUnitsUnsub) { try { cloudUnitsUnsub(); } catch (_) {} cloudUnitsUnsub = null; }
     if (cloudImplUnsub) { try { cloudImplUnsub(); } catch (_) {} cloudImplUnsub = null; }
     if (cloudDamageUnsub) { try { cloudDamageUnsub(); } catch (_) {} cloudDamageUnsub = null; }

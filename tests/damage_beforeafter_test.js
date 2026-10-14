@@ -488,6 +488,13 @@ const { launch, BASE_URL } = require('./_env');
         closeRestoreReport();
         window.confirm = m => { confirmText = String(m); return confirmAnswer; };
 
+        // k. keluar / akses dicabut: salinan foto After ikut dibuang bersama
+        // sesi, seperti Before — di HP bersama, akun berikutnya tanpa akses
+        // Kerusakan tidak boleh masih bisa membukanya dari memori.
+        _dmgAfterCache.set('zz', PH('Z')); _dmgPhotoCache.set('zz', PH('Z'));
+        tearDownCloudSync();
+        t('keluar: salinan foto Before dan After dibuang', [_dmgAfterCache.size, _dmgPhotoCache.has('zz')], [0, false]);
+
         window.__T = T;
     } catch (e) { window.__T = [{ n: 'EXCEPTION ' + e.message + ' ' + e.stack, pass: false }]; } })();` });
 
