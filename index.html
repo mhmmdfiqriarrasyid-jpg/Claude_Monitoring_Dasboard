@@ -757,7 +757,7 @@
                             <th>Damage Type</th>
                             <th>Component</th>
                             <th>Description</th>
-                            <th>Photo</th>
+                            <th>Photos</th>
                             <th>Repair</th>
                             <th class="col-actions">Actions</th>
                         </tr>
@@ -2244,8 +2244,8 @@
                         </div>
                     </div>
                     <div class="form-group full-width">
-                        <label class="form-label" for="dmgPhotoInput">Photo <span class="form-optional">(optional)</span></label>
-                        <input type="file" id="dmgPhotoInput" accept="image/*" style="display:none" onchange="handleDamagePhotoChange(event)">
+                        <label class="form-label" for="dmgPhotoInput">Photo — Before <span class="form-optional">(the damage, optional)</span></label>
+                        <input type="file" id="dmgPhotoInput" accept="image/*" style="display:none" onchange="handleDamagePhotoChange(event, 'before')">
                         <div class="dmg-photo-row">
                             <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('dmgPhotoInput').click()">
                                 <i class="fas fa-camera"></i> Choose Photo
@@ -2255,7 +2255,26 @@
                             </span>
                             <div id="dmgPhotoPreviewWrap" class="dmg-photo-preview" style="display:none">
                                 <img id="dmgPhotoPreview" alt="Photo preview" onclick="openPhotoLightbox(this.src)">
-                                <button type="button" class="btn btn-secondary btn-sm" id="dmgPhotoRemove" onclick="removeDamagePhoto()">
+                                <button type="button" class="btn btn-secondary btn-sm" id="dmgPhotoRemove" onclick="removeDamagePhoto('before')">
+                                    <i class="fas fa-trash" style="color:var(--danger)"></i> Delete photo
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Shown when editing; a new record gets its After photo from "Mark done". -->
+                    <div class="form-group full-width" id="dmgAfterGroup" style="display:none">
+                        <label class="form-label" for="dmgAfterInput">Photo — After <span class="form-optional">(repaired, optional)</span></label>
+                        <input type="file" id="dmgAfterInput" accept="image/*" style="display:none" onchange="handleDamagePhotoChange(event, 'after')">
+                        <div class="dmg-photo-row">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('dmgAfterInput').click()">
+                                <i class="fas fa-camera"></i> Choose Photo
+                            </button>
+                            <span id="dmgAfterLoading" class="wl-photo__loading" style="display:none">
+                                <i class="fas fa-spinner fa-spin"></i> Loading photo…
+                            </span>
+                            <div id="dmgAfterPreviewWrap" class="dmg-photo-preview" style="display:none">
+                                <img id="dmgAfterPreview" alt="After photo preview" onclick="openPhotoLightbox(this.src)">
+                                <button type="button" class="btn btn-secondary btn-sm" id="dmgAfterRemove" onclick="removeDamagePhoto('after')">
                                     <i class="fas fa-trash" style="color:var(--danger)"></i> Delete photo
                                 </button>
                             </div>
@@ -2271,6 +2290,39 @@
         <div class="form-actions">
             <button type="button" class="btn btn-secondary" onclick="closeDamageModal()">Cancel</button>
             <button type="submit" class="btn btn-primary" form="damageForm"><i class="fas fa-check"></i> Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== MARK AS REPAIRED (with the After photo) ===== -->
+<div class="modal-overlay" id="damageRepairModal">
+    <div class="modal-card dmg-repair">
+        <div class="modal-header">
+            <h3 id="damageRepairTitle"><i class="fas fa-wrench"></i> Mark as repaired</h3>
+            <button class="btn-icon" onclick="closeDamageRepair()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <div class="dmg-repair__summary" id="damageRepairSummary"></div>
+            <div class="form-group">
+                <label class="form-label" for="dmgRepairInput">Photo — After <span class="form-optional" id="dmgRepairOptional">(optional)</span></label>
+                <input type="file" id="dmgRepairInput" accept="image/*" style="display:none" onchange="handleRepairPhotoChange(event)">
+                <div class="dmg-photo-row">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('dmgRepairInput').click()">
+                        <i class="fas fa-camera"></i> Take / Choose Photo
+                    </button>
+                    <div id="dmgRepairPreviewWrap" class="dmg-photo-preview" style="display:none">
+                        <img id="dmgRepairPreview" alt="After photo preview" onclick="openPhotoLightbox(this.src)">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="removeRepairPhoto()">
+                            <i class="fas fa-trash" style="color:var(--danger)"></i> Delete photo
+                        </button>
+                    </div>
+                </div>
+                <div class="dmg-repair__hint" id="dmgRepairHint"></div>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeDamageRepair()">Cancel</button>
+            <button type="button" class="btn btn-primary" id="damageRepairSave" onclick="saveDamageRepair()"><i class="fas fa-check"></i> Mark as repaired</button>
         </div>
     </div>
 </div>
@@ -2883,14 +2935,18 @@
 
 <!-- ===== PHOTO LIGHTBOX ===== -->
 <div class="photo-lightbox" id="photoLightbox" onclick="closePhotoLightbox()">
+    <span class="photo-lightbox__caption" id="photoLightboxCaption" style="display:none"></span>
     <button type="button" class="photo-lightbox__nav" id="photoLightboxPrev"
             aria-label="Previous photo" title="Previous photo"
             onclick="event.stopPropagation();stepPhotoLightbox(-1)">&#10094;</button>
     <img id="photoLightboxImg" alt="Photo">
+    <div class="photo-lightbox__compare" id="photoLightboxCompare" style="display:none"></div>
     <button type="button" class="photo-lightbox__nav" id="photoLightboxNext"
             aria-label="Next photo" title="Next photo"
             onclick="event.stopPropagation();stepPhotoLightbox(1)">&#10095;</button>
     <span class="photo-lightbox__count" id="photoLightboxCount"></span>
+    <button type="button" class="photo-lightbox__mode" id="photoLightboxMode" style="display:none"
+            onclick="event.stopPropagation();togglePhotoLightboxCompare()"></button>
 </div>
 
 <!-- ===== LICENSE STOCK MODAL ===== -->

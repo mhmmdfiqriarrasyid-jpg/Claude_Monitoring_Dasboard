@@ -144,6 +144,9 @@ const WORK_LOG_PHOTOS_COL = 'workLogPhotos';
 const LEAVE_COL = 'leaveRequests';
 // Same again for damage records — one document per record, never subscribed.
 const DAMAGE_PHOTOS_COL = 'damagePhotos';
+// damagePhotos/{recordId} is the photo of the damage ("Before");
+// damagePhotos/{recordId}__after the photo after the repair.
+const DAMAGE_AFTER_SUFFIX = '__after';
 // Heavy-equipment checks: the schedule, one report per unit check (with its
 // own approval), and that report's photos — one per component, kept apart
 // and never subscribed, for the same reason as the photo collections above.
@@ -779,6 +782,22 @@ window.cloud = {
     },
     async deleteDamagePhoto(id) {
         await deleteDoc(doc(db, DAMAGE_PHOTOS_COL, id));
+    },
+    // The photo taken after the repair. Same collection and the same rules as
+    // the damage photo itself (now shown as "Before"), one document of its own
+    // so opening one side never downloads the other.
+    async getDamageAfterPhoto(id) {
+        const snap = await getDoc(doc(db, DAMAGE_PHOTOS_COL, id + DAMAGE_AFTER_SUFFIX));
+        if (!snap.exists()) return '';
+        const data = snap.data();
+        return typeof data.photo === 'string' ? data.photo : '';
+    },
+    async saveDamageAfterPhoto(id, photo) {
+        await setDoc(doc(db, DAMAGE_PHOTOS_COL, id + DAMAGE_AFTER_SUFFIX),
+                     { id, side: 'after', photo, updatedAt: Date.now() });
+    },
+    async deleteDamageAfterPhoto(id) {
+        await deleteDoc(doc(db, DAMAGE_PHOTOS_COL, id + DAMAGE_AFTER_SUFFIX));
     },
 
     // ---- Master lists: one document per list (site, brand, company) ----

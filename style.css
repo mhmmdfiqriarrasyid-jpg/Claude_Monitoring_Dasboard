@@ -2297,6 +2297,109 @@ body[data-ro-editunits] .inline-edit { background: transparent !important; }
     .photo-lightbox img { max-width: calc(100vw - 112px); }
 }
 
+/* Before / After: a label on the photo shown, and a side-by-side view. */
+.photo-lightbox__caption {
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    background: rgba(0,0,0,0.55);
+    border-radius: 999px;
+    padding: 5px 14px;
+    white-space: nowrap;
+    max-width: calc(100vw - 32px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.photo-lightbox__mode {
+    position: absolute;
+    bottom: 14px;
+    right: 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid rgba(255,255,255,0.35);
+    border-radius: 999px;
+    background: rgba(0,0,0,0.5);
+    color: #fff;
+    font-size: 13px;
+    padding: 7px 14px;
+    cursor: pointer;
+}
+.photo-lightbox__mode:hover { background: rgba(255,255,255,0.2); }
+.photo-lightbox__compare {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 96vw;
+}
+.photo-lightbox__fig {
+    margin: 0;
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    cursor: zoom-in;
+}
+.photo-lightbox .photo-lightbox__fig img {
+    max-width: 100%;
+    max-height: 80vh;
+    object-fit: contain;
+}
+.photo-lightbox__fig figcaption {
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    background: rgba(0,0,0,0.55);
+    border-radius: 999px;
+    padding: 4px 12px;
+}
+/* A phone held upright has no room for two photos across: stack them. */
+@media (max-width: 700px), (orientation: portrait) and (max-width: 1024px) {
+    .photo-lightbox__compare { flex-direction: column; gap: 10px; }
+    .photo-lightbox .photo-lightbox__fig img { max-height: 36vh; max-width: 100%; }
+}
+
+/* Damage records: Before / After as one joined control, so the cell stays
+   about as narrow as the single Photo button it replaces. */
+.dmg-ph-group { display: inline-flex; flex-wrap: nowrap; vertical-align: middle; }
+.dmg-ph-group .wl-photo-btn:not(:only-child):first-child { border-radius: 999px 0 0 999px; }
+.dmg-ph-group .wl-photo-btn:not(:only-child):last-child { border-radius: 0 999px 999px 0; margin-left: -1px; }
+.wl-photo-btn.dmg-ph--after { border-color: var(--success-border); background: var(--success-bg); color: var(--success); }
+.wl-photo-btn.dmg-ph--add { border-style: dashed; }
+@media (min-width: 701px) {
+    .dmg-ph-group .wl-photo-btn { padding: 3px 9px; }
+}
+/* The description is capped at 240px; its text used to run on underneath the
+   photo buttons next to it. Phones show it as a card row, which wraps. */
+@media (min-width: 701px) {
+    .data-table td.dmg-desc { overflow: hidden; text-overflow: ellipsis; }
+}
+
+/* "Mark as repaired" dialog. */
+.modal-card.dmg-repair { max-width: 520px; }
+.dmg-repair__summary {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    display: grid;
+    gap: 6px;
+}
+.dmg-repair__meta { color: var(--text-secondary); font-size: 12px; margin-left: 6px; }
+.dmg-repair__desc { color: var(--text-secondary); font-size: 12.5px; }
+.dmg-repair__hint { color: var(--text-secondary); font-size: 11.5px; margin-top: 6px; }
+
 /* Work log documentation: a count button, not the images themselves. The
    photos are fetched only when this is clicked — see openWorkLogPhotos(). */
 .wl-photo-btn {

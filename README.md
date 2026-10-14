@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.705 pemeriksaan di empat puluh lima suite, menggerakkan Chromium sungguhan terhadap
+1.773 pemeriksaan di empat puluh enam suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -305,6 +305,27 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
   Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
   **Implement Brands** (`masterLists/brand`) untuk Agricultural.
+- **Foto kerusakan Before / After v151 (dijaga `tests/damage_beforeafter_test.js`
+  dan rules_test).**
+  - Foto yang sudah ada = **Before** (`damagePhotos/{id}`, tanda `hasPhoto`).
+    Foto sesudah perbaikan = **After** di `damagePhotos/{id}__after` (tanda
+    `hasAfterPhoto` di catatannya). Koleksi dan rules sama — tidak perlu
+    publish rules.
+  - *Mark done* kini membuka dialog "Mark as repaired" (`openDamageRepair`)
+    dengan foto After opsional; fotonya ditulis SEBELUM catatannya, dan
+    tanda ikut dalam satu tulisan catatan (`resolveDamage(id, {confirmed,
+    extra})`). Catatan yang sudah selesai tanpa foto After mendapat tombol
+    **+ After** (mode foto saja; juga untuk mengganti).
+  - Kolom **Photos**: tombol Before / After; penampil memberi label
+    (tanggal kerusakan / tanggal perbaikan), panah untuk berpindah, dan
+    tombol **Side by side** (di HP tegak keduanya bertumpuk).
+  - Form Edit punya slot After sendiri (disembunyikan di form Tambah); ubah
+    teks saja tidak menulis foto apa pun. Hapus catatan / restore GANTI ikut
+    menghapus kedua dokumen foto; cadangan membawa `damageAfterPhotos`;
+    CSV punya kolom *Photo Before* dan *Photo After*.
+  - Foto After yang ditolak server masuk `#unsentNotice` dan bisa dibuka
+    lagi dengan fotonya. Catatan yang berubah di perangkat lain membuang
+    salinan foto di perangkat ini, dan hasil kosong tidak di-cache.
 - **Pemakaian di HP / lapangan v150 (dijaga `tests/field_phone_test.js`).**
   - *Tombol Back:* setiap modal mendapat entri riwayat (`setupBackButton`,
     lewat MutationObserver yang sama dengan fokus); Back menutup modal teratas
@@ -449,7 +470,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   stempel `appliedAt` supaya hanya sekali); tanpa akses itu muncul di Kotak
   Keputusan. Foto di `inspectionPhotos/{id}` (tidak di-subscribe), ditulis
   SEBELUM laporannya.
-- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (127 skenario;
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (131 skenario;
   bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
   kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
   alur persetujuan laporan/izin (transisi status di atas, kunci isi dan foto

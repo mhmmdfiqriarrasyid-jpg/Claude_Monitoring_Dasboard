@@ -156,6 +156,11 @@ async function check(name, p, expectOk) {
     await check('surat sakit: jadwal-saja TIDAK bisa dibaca', getDoc(doc(S, 'workLogPhotos', 'lv_1')), false);
     await check('surat sakit: pengisi laporan bisa membaca', getDoc(doc(W, 'workLogPhotos', 'lv_1')), true);
     await check('surat sakit: atasan penyetuju bisa membaca', getDoc(doc(B, 'workLogPhotos', 'lv_1')), true);
+    // Foto kerusakan Before = damagePhotos/{id}, After = damagePhotos/{id}__after.
+    await check('foto After kerusakan: penyunting kerusakan boleh menulis', setDoc(doc(SU, 'damagePhotos', 'dmg_1__after'), { id: 'dmg_1', side: 'after', photo: 'data:image/jpeg;base64,AA', updatedAt: 1 }), true);
+    await check('foto After kerusakan: penyunting kerusakan bisa membaca', getDoc(doc(SU, 'damagePhotos', 'dmg_1__after')), true);
+    await check('foto After kerusakan: tanpa akses TIDAK bisa membaca', getDoc(doc(N, 'damagePhotos', 'dmg_1__after')), false);
+    await check('foto After kerusakan: tanpa akses TIDAK bisa menulis', setDoc(doc(N, 'damagePhotos', 'dmg_2__after'), { id: 'dmg_2', photo: '' }), false);
     await check('izin: tanpa akses TIDAK bisa dibaca', getDoc(doc(N, 'leaveRequests', 'lv_1')), false);
     await check('izin: penyusun jadwal bisa membaca (penanda di grid)', getDoc(doc(S, 'leaveRequests', 'lv_1')), true);
     await check('laporan: tanpa akses TIDAK bisa dibaca', getDoc(doc(N, 'workLogs', 'wl_1')), false);
