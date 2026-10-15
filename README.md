@@ -127,6 +127,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
 | `service-worker.js` | Cache PWA; `CACHE_NAME` dinaikkan tiap deploy |
 | `tests/` | Uji browser |
 | `.claude/skills/` | Skill Claude Code (Ponytail v5.2.0, MIT): `/ponytail`, `/ponytail-review`, `/ponytail-audit`, `/ponytail-debt`, `/ponytail-gain`, `/ponytail-help`. Mode `/ponytail` hanya aktif bila dipanggil; asal dan perubahan lokal di `.claude/skills/ponytail/UPSTREAM.md` |
+| `.claude/skills/ui-ux-pro-max/` | Skill Claude Code UI UX Pro Max v2.15.0 (MIT): panduan UI/UX + basis data gaya, warna, tipografi, chart, aksesibilitas; dicari dengan `python3 .claude/skills/ui-ux-pro-max/scripts/search.py`. Asal, yang sengaja tidak disalin, dan perubahan lokal di `UPSTREAM.md` di folder itu |
 
 ---
 
