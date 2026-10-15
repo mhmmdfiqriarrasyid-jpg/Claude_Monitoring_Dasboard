@@ -4420,3 +4420,92 @@ td[data-label="Approval"] { vertical-align: middle; }
 }
 .session-banner > i { color: var(--warning); }
 .session-banner > span { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }
+
+/* ============================================================
+   UI phase 1 — phones in the field (v156)
+   ============================================================ */
+
+/* 1.1 Card actions: in the phone card layout the actions cell was 80px wide
+   (sized for two desktop icons), so Profile and History sat off the screen
+   and Edit stuck out of the card. The cell takes the card's width, and each
+   icon button shows its own title as a label under the icon. */
+@media (max-width: 700px) {
+    .table--cardable td.col-actions,
+    #viewUsers .table--cardable td.col-actions { width: 100%; }
+    .table--cardable td.col-actions .row-actions { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+    .table--cardable td.col-actions .row-actions:not(.row-actions--labeled) {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; width: 100%;
+    }
+    .table--cardable .row-actions:not(.row-actions--labeled) .btn[title] {
+        width: auto; height: auto; min-height: 52px; flex-direction: column; gap: 2px; padding: 6px 4px; font-size: 12px;
+    }
+    .table--cardable .row-actions:not(.row-actions--labeled) .btn[title]::after {
+        content: attr(title); display: block; max-width: 100%;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    /* Approve and Request revision were 4px apart. */
+    .appr-cell .appr-actions { gap: 8px; }
+    /* Compact view only shrinks text on a phone. */
+    #compactToggle { display: none; }
+}
+
+/* 1.2 Forms on phones: the single column may shrink below its longest
+   <option>, so fields stop running past the sheet's right edge. */
+@media (max-width: 900px) {
+    .form-grid { grid-template-columns: minmax(0, 1fr); }
+    .form-group { min-width: 0; }
+}
+
+/* 1.4 The loading overlay sat under the sign-in screen (200 < 500) and
+   under open forms (250): a slow sign-in looked like nothing happened. */
+.loading-overlay { z-index: 600; flex-direction: column; gap: 12px; background: rgba(240,238,230,.92); }
+.loading-overlay__text {
+    max-width: 280px; margin: 0; padding: 8px 14px;
+    border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow-md);
+    text-align: center; font-size: 14px; color: var(--text-secondary);
+}
+.loading-overlay__text:empty { display: none; }
+
+/* 1.5 Unit search results: on phones a full-width list under the top bar
+   instead of a box anchored to the narrow search field. */
+@media (max-width: 900px) {
+    .global-search__results {
+        position: fixed; top: calc(env(safe-area-inset-top, 0px) + 60px); left: 12px; right: 12px;
+        width: auto; max-height: 60vh;
+    }
+}
+
+/* 1.7 Phone menu: a close button inside it (the menu covers the burger). */
+.sidebar__close { display: none; }
+@media (max-width: 900px) {
+    .sidebar__close {
+        display: inline-flex; align-items: center; justify-content: center;
+        margin-left: auto; width: 44px; height: 44px; flex-shrink: 0;
+        background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+        color: var(--text-secondary); font-size: 16px; cursor: pointer;
+    }
+    .sidebar__close:hover { background: var(--border-light); color: var(--text); }
+}
+
+/* 1.8 Offline: the dot stops saying "live", and a phone shows a short word
+   (the full sentence stays for screen readers and in the tooltip). */
+body[data-offline] .status-dot.connected { background: var(--warning); box-shadow: none; animation: none; }
+body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
+.conn-short { display: none; }
+@media (max-width: 900px) {
+    body[data-offline] .conn-long {
+        position: absolute; width: 1px; height: 1px; overflow: hidden;
+        clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+    }
+    body[data-offline] .conn-short { display: inline; }
+}
+
+/* 1.9 Phone: a dot on the menu button while decisions, check reports or
+   team notices are waiting (their counts are inside the closed menu). */
+@media (max-width: 900px) {
+    .topbar__burger { position: relative; }
+    .topbar__burger.has-pending::after {
+        content: ""; position: absolute; top: 3px; right: 3px; width: 9px; height: 9px;
+        border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--card);
+    }
+}

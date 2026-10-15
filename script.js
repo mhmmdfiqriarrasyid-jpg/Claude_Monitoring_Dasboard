@@ -125,7 +125,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v155';
+const APP_VERSION = 'v156';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -701,6 +701,53 @@ const MODAL_CLOSERS = {
     breakdownReasonModal: 'cancelBreakdownReason'
 };
 
+// ============================================================
+// UNSAVED TYPING — Back, X and Cancel ask before throwing it away
+// ------------------------------------------------------------
+// A long damage "Kronologi" typed on a phone was wiped by one accidental
+// edge-swipe Back: the closers asked only about photos. Each form's state is
+// noted when its modal opens (after the open function has filled it — a
+// MutationObserver callback runs after that code), and closing without
+// saving asks when it differs.
+// ============================================================
+const FORM_GUARDS = { damageModal: 'damageForm', workLogModal: 'workLogForm', leaveModal: 'leaveForm',
+                      inspectionModal: 'inspectionForm', unitModal: 'unitForm' };
+const _formOpenState = {};
+const _formReopened = new Set();   // reopened with text a refused save kept
+
+function _formStateKey(formId) {
+    let key = JSON.stringify(captureFormState(formId));
+    // A check report's results, and a daily report's units, are buttons and
+    // chips, not inputs.
+    if (formId === 'inspectionForm' && typeof _insResults !== 'undefined') key += JSON.stringify(_insResults || {});
+    if (formId === 'workLogForm' && typeof _wlUnits !== 'undefined') key += JSON.stringify(_wlUnits || []);
+    return key;
+}
+function watchFormEdits() {
+    if (typeof MutationObserver !== 'function') return;
+    Object.keys(FORM_GUARDS).forEach(modalId => {
+        const formId = FORM_GUARDS[modalId];
+        const m = document.getElementById(modalId);
+        if (!m || !document.getElementById(formId)) return;
+        let wasOpen = m.classList.contains('open');
+        new MutationObserver(() => {
+            const open = m.classList.contains('open');
+            if (open && !wasOpen) _formOpenState[formId] = _formStateKey(formId);
+            if (!open && wasOpen) { delete _formOpenState[formId]; _formReopened.delete(formId); }
+            wasOpen = open;
+        }).observe(m, { attributes: true, attributeFilter: ['class'] });
+    });
+}
+function formHasUnsavedTyping(formId) {
+    if (_formReopened.has(formId)) return true;
+    const was = _formOpenState[formId];
+    return was != null && was !== _formStateKey(formId);
+}
+// The question the closers share. True when it is fine to close.
+function okToDiscardTyping(formId) {
+    return !formHasUnsavedTyping(formId) || confirm('Discard what you typed? It has not been saved.');
+}
+
 // Closes the topmost open modal only. Closing all of them at once would
 // dismiss the page behind a confirmation dialog the user is still reading.
 // The lightbox has its own handler (with arrow-key navigation) and sits above
@@ -710,7 +757,10 @@ function closeTopModal() {
     if (lightbox && lightbox.classList.contains('open')) { closePhotoLightbox(); return true; }
 
     const open = Array.from(document.querySelectorAll('.modal-overlay.open'));
-    if (open.length === 0) return false;
+    if (open.length === 0) {
+        if (isNavOpen()) { closeNav(); return true; }
+        return false;
+    }
     const top = open[open.length - 1];
     const fn = window[MODAL_CLOSERS[top.id]];
     if (typeof fn === 'function') {
@@ -820,6 +870,40 @@ let _histModals = 0;        // history entries pushed for modals still open
 let _popClosing = 0;        // modal closes started by Back (entry already gone)
 let _ignorePops = 0;        // pops caused by our own history.go()
 let _navFromHistory = false;
+let _drawerEntry = false;   // a history entry was pushed for the open phone menu
+
+// ---- Phone menu (drawer) ----
+// It used to close only when a page was picked: a tap on the dimmed page,
+// Escape and Back did nothing — Back even changed the page behind it. Open,
+// it is a layer with its own history entry, like a modal.
+function _drawerShell() { return document.getElementById('appShell'); }
+function isNavOpen() { const a = _drawerShell(); return !!(a && a.classList.contains('nav-open')); }
+function openNav() {
+    const a = _drawerShell();
+    if (!a || isNavOpen()) return;
+    a.classList.add('nav-open');
+    if (window.history && typeof history.pushState === 'function') {
+        try {
+            // A page picked from the menu replaces the menu's entry, so the
+            // page underneath keeps its scroll position for Back now.
+            const st = history.state;
+            if (st && st.ot === 'view') history.replaceState({ ...st, scroll: _pageScroll() }, '');
+            history.pushState({ ot: 'drawer', view: currentView }, ''); _drawerEntry = true;
+        } catch (_) {}
+    }
+}
+function closeNav() {
+    const a = _drawerShell();
+    if (!a || !isNavOpen()) return;
+    a.classList.remove('nav-open');
+    if (_drawerEntry) {
+        _drawerEntry = false;
+        // Only our own entry, and only while it is on top — see the modal
+        // entries below for why stepping back blindly can leave the app.
+        if (history.state && history.state.ot === 'drawer') { _ignorePops++; history.back(); }
+    }
+}
+function toggleNav() { if (isNavOpen()) closeNav(); else openNav(); }
 
 function _openLayers() {
     const lb = document.getElementById('photoLightbox');
@@ -827,6 +911,11 @@ function _openLayers() {
 }
 
 function setupBackButton() {
+    const shell = _drawerShell();
+    if (shell) shell.addEventListener('click', e => { if (e.target === shell && isNavOpen()) closeNav(); });
+    // The page sets the scroll position itself on Back (the browser's own
+    // restore runs against the old, shorter page and lands in the wrong place).
+    try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; } catch (_) {}
     if (!window.history || typeof history.pushState !== 'function' || typeof MutationObserver !== 'function') return;
     try { history.replaceState({ ot: 'view', view: currentView || 'dashboard' }, ''); } catch (_) {}
     let layers = _openLayers();
@@ -858,6 +947,12 @@ function setupBackButton() {
 
     window.addEventListener('popstate', e => {
         if (_ignorePops > 0) { _ignorePops--; return; }
+        // Back with the phone menu open closes the menu, nothing else.
+        if (isNavOpen()) {
+            _drawerEntry = false;
+            _drawerShell().classList.remove('nav-open');
+            return;
+        }
         if (_openLayers() > 0) {
             // Back always closes what is open on top, whatever the count says.
             _histModals = Math.max(0, _histModals - 1);
@@ -877,22 +972,45 @@ function setupBackButton() {
         if (st && st.ot === 'view' && st.view && st.view !== currentView) {
             _navFromHistory = true;
             try { navigateTo(st.view); } finally { _navFromHistory = false; }
+            // Back returns to where the person was on that page.
+            _setPageScroll(typeof st.scroll === 'number' ? st.scroll : 0);
         }
     });
 }
 
+// The page scrolls in .main on wide screens and in the document on phones.
+function _pageScroll() {
+    const m = document.querySelector('.main');
+    return Math.round(window.scrollY || (m && m.scrollTop) || 0);
+}
+function _setPageScroll(y) {
+    window.scrollTo(0, y);
+    const m = document.querySelector('.main');
+    if (m) m.scrollTop = y;
+}
+
 // A page change gets its own entry (not while a modal is open — those sit on
 // top), so Back returns to the page before.
-function _pushViewHistory(view) {
+// leavingScroll: where the page being left was scrolled to, read BEFORE the
+// views were switched (the shorter new page clamps the scroll position).
+function _pushViewHistory(view, leavingScroll) {
     if (_navFromHistory || !window.history || typeof history.pushState !== 'function') return;
     if (_openLayers() > 0) return;
     const st = history.state;
     if (st && st.ot === 'view' && st.view === view) return;
-    try { history.pushState({ ot: 'view', view }, ''); } catch (_) {}
+    try {
+        // A page picked from the phone menu takes over the menu's entry, so
+        // Back from the new page returns to the page before it.
+        if (st && st.ot === 'drawer') { _drawerEntry = false; history.replaceState({ ot: 'view', view }, ''); return; }
+        // Remember where the page being left was scrolled to, for Back.
+        if (st && st.ot === 'view') history.replaceState({ ...st, scroll: leavingScroll != null ? leavingScroll : _pageScroll() }, '');
+        history.pushState({ ot: 'view', view }, '');
+    } catch (_) {}
 }
 
 function setupKeyboardShortcuts() {
     watchModalFocus();
+    watchFormEdits();
     setupBackButton();
     setupSortableHeaders();
     document.addEventListener('keydown', e => {
@@ -1120,8 +1238,28 @@ function showToast(message, type = 'info') {
     setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 4000);
 }
 
-function showLoading(show) {
+// text: an optional line under the spinner saying what is being waited for.
+function showLoading(show, text) {
     document.getElementById('loadingOverlay').classList.toggle('active', show);
+    const t = document.getElementById('loadingText');
+    if (t) t.textContent = show && text ? text : '';
+}
+
+// Disables the form's submit buttons while it is being sent, so a second tap
+// on a slow signal does not send it twice.
+function setFormBusy(formId, busy, busyLabel) {
+    const form = document.getElementById(formId);
+    if (!form) return;
+    form.querySelectorAll('button[type="submit"]').forEach(b => {
+        if (busy) {
+            if (!b.dataset.idleHtml) b.dataset.idleHtml = b.innerHTML;
+            b.disabled = true;
+            if (busyLabel) b.textContent = busyLabel;
+        } else {
+            b.disabled = false;
+            if (b.dataset.idleHtml) { b.innerHTML = b.dataset.idleHtml; delete b.dataset.idleHtml; }
+        }
+    });
 }
 
 // A value as a JS string literal that is safe INSIDE an HTML attribute such as
@@ -1177,6 +1315,7 @@ function navigateTo(view) {
         view = 'dashboard';
     }
 
+    const leavingScroll = _pageScroll();
     document.getElementById('viewDashboard').style.display = (view === 'dashboard') ? 'block' : 'none';
     document.getElementById('viewEditUnits').style.display = (view === 'editUnits') ? 'block' : 'none';
     const implView = document.getElementById('viewImplements');
@@ -1196,9 +1335,14 @@ function navigateTo(view) {
     const usersView = document.getElementById('viewUsers');
     if (usersView) usersView.style.display = (view === 'users') ? 'block' : 'none';
 
+    const changed = currentView !== view;
     currentView = view;
-    _pushViewHistory(view);
+    _pushViewHistory(view, leavingScroll);
     markActiveNav();
+    // A new page opens at its top. On a phone the old scroll position carried
+    // over, so a page picked from the menu often opened at its last card and
+    // footer. Back restores the old position instead (popstate handler).
+    if (changed && !_navFromHistory) _setPageScroll(0);
 
     // Once cloud sync is live, the in-memory arrays ARE the data — the
     // snapshots keep them current. Re-reading localStorage here swapped them
@@ -1273,7 +1417,10 @@ function navigateTo(view) {
 // opens the page on that group.
 function goNav(view, group) {
     navigateTo(view);
-    if (currentView !== view) return;   // refused for lack of access
+    if (currentView !== view) return;
+    // Switching group on the same page (Agricultural → Heavy) is a new page
+    // to the person too.
+    _setPageScroll(0);   // refused for lack of access
     if (view === 'dashboard') setDashGroup(group);
     else if (view === 'editUnits') switchEditUnitsGroup(group);
     else if (view === 'damage') setDamageGroup(group === 'all' ? '' : group);
@@ -2024,9 +2171,13 @@ function updateConnectionLabel() {
     if (navigator.onLine) {
         delete document.body.dataset.offline;
         el.textContent = `${globalData.length} Units`;
+        el.removeAttribute('title');
     } else {
         document.body.dataset.offline = '1';
-        el.textContent = 'Offline — changes saved on this device';
+        // A phone shows only "Offline" — the full sentence squeezed the unit
+        // search down to a few letters — but screen readers still hear it.
+        el.innerHTML = '<span class="conn-long">Offline — changes saved on this device</span><span class="conn-short" aria-hidden="true">Offline</span>';
+        el.title = 'Offline — changes saved on this device';
     }
 }
 
@@ -5917,7 +6068,7 @@ function saveUnit(event) {
         Object.keys(full).forEach(k => { if (full[k] !== _unitFormShown[k]) fields[k] = full[k]; });
         if (!Object.keys(fields).length) {
             showToast('No changes', 'info');
-            closeModal();
+            closeModal(true);
             return;
         }
     }
@@ -5999,7 +6150,7 @@ function _commitSaveUnit(id, fields) {
         }
     }
 
-    closeModal();
+    closeModal(true);
     renderEditTable();
 }
 
@@ -6152,7 +6303,9 @@ function licenseBadgeFor(unit, kind) {
     return `<span class="${cls}" title="${escapeHtml(tt)}"><i class="fas fa-${icon}"></i> ${escapeHtml(s.label)}</span>`;
 }
 
-function closeModal() {
+// force: after a save, when nothing typed is being thrown away.
+function closeModal(force) {
+    if (!force && document.getElementById('unitModal').classList.contains('open') && !okToDiscardTyping('unitForm')) return;
     document.getElementById('unitModal').classList.remove('open');
 }
 
@@ -7052,7 +7205,9 @@ function renderGlobalSearchResults() {
         : `${u.name} ${u.sn} ${u.model} ${u.site}`).toLowerCase().includes(q)).slice(0, 8);
     if (!hits.length) {
         box.innerHTML = '<div class="global-search__empty">No matching units</div>';
-        box.style.display = '';
+        // 'block', not '': the stylesheet hides the box by default, so
+        // clearing the inline style kept every result invisible.
+        box.style.display = 'block';
         return;
     }
     box.innerHTML = hits.map(u => `
@@ -7060,7 +7215,7 @@ function renderGlobalSearchResults() {
             <span class="global-search__name">${escapeHtml(u.name || '(unnamed)')}</span>
             <span class="global-search__meta"><span class="mono">${escapeHtml(u.sn || '')}</span>${u.site ? ' · ' + escapeHtml(u.site) : ''}${isHeavy(u) ? ' · ' + escapeHtml(UNIT_GROUPS.heavy.shortLabel) : ''}</span>
         </div>`).join('');
-    box.style.display = '';
+    box.style.display = 'block';
 }
 
 function openUnitFromSearch(id) {
@@ -8057,9 +8212,11 @@ function closeDamageModal(force) {
     // A photo taken for a damage record exists only on this phone until the
     // record is saved; X, Cancel and the Back button used to drop it silently.
     const added = (_dmgPhotoDirty && _dmgPhotoData) || (_dmgAfterDirty && _dmgAfterData);
-    if (!force && (_dmgPhotoDirty || _dmgAfterDirty) && document.getElementById('damageModal').classList.contains('open') &&
-        !confirm(added ? 'The photo is not saved yet and will be lost. Close anyway?'
-                       : 'The photo change is not saved yet. Close anyway?')) {
+    const open = document.getElementById('damageModal').classList.contains('open');
+    if (!force && open && (_dmgPhotoDirty || _dmgAfterDirty)) {
+        if (!confirm(added ? 'The photo is not saved yet and will be lost. Close anyway?'
+                           : 'The photo change is not saved yet. Close anyway?')) return;
+    } else if (!force && open && !okToDiscardTyping('damageForm')) {
         return;
     }
     document.getElementById('damageModal').classList.remove('open');
@@ -10853,7 +11010,8 @@ async function handleSignIn(event) {
     const email = document.getElementById('signInEmail').value.trim();
     const password = document.getElementById('signInPassword').value;
     try {
-        showLoading(true);
+        showLoading(true, 'Signing in… on a weak signal this can take a while');
+        setFormBusy('signInForm', true, 'Signing in…');
         _explicitSignIn = true;
         // A fresh 24h window BEFORE signing in: Firebase calls the auth
         // listener before signIn() resolves, and the listener checks the
@@ -10872,6 +11030,7 @@ async function handleSignIn(event) {
         showAuthError('signInError', friendlyAuthError(err) + (wrong ? signInHint(email, password) : ''));
     } finally {
         showLoading(false);
+        setFormBusy('signInForm', false);
     }
 }
 
@@ -10882,7 +11041,8 @@ async function handleSignUp(event) {
     const email = document.getElementById('signUpEmail').value.trim();
     const password = document.getElementById('signUpPassword').value;
     try {
-        showLoading(true);
+        showLoading(true, 'Creating the account…');
+        setFormBusy('signUpForm', true, 'Creating account…');
         _explicitSignIn = true;
         const user = await window.cloud.signUp(email, password, name);
         startSessionClock(); // fresh 24h window
@@ -10893,6 +11053,7 @@ async function handleSignUp(event) {
         showAuthError('signUpError', friendlyAuthError(err));
     } finally {
         showLoading(false);
+        setFormBusy('signUpForm', false);
     }
 }
 
@@ -13200,8 +13361,9 @@ function closeWorkLogModal(force) {
     // Photos are compressed on the device and exist nowhere else until the
     // report is saved, so closing after shooting four of them in the field is
     // the most expensive discard in the app. saveWorkLog passes force.
-    if (!force && _wlPhotosDirty && _wlPhotos.length &&
-        !confirm(`${_wlPhotos.length} photo(s) not saved yet and will be lost. Close anyway?`)) {
+    if (!force && _wlPhotosDirty && _wlPhotos.length) {
+        if (!confirm(`${_wlPhotos.length} photo(s) not saved yet and will be lost. Close anyway?`)) return;
+    } else if (!force && !okToDiscardTyping('workLogForm')) {
         return;
     }
     _wlPhotosGen++;
@@ -13927,8 +14089,9 @@ function editLeave(id) {
 }
 
 function closeLeaveModal(force) {
-    if (!force && _lvDocsDirty && _lvDocs.length &&
-        !confirm(`${_lvDocs.length} letter page(s) not saved yet and will be lost. Close anyway?`)) {
+    if (!force && _lvDocsDirty && _lvDocs.length) {
+        if (!confirm(`${_lvDocs.length} letter page(s) not saved yet and will be lost. Close anyway?`)) return;
+    } else if (!force && !okToDiscardTyping('leaveForm')) {
         return;
     }
     _lvDocsGen++;
@@ -15295,6 +15458,21 @@ function updateDecisionBadge() {
     const n = decisionTotal();
     el.textContent = n > 99 ? '99+' : String(n);
     el.style.display = n > 0 ? '' : 'none';
+    updateMenuButtonLabel();
+}
+
+// On a phone the counts live in the closed menu; the menu button carries a
+// dot (style.css) and says what is waiting.
+function updateMenuButtonLabel() {
+    const btn = document.querySelector('.topbar__burger');
+    if (!btn) return;
+    const shown = id => { const b = document.getElementById(id); return b && b.style.display !== 'none' && b.textContent.trim() ? b.textContent.trim() : ''; };
+    const parts = [];
+    if (shown('decisionBadge')) parts.push(`${shown('decisionBadge')} decisions waiting`);
+    if (shown('inspectionBadge')) parts.push(`${shown('inspectionBadge')} check reports`);
+    if (shown('teamBadge')) parts.push(`${shown('teamBadge')} reports to revise`);
+    btn.setAttribute('aria-label', parts.length ? `Menu — ${parts.join(', ')}` : 'Menu');
+    btn.classList.toggle('has-pending', parts.length > 0);
 }
 
 // ============================================================
@@ -15343,6 +15521,7 @@ function updateMyTeamNotices() {
         nav.style.display = totalRevision ? '' : 'none';
         nav.title = totalRevision ? `${totalRevision} need your revision` : '';
     }
+    updateMenuButtonLabel();
 }
 
 function renderMyNoticeBox(kind, mine) {
@@ -16812,8 +16991,11 @@ function editInspection(id) {
 }
 
 function closeInspectionModal(force) {
-    if (!force && _insPhotosDirty && Object.keys(_insPhotos).length &&
-        !confirm(`${Object.keys(_insPhotos).length} photo(s) not saved yet and will be lost. Close anyway?`)) return;
+    if (!force && _insPhotosDirty && Object.keys(_insPhotos).length) {
+        if (!confirm(`${Object.keys(_insPhotos).length} photo(s) not saved yet and will be lost. Close anyway?`)) return;
+    } else if (!force && !okToDiscardTyping('inspectionForm')) {
+        return;
+    }
     _insGen++;
     _insPhotosDirty = false;
     document.getElementById('inspectionModal').classList.remove('open');
@@ -17128,6 +17310,7 @@ function updateInspectionBadge() {
     const n = due + mine + waiting;
     el.textContent = n > 99 ? '99+' : String(n);
     el.style.display = n ? '' : 'none';
+    updateMenuButtonLabel();
 }
 
 // ============================================================
@@ -18403,6 +18586,7 @@ function _reopenWorkLog(snap) {
     if (snap.photos) { _wlPhotosGen++; _wlPhotos = snap.photos.slice(); _wlPhotosDirty = true; _wlPhotosLoading = false; }
     renderWorkLogUnitChips();
     renderWorkLogPhotos();
+    _formReopened.add('workLogForm');   // what it holds was never saved
 }
 function _snapLeave() {
     return { vals: captureFormState('leaveForm'), docs: _lvDocsDirty ? _lvDocs.slice() : null };
@@ -18415,6 +18599,7 @@ function _reopenLeave(snap) {
     ensureMemberOption('lvMember', snap.vals.lvMember);
     if (snap.docs) { _lvDocsGen++; _lvDocs = snap.docs.slice(); _lvDocsDirty = true; _lvDocsLoading = false; }
     renderLeaveDocs();
+    _formReopened.add('leaveForm');
 }
 function _snapInspection(rec) {
     return { rec: { ...rec }, vals: captureFormState('inspectionForm'), results: { ..._insResults },
@@ -18427,6 +18612,7 @@ function _reopenInspection(snap) {
     if (snap.photos) { _insGen++; _insPhotos = { ...snap.photos }; _insPhotosDirty = true; _insPhotosLoading = false; _insPhotosFailed = false; }
     renderInspectionComponents(snap.rec);
     inspectionComponents().forEach(c => renderInspectionPhoto(c.key));
+    _formReopened.add('inspectionForm');
 }
 function _snapDamage() {
     return { vals: captureFormState('damageForm'), photo: _dmgPhotoDirty ? _dmgPhotoData : null, photoDirty: _dmgPhotoDirty,
@@ -18438,6 +18624,7 @@ function _reopenDamage(snap) {
     applyFormState(snap.vals);
     if (snap.photoDirty) { _dmgPhotoData = snap.photo || ''; _dmgPhotoDirty = true; _dmgPhotoLoading = false; setDamagePhotoPreview('before'); }
     if (snap.afterDirty) { _dmgAfterData = snap.after || ''; _dmgAfterDirty = true; _dmgAfterLoading = false; setDamagePhotoPreview('after'); }
+    _formReopened.add('damageForm');
 }
 
 // ============================================================

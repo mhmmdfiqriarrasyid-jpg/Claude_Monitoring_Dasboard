@@ -307,6 +307,33 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
   Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
   **Implement Brands** (`masterLists/brand`) untuk Agricultural.
+- **Tampilan fase 1 v156 — HP di lapangan (dijaga `tests/ux_phase1_test.js`).**
+  Hasil review ui-ux-pro-max (rencana lengkap: artifact "Rencana Tampilan OT
+  Dashboard").
+  - *Tombol aksi kartu:* di tata letak kartu (≤700px) sel aksi selebar kartu;
+    tombol ikon menampilkan `title`-nya sebagai label (`::after`), tinggi
+    ≥52px; Approve/Request revision berjarak 8px; tombol Compact disembunyikan.
+  - *Form di HP:* `.form-grid` satu kolom `minmax(0,1fr)` — form kerusakan
+    tidak lagi melewati tepi layar.
+  - *Ketikan tidak hilang:* `watchFormEdits()` mencatat isi form saat modal
+    terbuka; X / Cancel / Back bertanya ("Discard what you typed?") bila
+    berubah — form kerusakan, laporan harian, izin, inspeksi, unit
+    (`closeModal(force)`; simpan memakai force). Form yang dibuka lagi dari
+    "Not saved" selalu ditanya (`_formReopened`).
+  - *Masuk akun:* overlay loading di atas layar masuk dan form (z-index 600),
+    dengan teks (`showLoading(show, text)`); tombol submit nonaktif selama
+    proses (`setFormBusy`).
+  - *Pencarian unit:* hasilnya kini benar-benar tampil (`display:block`); di
+    HP berupa daftar selebar layar di bawah bar atas.
+  - *Pindah halaman:* halaman baru dibuka dari atas; Back kembali ke posisi
+    gulir sebelumnya (disimpan di entri riwayat, `scrollRestoration=manual`).
+  - *Menu HP:* `openNav/closeNav`; punya entri riwayat sendiri — Back, Esc,
+    ketuk area gelap, atau tombol ✕ menutupnya; halaman yang dipilih dari
+    menu mengambil alih entri menu.
+  - *Offline:* titik status kuning tanpa denyut; di HP label pendek
+    "Offline" (kalimat lengkap tetap untuk pembaca layar).
+  - *Tombol menu:* titik oranye + `aria-label` ("Menu — 22 decisions
+    waiting") saat ada keputusan, laporan cek atau revisi menunggu.
 - **Foto kerusakan Before / After v151 (dijaga `tests/damage_beforeafter_test.js`
   dan rules_test).**
   - Foto yang sudah ada = **Before** (`damagePhotos/{id}`, tanda `hasPhoto`).

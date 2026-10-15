@@ -30,6 +30,7 @@
 <!-- Loading Overlay -->
 <div class="loading-overlay" id="loadingOverlay">
     <div class="spinner"></div>
+    <p class="loading-overlay__text" id="loadingText" role="status" aria-live="polite"></p>
 </div>
 
 <!-- Toast Container -->
@@ -138,8 +139,9 @@
             <div class="sidebar__brand-name">Operation Technology</div>
             <div class="sidebar__brand-sub">Dashboard</div>
         </div>
+        <button type="button" class="btn-icon sidebar__close" onclick="closeNav()" aria-label="Close menu" title="Close menu"><i class="fas fa-xmark"></i></button>
     </div>
-    <nav class="sidebar__nav" onclick="if(event.target.closest('.nav__link'))document.getElementById('appShell').classList.remove('nav-open')">
+    <nav class="sidebar__nav" onclick="if(event.target.closest('.nav__link'))closeNav()">
         <!-- Grouped by what the work is about: the two equipment groups each
              get their own Dashboard / Unit Database / Kerusakan, which open the
              shared page on that group (data-group). A group whose links are all
@@ -219,7 +221,7 @@
   <!-- Body: topbar + main -->
   <div class="app-body">
     <div class="topbar">
-        <button class="topbar__burger" title="Menu" onclick="document.getElementById('appShell').classList.toggle('nav-open')">
+        <button class="topbar__burger" title="Menu" aria-label="Menu" onclick="toggleNav()">
             <i class="fas fa-bars"></i>
         </button>
         <div class="header__status">
