@@ -82,19 +82,19 @@ const { launch, BASE_URL } = require('./_env');
         t('membuka halaman tidak mengambil foto apa pun', fetched.length, 0);
 
         // ---------- diambil hanya saat dibuka, lalu di-cache ----------
-        await openDamagePhoto('dSplit', null);
+        await openDamagePhotos('dSplit', 'before', null);
         t('sekali klik = sekali ambil', fetched, ['dSplit']);
         t('lightbox terbuka',
           document.getElementById('photoLightbox').classList.contains('open'), true);
         t('gambarnya yang benar',
           document.getElementById('photoLightboxImg').src, PH('SPLIT'));
         closePhotoLightbox();
-        await openDamagePhoto('dSplit', null);
+        await openDamagePhotos('dSplit', 'before', null);
         t('klik kedua dilayani cache, tidak menarik ulang', fetched.length, 1);
         closePhotoLightbox();
 
         // Catatan lama tidak perlu jaringan sama sekali — fotonya sudah ada.
-        await openDamagePhoto('dOld', null);
+        await openDamagePhotos('dOld', 'before', null);
         t('foto inline lama tidak perlu diambil dari cloud', fetched.length, 1);
         t('dan tetap tampil', document.getElementById('photoLightboxImg').src, PH('OLD'));
         closePhotoLightbox();
@@ -104,7 +104,7 @@ const { launch, BASE_URL } = require('./_env');
         failNextFetch = true;
         const btn = document.createElement('button');
         btn.innerHTML = 'X';
-        await openDamagePhoto('dSplit', btn);
+        await openDamagePhotos('dSplit', 'before', btn);
         t('gagal memuat tidak membuka lightbox',
           document.getElementById('photoLightbox').classList.contains('open'), false);
         t('tombolnya dipulihkan', [btn.disabled, btn.innerHTML], [false, 'X']);

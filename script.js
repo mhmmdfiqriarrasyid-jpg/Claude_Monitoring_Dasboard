@@ -125,7 +125,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v154';
+const APP_VERSION = 'v155';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -2552,11 +2552,7 @@ const BACKUP_PARTS = [
     { key: 'damages', label: 'Damage Records', area: 'damage',
       read: () => globalDamages, write: l => { globalDamages = l; },
       saveLocal: () => saveDamages(), bulk: 'saveDamages',
-      deleteOne: (id, r) => {
-          cloudDeleteDamage(id);
-          if (damageHasPhoto(r)) _dropPhotoDoc('deleteDamagePhoto', id);
-          if (damageHasAfterPhoto(r)) _dropPhotoDoc('deleteDamageAfterPhoto', id);
-      },
+      deleteOne: (id, r) => { cloudDeleteDamage(id); dropDamagePhotos(r); },
       resync: () => resyncDamages() },
 
     { key: 'licenseStock', label: 'License Stock', area: 'licenseStock',
@@ -2945,7 +2941,7 @@ function _dropPhotoDoc(fnName, id) {
     const fn = window.cloud && window.cloud[fnName];
     if (typeof fn !== 'function') return;
     Promise.resolve(fn.call(window.cloud, id)).catch(err =>
-        console.warn(`[restore] ${fnName}(${id}) gagal:`, err));
+        console.warn(`[photo-doc] ${fnName}(${id}) failed:`, err));
 }
 
 // Photos and letters, one document per record, fetched one at a time — which
@@ -6793,45 +6789,41 @@ function damagePhotoCaption(rec, side) {
     return rec && rec.date ? `Before · ${rec.date}` : 'Before';
 }
 
-// Opens a damage record's photos at the side that was clicked. Both sides are
-// fetched together (each from its own document), so the viewer can flip
-// between them or put them side by side. The other side failing to load only
-// leaves it out; the clicked side failing is said, and nothing opens.
+// Opens a damage record's photos at the side that was tapped. That side shows
+// as soon as it is here — on a weak signal it used to wait for the other
+// side's download too. The other side (each lives in its own document) is
+// fetched after and joins the open viewer, so the two can be flipped or put
+// side by side. The tapped side failing is said, and nothing opens; the other
+// side failing only leaves it out.
 async function openDamagePhotos(id, side, btn) {
     const want = side === 'after' ? 'after' : 'before';
+    const other = want === 'after' ? 'before' : 'after';
     const rec = globalDamages.find(d => d.id === id) || null;
+    const load = s => (s === 'after' ? loadDamageAfterPhoto : loadDamagePhoto)(id);
     const original = btn ? btn.innerHTML : '';
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+    let first = '';
     try {
-        const errs = {};
-        const get = (s, fn) => fn(id).catch(err => { errs[s] = err; return ''; });
-        const [before, after] = await Promise.all([
-            want === 'before' || damageHasPhoto(rec) ? get('before', loadDamagePhoto) : '',
-            want === 'after' || damageHasAfterPhoto(rec) ? get('after', loadDamageAfterPhoto) : ''
-        ]);
-        const got = { before, after };
-        if (!got[want]) {
-            if (errs[want]) {
-                console.error('[damage] photo load failed:', errs[want]);
-                showToast(navigator.onLine
-                    ? 'Failed to load the damage photo'
-                    : 'The photo needs a signal to load', 'error');
-            } else {
-                showToast('Photo not found', 'warning');
-            }
-            return;
-        }
-        const photos = [], captions = [];
-        if (before) { photos.push(before); captions.push(damagePhotoCaption(rec, 'before')); }
-        if (after)  { photos.push(after);  captions.push(damagePhotoCaption(rec, 'after')); }
-        openPhotoLightbox(photos, want === 'after' && before ? 1 : 0, { captions, compare: true });
+        first = await load(want);
+    } catch (err) {
+        console.error('[damage] photo load failed:', err);
+        showToast(navigator.onLine
+            ? 'Failed to load the damage photo'
+            : 'The photo needs a signal to load', 'error');
+        return;
     } finally {
         if (btn) { btn.disabled = false; btn.innerHTML = original; }
     }
-}
+    if (!first) { showToast('Photo not found', 'warning'); return; }
+    openPhotoLightbox(first, 0, { captions: [damagePhotoCaption(rec, want)] });
 
-function openDamagePhoto(id, btn) {
-    return openDamagePhotos(id, 'before', btn);
+    if (!(other === 'after' ? damageHasAfterPhoto(rec) : damageHasPhoto(rec))) return;
+    let second = '';
+    try { second = await load(other); } catch (err) { console.warn('[damage] other photo load failed:', err); }
+    // Only while the viewer still shows just the tapped photo.
+    if (!second || _lightboxPhotos.length !== 1 || _lightboxPhotos[0] !== first) return;
+    openPhotoLightbox(want === 'after' ? [second, first] : [first, second], want === 'after' ? 1 : 0,
+        { captions: [damagePhotoCaption(rec, 'before'), damagePhotoCaption(rec, 'after')], compare: true });
 }
 
 // One-shot move of inline photos into damagePhotos, mirroring the work-log
@@ -6914,11 +6906,6 @@ function damagePhotoButtons(rec, opts) {
             onclick="event.stopPropagation();openDamageRepair(${jsArg(rec.id)})">+ After</button>`);
     }
     return btns.length ? `<span class="dmg-ph-group">${btns.join('')}</span>` : dash;
-}
-
-// Kept for anything still calling the one-button form.
-function damagePhotoButton(rec) {
-    return damagePhotoButtons(rec);
 }
 
 // ---- Lightbox (view full-size photo) ----
@@ -7539,41 +7526,31 @@ function editDamage(id) {
     if (bdGroup) bdGroup.style.display = 'none';
     document.getElementById('damageModal').classList.add('open');
 
-    // The photo lives in its own document now, so it arrives after the form
-    // does. Bail out if the user has moved on to another record or has already
-    // changed the photo themselves — their choice must not be overwritten by a
-    // fetch they started before making it.
-    if (_dmgPhotoLoading) {
-        loadDamagePhoto(id).then(photo => {
-            if (document.getElementById('editDamageId').value !== id) return;
-            _dmgPhotoLoading = false;
-            if (_dmgPhotoDirty) return;
-            _dmgPhotoData = photo;
-            _dmgPhotoLoading = false;
-            setDamagePhotoPreview();
-        }).catch(err => {
-            console.error('[damage] photo load failed:', err);
-            _dmgPhotoLoading = false;
-            setDamagePhotoPreview();
-            showToast('Existing photo failed to load — it is still saved', 'warning');
-        });
-    }
-    if (_dmgAfterLoading) {
-        loadDamageAfterPhoto(id).then(photo => {
-            if (document.getElementById('editDamageId').value !== id) return;
-            _dmgAfterLoading = false;
-            if (_dmgAfterDirty) return;
-            _dmgAfterData = photo;
-            _dmgAfterLoading = false;
-            setDamagePhotoPreview('after');
-        }).catch(err => {
-            console.error('[damage] after photo load failed:', err);
-            if (document.getElementById('editDamageId').value !== id) return;
-            _dmgAfterLoading = false;
-            setDamagePhotoPreview('after');
-            showToast('Existing After photo failed to load — it is still saved', 'warning');
-        });
-    }
+    if (_dmgPhotoLoading) loadDamageSlot('before', id);
+    if (_dmgAfterLoading) loadDamageSlot('after', id);
+}
+
+// The photos live in documents of their own, so they arrive after the form
+// does. A result is dropped once the form was closed or opened again (for
+// this record or another), and never overwrites a photo the user already
+// changed in that slot — their choice must not be undone by a fetch they
+// started before making it.
+function loadDamageSlot(side, id) {
+    const gen = _dmgFormGen;
+    const after = side === 'after';
+    const current = () => gen === _dmgFormGen && document.getElementById('damageModal').classList.contains('open');
+    (after ? loadDamageAfterPhoto : loadDamagePhoto)(id).then(photo => {
+        if (!current()) return;
+        if (after) { _dmgAfterLoading = false; if (!_dmgAfterDirty) _dmgAfterData = photo; }
+        else { _dmgPhotoLoading = false; if (!_dmgPhotoDirty) _dmgPhotoData = photo; }
+        setDamagePhotoPreview(side);
+    }).catch(err => {
+        console.error(`[damage] ${side} photo load failed:`, err);
+        if (!current()) return;
+        if (after) _dmgAfterLoading = false; else _dmgPhotoLoading = false;
+        setDamagePhotoPreview(side);
+        showToast(`Existing ${after ? 'After ' : ''}photo failed to load — it is still saved`, 'warning');
+    });
 }
 
 function showDamageAfterSlot(show) {
@@ -8096,14 +8073,8 @@ function dropDamagePhotos(rec) {
     if (!rec || !rec.id) return;
     _dmgPhotoCache.delete(rec.id);
     _dmgAfterCache.delete(rec.id);
-    if (damageHasPhoto(rec) && window.cloud?.deleteDamagePhoto) {
-        window.cloud.deleteDamagePhoto(rec.id).catch(err =>
-            console.error('[damage] photo delete failed:', err));
-    }
-    if (damageHasAfterPhoto(rec) && window.cloud?.deleteDamageAfterPhoto) {
-        window.cloud.deleteDamageAfterPhoto(rec.id).catch(err =>
-            console.error('[damage] after photo delete failed:', err));
-    }
+    if (damageHasPhoto(rec)) _dropPhotoDoc('deleteDamagePhoto', rec.id);
+    if (damageHasAfterPhoto(rec)) _dropPhotoDoc('deleteDamageAfterPhoto', rec.id);
 }
 
 function deleteDamage(id) {

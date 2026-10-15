@@ -511,6 +511,77 @@ const { launch, BASE_URL } = require('./_env');
         closeRestoreReport();
         window.confirm = m => { confirmText = String(m); return confirmAnswer; };
 
+        // =============== 12. SHOULD-FIX ponytail-review ===============
+        // 12a. foto yang diketuk tampil dulu, sisi lainnya menyusul
+        globalDamages = [mk('sA', { hasPhoto: true, hasAfterPhoto: true, resolved: true, resolvedAt: '2026-10-14' })];
+        saveDamages();
+        _dmgAfterCache.set('sA', PH('SA_AFTER')); _dmgPhotoCache.delete('sA');
+        let releaseBefore = null;
+        const realGetBefore = window.cloud.getDamagePhoto;
+        window.cloud.getDamagePhoto = () => new Promise(r => { releaseBefore = () => r(PH('SA_BEFORE')); });
+        const opening = openDamagePhotos('sA', 'after', null);
+        await tick(10);
+        t('After yang diketuk langsung tampil, tidak menunggu unduhan Before',
+          [lb().classList.contains('open'), document.getElementById('photoLightboxImg').src, vis('photoLightboxCount')], [true, PH('SA_AFTER'), false]);
+        releaseBefore(); await opening;
+        t('Before menyusul: bisa dibalik dan dibuat berdampingan, tetap di After',
+          [document.getElementById('photoLightboxImg').src, document.getElementById('photoLightboxCount').textContent, vis('photoLightboxMode')], [PH('SA_AFTER'), '2 / 2', true]);
+        closePhotoLightbox();
+        _dmgPhotoCache.delete('sA');
+        const opening2 = openDamagePhotos('sA', 'after', null);
+        await tick(10);
+        closePhotoLightbox();
+        releaseBefore(); await opening2;
+        t('ditutup sebelum Before tiba: penampil tidak muncul lagi', lb().classList.contains('open'), false);
+        window.cloud.getDamagePhoto = realGetBefore;
+
+        // 12b. hasil kosong tidak diingat (foto dari HP lain belum sampai)
+        globalDamages.push(mk('sB', { hasPhoto: true, hasAfterPhoto: true, resolved: true }));
+        delete store.after.sB; delete store.before.sB; _dmgAfterCache.delete('sB'); _dmgPhotoCache.delete('sB');
+        toasts.length = 0;
+        await openDamagePhotos('sB', 'after', null);
+        await openDamagePhotos('sB', 'before', null);
+        t('foto belum ada di server: "Photo not found", tidak terbuka', [toasts.slice(-2), lb().classList.contains('open')], [['Photo not found', 'Photo not found'], false]);
+        store.after.sB = PH('SB_AFTER'); store.before.sB = PH('SB_BEFORE');
+        await openDamagePhotos('sB', 'after', null);
+        t('After tiba kemudian: ketukan berikutnya menampilkannya', [lb().classList.contains('open'), document.getElementById('photoLightboxImg').src], [true, PH('SB_AFTER')]);
+        closePhotoLightbox();
+        await openDamagePhotos('sB', 'before', null);
+        t('Before juga', document.getElementById('photoLightboxImg').src, PH('SB_BEFORE'));
+        closePhotoLightbox();
+
+        // 12c. form Edit: hasil muat foto catatan sebelumnya tidak mengganggu
+        let failC = null, loadD = null;
+        window.cloud.getDamagePhoto = id => new Promise((res, rej) => {
+            if (id === 'sC') failC = () => rej(new Error('offline')); else loadD = () => res(PH('SD_BEFORE'));
+        });
+        globalDamages.push(mk('sC', { hasPhoto: true }), mk('sD', { hasPhoto: true }));
+        _dmgPhotoCache.delete('sC'); _dmgPhotoCache.delete('sD');
+        editDamage('sC'); closeDamageModal(true); editDamage('sD');
+        toasts.length = 0;
+        failC(); await tick(10);
+        t('gagal memuat foto catatan sebelumnya: form ini tetap "Loading", tanpa pesan salah',
+          [vis('dmgPhotoLoading'), toasts.filter(x => /failed to load/.test(x)).length], [true, 0]);
+        loadD(); await tick(10);
+        t('foto catatan yang terbuka tetap dimuat', [vis('dmgPhotoLoading'), document.getElementById('dmgPhotoPreview').src], [false, PH('SD_BEFORE')]);
+        closeDamageModal(true);
+        window.cloud.getDamagePhoto = realGetBefore;
+
+        // 12d. restore GANTI yang menghapus catatan juga membuang salinan fotonya
+        answers = [];
+        window.confirm = m => { confirmText = String(m); return answers.length ? answers.shift() : true; };
+        globalDamages = [mk('sE', { hasPhoto: true, hasAfterPhoto: true }), mk('sF', {})]; saveDamages();
+        _dmgPhotoCache.set('sE', PH('E1')); _dmgAfterCache.set('sE', PH('E2'));
+        calls.length = 0;
+        answers = [false, true];
+        importBackup(new File([JSON.stringify({ version: 5, units: globalData.slice(), damages: [mk('sF', {})] })], 'f.json', { type: 'application/json' }));
+        await tick(400);
+        t('restore GANTI: dokumen dan salinan foto catatan yang dihapus ikut hilang',
+          [calls.filter(c => /^del(Before|After)$/.test(c[0])).map(c => c.join(':')).sort(), _dmgPhotoCache.has('sE'), _dmgAfterCache.has('sE')],
+          [['delAfter:sE', 'delBefore:sE'], false, false]);
+        closeRestoreReport();
+        window.confirm = m => { confirmText = String(m); return confirmAnswer; };
+
         // k. keluar / akses dicabut: salinan foto After ikut dibuang bersama
         // sesi, seperti Before — di HP bersama, akun berikutnya tanpa akses
         // Kerusakan tidak boleh masih bisa membukanya dari memori.

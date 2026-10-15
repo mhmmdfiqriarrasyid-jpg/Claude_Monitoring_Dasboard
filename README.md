@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.795 pemeriksaan di empat puluh enam suite, menggerakkan Chromium sungguhan terhadap
+1.804 pemeriksaan di empat puluh enam suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -348,6 +348,14 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
     tidak lagi bisa menyimpan foto lama di jeda unggah, dan tanda "waiting to
     send" / peringatan keluar bertahan sampai fotonya terkirim. Menghapus
     foto tetap sesudah catatan.
+  - *v155 (should-fix ponytail-review):* foto yang diketuk langsung tampil;
+    sisi lainnya diunduh sesudahnya dan bergabung ke penampil yang masih
+    terbuka (`openDamagePhotos`). Satu pemuat untuk kedua slot form
+    (`loadDamageSlot`, dijaga `_dmgFormGen`) — hasil dari form yang sudah
+    ditutup tidak lagi mengganggu form berikutnya. Hapus catatan dan restore
+    GANTI memakai satu jalur (`dropDamagePhotos` → `_dropPhotoDoc`), termasuk
+    membuang salinan foto di memori. Pembungkus `openDamagePhoto` dan
+    `damagePhotoButton` dihapus. Tes baru untuk "hasil kosong tidak diingat".
 - **Pemakaian di HP / lapangan v150 (dijaga `tests/field_phone_test.js`).**
   - *Tombol Back:* setiap modal mendapat entri riwayat (`setupBackButton`,
     lewat MutationObserver yang sama dengan fokus); Back menutup modal teratas
