@@ -32,6 +32,17 @@ const { launch, BASE_URL } = require('./_env');
         await new Promise(r => setTimeout(r, 50));
         out.done = [btn.disabled, /Sign In/.test(btn.textContent), document.getElementById('loadingOverlay').classList.contains('active'),
                     document.getElementById('loadingText').textContent];
+        // Berhasil: profil masih dibaca, jadi tetap "sibuk" sampai layar berikutnya tampil.
+        let resolveIt;
+        window.cloud.signIn = () => new Promise(res => { resolveIt = res; });
+        document.getElementById('signInForm').requestSubmit();
+        await new Promise(r => setTimeout(r, 30));
+        resolveIt({ uid: 'x' });
+        await new Promise(r => setTimeout(r, 50));
+        out.afterResolve = [btn.disabled, document.getElementById('loadingOverlay').classList.contains('active')];
+        showPendingGate('x@y.id');
+        out.afterScreen = [btn.disabled, document.getElementById('loadingOverlay').classList.contains('active')];
+        showAuthGate();
         return out;
     });
 
@@ -144,9 +155,11 @@ const { launch, BASE_URL } = require('./_env');
         const br = box.getBoundingClientRect();
         t('hasil pencarian tampil', [getComputedStyle(box).display, box.querySelectorAll('.global-search__item').length > 0], ['block', true]);
         t('di HP selebar layar, di bawah bar atas', [br.left >= 0, br.right <= vw, br.top >= 54], [true, true, true]);
+        t('selama daftar terbuka, bar atas di atas banner sesi', document.body.classList.contains('gsearch-open'), true);
         g.value = 'tidakadaunitini'; renderGlobalSearchResults();
         t('tidak ada yang cocok: pesannya tampil', [getComputedStyle(box).display, /No matching units/.test(box.textContent)], ['block', true]);
         closeGlobalSearch(); g.value = '';
+        t('daftar ditutup: kelasnya dilepas', document.body.classList.contains('gsearch-open'), false);
 
         // =============== 1.6 posisi gulir ===============
         goNav('dashboard', 'tractor'); await tick(150);
@@ -191,6 +204,41 @@ const { launch, BASE_URL } = require('./_env');
         history.back(); await tick(350);
         t('Back: dashboard di posisi semula', [currentView, Math.abs(Math.round(scrollY) - y2) <= 2], ['dashboard', true]);
 
+        // Halaman yang sedang tampil dipilih lagi dari menu: tidak menambah entri.
+        goNav('damage', 'heavy'); await tick(150);
+        goNav('dashboard', 'tractor'); await tick(150);
+        openNav(); await tick(30);
+        document.querySelector('.nav__link.active[data-view="dashboard"]').click(); await tick(300);
+        history.back(); await tick(350);
+        t('memilih halaman yang sama dari menu: Back langsung ke halaman sebelumnya', currentView, 'damage');
+        // History dibuka dari menu: menu tertutup, entrinya dipakai modal; Back berikutnya kembali.
+        goNav('dashboard', 'tractor'); await tick(150);
+        openNav(); await tick(30);
+        document.getElementById('navHistory').click(); await tick(150);
+        t('History dari menu: menu tertutup, entri menjadi milik modal', [isNavOpen(), isOpen('historyModal'), history.state && history.state.ot], [false, true, 'modal']);
+        closeHistory(); await tick(300);
+        history.back(); await tick(350);
+        t('setelah History ditutup, Back kembali ke halaman sebelumnya', currentView, 'damage');
+
+        // Dibuka lagi dari "Not saved" tetapi ditolak: form kosong berikutnya tidak bertanya.
+        navigateTo('team'); switchTeamTab('worklog'); await tick(80);
+        const membersBak = teamMembers;
+        teamMembers = [];
+        _reopenWorkLog({ vals: { editWorkLogId: '', wlTask: 'x' }, units: [], photos: null }); await tick(30);
+        teamMembers = membersBak;
+        const opened = isOpen('workLogModal');
+        if (!opened) { showAddWorkLogForm(); await tick(30); }
+        asked = []; confirmAnswer = true; closeWorkLogModal(); await tick(30);
+        t('pembukaan ulang yang ditolak tidak membuat form kosong bertanya', [opened, asked.length], [false, 0]);
+        // Anggota nonaktif: daftar anggota dibangun ulang saat form terbuka, pilihannya tetap.
+        teamMembers = [{ id: 'm1', name: 'Andi', active: true }, { id: 'm2', name: 'Budi', active: false }];
+        leaveRequests = [{ id: 'lv1', memberId: 'm2', memberName: 'Budi', type: 'izin', dateFrom: '2026-10-20', dateTo: '2026-10-20', days: 1, approval: 'draft', createdByUid: 'uO' }];
+        editLeave('lv1'); await tick(40);
+        populateLeaveFilters();
+        asked = []; closeLeaveModal(); await tick(30);
+        t('anggota nonaktif tetap terpilih, tanpa pertanyaan palsu', [asked.length, isOpen('leaveModal')], [0, false]);
+        teamMembers = [{ id: 'm1', name: 'Andi', active: true, company: 'PT. GPA' }];
+
         // =============== 1.8 offline ===============
         Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false });
         document.getElementById('connectionDot').classList.add('connected');
@@ -223,9 +271,24 @@ const { launch, BASE_URL } = require('./_env');
     await page.waitForFunction(() => window.__T, null, { timeout: 120000 });
     const T = await page.evaluate(() => window.__T);
     const t = (n, g, w) => T.unshift({ n, g, w, pass: JSON.stringify(g) === JSON.stringify(w) });
+    await page.setViewportSize({ width: 1366, height: 768 });
+    const desk = await page.evaluate(async () => {
+        const tick = ms => new Promise(r => setTimeout(r, ms));
+        const m = document.querySelector('.main');
+        goNav('editUnits', 'tractor'); await tick(200);
+        m.scrollTop = 300; await tick(50);
+        const saved = m.scrollTop;
+        goNav('damage', 'heavy'); await tick(200);
+        const top0 = m.scrollTop;
+        history.back(); await tick(400);
+        return [currentView, m.scrollTop === saved, top0, Math.round(window.scrollY), Math.round(document.querySelector('.topbar').getBoundingClientRect().top)];
+    });
+    t('laptop: Back memulihkan posisi .main, jendela dan bar atas tidak bergeser', desk, ['editUnits', true, 0, 0, 0]);
     t('masuk akun: tombol nonaktif, teks proses, lapisan loading di atas kartu', signin.busy,
       [true, 'Signing in…', 'Signing in… on a weak signal this can take a while', true]);
     t('gagal masuk: tombol aktif lagi, loading hilang', signin.done, [false, true, false, '']);
+    t('berhasil: tetap sibuk selama profil dimuat', signin.afterResolve, [true, true]);
+    t('layar berikutnya tampil: sibuk selesai', signin.afterScreen, [false, false]);
 
     let pass = 0;
     T.forEach(x => { if (x.pass) pass++; else console.log('FAIL', x.n, '\n  dapat :', JSON.stringify(x.g), '\n  harap :', JSON.stringify(x.w)); });

@@ -125,7 +125,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v156';
+const APP_VERSION = 'v157';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -896,12 +896,17 @@ function closeNav() {
     const a = _drawerShell();
     if (!a || !isNavOpen()) return;
     a.classList.remove('nav-open');
-    if (_drawerEntry) {
+    if (!_drawerEntry) return;
+    // Decided a microtask later: a link in the menu may have just opened a
+    // page or a modal, which takes over the menu's entry (_pushViewHistory,
+    // the layer observer). Only an entry nobody took over is stepped back
+    // over — and only while it is ours and on top; stepping back blindly can
+    // leave the app.
+    queueMicrotask(() => {
+        if (!_drawerEntry) return;
         _drawerEntry = false;
-        // Only our own entry, and only while it is on top — see the modal
-        // entries below for why stepping back blindly can leave the app.
         if (history.state && history.state.ot === 'drawer') { _ignorePops++; history.back(); }
-    }
+    });
 }
 function toggleNav() { if (isNavOpen()) closeNav(); else openNav(); }
 
@@ -922,7 +927,19 @@ function setupBackButton() {
     const obs = new MutationObserver(() => {
         const now = _openLayers();
         if (now > layers) {
-            for (let i = layers; i < now; i++) { history.pushState({ ot: 'modal' }, ''); _histModals++; }
+            for (let i = layers; i < now; i++) {
+                // Opened from the phone menu (History, Master Lists, …): the
+                // menu closes and its entry becomes the modal's, or it would
+                // be left behind as a Back press that does nothing.
+                if (_drawerEntry && history.state && history.state.ot === 'drawer') {
+                    _drawerEntry = false;
+                    _drawerShell().classList.remove('nav-open');
+                    history.replaceState({ ot: 'modal' }, '');
+                } else {
+                    history.pushState({ ot: 'modal' }, '');
+                }
+                _histModals++;
+            }
         } else if (now < layers) {
             let closed = layers - now;
             // Closed by Back: its entry is already gone.
@@ -979,14 +996,20 @@ function setupBackButton() {
 }
 
 // The page scrolls in .main on wide screens and in the document on phones.
-function _pageScroll() {
+// Only that one is read and set: on a desktop the document can still scroll
+// a little (the footer sits below the full-height shell), and moving it
+// pushed the top bar off the screen.
+function _mainScroller() {
     const m = document.querySelector('.main');
-    return Math.round(window.scrollY || (m && m.scrollTop) || 0);
+    return m && /auto|scroll/.test(getComputedStyle(m).overflowY) ? m : null;
+}
+function _pageScroll() {
+    const m = _mainScroller();
+    return Math.round(m ? m.scrollTop : window.scrollY);
 }
 function _setPageScroll(y) {
-    window.scrollTo(0, y);
-    const m = document.querySelector('.main');
-    if (m) m.scrollTop = y;
+    const m = _mainScroller();
+    if (m) m.scrollTop = y; else window.scrollTo(0, y);
 }
 
 // A page change gets its own entry (not while a modal is open — those sit on
@@ -1001,7 +1024,12 @@ function _pushViewHistory(view, leavingScroll) {
     try {
         // A page picked from the phone menu takes over the menu's entry, so
         // Back from the new page returns to the page before it.
-        if (st && st.ot === 'drawer') { _drawerEntry = false; history.replaceState({ ot: 'view', view }, ''); return; }
+        // (Picking the page already shown adds nothing: closeNav() then pops
+        // the menu's entry, so Back is not wasted on a page that is the same.)
+        if (st && st.ot === 'drawer') {
+            if (st.view === view) return;
+            _drawerEntry = false; history.replaceState({ ot: 'view', view }, ''); return;
+        }
         // Remember where the page being left was scrolled to, for Back.
         if (st && st.ot === 'view') history.replaceState({ ...st, scroll: leavingScroll != null ? leavingScroll : _pageScroll() }, '');
         history.pushState({ ot: 'view', view }, '');
@@ -1243,6 +1271,28 @@ function showLoading(show, text) {
     document.getElementById('loadingOverlay').classList.toggle('active', show);
     const t = document.getElementById('loadingText');
     if (t) t.textContent = show && text ? text : '';
+}
+
+// Signing in is not over when signIn() resolves: the profile is read next,
+// slowly on a weak signal. The busy state lasts until a screen is shown —
+// the app, the pending screen or the sign-in screen again.
+let _authBusy = false;
+let _authBusyTimer = null;
+function setAuthBusy(formId, label, text) {
+    _authBusy = true;
+    showLoading(true, text);
+    setFormBusy(formId, true, label);
+    clearTimeout(_authBusyTimer);
+    // Safety net: never leave the overlay up if no screen ever follows.
+    _authBusyTimer = setTimeout(releaseAuthBusy, 45000);
+}
+function releaseAuthBusy() {
+    clearTimeout(_authBusyTimer);
+    if (!_authBusy) return;
+    _authBusy = false;
+    showLoading(false);
+    setFormBusy('signInForm', false);
+    setFormBusy('signUpForm', false);
 }
 
 // Disables the form's submit buttons while it is being sent, so a second tap
@@ -7192,6 +7242,7 @@ function closeUnitProfile() {
 function closeGlobalSearch() {
     const box = document.getElementById('globalSearchResults');
     if (box) { box.innerHTML = ''; box.style.display = 'none'; }
+    document.body.classList.remove('gsearch-open');
 }
 
 function renderGlobalSearchResults() {
@@ -7208,6 +7259,7 @@ function renderGlobalSearchResults() {
         // 'block', not '': the stylesheet hides the box by default, so
         // clearing the inline style kept every result invisible.
         box.style.display = 'block';
+        document.body.classList.add('gsearch-open');
         return;
     }
     box.innerHTML = hits.map(u => `
@@ -7216,6 +7268,7 @@ function renderGlobalSearchResults() {
             <span class="global-search__meta"><span class="mono">${escapeHtml(u.sn || '')}</span>${u.site ? ' · ' + escapeHtml(u.site) : ''}${isHeavy(u) ? ' · ' + escapeHtml(UNIT_GROUPS.heavy.shortLabel) : ''}</span>
         </div>`).join('');
     box.style.display = 'block';
+    document.body.classList.add('gsearch-open');
 }
 
 function openUnitFromSearch(id) {
@@ -10587,6 +10640,7 @@ function pruneForeignLocalAudit(uid) {
 }
 
 function showAuthGate(tab) {
+    releaseAuthBusy();
     document.getElementById('authGate').style.display = 'flex';
     document.getElementById('pendingGate').style.display = 'none';
     document.body.classList.add('auth-blocked');
@@ -10594,6 +10648,7 @@ function showAuthGate(tab) {
 }
 
 function showPendingGate(email) {
+    releaseAuthBusy();
     document.getElementById('authGate').style.display = 'none';
     const el = document.getElementById('pendingGate');
     el.style.display = 'flex';
@@ -10603,6 +10658,7 @@ function showPendingGate(email) {
 }
 
 function hideAuthGates() {
+    releaseAuthBusy();
     document.getElementById('authGate').style.display = 'none';
     document.getElementById('pendingGate').style.display = 'none';
     document.body.classList.remove('auth-blocked');
@@ -11010,8 +11066,7 @@ async function handleSignIn(event) {
     const email = document.getElementById('signInEmail').value.trim();
     const password = document.getElementById('signInPassword').value;
     try {
-        showLoading(true, 'Signing in… on a weak signal this can take a while');
-        setFormBusy('signInForm', true, 'Signing in…');
+        setAuthBusy('signInForm', 'Signing in…', 'Signing in… on a weak signal this can take a while');
         _explicitSignIn = true;
         // A fresh 24h window BEFORE signing in: Firebase calls the auth
         // listener before signIn() resolves, and the listener checks the
@@ -11027,10 +11082,8 @@ async function handleSignIn(event) {
         clearSessionClock();
         const code = err && err.code;
         const wrong = code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/invalid-login-credentials';
+        releaseAuthBusy();
         showAuthError('signInError', friendlyAuthError(err) + (wrong ? signInHint(email, password) : ''));
-    } finally {
-        showLoading(false);
-        setFormBusy('signInForm', false);
     }
 }
 
@@ -11041,8 +11094,7 @@ async function handleSignUp(event) {
     const email = document.getElementById('signUpEmail').value.trim();
     const password = document.getElementById('signUpPassword').value;
     try {
-        showLoading(true, 'Creating the account…');
-        setFormBusy('signUpForm', true, 'Creating account…');
+        setAuthBusy('signUpForm', 'Creating account…', 'Creating the account…');
         _explicitSignIn = true;
         const user = await window.cloud.signUp(email, password, name);
         startSessionClock(); // fresh 24h window
@@ -11050,10 +11102,8 @@ async function handleSignUp(event) {
         await window.cloud.createUserDoc(user, name);
         // onAuthChange will pick up the new user and route to pending/app.
     } catch (err) {
+        releaseAuthBusy();
         showAuthError('signUpError', friendlyAuthError(err));
-    } finally {
-        showLoading(false);
-        setFormBusy('signUpForm', false);
     }
 }
 
@@ -12907,6 +12957,8 @@ function populateWorkLogFilters() {
             activeMembers().map(m =>
                 `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}</option>`).join('');
         if (keep && formSel.querySelector(`option[value="${CSS.escape(keep)}"]`)) formSel.value = keep;
+        // A form open on an inactive member's record keeps that member.
+        else if (keep && document.getElementById('workLogModal').classList.contains('open')) ensureMemberOption('wlMember', keep);
     }
     const list = document.getElementById('wlUnitList');
     if (list) {
@@ -13816,6 +13868,8 @@ function populateLeaveFilters() {
         formSel.innerHTML = '<option value="">— Select member —</option>'
             + activeMembers().map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}</option>`).join('');
         if (keep && formSel.querySelector(`option[value="${CSS.escape(keep)}"]`)) formSel.value = keep;
+        // A form open on an inactive member's record keeps that member.
+        else if (keep && document.getElementById('leaveModal').classList.contains('open')) ensureMemberOption('lvMember', keep);
     }
     const compSel = document.getElementById('lvCompanyFilter');
     if (compSel) {
@@ -18586,7 +18640,8 @@ function _reopenWorkLog(snap) {
     if (snap.photos) { _wlPhotosGen++; _wlPhotos = snap.photos.slice(); _wlPhotosDirty = true; _wlPhotosLoading = false; }
     renderWorkLogUnitChips();
     renderWorkLogPhotos();
-    _formReopened.add('workLogForm');   // what it holds was never saved
+    // What it holds was never saved — when it did open (it may be refused).
+    if (document.getElementById('workLogModal').classList.contains('open')) _formReopened.add('workLogForm');
 }
 function _snapLeave() {
     return { vals: captureFormState('leaveForm'), docs: _lvDocsDirty ? _lvDocs.slice() : null };
@@ -18599,7 +18654,7 @@ function _reopenLeave(snap) {
     ensureMemberOption('lvMember', snap.vals.lvMember);
     if (snap.docs) { _lvDocsGen++; _lvDocs = snap.docs.slice(); _lvDocsDirty = true; _lvDocsLoading = false; }
     renderLeaveDocs();
-    _formReopened.add('leaveForm');
+    if (document.getElementById('leaveModal').classList.contains('open')) _formReopened.add('leaveForm');
 }
 function _snapInspection(rec) {
     return { rec: { ...rec }, vals: captureFormState('inspectionForm'), results: { ..._insResults },
@@ -18612,7 +18667,7 @@ function _reopenInspection(snap) {
     if (snap.photos) { _insGen++; _insPhotos = { ...snap.photos }; _insPhotosDirty = true; _insPhotosLoading = false; _insPhotosFailed = false; }
     renderInspectionComponents(snap.rec);
     inspectionComponents().forEach(c => renderInspectionPhoto(c.key));
-    _formReopened.add('inspectionForm');
+    if (document.getElementById('inspectionModal').classList.contains('open')) _formReopened.add('inspectionForm');
 }
 function _snapDamage() {
     return { vals: captureFormState('damageForm'), photo: _dmgPhotoDirty ? _dmgPhotoData : null, photoDirty: _dmgPhotoDirty,
@@ -18624,7 +18679,7 @@ function _reopenDamage(snap) {
     applyFormState(snap.vals);
     if (snap.photoDirty) { _dmgPhotoData = snap.photo || ''; _dmgPhotoDirty = true; _dmgPhotoLoading = false; setDamagePhotoPreview('before'); }
     if (snap.afterDirty) { _dmgAfterData = snap.after || ''; _dmgAfterDirty = true; _dmgAfterLoading = false; setDamagePhotoPreview('after'); }
-    _formReopened.add('damageForm');
+    if (document.getElementById('damageModal').classList.contains('open')) _formReopened.add('damageForm');
 }
 
 // ============================================================

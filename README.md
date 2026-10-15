@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.804 pemeriksaan di empat puluh enam suite, menggerakkan Chromium sungguhan terhadap
+1.852 pemeriksaan di empat puluh tujuh suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -334,6 +334,18 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
     "Offline" (kalimat lengkap tetap untuk pembaca layar).
   - *Tombol menu:* titik oranye + `aria-label` ("Menu — 22 decisions
     waiting") saat ada keputusan, laporan cek atau revisi menunggu.
+  - *Perbaikan review v157:* memilih halaman yang sedang tampil dari menu
+    tidak menambah entri riwayat; modal yang dibuka dari menu (History,
+    Master Lists) mengambil alih entri menu; menu menutup entrinya satu
+    microtask kemudian (`closeNav`), jadi urutan ketukan apa pun benar.
+    Gulir hanya pada satu penggulung (`.main` di laptop, jendela di HP) —
+    Back tidak lagi menggeser bar atas di laptop. Status sibuk masuk/daftar
+    akun (`setAuthBusy` / `releaseAuthBusy`) bertahan sampai layar berikutnya
+    tampil (aplikasi, pending, atau sign-in), dengan batas 45 detik.
+    Form yang ditolak saat dibuka ulang tidak lagi ditandai; anggota nonaktif
+    tetap terpilih saat daftar anggota dibangun ulang. Mode compact hanya di
+    layar lebar; tombol "To Damage" di kartu inspeksi tidak terjepit; daftar
+    pencarian di atas banner sesi (`body.gsearch-open`).
 - **Foto kerusakan Before / After v151 (dijaga `tests/damage_beforeafter_test.js`
   dan rules_test).**
   - Foto yang sudah ada = **Before** (`damagePhotos/{id}`, tanda `hasPhoto`).

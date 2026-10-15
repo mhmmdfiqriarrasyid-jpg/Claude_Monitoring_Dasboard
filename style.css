@@ -1343,6 +1343,9 @@ body {
 }
 
 /* --- Compact Mode --- */
+/* Wide screens only: its toggle is hidden on phones (v156), so a choice made
+   there earlier must not stay stuck on the card layout. */
+@media (min-width: 701px) {
 .data-table.compact td { padding: 5px 10px; font-size: 12px; }
 .data-table.compact th { padding: 7px 10px; font-size: 10px; }
 .data-table.compact .row-actions .btn { width: 26px; height: 26px; font-size: 11px; }
@@ -1350,6 +1353,7 @@ body {
 .data-table.compact .inline-edit { padding: 2px 4px; }
 .data-table.compact .attach-chip { padding: 1px 4px; font-size: 10px; }
 .data-table.compact .attach-upload-btn { width: 20px; height: 20px; font-size: 11px; }
+}
 
 /* --- Footer --- */
 .footer {
@@ -4433,6 +4437,9 @@ td[data-label="Approval"] { vertical-align: middle; }
     .table--cardable td.col-actions,
     #viewUsers .table--cardable td.col-actions { width: 100%; }
     .table--cardable td.col-actions .row-actions { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+    /* A check report's "To Damage" button shares the cell: its own line. */
+    .table--cardable td.col-actions { flex-wrap: wrap; gap: 8px; }
+    .table--cardable td.col-actions .ins-apply { flex: 0 0 auto; margin-bottom: 0; }
     .table--cardable td.col-actions .row-actions:not(.row-actions--labeled) {
         display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; width: 100%;
     }
@@ -4468,6 +4475,10 @@ td[data-label="Approval"] { vertical-align: middle; }
 
 /* 1.5 Unit search results: on phones a full-width list under the top bar
    instead of a box anchored to the narrow search field. */
+/* While the list is open the top bar (its stacking context) sits above the
+   session banner (z 420), or the banner covered the first results. */
+body.gsearch-open .topbar { z-index: 430; }
+.global-search__results { z-index: 430; }
 @media (max-width: 900px) {
     .global-search__results {
         position: fixed; top: calc(env(safe-area-inset-top, 0px) + 60px); left: 12px; right: 12px;
