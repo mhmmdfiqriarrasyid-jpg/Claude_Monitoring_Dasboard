@@ -125,7 +125,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v153';
+const APP_VERSION = 'v154';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -7651,9 +7651,19 @@ function saveDamage(event) {
     const snap = _snapDamage();
     const unsentLabel = `damage record — ${data.unitName || data.sn || 'unit'}, ${data.date}`;
     const onFail = err => rememberUnsent(unsentLabel, err, () => _reopenDamage(snap));
-    let savedId = id;
+    const idx = id ? globalDamages.findIndex(d => d.id === id) : -1;
+    const savedId = id || generateDamageId();
+    // A photo being added or replaced goes out BEFORE the record. Writes from
+    // one phone reach the server in order, so no other device sees the record
+    // change (and drop its copy of the photo) before the new photo is there,
+    // and the record's "waiting to send" mark stays on until the photo is
+    // through too. A removal goes AFTER, so the record never points at a
+    // photo that is already gone.
+    if (!id || idx !== -1) {
+        if (_dmgPhotoDirty && _dmgPhotoData) sendDamageBeforePhoto(savedId, _dmgPhotoData);
+        if (_dmgAfterDirty && id && _dmgAfterData) sendDamageAfterPhoto({ id, ...data }, _dmgAfterData);
+    }
     if (id) {
-        const idx = globalDamages.findIndex(d => d.id === id);
         if (idx !== -1) {
             globalDamages[idx] = { ...globalDamages[idx], ...data, updatedAt: Date.now() };
             saveDamages();
@@ -7668,7 +7678,7 @@ function saveDamage(event) {
             showToast('Damage record updated', 'success');
         }
     } else {
-        const newRec = { id: generateDamageId(), ...data, resolved: false, resolvedAt: '', createdAt: Date.now(), updatedAt: Date.now() };
+        const newRec = { id: savedId, ...data, resolved: false, resolvedAt: '', createdAt: Date.now(), updatedAt: Date.now() };
         // What this record put into Breakdown, if anything: 'status', a
         // component field, or ''. "Tandai selesai" restores exactly that — it
         // used to restore the unit's status even for a record that never set
@@ -7676,7 +7686,6 @@ function saveDamage(event) {
         const setBd = !!document.getElementById('dmgSetBreakdown')?.checked;
         const drives = setBd ? damageTargetField(data.damageType, data.component, unit) : null;
         newRec.drove = setBd && drives !== DAMAGE_DRIVES_NOTHING ? (drives || 'status') : '';
-        savedId = newRec.id;
         globalDamages.push(newRec);
         saveDamages();
         cloudPushDamage(newRec, onFail);
@@ -7698,33 +7707,33 @@ function saveDamage(event) {
         }
     }
 
-    if (_dmgPhotoDirty && savedId) {
-        const recId = savedId;
-        const photo = _dmgPhotoData || '';
-        _dmgPhotoCache.set(recId, photo);
-        // Offline, the service worker can still be serving a firebase-init.js
-        // from before this collection existed. Say so rather than failing
-        // silently on a save that otherwise looks like it worked.
-        if (!window.cloud.saveDamagePhoto) {
-            showToast('Reload the page — an old version is still active, photo not sent yet', 'warning');
-        } else {
-            const write = photo
-                ? window.cloud.saveDamagePhoto(recId, photo)
-                : window.cloud.deleteDamagePhoto(recId);
-            write.catch(err => {
-                console.error('[damage] photo save failed:', err);
-                if (err && err.code === 'permission-denied') showDamageRulesBanner();
-                showToast('Record saved, but the photo failed to send', 'error');
-            });
-        }
-    }
-    if (_dmgAfterDirty && id) {
-        const rec = globalDamages.find(d => d.id === id);
-        if (rec) sendDamageAfterPhoto(rec, _dmgAfterData || '');
+    if (!id || idx !== -1) {
+        if (_dmgPhotoDirty && !_dmgPhotoData) sendDamageBeforePhoto(savedId, '');
+        if (_dmgAfterDirty && id && !_dmgAfterData) sendDamageAfterPhoto({ id, ...data }, '');
     }
 
     closeDamageModal(true);
     renderDamageTable();
+}
+
+// Writes (or, with an empty photo, removes) a record's Before photo.
+function sendDamageBeforePhoto(recId, photo) {
+    _dmgPhotoCache.set(recId, photo);
+    // Offline, the service worker can still be serving a firebase-init.js
+    // from before this collection existed. Say so rather than failing
+    // silently on a save that otherwise looks like it worked.
+    if (!window.cloud.saveDamagePhoto) {
+        showToast('Reload the page — an old version is still active, photo not sent yet', 'warning');
+        return;
+    }
+    const write = photo
+        ? window.cloud.saveDamagePhoto(recId, photo)
+        : window.cloud.deleteDamagePhoto(recId);
+    write.catch(err => {
+        console.error('[damage] photo save failed:', err);
+        if (err && err.code === 'permission-denied') showDamageRulesBanner();
+        showToast('Record saved, but the photo failed to send', 'error');
+    });
 }
 
 // Which place on the unit does a damage record drive? This is the contract the

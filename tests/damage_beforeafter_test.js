@@ -278,9 +278,32 @@ const { launch, BASE_URL } = require('./_env');
         calls.length = 0;
         saveDamage({ preventDefault() {} });
         await tick(30);
-        t('simpan: foto After dikirim dan ditandai', [calls.map(c => c[0]), globalDamages.find(d => d.id === 'dB').hasAfterPhoto], [['rec', 'after'], true]);
+        // Foto dulu, baru catatannya: HP lain tidak melihat catatan berubah
+        // (lalu membuang salinan fotonya) sebelum foto barunya ada di server,
+        // dan tanda "waiting to send" catatan baru hilang setelah foto ikut
+        // terkirim. Menghapus tetap SESUDAH catatan (lihat di atas).
+        t('simpan: foto After dikirim LEBIH DULU, lalu catatannya', [calls.map(c => c[0]), globalDamages.find(d => d.id === 'dB').hasAfterPhoto], [['after', 'rec'], true]);
         // Before tidak tersentuh oleh slot After
         t('slot After tidak menyentuh Before', calls.filter(c => c[0] === 'before' || c[0] === 'delBefore').length, 0);
+        // Foto Before mengikuti urutan yang sama — di Edit maupun di Tambah.
+        editDamage('dB'); await tick(40);
+        await pick(handleDamagePhotoChange, 'before');
+        calls.length = 0;
+        saveDamage({ preventDefault() {} });
+        await tick(30);
+        t('Edit: foto Before diganti — foto dulu, lalu catatannya', calls.map(c => c[0]), ['before', 'rec']);
+        showAddDamageForm();
+        document.getElementById('dmgUnit').value = 'BD021G';
+        document.getElementById('dmgType').value = 'Mekanis';
+        document.getElementById('dmgSetBreakdown').checked = false;
+        await pick(handleDamagePhotoChange, 'before');
+        calls.length = 0;
+        saveDamage({ preventDefault() {} });
+        await tick(30);
+        const added = globalDamages[globalDamages.length - 1];
+        t('Tambah dengan foto: foto dulu, lalu catatan — dengan id yang sama',
+          [calls.map(c => c[0]), calls[0] && calls[0][1] === added.id, calls[1] && calls[1][1] === added.id, added.hasPhoto], [['before', 'rec'], true, true, true]);
+        globalDamages = globalDamages.filter(d => d.id !== added.id); saveDamages();
 
         // =============== 5. PROFIL UNIT ===============
         showUnitProfile('u1');
