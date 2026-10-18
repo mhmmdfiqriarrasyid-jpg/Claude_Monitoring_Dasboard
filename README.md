@@ -319,8 +319,9 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   - *Perhitungan* (`fuelHistory`, `vehicleStats`): jarak = KM ini − KM
     sebelumnya (yang pertama dari KM serah terima; berikutnya dari KM
     tertinggi sejauh ini), km/L ≈ jarak ÷ liter isi ini (anggapan isi
-    penuh), rata-rata = total jarak terhitung ÷ liternya; ringkasan bulan
-    berjalan. Ditandai untuk dicek: KM lebih rendah dari sebelumnya, di
+    penuh; liter dari catatan tanpa jarak terukur ikut dihitung di catatan
+    terukur berikutnya), rata-rata = (KM sekarang − KM serah terima) ÷ total
+    liter, sama dengan angka di kartu; ringkasan bulan berjalan. Ditandai untuk dicek: KM lebih rendah dari sebelumnya, di
     bawah KM serah terima, KM sama, konsumsi di luar ×½…×2 median kendaraan.
   - Form: KM terakhir ditampilkan; KM lebih rendah, lompatan >1.500 km, dan
     tanggal sebelum serah terima ditanya dulu; tanggal masa depan dan liter
@@ -328,6 +329,18 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
     cadangan (`vehicles`, `fuelLogs`, foto `fuelPhotos`).
   - Akses: area **Warehouse** yang sudah ada. **Perlu publish
     firestore.rules** (blok `vehicles`, `fuelLogs`, `fuelPhotos`).
+  - *Perbaikan v159 (hasil review):* liter diketik dengan koma ("3,5") dan KM
+    dengan titik/koma ribuan ("9.012") dibaca benar (`parseLiters`,
+    `parseKm`; kolomnya `type="text"` + `inputmode`); peringatan KM membaca
+    urutan tanggal (`_fuelPreview` mensimulasikan riwayat dengan catatan
+    baru), jadi mengedit catatan lama atau mengisi catatan terlupa tidak
+    memicu pertanyaan palsu, dan KM yang melebihi bacaan sesudahnya
+    ditanya; liter tidak wajar (>10 L motor, >80 L lainnya, atau >2,5× isi
+    terbesar) ditanya; simpan/hapus yang ditolak server dikembalikan di layar
+    dan muncul di "Not saved" untuk dibuka lagi; tombol Handle di Kotak
+    Keputusan mengosongkan filter; pesan jelas bila semua kendaraan Retired;
+    catatan kendaraan tampil di kartu; toolbar tidak melebar di HP; riwayat
+    kendaraan tidak tertutup bilah atas. Rules tidak berubah.
 - **Tampilan fase 1 v156 — HP di lapangan (dijaga `tests/ux_phase1_test.js`).**
   Hasil review ui-ux-pro-max (rencana lengkap: artifact "Rencana Tampilan OT
   Dashboard").

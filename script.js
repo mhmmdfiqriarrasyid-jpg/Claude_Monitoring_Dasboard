@@ -127,7 +127,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v158';
+const APP_VERSION = 'v159';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -14954,6 +14954,23 @@ function fmtNum(n, digits) {
     return v.toLocaleString('en-US', { minimumFractionDigits: digits || 0, maximumFractionDigits: digits || 0 });
 }
 function fmtKm(n) { return `${fmtNum(n)} km`; }
+
+// Typed on an Indonesian phone, "3,5" means three and a half and "9.012"
+// means nine thousand and twelve. A number field read "3,5" as 35 and
+// "9.012" as 9.012, so both fields are text and parsed here.
+// Liters: one decimal mark, ',' or '.', at most two decimals. NaN otherwise.
+function parseLiters(raw) {
+    const t = String(raw == null ? '' : raw).trim().replace(/\s+/g, '');
+    if (!/^\d+([.,]\d{1,2})?$/.test(t)) return NaN;
+    return Number(t.replace(',', '.'));
+}
+// Odometer: whole km, optionally grouped by '.', ',' or spaces in threes.
+function parseKm(raw) {
+    const t = String(raw == null ? '' : raw).trim().replace(/\s+/g, '');
+    if (/^\d+$/.test(t)) return Number(t);
+    if (/^\d{1,3}([.,]\d{3})+$/.test(t)) return Number(t.replace(/[.,]/g, ''));
+    return NaN;
+}
 function fmtLiters(n) { return `${fmtNum(n, 2).replace(/\.?0+$/, '')} L`; }
 function vehicleLabel(v) {
     if (!v) return '—';
@@ -14982,15 +14999,17 @@ function applyCloudFuelSnapshot(list) {
 // ---- The arithmetic ----
 // Records of one vehicle in the order they happened, each with what follows
 // from the reading before it.
-function fuelHistory(vehicleId) {
+// logs: an alternative list (the form checks what a save would change).
+function fuelHistory(vehicleId, logs) {
     const v = vehicles.find(x => x.id === vehicleId);
     const startKm = v ? Number(v.startKm) || 0 : 0;
-    const recs = fuelLogs.filter(r => r.vehicleId === vehicleId)
+    const recs = (logs || fuelLogs).filter(r => r.vehicleId === vehicleId)
         .slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) ||
                                  (Number(a.km) || 0) - (Number(b.km) || 0) ||
                                  (a.createdAt || 0) - (b.createdAt || 0));
     let prev = startKm;
-    const out = recs.map(r => {
+    let carry = 0;   // liters of records that measured no distance
+    const out = recs.map((r, i) => {
         const km = Number(r.km) || 0;
         const liters = Number(r.liters) || 0;
         const flags = [];
@@ -14998,11 +15017,22 @@ function fuelHistory(vehicleId) {
         if (km < startKm) flags.push('belowStart');
         if (distance < 0) { flags.push('back'); distance = null; }
         else if (distance === 0) flags.push('noDistance');
-        const kmPerL = distance != null && distance > 0 && liters > 0 ? distance / liters : null;
+        // The next measured distance also covers what an unmeasured record
+        // filled, so its liters count there; otherwise the average and the
+        // next km/L would leave them out.
+        let kmPerL = null;
+        if (distance != null && distance > 0) {
+            const used = liters + carry;
+            carry = 0;
+            kmPerL = used > 0 ? distance / used : null;
+        } else {
+            carry += liters;
+        }
         // The next record is measured from the highest reading so far: one
         // mistyped low value must not double-count the distance after it.
+        const before = prev;
         prev = Math.max(prev, km);
-        return { rec: r, km, liters, distance, kmPerL, flags };
+        return { rec: r, km, liters, distance, kmPerL, flags, prevKm: before, prevDate: i ? (recs[i - 1].date || '') : (v ? v.handoverDate || '' : '') };
     });
     const rates = out.map(x => x.kmPerL).filter(x => x != null).sort((a, b) => a - b);
     if (rates.length >= 3) {
@@ -15019,15 +15049,14 @@ function vehicleStats(v, month) {
     const hist = fuelHistory(v.id);
     const startKm = Number(v.startKm) || 0;
     const latestKm = hist.reduce((m, x) => Math.max(m, x.km), startKm);
-    const counted = hist.filter(x => x.distance != null && x.distance > 0 && x.liters > 0);
-    const sumDist = counted.reduce((s, x) => s + x.distance, 0);
-    const sumLit = counted.reduce((s, x) => s + x.liters, 0);
+    const totalLiters = hist.reduce((s, x) => s + x.liters, 0);
     const inMonth = month ? hist.filter(x => String(x.rec.date || '').slice(0, 7) === month) : [];
     return {
         hist, startKm, latestKm,
         totalKm: latestKm - startKm,
-        totalLiters: hist.reduce((s, x) => s + x.liters, 0),
-        avgKmPerL: sumLit > 0 ? sumDist / sumLit : null,
+        totalLiters,
+        // Since handover ÷ fuel total: the three figures on a card agree.
+        avgKmPerL: totalLiters > 0 && latestKm > startKm ? (latestKm - startKm) / totalLiters : null,
         last: hist.length ? hist[hist.length - 1] : null,
         flagged: hist.filter(x => x.flags.length).length,
         monthLiters: inMonth.reduce((s, x) => s + x.liters, 0),
@@ -15097,6 +15126,7 @@ function renderVehicleView() {
                 </dl>
                 <p class="vehicle-card__meta">Handover ${escapeHtml(v.handoverDate || '—')} at ${fmtKm(s.startKm)} · ${lastLine}${
                     s.flagged ? ` · <span class="vehicle-card__flag"><i class="fas fa-triangle-exclamation"></i> ${s.flagged} to check</span>` : ''}</p>
+                ${v.note ? `<p class="vehicle-card__meta vehicle-card__note">${escapeHtml(v.note)}</p>` : ''}
                 <div class="vehicle-card__actions">
                     ${canEdit && !retired ? `<button class="btn btn-primary btn-sm" onclick="showFuelForm(${jsArg(v.id)})"><i class="fas fa-gas-pump"></i> Log Fuel</button>` : ''}
                     <button class="btn btn-secondary btn-sm" onclick="showVehicleHistory(${jsArg(v.id)})"><i class="fas fa-list"></i> Records</button>
@@ -15175,7 +15205,7 @@ function showVehicleHistory(id) {
     const m = document.getElementById('fuelMonthFilter');
     if (m) m.value = '';
     renderVehicleView();
-    document.getElementById('fuelTable')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('fuelTable')?.closest('.table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ---- Vehicle form ----
@@ -15224,9 +15254,8 @@ function saveVehicle(event) {
     if (!plate) { showToast('Fill in the plate number or a name', 'warning'); return; }
     const clash = vehicles.find(v => v.id !== id && (v.plate || '').toLowerCase() === plate.toLowerCase());
     if (clash) { showToast(`"${plate}" is already registered`, 'warning'); return; }
-    const startRaw = document.getElementById('vehStartKm').value;
-    const startKm = Number(startRaw);
-    if (startRaw === '' || !isFinite(startKm) || startKm < 0) { showToast('Odometer at handover must be a number of km', 'warning'); return; }
+    const startKm = parseKm(document.getElementById('vehStartKm').value);
+    if (!isFinite(startKm)) { showToast('Odometer at handover must be a whole number of km, e.g. 8880', 'warning'); return; }
     const handoverDate = document.getElementById('vehHandover').value;
     if (!handoverDate) { showToast('Fill in the handover date', 'warning'); return; }
     const existing = id ? vehicles.find(v => v.id === id) : null;
@@ -15262,6 +15291,9 @@ function saveVehicle(event) {
             console.error('[vehicles] save failed:', err);
             if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
             showToast('Failed to save the vehicle', 'error');
+            const i = vehicles.findIndex(x => x.id === rec.id);
+            if (i !== -1 && vehicles[i] === rec) { if (existing) vehicles[i] = existing; else vehicles.splice(i, 1); }
+            renderVehicleView();
         }
     );
     closeVehicleModal(true);
@@ -15278,7 +15310,11 @@ function deleteVehicle(id) {
     vehicles = vehicles.filter(x => x.id !== id);
     cloudWrite({ action: 'delete', unitName: `[Vehicle] ${v.plate}`, field: 'Vehicle', before: vehicleLabel(v), after: '' },
         cloudCall('deleteVehicle', id), 'Vehicle deleted',
-        err => { console.error('[vehicles] delete failed:', err); showToast('Failed to delete the vehicle', 'error'); });
+        err => {
+            console.error('[vehicles] delete failed:', err);
+            showToast('Failed to delete the vehicle', 'error');
+            if (!vehicles.some(x => x.id === id)) { vehicles.push(v); renderVehicleView(); }
+        });
     renderVehicleView();
 }
 
@@ -15292,34 +15328,38 @@ function _fuelVehicleOptions(selectedId) {
     if (selectedId) sel.value = selectedId;
 }
 
-// The reading the new record follows: the highest one before it.
-function _fuelPrevReading(vehicleId, exceptId) {
-    const v = vehicles.find(x => x.id === vehicleId);
-    if (!v) return null;
-    let best = { km: Number(v.startKm) || 0, date: v.handoverDate || '', what: 'handover' };
-    fuelLogs.forEach(r => {
-        if (r.vehicleId !== vehicleId || r.id === exceptId) return;
-        const km = Number(r.km) || 0;
-        if (km > best.km) best = { km, date: r.date || '', what: 'refuel' };
-    });
-    return best;
+// What saving this record would do, worked out on the history itself, so the
+// form says exactly what the table will then show: the reading just before
+// it in time, whether it would be marked, and which later record would be.
+function _fuelPreview(cand) {
+    const others = fuelLogs.filter(r => r.id !== cand.id);
+    const beforeFlags = new Map(fuelHistory(cand.vehicleId, others).map(x => [x.rec.id, x.flags.join('|')]));
+    const hist = fuelHistory(cand.vehicleId, others.concat([cand]));
+    const me = hist.find(x => x.rec.id === cand.id);
+    const newlyFlagged = hist.filter(x => x.rec.id !== cand.id && x.flags.includes('back') &&
+                                          !(beforeFlags.get(x.rec.id) || '').includes('back'));
+    return { me, newlyFlagged };
 }
 
 function updateFuelKmHint() {
     const hint = document.getElementById('fuelKmHint');
     if (!hint) return;
     const vid = document.getElementById('fuelVehicle').value;
-    const prev = vid ? _fuelPrevReading(vid, document.getElementById('editFuelId').value) : null;
     hint.className = 'form-hint';
-    if (!prev) { hint.textContent = ''; return; }
+    if (!vid) { hint.textContent = ''; return; }
     const raw = document.getElementById('fuelKm').value;
-    const km = Number(raw);
-    let text = `Last reading: ${fmtKm(prev.km)}${prev.date ? ' on ' + prev.date : ''} (${prev.what})`;
-    if (raw !== '' && isFinite(km)) {
-        const d = km - prev.km;
-        if (d < 0) { text += ` — this is ${fmtKm(-d)} LOWER`; hint.classList.add('form-hint--bad'); }
-        else { text += ` — +${fmtKm(d)} since then`; hint.classList.add('form-hint--ok'); }
-    }
+    const km = parseKm(raw);
+    const date = document.getElementById('fuelDate').value || toISODate();
+    const id = document.getElementById('editFuelId').value || '__new__';
+    // With no reading typed yet, preview at 0 km just to find the reading before.
+    const p = _fuelPreview({ id, vehicleId: vid, date, km: isFinite(km) ? km : 0, liters: 0, createdAt: Date.now() });
+    const prevWhat = p.me.prevDate ? ` on ${p.me.prevDate}` : '';
+    let text = `Previous reading: ${fmtKm(p.me.prevKm)}${prevWhat}`;
+    if (raw.trim() === '') { hint.textContent = text; return; }
+    if (!isFinite(km)) { text += ' — type the odometer as a whole number of km'; hint.classList.add('form-hint--bad'); }
+    else if (p.me.flags.includes('back')) { text += ` — this is ${fmtKm(p.me.prevKm - km)} LOWER`; hint.classList.add('form-hint--bad'); }
+    else if (p.newlyFlagged.length) { text += ` — but ${fmtKm(km)} is HIGHER than the later reading ${fmtKm(p.newlyFlagged[0].km)} on ${p.newlyFlagged[0].rec.date}`; hint.classList.add('form-hint--bad'); }
+    else { text += ` — +${fmtKm(km - p.me.prevKm)} since then`; hint.classList.add('form-hint--ok'); }
     hint.textContent = text;
 }
 
@@ -15332,7 +15372,10 @@ function _openFuelModal() {
 function showFuelForm(vehicleId) {
     if (!requireEdit('warehouse')) return;
     const usable = vehicles.filter(v => v.status !== 'retired');
-    if (!usable.length) { showToast('Add a vehicle first', 'warning'); return; }
+    if (!usable.length) {
+        showToast(vehicles.length ? 'All vehicles are retired — edit one and set it to In use to log fuel' : 'Add a vehicle first', 'warning');
+        return;
+    }
     document.getElementById('fuelModalTitle').innerHTML = '<i class="fas fa-gas-pump"></i> Log Fuel';
     document.getElementById('fuelForm').reset();
     document.getElementById('editFuelId').value = '';
@@ -15480,23 +15523,31 @@ function saveFuelLog(event) {
     const date = document.getElementById('fuelDate').value;
     if (!date) { showToast('Fill in the date', 'warning'); return; }
     if (date > toISODate()) { showToast('The date is in the future', 'warning'); return; }
-    const liters = Number(document.getElementById('fuelLiters').value);
+    const litRaw = document.getElementById('fuelLiters').value;
+    const liters = parseLiters(litRaw);
+    if (!isFinite(liters)) { showToast('Liters must be a number like 3.5 or 3,5', 'warning'); return; }
     if (!(liters > 0)) { showToast('Liters must be more than 0', 'warning'); return; }
-    const kmRaw = document.getElementById('fuelKm').value;
-    const km = Number(kmRaw);
-    if (kmRaw === '' || !isFinite(km) || km < 0) { showToast('Fill in the odometer in km', 'warning'); return; }
+    const km = parseKm(document.getElementById('fuelKm').value);
+    if (!isFinite(km)) { showToast('Fill in the odometer as a whole number of km, e.g. 9012', 'warning'); return; }
     if (_fuelPhotoDirty && _fuelPhotoData) {
         const block = fuelPhotoBlocker();
         if (block) { showToast(block, 'warning'); return; }
     }
-    // A low reading is asked about, not refused: it may be this record that
-    // is right and an earlier one that was mistyped.
-    const prev = _fuelPrevReading(vehicleId, id);
-    if (prev && km < prev.km && !confirm(`The odometer ${fmtKm(km)} is LOWER than the last reading ${fmtKm(prev.km)} (${prev.date || prev.what}).\n\nSave anyway? It will be marked to check.`)) return;
-    if (prev && km - prev.km > FUEL_BIG_JUMP_KM && !confirm(`${fmtKm(km - prev.km)} since the last reading (${fmtKm(prev.km)}). Is the odometer ${fmtKm(km)} right?`)) return;
-    if (date < (v.handoverDate || '') && !confirm(`The date is before the handover (${v.handoverDate}). Save anyway?`)) return;
-
     const existing = id ? fuelLogs.find(r => r.id === id) : null;
+    // Asked about, not refused: it may be this record that is right and an
+    // earlier one that was mistyped. Worked out in date order, so editing an
+    // older record (a note, a late photo) asks nothing.
+    const p = _fuelPreview({ id: id || '__new__', vehicleId, date, km: Math.round(km), liters, createdAt: existing ? existing.createdAt : Date.now() });
+    if (p.me.flags.includes('back') && !confirm(`The odometer ${fmtKm(km)} is LOWER than the reading before it, ${fmtKm(p.me.prevKm)}${p.me.prevDate ? ' on ' + p.me.prevDate : ''}.\n\nSave anyway? It will be marked to check.`)) return;
+    if (p.newlyFlagged.length && !confirm(`The odometer ${fmtKm(km)} is HIGHER than the later reading ${fmtKm(p.newlyFlagged[0].km)} on ${p.newlyFlagged[0].rec.date}, which would then be marked to check.\n\nSave anyway?`)) return;
+    if (p.me.distance != null && p.me.distance > FUEL_BIG_JUMP_KM && !confirm(`${fmtKm(p.me.distance)} since the reading before (${fmtKm(p.me.prevKm)}). Is the odometer ${fmtKm(km)} right?`)) return;
+    if (date < (v.handoverDate || '') && !confirm(`The date is before the handover (${v.handoverDate}). Save anyway?`)) return;
+    // A typo in liters (an extra digit) is the other common mistake.
+    const maxBefore = fuelLogs.filter(r => r.vehicleId === vehicleId && r.id !== id).reduce((m, r) => Math.max(m, Number(r.liters) || 0), 0);
+    const tankish = v.type === 'Motorbike' ? 10 : 80;
+    if ((liters > tankish || (maxBefore > 0 && liters > maxBefore * 2.5)) &&
+        !confirm(`${fmtLiters(liters)} is a lot for one refuel of ${v.plate}${maxBefore ? ` (largest so far ${fmtLiters(maxBefore)})` : ''}. Is it right?`)) return;
+
     const rec = {
         id: id || generateFuelId(),
         vehicleId,
@@ -15513,6 +15564,8 @@ function saveFuelLog(event) {
     // The photo goes before the record, so no device sees the record point at
     // a photo the server does not have yet. A removal goes after.
     if (_fuelPhotoDirty && _fuelPhotoData) _sendFuelPhoto(rec.id, _fuelPhotoData);
+    // Kept in case the server refuses: the "Not saved" notice reopens it.
+    const snap = { vals: captureFormState('fuelForm'), photo: _fuelPhotoDirty ? _fuelPhotoData : null };
     const idx = fuelLogs.findIndex(r => r.id === rec.id);
     if (idx === -1) fuelLogs.push(rec); else fuelLogs[idx] = rec;
     cloudWrite(
@@ -15524,12 +15577,27 @@ function saveFuelLog(event) {
         err => {
             console.error('[fuel] save failed:', err);
             if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
-            showToast('Failed to save the fuel record', 'error');
+            // Shown at once, so taken back at once — unless a snapshot has
+            // already replaced it with what the server holds.
+            const i = fuelLogs.findIndex(r => r.id === rec.id);
+            if (i !== -1 && fuelLogs[i] === rec) { if (existing) fuelLogs[i] = existing; else fuelLogs.splice(i, 1); }
+            renderVehicleView();
+            rememberUnsent(`fuel record — ${v.plate}, ${rec.date}`, err, () => _reopenFuel(snap));
         }
     );
     if (_fuelPhotoDirty && !_fuelPhotoData && existing && existing.hasPhoto) _sendFuelPhoto(rec.id, '');
     closeFuelModal(true);
     renderVehicleView();
+}
+
+function _reopenFuel(snap) {
+    const id = snap.vals.editFuelId;
+    if (id && fuelLogs.some(r => r.id === id)) editFuelLog(id); else showFuelForm(snap.vals.fuelVehicle);
+    if (!document.getElementById('fuelModal').classList.contains('open')) return;
+    applyFormState(snap.vals);
+    if (snap.photo != null) { _fuelPhotoData = snap.photo || ''; _fuelPhotoDirty = true; _fuelPhotoLoading = false; setFuelPhotoPreview(); }
+    updateFuelKmHint();
+    _formReopened.add('fuelForm');
 }
 
 function deleteFuelLog(id) {
@@ -15540,9 +15608,16 @@ function deleteFuelLog(id) {
     const plate = v ? v.plate : (r.vehiclePlate || '');
     if (!confirm(`Delete the fuel record of ${plate} on ${r.date} (${fmtLiters(r.liters)} at ${fmtKm(r.km)})?`)) return;
     fuelLogs = fuelLogs.filter(x => x.id !== id);
+    const deleting = cloudCall('deleteFuelLog', id);
     cloudWrite({ action: 'delete', unitName: `[Vehicle] ${plate}`, field: 'Fuel', before: `${r.date} · ${fmtLiters(r.liters)} at ${fmtKm(r.km)}`, after: '' },
-        cloudCall('deleteFuelLog', id), 'Fuel record deleted',
-        err => { console.error('[fuel] delete failed:', err); showToast('Failed to delete the fuel record', 'error'); });
+        deleting, 'Fuel record deleted',
+        err => {
+            console.error('[fuel] delete failed:', err);
+            showToast('Failed to delete the fuel record', 'error');
+            if (!fuelLogs.some(x => x.id === id)) { fuelLogs.push(r); renderVehicleView(); }
+        });
+    // Queued right behind the record's delete (same area, same rules), so it
+    // also goes out when the phone is offline and closed before the ack.
     if (r.hasPhoto) { _fuelPhotoCache.delete(id); _dropPhotoDoc('deleteFuelPhoto', id); }
     renderVehicleView();
 }
@@ -16136,6 +16211,8 @@ function goDecision(target) {
             switchWarehouseTab('devices');
             break;
         case 'warehouseVehicles':
+            // A filter left from earlier could hide the record to check.
+            ['fuelVehicleFilter', 'fuelMonthFilter'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
             navigateTo('warehouse');
             switchWarehouseTab('vehicles');
             break;

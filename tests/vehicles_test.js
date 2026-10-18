@@ -40,6 +40,8 @@ const { launch, BASE_URL } = require('./_env');
         const isOpen = id => document.getElementById(id).classList.contains('open');
         const today = toISODate();
         const daysAgo = n => toISODate(new Date(Date.now() - n * 86400000));
+        // serah terima sebelum semua catatan uji (tanggal relatif ke hari ini)
+        const HANDOVER = daysAgo(30);
 
         // =============== tab dan data motor ===============
         navigateTo('warehouse'); switchWarehouseTab('vehicles'); await tick(60);
@@ -53,12 +55,12 @@ const { launch, BASE_URL } = require('./_env');
         t('form motor: tanggal serah terima terisi hari ini', document.getElementById('vehHandover').value, today);
         document.getElementById('vehPlate').value = 'PA 1234 XY';
         document.getElementById('vehBrand').value = 'Honda';
-        document.getElementById('vehHandover').value = '2026-10-16';
+        document.getElementById('vehHandover').value = HANDOVER;
         document.getElementById('vehStartKm').value = '8880';
         saveVehicle({ preventDefault() {} }); await tick(30);
         const v = vehicles[0];
         t('motor tersimpan dengan KM awal 8.880', [vehicles.length, v.plate, v.brand, v.startKm, v.handoverDate, v.status, calls.pop()[0]],
-          [1, 'PA 1234 XY', 'Honda', 8880, '2026-10-16', 'active', 'veh']);
+          [1, 'PA 1234 XY', 'Honda', 8880, HANDOVER, 'active', 'veh']);
         showAddVehicleForm(); document.getElementById('vehPlate').value = 'pa 1234 xy'; document.getElementById('vehStartKm').value = '1';
         toasts.length = 0; saveVehicle({ preventDefault() {} });
         t('plat ganda ditolak', [vehicles.length, /already registered/.test(toasts.pop() || '')], [1, true]);
@@ -79,12 +81,12 @@ const { launch, BASE_URL } = require('./_env');
         log(daysAgo(7), '3.5', '9160');
         log(daysAgo(4), '3.1', '9295');
         showFuelForm(v.id); document.getElementById('fuelKm').value = '9400'; updateFuelKmHint();
-        t('petunjuk KM terakhir di form', document.getElementById('fuelKmHint').textContent, 'Last reading: 9,295 km on ' + daysAgo(4) + ' (refuel) — +105 km since then');
+        t('petunjuk KM sebelumnya di form', document.getElementById('fuelKmHint').textContent, 'Previous reading: 9,295 km on ' + daysAgo(4) + ' — +105 km since then');
         closeFuelModal(true);
         // KM lebih rendah: ditanya; batal = tidak disimpan
         confirmAnswer = false; asked = [];
         log(daysAgo(1), '3.4', '9080');
-        t('KM lebih rendah dari sebelumnya: ditanya, batal = tidak disimpan', [fuelLogs.length, /LOWER than the last reading 9,295 km/.test(asked[0] || '')], [3, true]);
+        t('KM lebih rendah dari sebelumnya: ditanya, batal = tidak disimpan', [fuelLogs.length, /LOWER than the reading before it, 9,295 km/.test(asked[0] || '')], [3, true]);
         confirmAnswer = true; closeFuelModal(true);
         log(daysAgo(1), '3.4', '9080');
         const h = fuelHistory(v.id);
@@ -95,11 +97,15 @@ const { launch, BASE_URL } = require('./_env');
         t('isi berikutnya diukur dari KM tertinggi sebelumnya (bukan yang salah ketik)', h2[4].distance, 125);
         const s = vehicleStats(v, today.slice(0, 7));
         t('ringkasan motor: KM sekarang, sejak serah terima, total liter', [s.latestKm, s.totalKm, Math.round(s.totalLiters * 100) / 100], [9420, 540, 16.5]);
-        // rata-rata = jarak terhitung / liter dari isi yang terhitung
-        t('rata-rata km/L dari isi yang terhitung', Math.round(s.avgKmPerL * 10) / 10, Math.round(((132 + 148 + 135 + 125) / (3.2 + 3.5 + 3.1 + 3.3)) * 10) / 10);
+        // rata-rata = sejak serah terima ÷ total liter: tiga angka di kartu cocok
+        t('rata-rata km/L = sejak serah terima ÷ total liter', Math.round(s.avgKmPerL * 10) / 10, Math.round((540 / 16.5) * 10) / 10);
+        t('isi setelah KM mundur ikut menghitung liter isi yang tidak terukur', Math.round(h2[4].kmPerL * 10) / 10, Math.round((125 / (3.3 + 3.4)) * 10) / 10);
         // liter tidak wajar
         toasts.length = 0; log(today, '0', '9500');
         t('liter 0 ditolak', [fuelLogs.length, toasts.pop()], [5, 'Liters must be more than 0']);
+        closeFuelModal(true);
+        toasts.length = 0; log(today, 'tiga', '9500');
+        t('liter bukan angka ditolak', [fuelLogs.length, toasts.pop()], [5, 'Liters must be a number like 3.5 or 3,5']);
         closeFuelModal(true);
         toasts.length = 0; log(toISODate(new Date(Date.now() + 2 * 86400000)), '3', '9500');
         t('tanggal di masa depan ditolak', [fuelLogs.length, toasts.pop()], [5, 'The date is in the future']);
@@ -110,15 +116,55 @@ const { launch, BASE_URL } = require('./_env');
         // lompatan besar: ditanya
         asked = []; confirmAnswer = false;
         log(today, '3', '12000');
-        t('lompatan > 1.500 km: ditanya dulu', [fuelLogs.length, /since the last reading/.test(asked[0] || '')], [6, true]);
+        t('lompatan > 1.500 km: ditanya dulu', [fuelLogs.length, /since the reading before/.test(asked[0] || '')], [6, true]);
         confirmAnswer = true; closeFuelModal(true);
+
+        // =============== HP Indonesia: koma desimal, titik ribuan ===============
+        t('parse liter "3,5" = 3,5 L (bukan 35)', [parseLiters('3,5'), parseLiters('3.5'), parseLiters('12'), isNaN(parseLiters('1,234')), isNaN(parseLiters('3,5,1'))], [3.5, 3.5, 12, true, true]);
+        t('parse KM "9.012" = 9012', [parseKm('9.012'), parseKm('9,012'), parseKm('9012'), parseKm('12.345.678'), isNaN(parseKm('9.01')), isNaN(parseKm('9012,5'))], [9012, 9012, 9012, 12345678, true, true]);
+        asked = []; confirmAnswer = true;
+        log(today, '3,5', '9.600');
+        const lastRec = fuelLogs[fuelLogs.length - 1];
+        t('isi "3,5" liter di KM "9.600" tersimpan sebagai 3,5 L dan 9600 km', [lastRec.liters, lastRec.km], [3.5, 9600]);
+
+        // =============== mengedit catatan lama: tidak ada peringatan palsu ===============
+        const old = fuelHistory(v.id)[0].rec;
+        asked = [];
+        editFuelLog(old.id); await tick(20);
+        document.getElementById('fuelNote').value = 'struk menyusul';
+        t('edit catatan lama: petunjuk tidak merah', document.getElementById('fuelKmHint').classList.contains('form-hint--bad'), false);
+        saveFuelLog({ preventDefault() {} });
+        t('edit catatan lama: tersimpan tanpa pertanyaan', [asked.length, fuelLogs.find(r => r.id === old.id).note], [0, 'struk menyusul']);
+        // isi terlupa dengan tanggal lampau: dibandingkan dengan bacaan sebelumnya menurut tanggal
+        asked = [];
+        log(daysAgo(9), '2', '9100');
+        t('isi terlupa diisi belakangan (tanggal benar): tanpa pertanyaan', asked.length, 0);
+        // tanggal lampau tetapi KM melebihi bacaan yang lebih baru: ditanya
+        asked = []; confirmAnswer = false;
+        log(daysAgo(8), '2', '9300');
+        t('KM lebih tinggi dari bacaan sesudahnya: ditanya', /HIGHER than the later reading/.test(asked[0] || ''), true);
+        confirmAnswer = true; closeFuelModal(true);
+
+        // =============== simpan ditolak: tidak tertinggal di layar, bisa dibuka lagi ===============
+        const realSave = window.cloud.saveFuelLog;
+        window.cloud.saveFuelLog = () => Promise.reject(Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' }));
+        const n0 = fuelLogs.length;
+        log(today, '3', '9700');
+        await tick(60);
+        t('ditolak server: baris diambil kembali, ada "Not saved"', [fuelLogs.length, !!document.getElementById('unsentNotice')], [n0, true]);
+        window.cloud.saveFuelLog = realSave;
+        reopenUnsent([..._unsent.keys()].pop()); await tick(30);
+        t('dibuka lagi dengan isinya', [isOpen('fuelModal'), document.getElementById('fuelKm').value, document.getElementById('fuelLiters').value], [true, '9700', '3']);
+        saveFuelLog({ preventDefault() {} }); await tick(30);
+        t('lalu tersimpan', fuelLogs.length, n0 + 1);
 
         // =============== tampilan ===============
         renderVehicleView(); await tick(30);
-        t('kartu motor: KM sekarang dan sejak serah terima', [...document.querySelectorAll('.vehicle-card__stats dd')].slice(0, 2).map(d => d.textContent), ['9,470 km', '590 km']);
-        t('kartu menyebut serah terima 8,880 km dan yang perlu dicek', [/Handover 2026-10-16 at 8,880 km/.test(document.querySelector('.vehicle-card__meta').textContent), /2 to check/.test(document.querySelector('.vehicle-card__meta').textContent)], [true, true]);
-        t('tabel BBM: 6 baris, terbaru di atas, baris janggal diberi warna', [document.querySelectorAll('#fuelBody tr').length, document.querySelectorAll('#fuelBody tr.row-flagged').length], [6, 2]);
-        t('KPI: yang perlu dicek', document.getElementById('vehKpi_flags').textContent, '2');
+        const st2 = vehicleStats(v, today.slice(0, 7));
+        t('kartu motor: KM sekarang dan sejak serah terima', [...document.querySelectorAll('.vehicle-card__stats dd')].slice(0, 2).map(d => d.textContent), [fmtKm(st2.latestKm), fmtKm(st2.latestKm - 8880)]);
+        t('kartu menyebut serah terima 8,880 km dan yang perlu dicek', [new RegExp('Handover ' + HANDOVER + ' at 8,880 km').test(document.querySelector('.vehicle-card__meta').textContent), new RegExp(st2.flagged + ' to check').test(document.querySelector('.vehicle-card__meta').textContent)], [true, true]);
+        t('tabel BBM: semua baris, baris janggal diberi warna', [document.querySelectorAll('#fuelBody tr').length, document.querySelectorAll('#fuelBody tr.row-flagged').length], [fuelLogs.length, st2.flagged]);
+        t('KPI: yang perlu dicek', document.getElementById('vehKpi_flags').textContent, String(st2.flagged));
         document.getElementById('fuelMonthFilter').value = '2020-01'; renderVehicleView();
         t('filter bulan tanpa data: pesan kosong', /No fuel records match/.test(document.getElementById('fuelBody').textContent), true);
         clearFuelFilter();
@@ -150,6 +196,14 @@ const { launch, BASE_URL } = require('./_env');
         deleteVehicle(v.id);
         t('motor dengan catatan BBM tidak bisa dihapus (pakai Retired)', [vehicles.length, /set its status to Retired/.test(toasts.pop() || '')], [1, true]);
 
+        // =============== catatan motor tampil di kartu; semua motor Retired ===============
+        editVehicle(v.id); document.getElementById('vehNote').value = 'STNK habis 2027-03'; document.getElementById('vehStatus').value = 'retired';
+        saveVehicle({ preventDefault() {} }); await tick(30);
+        t('catatan motor tampil di kartu', /STNK habis 2027-03/.test(document.getElementById('vehicleCards').textContent), true);
+        toasts.length = 0; showFuelForm();
+        t('semua motor Retired: pesan yang tepat', /All vehicles are retired/.test(toasts.pop() || ''), true);
+        editVehicle(v.id); document.getElementById('vehStatus').value = 'active'; saveVehicle({ preventDefault() {} }); await tick(20);
+
         // =============== hanya-lihat ===============
         currentUserDoc = { role: 'staff', status: 'active', access: { warehouse: 'view' } }; applyRoleGating();
         renderVehicleView();
@@ -160,7 +214,10 @@ const { launch, BASE_URL } = require('./_env');
 
         // =============== Kotak Keputusan ===============
         const g = decisionGroups().find(x => x.key === 'fuel');
-        t('Kotak Keputusan: catatan BBM yang perlu dicek', [!!g, g && g.total, g && g.goto], [true, 2, 'warehouseVehicles']);
+        t('Kotak Keputusan: catatan BBM yang perlu dicek', [!!g, g && g.total > 0, g && g.goto], [true, true, 'warehouseVehicles']);
+        document.getElementById('fuelMonthFilter').value = '2020-01';
+        goDecision('warehouseVehicles'); await tick(30);
+        t('dari Kotak Keputusan: filter lama dibersihkan, baris janggal terlihat', [document.getElementById('fuelMonthFilter').value, document.querySelectorAll('#fuelBody tr.row-flagged').length > 0], ['', true]);
 
         // =============== CSV ===============
         window.__blob = null; exportFuelCSV();
