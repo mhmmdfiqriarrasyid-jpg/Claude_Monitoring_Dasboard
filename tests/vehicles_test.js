@@ -219,6 +219,66 @@ const { launch, BASE_URL } = require('./_env');
         goDecision('warehouseVehicles'); await tick(30);
         t('dari Kotak Keputusan: filter lama dibersihkan, baris janggal terlihat', [document.getElementById('fuelMonthFilter').value, document.querySelectorAll('#fuelBody tr.row-flagged').length > 0], ['', true]);
 
+        // =============== isi saat serah terima, isi ulang di KM yang sama, tanggal bacaan ===============
+        showAddVehicleForm(); await tick(10);
+        document.getElementById('vehPlate').value = 'PA 5678 ZZ';
+        document.getElementById('vehHandover').value = HANDOVER;
+        document.getElementById('vehStartKm').value = '5000';
+        saveVehicle({ preventDefault() {} }); await tick(20);
+        const v2 = vehicles.find(x => x.plate === 'PA 5678 ZZ');
+        const log2 = (date, liters, km) => {
+            showFuelForm(v2.id);
+            document.getElementById('fuelDate').value = date;
+            document.getElementById('fuelLiters').value = liters;
+            document.getElementById('fuelKm').value = km;
+            saveFuelLog({ preventDefault() {} });
+        };
+        asked = []; confirmAnswer = true;
+        log2(HANDOVER, '3', '5000');      // tangki diisi penuh saat serah terima
+        log2(daysAgo(25), '3', '5120');
+        log2(daysAgo(20), '3', '5240');
+        let hh = fuelHistory(v2.id);
+        const s3 = vehicleStats(v2);
+        t('isi saat serah terima: tanpa pertanyaan, tidak ditandai, bukan konsumsi',
+          [asked.length, hh[0].flags, hh[0].used, hh[1].kmPerL, s3.avgKmPerL, s3.totalLiters, s3.usedLiters], [0, [], null, 40, 40, 9, 6]);
+        renderVehicleView();
+        const card2 = [...document.querySelectorAll('.vehicle-card')].find(c => /PA 5678 ZZ/.test(c.textContent));
+        t('kartu: rata-rata menyebut liter yang tidak dihitung', /≈ 40\\.0 km\\/L\\s*excl\\. 3 L/.test(card2.querySelector('.vehicle-card__stats').textContent), true);
+        log2(daysAgo(20), '1', '5240');   // isi ulang di KM yang sama
+        hh = fuelHistory(v2.id);
+        t('isi ulang di KM yang sama: ditandai, liternya menambah isi sebelumnya', [hh[3].flags, hh[2].used, hh[2].kmPerL], [['noDistance'], 4, 30]);
+        // KM salah ketik rendah, lalu bacaan baru: tanggal dari bacaan tertinggi, bukan dari catatan salah ketik
+        log2(daysAgo(15), '3', '5100');
+        showFuelForm(v2.id); document.getElementById('fuelDate').value = daysAgo(12); document.getElementById('fuelKm').value = '5360'; updateFuelKmHint();
+        t('bacaan sebelumnya: KM dan tanggal dari catatan yang sama', document.getElementById('fuelKmHint').textContent, 'Previous reading: 5,240 km on ' + daysAgo(20) + ' — +120 km since then');
+        closeFuelModal(true);
+        log2(daysAgo(10), '3', '5400');
+        showFuelForm(v2.id); document.getElementById('fuelDate').value = daysAgo(10); updateFuelKmHint();
+        t('KM belum diisi: petunjuk menyebut bacaan terakhir hari itu', document.getElementById('fuelKmHint').textContent, 'Previous reading: 5,400 km on ' + daysAgo(10));
+        document.getElementById('fuelKm').value = '5300'; updateFuelKmHint();
+        t('KM lebih rendah dari isi lain di hari yang sama: petunjuk merah', [/5,400 km is already logged on/.test(document.getElementById('fuelKmHint').textContent), document.getElementById('fuelKmHint').classList.contains('form-hint--bad')], [true, true]);
+        closeFuelModal(true);
+        const n2 = fuelLogs.length;
+        asked = []; confirmAnswer = false;
+        log2(daysAgo(10), '2', '5300');
+        t('... dan ditanya; batal = tidak disimpan', [/already a fill on .* at 5,400 km/.test(asked[0] || ''), fuelLogs.length], [true, n2]);
+        closeFuelModal(true);
+        // sebelum serah terima: satu pertanyaan, tidak juga "LOWER than the reading before"
+        asked = [];
+        log2(daysAgo(40), '2', '4900');
+        t('tanggal sebelum serah terima: satu pertanyaan saja', [asked.length, /before the handover \\(.* at 5,000 km\\)\\. It will be marked/.test(asked[0] || ''), fuelLogs.length], [1, true, n2]);
+        updateFuelKmHint();
+        t('... petunjuknya menyebut bacaan serah terima', document.getElementById('fuelKmHint').textContent, 'Handover reading: 5,000 km on ' + HANDOVER + ' — this date is before the handover');
+        confirmAnswer = true; closeFuelModal(true);
+        // edit isi yang lebih awal di hari yang sama: tanpa pertanyaan
+        log2(daysAgo(10), '2', '5300');
+        const early = fuelLogs[fuelLogs.length - 1];
+        asked = [];
+        editFuelLog(early.id); await tick(10);
+        document.getElementById('fuelNote').value = 'isi pagi';
+        saveFuelLog({ preventDefault() {} });
+        t('edit isi pagi (hari yang sama, KM sama): tanpa pertanyaan', [asked.length, fuelLogs.find(r => r.id === early.id).note], [0, 'isi pagi']);
+
         // =============== CSV ===============
         window.__blob = null; exportFuelCSV();
         const csv = await window.__blob.text();

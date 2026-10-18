@@ -127,7 +127,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v159';
+const APP_VERSION = 'v160';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -15007,32 +15007,49 @@ function fuelHistory(vehicleId, logs) {
         .slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) ||
                                  (Number(a.km) || 0) - (Number(b.km) || 0) ||
                                  (a.createdAt || 0) - (b.createdAt || 0));
-    let prev = startKm;
-    let carry = 0;   // liters of records that measured no distance
-    const out = recs.map((r, i) => {
+    const handover = v ? v.handoverDate || '' : '';
+    // The next record is measured from the highest reading so far (one
+    // mistyped low value must not double-count the distance after it), and
+    // the date that reading was taken.
+    let prev = startKm, prevDate = handover;
+    let carry = 0;            // liters of mistyped low readings
+    let lastMeasured = null;  // the record the last distance was measured on
+    let baseline = false;     // a fill at the handover reading was seen
+    const out = recs.map(r => {
         const km = Number(r.km) || 0;
         const liters = Number(r.liters) || 0;
         const flags = [];
         let distance = km - prev;
+        // used: the liters this record's distance is divided by (full tank
+        // to full tank); null when it measured no distance.
+        const x = { rec: r, km, liters, distance, kmPerL: null, used: null, flags, prevKm: prev, prevDate };
         if (km < startKm) flags.push('belowStart');
-        if (distance < 0) { flags.push('back'); distance = null; }
-        else if (distance === 0) flags.push('noDistance');
-        // The next measured distance also covers what an unmeasured record
-        // filled, so its liters count there; otherwise the average and the
-        // next km/L would leave them out.
-        let kmPerL = null;
-        if (distance != null && distance > 0) {
-            const used = liters + carry;
-            carry = 0;
-            kmPerL = used > 0 ? distance / used : null;
+        if (distance < 0) {
+            flags.push('back'); x.distance = null;
+            // Its true reading lies inside the next span, so its fuel was used
+            // there — unless it is from before the handover.
+            if (!(handover && (r.date || '') < handover)) carry += liters;
+        } else if (distance === 0) {
+            if (!lastMeasured && !baseline) {
+                // Filled at the handover reading: the full tank the first
+                // distance is measured from. Not a mistake, and not consumption.
+                baseline = true;
+            } else {
+                flags.push('noDistance');
+                // A top-up at the same reading completes the fill before it.
+                if (lastMeasured) {
+                    lastMeasured.used += liters;
+                    lastMeasured.kmPerL = lastMeasured.distance / lastMeasured.used;
+                }
+            }
         } else {
-            carry += liters;
+            x.used = liters + carry;
+            carry = 0;
+            x.kmPerL = x.used > 0 ? distance / x.used : null;
+            lastMeasured = x;
         }
-        // The next record is measured from the highest reading so far: one
-        // mistyped low value must not double-count the distance after it.
-        const before = prev;
-        prev = Math.max(prev, km);
-        return { rec: r, km, liters, distance, kmPerL, flags, prevKm: before, prevDate: i ? (recs[i - 1].date || '') : (v ? v.handoverDate || '' : '') };
+        if (km >= prev) { prev = km; prevDate = r.date || ''; }
+        return x;
     });
     const rates = out.map(x => x.kmPerL).filter(x => x != null).sort((a, b) => a - b);
     if (rates.length >= 3) {
@@ -15050,13 +15067,18 @@ function vehicleStats(v, month) {
     const startKm = Number(v.startKm) || 0;
     const latestKm = hist.reduce((m, x) => Math.max(m, x.km), startKm);
     const totalLiters = hist.reduce((s, x) => s + x.liters, 0);
+    // Only fuel with a measured distance after it goes into the average: not a
+    // fill at the handover reading, nor one after the last good reading.
+    const measured = hist.filter(x => x.used != null);
+    const usedLiters = measured.reduce((s, x) => s + x.used, 0);
+    const usedKm = measured.reduce((s, x) => s + x.distance, 0);
     const inMonth = month ? hist.filter(x => String(x.rec.date || '').slice(0, 7) === month) : [];
     return {
         hist, startKm, latestKm,
         totalKm: latestKm - startKm,
         totalLiters,
-        // Since handover ÷ fuel total: the three figures on a card agree.
-        avgKmPerL: totalLiters > 0 && latestKm > startKm ? (latestKm - startKm) / totalLiters : null,
+        usedLiters,
+        avgKmPerL: usedLiters > 0 && usedKm > 0 ? usedKm / usedLiters : null,
         last: hist.length ? hist[hist.length - 1] : null,
         flagged: hist.filter(x => x.flags.length).length,
         monthLiters: inMonth.reduce((s, x) => s + x.liters, 0),
@@ -15122,7 +15144,9 @@ function renderVehicleView() {
                     <div><dt>Odometer now</dt><dd>${fmtKm(s.latestKm)}</dd></div>
                     <div><dt>Since handover</dt><dd>${fmtKm(s.totalKm)}</dd></div>
                     <div><dt>Fuel total</dt><dd>${fmtLiters(s.totalLiters)}</dd></div>
-                    <div><dt>Average</dt><dd>${s.avgKmPerL != null ? '≈ ' + fmtNum(s.avgKmPerL, 1) + ' km/L' : '—'}</dd></div>
+                    <div><dt>Average</dt><dd>${s.avgKmPerL != null ? '≈ ' + fmtNum(s.avgKmPerL, 1) + ' km/L' : '—'}${
+                        s.avgKmPerL != null && s.totalLiters - s.usedLiters > 0.005
+                            ? `<small class="vehicle-card__aside" title="Fuel with no measured distance after it (a fill at the handover reading, or since the last good reading) is not in the average">excl. ${fmtLiters(s.totalLiters - s.usedLiters)}</small>` : ''}</dd></div>
                 </dl>
                 <p class="vehicle-card__meta">Handover ${escapeHtml(v.handoverDate || '—')} at ${fmtKm(s.startKm)} · ${lastLine}${
                     s.flagged ? ` · <span class="vehicle-card__flag"><i class="fas fa-triangle-exclamation"></i> ${s.flagged} to check</span>` : ''}</p>
@@ -15341,6 +15365,17 @@ function _fuelPreview(cand) {
     return { me, newlyFlagged };
 }
 
+// A fill already logged on the same day at a higher reading: a lower one
+// typed now sorts before it, so nothing would be marked — but it is more
+// often a mistyped reading than an earlier fill. Asked only when the reading
+// or date is new, so editing that earlier fill asks nothing.
+function _fuelSameDayHigher(id, vehicleId, date, km) {
+    const existing = fuelLogs.find(r => r.id === id);
+    if (existing && existing.vehicleId === vehicleId && existing.date === date && Number(existing.km) === Math.round(km)) return null;
+    return fuelLogs.filter(r => r.vehicleId === vehicleId && r.id !== id && r.date === date && (Number(r.km) || 0) > km)
+        .reduce((m, r) => (!m || Number(r.km) > Number(m.km) ? r : m), null);
+}
+
 function updateFuelKmHint() {
     const hint = document.getElementById('fuelKmHint');
     if (!hint) return;
@@ -15351,13 +15386,22 @@ function updateFuelKmHint() {
     const km = parseKm(raw);
     const date = document.getElementById('fuelDate').value || toISODate();
     const id = document.getElementById('editFuelId').value || '__new__';
-    // With no reading typed yet, preview at 0 km just to find the reading before.
-    const p = _fuelPreview({ id, vehicleId: vid, date, km: isFinite(km) ? km : 0, liters: 0, createdAt: Date.now() });
+    const v = vehicles.find(x => x.id === vid);
+    if (v && v.handoverDate && date < v.handoverDate) {
+        hint.textContent = `Handover reading: ${fmtKm(v.startKm)} on ${v.handoverDate} — this date is before the handover`;
+        hint.classList.add('form-hint--bad');
+        return;
+    }
+    // With no reading typed yet, preview after everything on that date, to
+    // find the latest reading up to and including it.
+    const p = _fuelPreview({ id, vehicleId: vid, date, km: isFinite(km) ? km : Number.MAX_SAFE_INTEGER, liters: 0, createdAt: Date.now() });
     const prevWhat = p.me.prevDate ? ` on ${p.me.prevDate}` : '';
     let text = `Previous reading: ${fmtKm(p.me.prevKm)}${prevWhat}`;
     if (raw.trim() === '') { hint.textContent = text; return; }
+    const sameDay = isFinite(km) ? _fuelSameDayHigher(id, vid, date, km) : null;
     if (!isFinite(km)) { text += ' — type the odometer as a whole number of km'; hint.classList.add('form-hint--bad'); }
     else if (p.me.flags.includes('back')) { text += ` — this is ${fmtKm(p.me.prevKm - km)} LOWER`; hint.classList.add('form-hint--bad'); }
+    else if (sameDay) { text = `${fmtKm(sameDay.km)} is already logged on ${date} — was ${fmtKm(km)} an earlier fill that day?`; hint.classList.add('form-hint--bad'); }
     else if (p.newlyFlagged.length) { text += ` — but ${fmtKm(km)} is HIGHER than the later reading ${fmtKm(p.newlyFlagged[0].km)} on ${p.newlyFlagged[0].rec.date}`; hint.classList.add('form-hint--bad'); }
     else { text += ` — +${fmtKm(km - p.me.prevKm)} since then`; hint.classList.add('form-hint--ok'); }
     hint.textContent = text;
@@ -15538,10 +15582,16 @@ function saveFuelLog(event) {
     // earlier one that was mistyped. Worked out in date order, so editing an
     // older record (a note, a late photo) asks nothing.
     const p = _fuelPreview({ id: id || '__new__', vehicleId, date, km: Math.round(km), liters, createdAt: existing ? existing.createdAt : Date.now() });
-    if (p.me.flags.includes('back') && !confirm(`The odometer ${fmtKm(km)} is LOWER than the reading before it, ${fmtKm(p.me.prevKm)}${p.me.prevDate ? ' on ' + p.me.prevDate : ''}.\n\nSave anyway? It will be marked to check.`)) return;
+    if (date < (v.handoverDate || '')) {
+        if (!confirm(`The date is before the handover (${v.handoverDate} at ${fmtKm(v.startKm)}).${p.me.flags.includes('back') ? ' It will be marked to check.' : ''}\n\nSave anyway?`)) return;
+    } else if (p.me.flags.includes('back')) {
+        if (!confirm(`The odometer ${fmtKm(km)} is LOWER than the reading before it, ${fmtKm(p.me.prevKm)}${p.me.prevDate ? ' on ' + p.me.prevDate : ''}.\n\nSave anyway? It will be marked to check.`)) return;
+    } else {
+        const sameDay = _fuelSameDayHigher(id || '__new__', vehicleId, date, km);
+        if (sameDay && !confirm(`There is already a fill on ${date} at ${fmtKm(sameDay.km)}. Was ${fmtKm(km)} an earlier fill that day?\n\nSave anyway?`)) return;
+    }
     if (p.newlyFlagged.length && !confirm(`The odometer ${fmtKm(km)} is HIGHER than the later reading ${fmtKm(p.newlyFlagged[0].km)} on ${p.newlyFlagged[0].rec.date}, which would then be marked to check.\n\nSave anyway?`)) return;
     if (p.me.distance != null && p.me.distance > FUEL_BIG_JUMP_KM && !confirm(`${fmtKm(p.me.distance)} since the reading before (${fmtKm(p.me.prevKm)}). Is the odometer ${fmtKm(km)} right?`)) return;
-    if (date < (v.handoverDate || '') && !confirm(`The date is before the handover (${v.handoverDate}). Save anyway?`)) return;
     // A typo in liters (an extra digit) is the other common mistake.
     const maxBefore = fuelLogs.filter(r => r.vehicleId === vehicleId && r.id !== id).reduce((m, r) => Math.max(m, Number(r.liters) || 0), 0);
     const tankish = v.type === 'Motorbike' ? 10 : 80;

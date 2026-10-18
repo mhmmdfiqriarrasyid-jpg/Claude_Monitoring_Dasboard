@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.902 pemeriksaan di empat puluh delapan suite, menggerakkan Chromium sungguhan terhadap
+1.912 pemeriksaan di empat puluh delapan suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -341,6 +341,16 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
     Keputusan mengosongkan filter; pesan jelas bila semua kendaraan Retired;
     catatan kendaraan tampil di kartu; toolbar tidak melebar di HP; riwayat
     kendaraan tidak tertutup bilah atas. Rules tidak berubah.
+  - *Perbaikan v160 (review ulang):* isi BBM tepat di KM serah terima
+    dianggap tangki penuh awal — tidak ditandai dan tidak dihitung sebagai
+    konsumsi; liter hanya dibawa ke catatan berikutnya dari KM salah ketik
+    (bukan dari catatan sebelum serah terima); isi ulang di KM yang sama
+    menambah liter isi sebelumnya; rata-rata = jarak terukur ÷ liter yang
+    terukur (kartu menulis "excl. N L" bila ada liter yang tidak dihitung);
+    "Previous reading" memakai tanggal bacaan tertinggi itu sendiri, dan saat
+    KM belum diisi menyebut bacaan terakhir di hari itu; KM lebih rendah dari
+    isi lain di hari yang sama ditanya; tanggal sebelum serah terima cukup
+    satu pertanyaan.
 - **Tampilan fase 1 v156 — HP di lapangan (dijaga `tests/ux_phase1_test.js`).**
   Hasil review ui-ux-pro-max (rencana lengkap: artifact "Rencana Tampilan OT
   Dashboard").
