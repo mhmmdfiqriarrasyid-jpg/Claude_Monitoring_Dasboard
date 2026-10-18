@@ -104,6 +104,8 @@ let cloudInspectionsUnsub = null;
 
 // ---- Warehouse (cloud-only, same pattern as the team collections) ----
 let cloudDevicesUnsub = null;
+let cloudVehiclesUnsub = null;
+let cloudFuelUnsub = null;
 let warehouseDevices = [];           // serial-tracked devices
 let cloudStockUnsub = null;
 let stockLedger = [];                // IN/OUT rows for quantity-counted items
@@ -125,7 +127,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v157';
+const APP_VERSION = 'v158';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -693,6 +695,8 @@ const MODAL_CLOSERS = {
     workLogModal:         'closeWorkLogModal',
     leaveModal:           'closeLeaveModal',
     deviceModal:          'closeDeviceModal',
+    vehicleModal:         'closeVehicleModal',
+    fuelModal:            'closeFuelModal',
     stockModal:           'closeStockModal',
     // Not a plain dismissal: an abandoned breakdown reason has to put the
     // inline cell back, or the grid shows a status that was never saved.
@@ -711,7 +715,8 @@ const MODAL_CLOSERS = {
 // saving asks when it differs.
 // ============================================================
 const FORM_GUARDS = { damageModal: 'damageForm', workLogModal: 'workLogForm', leaveModal: 'leaveForm',
-                      inspectionModal: 'inspectionForm', unitModal: 'unitForm' };
+                      inspectionModal: 'inspectionForm', unitModal: 'unitForm',
+                      vehicleModal: 'vehicleForm', fuelModal: 'fuelForm' };
 const _formOpenState = {};
 const _formReopened = new Set();   // reopened with text a refused save kept
 
@@ -2828,7 +2833,16 @@ const BACKUP_PARTS = [
 
     { key: 'stockItems', label: 'Stock Items', area: 'warehouse',
       read: () => stockLedger, write: l => { stockLedger = l; },
-      bulk: 'saveStockItems', deleteOne: id => window.cloud.deleteStockItem(id) }
+      bulk: 'saveStockItems', deleteOne: id => window.cloud.deleteStockItem(id) },
+
+    { key: 'vehicles', label: 'Vehicles', area: 'warehouse',
+      read: () => vehicles, write: l => { vehicles = l; },
+      bulk: 'saveVehicles', deleteOne: id => window.cloud.deleteVehicle(id) },
+
+    { key: 'fuelLogs', label: 'Fuel Records', area: 'warehouse',
+      read: () => fuelLogs, write: l => { fuelLogs = l; },
+      bulk: 'saveFuelLogs',
+      deleteOne: (id, r) => { window.cloud.deleteFuelLog(id); if (r && r.hasPhoto) { _fuelPhotoCache.delete(id); _dropPhotoDoc('deleteFuelPhoto', id); } } }
 ];
 
 // Two collections are left out on purpose, and the UI says so rather than
@@ -3163,6 +3177,9 @@ const BACKUP_PHOTO_KINDS = [
     { key: 'leaveDocs', label: 'Leave / sick letters', part: 'leaveRequests', area: 'teamLog',
       has: r => leaveDocCount(r) > 0, get: 'getTeamDocs', save: 'saveTeamDocs',
       present: v => Array.isArray(v) && v.length > 0, cache: () => _leaveDocCache },
+    { key: 'fuelPhotos', label: 'Fuel receipt photos', part: 'fuelLogs', area: 'warehouse',
+      has: r => !!(r && r.hasPhoto), get: 'getFuelPhoto', save: 'saveFuelPhoto', del: 'deleteFuelPhoto',
+      present: v => typeof v === 'string' && v.length > 0, cache: () => _fuelPhotoCache },
     { key: 'inspectionPhotos', label: 'Inspection photos', part: 'inspections', area: 'inspection',
       has: r => Number(r.photoCount) > 0, get: 'getInspectionPhotos', save: 'saveInspectionPhotos',
       present: v => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length > 0,
@@ -10388,6 +10405,24 @@ function initCloudSync() {
                 }
             );
         }
+        if (window.cloud.subscribeVehicles) {
+            cloudVehiclesUnsub = window.cloud.subscribeVehicles(
+                applyCloudVehiclesSnapshot,
+                err => {
+                    console.warn('[cloud] vehicles offline:', err && err.code);
+                    if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+                }
+            );
+        }
+        if (window.cloud.subscribeFuelLogs) {
+            cloudFuelUnsub = window.cloud.subscribeFuelLogs(
+                applyCloudFuelSnapshot,
+                err => {
+                    console.warn('[cloud] fuelLogs offline:', err && err.code);
+                    if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+                }
+            );
+        }
         if (window.cloud.subscribeTeamMembers) {
             cloudTeamMembersUnsub = window.cloud.subscribeTeamMembers(
                 applyCloudTeamMembersSnapshot,
@@ -10566,7 +10601,7 @@ function tearDownCloudSync() {
     _loadedParts.clear();
     // Photo caches belong to the session: the next account on this browser,
     // or this one later, must fetch what is on the server now.
-    try { _wlPhotoCache.clear(); _leaveDocCache.clear(); _dmgPhotoCache.clear(); _dmgAfterCache.clear(); } catch (_) {}
+    try { _wlPhotoCache.clear(); _leaveDocCache.clear(); _dmgPhotoCache.clear(); _dmgAfterCache.clear(); _fuelPhotoCache.clear(); } catch (_) {}
     if (cloudUnitsUnsub) { try { cloudUnitsUnsub(); } catch (_) {} cloudUnitsUnsub = null; }
     if (cloudImplUnsub) { try { cloudImplUnsub(); } catch (_) {} cloudImplUnsub = null; }
     if (cloudDamageUnsub) { try { cloudDamageUnsub(); } catch (_) {} cloudDamageUnsub = null; }
@@ -10588,6 +10623,10 @@ function tearDownCloudSync() {
     if (cloudStockUnsub) { try { cloudStockUnsub(); } catch (_) {} cloudStockUnsub = null; }
     warehouseDevices = [];
     stockLedger = [];
+    if (cloudVehiclesUnsub) { try { cloudVehiclesUnsub(); } catch (_) {} cloudVehiclesUnsub = null; }
+    if (cloudFuelUnsub) { try { cloudFuelUnsub(); } catch (_) {} cloudFuelUnsub = null; }
+    vehicles = [];
+    fuelLogs = [];
     if (cloudTeamMembersUnsub) { try { cloudTeamMembersUnsub(); } catch (_) {} cloudTeamMembersUnsub = null; }
     if (cloudShiftsUnsub) { try { cloudShiftsUnsub(); } catch (_) {} cloudShiftsUnsub = null; }
     _shiftWindowStart = '';
@@ -14473,7 +14512,7 @@ const DEVICE_STATUS_LABEL = DEVICE_STATUSES.reduce((m, s) => { m[s.key] = s.labe
 const DEFAULT_DEVICE_TYPES = ['GPS / StarFire', 'Display', 'Steering Sensor', 'JDLink', 'Weather Station'];
 const STOCK_LOW_THRESHOLD = 5;   // "sisa" at or below this is flagged
 
-let warehouseTab = 'devices';    // 'devices' | 'stock'
+let warehouseTab = 'devices';    // 'devices' | 'stock' | 'vehicles'
 
 function generateDeviceId() {
     return 'dev_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
@@ -14543,7 +14582,7 @@ function showWarehouseRulesBanner() {
 
 // ---- View shell ----
 function switchWarehouseTab(tab) {
-    warehouseTab = (tab === 'stock') ? 'stock' : 'devices';
+    warehouseTab = ['stock', 'vehicles'].includes(tab) ? tab : 'devices';
     renderWarehouseView();
 }
 
@@ -14557,10 +14596,13 @@ function renderWarehouseView() {
     });
     const devPanel = document.getElementById('whDevicePanel');
     const stkPanel = document.getElementById('whStockPanel');
+    const vehPanel = document.getElementById('whVehiclePanel');
     if (devPanel) devPanel.style.display = (warehouseTab === 'devices') ? '' : 'none';
     if (stkPanel) stkPanel.style.display = (warehouseTab === 'stock') ? '' : 'none';
+    if (vehPanel) vehPanel.style.display = (warehouseTab === 'vehicles') ? '' : 'none';
 
     if (warehouseTab === 'devices') renderDeviceTable();
+    else if (warehouseTab === 'vehicles') renderVehicleView();
     else renderStockView();
 }
 
@@ -14873,6 +14915,657 @@ function exportDeviceCSV() {
 function devicesForUnit(unitId) {
     if (!unitId) return [];
     return warehouseDevices.filter(d => d.status === 'installed' && d.unitId === unitId);
+}
+
+// ============================================================
+// VEHICLES & FUEL — company motorbikes and every refuel
+// ------------------------------------------------------------
+// A vehicle starts from its handover: the date and the odometer reading on
+// that day. After that, each refuel is one record — date, liters, odometer,
+// and optionally a photo of the receipt. Distance and consumption follow
+// from consecutive odometer readings:
+//   distance  = this refuel's km − the previous reading (handover first)
+//   km / L    = that distance ÷ this refuel's liters
+// The second assumes the tank is filled each time, so it is shown as an
+// estimate. A reading below the one before it is flagged rather than refused
+// — the record may be the one that is right — and so is a consumption far
+// from the vehicle's usual.
+// ============================================================
+
+const VEHICLE_TYPES = ['Motorbike', 'Car', 'Other'];
+const FUEL_UNUSUAL_FACTOR = 2;        // km/L outside ×½ … ×2 of the vehicle's median
+const FUEL_BIG_JUMP_KM = 1500;        // a refuel this far from the last one asks first
+
+let vehicles = [];
+let fuelLogs = [];
+let _fuelPhotoData = '';
+let _fuelPhotoDirty = false;
+let _fuelPhotoLoading = false;
+let _fuelFormGen = 0;
+let _fuelPhotoBusy = 0;
+const _fuelPhotoCache = new Map();    // fuel record id -> data URL
+
+function generateVehicleId() { return 'veh_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5); }
+function generateFuelId() { return 'fuel_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5); }
+
+function fmtNum(n, digits) {
+    const v = Number(n);
+    if (!isFinite(v)) return '—';
+    return v.toLocaleString('en-US', { minimumFractionDigits: digits || 0, maximumFractionDigits: digits || 0 });
+}
+function fmtKm(n) { return `${fmtNum(n)} km`; }
+function fmtLiters(n) { return `${fmtNum(n, 2).replace(/\.?0+$/, '')} L`; }
+function vehicleLabel(v) {
+    if (!v) return '—';
+    const bm = [v.brand, v.model].filter(Boolean).join(' ');
+    return bm ? `${v.plate} · ${bm}` : (v.plate || '—');
+}
+
+// ---- Cloud snapshots ----
+function applyCloudVehiclesSnapshot(list) {
+    _markLoaded('vehicles');
+    vehicles = (list || []).slice().sort((a, b) =>
+        ((a.status === 'retired') - (b.status === 'retired')) || (a.plate || '').localeCompare(b.plate || ''));
+    if (currentView === 'warehouse' && warehouseTab === 'vehicles') renderVehicleView();
+    scheduleDecisionRefresh();
+}
+function applyCloudFuelSnapshot(list) {
+    _markLoaded('fuelLogs');
+    // A record changed elsewhere may carry a new receipt photo.
+    const seenAt = new Map(fuelLogs.map(r => [r.id, r.updatedAt]));
+    (list || []).forEach(r => { if (seenAt.has(r.id) && seenAt.get(r.id) !== r.updatedAt) _fuelPhotoCache.delete(r.id); });
+    fuelLogs = (list || []).slice();
+    if (currentView === 'warehouse' && warehouseTab === 'vehicles') renderVehicleView();
+    scheduleDecisionRefresh();
+}
+
+// ---- The arithmetic ----
+// Records of one vehicle in the order they happened, each with what follows
+// from the reading before it.
+function fuelHistory(vehicleId) {
+    const v = vehicles.find(x => x.id === vehicleId);
+    const startKm = v ? Number(v.startKm) || 0 : 0;
+    const recs = fuelLogs.filter(r => r.vehicleId === vehicleId)
+        .slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) ||
+                                 (Number(a.km) || 0) - (Number(b.km) || 0) ||
+                                 (a.createdAt || 0) - (b.createdAt || 0));
+    let prev = startKm;
+    const out = recs.map(r => {
+        const km = Number(r.km) || 0;
+        const liters = Number(r.liters) || 0;
+        const flags = [];
+        let distance = km - prev;
+        if (km < startKm) flags.push('belowStart');
+        if (distance < 0) { flags.push('back'); distance = null; }
+        else if (distance === 0) flags.push('noDistance');
+        const kmPerL = distance != null && distance > 0 && liters > 0 ? distance / liters : null;
+        // The next record is measured from the highest reading so far: one
+        // mistyped low value must not double-count the distance after it.
+        prev = Math.max(prev, km);
+        return { rec: r, km, liters, distance, kmPerL, flags };
+    });
+    const rates = out.map(x => x.kmPerL).filter(x => x != null).sort((a, b) => a - b);
+    if (rates.length >= 3) {
+        const mid = rates.length >> 1;
+        const median = rates.length % 2 ? rates[mid] : (rates[mid - 1] + rates[mid]) / 2;
+        out.forEach(x => {
+            if (x.kmPerL != null && (x.kmPerL > median * FUEL_UNUSUAL_FACTOR || x.kmPerL < median / FUEL_UNUSUAL_FACTOR)) x.flags.push('unusual');
+        });
+    }
+    return out;
+}
+
+function vehicleStats(v, month) {
+    const hist = fuelHistory(v.id);
+    const startKm = Number(v.startKm) || 0;
+    const latestKm = hist.reduce((m, x) => Math.max(m, x.km), startKm);
+    const counted = hist.filter(x => x.distance != null && x.distance > 0 && x.liters > 0);
+    const sumDist = counted.reduce((s, x) => s + x.distance, 0);
+    const sumLit = counted.reduce((s, x) => s + x.liters, 0);
+    const inMonth = month ? hist.filter(x => String(x.rec.date || '').slice(0, 7) === month) : [];
+    return {
+        hist, startKm, latestKm,
+        totalKm: latestKm - startKm,
+        totalLiters: hist.reduce((s, x) => s + x.liters, 0),
+        avgKmPerL: sumLit > 0 ? sumDist / sumLit : null,
+        last: hist.length ? hist[hist.length - 1] : null,
+        flagged: hist.filter(x => x.flags.length).length,
+        monthLiters: inMonth.reduce((s, x) => s + x.liters, 0),
+        monthKm: inMonth.reduce((s, x) => s + (x.distance > 0 ? x.distance : 0), 0),
+        monthFills: inMonth.length
+    };
+}
+
+const FUEL_FLAG_TEXT = {
+    back: 'Odometer lower than the reading before',
+    belowStart: 'Odometer below the handover reading',
+    noDistance: 'Same odometer as the reading before',
+    unusual: 'Consumption far from this vehicle\'s usual'
+};
+
+// ---- Rendering ----
+function populateFuelFilters() {
+    const sel = document.getElementById('fuelVehicleFilter');
+    if (sel) {
+        const keep = sel.value;
+        sel.innerHTML = '<option value="">All Vehicles</option>' +
+            vehicles.map(v => `<option value="${escapeHtml(v.id)}">${escapeHtml(vehicleLabel(v))}</option>`).join('');
+        if (keep && sel.querySelector(`option[value="${CSS.escape(keep)}"]`)) sel.value = keep;
+    }
+    const holders = document.getElementById('vehHolderList');
+    if (holders) holders.innerHTML = _mergeSuggestions([], [...activeMembers().map(m => m.name), ...vehicles.map(v => v.holder)])
+        .map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+}
+
+function renderVehicleView() {
+    populateFuelFilters();
+    const month = toISODate().slice(0, 7);
+    const active = vehicles.filter(v => v.status !== 'retired');
+    const stats = new Map(vehicles.map(v => [v.id, vehicleStats(v, month)]));
+    const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    let mLit = 0, mKm = 0, mFills = 0, flagged = 0;
+    stats.forEach(s => { mLit += s.monthLiters; mKm += s.monthKm; mFills += s.monthFills; flagged += s.flagged; });
+    setText('vehKpi_count', active.length);
+    setText('vehKpi_liters', fmtLiters(mLit));
+    setText('vehKpi_fills', `${mFills} refuel${mFills === 1 ? '' : 's'}`);
+    setText('vehKpi_km', fmtKm(mKm));
+    setText('vehKpi_flags', flagged);
+
+    const canEdit = hasAccess('warehouse', 'edit');
+    const cards = document.getElementById('vehicleCards');
+    if (cards) {
+        cards.innerHTML = vehicles.length ? vehicles.map(v => {
+            const s = stats.get(v.id);
+            const retired = v.status === 'retired';
+            const lastLine = s.last
+                ? `Last refuel ${escapeHtml(s.last.rec.date || '')} · ${fmtLiters(s.last.liters)} at ${fmtKm(s.last.km)}`
+                : 'No refuel logged yet';
+            return `
+            <article class="vehicle-card${retired ? ' vehicle-card--retired' : ''}">
+                <header class="vehicle-card__head">
+                    <div>
+                        <div class="vehicle-card__plate"><i class="fas fa-${v.type === 'Car' ? 'car' : 'motorcycle'}"></i> ${escapeHtml(v.plate || '')}</div>
+                        <div class="vehicle-card__sub">${escapeHtml([v.brand, v.model].filter(Boolean).join(' ') || v.type || '')}${v.holder ? ' · ' + escapeHtml(v.holder) : ''}</div>
+                    </div>
+                    ${retired ? '<span class="wh-status wh-status--retired">Retired</span>' : ''}
+                </header>
+                <dl class="vehicle-card__stats">
+                    <div><dt>Odometer now</dt><dd>${fmtKm(s.latestKm)}</dd></div>
+                    <div><dt>Since handover</dt><dd>${fmtKm(s.totalKm)}</dd></div>
+                    <div><dt>Fuel total</dt><dd>${fmtLiters(s.totalLiters)}</dd></div>
+                    <div><dt>Average</dt><dd>${s.avgKmPerL != null ? '≈ ' + fmtNum(s.avgKmPerL, 1) + ' km/L' : '—'}</dd></div>
+                </dl>
+                <p class="vehicle-card__meta">Handover ${escapeHtml(v.handoverDate || '—')} at ${fmtKm(s.startKm)} · ${lastLine}${
+                    s.flagged ? ` · <span class="vehicle-card__flag"><i class="fas fa-triangle-exclamation"></i> ${s.flagged} to check</span>` : ''}</p>
+                <div class="vehicle-card__actions">
+                    ${canEdit && !retired ? `<button class="btn btn-primary btn-sm" onclick="showFuelForm(${jsArg(v.id)})"><i class="fas fa-gas-pump"></i> Log Fuel</button>` : ''}
+                    <button class="btn btn-secondary btn-sm" onclick="showVehicleHistory(${jsArg(v.id)})"><i class="fas fa-list"></i> Records</button>
+                    ${canEdit ? `<button class="btn btn-secondary btn-sm" onclick="editVehicle(${jsArg(v.id)})"><i class="fas fa-pen"></i> Edit</button>
+                    <button class="btn btn-secondary btn-sm" title="Delete vehicle" aria-label="Delete vehicle ${escapeHtml(v.plate || '')}" onclick="deleteVehicle(${jsArg(v.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>` : ''}
+                </div>
+            </article>`;
+        }).join('') : `<div class="vehicle-empty">No vehicles yet.${canEdit ? ' Click <strong>Add Vehicle</strong> and enter the handover date and the odometer reading on that day.' : ''}</div>`;
+    }
+    renderFuelTable();
+}
+
+function getFilteredFuelRows() {
+    const vid = document.getElementById('fuelVehicleFilter')?.value || '';
+    const month = document.getElementById('fuelMonthFilter')?.value || '';
+    const rows = [];
+    vehicles.forEach(v => {
+        if (vid && v.id !== vid) return;
+        fuelHistory(v.id).forEach(x => {
+            if (month && String(x.rec.date || '').slice(0, 7) !== month) return;
+            rows.push({ ...x, vehicle: v });
+        });
+    });
+    // Records whose vehicle was deleted elsewhere still show, unmeasured.
+    if (!vid) fuelLogs.filter(r => !vehicles.some(v => v.id === r.vehicleId)).forEach(r => {
+        if (month && String(r.date || '').slice(0, 7) !== month) return;
+        rows.push({ rec: r, km: Number(r.km) || 0, liters: Number(r.liters) || 0, distance: null, kmPerL: null, flags: [], vehicle: null });
+    });
+    return rows.sort((a, b) => String(b.rec.date || '').localeCompare(String(a.rec.date || '')) || b.km - a.km);
+}
+
+function renderFuelTable() {
+    const tbody = document.getElementById('fuelBody');
+    if (!tbody) return;
+    const rows = getFilteredFuelRows();
+    const count = document.getElementById('fuelCount');
+    if (count) count.textContent = `${rows.length} record${rows.length === 1 ? '' : 's'}`;
+    if (!rows.length) {
+        const filtered = (document.getElementById('fuelVehicleFilter')?.value || '') || (document.getElementById('fuelMonthFilter')?.value || '');
+        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+            filtered ? 'No fuel records match the filter' : 'No fuel records yet. Use <strong>Log Fuel</strong> after each refuel.'}</td></tr>`;
+        return;
+    }
+    const canEdit = hasAccess('warehouse', 'edit');
+    const dash = '<span style="color:var(--text-light)">—</span>';
+    tbody.innerHTML = rows.map((x, i) => {
+        const r = x.rec;
+        const flags = x.flags.map(f => `<span class="fuel-flag" title="${escapeHtml(FUEL_FLAG_TEXT[f] || f)}"><i class="fas fa-triangle-exclamation"></i> ${escapeHtml(FUEL_FLAG_TEXT[f] || f)}</span>`).join('');
+        return `
+        <tr${x.flags.length ? ' class="row-flagged"' : ''}>
+            <td>${i + 1}</td>
+            <td data-label="Date" style="white-space:nowrap">${escapeHtml(r.date || '')}</td>
+            <td data-label="Vehicle"><strong>${escapeHtml(x.vehicle ? x.vehicle.plate : (r.vehiclePlate || '(deleted vehicle)'))}</strong></td>
+            <td data-label="Odometer" class="num">${fmtKm(x.km)}</td>
+            <td data-label="Distance" class="num">${x.distance != null ? '+' + fmtKm(x.distance) : dash}</td>
+            <td data-label="Liters" class="num">${fmtLiters(x.liters)}</td>
+            <td data-label="km / L" class="num">${x.kmPerL != null ? '≈ ' + fmtNum(x.kmPerL, 1) : dash}</td>
+            <td data-label="Receipt">${r.hasPhoto ? `<button type="button" class="wl-photo-btn" title="View receipt" aria-label="View receipt photo" onclick="openFuelPhoto(${jsArg(r.id)}, this)"><i class="fas fa-image"></i> Photo</button>` : dash}</td>
+            <td data-label="Notes" style="max-width:220px;font-size:12px;color:var(--text-secondary);white-space:normal">${flags}${r.note ? `<div>${escapeHtml(r.note)}</div>` : (flags ? '' : dash)}</td>
+            <td class="col-actions">${canEdit ? `<div class="row-actions">
+                <button class="btn btn-secondary" title="Edit" aria-label="Edit fuel record" onclick="editFuelLog(${jsArg(r.id)})"><i class="fas fa-pen"></i></button>
+                <button class="btn btn-secondary" title="Delete" aria-label="Delete fuel record" onclick="deleteFuelLog(${jsArg(r.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+            </div>` : ''}</td>
+        </tr>`;
+    }).join('');
+}
+
+function clearFuelFilter() {
+    ['fuelVehicleFilter', 'fuelMonthFilter'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    renderVehicleView();
+}
+
+function showVehicleHistory(id) {
+    const sel = document.getElementById('fuelVehicleFilter');
+    if (sel) sel.value = id;
+    const m = document.getElementById('fuelMonthFilter');
+    if (m) m.value = '';
+    renderVehicleView();
+    document.getElementById('fuelTable')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ---- Vehicle form ----
+function showAddVehicleForm() {
+    if (!requireEdit('warehouse')) return;
+    document.getElementById('vehicleModalTitle').innerHTML = '<i class="fas fa-motorcycle"></i> Add Vehicle';
+    document.getElementById('vehicleForm').reset();
+    document.getElementById('editVehicleId').value = '';
+    document.getElementById('vehType').value = 'Motorbike';
+    document.getElementById('vehStatus').value = 'active';
+    document.getElementById('vehHandover').value = toISODate();
+    populateFuelFilters();
+    document.getElementById('vehicleModal').classList.add('open');
+}
+
+function editVehicle(id) {
+    if (!requireEdit('warehouse')) return;
+    const v = vehicles.find(x => x.id === id);
+    if (!v) return;
+    document.getElementById('vehicleModalTitle').innerHTML = '<i class="fas fa-motorcycle"></i> Edit Vehicle';
+    document.getElementById('editVehicleId').value = v.id;
+    populateFuelFilters();
+    document.getElementById('vehPlate').value = v.plate || '';
+    document.getElementById('vehType').value = VEHICLE_TYPES.includes(v.type) ? v.type : 'Other';
+    document.getElementById('vehBrand').value = v.brand || '';
+    document.getElementById('vehModel').value = v.model || '';
+    document.getElementById('vehHandover').value = v.handoverDate || '';
+    document.getElementById('vehStartKm').value = v.startKm != null ? v.startKm : '';
+    document.getElementById('vehHolder').value = v.holder || '';
+    document.getElementById('vehStatus').value = v.status === 'retired' ? 'retired' : 'active';
+    document.getElementById('vehNote').value = v.note || '';
+    document.getElementById('vehicleModal').classList.add('open');
+}
+
+function closeVehicleModal(force) {
+    const m = document.getElementById('vehicleModal');
+    if (!force && m.classList.contains('open') && !okToDiscardTyping('vehicleForm')) return;
+    m.classList.remove('open');
+}
+
+function saveVehicle(event) {
+    event.preventDefault();
+    if (!requireEdit('warehouse')) return;
+    const id = document.getElementById('editVehicleId').value;
+    const plate = (document.getElementById('vehPlate').value || '').trim();
+    if (!plate) { showToast('Fill in the plate number or a name', 'warning'); return; }
+    const clash = vehicles.find(v => v.id !== id && (v.plate || '').toLowerCase() === plate.toLowerCase());
+    if (clash) { showToast(`"${plate}" is already registered`, 'warning'); return; }
+    const startRaw = document.getElementById('vehStartKm').value;
+    const startKm = Number(startRaw);
+    if (startRaw === '' || !isFinite(startKm) || startKm < 0) { showToast('Odometer at handover must be a number of km', 'warning'); return; }
+    const handoverDate = document.getElementById('vehHandover').value;
+    if (!handoverDate) { showToast('Fill in the handover date', 'warning'); return; }
+    const existing = id ? vehicles.find(v => v.id === id) : null;
+    // Records below the new handover reading would all turn into "below start".
+    if (existing && startKm !== Number(existing.startKm)) {
+        const below = fuelLogs.filter(r => r.vehicleId === id && Number(r.km) < startKm).length;
+        if (below && !confirm(`${below} fuel record(s) have an odometer below ${fmtKm(startKm)}. Change the handover reading anyway?`)) return;
+    }
+    const rec = {
+        id: id || generateVehicleId(),
+        plate,
+        type: document.getElementById('vehType').value || 'Motorbike',
+        brand: (document.getElementById('vehBrand').value || '').trim(),
+        model: (document.getElementById('vehModel').value || '').trim(),
+        handoverDate,
+        startKm: Math.round(startKm),
+        holder: (document.getElementById('vehHolder').value || '').trim(),
+        status: document.getElementById('vehStatus').value === 'retired' ? 'retired' : 'active',
+        note: (document.getElementById('vehNote').value || '').trim(),
+        createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),
+        updatedAt: Date.now()
+    };
+    // Shown at once; the snapshot confirms it.
+    const idx = vehicles.findIndex(v => v.id === rec.id);
+    if (idx === -1) vehicles.push(rec); else vehicles[idx] = rec;
+    cloudWrite(
+        { action: existing ? 'update' : 'create', unitName: `[Vehicle] ${plate}`, field: 'Vehicle',
+          before: existing ? `${existing.brand || ''} · handover ${existing.handoverDate || ''} at ${fmtKm(existing.startKm)}` : '',
+          after: `${rec.brand || ''} · handover ${rec.handoverDate} at ${fmtKm(rec.startKm)}${rec.status === 'retired' ? ' · retired' : ''}` },
+        cloudCall('saveVehicle', rec),
+        existing ? 'Vehicle updated' : 'Vehicle added',
+        err => {
+            console.error('[vehicles] save failed:', err);
+            if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+            showToast('Failed to save the vehicle', 'error');
+        }
+    );
+    closeVehicleModal(true);
+    renderVehicleView();
+}
+
+function deleteVehicle(id) {
+    if (!requireEdit('warehouse')) return;
+    const v = vehicles.find(x => x.id === id);
+    if (!v) return;
+    const n = fuelLogs.filter(r => r.vehicleId === id).length;
+    if (n) { showToast(`${v.plate} has ${n} fuel record(s) — set its status to Retired instead`, 'warning'); return; }
+    if (!confirm(`Delete vehicle ${v.plate}?`)) return;
+    vehicles = vehicles.filter(x => x.id !== id);
+    cloudWrite({ action: 'delete', unitName: `[Vehicle] ${v.plate}`, field: 'Vehicle', before: vehicleLabel(v), after: '' },
+        cloudCall('deleteVehicle', id), 'Vehicle deleted',
+        err => { console.error('[vehicles] delete failed:', err); showToast('Failed to delete the vehicle', 'error'); });
+    renderVehicleView();
+}
+
+// ---- Fuel form ----
+function _fuelVehicleOptions(selectedId) {
+    const sel = document.getElementById('fuelVehicle');
+    if (!sel) return;
+    const usable = vehicles.filter(v => v.status !== 'retired' || v.id === selectedId);
+    sel.innerHTML = (usable.length > 1 ? '<option value="">— Select vehicle —</option>' : '') +
+        usable.map(v => `<option value="${escapeHtml(v.id)}">${escapeHtml(vehicleLabel(v))}</option>`).join('');
+    if (selectedId) sel.value = selectedId;
+}
+
+// The reading the new record follows: the highest one before it.
+function _fuelPrevReading(vehicleId, exceptId) {
+    const v = vehicles.find(x => x.id === vehicleId);
+    if (!v) return null;
+    let best = { km: Number(v.startKm) || 0, date: v.handoverDate || '', what: 'handover' };
+    fuelLogs.forEach(r => {
+        if (r.vehicleId !== vehicleId || r.id === exceptId) return;
+        const km = Number(r.km) || 0;
+        if (km > best.km) best = { km, date: r.date || '', what: 'refuel' };
+    });
+    return best;
+}
+
+function updateFuelKmHint() {
+    const hint = document.getElementById('fuelKmHint');
+    if (!hint) return;
+    const vid = document.getElementById('fuelVehicle').value;
+    const prev = vid ? _fuelPrevReading(vid, document.getElementById('editFuelId').value) : null;
+    hint.className = 'form-hint';
+    if (!prev) { hint.textContent = ''; return; }
+    const raw = document.getElementById('fuelKm').value;
+    const km = Number(raw);
+    let text = `Last reading: ${fmtKm(prev.km)}${prev.date ? ' on ' + prev.date : ''} (${prev.what})`;
+    if (raw !== '' && isFinite(km)) {
+        const d = km - prev.km;
+        if (d < 0) { text += ` — this is ${fmtKm(-d)} LOWER`; hint.classList.add('form-hint--bad'); }
+        else { text += ` — +${fmtKm(d)} since then`; hint.classList.add('form-hint--ok'); }
+    }
+    hint.textContent = text;
+}
+
+function _openFuelModal() {
+    _fuelFormGen++;
+    _fuelPhotoBusy = 0;
+    document.getElementById('fuelModal').classList.add('open');
+}
+
+function showFuelForm(vehicleId) {
+    if (!requireEdit('warehouse')) return;
+    const usable = vehicles.filter(v => v.status !== 'retired');
+    if (!usable.length) { showToast('Add a vehicle first', 'warning'); return; }
+    document.getElementById('fuelModalTitle').innerHTML = '<i class="fas fa-gas-pump"></i> Log Fuel';
+    document.getElementById('fuelForm').reset();
+    document.getElementById('editFuelId').value = '';
+    _fuelVehicleOptions(vehicleId || (usable.length === 1 ? usable[0].id : ''));
+    document.getElementById('fuelDate').value = toISODate();
+    _fuelPhotoData = ''; _fuelPhotoDirty = false; _fuelPhotoLoading = false;
+    setFuelPhotoPreview();
+    updateFuelKmHint();
+    _openFuelModal();
+}
+
+function editFuelLog(id) {
+    if (!requireEdit('warehouse')) return;
+    const r = fuelLogs.find(x => x.id === id);
+    if (!r) return;
+    document.getElementById('fuelModalTitle').innerHTML = '<i class="fas fa-gas-pump"></i> Edit Fuel Record';
+    document.getElementById('editFuelId').value = r.id;
+    _fuelVehicleOptions(r.vehicleId);
+    document.getElementById('fuelDate').value = r.date || '';
+    document.getElementById('fuelLiters').value = r.liters != null ? r.liters : '';
+    document.getElementById('fuelKm').value = r.km != null ? r.km : '';
+    document.getElementById('fuelNote').value = r.note || '';
+    _fuelPhotoData = ''; _fuelPhotoDirty = false; _fuelPhotoLoading = !!r.hasPhoto;
+    setFuelPhotoPreview();
+    updateFuelKmHint();
+    _openFuelModal();
+    if (_fuelPhotoLoading) {
+        const gen = _fuelFormGen;
+        loadFuelPhoto(id).then(photo => {
+            if (gen !== _fuelFormGen) return;
+            _fuelPhotoLoading = false;
+            if (!_fuelPhotoDirty) _fuelPhotoData = photo;
+            setFuelPhotoPreview();
+        }).catch(err => {
+            console.error('[fuel] photo load failed:', err);
+            if (gen !== _fuelFormGen) return;
+            _fuelPhotoLoading = false;
+            setFuelPhotoPreview();
+            showToast('Existing receipt photo failed to load — it is still saved', 'warning');
+        });
+    }
+}
+
+function closeFuelModal(force) {
+    const m = document.getElementById('fuelModal');
+    const open = m.classList.contains('open');
+    if (!force && open && _fuelPhotoDirty) {
+        if (!confirm(_fuelPhotoData ? 'The receipt photo is not saved yet and will be lost. Close anyway?'
+                                    : 'The photo change is not saved yet. Close anyway?')) return;
+    } else if (!force && open && !okToDiscardTyping('fuelForm')) {
+        return;
+    }
+    _fuelFormGen++;
+    _fuelPhotoBusy = 0;
+    m.classList.remove('open');
+}
+
+async function handleFuelPhotoChange(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { showToast('The file must be an image (photo)', 'warning'); return; }
+    const gen = _fuelFormGen;
+    _fuelPhotoBusy++;
+    try {
+        const data = await compressImageToDataURL(file);
+        if (gen !== _fuelFormGen || !document.getElementById('fuelModal').classList.contains('open')) return;
+        _fuelPhotoData = data; _fuelPhotoDirty = true; _fuelPhotoLoading = false;
+        setFuelPhotoPreview();
+    } catch (err) {
+        showToast(err.message || 'Failed to process the photo', 'error');
+    } finally {
+        if (gen === _fuelFormGen) _fuelPhotoBusy = Math.max(0, _fuelPhotoBusy - 1);
+    }
+}
+
+function setFuelPhotoPreview() {
+    const wrap = document.getElementById('fuelPhotoPreviewWrap');
+    const img = document.getElementById('fuelPhotoPreview');
+    const loading = document.getElementById('fuelPhotoLoading');
+    if (loading) loading.style.display = (_fuelPhotoLoading && !_fuelPhotoData) ? '' : 'none';
+    if (!wrap || !img) return;
+    if (_fuelPhotoData) { img.src = _fuelPhotoData; wrap.style.display = ''; }
+    else { img.removeAttribute('src'); wrap.style.display = 'none'; }
+}
+
+function removeFuelPhoto() {
+    _fuelPhotoData = ''; _fuelPhotoDirty = true; _fuelPhotoLoading = false;
+    setFuelPhotoPreview();
+}
+
+async function loadFuelPhoto(id) {
+    if (_fuelPhotoCache.get(id)) return _fuelPhotoCache.get(id);
+    if (!window.cloud || typeof window.cloud.getFuelPhoto !== 'function') return '';
+    const photo = await window.cloud.getFuelPhoto(id);
+    if (photo) _fuelPhotoCache.set(id, photo);
+    return photo;
+}
+
+async function openFuelPhoto(id, btn) {
+    const r = fuelLogs.find(x => x.id === id);
+    const v = r && vehicles.find(x => x.id === r.vehicleId);
+    const original = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+    let photo = '';
+    try {
+        photo = await loadFuelPhoto(id);
+    } catch (err) {
+        console.error('[fuel] photo load failed:', err);
+        showToast(navigator.onLine ? 'Failed to load the receipt photo' : 'The photo needs a signal to load', 'error');
+        return;
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = original; }
+    }
+    if (!photo) { showToast('Photo not found', 'warning'); return; }
+    openPhotoLightbox(photo, 0, { captions: [`Receipt · ${r ? r.date : ''}${v ? ' · ' + v.plate : ''}`] });
+}
+
+// Why a receipt photo cannot be sent from here right now, or ''.
+function fuelPhotoBlocker() {
+    if (!window.cloud?.isReady) return 'Not connected yet — the receipt photo cannot be sent. Try again in a moment';
+    if (typeof window.cloud.saveFuelPhoto !== 'function') return 'Reload the page — an old version is still active and cannot send the photo';
+    return '';
+}
+
+function _sendFuelPhoto(recId, photo) {
+    if (photo) _fuelPhotoCache.set(recId, photo); else _fuelPhotoCache.delete(recId);
+    if (suppressCloudWrites || !window.cloud?.isReady) return;
+    const call = photo ? cloudCall('saveFuelPhoto', recId, photo) : cloudCall('deleteFuelPhoto', recId);
+    Promise.resolve(call).catch(err => {
+        console.error('[fuel] photo save failed:', err);
+        if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+        showToast(photo ? 'Record saved, but the receipt photo failed to send' : 'Record saved, but removing the photo failed', 'error');
+    });
+}
+
+function saveFuelLog(event) {
+    event.preventDefault();
+    if (!requireEdit('warehouse')) return;
+    if (_fuelPhotoBusy > 0) { showToast('The photo is still being processed — save again in a moment', 'warning'); return; }
+    const id = document.getElementById('editFuelId').value;
+    const vehicleId = document.getElementById('fuelVehicle').value;
+    const v = vehicles.find(x => x.id === vehicleId);
+    if (!v) { showToast('Pick a vehicle', 'warning'); return; }
+    const date = document.getElementById('fuelDate').value;
+    if (!date) { showToast('Fill in the date', 'warning'); return; }
+    if (date > toISODate()) { showToast('The date is in the future', 'warning'); return; }
+    const liters = Number(document.getElementById('fuelLiters').value);
+    if (!(liters > 0)) { showToast('Liters must be more than 0', 'warning'); return; }
+    const kmRaw = document.getElementById('fuelKm').value;
+    const km = Number(kmRaw);
+    if (kmRaw === '' || !isFinite(km) || km < 0) { showToast('Fill in the odometer in km', 'warning'); return; }
+    if (_fuelPhotoDirty && _fuelPhotoData) {
+        const block = fuelPhotoBlocker();
+        if (block) { showToast(block, 'warning'); return; }
+    }
+    // A low reading is asked about, not refused: it may be this record that
+    // is right and an earlier one that was mistyped.
+    const prev = _fuelPrevReading(vehicleId, id);
+    if (prev && km < prev.km && !confirm(`The odometer ${fmtKm(km)} is LOWER than the last reading ${fmtKm(prev.km)} (${prev.date || prev.what}).\n\nSave anyway? It will be marked to check.`)) return;
+    if (prev && km - prev.km > FUEL_BIG_JUMP_KM && !confirm(`${fmtKm(km - prev.km)} since the last reading (${fmtKm(prev.km)}). Is the odometer ${fmtKm(km)} right?`)) return;
+    if (date < (v.handoverDate || '') && !confirm(`The date is before the handover (${v.handoverDate}). Save anyway?`)) return;
+
+    const existing = id ? fuelLogs.find(r => r.id === id) : null;
+    const rec = {
+        id: id || generateFuelId(),
+        vehicleId,
+        vehiclePlate: v.plate || '',
+        date,
+        liters: Math.round(liters * 100) / 100,
+        km: Math.round(km),
+        hasPhoto: _fuelPhotoDirty ? !!_fuelPhotoData : !!(existing && existing.hasPhoto),
+        note: (document.getElementById('fuelNote').value || '').trim(),
+        createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),
+        createdBy: existing ? (existing.createdBy || '') : ((currentUser && currentUser.email) || ''),
+        updatedAt: Date.now()
+    };
+    // The photo goes before the record, so no device sees the record point at
+    // a photo the server does not have yet. A removal goes after.
+    if (_fuelPhotoDirty && _fuelPhotoData) _sendFuelPhoto(rec.id, _fuelPhotoData);
+    const idx = fuelLogs.findIndex(r => r.id === rec.id);
+    if (idx === -1) fuelLogs.push(rec); else fuelLogs[idx] = rec;
+    cloudWrite(
+        { action: existing ? 'update' : 'create', unitName: `[Vehicle] ${v.plate}`, field: 'Fuel',
+          before: existing ? `${existing.date} · ${fmtLiters(existing.liters)} at ${fmtKm(existing.km)}` : '',
+          after: `${rec.date} · ${fmtLiters(rec.liters)} at ${fmtKm(rec.km)}` },
+        cloudCall('saveFuelLog', rec),
+        existing ? 'Fuel record updated' : 'Fuel logged',
+        err => {
+            console.error('[fuel] save failed:', err);
+            if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+            showToast('Failed to save the fuel record', 'error');
+        }
+    );
+    if (_fuelPhotoDirty && !_fuelPhotoData && existing && existing.hasPhoto) _sendFuelPhoto(rec.id, '');
+    closeFuelModal(true);
+    renderVehicleView();
+}
+
+function deleteFuelLog(id) {
+    if (!requireEdit('warehouse')) return;
+    const r = fuelLogs.find(x => x.id === id);
+    if (!r) return;
+    const v = vehicles.find(x => x.id === r.vehicleId);
+    const plate = v ? v.plate : (r.vehiclePlate || '');
+    if (!confirm(`Delete the fuel record of ${plate} on ${r.date} (${fmtLiters(r.liters)} at ${fmtKm(r.km)})?`)) return;
+    fuelLogs = fuelLogs.filter(x => x.id !== id);
+    cloudWrite({ action: 'delete', unitName: `[Vehicle] ${plate}`, field: 'Fuel', before: `${r.date} · ${fmtLiters(r.liters)} at ${fmtKm(r.km)}`, after: '' },
+        cloudCall('deleteFuelLog', id), 'Fuel record deleted',
+        err => { console.error('[fuel] delete failed:', err); showToast('Failed to delete the fuel record', 'error'); });
+    if (r.hasPhoto) { _fuelPhotoCache.delete(id); _dropPhotoDoc('deleteFuelPhoto', id); }
+    renderVehicleView();
+}
+
+function exportFuelCSV() {
+    if (!canCsv('export')) return;
+    const rows = getFilteredFuelRows().slice().reverse();
+    if (!rows.length) { showToast('No fuel records to export', 'warning'); return; }
+    const headers = ['No', 'Date', 'Vehicle', 'Brand', 'Model', 'Odometer (km)', 'Distance (km)', 'Liters', 'km/L (estimate)', 'To check', 'Receipt photo', 'Notes'];
+    const body = rows.map((x, i) => [
+        i + 1, x.rec.date || '', x.vehicle ? x.vehicle.plate : (x.rec.vehiclePlate || ''),
+        x.vehicle ? x.vehicle.brand || '' : '', x.vehicle ? x.vehicle.model || '' : '',
+        x.km, x.distance != null ? x.distance : '', x.liters, x.kmPerL != null ? Math.round(x.kmPerL * 10) / 10 : '',
+        x.flags.map(f => FUEL_FLAG_TEXT[f] || f).join('; '), x.rec.hasPhoto ? 'Yes' : '', x.rec.note || ''
+    ]);
+    const blob = new Blob(['﻿' + toCSV(headers, body)], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fuel_log_${toISODate()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Exported ${rows.length} fuel record(s) to CSV`, 'success');
 }
 
 // ============================================================
@@ -15316,6 +16009,24 @@ function decisionGroups() {
             })),
             goto: 'warehouseDevices'
         });
+
+        // Fuel records whose odometer or consumption looks wrong, last 60 days.
+        const since = toISODate(new Date(Date.now() - 60 * 86400000));
+        const odd = [];
+        vehicles.forEach(v => fuelHistory(v.id).forEach(x => {
+            if (x.flags.length && String(x.rec.date || '') >= since) odd.push({ v, x });
+        }));
+        odd.sort((a, b) => String(b.x.rec.date || '').localeCompare(String(a.x.rec.date || '')));
+        add({
+            key: 'fuel', icon: 'gas-pump', tone: 'warning',
+            title: 'Fuel records to check',
+            total: odd.length,
+            items: odd.slice(0, 6).map(({ v, x }) => ({
+                text: `${v.plate} · ${x.rec.date || ''} · ${fmtKm(x.km)}`,
+                sub: x.flags.map(f => FUEL_FLAG_TEXT[f] || f).join(' · ')
+            })),
+            goto: 'warehouseVehicles'
+        });
     }
 
     // ---- Pendaftar menunggu disetujui ----
@@ -15423,6 +16134,10 @@ function goDecision(target) {
         case 'warehouseDevices':
             navigateTo('warehouse');
             switchWarehouseTab('devices');
+            break;
+        case 'warehouseVehicles':
+            navigateTo('warehouse');
+            switchWarehouseTab('vehicles');
             break;
         default:
             navigateTo(target);

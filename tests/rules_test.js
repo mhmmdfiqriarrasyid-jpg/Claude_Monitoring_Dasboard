@@ -41,6 +41,8 @@ async function check(name, p, expectOk) {
         await u('nobody', 'khl', {});
         await u('tech', 'khl', { inspection: 'edit' });
         await u('sup', 'staff', { inspection: 'view', inspectionApprove: 'edit', damage: 'edit' });
+        await u('wh', 'staff', { warehouse: 'edit' });
+        await u('whv', 'staff', { warehouse: 'view' });
         await setDoc(doc(db, 'workLogs', 'wl_1'), { id: 'wl_1', task: 'x', approval: 'pending', createdByUid: 'writer' });
         await setDoc(doc(db, 'workLogs', 'wl_ok'), { id: 'wl_ok', task: 'x', approval: 'approved', approvedByEmail: 'boss@x.id', createdByUid: 'writer' });
         await setDoc(doc(db, 'workLogs', 'wl_both'), { id: 'wl_both', task: 'x', approval: 'pending', createdByUid: 'both' });
@@ -156,6 +158,19 @@ async function check(name, p, expectOk) {
     await check('surat sakit: jadwal-saja TIDAK bisa dibaca', getDoc(doc(S, 'workLogPhotos', 'lv_1')), false);
     await check('surat sakit: pengisi laporan bisa membaca', getDoc(doc(W, 'workLogPhotos', 'lv_1')), true);
     await check('surat sakit: atasan penyetuju bisa membaca', getDoc(doc(B, 'workLogPhotos', 'lv_1')), true);
+    // Kendaraan operasional dan catatan BBM (v158): area Warehouse.
+    const WH = as('wh'), WHV = as('whv');
+    await check('kendaraan: editor gudang boleh menambah', setDoc(doc(WH, 'vehicles', 'veh_1'), { id: 'veh_1', plate: 'PA 1234 XY', startKm: 8880, handoverDate: '2026-10-16' }), true);
+    await check('kendaraan: id di dokumen harus sama', setDoc(doc(WH, 'vehicles', 'veh_2'), { id: 'lain', plate: 'X' }), false);
+    await check('kendaraan: tanpa akses gudang TIDAK boleh menulis', setDoc(doc(N, 'vehicles', 'veh_3'), { id: 'veh_3', plate: 'X' }), false);
+    await check('kendaraan: hanya-lihat gudang TIDAK boleh menulis', setDoc(doc(WHV, 'vehicles', 'veh_4'), { id: 'veh_4', plate: 'X' }), false);
+    await check('catatan BBM: editor gudang boleh menulis', setDoc(doc(WH, 'fuelLogs', 'fuel_1'), { id: 'fuel_1', vehicleId: 'veh_1', date: '2026-10-16', liters: 3.2, km: 9012 }), true);
+    await check('catatan BBM: pengguna aktif bisa membaca', getDoc(doc(W, 'fuelLogs', 'fuel_1')), true);
+    await check('catatan BBM: tanpa akses TIDAK boleh menghapus', deleteDoc(doc(N, 'fuelLogs', 'fuel_1')), false);
+    await check('foto struk: editor gudang boleh menulis', setDoc(doc(WH, 'fuelPhotos', 'fuel_1'), { id: 'fuel_1', photo: 'data:image/jpeg;base64,AA' }), true);
+    await check('foto struk: hanya-lihat gudang bisa membaca', getDoc(doc(WHV, 'fuelPhotos', 'fuel_1')), true);
+    await check('foto struk: tanpa akses gudang TIDAK bisa membaca', getDoc(doc(N, 'fuelPhotos', 'fuel_1')), false);
+
     // Foto kerusakan Before = damagePhotos/{id}, After = damagePhotos/{id}__after.
     await check('foto After kerusakan: penyunting kerusakan boleh menulis', setDoc(doc(SU, 'damagePhotos', 'dmg_1__after'), { id: 'dmg_1', side: 'after', photo: 'data:image/jpeg;base64,AA', updatedAt: 1 }), true);
     await check('foto After kerusakan: penyunting kerusakan bisa membaca', getDoc(doc(SU, 'damagePhotos', 'dmg_1__after')), true);

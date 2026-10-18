@@ -64,7 +64,7 @@ const { launch, BASE_URL } = require('./_env');
             saveTeamMembers: mk('teamMembers'), saveShifts: mk('shifts'),
             saveLeaveRequests: mk('leaveRequests'),
             deleteLeaveRequest: id => { deleted.push('lv:' + id); return Promise.resolve(); },
-            saveWorkLogs: mk('workLogs'), saveDevices: mk('devices'), saveStockItems: mk('stockItems'),
+            saveWorkLogs: mk('workLogs'), saveDevices: mk('devices'), saveStockItems: mk('stockItems'), saveVehicles: mk('vehicles'), saveFuelLogs: mk('fuelLogs'),
             deleteImplement: id => { deleted.push('impl:' + id); return Promise.resolve(); },
             deleteShift: id => { deleted.push('shift:' + id); return Promise.resolve(); },
             deleteTeamMember: id => { deleted.push('tm:' + id); return Promise.resolve(); },
@@ -134,7 +134,7 @@ const { launch, BASE_URL } = require('./_env');
         t('tanpa akses tim, koleksi tim tidak ikut', 'teamMembers' in exported, false);
         t('dan berkasnya mengakui apa yang tidak ada di dalamnya',
           exported.omitted.map(o => o.key).sort(),
-          ['devices', 'inspectionPlans', 'inspections', 'leaveRequests', 'shifts', 'stockItems', 'teamMembers', 'workLogs']);
+          ['devices', 'fuelLogs', 'inspectionPlans', 'inspections', 'leaveRequests', 'shifts', 'stockItems', 'teamMembers', 'vehicles', 'workLogs']);
         t('toastnya menyebut yang tidak termasuk',
           toasts.some(m => /NOT included/.test(m)), true);
 
@@ -155,12 +155,12 @@ const { launch, BASE_URL } = require('./_env');
         const barisLaporan = [...document.querySelectorAll('#restoreReportBody tr')]
             .map(tr => tr.textContent.replace(/\\s+/g, ' ').trim());
         t('laporan restore muncul', barisLaporan.length > 0, true);
-        // v3 hanya membawa implement, kerusakan, dan stok lisensi — dua belas
-        // koleksi lainnya (termasuk jadwal & laporan pengecekan, Master Lists
-        // dan License Requirements) tidak ada di dalamnya, dan semuanya harus
-        // tertulis.
+        // v3 hanya membawa implement, kerusakan, dan stok lisensi — empat belas
+        // koleksi lainnya (termasuk jadwal & laporan pengecekan, Master Lists,
+        // License Requirements, kendaraan dan catatan BBM) tidak ada di
+        // dalamnya, dan semuanya harus tertulis.
         t('koleksi yang tidak ada di berkas DILAPORKAN, bukan didiamkan',
-          barisLaporan.filter(x => /not in this file/.test(x)).length, 12);
+          barisLaporan.filter(x => /not in this file/.test(x)).length, 14);
         t('anggota tim termasuk yang dilaporkan hilang',
           barisLaporan.some(x => /Team Members.*not in this file/.test(x)), true);
         t('peringatan cadangan lama tampil',
@@ -190,6 +190,8 @@ const { launch, BASE_URL } = require('./_env');
         v4.damageComponents = [{ id: 'dc1', name: 'GPS', unitField: 'gps' }];
         v4.inspectionPlans = [{ id: 'inp1', date: '2026-10-02', unitIds: [] }];
         v4.inspections = [{ id: 'ins1', unitId: 'u1', date: '2026-10-01', approval: 'approved' }];
+        v4.vehicles = [{ id: 'veh1', plate: 'PA 1', startKm: 8880, handoverDate: '2026-10-16', status: 'active' }];
+        v4.fuelLogs = [{ id: 'fuel1', vehicleId: 'veh1', date: '2026-10-16', liters: 3, km: 9000 }];
         // Mode GANTI bertanya DUA kali: pertama memilih gabung/ganti (Batal =
         // ganti), lalu meminta penegasan sebelum menghapus. Menjawab "tidak"
         // pada yang kedua membatalkan seluruh restore.

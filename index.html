@@ -1489,6 +1489,10 @@
                         aria-controls="whStockPanel" onclick="switchWarehouseTab('stock')">
                     <i class="fas fa-boxes-stacked"></i> Stock Items
                 </button>
+                <button class="team-tab wh-tab" data-tab="vehicles" role="tab" aria-selected="false"
+                        aria-controls="whVehiclePanel" onclick="switchWarehouseTab('vehicles')">
+                    <i class="fas fa-motorcycle"></i> Vehicles &amp; Fuel
+                </button>
             </div>
         </div>
 
@@ -1646,6 +1650,81 @@
                             </tr>
                         </thead>
                         <tbody id="stockBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ---------- Operational vehicles and their fuel log ---------- -->
+        <div id="whVehiclePanel" role="tabpanel" aria-label="Vehicles and fuel" style="display:none">
+            <div class="downtime-kpis" style="margin-bottom:16px">
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Vehicles</div>
+                    <div class="downtime-kpi__value" id="vehKpi_count">0</div>
+                    <div class="downtime-kpi__sub">In use</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Fuel this month</div>
+                    <div class="downtime-kpi__value" id="vehKpi_liters">0 L</div>
+                    <div class="downtime-kpi__sub" id="vehKpi_fills">0 refuels</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Distance this month</div>
+                    <div class="downtime-kpi__value" id="vehKpi_km">0 km</div>
+                    <div class="downtime-kpi__sub">From the odometer at refuels</div>
+                </div>
+                <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">To check</div>
+                    <div class="downtime-kpi__value" id="vehKpi_flags">0</div>
+                    <div class="downtime-kpi__sub">Odometer or fuel looks wrong</div>
+                </div>
+            </div>
+
+            <div class="edit-toolbar">
+                <div class="edit-toolbar__left">
+                    <button class="btn btn-success editonly editonly--warehouse" onclick="showFuelForm()">
+                        <i class="fas fa-gas-pump"></i> Log Fuel
+                    </button>
+                    <button class="btn btn-secondary editonly editonly--warehouse" onclick="showAddVehicleForm()">
+                        <i class="fas fa-plus"></i> Add Vehicle
+                    </button>
+                    <button class="btn btn-secondary csv-export" onclick="exportFuelCSV()">
+                        <i class="fas fa-download"></i> Export CSV
+                    </button>
+                </div>
+                <div class="edit-toolbar__right">
+                    <select id="fuelVehicleFilter" aria-label="Filter fuel records by vehicle" class="btn btn-secondary btn-sm" onchange="renderVehicleView()">
+                        <option value="">All Vehicles</option>
+                    </select>
+                    <input type="month" id="fuelMonthFilter" aria-label="Filter fuel records by month" class="btn btn-secondary btn-sm" onchange="renderVehicleView()">
+                    <button class="btn btn-secondary btn-sm" onclick="clearFuelFilter()">Reset</button>
+                    <span id="fuelCount">0 records</span>
+                </div>
+            </div>
+
+            <div class="vehicle-cards" id="vehicleCards"></div>
+
+            <div class="table-card">
+                <div class="table-card__header">
+                    <div class="table-card__title"><i class="fas fa-gas-pump"></i> Fuel Log</div>
+                </div>
+                <div class="table-wrapper" style="max-height:600px;">
+                    <table class="data-table table--cardable" id="fuelTable">
+                        <thead>
+                            <tr>
+                                <th>No</th>
+                                <th>Date</th>
+                                <th>Vehicle</th>
+                                <th>Odometer</th>
+                                <th>Distance</th>
+                                <th>Liters</th>
+                                <th>km / L</th>
+                                <th>Receipt</th>
+                                <th>Notes</th>
+                                <th class="col-actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fuelBody"></tbody>
                     </table>
                 </div>
             </div>
@@ -2334,6 +2413,131 @@
 
 <!-- ===== MANAGE DAMAGE COMPONENTS MODAL ===== -->
 <!-- ==================== DEVICE MODAL ==================== -->
+<!-- ===== VEHICLE MODAL ===== -->
+<div class="modal-overlay" id="vehicleModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="vehicleModalTitle"><i class="fas fa-motorcycle"></i> Add Vehicle</h3>
+            <button class="btn-icon" onclick="closeVehicleModal()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form id="vehicleForm" onsubmit="saveVehicle(event)">
+            <input type="hidden" id="editVehicleId">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="vehPlate">Plate number / name</label>
+                        <input class="form-input" id="vehPlate" required maxlength="40" autocomplete="off" placeholder="e.g. PA 1234 XY">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="vehType">Type</label>
+                        <select class="form-select" id="vehType">
+                            <option value="Motorbike">Motorbike</option>
+                            <option value="Car">Car</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="vehBrand">Brand</label>
+                        <input class="form-input" id="vehBrand" maxlength="40" autocomplete="off" placeholder="e.g. Honda / Yamaha">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="vehModel">Model <span class="form-optional">(optional)</span></label>
+                        <input class="form-input" id="vehModel" maxlength="40" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="vehHandover">Handover date</label>
+                        <input type="date" class="form-input" id="vehHandover" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="vehStartKm">Odometer at handover (km)</label>
+                        <input type="number" class="form-input" id="vehStartKm" required min="0" step="1" inputmode="numeric" placeholder="e.g. 8880">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="vehHolder">Held by <span class="form-optional">(optional)</span></label>
+                        <input class="form-input" id="vehHolder" list="vehHolderList" maxlength="60" autocomplete="off" placeholder="Person or team">
+                        <datalist id="vehHolderList"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="vehStatus">Status</label>
+                        <select class="form-select" id="vehStatus">
+                            <option value="active">In use</option>
+                            <option value="retired">Retired</option>
+                        </select>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="vehNote">Notes <span class="form-optional">(optional)</span></label>
+                        <textarea class="form-input form-textarea" id="vehNote" rows="2" maxlength="300"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeVehicleModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-check"></i> Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ===== FUEL MODAL ===== -->
+<div class="modal-overlay" id="fuelModal">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 id="fuelModalTitle"><i class="fas fa-gas-pump"></i> Log Fuel</h3>
+            <button class="btn-icon" onclick="closeFuelModal()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form id="fuelForm" onsubmit="saveFuelLog(event)">
+            <input type="hidden" id="editFuelId">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group full-width">
+                        <label class="form-label" for="fuelVehicle">Vehicle</label>
+                        <select class="form-select" id="fuelVehicle" required onchange="updateFuelKmHint()"></select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="fuelDate">Date</label>
+                        <input type="date" class="form-input" id="fuelDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="fuelLiters">Liters</label>
+                        <input type="number" class="form-input" id="fuelLiters" required min="0.01" step="0.01" inputmode="decimal" placeholder="e.g. 3.5">
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="fuelKm">Odometer at refuel (km)</label>
+                        <input type="number" class="form-input" id="fuelKm" required min="0" step="1" inputmode="numeric" oninput="updateFuelKmHint()">
+                        <p class="form-hint" id="fuelKmHint"></p>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="fuelPhotoInput">Receipt photo <span class="form-optional">(optional)</span></label>
+                        <input type="file" id="fuelPhotoInput" accept="image/*" style="display:none" onchange="handleFuelPhotoChange(event)">
+                        <div class="dmg-photo-row">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('fuelPhotoInput').click()">
+                                <i class="fas fa-camera"></i> Take / Choose Photo
+                            </button>
+                            <span id="fuelPhotoLoading" class="wl-photo__loading" style="display:none">
+                                <i class="fas fa-spinner fa-spin"></i> Loading photo…
+                            </span>
+                            <div id="fuelPhotoPreviewWrap" class="dmg-photo-preview" style="display:none">
+                                <img id="fuelPhotoPreview" alt="Receipt photo preview" onclick="openPhotoLightbox(this.src)">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="removeFuelPhoto()">
+                                    <i class="fas fa-trash" style="color:var(--danger)"></i> Delete photo
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="fuelNote">Notes <span class="form-optional">(optional)</span></label>
+                        <textarea class="form-input form-textarea" id="fuelNote" rows="2" maxlength="300"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeFuelModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-check"></i> Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="modal-overlay" id="deviceModal">
     <div class="modal-card">
         <div class="modal-header">

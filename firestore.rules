@@ -346,6 +346,14 @@ service cloud.firestore {
                              allow create, update: if canEditArea('warehouse') && idMatches(id); }
     match /stockItems/{id} { allow read: if isActive(); allow delete: if canEditArea('warehouse');
                              allow create, update: if canEditArea('warehouse') && idMatches(id); }
+    // Operational vehicles (company motorbikes) and their fuel log: the same
+    // area. A fuel receipt photo is one document per record and only
+    // warehouse viewers may open it.
+    match /vehicles/{id}   { allow read: if isActive(); allow delete: if canEditArea('warehouse');
+                             allow create, update: if canEditArea('warehouse') && idMatches(id); }
+    match /fuelLogs/{id}   { allow read: if isActive(); allow delete: if canEditArea('warehouse');
+                             allow create, update: if canEditArea('warehouse') && idMatches(id); }
+    match /fuelPhotos/{id} { allow read: if canViewArea('warehouse'); allow write: if canEditArea('warehouse'); }
 
     // ---- Accounts ----
     // Sign-up may only ever create a PENDING VIEWER. Without this, any signed-in

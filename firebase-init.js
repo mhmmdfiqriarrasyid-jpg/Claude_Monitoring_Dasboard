@@ -131,6 +131,11 @@ const LICENSE_REQ_COL = 'licenseRequirements';
 const DAMAGE_COMPONENTS_COL = 'damageComponents';
 const DEVICES_COL = 'devices';
 const STOCK_ITEMS_COL = 'stockItems';
+// Operational vehicles (company motorbikes) and their fuel log. A fuel
+// record's receipt photo lives in fuelPhotos/{recordId}, never subscribed.
+const VEHICLES_COL = 'vehicles';
+const FUEL_LOGS_COL = 'fuelLogs';
+const FUEL_PHOTOS_COL = 'fuelPhotos';
 const TEAM_MEMBERS_COL = 'teamMembers';
 const SHIFTS_COL = 'shifts';
 const WORK_LOGS_COL = 'workLogs';
@@ -590,6 +595,71 @@ window.cloud = {
         );
     },
 
+    // ---- Operational vehicles ----
+    async saveVehicle(rec) {
+        await setDoc(doc(db, VEHICLES_COL, rec.id), rec, { merge: true });
+    },
+    async saveVehicles(items) {
+        if (!items || !items.length) return;
+        await batchInChunks(items, (batch, r) => batch.set(doc(db, VEHICLES_COL, r.id), r, { merge: true }));
+    },
+    async deleteVehicle(id) {
+        await deleteDoc(doc(db, VEHICLES_COL, id));
+    },
+    async getAllVehicles() {
+        const snap = await getDocs(collection(db, VEHICLES_COL));
+        return snap.docs.map(withDocId);
+    },
+    subscribeVehicles(callback, errorCallback) {
+        return onSnapshot(
+            collection(db, VEHICLES_COL),
+            snap => callback(snap.docs.map(withDocId)),
+            err => {
+                console.error('[cloud] vehicles subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
+    },
+
+    // ---- Fuel log: one record per refuel (date, liters, odometer) ----
+    async saveFuelLog(rec) {
+        await setDoc(doc(db, FUEL_LOGS_COL, rec.id), rec, { merge: true });
+    },
+    async saveFuelLogs(items) {
+        if (!items || !items.length) return;
+        await batchInChunks(items, (batch, r) => batch.set(doc(db, FUEL_LOGS_COL, r.id), r, { merge: true }));
+    },
+    async deleteFuelLog(id) {
+        await deleteDoc(doc(db, FUEL_LOGS_COL, id));
+    },
+    async getAllFuelLogs() {
+        const snap = await getDocs(collection(db, FUEL_LOGS_COL));
+        return snap.docs.map(withDocId);
+    },
+    subscribeFuelLogs(callback, errorCallback) {
+        return onSnapshot(
+            collection(db, FUEL_LOGS_COL),
+            snap => callback(snap.docs.map(withDocId)),
+            err => {
+                console.error('[cloud] fuelLogs subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
+    },
+    // Receipt photo of a fuel record, one document per record, read on demand.
+    async getFuelPhoto(id) {
+        const snap = await getDoc(doc(db, FUEL_PHOTOS_COL, id));
+        if (!snap.exists()) return '';
+        const data = snap.data();
+        return typeof data.photo === 'string' ? data.photo : '';
+    },
+    async saveFuelPhoto(id, photo) {
+        await setDoc(doc(db, FUEL_PHOTOS_COL, id), { id, photo, updatedAt: Date.now() });
+    },
+    async deleteFuelPhoto(id) {
+        await deleteDoc(doc(db, FUEL_PHOTOS_COL, id));
+    },
+
     // ---- Team members (people, including those without a login account) ----
     async saveTeamMember(member) {
         await setDoc(doc(db, TEAM_MEMBERS_COL, member.id), member, { merge: true });
@@ -925,7 +995,8 @@ window.cloud = {
             userCategories: USER_CATEGORIES_COL, damageComponents: DAMAGE_COMPONENTS_COL,
             teamMembers: TEAM_MEMBERS_COL, shifts: SHIFTS_COL, workLogs: WORK_LOGS_COL,
             leaveRequests: LEAVE_COL, inspectionPlans: INSPECTION_PLANS_COL, inspections: INSPECTIONS_COL,
-            devices: DEVICES_COL, stockItems: STOCK_ITEMS_COL, licenseRequirements: LICENSE_REQ_COL
+            devices: DEVICES_COL, stockItems: STOCK_ITEMS_COL, licenseRequirements: LICENSE_REQ_COL,
+            vehicles: VEHICLES_COL, fuelLogs: FUEL_LOGS_COL
         };
         const name = cols[which];
         if (!name) throw new Error(`unknown collection: ${which}`);

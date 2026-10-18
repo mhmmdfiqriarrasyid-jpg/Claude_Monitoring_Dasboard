@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.852 pemeriksaan di empat puluh tujuh suite, menggerakkan Chromium sungguhan terhadap
+1.887 pemeriksaan di empat puluh delapan suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -307,6 +307,27 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
   Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
   **Implement Brands** (`masterLists/brand`) untuk Agricultural.
+- **Kendaraan & BBM v158 (dijaga `tests/vehicles_test.js` dan rules_test).**
+  Tab baru **Vehicles & Fuel** di Warehouse untuk motor operasional.
+  - *Kendaraan* (`vehicles/{id}`): plat/nama, jenis, brand, model, tanggal
+    serah terima dan **KM odometer saat serah terima** (`startKm`), pemegang,
+    status (In use / Retired). Kendaraan yang sudah punya catatan BBM tidak
+    bisa dihapus — jadikan Retired.
+  - *Catatan isi BBM* (`fuelLogs/{id}`): tanggal, liter, KM odometer saat
+    mengisi, catatan, foto struk opsional (`fuelPhotos/{id}`, tidak
+    di-subscribe, dikirim sebelum catatannya).
+  - *Perhitungan* (`fuelHistory`, `vehicleStats`): jarak = KM ini − KM
+    sebelumnya (yang pertama dari KM serah terima; berikutnya dari KM
+    tertinggi sejauh ini), km/L ≈ jarak ÷ liter isi ini (anggapan isi
+    penuh), rata-rata = total jarak terhitung ÷ liternya; ringkasan bulan
+    berjalan. Ditandai untuk dicek: KM lebih rendah dari sebelumnya, di
+    bawah KM serah terima, KM sama, konsumsi di luar ×½…×2 median kendaraan.
+  - Form: KM terakhir ditampilkan; KM lebih rendah, lompatan >1.500 km, dan
+    tanggal sebelum serah terima ditanya dulu; tanggal masa depan dan liter
+    ≤ 0 ditolak. Kotak Keputusan: "Fuel records to check" (60 hari). CSV,
+    cadangan (`vehicles`, `fuelLogs`, foto `fuelPhotos`).
+  - Akses: area **Warehouse** yang sudah ada. **Perlu publish
+    firestore.rules** (blok `vehicles`, `fuelLogs`, `fuelPhotos`).
 - **Tampilan fase 1 v156 — HP di lapangan (dijaga `tests/ux_phase1_test.js`).**
   Hasil review ui-ux-pro-max (rencana lengkap: artifact "Rencana Tampilan OT
   Dashboard").
@@ -540,7 +561,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   stempel `appliedAt` supaya hanya sekali); tanpa akses itu muncul di Kotak
   Keputusan. Foto di `inspectionPhotos/{id}` (tidak di-subscribe), ditulis
   SEBELUM laporannya.
-- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (131 skenario;
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (141 skenario;
   bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
   kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
   alur persetujuan laporan/izin (transisi status di atas, kunci isi dan foto
