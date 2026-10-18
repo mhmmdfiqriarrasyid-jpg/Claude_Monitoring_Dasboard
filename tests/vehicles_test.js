@@ -158,6 +158,52 @@ const { launch, BASE_URL } = require('./_env');
         saveFuelLog({ preventDefault() {} }); await tick(30);
         t('lalu tersimpan', fuelLogs.length, n0 + 1);
 
+        // =============== foto ditolak bersama catatannya: tidak ada "Record saved" ===============
+        const denied = () => Promise.reject(Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' }));
+        const realPhotoSave = window.cloud.saveFuelPhoto;
+        window.cloud.saveFuelLog = denied; window.cloud.saveFuelPhoto = denied;
+        toasts.length = 0;
+        const u0 = _unsent.size;
+        log(today, '3', '9710', () => { _fuelPhotoData = PH('DITOLAK'); _fuelPhotoDirty = true; });
+        await tick(80);
+        t('foto dan catatan ditolak: hanya "Not saved", tanpa "Record saved"', [toasts.some(m => /Record saved/.test(m)), _unsent.size], [false, u0 + 1]);
+        window.cloud.saveFuelLog = realSave;
+        toasts.length = 0;
+        log(today, '3', '9705', () => { _fuelPhotoData = PH('GAGAL'); _fuelPhotoDirty = true; });
+        await tick(80);
+        t('catatan tersimpan tetapi fotonya gagal: diberi tahu', toasts.includes('Record saved, but the receipt photo failed to send'), true);
+        window.cloud.saveFuelPhoto = realPhotoSave;
+        // dibuka lagi saat form tidak bisa terbuka (motor Retired): isian tetap disimpan
+        const keptKey = [..._unsent.keys()].pop();
+        editVehicle(v.id); document.getElementById('vehStatus').value = 'retired'; saveVehicle({ preventDefault() {} }); await tick(20);
+        reopenUnsent(keptKey);
+        t('dibuka lagi saat motor Retired: form tidak terbuka, isian tetap ada', [isOpen('fuelModal'), _unsent.has(keptKey)], [false, true]);
+        editVehicle(v.id); document.getElementById('vehStatus').value = 'active'; saveVehicle({ preventDefault() {} }); await tick(20);
+        // dibuka lagi saat sedang mengetik isi BBM lain: ditanya dulu
+        showFuelForm(v.id); await tick(20);
+        document.getElementById('fuelNote').value = 'isi kedua, belum disimpan';
+        asked = []; confirmAnswer = false;
+        reopenUnsent(keptKey); await tick(20);
+        t('dibuka lagi di atas form yang sedang diketik: ditanya, "tidak" = ketikan dan isian tetap', [/Discard what you typed/.test(asked[0] || ''), document.getElementById('fuelNote').value, _unsent.has(keptKey)], [true, 'isi kedua, belum disimpan', true]);
+        confirmAnswer = true;
+        reopenUnsent(keptKey); await tick(20);
+        t('... "ya" = isian yang ditolak terbuka dengan fotonya', [document.getElementById('fuelKm').value, _fuelPhotoData, _unsent.has(keptKey)], ['9710', PH('DITOLAK'), false]);
+        closeFuelModal(true);
+        // dibuat lalu dihapus saat offline, keduanya ditolak: tidak muncul lagi
+        let refuseCreate, refuseDelete;
+        const realDel = window.cloud.deleteFuelLog;
+        window.cloud.saveFuelLog = () => new Promise((_, rej) => { refuseCreate = rej; });
+        window.cloud.deleteFuelLog = () => new Promise((_, rej) => { refuseDelete = rej; });
+        log(today, '3', '9720');
+        const ghost = fuelLogs[fuelLogs.length - 1];
+        deleteFuelLog(ghost.id);
+        const permErr = Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' });
+        refuseCreate(permErr); await tick(20);
+        refuseDelete(permErr); await tick(20);
+        t('dibuat lalu dihapus, keduanya ditolak: catatan tidak muncul lagi', fuelLogs.some(r => r.id === ghost.id), false);
+        window.cloud.saveFuelLog = realSave; window.cloud.deleteFuelLog = realDel;
+        [..._unsent.keys()].forEach(k => _unsent.delete(k)); renderUnsentNotice();
+
         // =============== tampilan ===============
         renderVehicleView(); await tick(30);
         const st2 = vehicleStats(v, today.slice(0, 7));
@@ -299,12 +345,15 @@ const { launch, BASE_URL } = require('./_env');
     // HP: kartu motor satu kolom, tombol cukup besar, tabel jadi kartu
     await page.setViewportSize({ width: 390, height: 844 });
     const phone = await page.evaluate(async () => {
+        // catatan berisi tautan panjang tanpa spasi tidak boleh melebarkan kartu
+        vehicles[0].note = 'STNK: https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/view';
         renderVehicleView(); await new Promise(r => setTimeout(r, 50));
         const card = document.querySelector('.vehicle-card').getBoundingClientRect();
+        const note = document.querySelector('.vehicle-card__note').getBoundingClientRect();
         const btn = document.querySelector('.vehicle-card__actions .btn').getBoundingClientRect();
-        return [card.right <= innerWidth, btn.height >= 44, document.documentElement.scrollWidth <= innerWidth];
+        return [card.right <= innerWidth, note.right <= card.right, btn.height >= 44, document.documentElement.scrollWidth <= innerWidth];
     });
-    T.push({ n: 'HP: kartu motor muat, tombol ≥44px, tanpa geser samping', g: phone, w: [true, true, true], pass: JSON.stringify(phone) === JSON.stringify([true, true, true]) });
+    T.push({ n: 'HP: kartu motor muat (juga dengan tautan panjang di catatan), tombol ≥44px, tanpa geser samping', g: phone, w: [true, true, true, true], pass: JSON.stringify(phone) === JSON.stringify([true, true, true, true]) });
 
     let pass = 0;
     T.forEach(x => { if (x.pass) pass++; else console.log('FAIL', x.n, '\n  dapat :', JSON.stringify(x.g), '\n  harap :', JSON.stringify(x.w)); });

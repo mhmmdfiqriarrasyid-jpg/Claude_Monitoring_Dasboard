@@ -98,7 +98,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.912 pemeriksaan di empat puluh delapan suite, menggerakkan Chromium sungguhan terhadap
+1.918 pemeriksaan di empat puluh delapan suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -351,6 +351,17 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
     KM belum diisi menyebut bacaan terakhir di hari itu; KM lebih rendah dari
     isi lain di hari yang sama ditanya; tanggal sebelum serah terima cukup
     satu pertanyaan.
+  - *Perbaikan v161 (jalur gagal):* foto struk yang ditolak bersama
+    catatannya tidak lagi memunculkan "Record saved, but the receipt photo
+    failed" (pesan itu hanya muncul bila catatannya benar-benar tersimpan);
+    "Open it again" di pemberitahuan "Not saved" tidak lagi membuang isian bila
+    form tidak bisa terbuka (akses hilang, kendaraan Retired) — `reopenUnsent`
+    menyimpan entri bila fungsi buka-ulang mengembalikan `false`, berlaku juga
+    untuk laporan harian, cuti, pengecekan dan kerusakan; membuka ulang di
+    atas form BBM yang sedang diketik ditanya dulu; catatan/kendaraan yang
+    dibuat lalu dihapus saat offline dan keduanya ditolak server tidak muncul
+    lagi (`_refusedCreates`); tautan panjang di catatan kendaraan tidak
+    melebarkan kartu di HP.
 - **Tampilan fase 1 v156 — HP di lapangan (dijaga `tests/ux_phase1_test.js`).**
   Hasil review ui-ux-pro-max (rencana lengkap: artifact "Rencana Tampilan OT
   Dashboard").

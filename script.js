@@ -127,7 +127,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v160';
+const APP_VERSION = 'v161';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -14933,6 +14933,10 @@ function devicesForUnit(unitId) {
 // ============================================================
 
 const VEHICLE_TYPES = ['Motorbike', 'Car', 'Other'];
+// Records created here whose create the server refused. Queued writes settle
+// in order, so a delete made offline right after learns it here and does not
+// put back a record that exists nowhere.
+const _refusedCreates = new Set();
 const FUEL_UNUSUAL_FACTOR = 2;        // km/L outside ×½ … ×2 of the vehicle's median
 const FUEL_BIG_JUMP_KM = 1500;        // a refuel this far from the last one asks first
 
@@ -15313,6 +15317,7 @@ function saveVehicle(event) {
         existing ? 'Vehicle updated' : 'Vehicle added',
         err => {
             console.error('[vehicles] save failed:', err);
+            if (!existing) _refusedCreates.add('veh:' + rec.id);
             if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
             showToast('Failed to save the vehicle', 'error');
             const i = vehicles.findIndex(x => x.id === rec.id);
@@ -15337,6 +15342,7 @@ function deleteVehicle(id) {
         err => {
             console.error('[vehicles] delete failed:', err);
             showToast('Failed to delete the vehicle', 'error');
+            if (_refusedCreates.delete('veh:' + id)) return;
             if (!vehicles.some(x => x.id === id)) { vehicles.push(v); renderVehicleView(); }
         });
     renderVehicleView();
@@ -15545,14 +15551,19 @@ function fuelPhotoBlocker() {
     return '';
 }
 
-function _sendFuelPhoto(recId, photo) {
+// recordP: the record's own write. A photo refused along with its record
+// says nothing — the "Not saved" notice covers both, and reopening sends the
+// photo again.
+function _sendFuelPhoto(recId, photo, recordP) {
     if (photo) _fuelPhotoCache.set(recId, photo); else _fuelPhotoCache.delete(recId);
     if (suppressCloudWrites || !window.cloud?.isReady) return;
     const call = photo ? cloudCall('saveFuelPhoto', recId, photo) : cloudCall('deleteFuelPhoto', recId);
     Promise.resolve(call).catch(err => {
         console.error('[fuel] photo save failed:', err);
         if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
-        showToast(photo ? 'Record saved, but the receipt photo failed to send' : 'Record saved, but removing the photo failed', 'error');
+        Promise.resolve(recordP).then(
+            () => showToast(photo ? 'Record saved, but the receipt photo failed to send' : 'Record saved, but removing the photo failed', 'error'),
+            () => {});
     });
 }
 
@@ -15613,7 +15624,11 @@ function saveFuelLog(event) {
     };
     // The photo goes before the record, so no device sees the record point at
     // a photo the server does not have yet. A removal goes after.
-    if (_fuelPhotoDirty && _fuelPhotoData) _sendFuelPhoto(rec.id, _fuelPhotoData);
+    // Its result is only known later; the photo's failure message waits for it.
+    let recordDone;
+    const recordP = new Promise((res, rej) => { recordDone = { res, rej }; });
+    recordP.catch(() => {});
+    if (_fuelPhotoDirty && _fuelPhotoData) _sendFuelPhoto(rec.id, _fuelPhotoData, recordP);
     // Kept in case the server refuses: the "Not saved" notice reopens it.
     const snap = { vals: captureFormState('fuelForm'), photo: _fuelPhotoDirty ? _fuelPhotoData : null };
     const idx = fuelLogs.findIndex(r => r.id === rec.id);
@@ -15622,10 +15637,13 @@ function saveFuelLog(event) {
         { action: existing ? 'update' : 'create', unitName: `[Vehicle] ${v.plate}`, field: 'Fuel',
           before: existing ? `${existing.date} · ${fmtLiters(existing.liters)} at ${fmtKm(existing.km)}` : '',
           after: `${rec.date} · ${fmtLiters(rec.liters)} at ${fmtKm(rec.km)}` },
-        cloudCall('saveFuelLog', rec),
+        Promise.resolve(cloudCall('saveFuelLog', rec)).then(v => { recordDone.res(); return v; }, e => { recordDone.rej(e); throw e; }),
         existing ? 'Fuel record updated' : 'Fuel logged',
         err => {
             console.error('[fuel] save failed:', err);
+            // Deleted here before the server refused it: that delete must not
+            // bring back a record the server never had.
+            if (!existing) _refusedCreates.add('fuel:' + rec.id);
             if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
             // Shown at once, so taken back at once — unless a snapshot has
             // already replaced it with what the server holds.
@@ -15635,19 +15653,26 @@ function saveFuelLog(event) {
             rememberUnsent(`fuel record — ${v.plate}, ${rec.date}`, err, () => _reopenFuel(snap));
         }
     );
-    if (_fuelPhotoDirty && !_fuelPhotoData && existing && existing.hasPhoto) _sendFuelPhoto(rec.id, '');
+    if (_fuelPhotoDirty && !_fuelPhotoData && existing && existing.hasPhoto) _sendFuelPhoto(rec.id, '', recordP);
     closeFuelModal(true);
     renderVehicleView();
 }
 
 function _reopenFuel(snap) {
+    const m = document.getElementById('fuelModal');
+    // The notice sits above the dialog: another refuel may be half typed.
+    if (m.classList.contains('open')) {
+        closeFuelModal();
+        if (m.classList.contains('open')) return false;
+    }
     const id = snap.vals.editFuelId;
     if (id && fuelLogs.some(r => r.id === id)) editFuelLog(id); else showFuelForm(snap.vals.fuelVehicle);
-    if (!document.getElementById('fuelModal').classList.contains('open')) return;
+    if (!m.classList.contains('open')) return false;
     applyFormState(snap.vals);
     if (snap.photo != null) { _fuelPhotoData = snap.photo || ''; _fuelPhotoDirty = true; _fuelPhotoLoading = false; setFuelPhotoPreview(); }
     updateFuelKmHint();
     _formReopened.add('fuelForm');
+    return true;
 }
 
 function deleteFuelLog(id) {
@@ -15664,6 +15689,7 @@ function deleteFuelLog(id) {
         err => {
             console.error('[fuel] delete failed:', err);
             showToast('Failed to delete the fuel record', 'error');
+            if (_refusedCreates.delete('fuel:' + id)) return;
             if (!fuelLogs.some(x => x.id === id)) { fuelLogs.push(r); renderVehicleView(); }
         });
     // Queued right behind the record's delete (same area, same rules), so it
@@ -19437,9 +19463,11 @@ function rememberUnsent(label, err, reopen) {
 function reopenUnsent(key) {
     const u = _unsent.get(key);
     if (!u) return;
+    // false: the form did not open (no edit access any more, the vehicle was
+    // retired, or the user kept a form they were typing in) — keep the entry.
+    if (u.reopen() === false) return;
     _unsent.delete(key);
     renderUnsentNotice();
-    u.reopen();
 }
 function dismissUnsent(key) {
     if (!_unsent.has(key)) return;
@@ -19483,7 +19511,9 @@ function _reopenWorkLog(snap) {
     renderWorkLogUnitChips();
     renderWorkLogPhotos();
     // What it holds was never saved — when it did open (it may be refused).
-    if (document.getElementById('workLogModal').classList.contains('open')) _formReopened.add('workLogForm');
+    const opened = document.getElementById('workLogModal').classList.contains('open');
+    if (opened) _formReopened.add('workLogForm');
+    return opened;
 }
 function _snapLeave() {
     return { vals: captureFormState('leaveForm'), docs: _lvDocsDirty ? _lvDocs.slice() : null };
@@ -19496,7 +19526,9 @@ function _reopenLeave(snap) {
     ensureMemberOption('lvMember', snap.vals.lvMember);
     if (snap.docs) { _lvDocsGen++; _lvDocs = snap.docs.slice(); _lvDocsDirty = true; _lvDocsLoading = false; }
     renderLeaveDocs();
-    if (document.getElementById('leaveModal').classList.contains('open')) _formReopened.add('leaveForm');
+    const opened = document.getElementById('leaveModal').classList.contains('open');
+    if (opened) _formReopened.add('leaveForm');
+    return opened;
 }
 function _snapInspection(rec) {
     return { rec: { ...rec }, vals: captureFormState('inspectionForm'), results: { ..._insResults },
@@ -19509,7 +19541,9 @@ function _reopenInspection(snap) {
     if (snap.photos) { _insGen++; _insPhotos = { ...snap.photos }; _insPhotosDirty = true; _insPhotosLoading = false; _insPhotosFailed = false; }
     renderInspectionComponents(snap.rec);
     inspectionComponents().forEach(c => renderInspectionPhoto(c.key));
-    if (document.getElementById('inspectionModal').classList.contains('open')) _formReopened.add('inspectionForm');
+    const opened = document.getElementById('inspectionModal').classList.contains('open');
+    if (opened) _formReopened.add('inspectionForm');
+    return opened;
 }
 function _snapDamage() {
     return { vals: captureFormState('damageForm'), photo: _dmgPhotoDirty ? _dmgPhotoData : null, photoDirty: _dmgPhotoDirty,
@@ -19521,7 +19555,9 @@ function _reopenDamage(snap) {
     applyFormState(snap.vals);
     if (snap.photoDirty) { _dmgPhotoData = snap.photo || ''; _dmgPhotoDirty = true; _dmgPhotoLoading = false; setDamagePhotoPreview('before'); }
     if (snap.afterDirty) { _dmgAfterData = snap.after || ''; _dmgAfterDirty = true; _dmgAfterLoading = false; setDamagePhotoPreview('after'); }
-    if (document.getElementById('damageModal').classList.contains('open')) _formReopened.add('damageForm');
+    const opened = document.getElementById('damageModal').classList.contains('open');
+    if (opened) _formReopened.add('damageForm');
+    return opened;
 }
 
 // ============================================================
