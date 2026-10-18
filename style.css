@@ -4577,6 +4577,25 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
     background: var(--card); color: var(--warning);
     font-size: 11.5px; font-weight: 600;
 }
+/* Damage ↔ unit status: what an open record holds, and units with open damage. */
+.dmg-unit-chip {
+    display: inline-flex; align-items: center; margin-left: 6px; padding: 2px 8px;
+    border-radius: 999px; font-size: 10.5px; font-weight: 600; white-space: nowrap; vertical-align: middle;
+}
+.dmg-unit-chip--down { background: var(--danger-bg, #F8E3E1); color: var(--danger); }
+.dmg-unit-chip--off  { background: var(--warning-bg); color: var(--warning); border: 1px solid var(--warning-border); }
+.dmg-reopen { padding: 2px 8px; font-size: 11px; margin-left: 4px; }
+.dmg-open-chip {
+    display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 2px 8px;
+    border: 1px solid var(--warning-border); border-radius: 999px; background: var(--warning-bg);
+    color: var(--warning); font: 600 11px/1.4 var(--font-sans); white-space: nowrap; cursor: pointer; vertical-align: middle;
+}
+.dmg-open-chip:hover { filter: brightness(0.97); }
+.dmg-open-chip:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.dmg-repair__effect { margin: 6px 0 2px; font-size: 13px; font-weight: 600; color: var(--text); }
+.dmg-repaired-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-top: 10px; }
+.dmg-repaired-row .form-input { width: auto; max-width: 190px; }
+.dmg-repaired-row .form-input:disabled { opacity: 0.55; }
 .vehicle-card__aside { display: block; margin-top: 2px; font-size: 11.5px; font-weight: 400; color: var(--text-light); }
 .vehicle-card__note { font-style: italic; }
 .vehicle-card__sub, .vehicle-card__meta, .vehicle-card__plate { overflow-wrap: anywhere; }

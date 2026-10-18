@@ -20,6 +20,8 @@ rules_version = '2';
 //   'team' (edit) carry defaults; staff/pbt/khl/viewer grant nothing on their
 //   own, so every area is granted explicitly in the app's Akses dialog.
 //   Owner is always a superuser and can never be locked out.
+//   A Damage editor may also move a unit between Good and Breakdown — what
+//   a damage record does to its unit — through damageLinkOnly (v162).
 //
 //   activeSession : { id, startedAt, device } — the one device currently
 //   signed in. A user may write this one field on their own document; the
@@ -77,9 +79,39 @@ service cloud.firestore {
       );
     }
 
+    // A damage record holds its unit (or one component) in Breakdown while it
+    // is open and gives it back when it is done. A Damage editor without Unit
+    // Database edit may make exactly that change — status, the eight
+    // component fields, the reason, the downtime clock, and the id of the
+    // damage behind it — and nothing else. Values stay Good / Breakdown, and
+    // the downtime log can only grow by the one interval a return to Good
+    // closes, so MTBF/MTTR history cannot be wiped from here.
+    function downtimeCount(d) {
+      return d.get('downtimeHistory', null) is list ? d.get('downtimeHistory', null).size() : 0;
+    }
+    function goodOrBreakdown(ch, k) {
+      return !ch.hasAny([k]) || request.resource.data.get(k, '') in ['Good', 'Breakdown'];
+    }
+    function damageLinkOnly() {
+      let ch = request.resource.data.diff(resource.data).affectedKeys();
+      return ch.hasOnly(['status', 'breakdownReason', 'breakdownStartedAt', 'downtimeHistory', 'breakdownDamageId',
+                         'display', 'gps', 'steering', 'jdlink',
+                         'cameraAi', 'telematicBox', 'switchLimiter', 'rotaryLamp'])
+        && goodOrBreakdown(ch, 'status')
+        && goodOrBreakdown(ch, 'display') && goodOrBreakdown(ch, 'gps')
+        && goodOrBreakdown(ch, 'steering') && goodOrBreakdown(ch, 'jdlink')
+        && goodOrBreakdown(ch, 'cameraAi') && goodOrBreakdown(ch, 'telematicBox')
+        && goodOrBreakdown(ch, 'switchLimiter') && goodOrBreakdown(ch, 'rotaryLamp')
+        && (downtimeCount(request.resource.data) - downtimeCount(resource.data)) in [0, 1]
+        && (!ch.hasAny(['breakdownReason']) || (request.resource.data.breakdownReason is string
+                                                && request.resource.data.breakdownReason.size() <= 1000));
+    }
+
     // ---- Fleet data (one area each) ----
     match /units/{id}         { allow read: if isActive(); allow delete: if canEditArea('editUnits');
-                                allow create, update: if canEditArea('editUnits') && idMatches(id); }
+                                allow create: if canEditArea('editUnits') && idMatches(id);
+                                allow update: if idMatches(id)
+                                  && (canEditArea('editUnits') || (canEditArea('damage') && damageLinkOnly())); }
     match /implements/{id}    { allow read: if isActive(); allow delete: if canEditArea('implements');
                                 allow create, update: if canEditArea('implements') && idMatches(id); }
     match /damageRecords/{id} { allow read: if isActive(); allow delete: if canEditArea('damage');

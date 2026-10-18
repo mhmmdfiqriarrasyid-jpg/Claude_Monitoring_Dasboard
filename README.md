@@ -86,6 +86,11 @@ oleh Firestore rules, bukan hanya oleh tampilan.
 `inspectionApprove` (atasan: menyetujui / minta revisi) dipisah dengan alasan
 yang sama.
 
+Editor `damage` tanpa edit `editUnits` boleh mengubah unit **hanya** lewat
+kerusakan (v162): status, delapan field komponen, alasan breakdown, jam
+downtime dan `breakdownDamageId` — nilai Good/Breakdown saja, dan riwayat
+downtime hanya bisa bertambah satu interval (`damageLinkOnly` di rules).
+
 **Satu akun hanya boleh aktif di satu perangkat.** Login terbaru menang;
 perangkat lain keluar sendiri.
 
@@ -401,6 +406,37 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
     tetap terpilih saat daftar anggota dibangun ulang. Mode compact hanya di
     layar lebar; tombol "To Damage" di kartu inspeksi tidak terjepit; daftar
     pencarian di atas banner sesi (`body.gsearch-open`).
+- **Kerusakan ↔ status unit v162 (dijaga `tests/damagesync_test.js` dan
+  rules_test). Perlu publish firestore.rules (blok `units`).**
+  - Catatan kerusakan yang terbuka *menahan* satu tempat di unitnya
+    (`drove`): Mekanis/Software → **status unit Breakdown** (alasan + 
+    `breakdownDamageId`); Device Precision pada komponen → **hanya komponen
+    itu** (alat berat: Camera AI/Telematic Box/Switch Limiter/Rotary Lamp —
+    status unit tidak berubah, keputusan pemilik; traktor: seperti dulu).
+  - Unit/komponen kembali Good hanya saat catatan **terakhir** yang
+    menahannya selesai atau dihapus (`openDamageHolders`,
+    `releaseDamageOnUnit`); alasan pindah ke catatan tertua yang masih
+    terbuka. Breakdown yang diset manual (tanpa catatan yang menahannya)
+    tidak diambil alih: alasan tidak ditimpa, selesai tidak membuatnya Good.
+  - Catatan yang sengaja tidak dicentang: `drove:''`, `noHold:true` — tidak
+    menahan dan tidak lagi menghalangi unit kembali Good.
+  - Edit catatan terbuka: kotak "set Breakdown" tampil; pindah unit, ganti
+    tipe/komponen, centang/lepas centang → lepas yang lama, tahan yang baru
+    (`_planDamageEdit`). Hapus (satu/massal) melepas seperti *Mark done*;
+    konfirmasinya menyebut efeknya. **Reopen** di baris Done. **Already
+    repaired on …** di form Tambah: tercatat selesai, unit tidak disentuh.
+  - Tulisan ke unit lewat `_applyDamageLink`: hanya `DAMAGE_LINK_FIELDS`,
+    dikirim parsial (`updateUnitsFields`; cadangan `saveUnits` parsial) —
+    akun yang hanya boleh edit Damage kini benar-benar mengubah status
+    (dulu gagal diam-diam). Ditolak server → baris FAILED + tarik ulang.
+  - Set Good manual saat masih ada kerusakan terbuka (sel, form, bulk edit)
+    ditanya dulu; impor CSV menyebut jumlahnya. Catatannya tetap terbuka.
+  - Periksa Data **Heavy unit status vs open damage**: per unit pilih **Set
+    Breakdown** / **Mark done**, atau **Set Good** untuk Breakdown yang
+    ditinggal catatan yang sudah selesai/dihapus. Tidak pernah otomatis.
+  - Penanda: "Unit: Breakdown" / "Unit is Good" di tabel Damage, "N open
+    damage" di Unit Database dan dashboard (ke Damage dengan pencarian SN),
+    efek di dialog Mark done.
 - **Foto kerusakan Before / After v151 (dijaga `tests/damage_beforeafter_test.js`
   dan rules_test).**
   - Foto yang sudah ada = **Before** (`damagePhotos/{id}`, tanda `hasPhoto`).
@@ -595,7 +631,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   stempel `appliedAt` supaya hanya sekali); tanpa akses itu muncul di Kotak
   Keputusan. Foto di `inspectionPhotos/{id}` (tidak di-subscribe), ditulis
   SEBELUM laporannya.
-- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (141 skenario;
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (158 skenario;
   bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
   kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
   alur persetujuan laporan/izin (transisi status di atas, kunci isi dan foto

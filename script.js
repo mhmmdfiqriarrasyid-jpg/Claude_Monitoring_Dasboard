@@ -127,7 +127,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v161';
+const APP_VERSION = 'v162';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -3502,6 +3502,8 @@ function trackStatusChange(unit, oldStatus, newStatus) {
         unit.breakdownStartedAt = null;
         unit.breakdownReason = '';
     }
+    // Back to Good by any path: no damage record is behind it any more.
+    if (willBeGood && unit.breakdownDamageId) unit.breakdownDamageId = '';
 }
 
 // Takes the units to measure; the default (every unit) keeps the old call
@@ -4303,7 +4305,7 @@ function _detailRowHeavy(d, i) {
     return `
         <tr class="${!isGood(d.status) ? 'row-breakdown' : ''}">
             <td>${i + 1}</td>
-            <td><strong class="unit-link" title="View unit profile" onclick="showUnitProfile(${jsArg(d.id)})">${escapeHtml(d.name)}</strong></td>
+            <td><strong class="unit-link" title="View unit profile" onclick="showUnitProfile(${jsArg(d.id)})">${escapeHtml(d.name)}</strong>${openDamageChipFor(d)}</td>
             <td>${_dash(d.brand)}</td>
             <td>${escapeHtml(d.model)}</td>
             <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
@@ -4318,7 +4320,7 @@ function _detailRowAll(d, i) {
     return `
         <tr class="${!isGood(d.status) ? 'row-breakdown' : ''}">
             <td>${i + 1}</td>
-            <td><strong class="unit-link" title="View unit profile" onclick="showUnitProfile(${jsArg(d.id)})">${escapeHtml(d.name)}</strong></td>
+            <td><strong class="unit-link" title="View unit profile" onclick="showUnitProfile(${jsArg(d.id)})">${escapeHtml(d.name)}</strong>${openDamageChipFor(d)}</td>
             <td>${escapeHtml(groupDef(unitGroupOf(d)).shortLabel)}</td>
             <td>${escapeHtml(d.model)}</td>
             <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
@@ -4329,6 +4331,7 @@ function _detailRowAll(d, i) {
 }
 
 function renderTable(data) {
+    _openDmgIdx = null;
     const scope = effectiveDashGroup();
     renderDetailHead(scope);
     const tbody = document.getElementById('detailBody');
@@ -4807,8 +4810,15 @@ function handleEditCSVImport(file) {
             let updateResult = { updated: 0, unchanged: 0, failed: [] };
             let updatesAsSkipped = [];
             if (updateCandidates.length > 0) {
+                const bySn = new Map(globalData.map(u => [(u.sn || '').toLowerCase(), u]));
+                const goodHeld = updateCandidates.filter(p => {
+                    const u = bySn.get((p.sn || '').toLowerCase());
+                    return u && isHeavy(u) && p.status !== undefined && String(p.status).trim() !== ''
+                        && isGood(p.status) && !isGood(u.status) && openDamageHolders(u, 'status').length > 0;
+                }).length;
                 const doUpdate = confirm(
                     `${updateCandidates.length} unit(s) with the same Serial Number already exist in the database.\n\n` +
+                    (goodHeld ? `${goodHeld} heavy unit(s) would be set Good while damage records are still open — those records stay open.\n\n` : '') +
                     `OK = UPDATE the fields filled in the CSV\n` +
                     `Cancel = SKIP (only add new units)`
                 );
@@ -5321,7 +5331,7 @@ function _editRowHeavy(d, i, ce) {
         <tr>
             <td class="col-check"><input type="checkbox" class="unit-check" data-id="${id}" onchange="updateSelectedCount()"></td>
             <td>${i + 1}</td>
-            <td data-label="Nickname"><span class="inline-edit" contenteditable="${ce}" data-id="${id}" data-field="name" onblur="saveInlineEdit(this)">${escapeHtml(d.name == null ? '' : d.name)}</span>${inspectionChipFor(d)}</td>${cell('Brand', 'brand')}${cell('Model', 'model')}
+            <td data-label="Nickname"><span class="inline-edit" contenteditable="${ce}" data-id="${id}" data-field="name" onblur="saveInlineEdit(this)">${escapeHtml(d.name == null ? '' : d.name)}</span>${inspectionChipFor(d)}${openDamageChipFor(d)}</td>${cell('Brand', 'brand')}${cell('Model', 'model')}
             <td data-label="SN" style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
             ${cell('Machine Type', 'machineType')}${cell('Asset No.', 'assetCode')}${cell('Work Tool', 'workTool')}
             ${cell('Status', 'status')}
@@ -5362,6 +5372,7 @@ document.addEventListener('focusout', e => {
 
 function renderEditTable() {
     if (_editCellFocused()) { _editRenderPending = true; return; }
+    _openDmgIdx = null;
     // A blur fired by the rebuild itself must not count as an edit.
     _rebuildingEditTable = true;
     try { _renderEditTable(); } finally { _rebuildingEditTable = false; }
@@ -5473,6 +5484,33 @@ function populateEditFilters() {
 }
 
 // ---- Inline Edit ----
+// A heavy unit set back to Good by hand (status or a component) while open
+// damage records still hold that place in Breakdown. Asked, not refused — the
+// unit may really run again — but the records stay open, and Data Check keeps
+// listing the unit until they are marked done. changes: [{ unit, fields }].
+function confirmGoodWithOpenDamage(changes) {
+    const hits = [];
+    changes.forEach(({ unit, fields }) => {
+        if (!unit || !isHeavy(unit) || !fields) return;
+        ['status', ...HEAVY_COMPONENT_KEYS].forEach(f => {
+            if (fields[f] === undefined || !isGood(fields[f]) || isGood(unit[f])) return;
+            const held = openDamageHolders(unit, f);
+            if (held.length) hits.push({ unit, f, held });
+        });
+    });
+    if (!hits.length) return true;
+    const units = new Set(hits.map(h => h.unit.id));
+    if (units.size === 1) {
+        const h = hits[0];
+        const all = [...new Map(hits.flatMap(x => x.held).map(d => [d.id, d])).values()];
+        const list = all.slice(0, 3).map(d => `${d.damageType}${d.component ? ' / ' + d.component : ''} (${d.date})`).join('; ');
+        return confirm(`"${h.unit.name || h.unit.sn}" has ${all.length} open damage record(s): ${list}${all.length > 3 ? '; …' : ''}.\n\n`
+            + 'Setting it Good does not close them — mark them done in Damage instead.\n\nSet Good anyway?');
+    }
+    return confirm(`${units.size} heavy unit(s) still have open damage records holding them in Breakdown.\n\n`
+        + 'Setting them Good does not close those records — mark them done in Damage instead.\n\nSet Good anyway?');
+}
+
 function saveInlineEdit(el) {
     // A blur caused by redrawing the table, or one that lands while a cloud
     // snapshot is being applied, is not the person finishing an edit.
@@ -5535,6 +5573,10 @@ function saveInlineEdit(el) {
             _pendingBreakdown = { unitId: id, fields: { status: newValue }, isInline: true, el };
             document.getElementById('breakdownReasonText').value = '';
             document.getElementById('breakdownReasonModal').classList.add('open');
+            return;
+        }
+        if (!confirmGoodWithOpenDamage([{ unit, fields: { [field]: newValue } }])) {
+            el.textContent = unit[field] || '';
             return;
         }
         if (updateUnit(id, { [field]: newValue })) {
@@ -5692,6 +5734,7 @@ function applyBulkEdit() {
                      `This cannot be undone. Continue?`)) return;
     }
     if (!confirm(`Apply changes to ${ids.length} unit(s)?`)) return;
+    if (fields.status !== undefined && !confirmGoodWithOpenDamage(ids.map(id => ({ unit: globalData.find(u => u.id === id), fields })))) return;
 
     let n = 0;
     ids.forEach(id => {
@@ -6150,6 +6193,8 @@ function saveUnit(event) {
     if (fields.implement !== undefined) fields.implement = checked.implement;
     if (fields.site !== undefined) fields.site = checked.site;
     if (fields.brand !== undefined) fields.brand = checked.brand;
+
+    if (existing && !confirmGoodWithOpenDamage([{ unit: existing, fields }])) return;
 
     // If status is changing TO Breakdown, prompt for a reason first.
     if (fields.status !== undefined && !isGood(fields.status)) {
@@ -7595,6 +7640,39 @@ function liveUnitFor(rec) {
     return null;
 }
 
+// On a heavy unit: what this open record holds, and whether the unit agrees.
+function damageUnitChip(d, unit) {
+    if (d.resolved || !unit || !isHeavy(unit)) return '';
+    const field = damageHeldField(d, unit);
+    if (!field) return '';
+    const what = field === 'status' ? 'Unit' : damageFieldLabel(field);
+    return isBrokenValue(field === 'status' ? unit.status : unit[field])
+        ? `<span class="dmg-unit-chip dmg-unit-chip--down" title="Held in Breakdown by this damage">${escapeHtml(what)}: Breakdown</span>`
+        : `<span class="dmg-unit-chip dmg-unit-chip--off" title="The unit is Good while this damage is still open — see Data Check">${escapeHtml(what)} is Good</span>`;
+}
+
+// Open damage records per unit, counted once per render of a unit table
+// (a per-row search over every record made a table of hundreds slow).
+let _openDmgIdx = null;
+function openDamageCountFor(unit) {
+    if (!_openDmgIdx) {
+        _openDmgIdx = new Map();
+        (globalDamages || []).forEach(d => {
+            if (d.resolved) return;
+            const u = liveUnitFor(d);
+            if (u) _openDmgIdx.set(u.id, (_openDmgIdx.get(u.id) || 0) + 1);
+        });
+    }
+    return _openDmgIdx.get(unit.id) || 0;
+}
+function openDamageChipFor(unit) {
+    if (!unit || !isHeavy(unit) || !hasAccess('damage', 'view')) return '';
+    const n = openDamageCountFor(unit);
+    if (!n) return '';
+    return ` <button type="button" class="dmg-open-chip" title="Open damage records on this unit — open Damage"
+        onclick="event.stopPropagation(); goDecision(${jsArg('damage:heavy:' + (unit.sn || unit.name || ''))})"><i class="fas fa-screwdriver-wrench"></i> ${n} open damage</button>`;
+}
+
 // ---- Render ----
 function renderDamageTable() {
     updateDamageCount();
@@ -7647,7 +7725,8 @@ function renderDamageTable() {
             <td data-label="Photos">${damagePhotoButtons(d, { addAfter: true })}</td>
             <td data-label="Repair" style="white-space:nowrap">${d.resolved
                 ? `<span class="badge badge-good" style="font-size:10px" title="Repaired"><i class="fas fa-check"></i> Done${d.resolvedAt ? ' ' + escapeHtml(d.resolvedAt) : ''}</span>`
-                : `<button class="btn btn-secondary btn-sm" style="font-size:11px" title="Mark as done & restore unit status" onclick="openDamageRepair(${jsArg(d.id)})"><i class="fas fa-wrench"></i> Mark done</button>`}</td>
+                  + ` <button class="btn btn-secondary btn-sm editonly--damage dmg-reopen" title="Reopen — the repair did not hold" aria-label="Reopen this damage" onclick="reopenDamage(${jsArg(d.id)})"><i class="fas fa-rotate-left"></i></button>`
+                : `<button class="btn btn-secondary btn-sm" style="font-size:11px" title="Mark as done & restore unit status" onclick="openDamageRepair(${jsArg(d.id)})"><i class="fas fa-wrench"></i> Mark done</button>${damageUnitChip(d, lu)}`}</td>
             <td class="col-actions">
                 <div class="row-actions">
                     <button class="btn btn-secondary" title="Edit" onclick="editDamage(${jsArg(d.id)})"><i class="fas fa-pen"></i></button>
@@ -7707,7 +7786,23 @@ function showAddDamageForm() {
     setDamagePhotoPreview();
     const bdGroup = document.getElementById('dmgSetBreakdownGroup');
     if (bdGroup) bdGroup.style.display = '';
+    const rep = document.getElementById('dmgAlreadyRepairedRow');
+    if (rep) rep.style.display = '';
+    onDamageAlreadyRepairedChange();
     document.getElementById('damageModal').classList.add('open');
+}
+
+// A damage that is fixed already is recorded as done and never puts the unit
+// into Breakdown, so the "set Breakdown" box does not apply to it.
+function onDamageAlreadyRepairedChange() {
+    const on = !!document.getElementById('dmgAlreadyRepaired')?.checked;
+    const date = document.getElementById('dmgRepairedDate');
+    if (date) {
+        date.disabled = !on;
+        if (on && !date.value) date.value = toISODate();
+    }
+    const bd = document.getElementById('dmgSetBreakdown');
+    if (bd) bd.disabled = on;
 }
 
 function editDamage(id) {
@@ -7746,9 +7841,17 @@ function editDamage(id) {
     _dmgAfterLoading = damageHasAfterPhoto(rec);
     showDamageAfterSlot(true);
     setDamagePhotoPreview();
-    // Status linkage only applies when recording a NEW damage, not when editing.
+    // An open record that says what it holds can be linked or unlinked here;
+    // older records and repaired ones keep their link as it is.
     const bdGroup = document.getElementById('dmgSetBreakdownGroup');
-    if (bdGroup) bdGroup.style.display = 'none';
+    const linkable = !rec.resolved && Object.prototype.hasOwnProperty.call(rec, 'drove');
+    if (bdGroup) bdGroup.style.display = linkable ? '' : 'none';
+    const bd = document.getElementById('dmgSetBreakdown');
+    if (bd) { bd.checked = linkable && !!rec.drove; bd.disabled = false; }
+    const rep = document.getElementById('dmgAlreadyRepairedRow');
+    if (rep) rep.style.display = 'none';
+    const repBox = document.getElementById('dmgAlreadyRepaired');
+    if (repBox) repBox.checked = false;
     document.getElementById('damageModal').classList.add('open');
 
     if (_dmgPhotoLoading) loadDamageSlot('before', id);
@@ -7845,9 +7948,20 @@ function saveDamage(event) {
     // today's shape; cleared when a record is moved off a heavy unit, because
     // the merges below would otherwise keep the old value.
     if (isHeavy(unit) || (old && old.unitGroup)) data.unitGroup = isHeavy(unit) ? 'heavy' : '';
-    // Moved to another unit: whatever it drove belongs to the old unit, and
-    // resolving it later must not touch the new one.
-    if (old && old.drove && (liveUnitFor(old) || {}).id !== unit.id) data.drove = '';
+    // What an edit does to the unit(s): give back what it held, take hold of
+    // the new place. Worked out before anything is written.
+    const link = id ? _planDamageEdit(old, data, unit) : null;
+    if (link) Object.assign(data, link.recFields);
+    // "Already repaired on …": a record of damage that is fixed already. It
+    // never touches the unit — adding it open and marking it done would log a
+    // breakdown of a few seconds that never happened.
+    const repairedOn = !id && document.getElementById('dmgAlreadyRepaired')?.checked
+        ? (document.getElementById('dmgRepairedDate').value || '') : '';
+    if (!id && document.getElementById('dmgAlreadyRepaired')?.checked) {
+        if (!repairedOn) { showToast('Fill in the date it was repaired', 'warning'); return; }
+        if (repairedOn < data.date) { showToast('The repair date is before the damage date', 'warning'); return; }
+        if (repairedOn > toISODate()) { showToast('The repair date is in the future', 'warning'); return; }
+    }
 
     // Kept in case the server refuses the save — see rememberUnsent.
     const snap = _snapDamage();
@@ -7878,16 +7992,19 @@ function saveDamage(event) {
                 after: data.date
             });
             showToast('Damage record updated', 'success');
+            _runDamageEdit(globalDamages[idx], link, unit);
         }
     } else {
-        const newRec = { id: savedId, ...data, resolved: false, resolvedAt: '', createdAt: Date.now(), updatedAt: Date.now() };
-        // What this record put into Breakdown, if anything: 'status', a
-        // component field, or ''. "Tandai selesai" restores exactly that — it
+        const newRec = { id: savedId, ...data, resolved: !!repairedOn, resolvedAt: repairedOn, createdAt: Date.now(), updatedAt: Date.now() };
+        // What this record holds in Breakdown, if anything: 'status', a
+        // component field, or ''. "Mark done" gives back exactly that — it
         // used to restore the unit's status even for a record that never set
         // it, clearing somebody else's breakdown and its reason.
-        const setBd = !!document.getElementById('dmgSetBreakdown')?.checked;
-        const drives = setBd ? damageTargetField(data.damageType, data.component, unit) : null;
-        newRec.drove = setBd && drives !== DAMAGE_DRIVES_NOTHING ? (drives || 'status') : '';
+        const setBd = !repairedOn && !!document.getElementById('dmgSetBreakdown')?.checked;
+        const plan = setBd ? planDamageHold(newRec, unit) : null;
+        newRec.drove = plan ? plan.field : '';
+        // Left unticked on purpose: Data Check does not ask about it later.
+        if (!setBd && !repairedOn) newRec.noHold = true;
         globalDamages.push(newRec);
         saveDamages();
         cloudPushDamage(newRec, onFail);
@@ -7898,14 +8015,19 @@ function saveDamage(event) {
             field: data.damageType + (data.component ? ` / ${data.component}` : ''),
             after: data.date
         });
-        showToast('Damage record added', 'success');
+        if (repairedOn) logEvent({ action: 'update', unitId: unit.id, unitName: `[Damage] ${data.unitName}`,
+                                   field: 'Repair', before: '', after: `Done (${repairedOn})` });
+        showToast(repairedOn ? `Damage record added as repaired on ${repairedOn}` : 'Damage record added', 'success');
 
-        // Link to unit status: put the unit (or the affected component) into
-        // Breakdown so the dashboard/downtime tracking reflect this damage.
-        if (setBd) {
-            const target = _applyDamageBreakdown(unit.id, data.damageType, data.component, data.description);
-            if (target) showToast(`${target} "${unit.name}" set to Breakdown`, 'info');
-            else if (newRec.drove) { newRec.drove = ''; saveDamages(); cloudPushDamage(newRec); }
+        // The record goes out first; then the unit (or the component) is put
+        // into Breakdown so the dashboard and downtime tracking reflect it.
+        if (plan && plan.fields && !_applyDamageLink(unit.id, plan.fields)) {
+            newRec.drove = '';
+            saveDamages();
+            cloudPushDamage(newRec);
+            showToast(`"${unit.name || unit.sn}" was not set to Breakdown — this record is not linked to it`, 'warning');
+        } else if (plan) {
+            showDamageHoldToast(plan, unit, data.component);
         }
     }
 
@@ -7916,6 +8038,66 @@ function saveDamage(event) {
 
     closeDamageModal(true);
     renderDamageTable();
+}
+
+// Editing an open record that says what it holds. The "set Breakdown" box is
+// shown, ticked when it holds something. Moving the record to another unit,
+// naming another place, or unticking gives back what it held; ticking, or the
+// new place, takes hold. Older records (no drove) and repaired ones keep
+// today's rule: moved to another unit, they hold nothing.
+function _planDamageEdit(prev, data, unit) {
+    const none = { recFields: {}, release: null, hold: null, reason: null };
+    if (!prev) return none;
+    const oldUnit = liveUnitFor(prev);
+    if (prev.resolved || !Object.prototype.hasOwnProperty.call(prev, 'drove')) {
+        return prev.drove && (oldUnit || {}).id !== unit.id ? { ...none, recFields: { drove: '' } } : none;
+    }
+    const want = !!document.getElementById('dmgSetBreakdown')?.checked;
+    const draft = { ...prev, ...data };
+    const oldField = prev.drove || '';
+    const t = damageTargetField(draft.damageType, draft.component, unit);
+    const newField = t === DAMAGE_DRIVES_NOTHING ? '' : (t || 'status');
+    if (want && oldField && oldUnit && oldUnit.id === unit.id && oldField === newField) {
+        // Still holding the same place; only its reason may follow the new text.
+        const reason = oldField === 'status' && unit.breakdownDamageId === prev.id ? damageBreakdownReason(draft) : '';
+        return { ...none, reason: reason && reason !== unit.breakdownReason ? reason : null };
+    }
+    const release = oldField && oldUnit ? { unit: oldUnit, field: oldField } : null;
+    if (!want) return { recFields: { drove: '', noHold: true }, release, hold: null, reason: null };
+    // A different place or a different unit: planning it before the release
+    // cannot be affected by it.
+    const hold = planDamageHold(draft, unit);
+    return { recFields: { drove: hold.field, noHold: false }, release, hold, reason: null };
+}
+
+function _runDamageEdit(rec, link, unit) {
+    if (!link) return;
+    if (link.release) {
+        const r = releaseDamageOnUnit(rec, link.release.unit, link.release.field);
+        const name = link.release.unit.name || link.release.unit.sn;
+        if (r.outcome === 'restored') showToast(`"${name}" ${damageFieldLabel(link.release.field)} set back to Good`, 'info');
+        else if (r.outcome === 'kept') showToast(`"${name}" stays Breakdown — ${r.others} other open damage record(s)`, 'info');
+    }
+    if (link.hold && link.hold.fields && !_applyDamageLink(unit.id, link.hold.fields)) {
+        rec.drove = '';
+        saveDamages();
+        cloudPushDamage(rec);
+        showToast(`"${unit.name || unit.sn}" was not set to Breakdown — this record is not linked to it`, 'warning');
+    } else if (link.hold) {
+        showDamageHoldToast(link.hold, unit, rec.component);
+    }
+    if (link.reason) _applyDamageLink(unit.id, { breakdownReason: link.reason });
+}
+
+function showDamageHoldToast(plan, unit, component) {
+    const name = unit.name || unit.sn || '';
+    if (plan.outcome === 'flipped') {
+        showToast(`${plan.field === 'status' ? 'Unit status' : `Unit component ${component}`} "${name}" set to Breakdown`, 'info');
+    } else if (plan.outcome === 'joined') {
+        showToast(`"${name}" was already Breakdown — it stays Breakdown until this damage is done too`, 'info');
+    } else if (plan.outcome === 'manual') {
+        showToast(`"${name}" was already Breakdown (set by hand) — this record leaves it as it is`, 'info');
+    }
 }
 
 // Writes (or, with an empty photo, removes) a record's Before photo.
@@ -7961,32 +8143,162 @@ function damageTargetField(damageType, component, unit) {
     return (damageType === 'Device Precision' && compField) ? compField : null;
 }
 
-// Put the unit (or the damaged component) into Breakdown.
-// Returns a label describing what was changed, or '' when nothing changed.
-function _applyDamageBreakdown(unitId, damageType, component, description) {
-    const compField = damageTargetField(damageType, component, globalData.find(u => u.id === unitId));
-    if (compField === DAMAGE_DRIVES_NOTHING) return '';
-    // Report only what was written: updateUnit refuses a component field on a
-    // unit whose group is unreadable, and saying "di-set Breakdown" anyway
-    // would leave an open damage that shows nowhere.
-    if (compField) {
-        return updateUnit(unitId, { [compField]: 'Breakdown' }) ? `Unit component ${component}` : '';
-    }
-    const reason = `${damageType}${component ? ' / ' + component : ''}: ${description || '-'}`;
-    return updateUnit(unitId, { status: 'Breakdown', breakdownReason: reason }) ? 'Unit status' : '';
+// ---- Damage ↔ unit status ----
+// A damage record holds one place on its unit in Breakdown — the status, or a
+// component — while it is open, and gives it back when it is done. The unit
+// returns to Good only when the LAST open record holding that place is done or
+// deleted; a breakdown set by hand before the damage was recorded is never
+// taken over, so marking the damage done does not set it Good.
+
+// What a damage record may change on its unit, and all a Damage editor who
+// cannot edit units may write there (firestore.rules, damageLinkOnly). Real
+// unit edits keep going through updateUnit and its firewall.
+const DAMAGE_LINK_FIELDS = ['status', 'breakdownReason', 'breakdownStartedAt', 'downtimeHistory',
+    'breakdownDamageId', ...COMPONENT_KEYS, ...HEAVY_COMPONENT_KEYS];
+
+function isBrokenValue(v) { return clean(v).toLowerCase() === 'breakdown'; }
+
+function damageBreakdownReason(d) {
+    return `${d.damageType}${d.component ? ' / ' + d.component : ''}: ${d.description || '-'}`.slice(0, 600);
 }
 
-// Is there ANOTHER still-open damage record on the same unit that drives the
-// same place (same component field, or both the unit's status)? If so,
-// resolving this one must not flip that place back to Good.
+// The place an OPEN record holds on its unit: 'status', a component field, or
+// ''. Records since v120 say so in `drove`; older ones are read through
+// today's mapping, as resolveDamage always read them.
+function damageHeldField(d, unit) {
+    if (!d || d.resolved || !unit) return '';
+    if (Object.prototype.hasOwnProperty.call(d, 'drove')) return d.drove || '';
+    const t = damageTargetField(d.damageType, d.component, unit);
+    return t === DAMAGE_DRIVES_NOTHING ? '' : (t || 'status');
+}
+
+// Open records on this unit that hold `field`, oldest first.
+function openDamageHolders(unit, field, excludeIds) {
+    if (!unit || !field) return [];
+    return globalDamages.filter(d => {
+        if (d.resolved || (excludeIds && excludeIds.has(d.id))) return false;
+        const u = liveUnitFor(d);
+        return !!u && u.id === unit.id && damageHeldField(d, u) === field;
+    }).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || (a.createdAt || 0) - (b.createdAt || 0));
+}
+
+// Is there ANOTHER still-open damage record on the same unit holding the same
+// place (component field, or null for the unit's status)? If so, resolving
+// this one must not flip that place back to Good. A record that never put
+// anything into Breakdown (drove '') no longer counts.
 function hasOtherOpenDamage(rec, unit, compField) {
     if (!unit || compField === DAMAGE_DRIVES_NOTHING) return false;
-    return globalDamages.some(d => {
-        if (d.id === rec.id || d.resolved) return false;
-        const u = liveUnitFor(d);
-        if (!u || u.id !== unit.id) return false;
-        return damageTargetField(d.damageType, d.component, u) === compField;
+    return openDamageHolders(unit, compField || 'status', new Set([rec.id])).length > 0;
+}
+
+// Writes what a damage record changes on its unit. Allowed to a Damage editor
+// who cannot edit units — the server lets them write exactly these fields —
+// and sent as the changed fields only, so a copy of the unit hours old cannot
+// put back anything else. Returns true when the unit changed here.
+function _applyDamageLink(unitId, fields) {
+    if (!hasAccess('damage', 'edit') && !hasAccess('editUnits', 'edit')) return false;
+    const idx = globalData.findIndex(u => u.id === unitId);
+    if (idx === -1) return false;
+    const before = { ...globalData[idx] };
+    const allowed = {};
+    Object.keys(fields || {}).forEach(k => {
+        if (DAMAGE_LINK_FIELDS.includes(k)) allowed[k] = fields[k];
+        else console.warn(`[damage] ${k} is not a damage-to-unit field — dropped`);
     });
+    const guarded = guardUnitFields(before, allowed);
+    if (!Object.keys(guarded).length) return false;
+    const unit = { ...before, ...guarded };
+    if (guarded.status !== undefined && guarded.status !== before.status) {
+        trackStatusChange(unit, before.status, guarded.status);
+    }
+    const partial = { id: unitId };
+    DAMAGE_LINK_FIELDS.forEach(k => {
+        if (JSON.stringify(before[k] === undefined ? null : before[k]) !== JSON.stringify(unit[k] === undefined ? null : unit[k])) {
+            partial[k] = unit[k] === undefined ? null : unit[k];
+        }
+    });
+    if (Object.keys(partial).length === 1) return false;
+    globalData[idx] = unit;
+    saveToStorage(globalData);
+    _sendDamageLink(partial, unit);
+    recordChange({ type: 'updated', detail: `Unit "${unit.name}" updated` });
+    Object.keys(guarded).forEach(field => {
+        if (field === 'downtimeHistory' || field === 'breakdownStartedAt' || field === 'breakdownDamageId') return;
+        if (!sameStoredValue(before[field], unit[field])) {
+            logEvent({ action: 'update', unitId, unitName: unit.name, field, before: before[field], after: unit[field] });
+        }
+    });
+    return true;
+}
+
+function _sendDamageLink(partial, unit) {
+    if (suppressCloudWrites || !window.cloud?.isReady) return;
+    const send = typeof window.cloud.updateUnitsFields === 'function'
+        ? window.cloud.updateUnitsFields([partial]) : window.cloud.saveUnits([partial]);
+    Promise.resolve(send).catch(err => cloudWriteFailed(err, {
+        what: 'unit status (from damage)',
+        label: unit.name || unit.sn || '-',
+        unitId: unit.id,
+        resync: resyncUnits
+    }));
+}
+
+// What recording (or reopening) this record would do to its unit, without
+// doing it: { field, fields, outcome }. field is the place the record will
+// hold ('' = none); fields is the unit write, or null.
+//   flipped — the place was running and goes into Breakdown;
+//   joined  — other open records already hold it in Breakdown; it stays;
+//   manual  — it is in Breakdown with no open record behind it (set by hand):
+//             left alone, its reason kept, and not held by this record.
+function planDamageHold(rec, unit) {
+    if (!unit) return { field: '', fields: null, outcome: 'none' };
+    const t = damageTargetField(rec.damageType, rec.component, unit);
+    if (t === DAMAGE_DRIVES_NOTHING) return { field: '', fields: null, outcome: 'none' };
+    const field = t || 'status';
+    const cur = field === 'status' ? unit.status : unit[field];
+    if (!isBrokenValue(cur)) {
+        return { field, outcome: 'flipped', fields: field === 'status'
+            ? { status: 'Breakdown', breakdownReason: damageBreakdownReason(rec), breakdownDamageId: rec.id }
+            : { [field]: 'Breakdown' } };
+    }
+    if (openDamageHolders(unit, field, new Set([rec.id])).length) return { field, fields: null, outcome: 'joined' };
+    return { field: '', fields: null, outcome: 'manual' };
+}
+
+// This record stops holding `field` on its unit (done, deleted, moved,
+// unlinked). The place goes back to Good only when no other open record
+// holds it; while others do, the unit's reason passes to the oldest of them
+// if it was this record's. excludeIds: records leaving at the same time (a
+// bulk delete). Returns { outcome: 'restored'|'kept'|'none'|'refused', others }.
+function releaseDamageOnUnit(rec, unit, field, excludeIds) {
+    if (!unit || !field) return { outcome: 'none', others: 0 };
+    const skip = new Set(excludeIds || []);
+    skip.add(rec.id);
+    const others = openDamageHolders(unit, field, skip);
+    if (others.length) {
+        if (field === 'status' && unit.breakdownDamageId && skip.has(unit.breakdownDamageId)) {
+            _applyDamageLink(unit.id, { breakdownReason: damageBreakdownReason(others[0]), breakdownDamageId: others[0].id });
+        }
+        return { outcome: 'kept', others: others.length };
+    }
+    const cur = field === 'status' ? unit.status : unit[field];
+    if (isGood(cur)) return { outcome: 'none', others: 0 };
+    return _applyDamageLink(unit.id, { [field]: 'Good' }) ? { outcome: 'restored', others: 0 } : { outcome: 'refused', others: 0 };
+}
+
+function damageFieldLabel(field) {
+    return field === 'status' ? 'status' : (COMPONENT_LABELS[field] || field);
+}
+
+// Put the unit (or the damaged component) into Breakdown. Kept for callers
+// that only need the label: '' when nothing changed.
+function _applyDamageBreakdown(unitId, damageType, component, description) {
+    const unit = globalData.find(u => u.id === unitId);
+    const p = planDamageHold({ id: '', damageType, component, description }, unit);
+    if (!p.fields) return '';
+    if (p.field === 'status') delete p.fields.breakdownDamageId;
+    if (!_applyDamageLink(unitId, p.fields)) return '';
+    return p.field === 'status' ? 'Unit status' : `Unit component ${component}`;
 }
 
 // Mark a damage record repaired: flag it resolved and restore the unit /
@@ -8017,42 +8329,12 @@ function resolveDamage(id, opts) {
         after: `Done (${rec.resolvedAt})`
     });
 
-    const unit = liveUnitFor(rec);
-    let restored = false;
-    let blocked = false;
-    // Records since v120 say what they drove. Older ones do not; for those,
-    // ask before touching the unit rather than assume.
-    const known = Object.prototype.hasOwnProperty.call(rec, 'drove');
-    const legacyTarget = unit && !known ? damageTargetField(rec.damageType, rec.component, unit) : null;
-    const legacyBroken = unit && !known && legacyTarget !== DAMAGE_DRIVES_NOTHING
-        && !isGood(legacyTarget ? unit[legacyTarget] : unit.status);
-    const restoreLegacy = legacyBroken && confirm(`Also restore the unit ${legacyTarget ? 'component ' + (rec.component || legacyTarget) : 'status'} of "${unit.name || unit.sn}" to Good?\n\n`
-        + 'This older record does not say whether it put the unit into Breakdown. Cancel = leave the unit as is.');
-    if (unit && known) {
-        const compField = rec.drove === 'status' ? null : rec.drove;
-        if (!rec.drove) {
-            // This record never put anything into Breakdown.
-        } else if (hasOtherOpenDamage(rec, unit, compField)) {
-            blocked = true;
-        } else if (compField) {
-            if (!isGood(unit[compField])) restored = updateUnit(unit.id, { [compField]: 'Good' });
-        } else if (!isGood(unit.status)) {
-            restored = updateUnit(unit.id, { status: 'Good' });
-        }
-    } else if (unit && restoreLegacy) {
-        const compField = damageTargetField(rec.damageType, rec.component, unit);
-        if (compField === DAMAGE_DRIVES_NOTHING) {
-            // Nothing on the unit to restore — see damageTargetField.
-        } else if (hasOtherOpenDamage(rec, unit, compField)) {
-            blocked = true;
-        } else if (compField) {
-            if (!isGood(unit[compField])) restored = updateUnit(unit.id, { [compField]: 'Good' });
-        } else if (!isGood(unit.status)) {
-            restored = updateUnit(unit.id, { status: 'Good' });
-        }
-    }
+    const res = _releaseOnClose(rec, liveUnitFor(rec));
+    const restored = res.outcome === 'restored';
+    const blocked = res.outcome === 'kept';
 
     renderDamageTable();
+    if (opts.quiet) return true;
     const withPhoto = opts.extra && opts.extra.hasAfterPhoto ? ' with the After photo' : '';
     if (blocked) {
         showToast(`Damage marked as done${withPhoto} — unit status not restored because other damage is still open`, 'warning');
@@ -8062,6 +8344,72 @@ function resolveDamage(id, opts) {
         showToast(`Damage marked as done${withPhoto}`, 'success');
     }
     return true;
+}
+
+// A record leaves the open list (marked done, or deleted): give back what it
+// held. Records since v120 say what that is; for older ones, ask before
+// touching the unit rather than assume.
+function _releaseOnClose(rec, unit, excludeIds) {
+    const nothing = { outcome: 'none', others: 0 };
+    if (!unit) return nothing;
+    if (Object.prototype.hasOwnProperty.call(rec, 'drove')) {
+        return rec.drove ? releaseDamageOnUnit(rec, unit, rec.drove, excludeIds) : nothing;
+    }
+    const t = damageTargetField(rec.damageType, rec.component, unit);
+    if (t === DAMAGE_DRIVES_NOTHING || isGood(t ? unit[t] : unit.status)) return nothing;
+    if (!confirm(`Also restore the unit ${t ? 'component ' + (rec.component || t) : 'status'} of "${unit.name || unit.sn}" to Good?\n\n`
+        + 'This older record does not say whether it put the unit into Breakdown. Cancel = leave the unit as is.')) return nothing;
+    return releaseDamageOnUnit(rec, unit, t || 'status', excludeIds);
+}
+
+// What closing this open record would do to its unit, in words — for the
+// repair dialog and the delete question. '' when it changes nothing.
+function damageCloseEffect(rec, excludeIds) {
+    const unit = liveUnitFor(rec);
+    if (!unit || rec.resolved) return '';
+    const field = damageHeldField(rec, unit);
+    if (!field || !Object.prototype.hasOwnProperty.call(rec, 'drove')) return '';
+    const name = unit.name || unit.sn || '';
+    const skip = new Set(excludeIds || []);
+    skip.add(rec.id);
+    const others = openDamageHolders(unit, field, skip).length;
+    if (others) return `"${name}" stays Breakdown — ${others} other open damage record(s)`;
+    if (isGood(field === 'status' ? unit.status : unit[field])) return '';
+    return field === 'status' ? `"${name}" goes back to Good` : `"${name}" ${damageFieldLabel(field)} goes back to Good`;
+}
+
+// A record marked done by mistake, or a repair that did not hold. Open again,
+// it takes hold of its place on the unit as a new record would.
+function reopenDamage(id) {
+    if (!requireEdit('damage')) return;
+    const rec = globalDamages.find(d => d.id === id);
+    if (!rec || !rec.resolved) return;
+    const unit = liveUnitFor(rec);
+    // Held something before (or is an older record that does not say): put
+    // that back. One left unticked on purpose stays unlinked.
+    const intends = rec.drove || !Object.prototype.hasOwnProperty.call(rec, 'drove');
+    const plan = unit && intends ? planDamageHold({ ...rec, resolved: false }, unit) : null;
+    const name = unit ? (unit.name || unit.sn) : (rec.unitName || rec.sn || '');
+    if (!confirm(`Reopen the damage on "${name}" (${rec.date})?`
+        + (plan && plan.outcome === 'flipped' ? `\n\nThe unit ${plan.field === 'status' ? 'status' : damageFieldLabel(plan.field)} goes back to Breakdown.` : ''))) return;
+    const was = rec.resolvedAt || '';
+    rec.resolved = false;
+    rec.resolvedAt = '';
+    rec.drove = plan ? plan.field : '';
+    rec.updatedAt = Date.now();
+    saveDamages();
+    cloudPushDamage(rec);
+    logEvent({ action: 'update', unitId: rec.unitId, unitName: `[Damage] ${rec.unitName}`,
+               field: 'Repair', before: `Done${was ? ' (' + was + ')' : ''}`, after: 'Open (reopened)' });
+    const linked = !(plan && plan.fields) || _applyDamageLink(unit.id, plan.fields);
+    if (!linked) {
+        rec.drove = '';
+        saveDamages();
+        cloudPushDamage(rec);
+    }
+    renderDamageTable();
+    showToast('Damage reopened', 'success');
+    if (plan && linked) showDamageHoldToast(plan, unit, rec.component);
 }
 
 // ---- "Mark as repaired" dialog — and the After photo ----
@@ -8111,6 +8459,12 @@ function openDamageRepair(id, opts) {
     }
     const opt = document.getElementById('dmgRepairOptional');
     if (opt) opt.style.display = _repairMode === 'resolve' ? '' : 'none';
+    const effect = document.getElementById('dmgRepairEffect');
+    if (effect) {
+        const e = _repairMode === 'resolve' ? damageCloseEffect(rec) : '';
+        effect.textContent = e ? `After this: ${e}.` : '';
+        effect.hidden = !e;
+    }
     const hint = document.getElementById('dmgRepairHint');
     if (hint) hint.textContent = _repairMode === 'resolve'
         ? 'A photo of the repaired part, taken now, is shown next to the damage photo as Before / After.'
@@ -8308,8 +8662,11 @@ function deleteDamage(id) {
     if (!requireEdit('damage')) return;
     const rec = globalDamages.find(d => d.id === id);
     if (!rec) return;
-    if (!confirm(`Delete the damage record for unit "${rec.unitName}" (${rec.date})?`)) return;
+    // An open record still holding its unit gives it back, as "Mark done" does.
+    const effect = damageCloseEffect(rec);
+    if (!confirm(`Delete the damage record for unit "${rec.unitName}" (${rec.date})?${effect ? `\n\n${effect}.` : ''}`)) return;
 
+    const unit = !rec.resolved ? liveUnitFor(rec) : null;
     globalDamages = globalDamages.filter(d => d.id !== id);
     saveDamages();
     cloudDeleteDamage(id);
@@ -8320,6 +8677,7 @@ function deleteDamage(id) {
         unitName: `[Damage] ${rec.unitName}`,
         before: rec.damageType + (rec.component ? ` / ${rec.component}` : '')
     });
+    if (unit) _releaseOnClose(rec, unit);
     renderDamageTable();
     showToast('Damage record deleted', 'success');
 }
@@ -8328,9 +8686,21 @@ function deleteSelectedDamages() {
     if (!requireEdit('damage')) return;
     const count = selectedDamageIds.size;
     if (count === 0) return;
-    if (!confirm(`Delete ${count} selected damage record(s)?`)) return;
-
     const idSet = new Set(selectedDamageIds);
+    // Open records that say what they hold give it back — once per unit and
+    // place, after ALL the selected records are counted out, so two records on
+    // one unit set it Good once instead of each finding the other still open.
+    const releases = new Map();
+    globalDamages.filter(d => idSet.has(d.id) && !d.resolved && Object.prototype.hasOwnProperty.call(d, 'drove') && d.drove)
+        .forEach(d => {
+            const u = liveUnitFor(d);
+            if (u && !releases.has(u.id + '|' + d.drove)) releases.set(u.id + '|' + d.drove, { rec: d, unit: u, field: d.drove });
+        });
+    const back = [...releases.values()].filter(r =>
+        !openDamageHolders(r.unit, r.field, idSet).length && !isGood(r.field === 'status' ? r.unit.status : r.unit[r.field]));
+    if (!confirm(`Delete ${count} selected damage record(s)?`
+        + (back.length ? `\n\n${back.length} unit(s) go back to Good: ${back.slice(0, 5).map(r => r.unit.name || r.unit.sn).join(', ')}${back.length > 5 ? ', …' : ''}.` : ''))) return;
+
     const removed = globalDamages.filter(d => idSet.has(d.id));
     globalDamages = globalDamages.filter(d => !idSet.has(d.id));
     saveDamages();
@@ -8342,6 +8712,7 @@ function deleteSelectedDamages() {
         unitName: `[Damage] ${rec.unitName}`,
         before: rec.damageType + (rec.component ? ` / ${rec.component}` : '')
     }));
+    releases.forEach(r => releaseDamageOnUnit(r.rec, r.unit, r.field, idSet));
     renderDamageTable();
     showToast(`${count} damage record(s) deleted`, 'success');
 }
@@ -8437,6 +8808,8 @@ function applyCloudDamagesSnapshot(items) {
             // units arrive first, and this section stayed hidden until
             // something else happened to redraw the page.
             if (currentView === 'dashboard' && globalData.length) renderDamageStats();
+            // Heavy rows carry an "open damage" count.
+            if (currentView === 'editUnits' && globalData.some(isHeavy)) renderEditTable();
         }
     } finally {
         suppressCloudWrites = false;
@@ -9811,6 +10184,9 @@ function applyCloudUnitsSnapshot(units) {
             // The Sync button counts licences that differ from the ledger —
             // a unit edited elsewhere changes that count.
             updateLicenseSyncBadge();
+        } else if (currentView === 'damage') {
+            // Each open heavy record shows whether its unit agrees.
+            renderDamageTable();
         }
     } finally {
         suppressCloudWrites = false;
@@ -16253,6 +16629,18 @@ function goDecision(target) {
         renderInspectionView();
         return;
     }
+    if (typeof target === 'string' && target.startsWith('damage:')) {
+        const [, g, ...q] = target.split(':');
+        navigateTo('damage');
+        if (currentView !== 'damage') return;
+        const search = document.getElementById('damageSearch');
+        if (search) search.value = q.join(':');
+        const type = document.getElementById('damageTypeFilter');
+        if (type) type.value = '';
+        setDamageGroup(g);
+        renderDamageTable();
+        return;
+    }
     if (typeof target === 'string' && target.startsWith('dashboard:')) {
         navigateTo('dashboard');
         if (currentView === 'dashboard') setDashGroup(target.slice(10), { persist: false });
@@ -17051,6 +17439,94 @@ function dcGroupReferences() {
     return out;
 }
 
+// Heavy units whose status (or a component) disagrees with their open damage
+// records. Never fixed on its own: a person picks, unit by unit, what is true
+// — the unit is broken (set Breakdown and link the records) or the repair is
+// done (mark the records done). A unit still in Breakdown because of a damage
+// that is done or deleted is offered "Set Good". A record left unticked on
+// purpose is not asked about.
+function dcDamageStatusSync() {
+    const out = [];
+    const byUnit = new Map();
+    (globalDamages || []).forEach(d => {
+        if (d.resolved) return;
+        const lu = liveUnitFor(d);
+        if (!lu || !isHeavy(lu)) return;
+        if (!byUnit.has(lu.id)) byUnit.set(lu.id, []);
+        byUnit.get(lu.id).push(d);
+    });
+    const brief = recs => recs.slice(0, 3).map(d => `${d.damageType}${d.component ? ' / ' + d.component : ''} (${d.date})`).join('; ')
+        + (recs.length > 3 ? '; …' : '');
+    globalData.filter(isHeavy).forEach(u => {
+        const name = u.name || u.sn || u.id;
+        const goTo = `damage:heavy:${u.sn || u.name || ''}`;
+        const recs = byUnit.get(u.id) || [];
+        ['status', ...HEAVY_COMPONENT_KEYS].forEach(field => {
+            if (isBrokenValue(field === 'status' ? u.status : u[field])) return;
+            const about = recs.filter(d => {
+                if (damageHeldField(d, u) === field) return true;
+                // Never linked (refused, or an account without unit rights
+                // before v162) — unless left unticked on purpose.
+                if (!Object.prototype.hasOwnProperty.call(d, 'drove') || d.drove || d.noHold) return false;
+                const t = damageTargetField(d.damageType, d.component, u);
+                return t !== DAMAGE_DRIVES_NOTHING && (t || 'status') === field;
+            });
+            if (!about.length) return;
+            out.push(dc('kerusakan-status', `${UNIT_GROUPS.heavy.shortLabel}: ${name}`,
+                `${field === 'status' ? 'Status' : damageFieldLabel(field)} is Good, but ${about.length} damage record(s) are still open: ${brief(about)}`,
+                goTo, { unitId: u.id, syncFix: 'hold', field, damageIds: about.map(d => d.id) }));
+        });
+        if (isBrokenValue(u.status) && u.breakdownDamageId && !recs.some(d => damageHeldField(d, u) === 'status')) {
+            const src = (globalDamages || []).find(d => d.id === u.breakdownDamageId);
+            if (!src || src.resolved) out.push(dc('kerusakan-status', `${UNIT_GROUPS.heavy.shortLabel}: ${name}`,
+                `Status is Breakdown, but the damage that set it is ${src ? `marked done (${src.resolvedAt || '-'})` : 'deleted'} and no other damage is open`,
+                goTo, { unitId: u.id, syncFix: 'release', field: 'status' }));
+        }
+    });
+    return out;
+}
+
+// Data Check's fix for one finding above, as the person chose it.
+function fixDamageSync(unitId, field, action) {
+    if (!requireEdit('damage')) return;
+    const kind = action === 'release' ? 'release' : 'hold';
+    const item = dcDamageStatusSync().find(i => i.unitId === unitId && i.field === field && i.syncFix === kind);
+    const unit = globalData.find(u => u.id === unitId);
+    if (!item || !unit) { showToast('Already in order', 'info'); renderDataCheck(); return; }
+    const name = unit.name || unit.sn || '';
+    const what = field === 'status' ? 'status' : damageFieldLabel(field);
+    const recs = (item.damageIds || []).map(id => globalDamages.find(d => d.id === id)).filter(Boolean)
+        .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || (a.createdAt || 0) - (b.createdAt || 0));
+    if (action === 'hold') {
+        if (!confirm(`Set the ${what} of "${name}" to Breakdown?\n\n${recs.length} open damage record(s) will hold it there; `
+            + 'marking the last of them done sets it Good again.')) return;
+        recs.forEach(d => {
+            if (d.drove === field && !d.noHold) return;
+            d.drove = field;
+            d.noHold = false;
+            d.updatedAt = Date.now();
+            cloudPushDamage(d);
+        });
+        saveDamages();
+        const fields = field === 'status'
+            ? { status: 'Breakdown', breakdownReason: damageBreakdownReason(recs[0]), breakdownDamageId: recs[0].id }
+            : { [field]: 'Breakdown' };
+        if (_applyDamageLink(unitId, fields)) showToast(`"${name}" ${what} set to Breakdown`, 'success');
+        else showToast(`"${name}" was not changed`, 'warning');
+    } else if (action === 'done') {
+        if (!confirm(`Mark ${recs.length} open damage record(s) on "${name}" as done?\n\nThe unit stays Good.`)) return;
+        let n = 0;
+        recs.forEach(d => { if (resolveDamage(d.id, { confirmed: true, quiet: true })) n++; });
+        showToast(`${n} damage record(s) marked as done`, 'success');
+    } else {
+        if (!confirm(`Set "${name}" back to Good?\n\nThe damage that put it into Breakdown is done, and no other damage is open.`)) return;
+        if (_applyDamageLink(unitId, { status: 'Good' })) showToast(`"${name}" set back to Good`, 'success');
+        else showToast(`"${name}" was not changed`, 'warning');
+    }
+    renderDataCheck();
+    scheduleDecisionRefresh();
+}
+
 const DATA_CHECKS = [
     { key: 'sn',       label: 'Duplicate serial numbers',   run: dcDuplicateSerials },
     { key: 'spasi',    label: 'Spaces / invisible characters', run: dcInvisibleCharacters },
@@ -17068,7 +17544,8 @@ const DATA_CHECKS = [
     { key: 'mirip',    label: 'Similar spellings',          run: dcSimilarSpellings },
     { key: 'kurang',   label: 'Key fields not filled',      run: dcMissingKeyFields },
     { key: 'impl-db',  label: 'Implement not in the Implements list', run: dcImplementNotInList },
-    { key: 'master',   label: 'Not in a master list',       run: dcNotInMasterLists }
+    { key: 'master',   label: 'Not in a master list',       run: dcNotInMasterLists },
+    { key: 'kerusakan-status', label: 'Heavy unit status vs open damage', run: dcDamageStatusSync }
 ];
 
 function runDataChecks() {
@@ -17130,13 +17607,22 @@ function renderDataCheck() {
                 <tbody>${g.items.map(i => `<tr>
                     <td data-label="Item">${escapeHtml(i.label)}</td>
                     <td data-label="Details">${escapeHtml(i.detail)}</td>
-                    <td data-label="" style="white-space:nowrap">${i.merge && canMergeField(i.merge.field)
+                    <td data-label="" style="white-space:nowrap">${damageSyncButtons(i)}${i.merge && canMergeField(i.merge.field)
                         ? `<button type="button" class="btn btn-primary btn-sm" title="Merge these spellings into one"
                             onclick="openValueMerge(${jsArg(i.merge.field)}, ${jsArgList(i.merge.values)})"><i class="fas fa-object-group"></i> Merge…</button> ` : ''}<button type="button" class="btn btn-secondary btn-sm"
                         onclick="goDecision(${jsArg(i.goTo)})">Open</button></td>
                 </tr>`).join('')}</tbody>
             </table>
         </div>`).join('');
+}
+
+function damageSyncButtons(i) {
+    if (!i.syncFix || !hasAccess('damage', 'edit')) return '';
+    const a = (action, label, cls) => `<button type="button" class="btn ${cls} btn-sm"
+        onclick="fixDamageSync(${jsArg(i.unitId)}, ${jsArg(i.field)}, ${jsArg(action)})">${label}</button> `;
+    return i.syncFix === 'release'
+        ? a('release', 'Set Good', 'btn-primary')
+        : a('hold', 'Set Breakdown', 'btn-primary') + a('done', 'Mark done', 'btn-secondary');
 }
 
 // The one automatic fix. Trimming whitespace and stripping zero-width
@@ -18141,11 +18627,13 @@ async function applyInspectionFindings(id) {
                 hasPhoto: !!photo, unitGroup: 'heavy', fromInspection: r.id,
                 resolved: false, resolvedAt: '', createdAt: Date.now(), updatedAt: Date.now(), drove: ''
             };
-            if (hasAccess('editUnits', 'edit') && _applyDamageBreakdown(unit.id, rec.damageType, c.label, note)) {
-                rec.drove = damageTargetField(rec.damageType, c.label, unit) || '';
-            }
+            // Device Precision on a heavy component: that component goes into
+            // Breakdown (the unit status does not), held until the record is done.
+            const plan = planDamageHold(rec, unit);
+            rec.drove = plan.field;
             globalDamages.push(rec);
             cloudPushDamage(rec);
+            if (plan.fields && !_applyDamageLink(unit.id, plan.fields)) { rec.drove = ''; cloudPushDamage(rec); }
             if (photo && window.cloud && window.cloud.saveDamagePhoto) {
                 _dmgPhotoCache.set(rec.id, photo);
                 window.cloud.saveDamagePhoto(rec.id, photo).catch(err => console.error('[ins] damage photo failed:', err));
@@ -19553,6 +20041,7 @@ function _reopenDamage(snap) {
     const id = snap.vals.editDamageId;
     if (id && globalDamages.some(d => d.id === id)) editDamage(id); else showAddDamageForm();
     applyFormState(snap.vals);
+    if (!id) onDamageAlreadyRepairedChange();
     if (snap.photoDirty) { _dmgPhotoData = snap.photo || ''; _dmgPhotoDirty = true; _dmgPhotoLoading = false; setDamagePhotoPreview('before'); }
     if (snap.afterDirty) { _dmgAfterData = snap.after || ''; _dmgAfterDirty = true; _dmgAfterLoading = false; setDamagePhotoPreview('after'); }
     const opened = document.getElementById('damageModal').classList.contains('open');

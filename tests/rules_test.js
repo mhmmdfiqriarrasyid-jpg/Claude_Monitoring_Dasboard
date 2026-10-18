@@ -264,6 +264,37 @@ async function check(name, p, expectOk) {
     await check('lisensi: id beda dengan dokumen DITOLAK', setDoc(doc(LI, 'licenseRequirements', 'bed-ripper'), lr('other', 'SF-RTK', '')), false);
     await check('lisensi: editor License Stock menghapus syarat', deleteDoc(doc(LI, 'licenseRequirements', 'bed-ripper')), true);
 
+    // ---- v162: kerusakan menahan status unit (editor Damage tanpa edit unit) ----
+    await env.withSecurityRulesDisabled(async ctx => {
+        const db = ctx.firestore();
+        await setDoc(doc(db, 'users', 'dmg'), { uid: 'dmg', email: 'dmg@x.id', role: 'staff', status: 'active', access: { damage: 'edit', editUnits: 'view' } });
+        await setDoc(doc(db, 'users', 'dmgv'), { uid: 'dmgv', email: 'dmgv@x.id', role: 'staff', status: 'active', access: { damage: 'view' } });
+        await setDoc(doc(db, 'units', 'hx'), { id: 'hx', name: 'EX-01', sn: 'SNX', unitGroup: 'heavy', status: 'Good', cameraAi: 'Good',
+            site: 'PT. GPA', breakdownReason: '', downtimeHistory: [{ start: 1, end: 2 }, { start: 3, end: 4 }] });
+    });
+    const DM = as('dmg'), DV = as('dmgv');
+    await check('damage→unit: editor Damage set Breakdown + alasan + id kerusakan', updateDoc(doc(DM, 'units', 'hx'),
+        { status: 'Breakdown', breakdownReason: 'Mekanis: bocor', breakdownStartedAt: 10, breakdownDamageId: 'dmg_1' }), true);
+    await check('damage→unit: editor Damage set komponen Breakdown', updateDoc(doc(DM, 'units', 'hx'), { cameraAi: 'Breakdown' }), true);
+    await check('damage→unit: kembali Good dengan satu interval downtime baru', updateDoc(doc(DM, 'units', 'hx'),
+        { status: 'Good', breakdownReason: '', breakdownStartedAt: null, breakdownDamageId: '',
+          downtimeHistory: [{ start: 1, end: 2 }, { start: 3, end: 4 }, { start: 10, end: 20 }] }), true);
+    await check('damage→unit: menghapus riwayat downtime DITOLAK', updateDoc(doc(DM, 'units', 'hx'), { downtimeHistory: [] }), false);
+    await check('damage→unit: menambah dua interval sekaligus DITOLAK', updateDoc(doc(DM, 'units', 'hx'),
+        { downtimeHistory: [{ start: 1, end: 2 }, { start: 3, end: 4 }, { start: 10, end: 20 }, { start: 30, end: 40 }, { start: 50, end: 60 }] }), false);
+    await check('damage→unit: mengubah nama unit DITOLAK', updateDoc(doc(DM, 'units', 'hx'), { name: 'EX-99' }), false);
+    await check('damage→unit: mengubah kelompok unit DITOLAK', updateDoc(doc(DM, 'units', 'hx'), { unitGroup: 'tractor' }), false);
+    await check('damage→unit: status + site sekaligus DITOLAK', updateDoc(doc(DM, 'units', 'hx'), { status: 'Breakdown', site: 'PT. MNM' }), false);
+    await check('damage→unit: nilai status selain Good/Breakdown DITOLAK', updateDoc(doc(DM, 'units', 'hx'), { status: 'Rusak' }), false);
+    await check('damage→unit: alasan bukan teks DITOLAK', updateDoc(doc(DM, 'units', 'hx'), { breakdownReason: 5 }), false);
+    await check('damage→unit: alasan sangat panjang DITOLAK', updateDoc(doc(DM, 'units', 'hx'), { breakdownReason: 'x'.repeat(1200) }), false);
+    await check('damage→unit: firebase-init lama (set merge parsial) diterima', setDoc(doc(DM, 'units', 'hx'), { id: 'hx', status: 'Good' }, { merge: true }), true);
+    await check('damage→unit: editor Damage TIDAK boleh membuat unit', setDoc(doc(DM, 'units', 'hy'), { id: 'hy', name: 'Baru', status: 'Good' }), false);
+    await check('damage→unit: editor Damage TIDAK boleh menghapus unit', deleteDoc(doc(DM, 'units', 'hx')), false);
+    await check('damage→unit: hanya-lihat Damage TIDAK boleh mengubah status', updateDoc(doc(DV, 'units', 'hx'), { status: 'Breakdown' }), false);
+    await check('damage→unit: tanpa akses TIDAK boleh mengubah status', updateDoc(doc(N, 'units', 'hx'), { status: 'Breakdown' }), false);
+    await check('damage→unit: editor unit tetap boleh mengubah apa pun', updateDoc(doc(S, 'units', 'hx'), { name: 'EX-01b', site: 'PT. MNM', downtimeHistory: [] }), true);
+
     await env.cleanup();
     let pass = 0;
     T.forEach(x => { if (x.pass) pass++; else console.log('FAIL', x.name, '\n   ', x.err || ''); });

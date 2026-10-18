@@ -2323,6 +2323,16 @@
                         <div id="dmgBreakdownHint" style="font-size:11.5px;color:var(--text-secondary);margin-top:4px">
                             Device Precision → related component (GPS/Display/Steering/JDLink); other types → unit status.
                         </div>
+                        <div id="dmgBreakdownRule" style="font-size:11.5px;color:var(--text-secondary);margin-top:2px">
+                            Marked done → back to Good once no other damage on that unit is still open.
+                        </div>
+                        <div class="dmg-repaired-row" id="dmgAlreadyRepairedRow">
+                            <label for="dmgAlreadyRepaired" style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+                                <input type="checkbox" id="dmgAlreadyRepaired" onchange="onDamageAlreadyRepairedChange()">
+                                Already repaired on
+                            </label>
+                            <input type="date" class="form-input" id="dmgRepairedDate" aria-label="Date it was repaired" disabled>
+                        </div>
                     </div>
                     <div class="form-group full-width">
                         <label class="form-label" for="dmgPhotoInput">Photo — Before <span class="form-optional">(the damage, optional)</span></label>
@@ -2401,6 +2411,7 @@
                         </button>
                     </div>
                 </div>
+                <div class="dmg-repair__effect" id="dmgRepairEffect" role="status" hidden></div>
                 <div class="dmg-repair__hint" id="dmgRepairHint"></div>
             </div>
         </div>
