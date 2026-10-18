@@ -127,7 +127,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v162';
+const APP_VERSION = 'v163';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -8208,6 +8208,10 @@ function _applyDamageLink(unitId, fields) {
     const guarded = guardUnitFields(before, allowed);
     if (!Object.keys(guarded).length) return false;
     const unit = { ...before, ...guarded };
+    // Its own array: trackStatusChange appends the closed interval in place,
+    // and on the shared one the diff below would see no change and leave the
+    // interval out of the write — the next snapshot would then drop it.
+    if (Array.isArray(unit.downtimeHistory)) unit.downtimeHistory = unit.downtimeHistory.slice();
     if (guarded.status !== undefined && guarded.status !== before.status) {
         trackStatusChange(unit, before.status, guarded.status);
     }

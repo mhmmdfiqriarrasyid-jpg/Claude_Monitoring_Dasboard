@@ -103,7 +103,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.966 pemeriksaan di empat puluh sembilan suite, menggerakkan Chromium sungguhan terhadap
+1.967 pemeriksaan di empat puluh sembilan suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -437,6 +437,10 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   - Penanda: "Unit: Breakdown" / "Unit is Good" di tabel Damage, "N open
     damage" di Unit Database dan dashboard (ke Damage dengan pencarian SN),
     efek di dialog Mark done.
+  - *Perbaikan v163:* saat unit kembali Good lewat kerusakan, interval
+    downtime yang baru ditutup ikut dalam tulisan parsial (dulu array-nya
+    dipakai bersama sehingga perbedaannya tidak terlihat, dan riwayat
+    MTTR/MTBF hilang setelah snapshot berikutnya).
 - **Foto kerusakan Before / After v151 (dijaga `tests/damage_beforeafter_test.js`
   dan rules_test).**
   - Foto yang sudah ada = **Before** (`damagePhotos/{id}`, tanda `hasPhoto`).

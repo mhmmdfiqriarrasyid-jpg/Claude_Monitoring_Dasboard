@@ -104,10 +104,14 @@ const { launch, BASE_URL } = require('./_env');
           [U('01').status, U('01').breakdownDamageId, U('01').breakdownReason, toasts.pop()],
           ['Breakdown', a2.id, 'Software: Error ECU', 'Damage marked as done — unit status not restored because other damage is still open']);
         const dh0 = (U('01').downtimeHistory || []).length;
+        partials.length = 0;
         resolveDamage(a2.id, { confirmed: true });
         t('selesai yang terakhir: Good, alasan dan id kosong, downtime tercatat',
           [U('01').status, U('01').breakdownReason, U('01').breakdownDamageId, U('01').downtimeHistory.length, toasts.pop()],
           ['Good', '', '', dh0 + 1, 'Damage marked as done — unit status restored']);
+        // Interval downtime harus ikut terkirim, kalau tidak snapshot berikutnya menghapusnya.
+        const sentGood = partials.flat().find(p => p.id === '01' && p.status === 'Good');
+        t('interval downtime ikut dalam tulisan ke server', [!!sentGood, sentGood && Array.isArray(sentGood.downtimeHistory) ? sentGood.downtimeHistory.length : -1], [true, dh0 + 1]);
         resolveDamage(c1.id, { confirmed: true });
         t('komponen kembali Good saat damage komponennya selesai', U('01').rotaryLamp, 'Good');
 
