@@ -127,7 +127,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v164';
+const APP_VERSION = 'v165';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -454,6 +454,8 @@ function loadUnitGroupPrefs() {
 // While no heavy unit exists, everything opens exactly as it does today,
 // whatever preference a device saved.
 function effectiveEditGroup() {
+    const sc = effectiveUnitScope();
+    if (sc === 'tractor' || sc === 'heavy') return sc;
     if (editUnitsGroup === 'heavy' && !_editGroupPicked && !hasHeavyUnits()) return 'tractor';
     // A fleet of heavy units only opens on them, like the dashboard does,
     // rather than on an empty Agricultural tab — unless that tab was chosen.
@@ -461,11 +463,94 @@ function effectiveEditGroup() {
     return editUnitsGroup;
 }
 function effectiveDashGroup() {
+    const sc = effectiveUnitScope();
+    if (sc === 'tractor' || sc === 'heavy') return sc;
     if (!hasHeavyUnits()) return 'tractor';
     if (!hasTractorUnits()) return 'heavy';
     return dashGroupPref;
 }
 function scopeDashUnits(list) { return unitsOfGroup(list || globalData, effectiveDashGroup()); }
+
+// ---- The data a limited account may see (unit-group limit, v165) ----
+// For an account limited to one group, globalData and globalDamages hold only
+// that group; every screen reads those two lists, so all of them follow. The
+// lists as they arrived are kept aside — never shown, never saved on the
+// device — so "outside your access" can be told from "not found". An
+// unlimited account keeps today's arrays exactly as they arrive.
+let _fleetUnitsAll = null, _fleetDamagesAll = null;
+let _appliedScope = 'all';
+function applyUnitScopeToData(fresh) {
+    fresh = fresh || {};
+    const sc = effectiveUnitScope();
+    if (sc === 'all') {
+        if (fresh.units) globalData = fresh.units;
+        else if (_fleetUnitsAll) globalData = _fleetUnitsAll;
+        if (fresh.damages) globalDamages = fresh.damages;
+        else if (_fleetDamagesAll) globalDamages = _fleetDamagesAll;
+        _fleetUnitsAll = _fleetDamagesAll = null;
+        return;
+    }
+    if (fresh.units) _fleetUnitsAll = fresh.units; else if (!_fleetUnitsAll) _fleetUnitsAll = globalData;
+    if (fresh.damages) _fleetDamagesAll = fresh.damages; else if (!_fleetDamagesAll) _fleetDamagesAll = globalDamages;
+    const inScope = u => !hasUnreadableGroup(u) && unitGroupOf(u) === sc;
+    globalData = _fleetUnitsAll.filter(inScope);
+    const byId = new Map(_fleetUnitsAll.map(u => [u.id, u]));
+    const bySn = new Map(_fleetUnitsAll.filter(u => u.sn).map(u => [String(u.sn).toLowerCase(), u]));
+    // A record follows its live unit (by id, then SN), as damageGroupOfRecord
+    // does; one whose unit is gone keeps the group it was stamped with.
+    globalDamages = _fleetDamagesAll.filter(d => {
+        const u = (d.unitId && byId.get(d.unitId)) || (d.sn && bySn.get(String(d.sn).toLowerCase()));
+        if (u) return inScope(u);
+        return (d.unitGroup === 'heavy' ? 'heavy' : 'tractor') === sc;
+    });
+}
+// Is this unit id one the account cannot see (as opposed to one that is gone)?
+function unitOutsideScope(id) {
+    return !!_fleetUnitsAll && !globalData.some(u => u.id === id) && _fleetUnitsAll.some(u => u.id === id);
+}
+// The account's limit changed (sign-in, or the owner changed it live): apply
+// it to what is loaded and redraw. Returns true when it changed.
+function applyScopeChange() {
+    const sc = effectiveUnitScope();
+    if (sc === 'all') delete document.body.dataset.unitScope; else document.body.dataset.unitScope = sc;
+    if (sc === _appliedScope) return false;
+    const wasLimited = _appliedScope !== 'all';
+    _appliedScope = sc;
+    if (sc === 'all' && wasLimited) {
+        // Back to everything: start from this device's own copy — a limited
+        // session never wrote to it — until the subscriptions bring the rest.
+        _fleetUnitsAll = _fleetDamagesAll = null;
+        loadFromStorage(); loadDamages(); loadImplements(); loadLicenseStock();
+    } else {
+        applyUnitScopeToData();
+        if (!unitScopeAllows('tractor')) { globalImplements = []; globalLicenseStock = []; licenseRequirements = []; }
+        if (!unitScopeAllows('heavy')) { inspections = []; inspectionPlans = []; }
+    }
+    if (sc !== 'all') {
+        dashGroupPref = sc;
+        if (sc === 'tractor' || sc === 'heavy') editUnitsGroup = sc;
+        damageGroup = sc === 'tractor' || sc === 'heavy' ? sc : '';
+    }
+    return true;
+}
+
+// Which history rows a limited account may read: rows about a unit (or its
+// damage) of its own group, and rows that are not about a unit group at all
+// (team, warehouse, users…). Implement and licence rows are agricultural,
+// inspection rows heavy equipment.
+function historyRowInScope(e) {
+    const sc = effectiveUnitScope();
+    if (sc === 'all') return true;
+    const m = String((e && e.unitName) || '').match(/^\[([A-Za-z ]+)\]/);
+    const tag = m ? m[1] : '';
+    if (tag === 'Implement' || tag === 'License') return sc === 'tractor';
+    if (tag === 'Inspection') return sc === 'heavy';
+    if (tag && tag !== 'Damage') return true;
+    const all = _fleetUnitsAll || globalData;
+    const u = e && e.unitId ? all.find(x => x.id === e.unitId) : null;
+    if (u) return !hasUnreadableGroup(u) && unitGroupOf(u) === sc;
+    return false;
+}
 // Names the tab explicitly once both groups exist: a bare 'editUnits' lands on
 // whichever tab was open last, which may not hold the unit at all. With no
 // heavy units there is one tab, and the link stays exactly what it was.
@@ -1537,6 +1622,12 @@ function updateNavGroups() {
         if (currentView === 'dashboard') setDashGroup(only, { persist: false });
         else dashGroupPref = only;
     }
+    // A limited account: the other group's links, and "All", are not its.
+    if (isUnitScoped()) {
+        document.querySelectorAll('.nav__link[data-group]').forEach(el => {
+            if (el.dataset.group === 'all' || !unitScopeAllows(el.dataset.group)) el.style.display = 'none';
+        });
+    }
     document.querySelectorAll('.sidebar__nav .nav-group').forEach(grp => {
         const any = [...grp.querySelectorAll('.nav__link')].some(l => l.style.display !== 'none');
         grp.style.display = any ? '' : 'none';
@@ -1549,6 +1640,10 @@ function updateNavGroups() {
 // ============================================================
 
 function saveToStorage(data) {
+    // A limited session's list must never become this device's copy: the next
+    // full session would save it into the rollback ring, and restoring that
+    // would delete the other group.
+    if (isUnitScoped()) return;
     try {
         const next = JSON.stringify(data);
         let prev = null;
@@ -1593,11 +1688,11 @@ function loadFromStorage() {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
-            globalData = JSON.parse(raw);
+            applyUnitScopeToData({ units: JSON.parse(raw) });
             return globalData.length > 0;
         }
     } catch (e) { /* ignore */ }
-    globalData = [];
+    applyUnitScopeToData({ units: [] });
     return false;
 }
 
@@ -2377,11 +2472,11 @@ function getAuditLog() {
     catch (e) {}
     // Cloud is the source of truth; fall back to local when offline or for
     // any entry that hasn't synced yet.
-    if (!cloudHistory.length) return local;
+    if (!cloudHistory.length) return local.filter(historyRowInScope);
     const seen = new Set(cloudHistory.map(e => e.id));
     const merged = [...cloudHistory, ...local.filter(e => e.id && !seen.has(e.id))];
     merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-    return merged.slice(0, AUDIT_LOG_MAX);
+    return merged.filter(historyRowInScope).slice(0, AUDIT_LOG_MAX);
 }
 
 // The audit log used to be subscribed for everyone the moment they signed in:
@@ -2692,7 +2787,7 @@ async function exportHistory() {
     if (window.cloud?.isReady && window.cloud.getAllHistory) {
         try {
             showLoading(true);
-            const all = await window.cloud.getAllHistory();
+            const all = (await window.cloud.getAllHistory() || []).filter(historyRowInScope);
             if (Array.isArray(all) && all.length >= log.length) {
                 log = all.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
                 complete = true;
@@ -2862,6 +2957,9 @@ async function exportBackup() {
     // read access to every area it contains — otherwise it is a way around
     // both the CSV privilege and per-area 'none'.
     if (!canCsv('export')) return;
+    // A backup of one group is a trap: restoring it with REPLACE deletes the
+    // other group.
+    if (isUnitScoped()) { showToast('Backup is for accounts that see all unit groups', 'warning'); return; }
     const blocked = ['editUnits', 'implements', 'damage', 'licenseStock']
         .filter(a => !hasAccess(a, 'view'));
     if (blocked.length) {
@@ -3227,6 +3325,7 @@ async function _mapLimit(items, n, fn) {
 // damage records and licence stock.
 function importBackup(file) {
     if (!canCsv('full')) return;
+    if (isUnitScoped()) { showToast('Restore is for accounts that see all unit groups', 'warning'); return; }
     // Units are non-negotiable: every backup carries them and the units path
     // below writes unconditionally. The rest are checked per collection as
     // they are restored, so someone with partial rights restores what they may
@@ -3863,6 +3962,8 @@ function syncDashGroupUI() {
 }
 
 function setDashGroup(g, opts) {
+    const sc = effectiveUnitScope();
+    if (sc === 'tractor' || sc === 'heavy') { g = sc; opts = { ...(opts || {}), persist: false }; }
     if (!DASH_GROUP_KEYS.includes(g)) return;
     dashGroupPref = g;
     if (!opts || opts.persist !== false) writePref('dashUnitGroup', g);
@@ -5311,6 +5412,8 @@ function renderEditGroupTabs() {
 }
 
 function switchEditUnitsGroup(g, opts) {
+    const sc = effectiveUnitScope();
+    if (sc === 'tractor' || sc === 'heavy') { g = sc; opts = { ...(opts || {}), persist: false }; }
     if (!UNIT_GROUP_KEYS.includes(g)) return;
     editUnitsGroup = g;
     _editGroupPicked = true;
@@ -6498,6 +6601,8 @@ function collectChartOfAccounts() {
 
 // ---- Storage ----
 function loadImplements() {
+    // Agricultural only: not for a heavy-equipment-only account.
+    if (!unitScopeAllows('tractor')) { globalImplements = []; updateImplementCount(); return false; }
     try {
         const raw = localStorage.getItem(IMPLEMENTS_STORAGE_KEY);
         globalImplements = raw ? JSON.parse(raw) : [];
@@ -7347,7 +7452,7 @@ function openUnitFromSearch(id) {
 
 function showUnitProfile(id) {
     const u = globalData.find(d => d.id === id);
-    if (!u) { showToast('Unit not found', 'warning'); return; }
+    if (!u) { showToast(unitOutsideScope(id) ? 'This unit is outside your access' : 'Unit not found', 'warning'); return; }
 
     document.getElementById('unitProfileTitle').textContent = u.name || u.sn || 'Unit Profile';
     document.getElementById('unitProfileEditBtn').onclick = () => { closeUnitProfile(); editUnit(id); };
@@ -7516,15 +7621,16 @@ function showUnitProfile(id) {
 function loadDamages() {
     try {
         const raw = localStorage.getItem(DAMAGE_STORAGE_KEY);
-        globalDamages = raw ? JSON.parse(raw) : [];
+        applyUnitScopeToData({ damages: raw ? JSON.parse(raw) : [] });
     } catch (e) {
-        globalDamages = [];
+        applyUnitScopeToData({ damages: [] });
     }
     updateDamageCount();
     return globalDamages.length > 0;
 }
 
 function saveDamages() {
+    if (isUnitScoped()) return;
     try {
         localStorage.setItem(DAMAGE_STORAGE_KEY, JSON.stringify(globalDamages));
         checkStorageUsage(); // photos are the main storage driver
@@ -7552,6 +7658,8 @@ function damageGroupOfRecord(d) {
 }
 
 function setDamageGroup(g) {
+    const sc = effectiveUnitScope();
+    if (sc === 'tractor' || sc === 'heavy') g = sc;
     damageGroup = (g === 'tractor' || g === 'heavy') ? g : '';
     const sel = document.getElementById('damageGroupFilter');
     if (sel && sel.value !== damageGroup) sel.value = damageGroup;
@@ -8907,7 +9015,7 @@ function applyCloudDamagesSnapshot(items) {
     clearRulesBanner('damageRecords');
     console.log(`[cloud] damage snapshot received — ${items.length} docs`);
 
-    if (_firstDamageSnapshot && items.length === 0 && globalDamages.length > 0) {
+    if (_firstDamageSnapshot && items.length === 0 && globalDamages.length > 0 && !isUnitScoped()) {
         console.warn(`[cloud] first damage snapshot is empty but local has ${globalDamages.length} — keeping local, re-uploading`);
         _firstDamageSnapshot = false;
         window.cloud.saveDamages(globalDamages).catch(err => {
@@ -8930,8 +9038,8 @@ function applyCloudDamagesSnapshot(items) {
 
     suppressCloudWrites = true;
     try {
-        globalDamages = items;
-        try { localStorage.setItem(DAMAGE_STORAGE_KEY, JSON.stringify(items)); } catch (e) {}
+        applyUnitScopeToData({ damages: items });
+        if (!isUnitScoped()) { try { localStorage.setItem(DAMAGE_STORAGE_KEY, JSON.stringify(items)); } catch (e) {} }
         if (currentView === 'damage') {
             renderDamageTable();
         } else {
@@ -8966,6 +9074,7 @@ function generateLicenseId() {
 
 // ---- Storage ----
 function loadLicenseStock() {
+    if (!unitScopeAllows('tractor')) { globalLicenseStock = []; updateLicenseCount(); return false; }
     try {
         const raw = localStorage.getItem(LICENSE_STORAGE_KEY);
         globalLicenseStock = raw ? JSON.parse(raw) : [];
@@ -10278,7 +10387,7 @@ function applyCloudUnitsSnapshot(units) {
     // First-snapshot guard: if cloud is empty but we have local data, do NOT
     // wipe — migration may still be in-flight, or this client beat the rest of
     // the team to upload. Re-push our local data and bail out for this round.
-    if (_firstUnitsSnapshot && units.length === 0 && globalData.length > 0) {
+    if (_firstUnitsSnapshot && units.length === 0 && globalData.length > 0 && !isUnitScoped()) {
         console.warn(`[cloud] first units snapshot is empty but local has ${globalData.length} — keeping local, re-uploading`);
         _firstUnitsSnapshot = false;
         window.cloud.saveUnits(globalData).catch(err => {
@@ -10290,21 +10399,22 @@ function applyCloudUnitsSnapshot(units) {
 
     suppressCloudWrites = true;
     try {
-        globalData = units;
+        applyUnitScopeToData({ units });
         // Persist to local cache so offline / next visit sees latest snapshot
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(units)); } catch (e) {}
+        // (not for a limited session — see saveToStorage).
+        if (!isUnitScoped()) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(units)); } catch (e) {} }
 
         // Update connection indicator
         const dot = document.getElementById('connectionDot');
         const lbl = document.getElementById('connectionLabel');
         if (dot) dot.classList.add('connected');
-        if (lbl) lbl.textContent = `Cloud · ${units.length} units`;
+        if (lbl) lbl.textContent = `Cloud · ${globalData.length} units`;
 
         // Re-render whichever view is visible
         if (currentView === 'dashboard') {
             const empty = document.getElementById('emptyState');
             const content = document.getElementById('dashboardContent');
-            if (units.length > 0) {
+            if (globalData.length > 0) {
                 if (empty) empty.style.display = 'none';
                 if (content) content.style.display = 'block';
                 filteredData = scopeDashUnits();
@@ -10864,7 +10974,9 @@ function initCloudSync() {
             const lbl = document.getElementById('connectionLabel');
             if (lbl) lbl.textContent = 'Cloud offline';
         });
-        cloudImplUnsub = window.cloud.subscribeImplements(applyCloudImplementsSnapshot, err => {
+        // Implements and licences are agricultural; a heavy-equipment-only
+        // account does not read them (the rules refuse it anyway).
+        if (unitScopeAllows('tractor')) cloudImplUnsub = window.cloud.subscribeImplements(applyCloudImplementsSnapshot, err => {
             console.warn('[cloud] implements offline');
         });
         if (window.cloud.subscribeDamages) {
@@ -10876,7 +10988,7 @@ function initCloudSync() {
                 }
             });
         }
-        if (window.cloud.subscribeLicenses) {
+        if (window.cloud.subscribeLicenses && unitScopeAllows('tractor')) {
             cloudLicenseUnsub = window.cloud.subscribeLicenses(applyCloudLicenseSnapshot, err => {
                 console.warn('[cloud] license stock offline:', err && err.code);
                 if (err && err.code === 'permission-denied') {
@@ -10959,7 +11071,7 @@ function initCloudSync() {
         }
         // Checks are read by whoever checks, approves, or reads the inbox —
         // the same set firestore.rules lets read them.
-        const canReadChecks = ['inspection', 'inspectionApprove', 'leader'].some(a => hasAccess(a, 'view'));
+        const canReadChecks = ['inspection', 'inspectionApprove', 'leader'].some(a => hasAccess(a, 'view')) && unitScopeAllows('heavy');
         if (window.cloud.subscribeInspections && canReadChecks) {
             cloudInspectionsUnsub = window.cloud.subscribeInspections(
                 applyCloudInspectionsSnapshot,
@@ -10979,7 +11091,7 @@ function initCloudSync() {
                 }
             );
         }
-        if (window.cloud.subscribeLicenseRequirements) {
+        if (window.cloud.subscribeLicenseRequirements && unitScopeAllows('tractor')) {
             cloudLicenseReqUnsub = window.cloud.subscribeLicenseRequirements(
                 applyLicenseRequirementsSnapshot,
                 err => console.warn('[cloud] licenseRequirements offline:', err && err.code)
@@ -11679,7 +11791,9 @@ function renderUserPill() {
     document.getElementById('userPillRole').textContent = label;
     pill.dataset.role = currentUserDoc.role;
     document.getElementById('userMenuEmail').textContent = currentUserDoc.email || '';
-    document.getElementById('userMenuRoleLabel').textContent = `${label} account · ${APP_VERSION}`;
+    document.getElementById('userMenuRoleLabel').textContent = isUnitScoped()
+        ? `${label} account · ${unitScopeLabel(effectiveUnitScope())} · ${APP_VERSION}`
+        : `${label} account · ${APP_VERSION}`;
 }
 
 function toggleUserMenu() {
@@ -11804,12 +11918,50 @@ function canViewView(view) {
     return (VIEW_AREAS[view] || []).some(a => hasAccess(a, 'view'));
 }
 
-// Effective level of a user for an area (explicit access override → role default).
-function effectiveAccess(area, user = currentUserDoc) {
+// The level stored for an area (explicit access override → role default),
+// before the unit-group limit below. The Access dialog shows this one.
+function grantedAccess(area, user = currentUserDoc) {
     if (!user) return 'none';
     if (user.role === 'owner') return 'edit';
     const explicit = user.access && user.access[area];
     return explicit || roleDefaultAccess(user.role, area);
+}
+
+// ---- Unit-group limit (v165) ----
+// An account can be limited to one unit group. It then sees only that group's
+// units and damage records, may not edit units or damage (view only), and the
+// areas that belong to the other group close. Stored as access.unitScope;
+// absent (or null) = all groups. Anything else — '' or an unknown word —
+// fails closed: no units at all, the same reading firestore.rules gives it.
+const UNIT_SCOPES = ['all', 'tractor', 'heavy'];
+const AREA_GROUP = { implements: 'tractor', licenseStock: 'tractor', inspection: 'heavy', inspectionApprove: 'heavy' };
+function effectiveUnitScope(user = currentUserDoc) {
+    if (!user || user.role === 'owner') return 'all';
+    const a = user.access || {};
+    if (!Object.prototype.hasOwnProperty.call(a, 'unitScope') || a.unitScope == null) return 'all';
+    return UNIT_SCOPES.includes(a.unitScope) ? a.unitScope : 'none';
+}
+function isUnitScoped(user = currentUserDoc) { return effectiveUnitScope(user) !== 'all'; }
+function unitScopeAllows(g, user = currentUserDoc) {
+    const sc = effectiveUnitScope(user);
+    return sc === 'all' || sc === g;
+}
+function unitScopeLabel(sc) {
+    return sc === 'tractor' ? `${UNIT_GROUPS.tractor.label} only`
+         : sc === 'heavy' ? `${UNIT_GROUPS.heavy.label} only`
+         : sc === 'none' ? 'No unit group' : 'All groups';
+}
+
+// Effective level of a user for an area: what is granted, narrowed by the
+// unit-group limit.
+function effectiveAccess(area, user = currentUserDoc) {
+    const lv = grantedAccess(area, user);
+    if (lv === 'none' || !user || user.role === 'owner') return lv;
+    const sc = effectiveUnitScope(user);
+    if (sc === 'all') return lv;
+    if (AREA_GROUP[area] && AREA_GROUP[area] !== sc) return 'none';
+    if ((area === 'editUnits' || area === 'damage') && lv === 'edit') return 'view';
+    return lv;
 }
 
 // Does the user meet at least `min` access ('view' or 'edit') for an area?
@@ -11850,6 +12002,7 @@ function canEditAnyArea() {
 
 function applyRoleGating() {
     const owner = isOwner();
+    const scopeChanged = applyScopeChange();
 
     // Owner-only navigation links
     document.querySelectorAll('[data-owner-only]').forEach(el => {
@@ -11867,6 +12020,20 @@ function applyRoleGating() {
     // Re-render any visible table to refresh its action buttons / editability
     if (currentView === 'editUnits') renderEditTable();
     if (currentView === 'implements') renderImplementsTable();
+    if (scopeChanged) {
+        updateDamageCount();
+        if (currentView === 'dashboard') {
+            const empty = document.getElementById('emptyState');
+            const content = document.getElementById('dashboardContent');
+            if (empty) empty.style.display = globalData.length ? 'none' : '';
+            if (content) content.style.display = globalData.length ? 'block' : 'none';
+            if (globalData.length) { filteredData = scopeDashUnits(); onDataLoaded(); }
+        } else if (currentView === 'damage') {
+            renderDamageTable();
+        }
+        renderUserPill();
+        scheduleDecisionRefresh();
+    }
 }
 
 // Hide sidebar links the user can't view, and flag view-only areas on <body>
@@ -12045,9 +12212,10 @@ function renderUsersView() {
             // with no way in. Say so where the owner will see it.
             const noAccess = !isOwnerRow &&
                 ACCESS_AREAS.every(a => effectiveAccess(a.key, u) === 'none');
-            const roleNote = legacy
+            const roleNote = (legacy
                 ? '<div class="user-role-note user-role-note--legacy">Legacy role — assign a new role</div>'
-                : (noAccess ? '<div class="user-role-note user-role-note--warn">No access granted yet</div>' : '');
+                : (noAccess ? '<div class="user-role-note user-role-note--warn">No access granted yet</div>' : ''))
+                + (!isOwnerRow && isUnitScoped(u) ? `<div class="user-role-note">${escapeHtml(unitScopeLabel(effectiveUnitScope(u)))}</div>` : '');
 
             // Which device currently holds this account's single session slot.
             const sess = u.activeSession;
@@ -12089,12 +12257,24 @@ function openAccessModal(uid) {
     document.getElementById('accessUserUid').value = uid;
     document.getElementById('accessUserName').textContent = user.displayName || user.email || uid;
     const labels = { none: 'None', view: 'View', edit: 'Edit' };
-    let rows = ACCESS_AREAS.map(area => {
-        const cur = effectiveAccess(area.key, user);
+    const sc = (user.access && UNIT_SCOPES.includes(user.access.unitScope)) ? user.access.unitScope : 'all';
+    let rows = `<div class="access-row access-row--scope">
+            <span class="access-row__label">Unit group <small>what this person can see</small></span>
+            <select class="form-select access-select" data-area="unitScope" onchange="refreshAccessScopeNote()">
+                ${UNIT_SCOPES.map(k => `<option value="${k}" ${k === sc ? 'selected' : ''}>${escapeHtml(unitScopeLabel(k))}</option>`).join('')}
+            </select>
+        </div>
+        <div class="access-presets">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="applyAccessPreset('tractor')">View only — ${escapeHtml(UNIT_GROUPS.tractor.shortLabel)}</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="applyAccessPreset('heavy')">View only — ${escapeHtml(UNIT_GROUPS.heavy.shortLabel)}</button>
+        </div>
+        <p class="access-scope-note" id="accessScopeNote" hidden></p>`;
+    rows += ACCESS_AREAS.map(area => {
+        const cur = grantedAccess(area.key, user);
         const opts = area.levels.map(l => `<option value="${l}" ${l === cur ? 'selected' : ''}>${labels[l]}</option>`).join('');
-        return `<div class="access-row">
-            <span class="access-row__label">${escapeHtml(area.label)}</span>
-            <select class="form-select access-select" data-area="${area.key}">${opts}</select>
+        return `<div class="access-row" data-row-area="${area.key}">
+            <span class="access-row__label">${escapeHtml(area.label)}<small class="access-row__applies" hidden></small></span>
+            <select class="form-select access-select" data-area="${area.key}" onchange="refreshAccessScopeNote()">${opts}</select>
         </div>`;
     }).join('');
     // CSV export/import capability (its own level set)
@@ -12105,7 +12285,50 @@ function openAccessModal(uid) {
         <select class="form-select access-select" data-area="csv">${CSV_LEVELS.map(l => `<option value="${l}" ${l === curCsv ? 'selected' : ''}>${csvLabels[l]}</option>`).join('')}</select>
     </div>`;
     document.getElementById('accessGrid').innerHTML = rows;
+    refreshAccessScopeNote();
     document.getElementById('accessModal').classList.add('open');
+}
+
+// What the chosen unit group does to the rows below, shown next to them. The
+// stored levels stay as they are, so setting "All groups" again gives back
+// exactly what was granted.
+function refreshAccessScopeNote() {
+    const grid = document.getElementById('accessGrid');
+    if (!grid) return;
+    const sel = grid.querySelector('[data-area="unitScope"]');
+    const sc = sel ? sel.value : 'all';
+    const note = document.getElementById('accessScopeNote');
+    if (note) {
+        note.hidden = sc === 'all';
+        note.textContent = sc === 'all' ? '' : `Sees only ${groupDef(sc).label} units and their damage records. `
+            + 'Unit Database and Damage are view only; the other group\'s menus close.';
+    }
+    const probe = { role: 'staff', access: { unitScope: sc } };
+    grid.querySelectorAll('[data-row-area]').forEach(row => {
+        const area = row.dataset.rowArea;
+        const granted = row.querySelector('.access-select').value;
+        probe.access[area] = granted;
+        const applies = effectiveAccess(area, probe);
+        const tag = row.querySelector('.access-row__applies');
+        if (tag) {
+            tag.hidden = applies === granted;
+            tag.textContent = applies === granted ? '' : ` → ${applies === 'none' ? 'None' : applies === 'view' ? 'View' : 'Edit'} with this group`;
+        }
+    });
+}
+
+// A ready-made view-only account for one group: the unit group, View on the
+// fleet menus that group uses. Team, warehouse and CSV rows are left alone.
+function applyAccessPreset(g) {
+    const grid = document.getElementById('accessGrid');
+    if (!grid) return;
+    const set = (area, v) => { const el = grid.querySelector(`[data-area="${area}"]`); if (el) el.value = v; };
+    set('unitScope', g);
+    set('editUnits', 'view');
+    set('damage', 'view');
+    if (g === 'tractor') { set('implements', 'view'); set('licenseStock', 'view'); }
+    else { set('inspection', 'view'); }
+    refreshAccessScopeNote();
 }
 
 function closeAccessModal() {
@@ -12130,7 +12353,8 @@ async function saveAccess() {
             unitId: uid,
             unitName: `[User] ${user.displayName || user.email}`,
             field: 'access',
-            after: ACCESS_AREAS.map(a => `${a.label}:${access[a.key]}`).join(', ')
+            after: [`Unit group:${unitScopeLabel(access.unitScope || 'all')}`,
+                    ...ACCESS_AREAS.map(a => `${a.label}:${access[a.key]}`), `CSV:${access.csv}`].join(', ')
         });
         showToast(`Access for "${user.displayName || user.email}" updated`, 'success');
         closeAccessModal();
@@ -12215,7 +12439,8 @@ async function changeUserRole(uid, newRole) {
         return;
     }
     if (oldRole === 'owner' &&
-        !confirm(`Demote ${user.email} from Super Admin to ${after}?\n\nTheir access will then follow the per-menu settings, and the new role grants no access until you set it.`)) {
+        !confirm(`Demote ${user.email} from Super Admin to ${after}?\n\nTheir access will then follow the per-menu settings, and the new role grants no access until you set it.`
+            + (isUnitScoped({ ...user, role: newRole }) ? `\n\nTheir stored unit group then applies: ${unitScopeLabel(effectiveUnitScope({ ...user, role: newRole }))}.` : ''))) {
         renderUsersView();
         return;
     }
@@ -15325,8 +15550,12 @@ function saveDevice(event) {
 
     let unit = null;
     const unitRaw = (document.getElementById('devUnit').value || '').trim();
+    const before = id ? warehouseDevices.find(d => d.id === id) : null;
     if (installed && unitRaw) {
         unit = resolveDamageUnit(unitRaw);
+        // Linked to a unit this account cannot see (another group) and left as
+        // it was: keep that link rather than refuse the save or drop it.
+        if (!unit && before && before.unitId && unitRaw === (before.unitName || '')) unit = { id: before.unitId, name: before.unitName };
         if (!unit) {
             showToast(`Unit "${unitRaw}" not found — pick one from the list`, 'warning');
             return;
@@ -16398,8 +16627,10 @@ function saveStockItem(event) {
 
     let unit = null;
     const unitRaw = (document.getElementById('stkUnit').value || '').trim();
+    const before = id ? stockLedger.find(r => r.id === id) : null;
     if (txnType === 'OUT' && unitRaw) {
         unit = resolveDamageUnit(unitRaw);
+        if (!unit && before && before.unitId && unitRaw === (before.unitName || '')) unit = { id: before.unitId, name: before.unitName };
         if (!unit) {
             showToast(`Unit "${unitRaw}" not found — clear it or pick one from the list`, 'warning');
             return;
@@ -19467,7 +19698,11 @@ function renderDataCompleteness() {
 // ============================================================
 
 function canEditMasterList(kind) { return (MASTER_DEF[kind] || { edit: [] }).edit.some(a => hasAccess(a, 'edit')); }
-function canViewMasterList(kind) { return (MASTER_DEF[kind] || { view: [] }).view.some(a => hasAccess(a, 'view')) || canEditMasterList(kind); }
+const MASTER_GROUP = { heavyBrand: 'heavy', brand: 'tractor' };
+function canViewMasterList(kind) {
+    if (MASTER_GROUP[kind] && !unitScopeAllows(MASTER_GROUP[kind])) return false;
+    return (MASTER_DEF[kind] || { view: [] }).view.some(a => hasAccess(a, 'view')) || canEditMasterList(kind);
+}
 function masterListActive(kind) { return !!(masterLists[kind] && masterLists[kind].length); }
 function masterNotInList(kind) {
     return `is not in the ${MASTER_DEF[kind].label} list — pick one from the list, or add it under Admin → Master Lists first`;

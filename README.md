@@ -86,6 +86,14 @@ oleh Firestore rules, bukan hanya oleh tampilan.
 `inspectionApprove` (atasan: menyetujui / minta revisi) dipisah dengan alasan
 yang sama.
 
+**Batas kelompok unit (v165):** `access.unitScope` = `all` / `tractor` /
+`heavy` (baris pertama dialog Access, plus tombol "View only — …"). Akun yang
+dibatasi hanya melihat unit dan kerusakan kelompoknya, Unit Database dan
+Damage menjadi lihat-saja, dan area kelompok lain tertutup (Implements +
+License Stock untuk alat berat; Inspection untuk pertanian). Tanpa nilai =
+semua; nilai lain = tertutup. Owner tidak pernah dibatasi. Ditegakkan juga di
+rules (`lvlOf`/`scopeOf`).
+
 Editor `damage` tanpa edit `editUnits` boleh mengubah unit **hanya** lewat
 kerusakan (v162): status, delapan field komponen, alasan breakdown, jam
 downtime dan `breakdownDamageId` — nilai Good/Breakdown saja, dan riwayat
@@ -103,7 +111,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.979 pemeriksaan di empat puluh sembilan suite, menggerakkan Chromium sungguhan terhadap
+2.019 pemeriksaan di lima puluh suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -406,6 +414,28 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
     tetap terpilih saat daftar anggota dibangun ulang. Mode compact hanya di
     layar lebar; tombol "To Damage" di kartu inspeksi tidak terjepit; daftar
     pencarian di atas banner sesi (`body.gsearch-open`).
+- **Batas kelompok unit v165 (dijaga `tests/unitscope_test.js` dan
+  rules_test). Perlu publish firestore.rules.**
+  - Klien: `effectiveUnitScope`, `grantedAccess` (yang tersimpan) dan
+    `effectiveAccess` (yang berlaku). `applyUnitScopeToData` menyaring
+    `globalData`/`globalDamages` saat data masuk (snapshot, cache perangkat,
+    perubahan akses live), jadi semua layar ikut: dashboard, Unit Database,
+    Damage, pencarian, profil ("outside your access"), Kotak Keputusan,
+    Periksa Data, rekap, CSV, History (`historyRowInScope`). Pemilih kelompok
+    terkunci tanpa menyimpan preferensi perangkat; tautan kelompok lain dan
+    "All" hilang dari sidebar.
+  - Sesi terbatas tidak pernah menulis daftar unit/kerusakan ke perangkat
+    (cincin auto-backup akan menyimpannya dan restore akan menghapus kelompok
+    lain); cadangan dan restore ditolak. Langganan koleksi kelompok lain
+    tidak dibuka. Perangkat/stok Warehouse yang tertaut ke unit kelompok lain
+    tetap tertaut saat diedit.
+  - Rules: `lvlOf(d, area)` dan `scopeOf(d)` membaca dokumen user sekali
+    (batas 1.000 ekspresi), `canEditAnything` dihitung sekali; Implements,
+    License Stock, syarat lisensi tertutup untuk alat berat, pengecekan untuk
+    pertanian; owner hanya bisa menyimpan nilai kelompok yang dikenal (dicek
+    hanya saat akses berubah). **Fase ini menyembunyikan di aplikasi; data
+    unit/kerusakan kelompok lain masih bisa dibaca lewat devtools sampai
+    tahap kunci-baca berikutnya.**
 - **Kerusakan ↔ status unit v162 (dijaga `tests/damagesync_test.js` dan
   rules_test). Perlu publish firestore.rules (blok `units`).**
   - Catatan kerusakan yang terbuka *menahan* satu tempat di unitnya
@@ -652,7 +682,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   stempel `appliedAt` supaya hanya sekali); tanpa akses itu muncul di Kotak
   Keputusan. Foto di `inspectionPhotos/{id}` (tidak di-subscribe), ditulis
   SEBELUM laporannya.
-- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (164 skenario;
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (186 skenario;
   bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
   kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
   alur persetujuan laporan/izin (transisi status di atas, kunci isi dan foto

@@ -10,7 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const { initializeTestEnvironment, assertSucceeds, assertFails } = require('@firebase/rules-unit-testing');
-const { doc, setDoc, getDoc, updateDoc, deleteDoc } = require('firebase/firestore');
+const { doc, setDoc, getDoc, getDocs, collection, updateDoc, deleteDoc } = require('firebase/firestore');
 
 const T = [];
 async function check(name, p, expectOk) {
@@ -305,6 +305,44 @@ async function check(name, p, expectOk) {
     await check('damage→unit: hanya-lihat Damage TIDAK boleh mengubah status', updateDoc(doc(DV, 'units', 'hx'), { status: 'Breakdown' }), false);
     await check('damage→unit: tanpa akses TIDAK boleh mengubah status', updateDoc(doc(N, 'units', 'hx'), { status: 'Breakdown' }), false);
     await check('damage→unit: editor unit tetap boleh mengubah apa pun', updateDoc(doc(S, 'units', 'hx'), { name: 'EX-01b', site: 'PT. MNM', downtimeHistory: [] }), true);
+
+    // ---- v165: akun yang dibatasi ke satu kelompok unit ----
+    await env.withSecurityRulesDisabled(async ctx => {
+        const db = ctx.firestore();
+        const u = (uid, access) => setDoc(doc(db, 'users', uid), { uid, email: uid + '@x.id', role: 'staff', status: 'active', access });
+        await u('hv', { editUnits: 'edit', damage: 'edit', implements: 'edit', inspection: 'edit', unitScope: 'heavy' });
+        await u('ag', { editUnits: 'view', implements: 'edit', licenseStock: 'edit', leader: 'view', unitScope: 'tractor' });
+        await u('badsc', { editUnits: 'edit', unitScope: '' });
+        await setDoc(doc(db, 'users', 'own2'), { uid: 'own2', email: 'own2@x.id', role: 'owner', status: 'active', access: { unitScope: 'heavy' } });
+        await setDoc(doc(db, 'implements', 'im1'), { id: 'im1', profileName: 'Rotary' });
+        await setDoc(doc(db, 'licenseStock', 'ls1'), { id: 'ls1', txnType: 'IN' });
+        await setDoc(doc(db, 'inspections', 'ins1'), { id: 'ins1', approval: 'approved', createdByUid: 'tech' });
+    });
+    const HV = as('hv'), AG = as('ag'), BAD = as('badsc'), OW2 = as('own2');
+    await check('kelompok: alat berat saja TIDAK boleh mengubah unit (hanya lihat)', updateDoc(doc(HV, 'units', 'u1'), { name: 'X' }), false);
+    await check('kelompok: alat berat saja TIDAK boleh menulis kerusakan', setDoc(doc(HV, 'damageRecords', 'dmg_hv'), { id: 'dmg_hv', unitId: 'hx' }), false);
+    await check('kelompok: alat berat saja TIDAK boleh mengubah status lewat kerusakan', updateDoc(doc(HV, 'units', 'hx'), { status: 'Breakdown' }), false);
+    await check('kelompok: alat berat saja masih bisa membaca unit (fase 1)', getDoc(doc(HV, 'units', 'hx')), true);
+    await check('kelompok: alat berat saja TIDAK bisa membaca daftar implement', getDocs(collection(HV, 'implements')), false);
+    await check('kelompok: alat berat saja TIDAK bisa membaca stok lisensi', getDocs(collection(HV, 'licenseStock')), false);
+    await check('kelompok: alat berat saja TIDAK bisa membaca syarat lisensi', getDocs(collection(HV, 'licenseRequirements')), false);
+    await check('kelompok: alat berat saja TIDAK boleh menulis implement', setDoc(doc(HV, 'implements', 'im2'), { id: 'im2' }), false);
+    await check('kelompok: alat berat saja tetap bisa membuat jadwal pengecekan', setDoc(doc(HV, 'inspectionPlans', 'pl_hv'), { id: 'pl_hv', unitId: 'hx' }), true);
+    await check('kelompok: alat berat saja tetap bisa membaca laporan pengecekan', getDocs(collection(HV, 'inspections')), true);
+    await check('kelompok: alat berat saja tetap boleh menulis riwayat (punya edit Inspection)', setDoc(doc(HV, 'history', 'h_hv'),
+        { id: 'h_hv', timestamp: Date.now(), action: 'add', unitId: 'hx', unitName: 'EX', field: 'x', before: '', after: '', actorUid: 'hv', actorEmail: 'hv@x.id', actorName: 'hv', actorRole: 'staff' }), true);
+    await check('kelompok: pertanian saja menulis implement', setDoc(doc(AG, 'implements', 'im3'), { id: 'im3', profileName: 'Bajak' }), true);
+    await check('kelompok: pertanian saja membaca stok lisensi', getDocs(collection(AG, 'licenseStock')), true);
+    await check('kelompok: pertanian saja TIDAK bisa membaca laporan pengecekan (walau Leader)', getDocs(collection(AG, 'inspections')), false);
+    await check('kelompok: pertanian saja TIDAK bisa membaca jadwal pengecekan', getDocs(collection(AG, 'inspectionPlans')), false);
+    await check('kelompok: nilai kelompok kosong ditutup (tidak boleh mengubah unit)', updateDoc(doc(BAD, 'units', 'u1'), { name: 'Y' }), false);
+    await check('kelompok: owner tidak pernah dibatasi', updateDoc(doc(OW2, 'units', 'u1'), { name: 'T' }), true);
+    await check('kelompok: owner memberi batas Heavy Equipment', updateDoc(doc(O, 'users', 'writer'), { access: { teamLog: 'edit', unitScope: 'heavy' } }), true);
+    await check('kelompok: owner memberi batas yang tidak dikenal DITOLAK', updateDoc(doc(O, 'users', 'writer'), { access: { teamLog: 'edit', unitScope: 'semua' } }), false);
+    await check('kelompok: ganti role akun bernilai kelompok rusak tetap bisa', updateDoc(doc(O, 'users', 'badsc'), { role: 'pbt' }), true);
+    await check('kelompok: keluarkan paksa akun bernilai kelompok rusak tetap bisa', updateDoc(doc(O, 'users', 'badsc'),
+        { activeSession: { id: 'revoked_x', startedAt: 1, device: 'x' } }), true);
+    await check('kelompok: akun terbatas TIDAK boleh mengubah batasnya sendiri', updateDoc(doc(HV, 'users', 'hv'), { access: { unitScope: 'all', editUnits: 'edit' } }), false);
 
     await env.cleanup();
     let pass = 0;

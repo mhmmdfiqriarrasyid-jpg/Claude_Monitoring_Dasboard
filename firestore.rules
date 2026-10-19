@@ -16,6 +16,9 @@ rules_version = '2';
 //              teamMembers:'none', teamLogApprove:'edit', warehouse:'edit',
 //              inspection:'edit', inspectionApprove:'edit',
 //              history:'view', csv:'export' }
+//   access.unitScope : 'all' | 'tractor' | 'heavy' (v165) — limits an account
+//   to one unit group: the other group's areas close and units/damage are
+//   view only. Absent = all; any other value fails closed.
 //   Missing override → role default. Only 'owner' (everything) and the legacy
 //   'team' (edit) carry defaults; staff/pbt/khl/viewer grant nothing on their
 //   own, so every area is granted explicitly in the app's Akses dialog.
@@ -45,13 +48,34 @@ service cloud.firestore {
     // .get() with defaults: reading a key the access map does not have is an
     // evaluation ERROR in rules, not null — it happened to deny, but only by
     // accident, and an error inside && / || is easy to get wrong.
-    function lvl(area) {
-      return isOwner()
-        ? 'edit'
-        : myDoc().data.get('access', {}).get(area, null) != null
-            ? myDoc().data.get('access', {}).get(area, null)
-            : (myDoc().data.get('role', '') == 'team' ? 'edit' : 'none');
+    // The helpers below take the user's document data (d) once, so a rule that
+    // asks about many areas (canEditAnything) stays within Firestore's limit
+    // of 1000 evaluated expressions. Callers check isActive() themselves.
+    //
+    // Unit-group limit (v165): access.unitScope 'tractor' or 'heavy' limits an
+    // account to that group; absent or null = all groups; anything else fails
+    // closed ('none'). The owner is never limited.
+    function scopeOf(d) {
+      let raw = d.get('access', {}).get('unitScope', null);
+      return d.get('role', '') == 'owner' || raw == null ? 'all'
+        : (raw in ['all', 'tractor', 'heavy'] ? raw : 'none');
     }
+    // What is granted, narrowed by the limit: the other group's areas close,
+    // and units and damage are view only.
+    function lvlOf(d, area) {
+      let given = d.get('access', {}).get(area, null);
+      let raw = d.get('role', '') == 'owner' ? 'edit'
+        : (given != null ? given : (d.get('role', '') == 'team' ? 'edit' : 'none'));
+      let sc = scopeOf(d);
+      return (sc == 'all' || raw == 'none') ? raw
+        : (area in ['implements', 'licenseStock'] && sc != 'tractor') ? 'none'
+        : (area in ['inspection', 'inspectionApprove'] && sc != 'heavy') ? 'none'
+        : (area in ['editUnits', 'damage'] && raw == 'edit') ? 'view'
+        : raw;
+    }
+    function lvl(area) { return lvlOf(myDoc().data, area); }
+    function unitScope() { return scopeOf(myDoc().data); }
+    function scopeAllows(g) { return unitScope() in ['all', g]; }
     function canEditArea(area) { return isActive() && lvl(area) == 'edit'; }
     function canViewArea(area) { return isActive() && lvl(area) in ['view', 'edit']; }
 
@@ -61,22 +85,25 @@ service cloud.firestore {
       return !('id' in request.resource.data) || request.resource.data.id == id;
     }
 
+    // Edit stored for an area (explicit, or the legacy 'team' default).
+    function editOn(a, role, area) {
+      let v = a.get(area, null);
+      return v == 'edit' || (v == null && role == 'team');
+    }
     // True if the user may edit ANY data area — used to gate audit-log writes,
-    // since every edit action also appends a history event.
+    // since every edit action also appends a history event. Same answer as
+    // asking lvl() for each area, with the unit-group limit worked out once.
     function canEditAnything() {
-      return isActive() && (
-        lvl('editUnits')    == 'edit' ||
-        lvl('implements')   == 'edit' ||
-        lvl('damage')       == 'edit' ||
-        lvl('licenseStock') == 'edit' ||
-        lvl('teamShift')    == 'edit' ||
-        lvl('teamLog')      == 'edit' ||
-        lvl('teamMembers')  == 'edit' ||
-        lvl('teamLogApprove') == 'edit' ||
-        lvl('warehouse')    == 'edit' ||
-        lvl('inspection')   == 'edit' ||
-        lvl('inspectionApprove') == 'edit'
-      );
+      let d = myDoc().data;
+      let a = d.get('access', {});
+      let role = d.get('role', '');
+      let sc = scopeOf(d);
+      return isActive() && (role == 'owner'
+        || editOn(a, role, 'teamShift') || editOn(a, role, 'teamLog') || editOn(a, role, 'teamMembers')
+        || editOn(a, role, 'teamLogApprove') || editOn(a, role, 'warehouse')
+        || (sc == 'all' && (editOn(a, role, 'editUnits') || editOn(a, role, 'damage')))
+        || (sc in ['all', 'tractor'] && (editOn(a, role, 'implements') || editOn(a, role, 'licenseStock')))
+        || (sc in ['all', 'heavy'] && (editOn(a, role, 'inspection') || editOn(a, role, 'inspectionApprove'))));
     }
 
     // A damage record holds its unit (or one component) in Breakdown while it
@@ -135,11 +162,11 @@ service cloud.firestore {
                                 allow create: if canEditArea('editUnits') && idMatches(id);
                                 allow update: if idMatches(id)
                                   && (canEditArea('editUnits') || (canEditArea('damage') && damageLinkOnly())); }
-    match /implements/{id}    { allow read: if isActive(); allow delete: if canEditArea('implements');
+    match /implements/{id}    { allow read: if isActive() && scopeAllows('tractor'); allow delete: if canEditArea('implements');
                                 allow create, update: if canEditArea('implements') && idMatches(id); }
     match /damageRecords/{id} { allow read: if isActive(); allow delete: if canEditArea('damage');
                                 allow create, update: if canEditArea('damage') && idMatches(id); }
-    match /licenseStock/{id}  { allow read: if isActive(); allow delete: if canEditArea('licenseStock');
+    match /licenseStock/{id}  { allow read: if isActive() && scopeAllows('tractor'); allow delete: if canEditArea('licenseStock');
                                 allow create, update: if canEditArea('licenseStock') && idMatches(id); }
 
     // ---- Managed dropdown sources ----
@@ -169,7 +196,7 @@ service cloud.firestore {
     // ---- License requirements per implement type (purchase plan) ----
     // Set by whoever manages license stock; only the known license values.
     match /licenseRequirements/{id} {
-      allow read: if isActive();
+      allow read: if isActive() && scopeAllows('tractor');
       allow delete: if canEditArea('licenseStock');
       allow create, update: if canEditArea('licenseStock')
         && request.resource.data.id == id
@@ -358,7 +385,8 @@ service cloud.firestore {
     // files, 'inspectionApprove' for the supervisor who signs off. The
     // approval functions above are reused unchanged.
     function inspectionReader() {
-      return canViewArea('inspection') || canViewArea('inspectionApprove') || canViewArea('leader');
+      return (canViewArea('inspection') || canViewArea('inspectionApprove') || canViewArea('leader'))
+          && scopeAllows('heavy');
     }
     // The schedule is set by whoever checks or approves.
     match /inspectionPlans/{id} {
@@ -459,7 +487,12 @@ service cloud.firestore {
       // affectedKeys().hasOnly() pins that to the single 'activeSession' field.
       // Role, status and access stay owner-only, so this opens no path to
       // self-promotion.
-      allow update: if isOwner()
+      // A stored unit group must be one the app knows — checked only when
+      // the access map changes, so a role change or a remote sign-out still
+      // works on a document that already holds a bad value.
+      allow update: if (isOwner()
+                        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['access'])
+                            || request.resource.data.get('access', {}).get('unitScope', 'all') in ['all', 'tractor', 'heavy']))
                     || (request.auth.uid == uid && selfBootstrapsAsOwner())
                     || (request.auth.uid == uid
                         && request.resource.data.diff(resource.data)
