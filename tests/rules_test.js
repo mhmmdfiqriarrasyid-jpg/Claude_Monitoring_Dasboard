@@ -273,12 +273,23 @@ async function check(name, p, expectOk) {
             site: 'PT. GPA', breakdownReason: '', downtimeHistory: [{ start: 1, end: 2 }, { start: 3, end: 4 }] });
     });
     const DM = as('dmg'), DV = as('dmgv');
+    const T0 = Date.now();
     await check('damage→unit: editor Damage set Breakdown + alasan + id kerusakan', updateDoc(doc(DM, 'units', 'hx'),
-        { status: 'Breakdown', breakdownReason: 'Mekanis: bocor', breakdownStartedAt: 10, breakdownDamageId: 'dmg_1' }), true);
+        { status: 'Breakdown', breakdownReason: 'Mekanis: bocor', breakdownStartedAt: T0, breakdownDamageId: 'dmg_1' }), true);
+    await check('damage→unit: jam breakdown diubah tanpa ganti status DITOLAK', updateDoc(doc(DM, 'units', 'hx'), { breakdownStartedAt: T0 - 3600000 }), false);
+    await check('damage→unit: id kerusakan sangat panjang DITOLAK', updateDoc(doc(DM, 'units', 'hx'), { breakdownDamageId: 'x'.repeat(200) }), false);
+    await check('damage→unit: alasan + id pindah ke kerusakan lain', updateDoc(doc(DM, 'units', 'hx'), { breakdownReason: 'Software: ECU', breakdownDamageId: 'dmg_2' }), true);
     await check('damage→unit: editor Damage set komponen Breakdown', updateDoc(doc(DM, 'units', 'hx'), { cameraAi: 'Breakdown' }), true);
+    await check('damage→unit: interval palsu (mulai bukan jam breakdown) DITOLAK', updateDoc(doc(DM, 'units', 'hx'),
+        { status: 'Good', breakdownReason: '', breakdownStartedAt: null, breakdownDamageId: '',
+          downtimeHistory: [{ start: 1, end: 2 }, { start: 3, end: 4 }, { start: T0 - 99999, end: T0 + 10, durationMs: 99999 + 10 }] }), false);
+    await check('damage→unit: riwayat lama diubah (jumlah sama) DITOLAK', updateDoc(doc(DM, 'units', 'hx'),
+        { downtimeHistory: [{ start: 0, end: 0 }, { start: 0, end: 0 }] }), false);
     await check('damage→unit: kembali Good dengan satu interval downtime baru', updateDoc(doc(DM, 'units', 'hx'),
         { status: 'Good', breakdownReason: '', breakdownStartedAt: null, breakdownDamageId: '',
-          downtimeHistory: [{ start: 1, end: 2 }, { start: 3, end: 4 }, { start: 10, end: 20 }] }), true);
+          downtimeHistory: [{ start: 1, end: 2 }, { start: 3, end: 4 }, { start: T0, end: T0 + 10, durationMs: 10 }] }), true);
+    await check('damage→unit: jam breakdown tahun 1970 DITOLAK', updateDoc(doc(DM, 'units', 'hx'),
+        { status: 'Breakdown', breakdownReason: 'x', breakdownStartedAt: 0, breakdownDamageId: 'dmg_3' }), false);
     await check('damage→unit: menghapus riwayat downtime DITOLAK', updateDoc(doc(DM, 'units', 'hx'), { downtimeHistory: [] }), false);
     await check('damage→unit: menambah dua interval sekaligus DITOLAK', updateDoc(doc(DM, 'units', 'hx'),
         { downtimeHistory: [{ start: 1, end: 2 }, { start: 3, end: 4 }, { start: 10, end: 20 }, { start: 30, end: 40 }, { start: 50, end: 60 }] }), false);

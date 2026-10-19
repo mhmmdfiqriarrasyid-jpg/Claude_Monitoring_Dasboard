@@ -103,7 +103,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-1.967 pemeriksaan di empat puluh sembilan suite, menggerakkan Chromium sungguhan terhadap
+1.979 pemeriksaan di empat puluh sembilan suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -441,6 +441,23 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
     downtime yang baru ditutup ikut dalam tulisan parsial (dulu array-nya
     dipakai bersama sehingga perbedaannya tidak terlihat, dan riwayat
     MTTR/MTBF hilang setelah snapshot berikutnya).
+  - *Perbaikan v164 (review):* edit biasa tidak lagi menjadikan catatan yang
+    tidak tertaut "sengaja tidak dicentang" (Periksa Data tetap
+    menanyakannya); Reopen menahan unit lagi kecuali catatan yang sengaja tidak
+    dicentang (`noHold`); Breakdown yang ditinggal catatan yang sudah
+    selesai/dihapus diambil alih catatan baru (`adopted`), bukan dianggap
+    manual; alasan dari catatan sebelum v162 (tanpa `breakdownDamageId`, teks
+    sama) pindah ke catatan yang masih terbuka; catatan lama yang dipindah
+    lewat Edit atau dihapus massal ditanya seperti Mark done, dan tidak
+    ditanya bila catatan lain masih menahan; tulisan unit yang ditolak server
+    melepas tautan catatannya (`_unlinkOnRefused`); pesan Mark done dan
+    konfirmasi hapus massal menyebut komponennya; impor CSV juga menghitung
+    komponen; penanda "N open damage" dan Open di Periksa Data memfilter per
+    unit (`damageUnitFilter`); snapshot kerusakan memperbarui penanda di
+    Unit Database tanpa menghapus pilihan Bulk Edit, dan dashboard ikut
+    diperbarui. Rules: riwayat downtime lama tidak bisa diubah, interval baru
+    harus menutup jam breakdown di server, jam itu hanya berubah bersama
+    status dan dalam rentang wajar, `breakdownDamageId` ≤ 64 karakter.
 - **Foto kerusakan Before / After v151 (dijaga `tests/damage_beforeafter_test.js`
   dan rules_test).**
   - Foto yang sudah ada = **Before** (`damagePhotos/{id}`, tanda `hasPhoto`).
@@ -635,7 +652,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   stempel `appliedAt` supaya hanya sekali); tanpa akses itu muncul di Kotak
   Keputusan. Foto di `inspectionPhotos/{id}` (tidak di-subscribe), ditulis
   SEBELUM laporannya.
-- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (158 skenario;
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (164 skenario;
   bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
   kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
   alur persetujuan laporan/izin (transisi status di atas, kunci isi dan foto

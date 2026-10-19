@@ -168,7 +168,7 @@ const { launch, BASE_URL } = require('./_env');
         selectedDamageIds.clear(); selectedDamageIds.add(b1.id); selectedDamageIds.add(b2.id);
         deleteSelectedDamages();
         t('hapus massal dua catatan satu unit: satu kali kembali Good',
-          [U('05').status, /1 unit\\(s\\) go back to Good/.test(asked[0] || ''), partials.flat().filter(p => p.id === '05' && p.status === 'Good').length], ['Good', true, 1]);
+          [U('05').status, /Back to Good: EX-05\\./.test(asked[0] || ''), partials.flat().filter(p => p.id === '05' && p.status === 'Good').length], ['Good', true, 1]);
 
         // =============== buka lagi ===============
         const o1 = add('05', 'Mekanis', '', 'Kopling');
@@ -176,7 +176,7 @@ const { launch, BASE_URL } = require('./_env');
         asked = [];
         reopenDamage(o1.id);
         t('buka lagi: unit kembali Breakdown, catatan terbuka',
-          [U('05').status, D(o1.id).resolved, D(o1.id).drove, /goes back to Breakdown/.test(asked[0] || '')], ['Breakdown', false, 'status', true]);
+          [U('05').status, D(o1.id).resolved, D(o1.id).drove, /goes to Breakdown/.test(asked[0] || '')], ['Breakdown', false, 'status', true]);
         t('tombol Reopen ada di baris Done', (() => { resolveDamage(o1.id, { confirmed: true }); navigateTo('damage'); renderDamageTable();
             return !!document.querySelector('#damageBody button[onclick*="reopenDamage"]'); })(), true);
 
@@ -218,13 +218,22 @@ const { launch, BASE_URL } = require('./_env');
         const s3 = add('04', 'Mekanis', '', 'Ditolak');
         await tick(60);
         t('status unit ditolak server: diberi tahu', toasts.some(m => /Rejected by the server — unit status \\(from damage\\) reverted/.test(m)), true);
+        t('ditolak server: catatannya tidak lagi mengaku menahan unit', [D(s3.id).drove, !!D(s3.id).noHold], ['', false]);
         refuseUnits = null;
         asOwner();
         await tick(30);
+        resolveDamage(s3.id, { confirmed: true, quiet: true });
+
+        // =============== Breakdown sisa damage yang sudah selesai: diambil alih ===============
+        // Unit 04 masih Breakdown dengan id kerusakan s3 yang sudah selesai (tab lama / tulisan ditolak).
+        Object.assign(globalData.find(u => u.id === '04'), { status: 'Breakdown', breakdownDamageId: s3.id, breakdownReason: 'Mekanis: Ditolak' });
+        toasts.length = 0;
+        const g1 = add('04', 'Mekanis', '', 'Masih terbuka');
+        t('Breakdown sisa damage yang selesai: catatan baru mengambil alih',
+          [g1.drove, U('04').breakdownDamageId, U('04').breakdownReason, toasts.some(m => /still Breakdown from a damage that is done/.test(m))],
+          ['status', g1.id, 'Mekanis: Masih terbuka', true]);
 
         // =============== set Good manual saat damage masih terbuka ===============
-        globalData.find(u => u.id === '04').status = 'Breakdown';   // seperti sebelum penolakan
-        const g1 = D(s3.id) || add('04', 'Mekanis', '', 'Masih terbuka');
         navigateTo('editUnits'); switchEditUnitsGroup('heavy', { persist: false }); renderEditTable(); await tick(20);
         const cell = document.querySelector('#editBody [data-id="04"][data-field="status"]');
         asked = []; confirmAnswer = false;
@@ -259,6 +268,72 @@ const { launch, BASE_URL } = require('./_env');
         navigateTo('leader'); switchLeaderTab('check'); renderDataCheck(); await tick(20);
         t('tombol pilihan per unit di Periksa Data', !!document.querySelector('#dataCheckBody button[onclick*="fixDamageSync"]'), true);
 
+        // =============== temuan review (v164) ===============
+        globalData.push(H('07'), H('08'), H('09'), H('10'), H('11'), H('12', { unitGroup: 'Heavy Equip' }));
+        const brokeBefore = (id, reason) => Object.assign(U(id), { status: 'Breakdown', breakdownReason: reason, breakdownStartedAt: Date.now() - 3600000 });
+        // edit teks catatan lama yang tidak tertaut: tetap ditanyakan Periksa Data
+        editDamage('old1'); await tick(10);
+        document.getElementById('dmgDescription').value = 'v161 (typo diperbaiki)';
+        saveDamage({ preventDefault() {} });
+        t('edit teks catatan yang tidak tertaut: tidak jadi "sengaja tidak dicentang"',
+          [!!D('old1').noHold, dcDamageStatusSync().filter(i => i.unitId === '06' && i.field === 'status').length], [false, 1]);
+        // buka lagi catatan "Already repaired": unit kembali ditahan
+        const rp = add('07', 'Mekanis', '', 'Sudah beres', { date: daysAgo(3), repaired: daysAgo(1) });
+        reopenDamage(rp.id);
+        t('buka lagi catatan "Already repaired": unit Breakdown', [U('07').status, D(rp.id).drove], ['Breakdown', 'status']);
+        resolveDamage(rp.id, { confirmed: true, quiet: true });
+        // pesan selesai untuk Device Precision menyebut komponennya
+        const cam = add('08', 'Device Precision', 'Camera AI', 'Retak');
+        toasts.length = 0; resolveDamage(cam.id, { confirmed: true });
+        t('selesai Device Precision: pesannya menyebut Camera AI, bukan status unit', toasts.pop(), 'Damage marked as done — Camera AI restored');
+        // alasan dari catatan sebelum v162 (tanpa breakdownDamageId) pindah ke catatan yang masih terbuka
+        globalDamages.push({ id: 'p9', date: daysAgo(4), unitId: '09', unitName: 'EX-09', sn: 'SN09', damageType: 'Mekanis', component: '', description: 'pompa', resolved: false, resolvedAt: '', drove: 'status', createdAt: 2, updatedAt: 2 });
+        brokeBefore('09', 'Mekanis: pompa');
+        const j9 = add('09', 'Software', '', 'ECU');
+        resolveDamage('p9', { confirmed: true, quiet: true });
+        t('alasan dari catatan sebelum v162 pindah ke catatan yang masih terbuka',
+          [U('09').status, U('09').breakdownReason, U('09').breakdownDamageId], ['Breakdown', 'Software: ECU', j9.id]);
+        resolveDamage(j9.id, { confirmed: true, quiet: true });
+        // catatan lama (tanpa drove) selesai saat catatan lain masih menahan: tidak ditanya
+        globalDamages.push({ id: 'L10', date: daysAgo(4), unitId: '10', unitName: 'EX-10', sn: 'SN10', damageType: 'Mekanis', component: '', description: 'legacy', resolved: false, resolvedAt: '', createdAt: 3, updatedAt: 3 });
+        brokeBefore('10', 'Mekanis: legacy');
+        add('10', 'Software', '', 'ikut');
+        asked = [];
+        resolveDamage('L10', { confirmed: true, quiet: true });
+        t('catatan lama selesai, catatan lain masih menahan: tidak ditanya, alasan pindah',
+          [asked.length, U('10').status, U('10').breakdownReason], [0, 'Breakdown', 'Software: ikut']);
+        // catatan lama dipindah ke unit lain lewat Edit: ditanya seperti Mark done
+        globalDamages.push({ id: 'L11', date: daysAgo(4), unitId: '11', unitName: 'EX-11', sn: 'SN11', damageType: 'Mekanis', component: '', description: 'pindah', resolved: false, resolvedAt: '', createdAt: 4, updatedAt: 4 });
+        brokeBefore('11', 'Mekanis: pindah');
+        editDamage('L11'); await tick(10);
+        document.getElementById('dmgUnit').value = damageUnitLabel(U('07'));
+        asked = []; confirmAnswer = true;
+        saveDamage({ preventDefault() {} });
+        t('edit catatan lama pindah unit: ditanya, unit lama Good, unit baru Breakdown',
+          [/older record does not say/.test(asked[0] || ''), U('11').status, U('07').status, D('L11').drove], [true, 'Good', 'Breakdown', 'status']);
+        // hapus massal: label menyebut komponen; catatan lama ditanya sekali
+        globalDamages.push({ id: 'L08', date: daysAgo(4), unitId: '08', unitName: 'EX-08', sn: 'SN08', damageType: 'Mekanis', component: '', description: 'massal', resolved: false, resolvedAt: '', createdAt: 5, updatedAt: 5 });
+        brokeBefore('08', 'Mekanis: massal');
+        const x8 = add('08', 'Device Precision', 'Camera AI', 'cam');
+        asked = []; confirmAnswer = true;
+        selectedDamageIds.clear(); selectedDamageIds.add('L08'); selectedDamageIds.add(x8.id);
+        deleteSelectedDamages();
+        t('hapus massal: label per tempat, catatan lama ditanya sekali',
+          [/Back to Good: EX-08 Camera AI/.test(asked[0] || ''), /older record\\(s\\) do not say/.test(asked[1] || ''), U('08').status, U('08').cameraAi],
+          [true, true, 'Good', 'Good']);
+        // "Already repaired" pada unit yang kelompoknya tak dikenal: boleh (tidak menyentuh unit)
+        const nBefore = globalDamages.length; toasts.length = 0;
+        add('12', 'Device Precision', 'GPS', 'sudah', { date: daysAgo(3), repaired: daysAgo(1) });
+        t('"Already repaired" pada unit berkelompok tak dikenal: tersimpan', globalDamages.length, nBefore + 1);
+        closeDamageModal(true);
+        // snapshot kerusakan dari perangkat lain tidak menghapus pilihan unit (Bulk Edit)
+        try { localStorage.setItem('tractorDamagePhotosSplit', '1'); } catch (_) {}
+        navigateTo('editUnits'); switchEditUnitsGroup('heavy', { persist: false }); renderEditTable(); await tick(10);
+        const cb0 = document.querySelector('#editBody .unit-check'); cb0.checked = true; updateSelectedCount();
+        applyCloudDamagesSnapshot(JSON.parse(JSON.stringify(globalDamages))); await tick(20);
+        t('snapshot kerusakan tidak menghapus pilihan unit', [selectedUnitIds.size, document.querySelector('#editBody .unit-check').checked], [1, true]);
+        cb0.checked = false; updateSelectedCount();
+
         // =============== penanda ===============
         navigateTo('damage'); setDamageGroup('heavy'); renderDamageTable();
         const chipTxt = [...document.querySelectorAll('#damageBody .dmg-unit-chip')].map(x => x.textContent);
@@ -267,7 +342,12 @@ const { launch, BASE_URL } = require('./_env');
         const chip = document.querySelector('#editBody [data-id="06"][data-field="name"]').parentElement.querySelector('.dmg-open-chip');
         t('Unit Database: penanda "N open damage"', !!chip && /open damage/.test(chip.textContent), true);
         chip.click(); await tick(20);
-        t('penanda membuka Damage dengan pencarian SN', [currentView, document.getElementById('damageSearch').value], ['damage', 'SN06']);
+        t('penanda membuka Damage hanya untuk unit itu (bukan pencarian teks)',
+          [currentView, document.getElementById('damageSearch').value, damageUnitFilter, getFilteredDamages().every(d => (liveUnitFor(d) || {}).id === '06'),
+           !document.getElementById('damageUnitFilterChip').hidden], ['damage', '', '06', true, true]);
+        document.getElementById('damageSearch').value = 'x'; document.getElementById('damageSearch').dispatchEvent(new Event('input'));
+        t('mengetik pencarian melepas filter unit', damageUnitFilter, '');
+        document.getElementById('damageSearch').value = ''; renderDamageTable();
         openDamageRepair(e1.id); await tick(10);
         t('dialog Mark done menyebut efeknya pada unit', document.getElementById('dmgRepairEffect').textContent, 'After this: "EX-06" Telematic Box goes back to Good.');
         closeDamageRepair(true);

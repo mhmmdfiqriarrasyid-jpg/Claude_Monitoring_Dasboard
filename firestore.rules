@@ -89,6 +89,14 @@ service cloud.firestore {
     function downtimeCount(d) {
       return d.get('downtimeHistory', null) is list ? d.get('downtimeHistory', null).size() : 0;
     }
+    // The one interval a return to Good closes: it starts where the stored
+    // breakdown clock started.
+    function closedInterval(iv) {
+      return iv is map && iv.keys().hasOnly(['start', 'end', 'durationMs'])
+        && iv.start == resource.data.get('breakdownStartedAt', null)
+        && iv.end is int && iv.end >= iv.start && iv.end <= request.time.toMillis() + 86400000
+        && iv.durationMs == iv.end - iv.start;
+    }
     function goodOrBreakdown(ch, k) {
       return !ch.hasAny([k]) || request.resource.data.get(k, '') in ['Good', 'Breakdown'];
     }
@@ -103,6 +111,21 @@ service cloud.firestore {
         && goodOrBreakdown(ch, 'cameraAi') && goodOrBreakdown(ch, 'telematicBox')
         && goodOrBreakdown(ch, 'switchLimiter') && goodOrBreakdown(ch, 'rotaryLamp')
         && (downtimeCount(request.resource.data) - downtimeCount(resource.data)) in [0, 1]
+        // Recorded intervals stay exactly as they are; a new one must close the
+        // breakdown the server has — a stale release over a newer breakdown
+        // is refused.
+        && (downtimeCount(resource.data) == 0
+            || request.resource.data.downtimeHistory[0:downtimeCount(resource.data)] == resource.data.downtimeHistory)
+        && (downtimeCount(request.resource.data) == downtimeCount(resource.data)
+            || closedInterval(request.resource.data.downtimeHistory[downtimeCount(resource.data)]))
+        // The clock moves only with the status, and to a plausible time.
+        && (!ch.hasAny(['breakdownStartedAt']) || (ch.hasAny(['status'])
+            && (request.resource.data.breakdownStartedAt == null
+                || (request.resource.data.breakdownStartedAt is int
+                    && request.resource.data.breakdownStartedAt <= request.time.toMillis() + 86400000
+                    && request.resource.data.breakdownStartedAt >= request.time.toMillis() - 30 * 86400000))))
+        && (!ch.hasAny(['breakdownDamageId']) || (request.resource.data.breakdownDamageId is string
+                                                  && request.resource.data.breakdownDamageId.size() <= 64))
         && (!ch.hasAny(['breakdownReason']) || (request.resource.data.breakdownReason is string
                                                 && request.resource.data.breakdownReason.size() <= 1000));
     }
