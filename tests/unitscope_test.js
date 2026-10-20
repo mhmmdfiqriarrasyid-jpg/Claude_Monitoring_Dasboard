@@ -145,6 +145,40 @@ const { launch, BASE_URL } = require('./_env');
         as({ uid: 'o', role: 'owner' });
         t('owner lagi: semua unit kembali (dari salinan perangkat)', [globalData.length, globalDamages.length, document.body.dataset.unitScope], [5, 4, undefined]);
 
+        // =============== temuan review v165 ===============
+        // riwayat: unit bernama "[BU] …" tetap diputuskan oleh kelompok unitnya; daftar brand kelompok lain disembunyikan
+        applyCloudUnitsSnapshot(JSON.parse(JSON.stringify(units)).concat([H('h9', { name: '[BU] EX-9' })]));
+        as(agDoc);
+        cloudHistory = [
+            { id: 'r1', timestamp: 3, unitId: 'h9', unitName: '[BU] EX-9', field: 'status' },
+            { id: 'r2', timestamp: 2, unitId: 'x', unitName: '[Master] Heavy Equipment Brands', field: 'values', after: 'Added "KOMATSUX"' },
+            { id: 'r3', timestamp: 1, unitId: 'x', unitName: '[Master] Sites', field: 'values' }
+        ];
+        t('riwayat pertanian saja: unit "[BU] EX-9" dan daftar brand alat berat disembunyikan', getAuditLog().map(e => e.id).filter(id => /^r\\d$/.test(id)), ['r3']);
+        cloudHistory = [];
+        // keluar lalu "Back" di layar masuk, lalu akun terbatas yang sama masuk lagi: tetap tersaring
+        currentUserDoc = null; applyScopeChange(); loadFromStorage(); loadDamages();
+        as(agDoc);
+        t('masuk lagi setelah keluar: tetap hanya pertanian', [globalData.every(u => !isHeavy(u)), globalDamages.map(d => d.id)], [true, ['d1']]);
+        // pembatasan live menutup profil unit kelompok lain yang sedang terbuka
+        as({ uid: 'o', role: 'owner' });
+        showUnitProfile('h1'); await tick(10);
+        as(agDoc);
+        t('dibatasi saat profil unit alat berat terbuka: profil ditutup', document.getElementById('unitProfileModal').classList.contains('open'), false);
+        // terbatas → semua: pilihan kelompok perangkat kembali, filter Damage tidak macet
+        localStorage.setItem('dashUnitGroup', 'all');
+        as(hvDoc); navigateTo('damage');
+        as({ uid: 'o', role: 'owner' });
+        t('kembali ke semua: Damage "All Groups" dan semua kerusakan tampil, dashboard ikut preferensi',
+          [damageGroup, document.getElementById('damageGroupFilter').value, getFilteredDamages().length, effectiveDashGroup()], ['', '', globalDamages.length, 'all']);
+        // akun tanpa batas: perangkat tertaut ke unit yang sudah dihapus tetap ditolak seperti dulu
+        warehouseDevices = [{ id: 'dev2', sn: 'GPS-2', type: 'GPS', status: 'installed', unitId: 'deleted-unit', unitName: 'TR-old', siteName: '', createdAt: 1, updatedAt: 1 }];
+        editDevice('dev2'); await tick(10);
+        toasts.length = 0; let sent2 = null; window.cloud.saveDevice = r => { sent2 = r; return ok(); };
+        saveDevice({ preventDefault() {} });
+        t('owner: perangkat tertaut ke unit yang dihapus tetap ditolak', [sent2, /not found/.test(toasts.pop() || '')], [null, true]);
+        closeDeviceModal();
+
         // =============== dialog Access ===============
         allUsers = [Object.assign({ email: 'hv@x.id', displayName: 'Hv', status: 'active' }, hvDoc), { uid: 'w', email: 'w@x.id', role: 'staff', status: 'active', access: { teamLog: 'edit' } }];
         openAccessModal('w'); await tick(10);
@@ -161,6 +195,15 @@ const { launch, BASE_URL } = require('./_env');
         t('simpan: unitScope ikut tersimpan', accessWrites.length && accessWrites[0][1].unitScope, 'heavy');
         openAccessModal('hv'); await tick(10);
         t('dialog akun terbatas: nilai tersimpan yang tampil (Edit), bukan yang berlaku', [grid.querySelector('[data-area="unitScope"]').value, grid.querySelector('[data-area="editUnits"]').value], ['heavy', 'edit']);
+        closeAccessModal();
+        // nilai kelompok yang tidak dikenal: tampil apa adanya, tidak bisa disimpan sebelum dipilih
+        allUsers.push({ uid: 'bad', email: 'bad@x.id', role: 'staff', status: 'active', access: { editUnits: 'view', unitScope: 'Heavy' } });
+        openAccessModal('bad'); await tick(10);
+        const scSel = grid.querySelector('[data-area="unitScope"]');
+        t('dialog: nilai tersimpan tak dikenal tampil sebagai "No unit group"', [scSel.value, /No unit group \\(stored: Heavy\\)/.test(scSel.textContent), document.getElementById('accessScopeNote').hidden], ['', true, false]);
+        accessWrites.length = 0; toasts.length = 0;
+        await saveAccess();
+        t('... dan tidak tersimpan sebelum kelompok dipilih', [accessWrites.length, toasts.pop()], [0, 'Pick a unit group first']);
         closeAccessModal();
         navigateTo('users'); renderUsersView(); await tick(10);
         t('tabel pengguna menyebut batas kelompok', /Heavy Equipment only/.test(document.querySelector('#viewUsers') ? document.querySelector('#viewUsers').textContent : document.body.textContent), true);

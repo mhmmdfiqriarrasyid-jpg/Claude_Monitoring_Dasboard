@@ -342,6 +342,8 @@ async function check(name, p, expectOk) {
     await check('kelompok: ganti role akun bernilai kelompok rusak tetap bisa', updateDoc(doc(O, 'users', 'badsc'), { role: 'pbt' }), true);
     await check('kelompok: keluarkan paksa akun bernilai kelompok rusak tetap bisa', updateDoc(doc(O, 'users', 'badsc'),
         { activeSession: { id: 'revoked_x', startedAt: 1, device: 'x' } }), true);
+    await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'users', 'oddacc'), { uid: 'oddacc', email: 'oddacc@x.id', role: 'staff', status: 'active', access: 'rusak' }));
+    await check('kelompok: field access bukan map tidak membuat bacaan gagal', getDocs(collection(as('oddacc'), 'implements')), true);
     await check('kelompok: akun terbatas TIDAK boleh mengubah batasnya sendiri', updateDoc(doc(HV, 'users', 'hv'), { access: { unitScope: 'all', editUnits: 'edit' } }), false);
 
     await env.cleanup();

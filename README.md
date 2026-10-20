@@ -111,7 +111,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-2.019 pemeriksaan di lima puluh suite, menggerakkan Chromium sungguhan terhadap
+2.026 pemeriksaan di lima puluh suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -436,6 +436,20 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
     hanya saat akses berubah). **Fase ini menyembunyikan di aplikasi; data
     unit/kerusakan kelompok lain masih bisa dibaca lewat devtools sampai
     tahap kunci-baca berikutnya.**
+  - *Perbaikan v166 (review):* History memutuskan baris dari kelompok unitnya
+    dulu (unit bernama "[BU] …" tidak lolos), hanya tag modul netral yang
+    lewat, dan baris daftar brand kelompok lain disembunyikan; keluar akun
+    mengembalikan status batas (`applyScopeChange` setelah `currentUserDoc =
+    null`), jadi masuk lagi tetap tersaring; perubahan batas live menutup
+    profil/pencarian, menggambar ulang History dan Master Lists, mengosongkan
+    filter Unit Database; dari terbatas ke semua: daftar dari cloud dipakai
+    lagi, preferensi kelompok perangkat kembali, filter Damage "All Groups"
+    benar, dan tidak ada penurunan lisensi otomatis dari salinan perangkat
+    (`_unitsFromDeviceOnly`); dashboard digambar ulang tanpa efek samping;
+    tautan Warehouse ke unit yang sudah dihapus kembali ditolak untuk akun
+    tanpa batas; nilai kelompok tak dikenal tampil apa adanya di dialog Access
+    dan harus dipilih dulu sebelum disimpan; rules membaca field `access`
+    bukan-map sebagai kosong.
 - **Kerusakan ↔ status unit v162 (dijaga `tests/damagesync_test.js` dan
   rules_test). Perlu publish firestore.rules (blok `units`).**
   - Catatan kerusakan yang terbuka *menahan* satu tempat di unitnya
@@ -682,7 +696,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   stempel `appliedAt` supaya hanya sekali); tanpa akses itu muncul di Kotak
   Keputusan. Foto di `inspectionPhotos/{id}` (tidak di-subscribe), ditulis
   SEBELUM laporannya.
-- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (186 skenario;
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (187 skenario;
   bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
   kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
   alur persetujuan laporan/izin (transisi status di atas, kunci isi dan foto

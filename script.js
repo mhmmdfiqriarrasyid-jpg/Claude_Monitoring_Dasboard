@@ -127,7 +127,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v165';
+const APP_VERSION = 'v166';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -513,43 +513,66 @@ function unitOutsideScope(id) {
 function applyScopeChange() {
     const sc = effectiveUnitScope();
     if (sc === 'all') delete document.body.dataset.unitScope; else document.body.dataset.unitScope = sc;
-    if (sc === _appliedScope) return false;
+    // A limited state always holds the lists as they arrived (_fleetUnitsAll);
+    // without them the loaded lists are unfiltered and must be filtered again.
+    if (sc === _appliedScope && (sc === 'all' || _fleetUnitsAll)) return false;
     const wasLimited = _appliedScope !== 'all';
     _appliedScope = sc;
     if (sc === 'all' && wasLimited) {
-        // Back to everything: start from this device's own copy — a limited
-        // session never wrote to it — until the subscriptions bring the rest.
-        _fleetUnitsAll = _fleetDamagesAll = null;
-        loadFromStorage(); loadDamages(); loadImplements(); loadLicenseStock();
+        // Back to everything: the lists the limited session received from the
+        // cloud, or else this device's own copy (a limited session never wrote
+        // to it) until the subscriptions bring the rest. Nothing writes units
+        // from that device copy before fresh cloud data has arrived.
+        const hadUnits = !!_fleetUnitsAll, hadDamages = !!_fleetDamagesAll;
+        applyUnitScopeToData();
+        if (!hadUnits) { loadFromStorage(); _unitsFromDeviceOnly = true; }
+        if (!hadDamages) loadDamages();
+        loadImplements(); loadLicenseStock();
+        // The limited session pinned the groups without saving them: go back
+        // to this device's own choices.
+        loadUnitGroupPrefs();
+        _editGroupPicked = false;
+        setDamageGroup('');
     } else {
         applyUnitScopeToData();
         if (!unitScopeAllows('tractor')) { globalImplements = []; globalLicenseStock = []; licenseRequirements = []; }
         if (!unitScopeAllows('heavy')) { inspections = []; inspectionPlans = []; }
     }
-    if (sc !== 'all') {
-        dashGroupPref = sc;
-        if (sc === 'tractor' || sc === 'heavy') editUnitsGroup = sc;
-        damageGroup = sc === 'tractor' || sc === 'heavy' ? sc : '';
-    }
+    if (sc === 'tractor' || sc === 'heavy') { dashGroupPref = sc; editUnitsGroup = sc; damageGroup = sc; }
+    else if (sc !== 'all') damageGroup = '';
+    const sel = document.getElementById('damageGroupFilter');
+    if (sel && sel.value !== damageGroup) sel.value = damageGroup;
     return true;
 }
+// Set when the unit list came from this device's copy at a change of account
+// limit, before any cloud snapshot: no automatic unit write may run from it.
+let _unitsFromDeviceOnly = false;
 
 // Which history rows a limited account may read: rows about a unit (or its
 // damage) of its own group, and rows that are not about a unit group at all
 // (team, warehouse, users…). Implement and licence rows are agricultural,
 // inspection rows heavy equipment.
+const NEUTRAL_HISTORY_TAGS = new Set(['User', 'Team', 'Leave', 'Daily Report', 'Vehicle', 'Inventory', 'Restore', 'Master']);
 function historyRowInScope(e) {
     const sc = effectiveUnitScope();
     if (sc === 'all') return true;
-    const m = String((e && e.unitName) || '').match(/^\[([A-Za-z ]+)\]/);
+    const name = String((e && e.unitName) || '');
+    const m = name.match(/^\[([A-Za-z ]+)\]/);
     const tag = m ? m[1] : '';
-    if (tag === 'Implement' || tag === 'License') return sc === 'tractor';
-    if (tag === 'Inspection') return sc === 'heavy';
-    if (tag && tag !== 'Damage') return true;
+    // A row about a unit (or its damage) goes by that unit's group — whatever
+    // its name looks like ("[BU] EX-9" is a unit, not a module).
     const all = _fleetUnitsAll || globalData;
     const u = e && e.unitId ? all.find(x => x.id === e.unitId) : null;
     if (u) return !hasUnreadableGroup(u) && unitGroupOf(u) === sc;
-    return false;
+    if (tag === 'Implement' || tag === 'License') return sc === 'tractor';
+    if (tag === 'Inspection') return sc === 'heavy';
+    // The two brand lists belong to one group each.
+    if (tag === 'Master' || tag === 'Restore') {
+        const what = name.slice(m[0].length).trim();
+        const k = Object.keys(MASTER_GROUP).find(x => MASTER_DEF[x] && MASTER_DEF[x].plural === what);
+        if (k) return unitScopeAllows(MASTER_GROUP[k]);
+    }
+    return NEUTRAL_HISTORY_TAGS.has(tag);
 }
 // Names the tab explicitly once both groups exist: a bare 'editUnits' lands on
 // whichever tab was open last, which may not hold the unit at all. With no
@@ -2522,6 +2545,7 @@ function stopHistorySubscription() {
 function showHistory(unitId) {
     if (!hasAccess('history', 'view')) { showToast('You do not have access to History', 'warning'); return; }
     startHistorySubscription();
+    document.getElementById('historyModal').dataset.unitId = unitId || '';
     const log = getAuditLog();
     const filtered = unitId ? log.filter(e => e.unitId === unitId) : log;
     const title = unitId
@@ -6444,6 +6468,9 @@ function scheduleExpiredLicenseDowngrades() {
 function applyExpiredLicenseDowngrades() {
     // Viewers must not write; their session would just fail against the rules.
     if (!hasAccess('editUnits', 'edit')) return 0;
+    // A device copy reloaded when an account limit changed may be weeks old:
+    // writing whole units from it would undo newer changes in the cloud.
+    if (_unitsFromDeviceOnly) return 0;
     let n = 0;
     globalData.slice().forEach(u => {
         // SF/G5 licences are John Deere only — and a unit of unreadable group
@@ -7453,6 +7480,7 @@ function openUnitFromSearch(id) {
 function showUnitProfile(id) {
     const u = globalData.find(d => d.id === id);
     if (!u) { showToast(unitOutsideScope(id) ? 'This unit is outside your access' : 'Unit not found', 'warning'); return; }
+    document.getElementById('unitProfileModal').dataset.unitId = id;
 
     document.getElementById('unitProfileTitle').textContent = u.name || u.sn || 'Unit Profile';
     document.getElementById('unitProfileEditBtn').onclick = () => { closeUnitProfile(); editUnit(id); };
@@ -10382,6 +10410,7 @@ async function migrateLocalToCloudIfNeeded() {
 
 function applyCloudUnitsSnapshot(units) {
     _markLoaded('units');
+    _unitsFromDeviceOnly = false;
     console.log(`[cloud] units snapshot received — ${units.length} docs`);
 
     // First-snapshot guard: if cloud is empty but we have local data, do NOT
@@ -11146,6 +11175,7 @@ function setupAuth() {
             // Signed out — show login, tear down sync, clear in-memory data
             currentUser = null;
             currentUserDoc = null;
+            applyScopeChange();
             clearSessionClock();
             stopWatchingOwnUserDoc();
             tearDownCloudSync();
@@ -11547,6 +11577,9 @@ function watchOwnUserDoc(uid) {
             renderUserPill();
             // Which collections this account may read changed: subscribe again.
             if (cloudInitialized) { tearDownCloudSync(); cloudInitialized = false; maybeInitCloudSync(); }
+            // The teardown dropped the history stream an open History needs.
+            const hm = document.getElementById('historyModal');
+            if (hm && hm.classList.contains('open') && hasAccess('history', 'view')) startHistorySubscription();
             showToast('Your access rights were updated by an admin', 'info');
         }
     }, err => console.warn('[session] user doc watch failed:', err && err.code));
@@ -11573,6 +11606,7 @@ async function handleSessionTakenOver(active) {
     try { await window.cloud.signOutUser(); } catch (e) { /* gate still shows below */ }
     currentUser = null;
     currentUserDoc = null;
+    applyScopeChange();
     showAuthGate('signin');
     showAuthError('signInError', msg);
     // Cleared so the next sign-in on this device is not treated as a takeover.
@@ -11684,6 +11718,7 @@ async function expireSession() {
         // leave the expired stamp in place so the next check expires again.
         currentUser = null;
         currentUserDoc = null;
+        applyScopeChange();
         tearDownCloudSync();
         showAuthGate('signin');
     }
@@ -12003,6 +12038,23 @@ function canEditAnyArea() {
 function applyRoleGating() {
     const owner = isOwner();
     const scopeChanged = applyScopeChange();
+    if (scopeChanged) {
+        // Whatever is open was drawn for the old limit.
+        const prof = document.getElementById('unitProfileModal');
+        if (prof && prof.classList.contains('open') && !globalData.some(u => u.id === prof.dataset.unitId)) closeUnitProfile();
+        closeGlobalSearch();
+        const gs = document.getElementById('globalSearch'); if (gs) gs.value = '';
+        const hm = document.getElementById('historyModal');
+        if (hm && hm.classList.contains('open')) {
+            if (hasAccess('history', 'view')) showHistory(hm.dataset.unitId || undefined); else closeHistory();
+        }
+        if (document.getElementById('masterListsModal')?.classList.contains('open')) {
+            if (MASTER_KINDS.some(canViewMasterList)) openMasterLists(); else closeMasterLists();
+        }
+        editSortState = { key: null, asc: true }; editToolFilter = ''; editMissingFilter = '';
+        ['editSearch', 'editStatusFilter', 'editSiteFilter'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+        populateEditFilters();
+    }
 
     // Owner-only navigation links
     document.querySelectorAll('[data-owner-only]').forEach(el => {
@@ -12027,7 +12079,9 @@ function applyRoleGating() {
             const content = document.getElementById('dashboardContent');
             if (empty) empty.style.display = globalData.length ? 'none' : '';
             if (content) content.style.display = globalData.length ? 'block' : 'none';
-            if (globalData.length) { filteredData = scopeDashUnits(); onDataLoaded(); }
+            // A redraw only: the licence downgrade and the daily e-mail run
+            // from fresh cloud data (applyCloudUnitsSnapshot), not from here.
+            if (globalData.length) { populateFilters(); filteredData = applyFilterLogic(); updateDashboard(filteredData); updateNavGroups(); }
         } else if (currentView === 'damage') {
             renderDamageTable();
         }
@@ -12257,10 +12311,13 @@ function openAccessModal(uid) {
     document.getElementById('accessUserUid').value = uid;
     document.getElementById('accessUserName').textContent = user.displayName || user.email || uid;
     const labels = { none: 'None', view: 'View', edit: 'Edit' };
-    const sc = (user.access && UNIT_SCOPES.includes(user.access.unitScope)) ? user.access.unitScope : 'all';
+    const rawScope = user.access ? user.access.unitScope : undefined;
+    const knownScope = rawScope == null || UNIT_SCOPES.includes(rawScope);
+    const sc = rawScope == null ? 'all' : (knownScope ? rawScope : '');
     let rows = `<div class="access-row access-row--scope">
             <span class="access-row__label">Unit group <small>what this person can see</small></span>
             <select class="form-select access-select" data-area="unitScope" onchange="refreshAccessScopeNote()">
+                ${knownScope ? '' : `<option value="" selected disabled>No unit group (stored: ${escapeHtml(String(rawScope))})</option>`}
                 ${UNIT_SCOPES.map(k => `<option value="${k}" ${k === sc ? 'selected' : ''}>${escapeHtml(unitScopeLabel(k))}</option>`).join('')}
             </select>
         </div>
@@ -12300,8 +12357,10 @@ function refreshAccessScopeNote() {
     const note = document.getElementById('accessScopeNote');
     if (note) {
         note.hidden = sc === 'all';
-        note.textContent = sc === 'all' ? '' : `Sees only ${groupDef(sc).label} units and their damage records. `
-            + 'Unit Database and Damage are view only; the other group\'s menus close.';
+        note.textContent = sc === 'all' ? ''
+            : !UNIT_SCOPES.includes(sc) ? 'The stored unit group is not recognised, so this account sees no units. Pick a group.'
+            : `Sees only ${groupDef(sc).label} units and their damage records. `
+              + 'Unit Database and Damage are view only; the other group\'s menus close.';
     }
     const probe = { role: 'staff', access: { unitScope: sc } };
     grid.querySelectorAll('[data-row-area]').forEach(row => {
@@ -12344,6 +12403,7 @@ async function saveAccess() {
     document.querySelectorAll('#accessGrid .access-select').forEach(sel => {
         access[sel.dataset.area] = sel.value;
     });
+    if (!UNIT_SCOPES.includes(access.unitScope)) { showToast('Pick a unit group first', 'warning'); return; }
     try {
         const fn = cloudFn('updateUserAccess');
         if (!fn) return;
@@ -15555,7 +15615,7 @@ function saveDevice(event) {
         unit = resolveDamageUnit(unitRaw);
         // Linked to a unit this account cannot see (another group) and left as
         // it was: keep that link rather than refuse the save or drop it.
-        if (!unit && before && before.unitId && unitRaw === (before.unitName || '')) unit = { id: before.unitId, name: before.unitName };
+        if (!unit && before && before.unitId && unitRaw === (before.unitName || '') && unitOutsideScope(before.unitId)) unit = { id: before.unitId, name: before.unitName };
         if (!unit) {
             showToast(`Unit "${unitRaw}" not found — pick one from the list`, 'warning');
             return;
@@ -16630,7 +16690,7 @@ function saveStockItem(event) {
     const before = id ? stockLedger.find(r => r.id === id) : null;
     if (txnType === 'OUT' && unitRaw) {
         unit = resolveDamageUnit(unitRaw);
-        if (!unit && before && before.unitId && unitRaw === (before.unitName || '')) unit = { id: before.unitId, name: before.unitName };
+        if (!unit && before && before.unitId && unitRaw === (before.unitName || '') && unitOutsideScope(before.unitId)) unit = { id: before.unitId, name: before.unitName };
         if (!unit) {
             showToast(`Unit "${unitRaw}" not found — clear it or pick one from the list`, 'warning');
             return;
