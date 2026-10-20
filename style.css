@@ -3298,6 +3298,9 @@ body[data-unit-scope] #damageGroupFilter { display: none !important; }
 .wh-status--damaged   { background: var(--danger-bg);  color: var(--danger); }
 .wh-status--repair    { background: var(--warning-bg); color: var(--warning); }
 .wh-status--retired   { background: var(--bg);         color: var(--text-light); }
+.wh-status--allocated { background: var(--info-bg);    color: var(--info); border: 1px dashed var(--info); }
+/* Six device states fit one row on a wide screen. */
+#whDevicePanel .downtime-kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 
 .wh-txn {
     display: inline-block;

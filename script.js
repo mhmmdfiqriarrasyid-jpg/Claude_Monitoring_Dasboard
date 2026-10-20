@@ -127,7 +127,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v168';
+const APP_VERSION = 'v169';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -15549,6 +15549,8 @@ function exportLeaveCSV() {
 const DEVICE_STATUSES = [
     { key: 'warehouse', label: 'In Warehouse', tone: 'info' },
     { key: 'installed', label: 'Installed',  tone: 'success' },
+    // Handed over to a division (the recipient), not installed on a unit.
+    { key: 'allocated', label: 'Allocated',  tone: 'info' },
     { key: 'damaged',   label: 'Damaged',    tone: 'danger' },
     { key: 'repair',    label: 'In Repair',  tone: 'warning' },
     { key: 'retired',   label: 'Retired',    tone: 'muted' }
@@ -15671,6 +15673,7 @@ function populateWarehouseFilters() {
     };
     dl('deviceTypeList', allDeviceTypes());
     dl('warehouseLocationList', allWarehouseLocations());
+    dl('devDivisionList', [...new Set(warehouseDevices.map(d => (d.division || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)));
     dl('stockItemList', allStockItemNames());
 
     const unitOpts = [...globalData]
@@ -15697,6 +15700,7 @@ function deviceWhere(d) {
         }
         return d.siteName || 'Installed (location not set)';
     }
+    if (d.status === 'allocated') return d.division ? `Division: ${d.division}` : 'Allocated (division not set)';
     return d.location || '—';
 }
 
@@ -15797,10 +15801,13 @@ function clearDeviceFilter() {
 function onDeviceStatusChange() {
     const status = document.getElementById('devStatus').value;
     const installed = status === 'installed';
+    const allocated = status === 'allocated';
     const locGroup = document.getElementById('devLocationGroup');
     const instGroup = document.getElementById('devInstallGroup');
-    if (locGroup) locGroup.style.display = installed ? 'none' : '';
+    const divGroup = document.getElementById('devDivisionGroup');
+    if (locGroup) locGroup.style.display = installed || allocated ? 'none' : '';
     if (instGroup) instGroup.style.display = installed ? '' : 'none';
+    if (divGroup) divGroup.style.display = allocated ? '' : 'none';
 }
 
 function showAddDeviceForm() {
@@ -15827,6 +15834,7 @@ function editDevice(id) {
     document.getElementById('devModel').value = d.model || '';
     document.getElementById('devStatus').value = d.status || 'warehouse';
     document.getElementById('devLocation').value = d.location || '';
+    document.getElementById('devDivision').value = d.division || '';
     const live = d.unitId ? globalData.find(u => u.id === d.unitId) : null;
     document.getElementById('devUnit').value = live ? damageUnitLabel(live) : (d.unitName || '');
     document.getElementById('devSite').value = d.siteName || '';
@@ -15856,6 +15864,9 @@ function saveDevice(event) {
 
     const status = document.getElementById('devStatus').value || 'warehouse';
     const installed = status === 'installed';
+    const allocated = status === 'allocated';
+    const division = allocated ? (document.getElementById('devDivision').value || '').trim() : '';
+    if (allocated && !division) { showToast('Fill in the division that receives the device', 'warning'); return; }
 
     let unit = null;
     const unitRaw = (document.getElementById('devUnit').value || '').trim();
@@ -15884,7 +15895,8 @@ function saveDevice(event) {
         brand: (document.getElementById('devBrand').value || '').trim(),
         model: (document.getElementById('devModel').value || '').trim(),
         status,
-        location: installed ? '' : (document.getElementById('devLocation').value || '').trim(),
+        location: installed || allocated ? '' : (document.getElementById('devLocation').value || '').trim(),
+        division,
         unitId: unit ? unit.id : '',
         unitName: unit ? (unit.name || '') : '',
         siteName,
@@ -15941,13 +15953,13 @@ function exportDeviceCSV() {
     const rows = getFilteredDevices();
     if (rows.length === 0) { showToast('No devices to export', 'warning'); return; }
     const headers = ['No', 'Serial Number', 'Type', 'Brand', 'Model', 'Status',
-                     'Warehouse Location', 'Installed on Unit', 'Installation Site', 'Position X', 'Position Y', 'Notes'];
+                     'Warehouse Location', 'Installed on Unit', 'Installation Site', 'Position X', 'Position Y', 'Notes', 'Division'];
     const dataRows = rows.map((d, i) => [
         i + 1, d.sn || '', d.type || '', d.brand || '', d.model || '',
         DEVICE_STATUS_LABEL[d.status] || d.status || '',
         d.location || '',
         d.unitId ? deviceWhere(d) : '',
-        d.siteName || '', d.posX || '', d.posY || '', d.note || ''
+        d.siteName || '', d.posX || '', d.posY || '', d.note || '', d.division || ''
     ]);
     const csv = toCSV(headers, dataRows);
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });

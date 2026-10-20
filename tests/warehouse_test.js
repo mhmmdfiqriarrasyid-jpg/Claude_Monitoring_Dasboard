@@ -55,6 +55,24 @@ const { launch, BASE_URL } = require('./_env');
         t('KPI rusak', document.getElementById('devKpi_damaged').textContent, '1');
         t('KPI afkir', document.getElementById('devKpi_retired').textContent, '0');
 
+        // ---------- dialokasikan ke divisi ----------
+        showAddDeviceForm();
+        document.getElementById('devSn').value = 'TAB-0099'; document.getElementById('devType').value = 'Tablet';
+        document.getElementById('devStatus').value = 'allocated'; onDeviceStatusChange();
+        t('status Allocated: kolom divisi tampil, lokasi gudang & pemasangan disembunyikan',
+          [document.getElementById('devDivisionGroup').style.display, document.getElementById('devLocationGroup').style.display, document.getElementById('devInstallGroup').style.display], ['', 'none', 'none']);
+        const nSaved = saved.length;
+        saveDevice({ preventDefault() {} });
+        t('Allocated tanpa divisi ditolak', saved.length, nSaved);
+        document.getElementById('devDivision').value = 'Plantation';
+        saveDevice({ preventDefault() {} });
+        const alloc = (saved[saved.length - 1] || [])[1] || {};
+        t('Allocated tersimpan dengan divisi penerima', [alloc.status, alloc.division, alloc.location], ['allocated', 'Plantation', '']);
+        t('di mana perangkat ini: nama divisi', deviceWhere(alloc), 'Division: Plantation');
+        warehouseDevices.push(alloc); renderDeviceTable();
+        t('KPI dialokasikan', document.getElementById('devKpi_allocated').textContent, '1');
+        warehouseDevices.pop(); renderDeviceTable();
+
         // ---------- "di mana perangkat ini" ----------
         t('di gudang -> nama gudang', deviceWhere(warehouseDevices[0]), 'Gudang Pusat');
         t('terpasang di unit -> nama unit hidup', deviceWhere(warehouseDevices[1]), 'JD-6110B-01');

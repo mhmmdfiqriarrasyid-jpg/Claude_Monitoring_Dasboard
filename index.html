@@ -1514,6 +1514,11 @@
                     <div class="downtime-kpi__sub">On a unit or in the field</div>
                 </div>
                 <div class="downtime-kpi">
+                    <div class="downtime-kpi__label">Allocated</div>
+                    <div class="downtime-kpi__value" id="devKpi_allocated">0</div>
+                    <div class="downtime-kpi__sub">Handed to a division</div>
+                </div>
+                <div class="downtime-kpi">
                     <div class="downtime-kpi__label">Damaged</div>
                     <div class="downtime-kpi__value" id="devKpi_damaged">0</div>
                     <div class="downtime-kpi__sub">Not yet handled</div>
@@ -1544,6 +1549,7 @@
                         <option value="">All Status</option>
                         <option value="warehouse">In Warehouse</option>
                         <option value="installed">Installed</option>
+                        <option value="allocated">Allocated</option>
                         <option value="damaged">Damaged</option>
                         <option value="repair">Repair</option>
                         <option value="retired">Retired</option>
@@ -2588,10 +2594,17 @@
                         <select class="form-select" id="devStatus" onchange="onDeviceStatusChange()">
                             <option value="warehouse">In Warehouse</option>
                             <option value="installed">Installed</option>
+                            <option value="allocated">Allocated</option>
                             <option value="damaged">Damaged</option>
                             <option value="repair">Repair</option>
                             <option value="retired">Retired</option>
                         </select>
+                    </div>
+                    <div class="form-group" id="devDivisionGroup" style="display:none">
+                        <label class="form-label" for="devDivision">Division (recipient)</label>
+                        <input class="form-input" id="devDivision" list="devDivisionList" maxlength="60" autocomplete="off"
+                               placeholder="e.g. Plantation, Workshop, IT…">
+                        <datalist id="devDivisionList"></datalist>
                     </div>
                     <div class="form-group" id="devLocationGroup">
                         <label class="form-label" for="devLocation">Warehouse Location</label>

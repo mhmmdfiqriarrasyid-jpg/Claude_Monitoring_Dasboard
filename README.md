@@ -111,7 +111,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-2.044 pemeriksaan di lima puluh suite, menggerakkan Chromium sungguhan terhadap
+2.049 pemeriksaan di lima puluh suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -320,6 +320,11 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
   Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
   **Implement Brands** (`masterLists/brand`) untuk Agricultural.
+- **Perangkat "Allocated" v169 (dijaga `tests/warehouse_test.js`).** Status
+  baru untuk perangkat yang diserahkan ke **divisi** (bukan dipasang di unit):
+  kolom *Division (recipient)* wajib diisi, dengan saran dari divisi yang
+  pernah dipakai; "di mana" tampil sebagai `Division: …`; KPI, filter status,
+  pencarian dan CSV (kolom Division) ikut. Rules tidak berubah.
 - **Kendaraan & BBM v158 (dijaga `tests/vehicles_test.js` dan rules_test).**
   Tab baru **Vehicles & Fuel** di Warehouse untuk motor operasional.
   - *Kendaraan* (`vehicles/{id}`): plat/nama, jenis, brand, model, tanggal
