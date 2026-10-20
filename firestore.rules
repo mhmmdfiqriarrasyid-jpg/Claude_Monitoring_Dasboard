@@ -87,7 +87,7 @@ service cloud.firestore {
     // account must therefore ask with where('unitGroup', '==', <its group>).
     function readsGroupOf(d) {
       let sc = unitScope();
-      return sc == 'all' || d.get('unitGroup', '') == sc;
+      return sc == 'all' || (sc in ['tractor', 'heavy'] && d.get('unitGroup', '') == sc);
     }
     function canEditArea(area) { return isActive() && lvl(area) == 'edit'; }
     function canViewArea(area) { return isActive() && lvl(area) in ['view', 'edit']; }
@@ -177,8 +177,12 @@ service cloud.firestore {
                                   && (canEditArea('editUnits') || (canEditArea('damage') && damageLinkOnly())); }
     match /implements/{id}    { allow read: if isActive() && scopeAllows('tractor'); allow delete: if canEditArea('implements');
                                 allow create, update: if canEditArea('implements') && idMatches(id); }
+    // A stored group is never blanked (an app tab from before v167 did that on
+    // every edit of an agricultural record).
     match /damageRecords/{id} { allow read: if isActive() && readsGroupOf(resource.data); allow delete: if canEditArea('damage');
-                                allow create, update: if canEditArea('damage') && idMatches(id); }
+                                allow create: if canEditArea('damage') && idMatches(id);
+                                allow update: if canEditArea('damage') && idMatches(id)
+                                  && (resource.data.get('unitGroup', '') == '' || request.resource.data.get('unitGroup', '') != ''); }
     match /licenseStock/{id}  { allow read: if isActive() && scopeAllows('tractor'); allow delete: if canEditArea('licenseStock');
                                 allow create, update: if canEditArea('licenseStock') && idMatches(id); }
 
@@ -548,7 +552,13 @@ service cloud.firestore {
                          'unitName', 'field', 'before', 'after', 'actorUid', 'actorEmail',
                          'actorName', 'actorRole', 'unitGroup'])
                     && request.resource.data.get('unitGroup', '') in ['', 'tractor', 'heavy', 'shared'];
-      allow update: if false;
+      // Rows written before v167 carry no group, so a limited account cannot
+      // read them: the owner may add the group once — that one field, only
+      // while it is missing.
+      allow update: if isOwner()
+                    && !('unitGroup' in resource.data)
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unitGroup'])
+                    && request.resource.data.unitGroup in ['tractor', 'heavy', 'shared'];
       allow delete: if isOwner();
     }
   }

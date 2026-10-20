@@ -88,7 +88,7 @@ const { launch, BASE_URL } = require('./_env');
         document.getElementById('globalSearch').value = 'TR-'; renderGlobalSearchResults();
         t('pencarian tidak menemukan unit pertanian', /No matching units/.test(document.getElementById('globalSearchResults').textContent), true);
         toasts.length = 0; showUnitProfile('t1');
-        t('profil unit kelompok lain: "di luar akses Anda"', toasts.pop(), 'This unit is outside your access');
+        t('profil unit kelompok lain: "di luar akses Anda"', toasts.pop(), 'This unit is outside your access (or no longer exists)');
         const bd = decisionGroups().find(g => g.key === 'breakdown');
         t('Kotak Keputusan: hanya breakdown alat berat', bd ? bd.items.map(i => i.text) : null, ['EX-h2']);
         blobs.length = 0; exportEditCSV(); const csvU = blobs[0] ? await blobs[0].text() : '';
@@ -245,7 +245,8 @@ const { launch, BASE_URL } = require('./_env');
         const unitParts = [], dmgParts = [];
         window.cloud.updateUnitsFields = items => { unitParts.push(...items); return ok(); };
         window.cloud.updateDamagesFields = items => { dmgParts.push(...items); return ok(); };
-        storeUnitGroups(); await tick(20);
+        window.cloud.updateHistoryFields = () => ok();
+        await storeUnitGroups(); await tick(20);
         t('Store unit groups: hanya kolom kelompok yang dikirim',
           [unitParts.some(p => p.id === 't1' && p.unitGroup === 'tractor'), unitParts.every(p => Object.keys(p).sort().join() === 'id,unitGroup'),
            dmgParts.some(p => p.id === 'd1' && p.unitGroup === 'tractor'), dmgParts.every(p => Object.keys(p).sort().join() === 'id,unitGroup')],
@@ -279,6 +280,63 @@ const { launch, BASE_URL } = require('./_env');
         t('Sign out & erase: keluar, cache unit/kerusakan/cadangan dihapus, database offline dihapus, halaman dimuat ulang',
           [signedOut, localStorage.getItem('tractorUnits'), localStorage.getItem('tractorDamageRecords'), localStorage.getItem('tractorUnits_autobackup'), erased, reloaded],
           [true, null, null, null, true, true]);
+
+        // =============== v168: perbaikan review ===============
+        as({ uid: 'o', role: 'owner' });
+        // riwayat: dua batch sekaligus ditolak rules lama → keduanya dikirim ulang tanpa kolom kelompok
+        _historyWithoutGroup = false;
+        const got = [];
+        window.cloud.addHistoryEvents = ev => new Promise((res, rej) => setTimeout(() => {
+            if (ev.some(e => 'unitGroup' in e)) rej(Object.assign(new Error('denied'), { code: 'permission-denied' }));
+            else { got.push(...ev); res(); }
+        }, 120));
+        logEvent({ action: 'x', unitName: '[Team] A', field: 'x' });
+        await tick(100);
+        logEvent({ action: 'x', unitName: '[Team] B', field: 'x' });
+        await tick(700);
+        t('riwayat: dua batch yang ditolak bersamaan sama-sama sampai', ['[Team] A', '[Team] B'].every(n => got.some(e => e.unitName === n)), true);
+        // ditolak juga tanpa kolom: bukan karena kolomnya → baris berikutnya membawa kolom lagi
+        let refuseAll = true; const got2 = [];
+        window.cloud.addHistoryEvents = ev => refuseAll ? Promise.reject(Object.assign(new Error('denied'), { code: 'permission-denied' })) : (got2.push(...ev), ok());
+        logEvent({ action: 'x', unitName: '[Team] C', field: 'x' }); await tick(200);
+        refuseAll = false;
+        logEvent({ action: 'x', unitName: '[Team] D', field: 'x' }); await tick(200);
+        t('ditolak bukan karena kolom kelompok: baris berikutnya tetap membawanya', [_historyWithoutGroup, (got2.find(e => e.unitName === '[Team] D') || {}).unitGroup], [false, 'shared']);
+        window.cloud.addHistoryEvents = ok;
+        // riwayat lama: owner mengisi kelompok sekali (baris unit yang sudah dihapus dilewati)
+        localStorage.removeItem('tractorHistoryGroupsStored_v1');
+        window.cloud.getAllHistory = () => Promise.resolve([
+            { id: 'o1', unitId: 'h1', unitName: 'EX-h1' }, { id: 'o2', unitId: 'x', unitName: '[Team] A' },
+            { id: 'o3', unitId: 'gone', unitName: 'Lama' }, { id: 'o4', unitId: 't1', unitName: 'TR-t1', unitGroup: 'tractor' }]);
+        const hparts = []; window.cloud.updateHistoryFields = items => { hparts.push(...items); return ok(); };
+        await storeUnitGroups(); await tick(20);
+        t('Store unit groups juga mengisi kelompok riwayat lama', hparts.map(p => p.id + ':' + p.unitGroup), ['o1:heavy', 'o2:shared']);
+        t('... sekali per perangkat', localStorage.getItem('tractorHistoryGroupsStored_v1'), '1');
+        // unit yang dihapus: baris riwayatnya tetap membawa kelompok unit itu
+        const before = JSON.parse(localStorage.getItem('tractorAuditLog') || '[]').length;
+        deleteUnits(['h2']); await tick(10);
+        const delRow = JSON.parse(localStorage.getItem('tractorAuditLog') || '[]').find(e => e.action === 'delete' && e.unitId === 'h2');
+        t('baris "unit dihapus" membawa kelompok unitnya', delRow && delRow.unitGroup, 'heavy');
+        // akun terbatas: tautan ke unit yang tidak terlihat (kelompok lain) tetap dianggap di luar akses
+        as(hvDoc);
+        t('unitOutsideScope: akun terbatas → unit tak terlihat; tanpa batas → tidak pernah', [unitOutsideScope('t1'), unitOutsideScope('h1')], [true, false]);
+        // perangkat: akun terbatas pertama kali → data perangkat dihapus dan halaman dimuat ulang, sekali
+        localStorage.setItem('tractorDeviceScope', 'all'); localStorage.removeItem('tractorDeviceScopeTried');
+        localStorage.setItem('tractorUnits', '[{"id":"t1"}]');
+        let erasedP = 0, reloadedP = 0;
+        window.cloud.eraseLocalCache = () => { erasedP++; return Promise.resolve(true); };
+        window.appReload = () => { reloadedP++; };
+        const first = await protectDeviceForScope('hv');
+        const second = await protectDeviceForScope('hv');
+        t('akun terbatas: data perangkat dibersihkan sekali, lalu tidak lagi',
+          [first, second, erasedP, reloadedP, localStorage.getItem('tractorUnits'), localStorage.getItem('tractorDeviceScope')], [true, false, 1, 1, null, 'hv:heavy']);
+        // gagal dibersihkan (tab lain terbuka): tidak berulang-ulang memuat ulang
+        localStorage.setItem('tractorDeviceScope', 'all'); localStorage.removeItem('tractorDeviceScopeTried');
+        window.cloud.eraseLocalCache = () => Promise.reject(Object.assign(new Error('other tab'), { code: 'failed-precondition' }));
+        reloadedP = 0; toasts.length = 0;
+        await protectDeviceForScope('hv');
+        const again = await protectDeviceForScope('hv');
+        t('tidak bisa dibersihkan: dimuat ulang sekali, lalu hanya diberi tahu', [reloadedP, again, toasts.some(m => /close the other tabs/.test(m))], [1, false, true]);
 
         window.__T = T;
     } catch (e) { window.__T = [{ n: 'EXCEPTION ' + e.message + ' ' + e.stack, pass: false }]; } })();` });

@@ -386,6 +386,20 @@ async function check(name, p, expectOk) {
     await check('rahasia: kelompok riwayat yang tidak dikenal DITOLAK', setDoc(doc(W, 'history', 'h_g2'),
         { id: 'h_g2', timestamp: Date.now(), action: 'x', unitId: '', unitName: 'x', field: '', before: '', after: '', actorUid: 'writer', actorEmail: 'writer@x.id', actorName: 'w', actorRole: 'staff', unitGroup: 'semua' }), false);
 
+    // ---- v168: perbaikan review ----
+    await env.withSecurityRulesDisabled(async ctx => {
+        const db = ctx.firestore();
+        await setDoc(doc(db, 'units', 'unone'), { id: 'unone', unitGroup: 'none' });
+        await setDoc(doc(db, 'history', 'hold'), { id: 'hold', timestamp: 1, action: 'x' });
+    });
+    await check('rahasia: kelompok tak dikenal ("none") tidak membaca dokumen bernilai "none"', getDoc(doc(BAD, 'units', 'unone')), false);
+    await check('rahasia: editor kerusakan TIDAK boleh mengosongkan kelompok catatan', updateDoc(doc(DM, 'damageRecords', 'dt'), { unitGroup: '' }), false);
+    await check('rahasia: editor kerusakan tetap boleh mengedit catatan (kelompok tetap)', updateDoc(doc(DM, 'damageRecords', 'dt'), { description: 'x' }), true);
+    await check('riwayat lama: owner menambahkan kelompok sekali', updateDoc(doc(O, 'history', 'hold'), { unitGroup: 'shared' }), true);
+    await check('riwayat lama: kelompok yang sudah ada TIDAK bisa diubah', updateDoc(doc(O, 'history', 'hold'), { unitGroup: 'heavy' }), false);
+    await check('riwayat lama: bukan owner TIDAK boleh menambahkan kelompok', updateDoc(doc(W, 'history', 'h1'), { unitGroup: 'shared' }), false);
+    await check('riwayat lama: owner TIDAK boleh mengubah kolom lain', updateDoc(doc(O, 'history', 'h1'), { unitGroup: 'shared', after: 'diubah' }), false);
+
     await env.cleanup();
     let pass = 0;
     T.forEach(x => { if (x.pass) pass++; else console.log('FAIL', x.name, '\n   ', x.err || ''); });

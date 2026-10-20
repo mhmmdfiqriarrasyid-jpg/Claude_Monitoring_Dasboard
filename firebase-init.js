@@ -487,6 +487,12 @@ window.cloud = {
             : query(collection(db, HISTORY_COL), orderBy('timestamp', 'desc')));
         return snap.docs.map(withDocId);
     },
+    // The owner's one-time back-fill of the group on rows written before
+    // v167: [{ id, unitGroup }]. The rules allow exactly that field, once.
+    async updateHistoryFields(items) {
+        if (!items || !items.length) return;
+        await batchInChunks(items, (batch, r) => { const { id, ...f } = r; batch.update(doc(db, HISTORY_COL, id), f); });
+    },
     // "Sign out & erase this device": the offline database goes too. The
     // instance is unusable afterwards, so the caller reloads the page.
     async eraseLocalCache() {

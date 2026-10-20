@@ -127,7 +127,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v167';
+const APP_VERSION = 'v168';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -519,7 +519,6 @@ function applyUnitScopeToData(fresh) {
         return (d.unitGroup === 'heavy' ? 'heavy' : 'tractor') === sc;
     });
 }
-// Is this unit id one the account cannot see (as opposed to one that is gone)?
 // What a limited account asks the server for: its group only (the rules
 // refuse anything wider). null = everything, for an unlimited account.
 function scopeQueryGroup() {
@@ -530,8 +529,13 @@ function scopeHistoryGroups() {
     const sc = effectiveUnitScope();
     return sc === 'all' ? null : [sc, 'shared'];
 }
+// Is this unit id one the account cannot see? The server sends a limited
+// account its own group only, so for it any unit not on its list may be the
+// other group's (or gone — it cannot tell); for an unlimited account a unit
+// not on the list is gone.
 function unitOutsideScope(id) {
-    return !!_fleetUnitsAll && !globalData.some(u => u.id === id) && _fleetUnitsAll.some(u => u.id === id);
+    if (!isUnitScoped()) return false;
+    return !globalData.some(u => u.id === id);
 }
 // The account's limit changed (sign-in, or the owner changed it live): apply
 // it to what is loaded and redraw. Returns true when it changed.
@@ -548,11 +552,12 @@ function applyScopeChange() {
         // cloud, or else this device's own copy (a limited session never wrote
         // to it) until the subscriptions bring the rest. Nothing writes units
         // from that device copy before fresh cloud data has arrived.
-        const hadUnits = !!_fleetUnitsAll, hadDamages = !!_fleetDamagesAll;
-        applyUnitScopeToData();
-        if (!hadUnits) { loadFromStorage(); _unitsFromDeviceOnly = true; }
-        if (!hadDamages) loadDamages();
-        loadImplements(); loadLicenseStock();
+        // The limited session's lists came from the server for one group only
+        // (v167): the whole fleet is this device's own copy until the new
+        // subscriptions deliver, and nothing writes units from it before then.
+        _fleetUnitsAll = _fleetDamagesAll = null;
+        loadFromStorage(); _unitsFromDeviceOnly = true;
+        loadDamages(); loadImplements(); loadLicenseStock();
         // The limited session pinned the groups without saving them: go back
         // to this device's own choices.
         loadUnitGroupPrefs();
@@ -692,6 +697,15 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupEventListeners() {
+    // "Sign out & erase this device" in another tab: drop what this tab holds.
+    window.addEventListener('storage', e => { if (e.key === ERASE_BROADCAST_KEY && e.newValue) appReload(); });
+    // The offline database could not be cleared (the app was open in another tab).
+    try {
+        if (sessionStorage.getItem(ERASE_INCOMPLETE_KEY)) {
+            sessionStorage.removeItem(ERASE_INCOMPLETE_KEY);
+            setTimeout(() => showToast('Signed out, but the offline database is still on this device — close the other tabs of this app, sign in, and use "Sign out & erase this device" again', 'warning'), 500);
+        }
+    } catch (_) {}
     loadUnitGroupPrefs();
     // The damage component list follows the chosen unit's group.
     const dmgUnitEl = document.getElementById('dmgUnit');
@@ -2441,7 +2455,8 @@ function deleteUnits(ids) {
     saveToStorage(globalData);
     if (count > 0) {
         recordChange({ type: 'deleted', detail: `${count} unit(s) deleted` });
-        removed.forEach(u => logEvent({ action: 'delete', unitId: u.id, unitName: u.name, before: deletedUnitSummary(u) }));
+        removed.forEach(u => logEvent({ action: 'delete', unitId: u.id, unitName: u.name, before: deletedUnitSummary(u),
+                                        unitGroup: hasUnreadableGroup(u) ? '' : unitGroupOf(u) }));
         cloudDeleteUnits(ids);
         // A second delete inside the undo window replaces the undo toast, so
         // the first batch can no longer be undone — purge its files now, or
@@ -2480,7 +2495,9 @@ function logEvent(entry) {
         ...actor
     };
     // Which group's accounts may read this row (v167); '' = only unlimited ones.
-    full.unitGroup = historyGroupOf(full);
+    // A caller that knows it (a unit being deleted is gone from the list)
+    // passes it along.
+    full.unitGroup = ['tractor', 'heavy', 'shared'].includes(entry.unitGroup) ? entry.unitGroup : historyGroupOf(full);
 
     // Local cache — instant render + offline support.
     try {
@@ -2516,17 +2533,22 @@ function _flushHistoryQueue() {
     if (!currentUser || !window.cloud?.addHistoryEvents) return;
     const batch = _historyPushQueue.splice(0);
     if (batch.length === 0) return;
-    const send = _historyWithoutGroup ? batch.map(({ unitGroup, ...rest }) => rest) : batch;
+    // Decided per send: every batch that went out WITH the key gets one retry
+    // without it, however many were in flight when the first refusal came.
+    const stripped = _historyWithoutGroup;
+    const send = stripped ? batch.map(({ unitGroup, ...rest }) => rest) : batch;
     window.cloud.addHistoryEvents(send).then(() => {
         _historyRetryDelay = 0;
     }).catch(err => {
         console.error('[cloud] history push failed:', err);
-        if (err && err.code === 'permission-denied' && !_historyWithoutGroup && batch.some(e => 'unitGroup' in e)) {
+        if (err && err.code === 'permission-denied' && !stripped && batch.some(e => 'unitGroup' in e)) {
             _historyWithoutGroup = true;
             _historyPushQueue.unshift(...batch);
             _scheduleHistoryFlush(0);
             return;
         }
+        // Refused without the key too: the key was not the cause.
+        if (err && err.code === 'permission-denied' && stripped) _historyWithoutGroup = false;
         if (err && err.code === 'permission-denied') {
             // The rules will keep refusing this batch, so putting it back
             // would only cost the next one too. The local cache still has
@@ -2591,6 +2613,8 @@ function startHistorySubscription() {
             // once by the owner (README: "Batas kelompok unit").
             showToast('History for this account needs a database index — ask the owner to create it', 'warning');
         }
+        // A failed listener is dead: let the next History open try again.
+        if (cloudHistoryUnsub) { try { cloudHistoryUnsub(); } catch (_) {} cloudHistoryUnsub = null; }
     }, 500, scopeHistoryGroups());
 }
 
@@ -5199,7 +5223,7 @@ function restoreAutoBackup(index) {
         + `The ${globalData.length} current unit(s) will be replaced. Other data (damage, licenses, team, inventory) is not changed.`)) return;
 
     const previousIds = globalData.map(u => u.id);
-    globalData = entry.units.map(u => ({ ...u, id: u.id || generateId() }));
+    globalData = entry.units.map(u => ({ ...u, id: u.id || generateId(), unitGroup: storedUnitGroup(u) }));
     const keptIds = new Set(globalData.map(u => u.id));
     saveToStorage(globalData);
     cloudDeleteUnits(previousIds.filter(id => !keptIds.has(id)));
@@ -7543,7 +7567,7 @@ function openUnitFromSearch(id) {
 
 function showUnitProfile(id) {
     const u = globalData.find(d => d.id === id);
-    if (!u) { showToast(unitOutsideScope(id) ? 'This unit is outside your access' : 'Unit not found', 'warning'); return; }
+    if (!u) { showToast(unitOutsideScope(id) ? 'This unit is outside your access (or no longer exists)' : 'Unit not found', 'warning'); return; }
     document.getElementById('unitProfileModal').dataset.unitId = id;
 
     document.getElementById('unitProfileTitle').textContent = u.name || u.sn || 'Unit Profile';
@@ -10440,6 +10464,7 @@ async function migrateLocalToCloudIfNeeded() {
         // Units
         if (await isEmpty('units', window.cloud.getAllUnits) && globalData.length > 0) {
             console.log(`[cloud] migrating ${globalData.length} local units to Firestore...`);
+            globalData.forEach(u => { u.unitGroup = storedUnitGroup(u); });
             await window.cloud.saveUnits(globalData);
             showToast(`${globalData.length} unit(s) uploaded to the cloud`, 'success');
         }
@@ -10453,6 +10478,7 @@ async function migrateLocalToCloudIfNeeded() {
         if (window.cloud.getAllDamages) {
             if (await isEmpty('damages', window.cloud.getAllDamages) && globalDamages.length > 0) {
                 console.log(`[cloud] migrating ${globalDamages.length} local damage records to Firestore...`);
+                globalDamages.forEach(d => { d.unitGroup = damageGroupStamp(d); });
                 await window.cloud.saveDamages(globalDamages);
                 showToast(`${globalDamages.length} damage record(s) uploaded to the cloud`, 'success');
             }
@@ -11308,6 +11334,7 @@ function setupAuth() {
         // all. The local write lands in the cache at once, so the watcher
         // below already sees this device's id.
         if (!held || held.id !== mine) claimActiveSession(user.uid, held);
+        if (await protectDeviceForScope(user.uid)) return;
         watchOwnUserDoc(user.uid);
         maybeInitCloudSync();
     });
@@ -11638,6 +11665,7 @@ function watchOwnUserDoc(uid) {
         if (JSON.stringify(before.access) !== JSON.stringify(doc.access) || before.role !== doc.role) {
             applyRoleGating();
             renderUserPill();
+            if (isUnitScoped()) protectDeviceForScope(uid);
             // Which collections this account may read changed: subscribe again.
             if (cloudInitialized) { tearDownCloudSync(); cloudInitialized = false; maybeInitCloudSync(); }
             // The teardown dropped the history stream an open History needs.
@@ -11892,11 +11920,57 @@ async function handleSignOutErase() {
         + 'cannot read them. Files attached to units are kept.'
         + (parts.length ? `\n\nNot sent yet — these will be LOST: ${parts.join(', ')}.` : ''))) return;
     try { await window.cloud.signOutUser(); } catch (e) { /* ignore */ }
-    DEVICE_DATA_KEYS.forEach(k => { try { localStorage.removeItem(k); } catch (_) {} });
-    try { if (window.cloud && typeof window.cloud.eraseLocalCache === 'function') await window.cloud.eraseLocalCache(); } catch (e) {
-        console.warn('[cloud] offline database not erased:', e);
+    // Other open tabs of the app drop what they hold in memory.
+    try { localStorage.setItem(ERASE_BROADCAST_KEY, String(Date.now())); } catch (_) {}
+    if (!await eraseDeviceData()) {
+        try { sessionStorage.setItem(ERASE_INCOMPLETE_KEY, '1'); } catch (_) {}
     }
     appReload();
+}
+
+const ERASE_BROADCAST_KEY = 'tractorEraseBroadcast';
+const ERASE_INCOMPLETE_KEY = 'tractorEraseIncomplete';
+// The app's offline copies, then Firestore's offline database. true when both
+// are gone. The database cannot be cleared while the app is open in another
+// tab; Firestore is stopped either way, so the caller reloads the page.
+async function eraseDeviceData() {
+    DEVICE_DATA_KEYS.forEach(k => { try { localStorage.removeItem(k); } catch (_) {} });
+    try { sessionStorage.removeItem(PENDING_CHANGES_KEY); } catch (_) {}
+    if (!window.cloud || typeof window.cloud.eraseLocalCache !== 'function') return false;
+    try { return !!await window.cloud.eraseLocalCache(); }
+    catch (e) { console.warn('[cloud] offline database not erased:', e); return false; }
+}
+
+// A limited account must not find the other group's records on its device:
+// the offline copies and Firestore's offline database may hold what an
+// unlimited session (this account before the limit, or another person) read
+// here. The first time a limited account uses this device under its limit,
+// both are cleared and the page reloads — unless something is still waiting
+// to be sent; then it is left for a later sign-in. Tried once per account and
+// limit, so another open tab cannot make it reload over and over.
+const DEVICE_SCOPE_KEY = 'tractorDeviceScope';
+const DEVICE_SCOPE_TRIED_KEY = 'tractorDeviceScopeTried';
+async function protectDeviceForScope(uid) {
+    const sc = effectiveUnitScope();
+    const want = sc === 'all' ? 'all' : `${uid}:${sc}`;
+    let have = null, tried = null;
+    try { have = localStorage.getItem(DEVICE_SCOPE_KEY); tried = localStorage.getItem(DEVICE_SCOPE_TRIED_KEY); } catch (_) {}
+    if (sc === 'all') {
+        try { if (have !== 'all') localStorage.setItem(DEVICE_SCOPE_KEY, 'all'); } catch (_) {}
+        return false;
+    }
+    if (have === want) return false;
+    if (tried === want) {
+        showToast('Data from another account may still be saved on this device — close the other tabs of this app and use "Sign out & erase this device"', 'warning');
+        return false;
+    }
+    const ins = inspections.filter(r => insQueuedIds.has(r.id)).length;
+    if (queuedSummary(ins).length) return false;
+    try { localStorage.setItem(DEVICE_SCOPE_TRIED_KEY, want); } catch (_) {}
+    const done = await eraseDeviceData();
+    if (done) { try { localStorage.setItem(DEVICE_SCOPE_KEY, want); } catch (_) {} }
+    appReload();
+    return true;
 }
 
 function renderUserPill() {
@@ -12406,23 +12480,45 @@ function renderGroupStampNotice() {
     if (!box) return;
     const { units, damages, unreadable } = isOwner() ? unstampedGroupRecords() : { units: [], damages: [], unreadable: 0 };
     const limited = (allUsers || []).some(u => u.role !== 'owner' && isUnitScoped(u));
-    box.hidden = !units.length && !damages.length && !unreadable;
+    const historyLeft = isOwner() && !_historyStampedHere();
+    box.hidden = !units.length && !damages.length && !unreadable && !historyLeft;
     if (box.hidden) { box.innerHTML = ''; return; }
     const missing = units.length + damages.length;
     box.innerHTML = `<i class="fas fa-layer-group" aria-hidden="true"></i>
         <div class="group-stamp-notice__text">
             ${missing ? `<strong>${units.length} unit(s) and ${damages.length} damage record(s) do not store their unit group yet.</strong>
-            Accounts limited to one group cannot see them until it is stored${limited ? ' — and such accounts exist now' : ''}.` : ''}
+            Accounts limited to one group cannot see them until it is stored${limited ? ' — and such accounts exist now' : ''}.`
+            : historyLeft ? '<strong>Older history rows do not store their unit group yet.</strong> Accounts limited to one group see only newer history until it is stored.' : ''}
             ${unreadable ? `${missing ? '<br>' : ''}<strong>${unreadable} unit(s) have a group that is not recognised</strong> — no limited account can see them; set it in Data Check.` : ''}
         </div>
-        ${units.length || damages.length ? '<button type="button" class="btn btn-primary btn-sm" onclick="storeUnitGroups()"><i class="fas fa-check"></i> Store unit groups</button>' : ''}`;
+        ${missing || historyLeft ? '<button type="button" class="btn btn-primary btn-sm" onclick="storeUnitGroups()"><i class="fas fa-check"></i> Store unit groups</button>' : ''}`;
+}
+// The history back-fill reads the whole log, so it is remembered per device
+// once it has gone through, rather than counted on every visit.
+const HISTORY_STAMPED_KEY = 'tractorHistoryGroupsStored_v1';
+function _historyStampedHere() { try { return localStorage.getItem(HISTORY_STAMPED_KEY) === '1'; } catch (_) { return false; } }
+// Older history rows: the group each belongs to, added once (rules allow the
+// owner exactly that field while it is missing). Rows whose unit is gone stay
+// as they are — readable by unlimited accounts only.
+async function storeHistoryGroups() {
+    if (!isOwner() || !window.cloud?.isReady || typeof window.cloud.getAllHistory !== 'function'
+        || typeof window.cloud.updateHistoryFields !== 'function') return 0;
+    const all = await window.cloud.getAllHistory();
+    const parts = (all || []).filter(e => e && e.id && !('unitGroup' in e))
+        .map(e => ({ id: e.id, unitGroup: historyGroupOf(e) }))
+        .filter(p => ['tractor', 'heavy', 'shared'].includes(p.unitGroup));
+    if (parts.length) await window.cloud.updateHistoryFields(parts);
+    try { localStorage.setItem(HISTORY_STAMPED_KEY, '1'); } catch (_) {}
+    return parts.length;
 }
 // Writes only the group, as a partial update, on the records that lack it.
-function storeUnitGroups() {
+async function storeUnitGroups() {
     if (!isOwner()) return;
     const { units, damages } = unstampedGroupRecords();
-    if (!units.length && !damages.length) { showToast('Every unit and damage record already stores its group', 'info'); return; }
-    if (!confirm(`Store the unit group on ${units.length} unit(s) and ${damages.length} damage record(s)?\n\n`
+    const historyLeft = !_historyStampedHere();
+    if (!units.length && !damages.length && !historyLeft) { showToast('Every unit and damage record already stores its group', 'info'); return; }
+    if (!confirm(`Store the unit group on ${units.length} unit(s) and ${damages.length} damage record(s)`
+        + (historyLeft ? ', and on older history rows' : '') + '?\n\n'
         + 'Accounts limited to one group can only read records that carry it. Nothing else on the records changes.')) return;
     const unitParts = units.map(u => ({ id: u.id, unitGroup: storedUnitGroup(u) }));
     const dmgParts = damages.map(d => ({ id: d.id, unitGroup: damageGroupStamp(d) }));
@@ -12440,9 +12536,19 @@ function storeUnitGroups() {
             Promise.resolve(send.call(window.cloud, dmgParts)).catch(err => cloudWriteFailed(err, { what: 'damage groups', label: '[Master] Unit groups', resync: resyncDamages }));
         }
     }
+    let rows = 0;
+    if (historyLeft) {
+        try { rows = await storeHistoryGroups(); }
+        catch (err) {
+            console.error('[cloud] history groups not stored:', err);
+            showToast(err && err.code === 'permission-denied'
+                ? 'History rows were not updated — publish the new firestore.rules first, then press Store unit groups again'
+                : 'History rows were not updated — try again', 'warning');
+        }
+    }
     logEvent({ action: 'update', unitName: '[Master] Unit groups', field: 'unitGroup',
-               after: `stored on ${unitParts.length} unit(s) and ${dmgParts.length} damage record(s)` });
-    showToast(`Unit group stored on ${unitParts.length} unit(s) and ${dmgParts.length} damage record(s)`, 'success');
+               after: `stored on ${unitParts.length} unit(s), ${dmgParts.length} damage record(s), ${rows} history row(s)` });
+    showToast(`Unit group stored on ${unitParts.length} unit(s), ${dmgParts.length} damage record(s), ${rows} history row(s)`, 'success');
     renderGroupStampNotice();
 }
 
@@ -18252,7 +18358,19 @@ function setUnreadableGroups() {
         const to = String(answer == null ? '' : answer).trim() === '1' ? 'tractor'
                  : String(answer == null ? '' : answer).trim() === '2' ? 'heavy' : null;
         if (!to) continue;
-        if (updateUnit(u.id, { unitGroup: to }, { setGroup: true })) n++;
+        if (updateUnit(u.id, { unitGroup: to }, { setGroup: true })) {
+            n++;
+            // Its damage records were stamped '' (group unknown): they take it now.
+            const parts = globalDamages.filter(d => (liveUnitFor(d) || {}).id === u.id && d.unitGroup !== to)
+                .map(d => { d.unitGroup = to; return { id: d.id, unitGroup: to }; });
+            if (parts.length) {
+                saveDamages();
+                if (!suppressCloudWrites && window.cloud?.isReady) {
+                    const send = typeof window.cloud.updateDamagesFields === 'function' ? window.cloud.updateDamagesFields : window.cloud.saveDamages;
+                    Promise.resolve(send.call(window.cloud, parts)).catch(err => cloudWriteFailed(err, { what: 'damage groups', label: '[Master] Unit groups', resync: resyncDamages }));
+                }
+            }
+        }
     }
     showToast(n ? `Group set for ${n} unit(s)` : 'Nothing changed', n ? 'success' : 'info');
     renderEditTable();

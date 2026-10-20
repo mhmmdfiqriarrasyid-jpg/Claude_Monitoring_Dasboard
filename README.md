@@ -111,7 +111,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-2.036 pemeriksaan di lima puluh suite, menggerakkan Chromium sungguhan terhadap
+2.044 pemeriksaan di lima puluh suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -473,6 +473,23 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
       lokal) tidak dihapus.
     - Masih terlihat oleh akun terbatas (hanya nama): nama unit di laporan
       harian, perangkat/stok Warehouse, dan daftar brand di master list.
+  - *Perbaikan v168 (review):* kirim-ulang History tanpa kolom diputuskan per
+    kiriman (batch yang ditolak bersamaan tidak hilang; penolakan karena hal
+    lain tidak mematikan kolom itu); owner mengisi kelompok History lama lewat
+    **Store unit groups** (rules: hanya kolom itu, sekali, owner saja); unit
+    yang dihapus tetap mencap kelompoknya di baris History; restore cadangan
+    otomatis dan unggahan pertama owner mencap kelompok; kelompok yang diatur
+    di Periksa Data ikut mencap kerusakannya; rules melarang mengosongkan
+    kelompok catatan kerusakan (tab lama), dan nilai `'none'` tidak membaca
+    apa pun; editor Warehouse terbatas tetap menyimpan tautan ke unit yang
+    tidak terlihat; batas dicabut → salinan perangkat, bukan daftar satu
+    kelompok; index History yang belum ada tidak mematikan langganan.
+    **Perangkat:** akun terbatas yang pertama kali memakai perangkat di bawah
+    batasnya membersihkan salinan offline + database offline dan memuat ulang
+    (`protectDeviceForScope`, sekali per akun+batas; dilewati bila ada yang
+    belum terkirim). "Sign out & erase" memberi sinyal ke tab lain untuk
+    memuat ulang dan memberi tahu bila database offline tidak bisa dihapus
+    karena tab lain masih terbuka.
 - **Kerusakan ↔ status unit v162 (dijaga `tests/damagesync_test.js` dan
   rules_test). Perlu publish firestore.rules (blok `units`).**
   - Catatan kerusakan yang terbuka *menahan* satu tempat di unitnya
@@ -719,7 +736,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   stempel `appliedAt` supaya hanya sekali); tanpa akses itu muncul di Kotak
   Keputusan. Foto di `inspectionPhotos/{id}` (tidak di-subscribe), ditulis
   SEBELUM laporannya.
-- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (206 skenario;
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (213 skenario;
   bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
   kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
   alur persetujuan laporan/izin (transisi status di atas, kunci isi dan foto
