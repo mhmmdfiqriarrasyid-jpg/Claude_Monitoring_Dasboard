@@ -589,6 +589,44 @@ const { launch, BASE_URL } = require('./_env');
         tearDownCloudSync();
         t('keluar: salinan foto Before dan After dibuang', [_dmgAfterCache.size, _dmgPhotoCache.has('zz')], [0, false]);
 
+        // =============== Export Photos: satu ZIP, satu folder per Nickname unit ===============
+        globalData = [{ id: 'u1', name: 'BD100T', sn: 'LGCB1', site: 'PT. GPA', status: 'Good' },
+                      { id: 'u2', name: 'BD/021G', sn: 'LGCB2', site: 'PT. GPA', status: 'Good' },
+                      { id: 'u3', name: 'BD100T', sn: 'LGCB3', site: 'PT. GPA', status: 'Good' }];
+        globalDamages = [
+            mk('zA', { hasPhoto: true }),
+            mk('zB', { hasPhoto: true, hasAfterPhoto: true, resolved: true, resolvedAt: '2026-10-14' }),
+            mk('zC', { unitId: 'u2', unitName: 'BD/021G', sn: 'LGCB2', hasPhoto: true }),
+            mk('zD', { unitId: 'u3', unitName: 'BD100T', sn: 'LGCB3', hasPhoto: true }),
+            mk('zE', { unitId: 'u2', unitName: 'BD/021G', sn: 'LGCB2' }),
+            mk('zF', { unitId: 'u2', unitName: 'BD/021G', sn: 'LGCB2', hasPhoto: true })   // foto tidak ada di server
+        ];
+        Object.assign(store.before, { zA: PH('/9j/AAAA'), zB: PH('/9j/BBBB'), zC: 'data:image/png;base64,iVBORw0K', zD: PH('/9j/DDDD') });
+        store.after.zB = PH('/9j/CCCC');
+        saveToStorage(globalData); saveDamages();
+        asOwner(); navigateTo('damage'); setDamageGroup(''); damageUnitFilter = '';
+        document.getElementById('damageSearch').value = ''; document.getElementById('damageTypeFilter').value = ''; renderDamageTable();
+        confirmAnswer = true; window.__blob = null; toasts.length = 0;
+        await exportDamagePhotosZip();
+        const zbytes = window.__blob ? new Uint8Array(await window.__blob.arrayBuffer()) : new Uint8Array(0);
+        const zdv = new DataView(zbytes.buffer), zdec = new TextDecoder(), zfiles = [];
+        for (let p = 0; p + 4 <= zbytes.length && zdv.getUint32(p, true) === 0x04034b50;) {
+            const crc = zdv.getUint32(p + 14, true), size = zdv.getUint32(p + 18, true), nl = zdv.getUint16(p + 26, true);
+            const name = zdec.decode(zbytes.slice(p + 30, p + 30 + nl)), data = zbytes.slice(p + 30 + nl, p + 30 + nl + size);
+            zfiles.push({ name, crcOk: _crc32(data) === crc, size });
+            p += 30 + nl + size;
+        }
+        const znames = zfiles.map(f => f.name).sort();
+        t('ZIP: folder per Nickname (garis miring aman, nickname sama → ditambah SN), Before/After, daftar foto',
+          znames, ['BD-021G/2026-10-12_Mechanical_Camera AI_before.png',
+                   'BD100T (LGCB3)/2026-10-12_Mechanical_Camera AI_before.jpg',
+                   'BD100T/2026-10-12_Mechanical_Camera AI_after.jpg',
+                   'BD100T/2026-10-12_Mechanical_Camera AI_before.jpg',
+                   'BD100T/2026-10-12_Mechanical_Camera AI_before_2.jpg',
+                   'photo_list.csv']);
+        t('ZIP: isi tiap file utuh (CRC cocok) dan berisi', [zfiles.every(f => f.crcOk), zfiles.every(f => f.size > 0), window.__blob && window.__blob.type], [true, true, 'application/zip']);
+        t('ZIP: pesan menyebut jumlah foto, folder, dan yang tidak termuat', toasts.pop(), '5 photo(s) in 3 unit folder(s) — 1 could not be loaded');
+
         window.__T = T;
     } catch (e) { window.__T = [{ n: 'EXCEPTION ' + e.message + ' ' + e.stack, pass: false }]; } })();` });
 

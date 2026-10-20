@@ -722,6 +722,10 @@
                 <button class="btn btn-secondary csv-export" onclick="exportDamageCSV()">
                     <i class="fas fa-download"></i> Export CSV
                 </button>
+                <button class="btn btn-secondary csv-export" id="btnExportDamagePhotos" onclick="exportDamagePhotosZip()"
+                        title="All Before / After photos of the records listed, one folder per unit nickname">
+                    <i class="fas fa-file-zipper"></i> Export Photos
+                </button>
             </div>
             <div class="edit-toolbar__right">
                 <select id="damageGroupFilter" aria-label="Filter unit group" class="btn btn-secondary btn-sm"

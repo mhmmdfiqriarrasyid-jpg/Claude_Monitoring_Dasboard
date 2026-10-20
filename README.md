@@ -111,7 +111,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-2.049 pemeriksaan di lima puluh suite, menggerakkan Chromium sungguhan terhadap
+2.052 pemeriksaan di lima puluh suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -320,6 +320,15 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
   Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
   **Implement Brands** (`masterLists/brand`) untuk Agricultural.
+- **Export Photos v170 (dijaga `tests/damage_beforeafter_test.js`).** Tombol
+  *Export Photos* di halaman Damage mengunduh semua foto Before/After dari
+  catatan yang sedang tampil (ikut filter kelompok/tipe/pencarian/unit) dalam
+  satu ZIP: satu folder per **Nickname unit** (nickname sama → ditambah SN),
+  nama file `tanggal_tipe_komponen_before|after.jpg`, plus `photo_list.csv`.
+  ZIP dibuat di browser tanpa library (`makeZip`, disimpan tanpa kompresi —
+  JPEG sudah terkompresi). Butuh hak export CSV; akun terbatas hanya
+  kelompoknya. Setiap foto dibaca dari server sekali (perhatikan kuota baca
+  bila fotonya ratusan).
 - **Perangkat "Allocated" v169 (dijaga `tests/warehouse_test.js`).** Status
   baru untuk perangkat yang diserahkan ke **divisi** (bukan dipasang di unit):
   kolom *Division (recipient)* wajib diisi, dengan saran dari divisi yang

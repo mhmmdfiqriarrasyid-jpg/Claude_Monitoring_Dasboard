@@ -127,7 +127,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v169';
+const APP_VERSION = 'v170';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -9100,6 +9100,122 @@ function exportDamageCSV() {
     a.click();
     URL.revokeObjectURL(url);
     showToast(`Exported ${rows.length} damage record(s) to CSV`, 'success');
+}
+
+// ---- Export photos (ZIP, one folder per unit nickname) ----
+// A ZIP built here, stored (not compressed: JPEG photos are compressed
+// already), so no library has to be downloaded for it.
+const _CRC32_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+        t[n] = c >>> 0;
+    }
+    return t;
+})();
+function _crc32(bytes) {
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < bytes.length; i++) c = _CRC32_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+}
+// files: [{ name: 'folder/file.jpg', data: Uint8Array }] → Blob (application/zip)
+function makeZip(files) {
+    const enc = new TextEncoder();
+    const now = new Date();
+    const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+    const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+    const parts = [], central = [];
+    let offset = 0;
+    files.forEach(f => {
+        const name = enc.encode(f.name);
+        const crc = _crc32(f.data);
+        const local = new DataView(new ArrayBuffer(30));
+        local.setUint32(0, 0x04034b50, true); local.setUint16(4, 20, true); local.setUint16(6, 0x0800, true);
+        local.setUint16(8, 0, true); local.setUint16(10, dosTime, true); local.setUint16(12, dosDate, true);
+        local.setUint32(14, crc, true); local.setUint32(18, f.data.length, true); local.setUint32(22, f.data.length, true);
+        local.setUint16(26, name.length, true); local.setUint16(28, 0, true);
+        parts.push(local, name, f.data);
+        const cen = new DataView(new ArrayBuffer(46));
+        cen.setUint32(0, 0x02014b50, true); cen.setUint16(4, 20, true); cen.setUint16(6, 20, true); cen.setUint16(8, 0x0800, true);
+        cen.setUint16(10, 0, true); cen.setUint16(12, dosTime, true); cen.setUint16(14, dosDate, true);
+        cen.setUint32(16, crc, true); cen.setUint32(20, f.data.length, true); cen.setUint32(24, f.data.length, true);
+        cen.setUint16(28, name.length, true); cen.setUint32(42, offset, true);
+        central.push(cen, name);
+        offset += 30 + name.length + f.data.length;
+    });
+    const cenSize = central.reduce((n, p) => n + p.byteLength, 0);
+    const end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+    end.setUint32(12, cenSize, true); end.setUint32(16, offset, true);
+    return new Blob([...parts, ...central, end], { type: 'application/zip' });
+}
+function _dataUrlBytes(url) {
+    const m = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(String(url || ''));
+    if (!m || !m[2]) return null;
+    const bin = atob(m[3]);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return { bytes: out, ext: /png/.test(m[1] || '') ? 'png' : /webp/.test(m[1] || '') ? 'webp' : 'jpg' };
+}
+// Safe as a folder or file name on Windows, macOS and phones.
+function _zipName(s, max) {
+    return String(s || '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, max || 60) || 'unnamed';
+}
+async function exportDamagePhotosZip() {
+    if (!canCsv('export')) return;
+    const rows = getFilteredDamages().filter(d => damageHasPhoto(d) || damageHasAfterPhoto(d));
+    if (!rows.length) { showToast('No photos in the damage records listed', 'warning'); return; }
+    const sides = rows.reduce((n, d) => n + (damageHasPhoto(d) ? 1 : 0) + (damageHasAfterPhoto(d) ? 1 : 0), 0);
+    if (!confirm(`Download ${sides} photo(s) of ${rows.length} damage record(s) as one ZIP, one folder per unit?`)) return;
+    // One folder per unit nickname; two units with the same nickname get the SN added.
+    const folderOf = new Map(), usedFolder = new Map();
+    const folderFor = d => {
+        const u = liveUnitFor(d);
+        const key = u ? 'u:' + u.id : 'r:' + (d.unitId || d.sn || d.unitName || '');
+        if (folderOf.has(key)) return folderOf.get(key);
+        let name = _zipName(u ? (u.name || u.sn) : (d.unitName || d.sn || 'Unknown unit'));
+        if (usedFolder.has(name.toLowerCase())) name = _zipName(`${name} (${(u && u.sn) || d.sn || key})`);
+        usedFolder.set(name.toLowerCase(), key);
+        folderOf.set(key, name);
+        return name;
+    };
+    const files = [], usedFile = new Set(), list = [['Folder', 'File', 'Unit', 'Serial Number', 'Date', 'Damage Type', 'Component', 'Side', 'Repair', 'Description']];
+    let missing = 0, done = 0;
+    showLoading(true);
+    try {
+        for (const d of rows) {
+            for (const side of ['before', 'after']) {
+                if (side === 'before' ? !damageHasPhoto(d) : !damageHasAfterPhoto(d)) continue;
+                let photo = '';
+                try { photo = side === 'before' ? await loadDamagePhoto(d.id) : await loadDamageAfterPhoto(d.id); } catch (_) { photo = ''; }
+                const got = _dataUrlBytes(photo);
+                done++;
+                if (!got) { missing++; continue; }
+                const folder = folderFor(d);
+                const base = _zipName([d.date || 'no-date', damageTypeLabel(d.damageType), d.component, side].filter(Boolean).join('_'), 90);
+                let file = `${base}.${got.ext}`, n = 2;
+                while (usedFile.has((folder + '/' + file).toLowerCase())) file = `${base}_${n++}.${got.ext}`;
+                usedFile.add((folder + '/' + file).toLowerCase());
+                files.push({ name: `${folder}/${file}`, data: got.bytes });
+                const lu = liveUnitFor(d);
+                list.push([folder, file, lu ? lu.name || '' : d.unitName || '', lu ? lu.sn || '' : d.sn || '', d.date || '',
+                    damageTypeLabel(d.damageType), d.component || '', side === 'before' ? 'Before' : 'After',
+                    d.resolved ? `Done ${d.resolvedAt || ''}`.trim() : 'Open', d.description || '']);
+            }
+        }
+    } finally {
+        showLoading(false);
+    }
+    if (!files.length) { showToast('The photos could not be loaded — check the connection and try again', 'error'); return; }
+    files.push({ name: 'photo_list.csv', data: new TextEncoder().encode('\uFEFF' + list.map(r => r.map(csvCell).join(',')).join('\n')) });
+    const url = URL.createObjectURL(makeZip(files));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `damage_photos_${toISODate()}.zip`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    showToast(`${files.length - 1} photo(s) in ${folderOf.size} unit folder(s)` + (missing ? ` — ${missing} could not be loaded` : ''), missing ? 'warning' : 'success');
 }
 
 // ---- Cloud ----
