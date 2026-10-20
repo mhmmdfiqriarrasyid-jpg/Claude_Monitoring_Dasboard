@@ -10,7 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const { initializeTestEnvironment, assertSucceeds, assertFails } = require('@firebase/rules-unit-testing');
-const { doc, setDoc, getDoc, getDocs, collection, updateDoc, deleteDoc } = require('firebase/firestore');
+const { doc, setDoc, getDoc, getDocs, collection, query, where, orderBy, updateDoc, deleteDoc } = require('firebase/firestore');
 
 const T = [];
 async function check(name, p, expectOk) {
@@ -322,7 +322,7 @@ async function check(name, p, expectOk) {
     await check('kelompok: alat berat saja TIDAK boleh mengubah unit (hanya lihat)', updateDoc(doc(HV, 'units', 'u1'), { name: 'X' }), false);
     await check('kelompok: alat berat saja TIDAK boleh menulis kerusakan', setDoc(doc(HV, 'damageRecords', 'dmg_hv'), { id: 'dmg_hv', unitId: 'hx' }), false);
     await check('kelompok: alat berat saja TIDAK boleh mengubah status lewat kerusakan', updateDoc(doc(HV, 'units', 'hx'), { status: 'Breakdown' }), false);
-    await check('kelompok: alat berat saja masih bisa membaca unit (fase 1)', getDoc(doc(HV, 'units', 'hx')), true);
+    await check('kelompok: alat berat saja membaca unit alat berat', getDoc(doc(HV, 'units', 'hx')), true);
     await check('kelompok: alat berat saja TIDAK bisa membaca daftar implement', getDocs(collection(HV, 'implements')), false);
     await check('kelompok: alat berat saja TIDAK bisa membaca stok lisensi', getDocs(collection(HV, 'licenseStock')), false);
     await check('kelompok: alat berat saja TIDAK bisa membaca syarat lisensi', getDocs(collection(HV, 'licenseRequirements')), false);
@@ -345,6 +345,46 @@ async function check(name, p, expectOk) {
     await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'users', 'oddacc'), { uid: 'oddacc', email: 'oddacc@x.id', role: 'staff', status: 'active', access: 'rusak' }));
     await check('kelompok: field access bukan map tidak membuat bacaan gagal', getDocs(collection(as('oddacc'), 'implements')), true);
     await check('kelompok: akun terbatas TIDAK boleh mengubah batasnya sendiri', updateDoc(doc(HV, 'users', 'hv'), { access: { unitScope: 'all', editUnits: 'edit' } }), false);
+
+    // ---- v167: bacaan unit, kerusakan, foto dan riwayat dikunci per kelompok ----
+    await env.withSecurityRulesDisabled(async ctx => {
+        const db = ctx.firestore();
+        await setDoc(doc(db, 'users', 'hvv'), { uid: 'hvv', email: 'hvv@x.id', role: 'staff', status: 'active',
+            access: { editUnits: 'view', damage: 'view', history: 'view', unitScope: 'heavy' } });
+        await setDoc(doc(db, 'units', 'tx'), { id: 'tx', name: 'TR', unitGroup: 'tractor' });
+        await setDoc(doc(db, 'units', 'ux'), { id: 'ux', name: 'TR lama' });
+        await setDoc(doc(db, 'damageRecords', 'dh'), { id: 'dh', unitId: 'hx', unitGroup: 'heavy' });
+        await setDoc(doc(db, 'damageRecords', 'dt'), { id: 'dt', unitId: 'tx', unitGroup: 'tractor' });
+        await setDoc(doc(db, 'damagePhotos', 'dh'), { id: 'dh', photo: 'x' });
+        await setDoc(doc(db, 'damagePhotos', 'dh__after'), { id: 'dh', side: 'after', photo: 'x' });
+        await setDoc(doc(db, 'damagePhotos', 'dt'), { id: 'dt', photo: 'x' });
+        for (const [id, g] of [['hh', 'heavy'], ['ht', 'tractor'], ['hs', 'shared']]) {
+            await setDoc(doc(db, 'history', id), { id, timestamp: 1, action: 'x', unitGroup: g });
+        }
+    });
+    const HVV = as('hvv');
+    await check('rahasia: alat berat saja membaca unit kelompoknya (query per kelompok)', getDocs(query(collection(HVV, 'units'), where('unitGroup', '==', 'heavy'))), true);
+    await check('rahasia: alat berat saja TIDAK bisa membaca seluruh koleksi unit', getDocs(collection(HVV, 'units')), false);
+    await check('rahasia: alat berat saja TIDAK bisa meminta unit pertanian', getDocs(query(collection(HVV, 'units'), where('unitGroup', '==', 'tractor'))), false);
+    await check('rahasia: alat berat saja TIDAK bisa membuka satu unit pertanian', getDoc(doc(HVV, 'units', 'tx')), false);
+    await check('rahasia: alat berat saja TIDAK bisa membuka unit tanpa kelompok', getDoc(doc(HVV, 'units', 'ux')), false);
+    await check('rahasia: alat berat saja membuka satu unit alat berat', getDoc(doc(HVV, 'units', 'hx')), true);
+    await check('rahasia: kerusakan per kelompok terbaca', getDocs(query(collection(HVV, 'damageRecords'), where('unitGroup', '==', 'heavy'))), true);
+    await check('rahasia: seluruh koleksi kerusakan DITOLAK', getDocs(collection(HVV, 'damageRecords')), false);
+    await check('rahasia: kerusakan pertanian DITOLAK', getDoc(doc(HVV, 'damageRecords', 'dt')), false);
+    await check('rahasia: foto kerusakan alat berat terbaca', getDoc(doc(HVV, 'damagePhotos', 'dh')), true);
+    await check('rahasia: foto After kerusakan alat berat terbaca', getDoc(doc(HVV, 'damagePhotos', 'dh__after')), true);
+    await check('rahasia: foto kerusakan pertanian DITOLAK', getDoc(doc(HVV, 'damagePhotos', 'dt')), false);
+    await check('rahasia: riwayat kelompoknya + bersama terbaca (query per kelompok)', getDocs(query(collection(HVV, 'history'),
+        where('unitGroup', 'in', ['heavy', 'shared']), orderBy('timestamp', 'desc'))), true);
+    await check('rahasia: seluruh riwayat DITOLAK', getDocs(query(collection(HVV, 'history'), orderBy('timestamp', 'desc'))), false);
+    await check('rahasia: baris riwayat pertanian DITOLAK', getDoc(doc(HVV, 'history', 'ht')), false);
+    await check('rahasia: akun tanpa batas tetap membaca semua unit', getDocs(collection(S, 'units')), true);
+    await check('rahasia: owner tetap membaca semua kerusakan', getDocs(collection(O, 'damageRecords')), true);
+    await check('rahasia: baris riwayat baru membawa kelompoknya', setDoc(doc(W, 'history', 'h_g1'),
+        { id: 'h_g1', timestamp: Date.now(), action: 'x', unitId: '', unitName: '[Team] x', field: '', before: '', after: '', actorUid: 'writer', actorEmail: 'writer@x.id', actorName: 'w', actorRole: 'staff', unitGroup: 'shared' }), true);
+    await check('rahasia: kelompok riwayat yang tidak dikenal DITOLAK', setDoc(doc(W, 'history', 'h_g2'),
+        { id: 'h_g2', timestamp: Date.now(), action: 'x', unitId: '', unitName: 'x', field: '', before: '', after: '', actorUid: 'writer', actorEmail: 'writer@x.id', actorName: 'w', actorRole: 'staff', unitGroup: 'semua' }), false);
 
     await env.cleanup();
     let pass = 0;

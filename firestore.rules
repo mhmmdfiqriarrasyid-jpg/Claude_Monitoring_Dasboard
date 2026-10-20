@@ -82,6 +82,13 @@ service cloud.firestore {
     function lvl(area) { return lvlOf(myDoc().data, area); }
     function unitScope() { return scopeOf(myDoc().data); }
     function scopeAllows(g) { return unitScope() in ['all', g]; }
+    // A document of a unit group (v167): readable by unlimited accounts, and
+    // by a limited one only when it carries that account's group. A limited
+    // account must therefore ask with where('unitGroup', '==', <its group>).
+    function readsGroupOf(d) {
+      let sc = unitScope();
+      return sc == 'all' || d.get('unitGroup', '') == sc;
+    }
     function canEditArea(area) { return isActive() && lvl(area) == 'edit'; }
     function canViewArea(area) { return isActive() && lvl(area) in ['view', 'edit']; }
 
@@ -164,13 +171,13 @@ service cloud.firestore {
     }
 
     // ---- Fleet data (one area each) ----
-    match /units/{id}         { allow read: if isActive(); allow delete: if canEditArea('editUnits');
+    match /units/{id}         { allow read: if isActive() && readsGroupOf(resource.data); allow delete: if canEditArea('editUnits');
                                 allow create: if canEditArea('editUnits') && idMatches(id);
                                 allow update: if idMatches(id)
                                   && (canEditArea('editUnits') || (canEditArea('damage') && damageLinkOnly())); }
     match /implements/{id}    { allow read: if isActive() && scopeAllows('tractor'); allow delete: if canEditArea('implements');
                                 allow create, update: if canEditArea('implements') && idMatches(id); }
-    match /damageRecords/{id} { allow read: if isActive(); allow delete: if canEditArea('damage');
+    match /damageRecords/{id} { allow read: if isActive() && readsGroupOf(resource.data); allow delete: if canEditArea('damage');
                                 allow create, update: if canEditArea('damage') && idMatches(id); }
     match /licenseStock/{id}  { allow read: if isActive() && scopeAllows('tractor'); allow delete: if canEditArea('licenseStock');
                                 allow create, update: if canEditArea('licenseStock') && idMatches(id); }
@@ -380,8 +387,11 @@ service cloud.firestore {
     // quota and silently stopped unit saves and the automatic backup. Same area
     // as the record: whoever may edit a damage record may edit its photo, so
     // there is no new permission to hand out per person.
+    // A photo goes by its damage record (the After photo is "<id>__after").
     match /damagePhotos/{id} {
-      allow read:  if canViewArea('damage');
+      allow read:  if canViewArea('damage')
+                    && (unitScope() == 'all'
+                        || readsGroupOf(get(/databases/$(database)/documents/damageRecords/$(id.split('__after')[0])).data));
       allow write: if canEditArea('damage');
     }
 
@@ -520,8 +530,11 @@ service cloud.firestore {
     // ---- Audit log ----
     // Append-only: events can be created by any editor but never edited, and
     // the actor must be the signed-in user. Only owners may clear history.
+    // A limited account reads its group's rows and the shared ones
+    // (where('unitGroup', 'in', [<its group>, 'shared'])).
     match /history/{eventId} {
-      allow read:   if canViewArea('history');
+      allow read:   if canViewArea('history')
+                    && (unitScope() == 'all' || resource.data.get('unitGroup', '') in [unitScope(), 'shared']);
       // Bound to the signed-in person: uid AND e-mail, the event's own id,
       // a known set of fields, and no timestamp far in the future (that
       // pinned forged rows above the real ones in the live feed).
@@ -533,7 +546,8 @@ service cloud.firestore {
                     && request.resource.data.timestamp <= request.time.toMillis() + 86400000
                     && request.resource.data.keys().hasOnly(['id', 'timestamp', 'action', 'unitId',
                          'unitName', 'field', 'before', 'after', 'actorUid', 'actorEmail',
-                         'actorName', 'actorRole']);
+                         'actorName', 'actorRole', 'unitGroup'])
+                    && request.resource.data.get('unitGroup', '') in ['', 'tractor', 'heavy', 'shared'];
       allow update: if false;
       allow delete: if isOwner();
     }

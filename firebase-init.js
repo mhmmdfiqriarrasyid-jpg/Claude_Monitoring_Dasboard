@@ -40,6 +40,11 @@ import {
 // writer put there, and the app builds edit/delete targets and click handlers
 // from it — so a document whose data claims someone else's id (or carries
 // markup in it) steered the UI. The document id cannot be forged that way.
+// The whole collection, or — for an account limited to one unit group — only
+// that group's documents.
+function groupQuery(col, group) {
+    return group ? query(collection(db, col), where('unitGroup', '==', group)) : collection(db, col);
+}
 const withDocId = d => ({ ...d.data(), id: d.id });
 
 // A listener that also reports which documents are still only on this device
@@ -208,13 +213,15 @@ window.cloud = {
             batch.delete(doc(db, UNITS_COL, id))
         );
     },
-    async getAllUnits() {
-        const snap = await getDocs(collection(db, UNITS_COL));
+    // group: for an account limited to one unit group, only that group's
+    // units — the only query firestore.rules lets such an account make.
+    async getAllUnits(group) {
+        const snap = await getDocs(groupQuery(UNITS_COL, group));
         return snap.docs.map(withDocId);
     },
-    subscribeUnits(callback, errorCallback) {
+    subscribeUnits(callback, errorCallback, group) {
         return onSnapshot(
-            collection(db, UNITS_COL),
+            groupQuery(UNITS_COL, group),
             snap => callback(snap.docs.map(withDocId)),
             err => {
                 console.error('[cloud] units subscription error:', err);
@@ -264,13 +271,18 @@ window.cloud = {
     async deleteDamage(id) {
         await deleteDoc(doc(db, DAMAGE_COL, id));
     },
-    async getAllDamages() {
-        const snap = await getDocs(collection(db, DAMAGE_COL));
+    async getAllDamages(group) {
+        const snap = await getDocs(groupQuery(DAMAGE_COL, group));
         return snap.docs.map(withDocId);
     },
-    subscribeDamages(callback, errorCallback) {
+    // Only the named fields of existing records: [{ id, field: value, … }].
+    async updateDamagesFields(items) {
+        if (!items || !items.length) return;
+        await batchInChunks(items, (batch, r) => { const { id, ...f } = r; batch.update(doc(db, DAMAGE_COL, id), f); });
+    },
+    subscribeDamages(callback, errorCallback, group) {
         return _onSnapshotWithPending(
-            collection(db, DAMAGE_COL),
+            groupQuery(DAMAGE_COL, group),
             callback,
             err => {
                 console.error('[cloud] damage subscription error:', err);
@@ -453,12 +465,12 @@ window.cloud = {
             batch.set(doc(db, HISTORY_COL, e.id), e)
         );
     },
-    subscribeHistory(callback, errorCallback, max = 500) {
-        const q = query(
-            collection(db, HISTORY_COL),
-            orderBy('timestamp', 'desc'),
-            limit(max)
-        );
+    // groups: for a limited account, the rows of its group and the shared
+    // ones (needs the composite index unitGroup + timestamp desc).
+    subscribeHistory(callback, errorCallback, max = 500, groups) {
+        const q = groups
+            ? query(collection(db, HISTORY_COL), where('unitGroup', 'in', groups), orderBy('timestamp', 'desc'), limit(max))
+            : query(collection(db, HISTORY_COL), orderBy('timestamp', 'desc'), limit(max));
         return onSnapshot(q,
             snap => callback(snap.docs.map(withDocId)),
             err => {
@@ -469,9 +481,19 @@ window.cloud = {
     },
     // The live subscription is capped so the dashboard stays light. Export
     // needs the whole audit trail, not just the newest page of it.
-    async getAllHistory() {
-        const snap = await getDocs(query(collection(db, HISTORY_COL), orderBy('timestamp', 'desc')));
+    async getAllHistory(groups) {
+        const snap = await getDocs(groups
+            ? query(collection(db, HISTORY_COL), where('unitGroup', 'in', groups), orderBy('timestamp', 'desc'))
+            : query(collection(db, HISTORY_COL), orderBy('timestamp', 'desc')));
         return snap.docs.map(withDocId);
+    },
+    // "Sign out & erase this device": the offline database goes too. The
+    // instance is unusable afterwards, so the caller reloads the page.
+    async eraseLocalCache() {
+        if (typeof FS.terminate !== 'function' || typeof FS.clearIndexedDbPersistence !== 'function') return false;
+        await FS.terminate(db);
+        await FS.clearIndexedDbPersistence(db);
+        return true;
     },
     async clearHistoryCloud() {
         const snap = await getDocs(collection(db, HISTORY_COL));

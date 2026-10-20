@@ -248,6 +248,9 @@
                 <button class="user-menu__item" onclick="handleSignOut(); event.stopPropagation();">
                     <i class="fas fa-right-from-bracket"></i> Sign out
                 </button>
+                <button class="user-menu__item" onclick="handleSignOutErase(); event.stopPropagation();" title="For a shared computer: also removes the records kept here for offline use">
+                    <i class="fas fa-broom"></i> Sign out &amp; erase this device
+                </button>
             </div>
         </div>
     </div>
@@ -1747,6 +1750,7 @@
         </div>
 
         <div class="users-summary" id="usersSummary"></div>
+        <div class="group-stamp-notice" id="groupStampNotice" role="status" hidden></div>
 
         <div class="table-card">
             <div class="table-card__header">

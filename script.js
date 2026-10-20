@@ -127,7 +127,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v166';
+const APP_VERSION = 'v167';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -304,10 +304,12 @@ Object.assign(COMPONENT_LABELS, {
 // ============================================================
 // UNIT GROUPS — agricultural equipment and heavy equipment
 // ------------------------------------------------------------
-// Every unit belongs to one group. The original 190 documents have no
-// `unitGroup` field and are NEVER back-filled: a missing value reads as
-// 'tractor', so no existing document changes meaning and nothing is written to
-// them. Only creating a unit writes the field, and it cannot change afterwards.
+// Every unit belongs to one group. The original 190 documents had no
+// `unitGroup` field: a missing value reads as 'tractor', so no document changes
+// meaning. Since v167 every unit and damage record carries the field — new
+// ones are stamped when written, older ones by the owner's "Store unit
+// groups" on the Users page — because accounts limited to one group can only
+// read records the server can see the group of. It never changes afterwards.
 //
 // Each group owns its own monitored components and its own extra fields. The
 // app used to assume every unit had Display/GPS/Steering/JDLink and SF/G5
@@ -365,6 +367,19 @@ function normalizeGroupKey(raw) {
     return null;
 }
 function unitGroupOf(u)  { return normalizeGroupKey(u && u.unitGroup) || 'tractor'; }
+// The group to store on a unit: a readable value in its canonical spelling, a
+// missing one as Agricultural (what it has always meant). An unreadable value
+// is left as it is — Data Check asks a person.
+function storedUnitGroup(u) {
+    const k = normalizeGroupKey(u && u.unitGroup);
+    return k === null ? u.unitGroup : (k || 'tractor');
+}
+// The group to stamp on a damage record: its live unit's, else what it carries.
+function damageGroupStamp(d) {
+    const u = liveUnitFor(d);
+    if (u) return hasUnreadableGroup(u) ? '' : unitGroupOf(u);
+    return d && d.unitGroup === 'heavy' ? 'heavy' : 'tractor';
+}
 // A group value that is set but means nothing to this version — a hand-edited
 // backup ('Heavy Equip'), or a group a newer version added. Such a unit READS
 // as tractor, but nobody knows that it is one, so nothing may write either
@@ -505,6 +520,16 @@ function applyUnitScopeToData(fresh) {
     });
 }
 // Is this unit id one the account cannot see (as opposed to one that is gone)?
+// What a limited account asks the server for: its group only (the rules
+// refuse anything wider). null = everything, for an unlimited account.
+function scopeQueryGroup() {
+    const sc = effectiveUnitScope();
+    return sc === 'all' ? null : sc;
+}
+function scopeHistoryGroups() {
+    const sc = effectiveUnitScope();
+    return sc === 'all' ? null : [sc, 'shared'];
+}
 function unitOutsideScope(id) {
     return !!_fleetUnitsAll && !globalData.some(u => u.id === id) && _fleetUnitsAll.some(u => u.id === id);
 }
@@ -553,6 +578,25 @@ let _unitsFromDeviceOnly = false;
 // (team, warehouse, users…). Implement and licence rows are agricultural,
 // inspection rows heavy equipment.
 const NEUTRAL_HISTORY_TAGS = new Set(['User', 'Team', 'Leave', 'Daily Report', 'Vehicle', 'Inventory', 'Restore', 'Master']);
+// The group a history row belongs to, stored on it so the server can let a
+// limited account read only its own: 'tractor' / 'heavy', 'shared' for rows
+// not about a unit group, '' when unknown (readable by unlimited accounts only).
+function historyGroupOf(e) {
+    const name = String((e && e.unitName) || '');
+    const m = name.match(/^\[([A-Za-z ]+)\]/);
+    const tag = m ? m[1] : '';
+    const all = _fleetUnitsAll || globalData;
+    const u = e && e.unitId ? all.find(x => x.id === e.unitId) : null;
+    if (u) return hasUnreadableGroup(u) ? '' : unitGroupOf(u);
+    if (tag === 'Implement' || tag === 'License') return 'tractor';
+    if (tag === 'Inspection') return 'heavy';
+    if (tag === 'Master' || tag === 'Restore') {
+        const what = name.slice(m[0].length).trim();
+        const k = Object.keys(MASTER_GROUP).find(x => MASTER_DEF[x] && MASTER_DEF[x].plural === what);
+        if (k) return MASTER_GROUP[k];
+    }
+    return NEUTRAL_HISTORY_TAGS.has(tag) ? 'shared' : '';
+}
 function historyRowInScope(e) {
     const sc = effectiveUnitScope();
     if (sc === 'all') return true;
@@ -1960,15 +2004,15 @@ function addUnits(newUnits) {
         // Group first. addUnits never invents a group — callers that create a
         // unit stamp it — but it refuses one it cannot read, and refuses an id
         // that already belongs to a unit of the other group.
-        if ('unitGroup' in u) {
-            const k = normalizeGroupKey(u.unitGroup);
-            if (k === null) {
-                skipped++;
-                skippedDetails.push({ name: u.name, sn: u.sn, reason: `Group "${u.unitGroup}" not recognized` });
-                return;
-            }
-            if (k === '') delete u.unitGroup; else u.unitGroup = k;
+        const k = 'unitGroup' in u ? normalizeGroupKey(u.unitGroup) : '';
+        if (k === null) {
+            skipped++;
+            skippedDetails.push({ name: u.name, sn: u.sn, reason: `Group "${u.unitGroup}" not recognized` });
+            return;
         }
+        // Stored on every new unit (a missing one meaning Agricultural, as
+        // always): accounts limited to one group read only stamped units.
+        u.unitGroup = k || 'tractor';
         if (u.id && existingById.has(u.id) && unitGroupOf(existingById.get(u.id)) !== unitGroupOf(u)) {
             skipped++;
             skippedDetails.push({ name: u.name, sn: u.sn, reason: 'ID already used by a unit in the other group' });
@@ -2332,9 +2376,9 @@ function cloudWriteFailed(err, opts) {
 // Pull the server's copy back over the local one after a rejected write. Each
 // reuses the same snapshot applier the live subscription uses, so there is no
 // second code path that could drift from it.
-function resyncUnits()      { return window.cloud.getAllUnits().then(applyCloudUnitsSnapshot); }
+function resyncUnits()      { return window.cloud.getAllUnits(scopeQueryGroup()).then(applyCloudUnitsSnapshot); }
 function resyncImplements() { return window.cloud.getAllImplements().then(applyCloudImplementsSnapshot); }
-function resyncDamages()    { return window.cloud.getAllDamages().then(applyCloudDamagesSnapshot); }
+function resyncDamages()    { return window.cloud.getAllDamages(scopeQueryGroup()).then(applyCloudDamagesSnapshot); }
 function resyncLicenses()   { return window.cloud.getAllLicenses().then(applyCloudLicenseSnapshot); }
 
 // The status pill in the topbar doubles as the offline indicator: without it a
@@ -2435,6 +2479,8 @@ function logEvent(entry) {
         after:     entry.after  != null ? String(entry.after)  : '',
         ...actor
     };
+    // Which group's accounts may read this row (v167); '' = only unlimited ones.
+    full.unitGroup = historyGroupOf(full);
 
     // Local cache — instant render + offline support.
     try {
@@ -2461,15 +2507,26 @@ function _scheduleHistoryFlush(delay) {
     _historyFlushTimer = setTimeout(_flushHistoryQueue, delay);
 }
 
+// Rules published before v167 refuse the unitGroup key on history rows. Then
+// the rows go out without it for the rest of the session rather than being
+// lost; the next session tries again.
+let _historyWithoutGroup = false;
 function _flushHistoryQueue() {
     _historyFlushTimer = null;
     if (!currentUser || !window.cloud?.addHistoryEvents) return;
     const batch = _historyPushQueue.splice(0);
     if (batch.length === 0) return;
-    window.cloud.addHistoryEvents(batch).then(() => {
+    const send = _historyWithoutGroup ? batch.map(({ unitGroup, ...rest }) => rest) : batch;
+    window.cloud.addHistoryEvents(send).then(() => {
         _historyRetryDelay = 0;
     }).catch(err => {
         console.error('[cloud] history push failed:', err);
+        if (err && err.code === 'permission-denied' && !_historyWithoutGroup && batch.some(e => 'unitGroup' in e)) {
+            _historyWithoutGroup = true;
+            _historyPushQueue.unshift(...batch);
+            _scheduleHistoryFlush(0);
+            return;
+        }
         if (err && err.code === 'permission-denied') {
             // The rules will keep refusing this batch, so putting it back
             // would only cost the next one too. The local cache still has
@@ -2525,12 +2582,16 @@ function startHistorySubscription() {
             showHistory(modal.dataset.unitId || undefined);
         }
     }, err => {
-        console.warn('[cloud] history offline:', err && err.code);
+        console.warn('[cloud] history offline:', err && err.code, err && err.message);
         if (err && err.code === 'permission-denied') {
             showHistoryRulesBanner();
             showToast('History blocked by Firestore rules — see the message in the History panel', 'warning');
+        } else if (err && err.code === 'failed-precondition' && scopeHistoryGroups()) {
+            // A limited account's History needs one composite index, created
+            // once by the owner (README: "Batas kelompok unit").
+            showToast('History for this account needs a database index — ask the owner to create it', 'warning');
         }
-    });
+    }, 500, scopeHistoryGroups());
 }
 
 // Access can be revoked mid-session. Drop the stream and the cached rows with
@@ -2811,7 +2872,7 @@ async function exportHistory() {
     if (window.cloud?.isReady && window.cloud.getAllHistory) {
         try {
             showLoading(true);
-            const all = (await window.cloud.getAllHistory() || []).filter(historyRowInScope);
+            const all = (await window.cloud.getAllHistory(scopeHistoryGroups()) || []).filter(historyRowInScope);
             if (Array.isArray(all) && all.length >= log.length) {
                 log = all.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
                 complete = true;
@@ -2877,6 +2938,8 @@ const BACKUP_PARTS = [
 
     { key: 'damages', label: 'Damage Records', area: 'damage',
       read: () => globalDamages, write: l => { globalDamages = l; },
+      // Units are restored first, so each record can take its unit's group.
+      prepare: r => (r && r.id ? { ...r, unitGroup: damageGroupStamp(r) } : r),
       saveLocal: () => saveDamages(), bulk: 'saveDamages',
       deleteOne: (id, r) => { cloudDeleteDamage(id); dropDamagePhotos(r); },
       resync: () => resyncDamages() },
@@ -3392,7 +3455,7 @@ function importBackup(file) {
                 // snapshot overwrites localStorage and silently undoes the
                 // whole restore (and deleted units come back).
                 const previousIds = globalData.map(u => u.id);
-                globalData = data.units.map(u => ({ ...u, id: u.id || generateId() }));
+                globalData = data.units.map(u => ({ ...u, id: u.id || generateId(), unitGroup: storedUnitGroup(u) }));
                 const keptIds = new Set(globalData.map(u => u.id));
                 saveToStorage(globalData);
                 const dropped = previousIds.filter(id => !keptIds.has(id));
@@ -3431,6 +3494,7 @@ function importBackup(file) {
                 }
                 // Rows the server would refuse sink the whole batch they ride
                 // in; leave them out and say how many.
+                if (part.prepare) rows = rows.map(part.prepare);
                 let refused = 0;
                 if (part.accept) {
                     const ok = rows.filter(r => r && part.accept(r));
@@ -8119,10 +8183,9 @@ function saveDamage(event) {
     if (_dmgPhotoDirty) data.photo = '';
     // Same for the After photo: the flag changes only when that slot did.
     if (_dmgAfterDirty && id) data.hasAfterPhoto = !!_dmgAfterData;
-    // Marked only on heavy-equipment records, so tractor records keep exactly
-    // today's shape; cleared when a record is moved off a heavy unit, because
-    // the merges below would otherwise keep the old value.
-    if (isHeavy(unit) || (old && old.unitGroup)) data.unitGroup = isHeavy(unit) ? 'heavy' : '';
+    // The unit's group, on every record (v167): accounts limited to one group
+    // read only records that carry theirs. Restamped when a record moves.
+    data.unitGroup = hasUnreadableGroup(unit) ? '' : unitGroupOf(unit);
     // What an edit does to the unit(s): give back what it held, take hold of
     // the new place. Worked out before anything is written.
     const link = id ? _planDamageEdit(old, data, unit) : null;
@@ -11002,7 +11065,7 @@ function initCloudSync() {
         cloudUnitsUnsub = window.cloud.subscribeUnits(applyCloudUnitsSnapshot, err => {
             const lbl = document.getElementById('connectionLabel');
             if (lbl) lbl.textContent = 'Cloud offline';
-        });
+        }, scopeQueryGroup());
         // Implements and licences are agricultural; a heavy-equipment-only
         // account does not read them (the rules refuse it anyway).
         if (unitScopeAllows('tractor')) cloudImplUnsub = window.cloud.subscribeImplements(applyCloudImplementsSnapshot, err => {
@@ -11015,7 +11078,7 @@ function initCloudSync() {
                     showDamageRulesBanner();
                     showToast('Damage is blocked by Firestore rules — see the Damage panel', 'warning');
                 }
-            });
+            }, scopeQueryGroup());
         }
         if (window.cloud.subscribeLicenses && unitScopeAllows('tractor')) {
             cloudLicenseUnsub = window.cloud.subscribeLicenses(applyCloudLicenseSnapshot, err => {
@@ -11815,6 +11878,27 @@ async function handleSignOut() {
     } catch (e) { /* ignore */ }
 }
 
+// For a shared computer. The app keeps units, damage records, implements,
+// licences and the change log in this browser for offline use — readable by
+// the next person with the browser's developer tools whatever their access.
+// This removes them (and the offline database) after signing out.
+const DEVICE_DATA_KEYS = [STORAGE_KEY, DAMAGE_STORAGE_KEY, IMPLEMENTS_STORAGE_KEY, LICENSE_STORAGE_KEY,
+    BACKUP_RING_KEY, AUDIT_LOG_KEY, PENDING_CHANGES_KEY];
+async function handleSignOutErase() {
+    const ins = inspections.filter(r => insQueuedIds.has(r.id)).length;
+    const parts = queuedSummary(ins);
+    if (!confirm('Sign out and erase this app\'s data on this device?\n\n'
+        + 'Use this on a shared computer: the records kept here for offline use are removed, so the next person '
+        + 'cannot read them. Files attached to units are kept.'
+        + (parts.length ? `\n\nNot sent yet — these will be LOST: ${parts.join(', ')}.` : ''))) return;
+    try { await window.cloud.signOutUser(); } catch (e) { /* ignore */ }
+    DEVICE_DATA_KEYS.forEach(k => { try { localStorage.removeItem(k); } catch (_) {} });
+    try { if (window.cloud && typeof window.cloud.eraseLocalCache === 'function') await window.cloud.eraseLocalCache(); } catch (e) {
+        console.warn('[cloud] offline database not erased:', e);
+    }
+    appReload();
+}
+
 function renderUserPill() {
     if (!currentUserDoc) return;
     const pill = document.getElementById('userPill');
@@ -12177,6 +12261,7 @@ function shortActor(value) {
 }
 
 function renderUsersView() {
+    renderGroupStampNotice();
     if (!isOwner()) return;
     const pending = allUsers.filter(u => u.status !== 'active');
     const active  = allUsers.filter(u => u.status === 'active');
@@ -12301,6 +12386,64 @@ function renderUsersView() {
             </tr>`;
         }).join('');
     }
+}
+
+// ---- Unit groups stored on every record (v167) ----
+// Accounts limited to one group can only read units and damage records the
+// server can see the group of. Older units have none (it meant Agricultural)
+// and older tractor damage records neither: the owner stores them once here.
+function unstampedGroupRecords() {
+    const units = globalData.filter(u => {
+        const k = normalizeGroupKey(u.unitGroup);
+        return k !== null && u.unitGroup !== (k || 'tractor');
+    });
+    const damages = globalDamages.filter(d => (d.unitGroup || '') !== damageGroupStamp(d));
+    const unreadable = globalData.filter(hasUnreadableGroup).length;
+    return { units, damages, unreadable };
+}
+function renderGroupStampNotice() {
+    const box = document.getElementById('groupStampNotice');
+    if (!box) return;
+    const { units, damages, unreadable } = isOwner() ? unstampedGroupRecords() : { units: [], damages: [], unreadable: 0 };
+    const limited = (allUsers || []).some(u => u.role !== 'owner' && isUnitScoped(u));
+    box.hidden = !units.length && !damages.length && !unreadable;
+    if (box.hidden) { box.innerHTML = ''; return; }
+    const missing = units.length + damages.length;
+    box.innerHTML = `<i class="fas fa-layer-group" aria-hidden="true"></i>
+        <div class="group-stamp-notice__text">
+            ${missing ? `<strong>${units.length} unit(s) and ${damages.length} damage record(s) do not store their unit group yet.</strong>
+            Accounts limited to one group cannot see them until it is stored${limited ? ' — and such accounts exist now' : ''}.` : ''}
+            ${unreadable ? `${missing ? '<br>' : ''}<strong>${unreadable} unit(s) have a group that is not recognised</strong> — no limited account can see them; set it in Data Check.` : ''}
+        </div>
+        ${units.length || damages.length ? '<button type="button" class="btn btn-primary btn-sm" onclick="storeUnitGroups()"><i class="fas fa-check"></i> Store unit groups</button>' : ''}`;
+}
+// Writes only the group, as a partial update, on the records that lack it.
+function storeUnitGroups() {
+    if (!isOwner()) return;
+    const { units, damages } = unstampedGroupRecords();
+    if (!units.length && !damages.length) { showToast('Every unit and damage record already stores its group', 'info'); return; }
+    if (!confirm(`Store the unit group on ${units.length} unit(s) and ${damages.length} damage record(s)?\n\n`
+        + 'Accounts limited to one group can only read records that carry it. Nothing else on the records changes.')) return;
+    const unitParts = units.map(u => ({ id: u.id, unitGroup: storedUnitGroup(u) }));
+    const dmgParts = damages.map(d => ({ id: d.id, unitGroup: damageGroupStamp(d) }));
+    unitParts.forEach(p => { const u = globalData.find(x => x.id === p.id); if (u) u.unitGroup = p.unitGroup; });
+    dmgParts.forEach(p => { const d = globalDamages.find(x => x.id === p.id); if (d) d.unitGroup = p.unitGroup; });
+    saveToStorage(globalData);
+    saveDamages();
+    if (!suppressCloudWrites && window.cloud?.isReady) {
+        if (unitParts.length) {
+            const send = typeof window.cloud.updateUnitsFields === 'function' ? window.cloud.updateUnitsFields : window.cloud.saveUnits;
+            Promise.resolve(send.call(window.cloud, unitParts)).catch(err => cloudWriteFailed(err, { what: 'unit groups', label: '[Master] Unit groups', resync: resyncUnits }));
+        }
+        if (dmgParts.length) {
+            const send = typeof window.cloud.updateDamagesFields === 'function' ? window.cloud.updateDamagesFields : window.cloud.saveDamages;
+            Promise.resolve(send.call(window.cloud, dmgParts)).catch(err => cloudWriteFailed(err, { what: 'damage groups', label: '[Master] Unit groups', resync: resyncDamages }));
+        }
+    }
+    logEvent({ action: 'update', unitName: '[Master] Unit groups', field: 'unitGroup',
+               after: `stored on ${unitParts.length} unit(s) and ${dmgParts.length} damage record(s)` });
+    showToast(`Unit group stored on ${unitParts.length} unit(s) and ${dmgParts.length} damage record(s)`, 'success');
+    renderGroupStampNotice();
 }
 
 // ---- Per-user access editor (owner) ----

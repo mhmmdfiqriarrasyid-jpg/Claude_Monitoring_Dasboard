@@ -111,7 +111,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-2.026 pemeriksaan di lima puluh suite, menggerakkan Chromium sungguhan terhadap
+2.036 pemeriksaan di lima puluh suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -450,6 +450,29 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
     tanpa batas; nilai kelompok tak dikenal tampil apa adanya di dialog Access
     dan harus dipilih dulu sebelum disimpan; rules membaca field `access`
     bukan-map sebagai kosong.
+  - **Rahasia di server (v167).** Akun terbatas tidak lagi bisa membaca data
+    kelompok lain lewat devtools:
+    - Setiap unit dan catatan kerusakan menyimpan `unitGroup` (unit baru dan
+      restore: kosong → `tractor`; kerusakan: kelompok unitnya). Data lama
+      diisi sekali oleh owner lewat **Store unit groups** di halaman Users
+      (tulisan parsial, hanya kolom itu). Unit berkelompok tak dikenal tidak
+      terlihat oleh akun terbatas sampai diperbaiki di Periksa Data.
+    - Baris History menyimpan `unitGroup` (`tractor`/`heavy`/`shared`/'');
+      bila rules lama menolak kolom itu, baris dikirim lagi tanpa kolom
+      (`_historyWithoutGroup`) — tidak ada riwayat yang hilang saat rollout.
+    - Akun terbatas meminta `where('unitGroup','==',kelompok)` untuk unit
+      dan kerusakan, dan `where('unitGroup','in',[kelompok,'shared'])` +
+      `orderBy('timestamp','desc')` untuk History (`scopeQueryGroup`,
+      `scopeHistoryGroups`). Rules (`readsGroupOf`) menolak bacaan lain;
+      foto kerusakan dicek lewat catatan induknya (`id.split('__after')`).
+    - **Index:** History akun terbatas butuh composite index di Firestore:
+      koleksi `history`, `unitGroup` Ascending + `timestamp` Descending.
+    - **Perangkat bersama:** menu akun → **Sign out & erase this device**
+      menghapus cache unit/kerusakan/implement/lisensi/riwayat/cincin
+      cadangan dan database offline Firestore. Lampiran unit (IndexedDB
+      lokal) tidak dihapus.
+    - Masih terlihat oleh akun terbatas (hanya nama): nama unit di laporan
+      harian, perangkat/stok Warehouse, dan daftar brand di master list.
 - **Kerusakan ↔ status unit v162 (dijaga `tests/damagesync_test.js` dan
   rules_test). Perlu publish firestore.rules (blok `units`).**
   - Catatan kerusakan yang terbuka *menahan* satu tempat di unitnya
@@ -696,7 +719,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   stempel `appliedAt` supaya hanya sekali); tanpa akses itu muncul di Kotak
   Keputusan. Foto di `inspectionPhotos/{id}` (tidak di-subscribe), ditulis
   SEBELUM laporannya.
-- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (187 skenario;
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (206 skenario;
   bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
   kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
   alur persetujuan laporan/izin (transisi status di atas, kunci isi dan foto

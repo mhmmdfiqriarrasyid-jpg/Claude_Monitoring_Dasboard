@@ -208,6 +208,78 @@ const { launch, BASE_URL } = require('./_env');
         navigateTo('users'); renderUsersView(); await tick(10);
         t('tabel pengguna menyebut batas kelompok', /Heavy Equipment only/.test(document.querySelector('#viewUsers') ? document.querySelector('#viewUsers').textContent : document.body.textContent), true);
 
+        // =============== v167: kelompok tersimpan di setiap catatan, bacaan per kelompok ===============
+        as({ uid: 'o', role: 'owner' });
+        applyCloudUnitsSnapshot(JSON.parse(JSON.stringify(units)));
+        applyCloudDamagesSnapshot(JSON.parse(JSON.stringify(damages)));
+        const added = addUnits([{ name: 'TR-new', sn: 'SNNEW1', model: '6110B', status: 'Good' }]);
+        t('unit baru tanpa kelompok disimpan sebagai pertanian', [added.added, (globalData.find(u => u.sn === 'SNNEW1') || {}).unitGroup], [1, 'tractor']);
+        // catatan kerusakan pertanian sekarang membawa kelompoknya
+        let sentRec = null; window.cloud.saveDamage = r => { sentRec = r; return ok(); };
+        showAddDamageForm(); document.getElementById('dmgUnit').value = damageUnitLabel(globalData.find(u => u.id === 't1'));
+        onDamageUnitChanged(); document.getElementById('dmgType').value = 'Mekanis'; document.getElementById('dmgDescription').value = 'x';
+        document.getElementById('dmgSetBreakdown').checked = false;
+        saveDamage({ preventDefault() {} });
+        t('kerusakan unit pertanian disimpan dengan kelompoknya', sentRec && sentRec.unitGroup, 'tractor');
+        // baris riwayat membawa kelompoknya
+        const pushed = [];
+        let refuseGroupOnce = true;
+        window.cloud.addHistoryEvents = ev => {
+            if (refuseGroupOnce && ev.some(e => 'unitGroup' in e)) { refuseGroupOnce = false; return Promise.reject(Object.assign(new Error('denied'), { code: 'permission-denied' })); }
+            pushed.push(...ev); return ok();
+        };
+        logEvent({ action: 'update', unitId: 'h1', unitName: 'EX-h1', field: 'site' });
+        logEvent({ action: 'update', unitId: 'im1', unitName: '[Implement] Rotary', field: 'x' });
+        logEvent({ action: 'update', unitId: 'w1', unitName: '[Team] Andi', field: 'x' });
+        const lastLocal = JSON.parse(localStorage.getItem('tractorAuditLog') || '[]').slice(0, 3).map(e => e.unitGroup);
+        t('riwayat: kelompok tiap baris (alat berat / pertanian / bersama)', lastLocal.reverse(), ['heavy', 'tractor', 'shared']);
+        await tick(300);
+        t('rules lama menolak kolom kelompok: baris dikirim lagi tanpa kolom itu, tidak hilang',
+          [['EX-h1', '[Implement] Rotary', '[Team] Andi'].every(n => pushed.some(e => e.unitName === n)), pushed.every(e => !('unitGroup' in e))], [true, true]);
+        // owner: catatan lama tanpa kelompok, disimpan sekali lewat halaman Users
+        globalData.forEach(u => { if (u.id === 't1') delete u.unitGroup; });
+        allUsers = [{ uid: 'hv', role: 'staff', status: 'active', access: { unitScope: 'heavy' } }];
+        navigateTo('users'); renderUsersView(); await tick(10);
+        const notice = document.getElementById('groupStampNotice');
+        t('halaman Users: pemberitahuan catatan tanpa kelompok', [notice.hidden, /do not store their unit group yet/.test(notice.textContent), /such accounts exist now/.test(notice.textContent)], [false, true, true]);
+        const unitParts = [], dmgParts = [];
+        window.cloud.updateUnitsFields = items => { unitParts.push(...items); return ok(); };
+        window.cloud.updateDamagesFields = items => { dmgParts.push(...items); return ok(); };
+        storeUnitGroups(); await tick(20);
+        t('Store unit groups: hanya kolom kelompok yang dikirim',
+          [unitParts.some(p => p.id === 't1' && p.unitGroup === 'tractor'), unitParts.every(p => Object.keys(p).sort().join() === 'id,unitGroup'),
+           dmgParts.some(p => p.id === 'd1' && p.unitGroup === 'tractor'), dmgParts.every(p => Object.keys(p).sort().join() === 'id,unitGroup')],
+          [true, true, true, true]);
+        t('setelah disimpan: tinggal unit berkelompok tak dikenal, tanpa tombol simpan',
+          [/do not store their unit group/.test(notice.textContent), /1 unit\\(s\\) have a group that is not recognised/.test(notice.textContent), !!notice.querySelector('button')], [false, true, false]);
+        // akun terbatas meminta server hanya kelompoknya
+        const subArgs = {};
+        window.cloud.subscribeUnits = (cb, err, g) => { subArgs.units = g; return () => {}; };
+        window.cloud.subscribeDamages = (cb, err, g) => { subArgs.damages = g; return () => {}; };
+        window.cloud.subscribeHistory = (cb, err, max, groups) => { subArgs.history = groups; return () => {}; };
+        let resyncArg; window.cloud.getAllUnits = g => { resyncArg = g; return Promise.resolve([]); };
+        as(hvDoc);
+        cloudInitialized = false; initCloudSync(); await tick(20);
+        stopHistorySubscription(); startHistorySubscription();
+        await resyncUnits().catch(() => {});
+        t('akun terbatas: langganan unit, kerusakan, riwayat dan sinkron ulang hanya kelompoknya',
+          [subArgs.units, subArgs.damages, subArgs.history, resyncArg], ['heavy', 'heavy', ['heavy', 'shared'], 'heavy']);
+        tearDownCloudSync(); stopHistorySubscription();
+        as({ uid: 'o', role: 'owner' });
+        cloudInitialized = false; initCloudSync(); await tick(20);
+        t('owner: langganan tanpa batas kelompok', [subArgs.units, subArgs.damages], [null, null]);
+        tearDownCloudSync();
+        // keluar & hapus data perangkat
+        localStorage.setItem('tractorUnits', '[1]'); localStorage.setItem('tractorDamageRecords', '[1]'); localStorage.setItem('tractorUnits_autobackup', '[1]');
+        let erased = false, reloaded = false, signedOut = false;
+        window.cloud.signOutUser = () => { signedOut = true; return ok(); };
+        window.cloud.eraseLocalCache = () => { erased = true; return Promise.resolve(true); };
+        window.appReload = () => { reloaded = true; };
+        await handleSignOutErase();
+        t('Sign out & erase: keluar, cache unit/kerusakan/cadangan dihapus, database offline dihapus, halaman dimuat ulang',
+          [signedOut, localStorage.getItem('tractorUnits'), localStorage.getItem('tractorDamageRecords'), localStorage.getItem('tractorUnits_autobackup'), erased, reloaded],
+          [true, null, null, null, true, true]);
+
         window.__T = T;
     } catch (e) { window.__T = [{ n: 'EXCEPTION ' + e.message + ' ' + e.stack, pass: false }]; } })();` });
 

@@ -2754,6 +2754,15 @@ body[data-ro-inspection]  .editonly--inspection { display: none !important; }
 body[data-nocsvexport] .csv-export { display: none !important; }
 body[data-nocsvimport] .csv-import { display: none !important; }
 
+.group-stamp-notice {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin: 0 0 14px; padding: 12px 14px; border-radius: var(--radius-lg);
+    border: 1px solid var(--warning-border); background: var(--warning-bg); font-size: 13px;
+}
+.group-stamp-notice[hidden] { display: none; }
+.group-stamp-notice > i { color: var(--warning); font-size: 18px; }
+.group-stamp-notice__text { flex: 1 1 260px; min-width: 0; }
+
 /* An account limited to one unit group does not pick a group. */
 body[data-unit-scope] #damageGroupFilter { display: none !important; }
 
