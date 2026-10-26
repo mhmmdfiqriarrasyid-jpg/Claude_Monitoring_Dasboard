@@ -3853,8 +3853,65 @@ function _groupOperatingMs(list, now) {
     }, 0);
 }
 
+// Hours in breakdown per calendar month, oldest first, for the units given.
+// Each recorded interval (and a breakdown still running) is split at month
+// boundaries, so a breakdown from 28 Sep to 3 Oct counts in both months; a
+// failure counts in the month it started.
+function downtimeByMonth(units, count) {
+    const now = Date.now();
+    const base = new Date(); base.setDate(1); base.setHours(0, 0, 0, 0);
+    const months = [];
+    for (let i = (count || 6) - 1; i >= 0; i--) {
+        const s = new Date(base.getFullYear(), base.getMonth() - i, 1);
+        const e = new Date(base.getFullYear(), base.getMonth() - i + 1, 1);
+        months.push({ start: s.getTime(), end: Math.min(e.getTime(), now), ms: 0, failures: 0,
+            label: s.toLocaleDateString('en-GB', { month: 'long' }).slice(0, 3),
+            name: s.toLocaleDateString('en-GB', { month: 'long' }) });
+    }
+    const add = (a, b) => {
+        months.forEach(m => { const o = Math.min(b, m.end) - Math.max(a, m.start); if (o > 0) m.ms += o; });
+        const m = months.find(x => a >= x.start && a < x.end);
+        if (m) m.failures++;
+    };
+    (units || []).forEach(u => {
+        (u.downtimeHistory || []).forEach(iv => {
+            const end = typeof iv.end === 'number' ? iv.end : null;
+            const start = typeof iv.start === 'number' ? iv.start
+                : (end != null && typeof iv.durationMs === 'number' ? end - iv.durationMs : null);
+            if (start != null && end != null && end > start) add(start, end);
+        });
+        if (typeof u.breakdownStartedAt === 'number' && u.breakdownStartedAt > 0 && u.breakdownStartedAt < now) add(u.breakdownStartedAt, now);
+    });
+    return months;
+}
+function _dashHours(ms) {
+    const h = ms / 3600000;
+    return (h >= 10 || h === 0 ? Math.round(h) : h.toFixed(1)) + ' h';
+}
+
+// Downtime per month as plain bars: the current month in the accent colour,
+// the five before it in a light tint.
+function renderDowntimeTrend(months) {
+    const host = document.getElementById('dashTrend');
+    if (!host) return;
+    const max = Math.max(0, ...months.map(m => m.ms));
+    if (!max) { host.innerHTML = '<p class="dash-empty">No downtime recorded in the last six months.</p>'; return; }
+    const label = 'Downtime per month: ' + months.map((m, i) =>
+        `${m.name}${i === months.length - 1 ? ' so far' : ''} ${_dashHours(m.ms)}`).join(', ');
+    host.innerHTML = `
+        <div class="dash-trend__bars" role="img" aria-label="${escapeHtml(label)}">${months.map((m, i) => `
+            <div class="dash-trend__col${i === months.length - 1 ? ' dash-trend__col--now' : ''}">
+                <span class="dash-trend__val">${_dashHours(m.ms)}</span>
+                <span class="dash-trend__bar" style="height:${m.ms ? Math.max(3, Math.round(m.ms / max * 150)) : 0}px"></span>
+            </div>`).join('')}
+        </div>
+        <div class="dash-trend__labels" aria-hidden="true">${months.map((m, i) =>
+            `<span${i === months.length - 1 ? ' class="dash-trend__now"' : ''}>${escapeHtml(m.label)}</span>`).join('')}</div>`;
+}
+
 function renderDowntimeKPIs(units) {
-    const s = computeDowntimeStats(units || scopeDashUnits());
+    const list = units || scopeDashUnits();
+    const s = computeDowntimeStats(list);
     document.getElementById('kpiMTBF').textContent = formatDuration(s.mtbf);
     document.getElementById('kpiMTTR').textContent = formatDuration(s.mttr);
     // MTBF only means something against the period it was measured over.
@@ -3867,17 +3924,54 @@ function renderDowntimeKPIs(units) {
     document.getElementById('kpiMonthDowntime').textContent = formatDuration(s.totalMonthDowntime);
     document.getElementById('kpiFailures').textContent = s.totalFailures;
 
+    // This month, by name, for the Reliability card and the Overview strip.
+    const months = downtimeByMonth(list, 6);
+    const cur = months[months.length - 1];
+    const today = new Date();
+    const range = document.getElementById('dashMonthRange');
+    if (range) range.textContent = `Time units spent in breakdown, 1–${today.getDate()} ${cur.name}`;
+    const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    setText('dashMonthKpiLabel', `Downtime in ${cur.name}`);
+    setText('dashMonthDowntimeLabel', `Downtime in ${cur.name}`);
+    setText('dashMonthDowntime', formatDuration(s.totalMonthDowntime));
+    setText('dashMonthFailuresLabel', `Failures in ${cur.name}`);
+    setText('dashMonthFailures', String(cur.failures));
+    setText('dashMonthMTTR', formatDuration(s.mttr));
+    setText('dashMonthMTBF', formatDuration(s.mtbf));
+    renderDowntimeTrend(months);
+
     const listEl = document.getElementById('topOffendersList');
     if (!listEl) return;
     if (s.topOffenders.length === 0) {
         listEl.innerHTML = '<div class="top-offender top-offender--empty">No downtime recorded yet</div>';
     } else {
-        listEl.innerHTML = s.topOffenders.map((u, i) => `
-            <div class="top-offender">
-                <span class="top-offender__rank">#${i + 1}</span>
-                <span class="top-offender__name">${escapeHtml(u.name || 'Unnamed')}</span>
-                <span class="top-offender__time">${formatDuration(u.downtime)}</span>
-            </div>`).join('');
+        // Ranked units with their site and number of failures, and the
+        // downtime as a bar against the worst one.
+        const max = s.topOffenders[0].downtime || 1;
+        const byId = new Map(list.map(u => [u.id, u]));
+        listEl.innerHTML = `
+            <div class="dash-table-wrap">
+            <table class="dash-table dash-worst__table">
+                <thead><tr><th scope="col" class="dash-worst__rank">#</th><th scope="col">Unit</th><th scope="col" class="dash-worst__site">Site</th>
+                    <th scope="col" class="dash-num dash-worst__fails">Failures</th><th scope="col" class="dash-worst__barcol">Downtime</th>
+                    <th scope="col" class="dash-num">Time</th></tr></thead>
+                <tbody>${s.topOffenders.map((o, i) => {
+                    const u = byId.get(o.id) || {};
+                    const fails = (u.downtimeHistory || []).length + (u.breakdownStartedAt ? 1 : 0);
+                    return `
+                    <tr>
+                        <td class="dash-worst__rank">${i + 1}</td>
+                        <td><button type="button" class="dash-unit" title="View unit profile"
+                            onclick="showUnitProfile(${jsArg(o.id)})">${escapeHtml(o.name || 'Unnamed')}</button></td>
+                        <td class="dash-muted dash-worst__site">${escapeHtml(u.site || '—')}</td>
+                        <td class="dash-num dash-worst__fails">${fails}</td>
+                        <td class="dash-worst__barcol"><div class="dash-bar dash-bar--bad" aria-hidden="true"><span style="width:${Math.round(o.downtime / max * 1000) / 10}%"></span></div></td>
+                        <td class="dash-num">${formatDuration(o.downtime)}</td>
+                    </tr>`;
+                }).join('')}
+                </tbody>
+            </table>
+            </div>`;
     }
 
     destroyChart('downtimeChart');
@@ -3888,20 +3982,31 @@ function renderDowntimeKPIs(units) {
                 labels: s.topTen.map(u => u.name || 'Unnamed'),
                 datasets: [{
                     data: s.topTen.map(u => +(u.downtime / 3600000).toFixed(2)),
-                    backgroundColor: themeColor('--primary', '#D97757'), borderRadius: 4, barPercentage: 0.6
+                    backgroundColor: themeColor('--dot-bad', '#F04438'), borderRadius: 4, barPercentage: 0.6
                 }]
             },
             options: {
                 responsive: true, maintainAspectRatio: false, indexAxis: 'y',
                 scales: {
-                    x: { beginAtZero: true, title: { display: true, text: 'Downtime (hours)', font: { size: 11, family: 'Inter' } }, ticks: { font: { size: 11 } }, grid: { color: themeColor('--border-light', '#DEDACE') } },
-                    y: { ticks: { font: { size: 11, family: 'Inter' } }, grid: { display: false } }
+                    x: { beginAtZero: true, title: { display: true, text: 'Downtime (hours)', color: dashChartInk(), font: dashChartFont(12) },
+                         ticks: { color: dashChartInk(), font: dashChartFont(12) }, grid: dashChartGrid(), border: { display: false } },
+                    y: { ticks: { color: dashChartInk(), font: dashChartFont(12) }, grid: { display: false } }
                 },
                 plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.x}h` } } }
             }
         });
     }
 }
+
+// Chart text and grid in the design-F palette: Open Sans (--font-sans) in the
+// secondary grey, hairline grid in --border.
+function dashChartFont(size, weight) {
+    const f = { size, family: themeColor('--font-sans', "'Open Sans', 'Segoe UI', sans-serif") };
+    if (weight) f.weight = weight;
+    return f;
+}
+function dashChartInk() { return themeColor('--text-secondary', '#475467'); }
+function dashChartGrid() { return { color: themeColor('--border', '#EAECF0') }; }
 
 // ============================================================
 // DATA PROCESSING
@@ -4115,7 +4220,93 @@ function syncDashGroupUI() {
     }
     _syncSelect(document.getElementById('componentFilter'), 'All Components', _issueOptions(scope, false), ' Issues');
     _syncSelect(document.getElementById('issueFilter'), 'All Issues', _issueOptions(scope, true), '');
+    syncDashHead();
 }
+
+// ---- Page head: date, equipment-group switch, Overview | Reliability ----
+// The head also shows on an empty dashboard and follows the account's group
+// limit, so it re-syncs on ot:view and ot:gating as well as on every render.
+function syncDashHead() {
+    const dateEl = document.getElementById('dashDate');
+    if (dateEl) {
+        const d = new Date();
+        dateEl.textContent = d.toLocaleDateString('en-GB', { weekday: 'long' }) + ', '
+            + d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    }
+    const seg = document.getElementById('dashGroupSeg');
+    if (seg) {
+        // A switch only where there is somewhere to go: both groups in the
+        // fleet, and an account that may see both. A limited account never
+        // sees a way to the other group (the sidebar hides it the same way).
+        const show = effectiveUnitScope() === 'all' && !document.body.dataset.unitScope
+            && hasHeavyUnits() && hasTractorUnits();
+        seg.hidden = !show;
+        if (show) {
+            const cur = effectiveDashGroup();
+            seg.querySelectorAll('[data-dash-group]').forEach(b =>
+                b.setAttribute('aria-pressed', String(b.dataset.dashGroup === cur)));
+        }
+    }
+    syncDashTabs();
+}
+
+// The open tab lasts for the session (a fresh tab opens on Overview). Print
+// never hides a pane, so a printed dashboard still carries everything.
+const DASH_TAB_KEY = 'ot.dashTab';
+let dashTab = (() => {
+    try { return sessionStorage.getItem(DASH_TAB_KEY) === 'reliability' ? 'reliability' : 'overview'; }
+    catch (_) { return 'overview'; }
+})();
+function setDashTab(tab, opts) {
+    dashTab = tab === 'reliability' ? 'reliability' : 'overview';
+    try { sessionStorage.setItem(DASH_TAB_KEY, dashTab); } catch (_) {}
+    syncDashTabs();
+    const btn = document.querySelector(`#viewDashboard [data-dash-tab="${dashTab}"]`);
+    if (opts && opts.focus && btn) {
+        btn.focus();
+        // From the summary strip further down: bring the tabs back into view.
+        const bar = btn.closest('.dash-tabs');
+        if (bar && bar.getBoundingClientRect().top < 0) bar.scrollIntoView({ block: 'start' });
+    }
+    // A chart drawn while its tab was hidden has no size until measured.
+    if (dashTab === 'reliability' && charts.downtimeChart) charts.downtimeChart.resize();
+}
+function syncDashTabs() {
+    const host = document.getElementById('dashboardContent');
+    if (!host) return;
+    if (host.dataset.tab !== 'print') host.dataset.tab = dashTab;
+    host.querySelectorAll('[data-dash-tab]').forEach(b => {
+        const on = b.dataset.dashTab === dashTab;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-selected', String(on));
+        b.tabIndex = on ? 0 : -1;
+    });
+}
+// Arrow keys, Home and End move between the two tabs (ARIA tabs pattern).
+function dashTabKey(e) {
+    const order = ['overview', 'reliability'];
+    let i = order.indexOf(dashTab);
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') i = (i + 1) % order.length;
+    else if (e.key === 'Home') i = 0;
+    else if (e.key === 'End') i = order.length - 1;
+    else return;
+    e.preventDefault();
+    setDashTab(order[i], { focus: true });
+}
+document.addEventListener('ot:view', e => { if (e.detail && e.detail.view === 'dashboard') syncDashHead(); });
+document.addEventListener('ot:gating', () => syncDashHead());
+// Both panes go on paper. The chart in the hidden one was drawn at no size,
+// so every chart is measured again before the page is laid out.
+window.addEventListener('beforeprint', () => {
+    const host = document.getElementById('dashboardContent');
+    if (!host || currentView !== 'dashboard') return;
+    host.dataset.tab = 'print';
+    Object.values(charts).forEach(c => { try { if (c) c.resize(); } catch (_) {} });
+});
+window.addEventListener('afterprint', () => {
+    const host = document.getElementById('dashboardContent');
+    if (host && host.dataset.tab === 'print') { host.dataset.tab = dashTab; syncDashTabs(); }
+});
 
 function setDashGroup(g, opts) {
     const sc = effectiveUnitScope();
@@ -4135,6 +4326,7 @@ function updateDashboard(data) {
     syncDashGroupUI();
     renderNarrative(data);
     renderKPI(data);
+    renderDashOverview(data);
     renderStatusChart(data);
     renderSiteChart(data);
     renderLicenseAlerts(data);
@@ -4210,6 +4402,180 @@ function renderKPI(data) {
     document.getElementById('kpiHealthBar').style.width = healthRate + '%';
 }
 
+// ---- Overview cards (design F) ----
+// Everything here is read from the same list as the KPI cards (the scope and
+// the filter bar), and only ever adds markup of its own: the captured tables,
+// chips and rings above and below keep rendering exactly as they did.
+function renderDashOverview(data) {
+    const now = Date.now();
+    const scope = effectiveDashGroup();
+    const total = data.length;
+    const good = data.filter(d => isGood(d.status)).length;
+    const down = data.filter(d => !isGood(d.status));
+
+    // Breakdown card: how long the longest running breakdown has lasted.
+    const starts = down.map(d => d.breakdownStartedAt).filter(t => typeof t === 'number' && t > 0 && t <= now);
+    const longest = document.getElementById('dashBreakdownLongest');
+    if (longest) {
+        longest.hidden = !starts.length;
+        longest.textContent = starts.length ? `Longest ${dashSpan(now - Math.min(...starts))}` : '';
+    }
+
+    // Licences card: John Deere only, so not on the Heavy dashboard.
+    const lic = _buildAlertList(data);
+    const licCard = document.getElementById('dashLicCard');
+    if (licCard) licCard.hidden = scope === 'heavy';
+    const due = document.getElementById('dashLicDue');
+    if (due) due.textContent = lic.soonCount;
+    const exp = document.getElementById('dashLicExpired');
+    if (exp) { exp.hidden = !lic.expiredCount; exp.textContent = `${lic.expiredCount} expired`; }
+
+    // Fleet health ring: the health rate, as the arc of a circle r=38.
+    const rate = pct(good, total);
+    const arc = document.getElementById('dashHealthArc');
+    const C = 2 * Math.PI * 38;
+    if (arc) arc.setAttribute('stroke-dasharray', `${(C * rate / 100).toFixed(1)} ${C.toFixed(1)}`);
+    const sub = document.getElementById('dashHealthSub');
+    if (sub) sub.textContent = `${good} of ${total} unit${total === 1 ? '' : 's'} in good condition`;
+
+    renderDashAttention(data, now);
+    renderDashSites(data);
+    renderDashParts(data, scope);
+}
+
+// "3 days", "5 hours": how long something has been going on.
+function dashSpan(ms) {
+    const h = Math.floor(ms / 3600000);
+    if (h < 1) return 'under 1 hour';
+    if (h < 24) return `${h} hour${h === 1 ? '' : 's'}`;
+    const d = Math.floor(h / 24);
+    return `${d} day${d === 1 ? '' : 's'}`;
+}
+
+// Needs attention: units in breakdown (longest first), then licences that
+// expired or expire within 30 days — the same licences as License Alerts.
+const DASH_ATTENTION_ROWS = 8;
+const DASH_ICON_STOP = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 9-6 6"></path><path d="m9 9 6 6"></path><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon></svg>';
+const DASH_ICON_KEY = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="m21 2-9.6 9.6"></path><path d="m15.5 7.5 3 3L22 7l-3-3"></path></svg>';
+function renderDashAttention(data, now) {
+    const host = document.getElementById('dashAttention');
+    if (!host) return;
+    const inbox = document.getElementById('dashAttnInbox');
+    if (inbox) inbox.hidden = !canViewView('leader');
+
+    // The newest open damage record says what broke when the unit itself
+    // carries no breakdown reason. Matched by id or SN first, so liveUnitFor
+    // (a search of every unit) only runs on the few records that may fit.
+    const open = (globalDamages || []).filter(r => !r.resolved);
+    const openDamage = u => {
+        const sn = String(u.sn || '').toLowerCase();
+        const recs = open.filter(r => (r.unitId === u.id || (sn && String(r.sn || '').toLowerCase() === sn))
+            && liveUnitFor(r) === u);
+        recs.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+        return recs.length ? (recs[0].description || recs[0].component || '') : '';
+    };
+    const rows = [];
+    data.filter(d => !isGood(d.status)).forEach(u => {
+        const t = u.breakdownStartedAt;
+        const ms = typeof t === 'number' && t > 0 && t <= now ? now - t : null;
+        rows.push({ u, kind: 'down', order: 0, rank: ms == null ? 0 : -ms,
+            issue: u.breakdownReason || openDamage(u) || '—', status: u.status || 'Breakdown',
+            since: ms == null ? '—' : dashSpan(ms) });
+    });
+    // Same selection as renderLicenseAlerts / _buildAlertList.
+    data.filter(u => !isHeavy(u)).forEach(u => ['gps', 'display'].forEach(kind => {
+        const end = getLicenseEndDate(u, kind);
+        if (!end) return;
+        const s = getExpiryStatus(end);
+        if (effectiveLicense(u, kind).downgraded) return;
+        if (!(s.kind === 'expired' || s.kind === 'soon' || (s.kind === 'ok' && s.daysLeft <= 30))) return;
+        const what = kind === 'gps' ? 'GPS' : 'Display';
+        const type = kind === 'gps' ? u.gpsLicense : u.licenseDisplay;
+        const days = Math.abs(s.daysLeft);
+        const n = `${days} day${days === 1 ? '' : 's'}`;
+        rows.push({ u, kind: 'license', order: 1, rank: s.daysLeft,
+            issue: `${what} license${type ? ' ' + type : ''} ${s.kind === 'expired' ? 'expired' : 'expires'}`,
+            status: 'License', since: s.daysLeft < 0 ? n : s.daysLeft === 0 ? 'today' : `in ${n}` });
+    }));
+    rows.sort((a, b) => a.order - b.order || a.rank - b.rank);
+
+    if (!rows.length) {
+        host.innerHTML = `<p class="dash-empty">Nothing needs attention: no unit is in breakdown${
+            effectiveDashGroup() === 'heavy' ? '' : ' and no license is due in the next 30 days'}.</p>`;
+        return;
+    }
+    const shown = rows.slice(0, DASH_ATTENTION_ROWS);
+    const site = r => escapeHtml(r.u.site || '—');
+    host.innerHTML = `
+        <div class="dash-table-wrap">
+        <table class="dash-table dash-attn__table">
+            <thead><tr><th scope="col">Unit</th><th scope="col">Issue</th><th scope="col">Site</th>
+                <th scope="col">Status</th><th scope="col" class="dash-num">Since</th></tr></thead>
+            <tbody>${shown.map(r => `
+                <tr class="dash-attn__row dash-attn__row--${r.kind}">
+                    <td class="dash-attn__unit"><button type="button" class="dash-unit" title="View unit profile"
+                        onclick="showUnitProfile(${jsArg(r.u.id)})">${escapeHtml(r.u.name || r.u.sn || 'Unnamed')}</button></td>
+                    <td class="dash-attn__issue">${escapeHtml(r.issue)}<span class="dash-attn__site-inline"> · ${site(r)}</span></td>
+                    <td class="dash-attn__site">${site(r)}</td>
+                    <td class="dash-attn__status"><span class="dash-chip dash-chip--${r.kind === 'down' ? 'bad' : 'info'}">${
+                        r.kind === 'down' ? DASH_ICON_STOP : DASH_ICON_KEY}${escapeHtml(r.status)}</span></td>
+                    <td class="dash-attn__since dash-num">${escapeHtml(r.since)}</td>
+                </tr>`).join('')}
+            </tbody>
+        </table>
+        </div>
+        ${rows.length > shown.length ? `<p class="dash-card__foot">Showing ${shown.length} of ${rows.length} — the rest are in Unit Detail and License Alerts below.</p>` : ''}`;
+}
+
+// Sites: good units out of all units per site, largest site first.
+function renderDashSites(data) {
+    const host = document.getElementById('dashSites');
+    if (!host) return;
+    const map = new Map();
+    data.forEach(d => {
+        const s = d.site || 'Unknown';
+        const e = map.get(s) || { good: 0, total: 0 };
+        e.total++;
+        if (isGood(d.status)) e.good++;
+        map.set(s, e);
+    });
+    const sites = [...map.entries()].sort((a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0]));
+    host.innerHTML = sites.length ? sites.map(([s, e]) => `
+        <div class="dash-site">
+            <div class="dash-site__row"><span class="dash-site__name">${escapeHtml(s)}</span>
+                <span class="dash-site__count">${e.good} / ${e.total} good</span></div>
+            <div class="dash-bar" aria-hidden="true"><span style="width:${pct(e.good, e.total)}%"></span></div>
+        </div>`).join('') : '<p class="dash-empty">No units.</p>';
+}
+
+// Faulty parts: units whose component is not Good, per component of each
+// group in scope (the same reading as detectIssues), in the component's colour.
+const DASH_PART_ICONS = {
+    display: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8"></path><path d="M12 16v4"></path></svg>',
+    gps: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="7"></circle><circle cx="12" cy="12" r="2.5"></circle><path d="M12 2v3"></path><path d="M12 19v3"></path><path d="M2 12h3"></path><path d="M19 12h3"></path></svg>',
+    steering: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="2.5"></circle><path d="M9.5 12H3.2"></path><path d="M14.5 12h6.3"></path><path d="M12 14.5v6.3"></path></svg>',
+    jdlink: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="10" r="2"></circle><path d="M12 12v9"></path><path d="M8.5 6.5a5 5 0 0 0 0 7"></path><path d="M15.5 6.5a5 5 0 0 1 0 7"></path></svg>',
+    cameraAi: '<i class="fas fa-camera" aria-hidden="true"></i>',
+    telematicBox: '<i class="fas fa-satellite-dish" aria-hidden="true"></i>',
+    switchLimiter: '<i class="fas fa-toggle-on" aria-hidden="true"></i>',
+    rotaryLamp: '<i class="fas fa-lightbulb" aria-hidden="true"></i>'
+};
+function renderDashParts(data, scope) {
+    const host = document.getElementById('dashParts');
+    if (!host) return;
+    let groups = scope === 'all' ? UNIT_GROUP_KEYS.filter(g => data.some(u => unitGroupOf(u) === g)) : [scope];
+    if (!groups.length) groups = groupsInScope(scope);
+    host.innerHTML = groups.map(g => {
+        const members = data.filter(u => unitGroupOf(u) === g);
+        return groupDef(g).components.map(c => {
+            const n = members.filter(u => !isGood(u[c.key])).length;
+            const token = '--color-' + c.key.replace(/[A-Z]/g, m => '-' + m.toLowerCase());
+            return `<span class="dash-part${n ? '' : ' dash-part--none'}" style="--part:var(${token})">${
+                DASH_PART_ICONS[c.key] || ''}<span class="dash-part__name">${escapeHtml(c.label)}</span><span class="dash-part__n">${n}</span></span>`;
+        }).join('');
+    }).join('');
+}
+
 // ---- Status Chart (Donut) ----
 function renderStatusChart(data) {
     const good = data.filter(d => isGood(d.status)).length;
@@ -4220,12 +4586,12 @@ function renderStatusChart(data) {
         type: 'doughnut',
         data: {
             labels: ['Good', 'Breakdown'],
-            datasets: [{ data: [good, breakdown], backgroundColor: [themeColor('--success', '#4F7B58'), themeColor('--danger', '#BF4D43')], borderWidth: 0, hoverOffset: 6 }]
+            datasets: [{ data: [good, breakdown], backgroundColor: [themeColor('--dot-good', '#17B26A'), themeColor('--dot-bad', '#F04438')], borderWidth: 0, hoverOffset: 6 }]
         },
         options: {
-            responsive: true, maintainAspectRatio: false, cutout: '65%',
+            responsive: true, maintainAspectRatio: false, cutout: '70%',
             plugins: {
-                legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true, pointStyle: 'circle', font: { size: 12, family: 'Inter' } } },
+                legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true, pointStyle: 'circle', color: dashChartInk(), font: dashChartFont(13) } },
                 tooltip: { callbacks: { label: ctx => { const t = ctx.dataset.data.reduce((a, b) => a + b, 0); return ` ${ctx.label}: ${ctx.parsed} (${pct(ctx.parsed, t)}%)`; } } }
             }
         }
@@ -4249,18 +4615,18 @@ function renderSiteChart(data) {
         data: {
             labels,
             datasets: [
-                { label: 'Good', data: labels.map(s => siteMap[s].good), backgroundColor: themeColor('--success', '#4F7B58'), borderRadius: 4, barPercentage: 0.6 },
-                { label: 'Breakdown', data: labels.map(s => siteMap[s].breakdown), backgroundColor: themeColor('--danger', '#BF4D43'), borderRadius: 4, barPercentage: 0.6 }
+                { label: 'Good', data: labels.map(s => siteMap[s].good), backgroundColor: themeColor('--dot-good', '#17B26A'), borderRadius: 4, barPercentage: 0.6 },
+                { label: 'Breakdown', data: labels.map(s => siteMap[s].breakdown), backgroundColor: themeColor('--dot-bad', '#F04438'), borderRadius: 4, barPercentage: 0.6 }
             ]
         },
         options: {
             responsive: true, maintainAspectRatio: false, indexAxis: 'y',
             scales: {
-                x: { stacked: true, beginAtZero: true, ticks: { stepSize: 1, font: { size: 11, family: 'Inter' } }, grid: { color: themeColor('--border-light', '#DEDACE') } },
-                y: { stacked: true, ticks: { font: { size: 11, family: 'Inter' } }, grid: { display: false } }
+                x: { stacked: true, beginAtZero: true, ticks: { stepSize: 1, color: dashChartInk(), font: dashChartFont(12) }, grid: dashChartGrid(), border: { display: false } },
+                y: { stacked: true, ticks: { color: dashChartInk(), font: dashChartFont(12) }, grid: { display: false } }
             },
             plugins: {
-                legend: { position: 'top', align: 'end', labels: { usePointStyle: true, pointStyle: 'circle', padding: 12, font: { size: 11, family: 'Inter' } } },
+                legend: { position: 'top', align: 'end', labels: { usePointStyle: true, pointStyle: 'circle', padding: 12, color: dashChartInk(), font: dashChartFont(12) } },
                 tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.x} units` } }
             }
         }
@@ -4712,10 +5078,11 @@ function renderDamageStats() {
     destroyChart('damageTrendChart');
     charts.damageTrendChart = makeChart('damageTrendChart', {
         type: 'bar',
-        data: { labels: months.map(m => m.label), datasets: [{ data: byMonth, backgroundColor: themeColor('--primary', '#D97757'), borderRadius: 4, barPercentage: 0.55 }] },
+        data: { labels: months.map(m => m.label), datasets: [{ data: byMonth, backgroundColor: themeColor('--accent', '#0F766E'), borderRadius: 4, barPercentage: 0.55 }] },
         options: {
             plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+            scales: { y: { beginAtZero: true, ticks: { precision: 0, color: dashChartInk(), font: dashChartFont(12) }, grid: dashChartGrid(), border: { display: false } },
+                      x: { ticks: { color: dashChartInk(), font: dashChartFont(12) }, grid: { display: false } } },
             maintainAspectRatio: false
         }
     });
@@ -4764,7 +5131,7 @@ function renderRepair(scope) {
         type: 'bar',
         data: { labels: sorted.map(x => x[0]), datasets: [{ data: sorted.map(x => x[1]), backgroundColor: sorted.map(x => chipColors[x[0]]), borderRadius: 4, barPercentage: 0.5 }] },
         options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y',
-            scales: { x: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: themeColor('--border-light', '#DEDACE') } }, y: { ticks: { font: { size: 11, family: 'Inter', weight: 600 } }, grid: { display: false } } },
+            scales: { x: { beginAtZero: true, ticks: { stepSize: 1, color: dashChartInk(), font: dashChartFont(12) }, grid: dashChartGrid(), border: { display: false } }, y: { ticks: { color: dashChartInk(), font: dashChartFont(12, 600) }, grid: { display: false } } },
             plugins: { legend: { display: false } } }
     });
 
@@ -4775,9 +5142,9 @@ function renderRepair(scope) {
     destroyChart('issueBySiteChart');
     charts.issueBySiteChart = makeChart('issueBySiteChart', {
         type: 'bar',
-        data: { labels: siteLabels, datasets: [{ data: siteLabels.map(s => siteCounts[s]), backgroundColor: themeColor('--warning', '#BC8A2E'), borderRadius: 4, barPercentage: 0.5 }] },
+        data: { labels: siteLabels, datasets: [{ data: siteLabels.map(s => siteCounts[s]), backgroundColor: themeColor('--dot-warn', '#F79009'), borderRadius: 4, barPercentage: 0.5 }] },
         options: { responsive: true, maintainAspectRatio: false,
-            scales: { y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: themeColor('--border-light', '#DEDACE') } }, x: { ticks: { font: { size: 11, family: 'Inter' } }, grid: { display: false } } },
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1, color: dashChartInk(), font: dashChartFont(12) }, grid: dashChartGrid(), border: { display: false } }, x: { ticks: { color: dashChartInk(), font: dashChartFont(12) }, grid: { display: false } } },
             plugins: { legend: { display: false } } }
     });
 
