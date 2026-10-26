@@ -7795,14 +7795,25 @@ function clearDamageUnitFilter() {
     renderDamageTable();
 }
 
-function getFilteredDamages() {
+// The Repair filter: '' any, 'open', 'repaired'.
+function damageRepairMatch(d, val) {
+    if (val === 'open') return !d.resolved;
+    if (val === 'repaired') return !!d.resolved;
+    return true;
+}
+
+// opts.anyRepair leaves the Repair filter out — the summary tiles count both
+// sides of it.
+function getFilteredDamages(opts) {
     const query = (document.getElementById('damageSearch')?.value || '').toLowerCase().trim();
     const typeVal = (document.getElementById('damageTypeFilter')?.value || '');
+    const repairVal = opts && opts.anyRepair ? '' : (document.getElementById('damageRepairFilter')?.value || '');
 
     let rows = [...globalDamages];
     if (damageUnitFilter) rows = rows.filter(d => (liveUnitFor(d) || {}).id === damageUnitFilter);
     if (damageGroup) rows = rows.filter(d => damageGroupOfRecord(d) === damageGroup);
     if (typeVal) rows = rows.filter(d => d.damageType === typeVal);
+    if (repairVal) rows = rows.filter(d => damageRepairMatch(d, repairVal));
     if (query) rows = rows.filter(d => {
         const lu = liveUnitFor(d);
         return `${lu ? (lu.name || '') + ' ' + (lu.sn || '') : ''} ${d.unitName} ${d.sn} ${d.site} ${d.damageType} ${d.component} ${d.description}`
@@ -7932,6 +7943,58 @@ function openDamageChipFor(unit) {
 }
 
 // ---- Render ----
+// "23 Oct" this year, "23 Oct 2025" before it. The ISO date stays in the
+// cell's title, the CSV and the forms.
+function damageDayLabel(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+    if (!m) return iso || '';
+    const label = `${+m[3]} ${MONTH_NAMES[+m[2] - 1]}`;
+    return m[1] === toISODate().slice(0, 4) ? label : `${label} ${m[1]}`;
+}
+
+// Chip colour per stored damage type (the words come from damageTypeLabel).
+const DAMAGE_TYPE_CHIP = { Mekanis: 'mech', Software: 'soft', 'Device Precision': 'device' };
+
+// The four tiles over the table, from the records in the current group,
+// search, type and unit filter. Repair time counts whole days from the
+// damage date to the repair date — both are calendar dates, no hours.
+function renderDamageKpis(rows) {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const isDay = v => /^\d{4}-\d{2}-\d{2}$/.test(v || '');
+    const month = toISODate().slice(0, 7);
+    let open = 0, down = 0, doneMonth = 0, days = 0, timed = 0;
+    rows.forEach(d => {
+        if (!d.resolved) {
+            open++;
+            // Holding its unit (or one of its components) in Breakdown now.
+            const u = liveUnitFor(d);
+            const f = damageHeldField(d, u);
+            if (f && isBrokenValue(f === 'status' ? u.status : u[f])) down++;
+            return;
+        }
+        if (String(d.resolvedAt || '').slice(0, 7) === month) doneMonth++;
+        if (isDay(d.date) && isDay(d.resolvedAt) && d.resolvedAt >= d.date) {
+            days += (Date.parse(d.resolvedAt) - Date.parse(d.date)) / 86400000;
+            timed++;
+        }
+    });
+    set('dmgKpiOpen', open);
+    set('dmgKpiDown', down);
+    set('dmgKpiRepaired', doneMonth);
+    set('dmgKpiRepairedLabel', `Repaired in ${new Date().toLocaleString('en-US', { month: 'long' })}`);
+    let avg = '—';
+    if (timed) {
+        const v = days / timed;
+        const r = v < 10 ? Math.round(v * 10) / 10 : Math.round(v);
+        avg = r === 0 ? 'Same day' : `${r} ${r === 1 ? 'day' : 'days'}`;
+    }
+    set('dmgKpiAvg', avg);
+    const tile = document.getElementById('dmgKpiAvgTile');
+    if (tile) tile.title = timed
+        ? `From the damage date to the repair date, over ${timed} repaired record${timed === 1 ? '' : 's'}`
+        : 'No repaired record with both dates yet';
+}
+
 function renderDamageTable() {
     updateDamageCount();
     // A re-render (search, filter, a cloud snapshot) draws fresh, unticked
@@ -7944,7 +8007,11 @@ function renderDamageTable() {
     const selectAllBox = document.getElementById('selectAllDamage');
     if (selectAllBox) selectAllBox.checked = false;
 
-    const rows = getFilteredDamages();
+    // The tiles count both sides of the Repair filter; the table applies it.
+    const base = getFilteredDamages({ anyRepair: true });
+    renderDamageKpis(base);
+    const repairVal = document.getElementById('damageRepairFilter')?.value || '';
+    const rows = repairVal ? base.filter(d => damageRepairMatch(d, repairVal)) : base;
     const tbody = document.getElementById('damageBody');
     if (!tbody) return;
     const unitChip = document.getElementById('damageUnitFilterChip');
@@ -7956,51 +8023,73 @@ function renderDamageTable() {
     }
 
     const hasFilter = (document.getElementById('damageSearch')?.value || '') ||
-                      (document.getElementById('damageTypeFilter')?.value || '') || damageUnitFilter;
+                      (document.getElementById('damageTypeFilter')?.value || '') || repairVal || damageUnitFilter;
+
+    // "14 damage records", or "Showing 3 of 14 records" of the group shown.
+    const countEl = document.getElementById('damageCount');
+    if (countEl && hasFilter) {
+        const all = damageGroup ? globalDamages.filter(d => damageGroupOfRecord(d) === damageGroup).length : globalDamages.length;
+        countEl.textContent = `Showing ${rows.length} of ${all} records`;
+    } else if (countEl) {
+        countEl.textContent = `${rows.length} damage record${rows.length === 1 ? '' : 's'}`;
+    }
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+        tbody.innerHTML = `<tr><td colspan="8" class="dmg-empty">${
             hasFilter ? 'No damage records match the filter'
-                      : 'No damage records yet. Click <strong>Add Damage</strong> to get started.'
+                      : 'No damage records yet. Click <strong>Report damage</strong> to get started.'
         }</td></tr>`;
         return;
     }
 
-    tbody.innerHTML = rows.map((d, i) => {
-        const comp = d.component
-            ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.component)}</span>`
-            : '<span style="color:var(--text-light);font-size:11px">—</span>';
-        const desc = d.description || '';
-        const descShort = desc.length > 50 ? desc.slice(0, 50) + '…' : desc;
+    tbody.innerHTML = rows.map(d => {
         const lu = liveUnitFor(d);
         const uName = lu ? (lu.name || '') : (d.unitName || '');
         const uSn   = lu ? (lu.sn || '')   : (d.sn || '');
         const uSite = lu ? (lu.site || '') : (d.site || '');
+        const meta = [uSite, uSn].filter(Boolean).map(escapeHtml).join(' · ');
+        const desc = d.description || '';
+        const what = (d.component ? `<span class="dmg-what__comp">${escapeHtml(d.component)}</span>` : '')
+            + (desc ? `<span class="dmg-what__desc" title="${escapeHtml(desc)}">${escapeHtml(desc)}</span>` : '');
+        const when = d.resolvedAt ? escapeHtml(d.resolvedAt) : '';
+        const repair = d.resolved
+            ? `<span class="dmg-state dmg-state--done" title="Repaired${when ? ' ' + when : ''}"><span class="dmg-state__dot" aria-hidden="true"></span>Repaired${
+                when ? ` <span class="dmg-state__when">${escapeHtml(damageDayLabel(d.resolvedAt))}</span>` : ''}</span>`
+              + `<button class="btn btn-secondary btn-sm editonly--damage dmg-reopen" title="Reopen — the repair did not hold" aria-label="Reopen this damage" onclick="reopenDamage(${jsArg(d.id)})"><i class="fas fa-rotate-left" aria-hidden="true"></i></button>`
+            : `<span class="dmg-state dmg-state--open"><span class="dmg-state__dot" aria-hidden="true"></span>Open</span>`
+              + `<button class="btn btn-secondary btn-sm dmg-done-btn" title="Mark as done & restore unit status" onclick="openDamageRepair(${jsArg(d.id)})"><i class="fas fa-wrench" aria-hidden="true"></i> Mark done</button>${damageUnitChip(d, lu)}`;
+        const who = escapeHtml(`${uName || uSn || 'unit'}, ${d.date || ''}`);
         return `
-        <tr>
-            <td class="col-check"><input type="checkbox" class="damage-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedDamageCount()"></td>
-            <td>${i + 1}</td>
-            <td data-label="Date" style="white-space:nowrap">${escapeHtml(d.date || '')}${queuedTag('damages', d.id)}</td>
-            <td data-label="Unit"><strong>${escapeHtml(uName)}</strong></td>
-            <td data-label="SN" style="font-family:monospace;font-size:12px">${escapeHtml(uSn)}</td>
-            <td data-label="Site">${escapeHtml(uSite)}</td>
-            <td data-label="Damage Type"><span class="badge badge-breakdown" style="font-size:10px">${escapeHtml(damageTypeLabel(d.damageType))}</span></td>
-            <td data-label="Component">${comp}</td>
-            <td data-label="Description" class="dmg-desc" style="max-width:240px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(desc)}">${escapeHtml(descShort) || '<span style="color:var(--text-light)">—</span>'}</td>
-            <td data-label="Photos">${damagePhotoButtons(d, { addAfter: true })}</td>
-            <td data-label="Repair" style="white-space:nowrap">${d.resolved
-                ? `<span class="badge badge-good" style="font-size:10px" title="Repaired"><i class="fas fa-check"></i> Done${d.resolvedAt ? ' ' + escapeHtml(d.resolvedAt) : ''}</span>`
-                  + ` <button class="btn btn-secondary btn-sm editonly--damage dmg-reopen" title="Reopen — the repair did not hold" aria-label="Reopen this damage" onclick="reopenDamage(${jsArg(d.id)})"><i class="fas fa-rotate-left"></i></button>`
-                : `<button class="btn btn-secondary btn-sm" style="font-size:11px" title="Mark as done & restore unit status" onclick="openDamageRepair(${jsArg(d.id)})"><i class="fas fa-wrench"></i> Mark done</button>${damageUnitChip(d, lu)}`}</td>
+        <tr class="${d.resolved ? 'dmg-row dmg-row--done' : 'dmg-row'}">
+            <td class="col-check"><input type="checkbox" class="damage-check" data-id="${escapeHtml(d.id)}" aria-label="Select damage record: ${who}" onchange="updateSelectedDamageCount()"></td>
+            <td data-label="Date" class="dmg-date"><span title="${escapeHtml(d.date || '')}">${escapeHtml(damageDayLabel(d.date))}</span>${queuedTag('damages', d.id)}</td>
+            <td data-label="Unit" class="dmg-unit"><span class="dmg-unit__name">${escapeHtml(uName) || '—'}</span>${meta ? `<span class="dmg-unit__meta">${meta}</span>` : ''}</td>
+            <td data-label="Type" class="dmg-type-cell"><span class="dmg-type dmg-type--${DAMAGE_TYPE_CHIP[d.damageType] || 'other'}">${escapeHtml(damageTypeLabel(d.damageType)) || '—'}</span></td>
+            <td data-label="What happened" class="dmg-what">${what || '<span class="dmg-none">—</span>'}</td>
+            <td data-label="Photos" class="dmg-photos">${damagePhotoButtons(d, { addAfter: true })}</td>
+            <td data-label="Repair" class="dmg-repair-cell"><span class="dmg-repair-cell__in">${repair}</span></td>
             <td class="col-actions">
                 <div class="row-actions">
-                    <button class="btn btn-secondary" title="Edit" onclick="editDamage(${jsArg(d.id)})"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Delete" onclick="deleteDamage(${jsArg(d.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                    <button class="btn btn-secondary dmg-icon-btn" title="Edit" aria-label="Edit damage record: ${who}" onclick="editDamage(${jsArg(d.id)})"><i class="fas fa-pen" aria-hidden="true"></i></button>
+                    <button class="btn btn-secondary dmg-icon-btn dmg-icon-btn--danger" title="Delete" aria-label="Delete damage record: ${who}" onclick="deleteDamage(${jsArg(d.id)})"><i class="fas fa-trash" aria-hidden="true"></i></button>
                 </div>
             </td>
         </tr>`;
     }).join('');
 }
+
+// The Repair filter starts at "Any" each time Damage is opened. A link from
+// another page (an "N open damage" chip, Data Check) means "show this unit's
+// records", and a "Repaired" left over from last time would hide them.
+let _dmgLastView = '';
+document.addEventListener('ot:view', e => {
+    const view = e.detail && e.detail.view;
+    if (view === 'damage' && _dmgLastView !== 'damage') {
+        const sel = document.getElementById('damageRepairFilter');
+        if (sel && sel.value) { sel.value = ''; renderDamageTable(); }
+    }
+    _dmgLastView = view;
+});
 
 // ---- Selection ----
 function toggleSelectAllDamages() {
@@ -8030,7 +8119,7 @@ function onDamageTypeChange() {
 // ---- Modal: Add / Edit ----
 function showAddDamageForm() {
     if (!requireEdit('damage')) return;
-    document.getElementById('damageModalTitle').textContent = 'Add Damage';
+    document.getElementById('damageModalTitle').textContent = 'Report damage';
     document.getElementById('editDamageId').value = '';
     document.getElementById('damageForm').reset();
     document.getElementById('dmgDate').value = toISODate();
@@ -8075,7 +8164,7 @@ function editDamage(id) {
     const rec = globalDamages.find(d => d.id === id);
     if (!rec) return;
 
-    document.getElementById('damageModalTitle').textContent = 'Edit Damage';
+    document.getElementById('damageModalTitle').textContent = 'Edit damage';
     document.getElementById('editDamageId').value = id;
     document.getElementById('dmgDate').value = rec.date || '';
     // Prefer the current unit (by id or serial) so a renamed unit shows its new

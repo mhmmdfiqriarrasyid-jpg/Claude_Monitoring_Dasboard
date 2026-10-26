@@ -717,72 +717,110 @@
 
         <div class="damage-rules-slot"></div>
 
-        <!-- Damage Toolbar -->
-        <div class="edit-toolbar">
-            <div class="edit-toolbar__left">
-                <button class="btn btn-success editonly editonly--damage" onclick="showAddDamageForm()">
-                    <i class="fas fa-plus"></i> Add Damage
-                </button>
-                <button class="btn btn-danger" id="btnDeleteSelectedDamage" style="display:none" onclick="deleteSelectedDamages()">
-                    <i class="fas fa-trash"></i> Delete Selected (<span id="selectedDamageCount">0</span>)
-                </button>
-                <button class="btn btn-secondary csv-export" onclick="exportDamageCSV()">
-                    <i class="fas fa-download"></i> Export CSV
-                </button>
-                <button class="btn btn-secondary csv-export" id="btnExportDamagePhotos" onclick="exportDamagePhotosZip()"
-                        title="All Before / After photos of the records listed, one folder per unit nickname">
-                    <i class="fas fa-file-zipper"></i> Export Photos
-                </button>
+        <!-- Page head: title, one line, actions -->
+        <div class="page-head dmg-head">
+            <div class="page-head__text">
+                <h1 class="page-head__title">Damage</h1>
+                <span class="page-head__sub">Every breakdown and fault, with photos and repair status</span>
             </div>
-            <div class="edit-toolbar__right">
-                <select id="damageGroupFilter" aria-label="Filter unit group" class="btn btn-secondary btn-sm"
-                        onchange="setDamageGroup(this.value)">
-                    <option value="">All Groups</option>
-                    <option value="tractor">Agricultural Equipment</option>
-                    <option value="heavy">Heavy Equipment</option>
-                </select>
-                <select id="damageTypeFilter" aria-label="Filter damage type" class="btn btn-secondary btn-sm">
-                    <option value="">All Types</option>
-                    <option value="Mekanis">Mechanical</option>
-                    <option value="Software">Software</option>
-                    <option value="Device Precision">Device Precision</option>
-                </select>
-                <div class="edit-search">
-                    <i class="fas fa-search"></i>
-                    <input type="text" id="damageSearch" aria-label="Search damage" placeholder="Search damage...">
-                </div>
-                <button type="button" id="damageUnitFilterChip" class="dmg-filter-chip" hidden onclick="clearDamageUnitFilter()" title="Show all units again"></button>
-                <span id="damageCount">0 damage records</span>
+            <div class="page-head__actions">
+                <button type="button" class="btn btn-secondary csv-export" id="btnExportDamagePhotos" onclick="exportDamagePhotosZip()"
+                        title="All Before / After photos of the records listed, one folder per unit nickname">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"></path><circle cx="12" cy="13" r="3.5"></circle></svg>
+                    Photos (ZIP)
+                </button>
+                <button type="button" class="btn btn-secondary csv-export" onclick="exportDamageCSV()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg>
+                    Export CSV
+                </button>
+                <button type="button" class="btn btn-primary editonly editonly--damage" onclick="showAddDamageForm()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                    Report damage
+                </button>
             </div>
         </div>
 
-        <!-- Damage Table -->
-        <div class="table-card">
-            <div class="table-card__header">
-                <div class="table-card__title"><i class="fas fa-screwdriver-wrench"></i> Damage History</div>
+        <!-- Summary of the records in the current group and filters (renderDamageKpis) -->
+        <section class="dmg-kpis" aria-label="Damage summary">
+            <div class="dmg-kpi dmg-kpi--open">
+                <span class="dmg-kpi__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><path d="m15 9-6 6"></path><path d="m9 9 6 6"></path></svg></span>
+                <span class="dmg-kpi__text"><span class="dmg-kpi__value" id="dmgKpiOpen">0</span><span class="dmg-kpi__label">Open</span></span>
             </div>
+            <div class="dmg-kpi dmg-kpi--down" title="Open records that keep their unit, or one of its components, in Breakdown right now">
+                <span class="dmg-kpi__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg></span>
+                <span class="dmg-kpi__text"><span class="dmg-kpi__value" id="dmgKpiDown">0</span><span class="dmg-kpi__label">Breakdowns open</span></span>
+            </div>
+            <div class="dmg-kpi dmg-kpi--done">
+                <span class="dmg-kpi__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg></span>
+                <span class="dmg-kpi__text"><span class="dmg-kpi__value" id="dmgKpiRepaired">0</span><span class="dmg-kpi__label" id="dmgKpiRepairedLabel">Repaired this month</span></span>
+            </div>
+            <div class="dmg-kpi dmg-kpi--time" id="dmgKpiAvgTile">
+                <span class="dmg-kpi__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></span>
+                <span class="dmg-kpi__text"><span class="dmg-kpi__value" id="dmgKpiAvg">—</span><span class="dmg-kpi__label">Average repair time</span></span>
+            </div>
+        </section>
+
+        <!-- Filters -->
+        <div class="dmg-filters">
+            <label class="dmg-field dmg-field--search">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7.5"></circle><path d="m21 21-4.5-4.5"></path></svg>
+                <input type="search" id="damageSearch" aria-label="Search damage" placeholder="Search damage" autocomplete="off">
+            </label>
+            <!-- Hidden for an account limited to one group (body[data-unit-scope]) -->
+            <label class="dmg-field dmg-field--group">
+                <span class="dmg-field__label">Group</span>
+                <select id="damageGroupFilter" aria-label="Filter unit group" onchange="setDamageGroup(this.value)">
+                    <option value="">All groups</option>
+                    <option value="tractor">Agricultural</option>
+                    <option value="heavy">Heavy equipment</option>
+                </select>
+            </label>
+            <label class="dmg-field">
+                <span class="dmg-field__label">Type</span>
+                <select id="damageTypeFilter" aria-label="Filter damage type">
+                    <option value="">All types</option>
+                    <option value="Mekanis">Mechanical</option>
+                    <option value="Software">Software</option>
+                    <option value="Device Precision">Device precision</option>
+                </select>
+            </label>
+            <label class="dmg-field">
+                <span class="dmg-field__label">Repair</span>
+                <select id="damageRepairFilter" aria-label="Filter repair status" onchange="renderDamageTable()">
+                    <option value="">Any</option>
+                    <option value="open">Open</option>
+                    <option value="repaired">Repaired</option>
+                </select>
+            </label>
+            <button type="button" id="damageUnitFilterChip" class="dmg-filter-chip" hidden onclick="clearDamageUnitFilter()" title="Show all units again"></button>
+            <span class="dmg-filters__end">
+                <span id="damageCount" class="dmg-count">0 damage records</span>
+                <button type="button" class="btn btn-danger" id="btnDeleteSelectedDamage" style="display:none" onclick="deleteSelectedDamages()">
+                    <i class="fas fa-trash" aria-hidden="true"></i> Delete selected (<span id="selectedDamageCount">0</span>)
+                </button>
+            </span>
+        </div>
+
+        <!-- Damage table -->
+        <section class="table-card dmg-card" aria-label="Damage history">
             <div class="table-wrapper" style="max-height:600px;">
                 <table class="data-table table--cardable" id="damageTable">
                     <thead>
                         <tr>
                             <th class="col-check"><input type="checkbox" id="selectAllDamage" aria-label="Select all damage records" onchange="toggleSelectAllDamages()"></th>
-                            <th>No</th>
                             <th>Date</th>
                             <th>Unit</th>
-                            <th>Serial Number</th>
-                            <th>Site</th>
-                            <th>Damage Type</th>
-                            <th>Component</th>
-                            <th>Description</th>
+                            <th>Type</th>
+                            <th>What happened</th>
                             <th>Photos</th>
                             <th>Repair</th>
-                            <th class="col-actions">Actions</th>
+                            <th class="col-actions"><span class="dmg-sr">Actions</span></th>
                         </tr>
                     </thead>
                     <tbody id="damageBody"></tbody>
                 </table>
             </div>
-        </div>
+        </section>
 
     </div><!-- /viewDamage -->
 
