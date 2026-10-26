@@ -55,6 +55,16 @@ const golden = JSON.parse(UI_LABELS_EN.reduce((s, [a, b]) => s.split(a).join(b),
 const T = [];
 const t = (n, g, w) => T.push({ n, g, w, pass: JSON.stringify(g) === JSON.stringify(w) });
 const errors = [];
+//  - Desain F (Unit Database): sel Status dan sel komponen yang bisa diedit
+//    membawa data-state="good" | "bad" sesuai nilainya, supaya CSS bisa
+//    menggambarnya sebagai chip. Hanya atribut ini yang ditambahkan, tepat di
+//    belakang onblur — sel bernilai kosong tidak membawanya. Golden hanya
+//    berisi nilai Good dan Breakdown, keduanya hanya di sel status/komponen.
+const F_EDIT_STATE = [
+    ['onblur=\\"saveInlineEdit(this)\\">Good</span>', 'onblur=\\"saveInlineEdit(this)\\" data-state=\\"good\\">Good</span>'],
+    ['onblur=\\"saveInlineEdit(this)\\">Breakdown</span>', 'onblur=\\"saveInlineEdit(this)\\" data-state=\\"bad\\">Breakdown</span>']
+];
+golden['html:editBody'] = JSON.parse(F_EDIT_STATE.reduce((s, [a, b]) => s.split(a).join(b), JSON.stringify(golden['html:editBody'])));
 
 async function freshPage(b) {
     const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
