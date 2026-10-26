@@ -51,6 +51,38 @@ const golden = JSON.parse(UI_LABELS_EN.reduce((s, [a, b]) => s.split(a).join(b),
     (_, r) => `data-reason=\\"${r}\\" onclick=\\"showBreakdownPopover(event, this.dataset.reason)\\"`)
   .replace(/onclick=\\"(showUnitProfile|showHistory|editUnit|deleteUnit|triggerAttachUpload)\('([^']*)'\)\\"/g,
     (_, fn, arg) => `onclick=\\"${fn}(&quot;${arg}&quot;)\\"`)));
+//  - Desain F (Soft UI): token warna diganti, jadi warna yang direkam ikut
+//    berganti — dan hanya warna. Setiap hex lama dipetakan ke nilai token
+//    yang kini menggambarnya, PER rekaman: grafik memakai palet grafik F
+//    (titik status --dot-*, aksen teal), cincin dan chip tetap memakai token
+//    komponen/status. Jadi satu hex lama bisa menjadi token berbeda di tempat
+//    berbeda, dan hanya di tempat yang disebut di sini.
+const F_COMPONENT_TOKENS = [
+    ['#886421', '#B54708'],   // --color-display
+    ['#4D6B89', '#175CD3'],   // --color-gps
+    ['#4B7453', '#067647'],   // --color-steering
+    ['#403E3A', '#344054'],   // --color-jdlink
+    ['#AD443B', '#B42318']    // --danger (chip "Unit")
+];
+const F_STATUS_DOTS = [
+    ['#4B7453', '#17B26A'],   // --success → --dot-good
+    ['#AD443B', '#F04438']    // --danger  → --dot-bad
+];
+const THEME_F = {
+    'html:componentGrid': F_COMPONENT_TOKENS,
+    'html:issueSummary': F_COMPONENT_TOKENS,
+    'charts.statusChart': F_STATUS_DOTS,
+    'charts.siteChart': F_STATUS_DOTS,
+    'charts.topIssueChart': F_COMPONENT_TOKENS,          // batang = warna chip-nya
+    'charts.issueBySiteChart': [['#886421', '#F79009']], // --warning → --dot-warn
+    'charts.damageTrendChart': [['#D97757', '#0F766E']]  // --primary → --accent
+};
+Object.entries(THEME_F).forEach(([path, pairs]) => {
+    const keys = path.split('.');
+    const last = keys.pop();
+    const host = keys.reduce((o, k) => o[k], golden);
+    host[last] = JSON.parse(pairs.reduce((s, [a, b]) => s.split(a).join(b), JSON.stringify(host[last])));
+});
 
 const T = [];
 const t = (n, g, w) => T.push({ n, g, w, pass: JSON.stringify(g) === JSON.stringify(w) });

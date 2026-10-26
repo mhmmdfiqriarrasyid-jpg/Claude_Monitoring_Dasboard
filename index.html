@@ -268,6 +268,27 @@
     <!-- ==================== DASHBOARD VIEW ==================== -->
     <div id="viewDashboard" class="view">
 
+        <!-- Page head: title, today's date and the equipment-group switch.
+             The switch is shown only when the fleet holds both groups and the
+             account may see both (syncDashHead); otherwise the sidebar's
+             group links are the only way, as before. -->
+        <div class="page-head dash-head">
+            <div class="page-head__text">
+                <h1 class="page-head__title">Dashboard</h1>
+                <span class="page-head__sub" id="dashDate"></span>
+                <!-- Which group this dashboard covers, on screen and on a
+                     printed copy. -->
+                <p id="dashScopeCaption" class="dash-scope-caption" hidden></p>
+            </div>
+            <div class="page-head__actions">
+                <div class="seg dash-seg" id="dashGroupSeg" role="group" aria-label="Equipment group" hidden>
+                    <button type="button" class="seg__btn" data-dash-group="tractor" aria-pressed="false" onclick="setDashGroup('tractor')">Agricultural</button>
+                    <button type="button" class="seg__btn" data-dash-group="heavy" aria-pressed="false" onclick="setDashGroup('heavy')">Heavy</button>
+                    <button type="button" class="seg__btn" data-dash-group="all" aria-pressed="false" onclick="setDashGroup('all')">All</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Change Alert Banner -->
         <div class="change-banner" id="changeBanner">
             <div class="change-banner__content">
@@ -288,61 +309,140 @@
             </button>
         </div>
 
-        <!-- Dashboard Content (hidden until data exists) -->
-        <div id="dashboardContent" style="display:none;">
+        <!-- Dashboard Content (hidden until data exists). data-tab says which
+             tab is on screen; print shows both. -->
+        <div id="dashboardContent" data-tab="overview" style="display:none;">
 
-            <!-- KPI Cards -->
-            <!-- Which group this dashboard covers. The group is picked in the
-                 sidebar (Dashboard under each group, All Dashboard); this line
-                 says it on screen and on a printed copy. -->
-            <p id="dashScopeCaption" class="dash-scope-caption" hidden></p>
+            <div class="team-tabbar dash-tabs" role="tablist" aria-label="Dashboard sections" onkeydown="dashTabKey(event)">
+                <button type="button" class="team-tab active" role="tab" id="dashTabOverview" data-dash-tab="overview"
+                        aria-selected="true" aria-controls="dashPaneOverview" onclick="setDashTab('overview')">Overview</button>
+                <button type="button" class="team-tab" role="tab" id="dashTabReliability" data-dash-tab="reliability"
+                        aria-selected="false" aria-controls="dashPaneReliability" tabindex="-1" onclick="setDashTab('reliability')">Reliability</button>
+            </div>
+
+            <!-- ============ OVERVIEW ============ -->
+            <div id="dashPaneOverview" class="dash-pane" role="tabpanel" aria-labelledby="dashTabOverview">
+
             <p id="dashNarrative" class="dash-narrative" style="display:none"></p>
 
-            <div class="kpi-grid">
-                <div class="kpi-card total">
-                    <div class="kpi-card__header">
-                        <span class="kpi-card__label">Total Units</span>
-                        <div class="kpi-card__icon"><i class="fas fa-boxes-stacked"></i></div>
-                    </div>
-                    <div class="kpi-card__value" id="kpiTotal">0</div>
-                    <div class="kpi-card__sub">All registered units</div>
-                </div>
+            <!-- KPI Cards. Total units reads as "Good 21 / 24"; the health rate
+                 is the Fleet health ring below. -->
+            <div class="kpi-grid dash-kpis">
                 <div class="kpi-card good">
                     <div class="kpi-card__header">
+                        <div class="kpi-card__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg></div>
                         <span class="kpi-card__label">Good</span>
-                        <div class="kpi-card__icon"><i class="fas fa-check-circle"></i></div>
                     </div>
-                    <div class="kpi-card__value" id="kpiGood">0</div>
-                    <div class="kpi-card__sub" id="kpiGoodPct">0% of total</div>
+                    <div class="kpi-card__row">
+                        <div class="kpi-card__value"><span id="kpiGood">0</span><span class="kpi-card__of"> / <span id="kpiTotal">0</span></span></div>
+                        <div class="kpi-card__sub" id="kpiGoodPct">0% of total</div>
+                    </div>
                     <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiGoodBar" style="width:0%"></div></div>
                 </div>
                 <div class="kpi-card breakdown">
                     <div class="kpi-card__header">
+                        <div class="kpi-card__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><path d="m15 9-6 6"></path><path d="m9 9 6 6"></path></svg></div>
                         <span class="kpi-card__label">Breakdown</span>
-                        <div class="kpi-card__icon"><i class="fas fa-exclamation-triangle"></i></div>
+                        <span class="kpi-chip kpi-chip--bad" id="dashBreakdownLongest" hidden></span>
                     </div>
-                    <div class="kpi-card__value" id="kpiBreakdown">0</div>
-                    <div class="kpi-card__sub" id="kpiBreakdownPct">0% of total</div>
+                    <div class="kpi-card__row">
+                        <div class="kpi-card__value" id="kpiBreakdown">0</div>
+                        <div class="kpi-card__sub" id="kpiBreakdownPct">0% of total</div>
+                    </div>
                     <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiBreakdownBar" style="width:0%"></div></div>
                 </div>
                 <div class="kpi-card issue">
                     <div class="kpi-card__header">
-                        <span class="kpi-card__label">Units with Issues</span>
-                        <div class="kpi-card__icon"><i class="fas fa-wrench"></i></div>
+                        <div class="kpi-card__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg></div>
+                        <span class="kpi-card__label">Units with issues</span>
                     </div>
-                    <div class="kpi-card__value" id="kpiIssue">0</div>
-                    <div class="kpi-card__sub" id="kpiIssuePct">0% of total</div>
+                    <div class="kpi-card__row">
+                        <div class="kpi-card__value" id="kpiIssue">0</div>
+                        <div class="kpi-card__sub" id="kpiIssuePct">0% of total</div>
+                    </div>
                     <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiIssueBar" style="width:0%"></div></div>
                 </div>
-                <div class="kpi-card health">
+                <!-- John Deere licences only: hidden on the Heavy dashboard. -->
+                <div class="kpi-card license" id="dashLicCard">
                     <div class="kpi-card__header">
-                        <span class="kpi-card__label">Health Rate</span>
-                        <div class="kpi-card__icon"><i class="fas fa-heart-pulse"></i></div>
+                        <div class="kpi-card__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h5.5"></path><path d="M16 2v4"></path><path d="M8 2v4"></path><path d="M3 10h8"></path><circle cx="17.5" cy="17.5" r="4.5"></circle><path d="M17.5 15.5v2l1.5 1"></path></svg></div>
+                        <span class="kpi-card__label">Licenses due</span>
+                        <span class="kpi-chip kpi-chip--bad" id="dashLicExpired" hidden></span>
                     </div>
-                    <div class="kpi-card__value" id="kpiHealth">0%</div>
-                    <div class="kpi-card__sub">Overall fleet health</div>
-                    <div class="kpi-card__bar"><div class="kpi-card__bar-fill" id="kpiHealthBar" style="width:0%"></div></div>
+                    <div class="kpi-card__row">
+                        <div class="kpi-card__value" id="dashLicDue">0</div>
+                        <div class="kpi-card__sub">Next 30 days</div>
+                    </div>
                 </div>
+            </div>
+
+            <div class="dash-row">
+                <section class="dash-card dash-attn" aria-labelledby="dashAttnTitle">
+                    <div class="dash-card__head">
+                        <h2 class="dash-card__title" id="dashAttnTitle">Needs attention</h2>
+                        <button type="button" class="dash-link" id="dashAttnInbox" onclick="navigateTo('leader')">Open decision inbox</button>
+                    </div>
+                    <div id="dashAttention"></div>
+                </section>
+                <div class="dash-side">
+                    <section class="dash-card dash-health" aria-labelledby="dashHealthTitle">
+                        <div class="dash-ring">
+                            <svg width="92" height="92" viewBox="0 0 96 96" aria-hidden="true">
+                                <circle class="dash-ring__track" cx="48" cy="48" r="38" fill="none" stroke-width="10" style="stroke:var(--track)"></circle>
+                                <circle class="dash-ring__arc" id="dashHealthArc" cx="48" cy="48" r="38" fill="none" stroke-width="10" stroke-linecap="round"
+                                        style="stroke:var(--accent)" stroke-dasharray="0 239" transform="rotate(-90 48 48)"></circle>
+                            </svg>
+                            <span class="dash-ring__text" id="kpiHealth">0%</span>
+                        </div>
+                        <div class="dash-health__text">
+                            <h2 class="dash-card__title" id="dashHealthTitle">Fleet health</h2>
+                            <span class="dash-card__sub" id="dashHealthSub"></span>
+                        </div>
+                        <!-- Kept for renderKPI; the ring above shows the same rate. -->
+                        <div class="kpi-card__bar" hidden><div class="kpi-card__bar-fill" id="kpiHealthBar" style="width:0%"></div></div>
+                    </section>
+                    <section class="dash-card dash-sites" aria-labelledby="dashSitesTitle">
+                        <h2 class="dash-card__title" id="dashSitesTitle">Sites</h2>
+                        <div id="dashSites" class="dash-sites__list"></div>
+                    </section>
+                    <section class="dash-card dash-parts" aria-labelledby="dashPartsTitle">
+                        <h2 class="dash-card__title" id="dashPartsTitle">Faulty parts</h2>
+                        <div id="dashParts" class="dash-parts__grid"></div>
+                    </section>
+                </div>
+            </div>
+
+            <!-- One line of the Reliability tab, each figure naming its period. -->
+            <section class="dash-card dash-month" aria-labelledby="dashMonthTitle">
+                <h2 class="dash-card__title" id="dashMonthTitle">Reliability</h2>
+                <div class="dash-month__stat"><span class="dash-month__label" id="dashMonthDowntimeLabel">Downtime this month</span><span class="dash-month__value" id="dashMonthDowntime">-</span></div>
+                <div class="dash-month__stat"><span class="dash-month__label" id="dashMonthFailuresLabel">Failures this month</span><span class="dash-month__value" id="dashMonthFailures">-</span></div>
+                <div class="dash-month__stat"><span class="dash-month__label">Avg. repair time</span><span class="dash-month__value" id="dashMonthMTTR">-</span></div>
+                <div class="dash-month__stat"><span class="dash-month__label">Avg. time between failures</span><span class="dash-month__value" id="dashMonthMTBF">-</span></div>
+                <button type="button" class="dash-link dash-month__more" onclick="setDashTab('reliability', { focus: true })">See reliability <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg></button>
+            </section>
+
+            <!-- License Expiring Soon -->
+            <div class="license-alerts-section" id="licenseAlertsSection" style="display:none">
+                <div class="section-header">
+                    <div class="section-title"><i class="fas fa-bell"></i> License Alerts</div>
+                    <div class="license-alerts-tools" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                        <div class="license-alerts-summary" id="licenseAlertsSummary"></div>
+                        <button class="btn btn-secondary btn-sm" onclick="sendLicenseAlertEmail()" id="btnEmailAlert">
+                            <i class="fas fa-envelope"></i> Email Report
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="openEmailSettingsModal()" title="Email settings" aria-label="Email settings">
+                            <i class="fas fa-gear"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="license-alerts-cards" id="licenseAlertsCards"></div>
+            </div>
+
+            <!-- Low license stock warning -->
+            <div class="stock-alerts-section" id="stockAlertsSection" style="display:none">
+                <div class="section-title" style="margin-bottom:10px"><i class="fas fa-boxes-stacked"></i> Low License Stock</div>
+                <div class="stock-alerts-cards" id="stockAlertsCards"></div>
             </div>
 
             <!-- Charts Row -->
@@ -357,75 +457,12 @@
                 </div>
             </div>
 
-            <!-- License Expiring Soon -->
-            <div class="license-alerts-section" id="licenseAlertsSection" style="display:none">
-                <div class="section-header">
-                    <div class="section-title"><i class="fas fa-bell"></i> License Alerts</div>
-                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                        <div class="license-alerts-summary" id="licenseAlertsSummary"></div>
-                        <button class="btn btn-secondary btn-sm" onclick="sendLicenseAlertEmail()" id="btnEmailAlert">
-                            <i class="fas fa-envelope"></i> Email Report
-                        </button>
-                        <button class="btn btn-secondary btn-sm" onclick="openEmailSettingsModal()" title="Email settings">
-                            <i class="fas fa-gear"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="license-alerts-cards" id="licenseAlertsCards"></div>
-            </div>
-
-            <!-- Low license stock warning -->
-            <div class="stock-alerts-section" id="stockAlertsSection" style="display:none">
-                <div class="section-title" style="margin-bottom:10px"><i class="fas fa-boxes-stacked"></i> Low License Stock</div>
-                <div class="stock-alerts-cards" id="stockAlertsCards"></div>
-            </div>
-
             <!-- Component Health -->
             <div class="component-health">
                 <div class="section-header">
                     <div class="section-title"><i class="fas fa-microchip"></i> Component Health Overview</div>
                 </div>
                 <div class="component-grid" id="componentGrid"></div>
-            </div>
-
-            <!-- Downtime & Reliability Section -->
-            <div class="downtime-section">
-                <div class="section-header">
-                    <div class="section-title"><i class="fas fa-stopwatch"></i> Reliability &amp; Downtime</div>
-                    <span style="font-size:11px;color:var(--text-light)">Logged automatically from status changes</span>
-                </div>
-                <div class="downtime-kpis">
-                    <div class="downtime-kpi">
-                        <div class="downtime-kpi__label">MTBF</div>
-                        <div class="downtime-kpi__value" id="kpiMTBF">-</div>
-                        <div class="downtime-kpi__sub" id="kpiMTBFSub">Mean time between failures</div>
-                    </div>
-                    <div class="downtime-kpi">
-                        <div class="downtime-kpi__label">MTTR</div>
-                        <div class="downtime-kpi__value" id="kpiMTTR">-</div>
-                        <div class="downtime-kpi__sub">Mean time to repair</div>
-                    </div>
-                    <div class="downtime-kpi">
-                        <div class="downtime-kpi__label">This Month</div>
-                        <div class="downtime-kpi__value" id="kpiMonthDowntime">-</div>
-                        <div class="downtime-kpi__sub">Total downtime</div>
-                    </div>
-                    <div class="downtime-kpi">
-                        <div class="downtime-kpi__label">Failures</div>
-                        <div class="downtime-kpi__value" id="kpiFailures">0</div>
-                        <div class="downtime-kpi__sub">Recorded breakdowns</div>
-                    </div>
-                </div>
-                <div class="downtime-grid">
-                    <div>
-                        <div class="chart-card__title"><i class="fas fa-ranking-star"></i> Top 5 Worst Offenders</div>
-                        <div class="top-offenders" id="topOffendersList"></div>
-                    </div>
-                    <div>
-                        <div class="chart-card__title"><i class="fas fa-chart-bar"></i> Downtime by Unit (Top 10)</div>
-                        <div class="chart-container-sm"><canvas id="downtimeChart"></canvas></div>
-                    </div>
-                </div>
             </div>
 
             <!-- Filter Bar -->
@@ -541,6 +578,68 @@
                     </div>
                 </div>
             </div>
+
+            </div><!-- /dashPaneOverview -->
+
+            <!-- ============ RELIABILITY ============ -->
+            <div id="dashPaneReliability" class="dash-pane" role="tabpanel" aria-labelledby="dashTabReliability">
+
+            <!-- Downtime & Reliability Section -->
+            <div class="downtime-section">
+                <div class="section-header">
+                    <div class="section-title"><i class="fas fa-stopwatch"></i> Reliability &amp; Downtime</div>
+                    <span class="downtime-section__note">Logged automatically from status changes</span>
+                </div>
+                <div class="downtime-kpis">
+                    <div class="downtime-kpi">
+                        <div class="downtime-kpi__label">Time between failures <span class="downtime-kpi__abbr">MTBF</span></div>
+                        <div class="downtime-kpi__value" id="kpiMTBF">-</div>
+                        <div class="downtime-kpi__sub" id="kpiMTBFSub">Mean time between failures</div>
+                        <div class="downtime-kpi__hint">Higher is better.</div>
+                    </div>
+                    <div class="downtime-kpi">
+                        <div class="downtime-kpi__label">Repair time <span class="downtime-kpi__abbr">MTTR</span></div>
+                        <div class="downtime-kpi__value" id="kpiMTTR">-</div>
+                        <div class="downtime-kpi__sub">Mean time to repair a breakdown</div>
+                        <div class="downtime-kpi__hint">Lower is better.</div>
+                    </div>
+                    <div class="downtime-kpi">
+                        <div class="downtime-kpi__label" id="dashMonthKpiLabel">Downtime this month</div>
+                        <div class="downtime-kpi__value" id="kpiMonthDowntime">-</div>
+                        <div class="downtime-kpi__sub" id="dashMonthRange">Total downtime</div>
+                    </div>
+                    <div class="downtime-kpi">
+                        <div class="downtime-kpi__label">Failures</div>
+                        <div class="downtime-kpi__value" id="kpiFailures">0</div>
+                        <div class="downtime-kpi__sub">Recorded breakdowns: times a unit went from Good to Breakdown</div>
+                    </div>
+                </div>
+                <div class="downtime-grid">
+                    <section class="dash-card dash-trend" aria-labelledby="dashTrendTitle">
+                        <div class="dash-card__head dash-card__head--stack">
+                            <h2 class="dash-card__title" id="dashTrendTitle">Downtime per month</h2>
+                            <span class="dash-card__sub">Hours in breakdown, last six months</span>
+                        </div>
+                        <div id="dashTrend"></div>
+                    </section>
+                    <section class="dash-card dash-units-chart" aria-labelledby="dashDowntimeChartTitle">
+                        <div class="dash-card__head dash-card__head--stack">
+                            <h2 class="dash-card__title" id="dashDowntimeChartTitle">Downtime by unit</h2>
+                            <span class="dash-card__sub">Top 10, hours in breakdown on record</span>
+                        </div>
+                        <div class="chart-container-sm"><canvas id="downtimeChart"></canvas></div>
+                    </section>
+                </div>
+                <section class="dash-card dash-worst" aria-labelledby="dashWorstTitle">
+                    <div class="dash-card__head dash-card__head--stack">
+                        <h2 class="dash-card__title" id="dashWorstTitle">Units with the most downtime</h2>
+                        <span class="dash-card__sub">Top 5 on record — candidates for a deeper check</span>
+                    </div>
+                    <div class="top-offenders" id="topOffendersList"></div>
+                </section>
+            </div>
+
+            </div><!-- /dashPaneReliability -->
 
         </div><!-- /dashboardContent -->
     </div><!-- /viewDashboard -->
