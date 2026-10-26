@@ -7954,6 +7954,9 @@ function damageDayLabel(iso) {
 
 // Chip colour per stored damage type (the words come from damageTypeLabel).
 const DAMAGE_TYPE_CHIP = { Mekanis: 'mech', Software: 'soft', 'Device Precision': 'device' };
+// The row's "⋯" actions button, and the one whose menu is open now.
+const DAMAGE_MORE_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg>';
+let _dmgMenuBtn = null;
 
 // The four tiles over the table, from the records in the current group,
 // search, type and unit filter. Repair time counts whole days from the
@@ -7996,6 +7999,7 @@ function renderDamageKpis(rows) {
 }
 
 function renderDamageTable() {
+    closeDamageMenu();
     updateDamageCount();
     // A re-render (search, filter, a cloud snapshot) draws fresh, unticked
     // rows — so the selection is dropped with them. Re-reading the OLD boxes
@@ -8042,41 +8046,121 @@ function renderDamageTable() {
         return;
     }
 
-    tbody.innerHTML = rows.map(d => {
+    tbody.innerHTML = rows.map((d, i) => {
         const lu = liveUnitFor(d);
         const uName = lu ? (lu.name || '') : (d.unitName || '');
         const uSn   = lu ? (lu.sn || '')   : (d.sn || '');
         const uSite = lu ? (lu.site || '') : (d.site || '');
+        const id = jsArg(d.id);
         const meta = [uSite, uSn].filter(Boolean).map(escapeHtml).join(' · ');
+        // A unit still in the database opens its profile; a deleted one is
+        // just its stored name.
+        const unitName = lu
+            ? `<button type="button" class="dmg-unit__name dmg-unit__link" title="View unit profile" onclick="showUnitProfile(${jsArg(lu.id)})">${escapeHtml(uName || uSn) || '—'}</button>`
+            : `<span class="dmg-unit__name">${escapeHtml(uName || uSn) || '—'}</span>`;
         const desc = d.description || '';
         const what = (d.component ? `<span class="dmg-what__comp">${escapeHtml(d.component)}</span>` : '')
             + (desc ? `<span class="dmg-what__desc" title="${escapeHtml(desc)}">${escapeHtml(desc)}</span>` : '');
-        const when = d.resolvedAt ? escapeHtml(d.resolvedAt) : '';
         const repair = d.resolved
-            ? `<span class="dmg-state dmg-state--done" title="Repaired${when ? ' ' + when : ''}"><span class="dmg-state__dot" aria-hidden="true"></span>Repaired${
-                when ? ` <span class="dmg-state__when">${escapeHtml(damageDayLabel(d.resolvedAt))}</span>` : ''}</span>`
-              + `<button class="btn btn-secondary btn-sm editonly--damage dmg-reopen" title="Reopen — the repair did not hold" aria-label="Reopen this damage" onclick="reopenDamage(${jsArg(d.id)})"><i class="fas fa-rotate-left" aria-hidden="true"></i></button>`
-            : `<span class="dmg-state dmg-state--open"><span class="dmg-state__dot" aria-hidden="true"></span>Open</span>`
-              + `<button class="btn btn-secondary btn-sm dmg-done-btn" title="Mark as done & restore unit status" onclick="openDamageRepair(${jsArg(d.id)})"><i class="fas fa-wrench" aria-hidden="true"></i> Mark done</button>${damageUnitChip(d, lu)}`;
+            ? `<span class="dmg-state badge dmg-state--done"${d.resolvedAt ? ` title="Repaired ${escapeHtml(d.resolvedAt)}"` : ''}><span class="dmg-state__dot" aria-hidden="true"></span>Repaired${
+                d.resolvedAt ? ` <span class="dmg-state__when">${escapeHtml(damageDayLabel(d.resolvedAt))}</span>` : ''}</span>`
+            : `<span class="dmg-state badge dmg-state--open"><span class="dmg-state__dot" aria-hidden="true"></span>Open</span>${damageUnitChip(d, lu)}`;
         const who = escapeHtml(`${uName || uSn || 'unit'}, ${d.date || ''}`);
+        // Row actions: one "⋯" menu on a desktop row (design F), the same
+        // buttons laid out in the card on a phone. Every one needs edit access.
+        const act = (cls, icon, text, call, title) =>
+            `<button type="button" class="dmg-menu__item${cls}"${title ? ` title="${title}"` : ''} onclick="closeDamageMenu();${call}(${id})"><i class="fas ${icon}" aria-hidden="true"></i><span class="dmg-menu__text">${text}</span></button>`;
+        const actions = (d.resolved
+                ? act(' dmg-menu__item--main', 'fa-rotate-left', 'Reopen', 'reopenDamage', 'Reopen — the repair did not hold')
+                : act(' dmg-menu__item--main', 'fa-wrench', 'Mark as repaired', 'openDamageRepair', 'Mark as done &amp; restore unit status'))
+            + act(' dmg-menu__item--icon', 'fa-pen', 'Edit', 'editDamage', '')
+            + act(' dmg-menu__item--icon dmg-menu__item--danger', 'fa-trash', 'Delete', 'deleteDamage', '');
         return `
         <tr class="${d.resolved ? 'dmg-row dmg-row--done' : 'dmg-row'}">
             <td class="col-check"><input type="checkbox" class="damage-check" data-id="${escapeHtml(d.id)}" aria-label="Select damage record: ${who}" onchange="updateSelectedDamageCount()"></td>
             <td data-label="Date" class="dmg-date"><span title="${escapeHtml(d.date || '')}">${escapeHtml(damageDayLabel(d.date))}</span>${queuedTag('damages', d.id)}</td>
-            <td data-label="Unit" class="dmg-unit"><span class="dmg-unit__name">${escapeHtml(uName) || '—'}</span>${meta ? `<span class="dmg-unit__meta">${meta}</span>` : ''}</td>
-            <td data-label="Type" class="dmg-type-cell"><span class="dmg-type dmg-type--${DAMAGE_TYPE_CHIP[d.damageType] || 'other'}">${escapeHtml(damageTypeLabel(d.damageType)) || '—'}</span></td>
+            <td data-label="Unit" class="dmg-unit">${unitName}${meta ? `<span class="dmg-unit__meta">${meta}</span>` : ''}</td>
+            <td data-label="Type" class="dmg-type-cell"><span class="dmg-type badge dmg-type--${DAMAGE_TYPE_CHIP[d.damageType] || 'other'}">${escapeHtml(damageTypeLabel(d.damageType)) || '—'}</span></td>
             <td data-label="What happened" class="dmg-what">${what || '<span class="dmg-none">—</span>'}</td>
             <td data-label="Photos" class="dmg-photos">${damagePhotoButtons(d, { addAfter: true })}</td>
-            <td data-label="Repair" class="dmg-repair-cell"><span class="dmg-repair-cell__in">${repair}</span></td>
-            <td class="col-actions">
-                <div class="row-actions">
-                    <button class="btn btn-secondary dmg-icon-btn" title="Edit" aria-label="Edit damage record: ${who}" onclick="editDamage(${jsArg(d.id)})"><i class="fas fa-pen" aria-hidden="true"></i></button>
-                    <button class="btn btn-secondary dmg-icon-btn dmg-icon-btn--danger" title="Delete" aria-label="Delete damage record: ${who}" onclick="deleteDamage(${jsArg(d.id)})"><i class="fas fa-trash" aria-hidden="true"></i></button>
+            <td data-label="Repair" class="dmg-repair-cell">${repair}</td>
+            <td class="col-actions dmg-act-cell">
+                <div class="dmg-actions editonly--damage">
+                    <button type="button" class="dmg-more" aria-expanded="false" aria-controls="dmgMenu${i}"
+                        aria-label="Actions for the damage on ${who}" title="Actions" onclick="toggleDamageMenu(this, event)">${DAMAGE_MORE_ICON}</button>
+                    <div class="dmg-menu" id="dmgMenu${i}">${actions}</div>
                 </div>
             </td>
         </tr>`;
     }).join('');
 }
+
+// ---- Row actions menu ----
+// The "⋯" button on a desktop row opens its menu fixed to the screen, so the
+// table's own scroll box does not clip it near the bottom. One is open at a
+// time; Escape, a click or focus elsewhere, scrolling and a re-render close
+// it. On a phone the button is hidden and the menu's buttons sit in the card.
+// (DAMAGE_MORE_ICON and _dmgMenuBtn are declared with the render helpers.)
+
+// Opened from the keyboard (Enter / Space: a click with no pointer detail),
+// the first item takes the focus; a mouse click leaves it on the button.
+function toggleDamageMenu(btn, ev) {
+    const wasOpen = _dmgMenuBtn === btn;
+    closeDamageMenu();
+    const menu = btn && btn.nextElementSibling;
+    if (wasOpen || !menu) return;
+    _dmgMenuBtn = btn;
+    btn.setAttribute('aria-expanded', 'true');
+    menu.classList.add('is-open');
+    const r = btn.getBoundingClientRect();
+    const h = menu.offsetHeight, w = menu.offsetWidth;
+    const below = r.bottom + 4 + h <= window.innerHeight - 8;
+    menu.style.top = `${Math.max(8, below ? r.bottom + 4 : r.top - 4 - h)}px`;
+    menu.style.left = `${Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8))}px`;
+    const first = menu.querySelector('button');
+    if (first && !(ev && ev.detail > 0)) first.focus({ preventScroll: true });
+}
+
+function closeDamageMenu(refocus) {
+    const btn = _dmgMenuBtn;
+    if (!btn) return;
+    _dmgMenuBtn = null;
+    btn.setAttribute('aria-expanded', 'false');
+    const menu = btn.nextElementSibling;
+    if (menu) {
+        menu.classList.remove('is-open');
+        menu.style.top = '';
+        menu.style.left = '';
+    }
+    if (refocus && btn.isConnected) btn.focus();
+}
+
+document.addEventListener('click', e => {
+    if (_dmgMenuBtn && !_dmgMenuBtn.parentElement.contains(e.target)) closeDamageMenu();
+});
+document.addEventListener('focusin', e => {
+    if (_dmgMenuBtn && !_dmgMenuBtn.parentElement.contains(e.target)) closeDamageMenu();
+});
+// Fixed to the screen, so it would float away from its row.
+window.addEventListener('scroll', () => closeDamageMenu(), true);
+window.addEventListener('resize', () => closeDamageMenu());
+document.addEventListener('keydown', e => {
+    if (!_dmgMenuBtn) return;
+    const items = [..._dmgMenuBtn.nextElementSibling.querySelectorAll('button')];
+    const at = items.indexOf(document.activeElement);
+    if (e.key === 'Escape') {
+        // Only the menu: the global handler would close a dialog as well.
+        e.stopImmediatePropagation();
+        closeDamageMenu(true);
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const step = e.key === 'ArrowDown' ? 1 : -1;
+        items[(at + step + items.length) % items.length].focus({ preventScroll: true });
+    } else if (e.key === 'Home' || e.key === 'End') {
+        e.preventDefault();
+        items[e.key === 'Home' ? 0 : items.length - 1].focus({ preventScroll: true });
+    }
+});
 
 // The Repair filter starts at "Any" each time Damage is opened. A link from
 // another page (an "N open damage" chip, Data Check) means "show this unit's
