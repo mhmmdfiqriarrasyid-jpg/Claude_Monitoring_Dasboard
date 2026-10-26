@@ -594,22 +594,22 @@
         </div>
         <input type="file" id="restoreFileInput" aria-label="Choose a backup file to restore" accept=".json" hidden>
 
+        <!-- Import Panel (collapsible) -->
+        <div class="import-panel" id="importPanel">
+            <div class="file-upload-area" id="editDropZone" tabindex="0" role="button" aria-describedby="importHint" onclick="document.getElementById('editCsvInput').click()">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <p>Click to upload or drag &amp; drop a CSV file</p>
+                <span class="hint" id="importHint">New units will be added. Duplicate serial numbers are skipped.</span>
+                <input type="file" id="editCsvInput" aria-label="Choose a unit CSV file to import" accept=".csv" hidden>
+            </div>
+        </div>
+
         <!-- Units missing a key field: one line, and a link that filters the
              table to them (renderUnitsMissingBanner). -->
         <div class="units-banner" id="unitsMissingBanner" role="status" hidden>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
             <span class="units-banner__text" id="unitsMissingText"></span>
             <button type="button" class="units-banner__link" id="unitsMissingShow" onclick="toggleMissingUnits()">Show them</button>
-        </div>
-
-        <!-- Key fields filled, and units per implement / work tool: both
-             filter the table below. -->
-        <div class="units-insights">
-            <!-- Key fields filled, per group; a chip per gap filters the table -->
-            <div class="dq" id="dataQuality" style="display:none" role="region" aria-label="Data completeness"></div>
-
-            <!-- Units per implement (Agricultural) / per work tool (Heavy) -->
-            <div class="tool-summary" id="toolSummary" style="display:none"></div>
         </div>
 
         <!-- Filters: quick chips with counts (renderUnitsQuickFilters), then
@@ -637,15 +637,24 @@
             </div>
         </div>
 
-        <!-- Import Panel (collapsible) -->
-        <div class="import-panel" id="importPanel">
-            <div class="file-upload-area" id="editDropZone" onclick="document.getElementById('editCsvInput').click()">
-                <i class="fas fa-cloud-upload-alt"></i>
-                <p>Click to upload or drag &amp; drop a CSV file</p>
-                <span class="hint" id="importHint">New units will be added. Duplicate serial numbers are skipped.</span>
-                <input type="file" id="editCsvInput" aria-label="Choose a unit CSV file to import" accept=".csv" hidden>
+        <!-- Key fields filled, and units per implement / work tool: both
+             filter the table below. Folded to one line until opened
+             (syncUnitsInsights); a filter set from either keeps it open. -->
+        <section class="units-insights" id="unitsInsights" aria-label="Data completeness and implements">
+            <button type="button" class="units-insights__toggle" id="unitsInsightsBtn" aria-expanded="false" aria-controls="unitsInsightsBody" onclick="toggleUnitsInsights()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"></path><path d="M7 15v2"></path><path d="M11 11v6"></path><path d="M15 7v10"></path><path d="M19 12v5"></path></svg>
+                <span class="units-insights__title">Fleet details</span>
+                <span class="units-insights__meta" id="unitsInsightsMeta"></span>
+                <svg class="units-insights__chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+            </button>
+            <div class="units-insights__body" id="unitsInsightsBody" hidden>
+                <!-- Key fields filled, per group; a chip per gap filters the table -->
+                <div class="dq" id="dataQuality" style="display:none" role="region" aria-label="Data completeness"></div>
+
+                <!-- Units per implement (Agricultural) / per work tool (Heavy) -->
+                <div class="tool-summary" id="toolSummary" style="display:none"></div>
             </div>
-        </div>
+        </section>
 
         <!-- Edit Table. Bulk Edit and Delete appear in its header while rows
              are ticked. -->
@@ -662,7 +671,7 @@
                 </div>
             </div>
             <div class="table-wrapper" style="max-height:600px;">
-                <table class="data-table table--cardable" id="editTable">
+                <table class="data-table table--cardable" id="editTable" aria-labelledby="editTableTitle">
                     <thead>
                         <tr>
                             <th class="col-check"><input type="checkbox" id="selectAll" aria-label="Select all units" onchange="toggleSelectAll()"></th>

@@ -5591,9 +5591,12 @@ function toggleMissingUnits() {
 // ---- Units: quick filters ----
 // All · Breakdown · Faulty part · License due, each with its count among the
 // group's units at the chosen site. Breakdown is the Status filter's own
-// "Breakdown"; Faulty part (a component not Good) and License due (a GPS or
-// display licence expired or within 30 days, as the table's red and amber
-// badges say) are editQuickFilter. One chip at a time.
+// "Breakdown"; Faulty part (a component not Good, as the dashboard counts
+// issues) and License due (a GPS or display licence expired or within 30
+// days, as the table's red and amber badges say) are editQuickFilter. One
+// chip at a time. "All" is lit only while nothing narrows the list (search
+// and site aside), and clears the status, part, licence, implement and
+// missing-field filters.
 let editQuickFilter = '';          // '' | 'faulty' | 'license'
 function unitHasFaultyPart(u) {
     return groupDef(unitGroupOf(u)).components.some(c => !isGood(u[c.key]));
@@ -5617,18 +5620,24 @@ function renderUnitsQuickFilters() {
     const units = unitsOfGroup(globalData, g).filter(d => !siteVal || d.site === siteVal);
     if (editQuickFilter === 'license' && !groupDef(g).hasLicences) editQuickFilter = '';
     const chips = [
-        { key: 'all', label: 'All', n: units.length, on: !statusVal && !editQuickFilter },
+        { key: 'all', label: 'All', n: units.length, on: !statusVal && !editQuickFilter && !editToolFilter && !editMissingFilter },
         { key: 'breakdown', label: 'Breakdown', n: units.filter(u => u.status === 'Breakdown').length, on: statusVal === 'Breakdown' },
         { key: 'faulty', label: 'Faulty part', n: units.filter(unitHasFaultyPart).length, on: editQuickFilter === 'faulty' }
     ];
     if (groupDef(g).hasLicences) chips.push({ key: 'license', label: 'License due', n: units.filter(unitLicenseDue).length, on: editQuickFilter === 'license' });
-    box.innerHTML = chips.map(c => `<button type="button" class="units-chip${c.on ? ' is-on' : ''}" aria-pressed="${c.on}"
+    // The chips are redrawn by the click they handle: keep keyboard focus on
+    // the one that was pressed.
+    const had = document.activeElement && document.activeElement.closest && document.activeElement.closest('#unitsQuick [data-key]');
+    box.innerHTML = chips.map(c => `<button type="button" class="units-chip${c.on ? ' is-on' : ''}" data-key="${c.key}" aria-pressed="${c.on}"
         ${!c.n && !c.on && c.key !== 'all' ? 'disabled' : ''} onclick="setUnitsQuickFilter('${c.key}')">${c.label} · ${c.n}</button>`).join('');
+    if (had) box.querySelector(`[data-key="${had.dataset.key}"]:not(:disabled)`)?.focus();
 }
 function setUnitsQuickFilter(key) {
     const sf = document.getElementById('editStatusFilter');
-    if (key === 'all') { editQuickFilter = ''; if (sf) sf.value = ''; }
-    else if (key === 'breakdown') {
+    if (key === 'all') {
+        editQuickFilter = ''; editToolFilter = ''; editMissingFilter = '';
+        if (sf) sf.value = '';
+    } else if (key === 'breakdown') {
         editQuickFilter = '';
         if (sf) sf.value = sf.value === 'Breakdown' ? '' : 'Breakdown';
     } else {
@@ -5693,32 +5702,87 @@ document.addEventListener('click', e => {
     const item = e.target.closest && e.target.closest('#unitsMoreMenu > button');
     if (!item) return;
     // The item's own onclick has run by now (it is on the button itself).
+    // Import CSV hands focus to the upload area it just opened.
     toggleUnitsMore(false);
-    if (!document.querySelector('.modal-overlay.open')) document.getElementById('unitsMoreBtn')?.focus({ preventScroll: true });
+    const drop = document.getElementById('editDropZone');
+    if (/toggleImportPanel/.test(item.getAttribute('onclick') || '') && document.getElementById('importPanel')?.classList.contains('open')) drop?.focus();
+    else if (!document.querySelector('.modal-overlay.open')) document.getElementById('unitsMoreBtn')?.focus({ preventScroll: true });
+});
+// The upload area is a button to the keyboard too.
+document.addEventListener('keydown', e => {
+    if (e.target && e.target.id === 'editDropZone' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.target.click(); }
 });
 
-// A status or part cell is coloured by its value (data-state). While it is
-// being typed into, or when a refused edit puts the old text back, the
-// colour follows the text.
-const STATE_FIELDS = new Set(['status', ...COMPONENT_KEYS, ...HEAVY_COMPONENT_KEYS]);
-function cellStateAttr(v) { return isGood(v) ? ' data-state="good"' : clean(v) ? ' data-state="bad"' : ''; }
-function _syncCellState(el) {
-    const st = isGood(el.textContent) ? 'good' : clean(el.textContent) ? 'bad' : '';
-    if ((el.dataset.state || '') === st) return;
-    if (st) el.dataset.state = st; else delete el.dataset.state;
+// ---- Units: Good / Breakdown in colour ----
+// The rows' markup is fixed (the golden tests compare it byte for byte), so
+// the status and part cells are coloured without touching it: the CSS Custom
+// Highlight API paints ranges over their text, styled by ::highlight(units-
+// good / units-bad) in f-theme/units.css. Repainted whenever the rows change
+// or a cell is typed into. A browser without the API shows plain text.
+const UNIT_STATE_FIELDS = new Set(['status', ...COMPONENT_KEYS, ...HEAVY_COMPONENT_KEYS]);
+function paintUnitStates() {
+    if (!(window.CSS && CSS.highlights && typeof Highlight === 'function')) return;
+    const good = new Highlight(), bad = new Highlight();
+    document.querySelectorAll('#editBody .inline-edit[data-field]').forEach(el => {
+        if (!UNIT_STATE_FIELDS.has(el.dataset.field) || !clean(el.textContent)) return;
+        const r = document.createRange();
+        r.selectNodeContents(el);
+        (isGood(el.textContent) ? good : bad).add(r);
+    });
+    CSS.highlights.set('units-good', good);
+    CSS.highlights.set('units-bad', bad);
 }
 (() => {
     const body = document.getElementById('editBody');
     if (!body || typeof MutationObserver !== 'function') return;
-    new MutationObserver(recs => {
-        const seen = new Set();
-        recs.forEach(r => {
-            const host = r.target.nodeType === 3 ? r.target.parentElement : r.target;
-            const el = host && host.closest && host.closest('.inline-edit[data-field]');
-            if (el && !seen.has(el) && STATE_FIELDS.has(el.dataset.field) && body.contains(el)) { seen.add(el); _syncCellState(el); }
-        });
-    }).observe(body, { subtree: true, childList: true, characterData: true });
+    new MutationObserver(paintUnitStates).observe(body, { subtree: true, childList: true, characterData: true });
 })();
+
+// ---- Units: data completeness and units per implement, folded ----
+// Both cards filter the table but are not what the page is read for, so they
+// sit behind one line ("Data 96% complete · 5 implement types") until
+// opened. The choice is remembered on this device; a filter set from either
+// card (or from the Decision inbox) opens it, so what narrows the table is
+// always on screen.
+function unitsInsightsOpen() {
+    if (editToolFilter || (editMissingFilter && editMissingFilter !== MISSING_ANY)) return true;
+    try { return localStorage.getItem('unitsInsightsOpen') === '1'; } catch (_) { return false; }
+}
+function syncUnitsInsights() {
+    const btn = document.getElementById('unitsInsightsBtn');
+    const body = document.getElementById('unitsInsightsBody');
+    if (!btn || !body) return;
+    const dq = document.getElementById('dataQuality');
+    const ts = document.getElementById('toolSummary');
+    const hasDq = dq && dq.style.display !== 'none';
+    const hasTs = ts && ts.style.display !== 'none';
+    document.getElementById('unitsInsights').hidden = !hasDq && !hasTs;
+    const g = effectiveEditGroup();
+    const parts = [];
+    const pct = hasDq && dq.querySelector('.dq__pct');
+    if (pct) parts.push(`Data ${pct.textContent} complete`);
+    if (hasTs) {
+        const kinds = toolSummaryRows(g).rows.filter(r => r.key !== TOOL_NONE).length;
+        parts.push(`${kinds} ${g === 'heavy' ? 'work tool' : 'implement'} type${kinds === 1 ? '' : 's'}`);
+    }
+    document.getElementById('unitsInsightsMeta').textContent = parts.join(' · ');
+    const open = unitsInsightsOpen();
+    body.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+}
+function toggleUnitsInsights() {
+    const open = document.getElementById('unitsInsightsBody').hidden;
+    try { localStorage.setItem('unitsInsightsOpen', open ? '1' : ''); } catch (_) {}
+    // Folding it away also drops a filter it was holding, or the table
+    // would stay narrowed by something no longer on screen.
+    if (!open && (editToolFilter || (editMissingFilter && editMissingFilter !== MISSING_ANY))) {
+        editToolFilter = '';
+        if (editMissingFilter !== MISSING_ANY) editMissingFilter = '';
+        renderEditTable();
+        return;
+    }
+    syncUnitsInsights();
+}
 
 // The page head follows the account (its group limit) and the data; a
 // change of limit drops the quick filter with the other filters
@@ -5757,7 +5821,7 @@ function _editRowHeavy(d, i, ce) {
     const remarksShort = remarks.length > 40 ? remarks.slice(0, 40) + '…' : remarks;
     const id = escapeHtml(d.id);
     const cell = (label, field, style) =>
-        `<td data-label="${label}"${style ? ` style="${style}"` : ''}><span class="inline-edit" contenteditable="${ce}" data-id="${id}" data-field="${field}" onblur="saveInlineEdit(this)"${STATE_FIELDS.has(field) ? cellStateAttr(d[field]) : ''}>${escapeHtml(d[field] == null ? '' : d[field])}</span></td>`;
+        `<td data-label="${label}"${style ? ` style="${style}"` : ''}><span class="inline-edit" contenteditable="${ce}" data-id="${id}" data-field="${field}" onblur="saveInlineEdit(this)">${escapeHtml(d[field] == null ? '' : d[field])}</span></td>`;
     return `
         <tr>
             <td class="col-check"><input type="checkbox" class="unit-check" data-id="${id}" onchange="updateSelectedCount()"></td>
@@ -5816,6 +5880,7 @@ function _renderEditTable() {
     renderUnitsQuickFilters();
     renderDataCompleteness();
     renderToolSummary();
+    syncUnitsInsights();
     updateEditCount();
     // A re-render (search, filter, a cloud snapshot) draws fresh, unticked
     // rows — so the selection is dropped with them. Re-reading the OLD boxes
@@ -5838,12 +5903,12 @@ function _renderEditTable() {
     const shown = document.getElementById('unitsShownCount');
     if (shown) {
         const all = unitsOfGroup(globalData, group).length;
-        shown.textContent = rows.length === all ? `Showing all ${all}` : `Showing ${rows.length} of ${all}`;
+        shown.textContent = !all ? '' : rows.length === all ? `Showing all ${all}` : `Showing ${rows.length} of ${all}`;
     }
     if (rows.length === 0) {
         const empty = group === 'heavy'
-            ? `No ${escapeHtml(UNIT_GROUPS.heavy.label)} units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.`
-            : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.';
+            ? `No ${escapeHtml(UNIT_GROUPS.heavy.label)} units yet. Click <strong>Add unit</strong>, or <strong>Import CSV</strong> from the More menu, to get started.`
+            : 'No units yet. Click <strong>Add unit</strong>, or <strong>Import CSV</strong> from the More menu, to get started.';
         tbody.innerHTML = `<tr><td colspan="${EDIT_COLSPAN[group]}" style="text-align:center;padding:24px;color:var(--text-secondary)">${(query || statusVal || siteVal || editToolFilter || editMissingFilter || editQuickFilter) ? 'No units match the filter' : empty}</td></tr>`;
         return;
     }
@@ -5870,11 +5935,11 @@ function _renderEditTable() {
             <td data-label="Model"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="model" onblur="saveInlineEdit(this)">${escapeHtml(d.model)}</span></td>
             <td data-label="SN" style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
             <td data-label="Implement"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="implement" onblur="saveInlineEdit(this)">${escapeHtml(d.implement || '')}</span></td>
-            <td data-label="Status"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="status" onblur="saveInlineEdit(this)"${cellStateAttr(d.status)}>${escapeHtml(d.status)}</span></td>
-            <td data-label="Display"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="display" onblur="saveInlineEdit(this)"${cellStateAttr(d.display)}>${escapeHtml(d.display)}</span></td>
-            <td data-label="GPS"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="gps" onblur="saveInlineEdit(this)"${cellStateAttr(d.gps)}>${escapeHtml(d.gps)}</span></td>
-            <td data-label="Steering"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="steering" onblur="saveInlineEdit(this)"${cellStateAttr(d.steering)}>${escapeHtml(d.steering)}</span></td>
-            <td data-label="JDLink"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="jdlink" onblur="saveInlineEdit(this)"${cellStateAttr(d.jdlink)}>${escapeHtml(d.jdlink)}</span></td>
+            <td data-label="Status"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="status" onblur="saveInlineEdit(this)">${escapeHtml(d.status)}</span></td>
+            <td data-label="Display"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="display" onblur="saveInlineEdit(this)">${escapeHtml(d.display)}</span></td>
+            <td data-label="GPS"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="gps" onblur="saveInlineEdit(this)">${escapeHtml(d.gps)}</span></td>
+            <td data-label="Steering"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="steering" onblur="saveInlineEdit(this)">${escapeHtml(d.steering)}</span></td>
+            <td data-label="JDLink"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="jdlink" onblur="saveInlineEdit(this)">${escapeHtml(d.jdlink)}</span></td>
             <td data-label="Site"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="site" onblur="saveInlineEdit(this)">${escapeHtml(d.site)}</span></td>
             <td data-label="Year Received"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="yearReceived" onblur="saveInlineEdit(this)">${escapeHtml(d.yearReceived || '')}</span></td>
             <td data-label="User Category">${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
@@ -6092,6 +6157,8 @@ function updateSelectedCount() {
     const bulkCount = document.getElementById('bulkEditCount');
     if (bulkCount) bulkCount.textContent = count;
     if (bulk) bulk.style.display = count > 0 ? '' : 'none';
+    // The table card shows its action bar only while rows are ticked.
+    document.querySelector('.units-table-card')?.classList.toggle('has-selection', count > 0);
 }
 
 // ---- Bulk edit selected units ----
@@ -7843,11 +7910,19 @@ function showUnitProfile(id) {
         const state = good ? 'Good' : (clean(u[c.key]) ? escapeHtml(clean(u[c.key])) : 'Not set');
         return `<div class="profile-comp ${good ? 'ok' : 'bad'}"><i class="fas fa-${good ? 'circle-check' : 'circle-xmark'}" aria-hidden="true"></i> ${label}<span class="profile-comp__state">${state}</span></div>`;
     }).join('');
-    // A unit in breakdown leads with why, and for how long (design F callout).
+    const dmg = globalDamages
+        .filter(r => r.unitId === id || (snLc && (r.sn || '').toLowerCase() === snLc))
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    // A unit in breakdown leads with why, for how long, and a way to its open
+    // damage records (design F callout).
     const downFor = !isGood(u.status) && u.breakdownStartedAt ? `Down ${formatDuration(Date.now() - u.breakdownStartedAt)}` : '';
+    const openDmg = dmg.filter(r => !r.resolved).length;
+    const dmgLink = openDmg && hasAccess('damage', 'view')
+        ? `<button type="button" class="profile-note__link" onclick="closeUnitProfile(); goDecision(${jsArg(`damage:${unitGroupOf(u)}:unit:${id}`)})">${
+            openDmg === 1 ? 'Open damage record' : `Open ${openDmg} damage records`}</button>` : '';
     const bdReason = !isGood(u.status)
         ? `<div class="profile-note profile-note--bad"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i>
-            <div><strong>${escapeHtml(u.status || 'Breakdown')}${u.breakdownReason ? ' — ' + escapeHtml(u.breakdownReason) : ''}</strong>${downFor ? `<span class="profile-note__sub">${downFor}</span>` : ''}</div></div>` : '';
+            <div><strong>${escapeHtml(u.status || 'Breakdown')}${u.breakdownReason ? ' — ' + escapeHtml(u.breakdownReason) : ''}</strong>${downFor ? `<span class="profile-note__sub">${downFor}</span>` : ''}${dmgLink}</div></div>` : '';
     const stray = strayGroupFields(u);
     const strayNote = stray.length
         ? `<div class="profile-note"><i class="fas fa-triangle-exclamation"></i> This unit carries ${stray.length} field(s) belonging to another group — see Decision Inbox → Data Check.</div>` : '';
@@ -7859,9 +7934,6 @@ function showUnitProfile(id) {
             <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${licenseTypeBadge(u, kind)} ${licenseBadgeFor(u, kind)}${end ? ` <span style="font-size:11.5px;color:var(--text-secondary)">exp ${escapeHtml(end)}</span>` : ''}</span></div>`;
     }).join('');
 
-    const dmg = globalDamages
-        .filter(r => r.unitId === id || (snLc && (r.sn || '').toLowerCase() === snLc))
-        .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     const dmgHtml = dmg.length ? dmg.map(r => `
         <div class="profile-item">
             <span class="profile-item__date">${escapeHtml(r.date || '')}</span>
