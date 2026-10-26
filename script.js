@@ -1631,6 +1631,8 @@ function navigateTo(view) {
         ensureUsersSubscription();
         renderUsersView();
     }
+    // Page-level UI (headers, switches) listens instead of growing this function.
+    document.dispatchEvent(new CustomEvent('ot:view', { detail: { view } }));
 }
 
 // ---- Sidebar: one menu per equipment group ----
@@ -4022,6 +4024,7 @@ function onDataLoaded() {
     scheduleExpiredLicenseDowngrades();
 
     _tryAutoDailyEmail();
+    document.dispatchEvent(new CustomEvent('ot:data'));
 }
 
 // ---- Dashboard group scope: Pertanian / Alat Berat / Semua ----
@@ -12362,6 +12365,7 @@ function applyRoleGating() {
         renderUserPill();
         scheduleDecisionRefresh();
     }
+    document.dispatchEvent(new CustomEvent('ot:gating'));
 }
 
 // Hide sidebar links the user can't view, and flag view-only areas on <body>
