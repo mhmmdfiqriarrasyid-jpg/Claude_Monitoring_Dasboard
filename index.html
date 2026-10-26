@@ -44,24 +44,31 @@
 <div class="toast-container" id="toastContainer"></div>
 
 <!-- ===== AUTH GATE (Login / Sign-up / Pending) ===== -->
+<!-- Design F: a teal brand panel beside a white card; on a phone the panel
+     shrinks to a band above the card. -->
 <div class="auth-gate" id="authGate">
+    <section class="auth-brand" aria-label="Operation Technology Dashboard">
+        <div class="auth-brand__logo"><img src="./logo.png" alt="Operation Technology logo" class="brand-logo--lg"></div>
+        <h1 class="auth-brand__name">Operation Technology <span class="auth-brand__sub">Dashboard</span></h1>
+    </section>
+    <section class="auth-main" aria-labelledby="authTitle">
     <div class="auth-card">
-        <div class="auth-card__brand">
-            <img src="./logo.png" alt="Operation Technology logo" class="brand-logo--lg">
-            <h1>Operation Technology Dashboard</h1>
+        <div class="auth-card__head">
+            <h2 class="auth-card__title" id="authTitle">Sign in</h2>
+            <p class="auth-card__sub" id="authSub">Use the email your account was created with.</p>
         </div>
 
-        <!-- Tabs: Sign In / Create Account -->
-        <div class="auth-tabs">
-            <button class="auth-tab active" id="authTabSignIn" onclick="switchAuthTab('signin')">Sign In</button>
-            <button class="auth-tab" id="authTabSignUp" onclick="switchAuthTab('signup')">Create Account</button>
+        <!-- Sign in / Create account (segmented control) -->
+        <div class="auth-tabs seg" role="group" aria-label="Sign in or create account">
+            <button type="button" class="auth-tab seg__btn active" id="authTabSignIn" aria-pressed="true" onclick="switchAuthTab('signin')">Sign in</button>
+            <button type="button" class="auth-tab seg__btn" id="authTabSignUp" aria-pressed="false" onclick="switchAuthTab('signup')">Create account</button>
         </div>
 
         <!-- Sign In form -->
         <form id="signInForm" class="auth-form" onsubmit="handleSignIn(event)">
             <div class="form-group">
                 <label class="form-label" for="signInEmail">Email</label>
-                <input type="email" class="form-input" id="signInEmail" required autocomplete="email"
+                <input type="email" class="form-input" id="signInEmail" required autocomplete="email" placeholder="name@company.com"
                        autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="email">
             </div>
             <div class="form-group">
@@ -70,26 +77,28 @@
                     <input type="password" class="form-input" id="signInPassword" required autocomplete="current-password"
                            autocapitalize="off" autocorrect="off" spellcheck="false">
                     <button type="button" class="pw-toggle" aria-label="Show password" aria-pressed="false"
-                            onclick="togglePasswordVisibility('signInPassword', this)"><i class="fas fa-eye"></i></button>
+                            onclick="togglePasswordVisibility('signInPassword', this)">Show</button>
                 </div>
             </div>
             <div class="auth-error" id="signInError"></div>
             <div class="auth-notice" id="signInNotice" style="display:none" role="status"></div>
-            <button type="submit" class="btn btn-primary auth-submit">
-                <i class="fas fa-right-to-bracket"></i> Sign In
-            </button>
+            <button type="submit" class="btn btn-primary auth-submit">Sign in</button>
             <button type="button" class="auth-link" onclick="handleForgotPassword()">Forgot password?</button>
+            <div class="auth-note">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h12"></path><path d="M6 22h12"></path><path d="M7 2v3.5a5 5 0 0 0 2.5 4.33L12 11l2.5-1.17A5 5 0 0 0 17 5.5V2"></path><path d="M7 22v-3.5a5 5 0 0 1 2.5-4.33L12 13l2.5 1.17A5 5 0 0 1 17 18.5V22"></path></svg>
+                <span>New here? <button type="button" class="auth-note__link" onclick="switchAuthTab('signup')">Create an account</button>. It starts as <strong>view only</strong> until the owner approves it.</span>
+            </div>
         </form>
 
         <!-- Sign Up form -->
         <form id="signUpForm" class="auth-form" style="display:none" onsubmit="handleSignUp(event)">
             <div class="form-group">
-                <label class="form-label" for="signUpName">Display Name</label>
+                <label class="form-label" for="signUpName">Display name</label>
                 <input type="text" class="form-input" id="signUpName" placeholder="Your name" autocomplete="name">
             </div>
             <div class="form-group">
                 <label class="form-label" for="signUpEmail">Email</label>
-                <input type="email" class="form-input" id="signUpEmail" required autocomplete="email"
+                <input type="email" class="form-input" id="signUpEmail" required autocomplete="email" placeholder="name@company.com"
                        autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="email">
             </div>
             <div class="form-group">
@@ -98,168 +107,183 @@
                     <input type="password" class="form-input" id="signUpPassword" required minlength="6" autocomplete="new-password"
                            autocapitalize="off" autocorrect="off" spellcheck="false">
                     <button type="button" class="pw-toggle" aria-label="Show password" aria-pressed="false"
-                            onclick="togglePasswordVisibility('signUpPassword', this)"><i class="fas fa-eye"></i></button>
+                            onclick="togglePasswordVisibility('signUpPassword', this)">Show</button>
                 </div>
             </div>
             <div class="auth-error" id="signUpError"></div>
-            <div class="auth-hint">
-                <i class="fas fa-info-circle"></i>
-                New accounts start as <strong>view-only</strong> and need the owner's approval before they can edit data.
+            <div class="auth-hint auth-note">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h12"></path><path d="M6 22h12"></path><path d="M7 2v3.5a5 5 0 0 0 2.5 4.33L12 11l2.5-1.17A5 5 0 0 0 17 5.5V2"></path><path d="M7 22v-3.5a5 5 0 0 1 2.5-4.33L12 13l2.5 1.17A5 5 0 0 1 17 18.5V22"></path></svg>
+                <span>New accounts start as <strong>view only</strong> and need the owner's approval before they can edit data.</span>
             </div>
-            <button type="submit" class="btn btn-primary auth-submit">
-                <i class="fas fa-user-plus"></i> Create Account
-            </button>
+            <button type="submit" class="btn btn-primary auth-submit">Create account</button>
         </form>
 
         <div class="auth-card__footer">© 2026 Operation Technology</div>
     </div>
+    </section>
 </div>
 
 <!-- ===== PENDING APPROVAL SCREEN (logged in but not approved) ===== -->
 <div class="auth-gate" id="pendingGate" style="display:none">
+    <section class="auth-brand" aria-label="Operation Technology Dashboard">
+        <div class="auth-brand__logo"><img src="./logo.png" alt="Operation Technology logo" class="brand-logo--lg"></div>
+        <p class="auth-brand__name">Operation Technology <span class="auth-brand__sub">Dashboard</span></p>
+    </section>
+    <section class="auth-main" aria-labelledby="pendingTitle">
     <div class="auth-card">
-        <div class="auth-card__brand">
-            <i class="fas fa-hourglass-half" style="color:#d69e2e"></i>
-            <h1>Pending approval</h1>
-            <p id="pendingEmail"></p>
+        <div class="auth-card__icon" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12"></path><path d="M6 22h12"></path><path d="M7 2v3.5a5 5 0 0 0 2.5 4.33L12 11l2.5-1.17A5 5 0 0 0 17 5.5V2"></path><path d="M7 22v-3.5a5 5 0 0 1 2.5-4.33L12 13l2.5 1.17A5 5 0 0 1 17 18.5V22"></path></svg>
         </div>
-        <div class="pending-message">
+        <div class="auth-card__head">
+            <h2 class="auth-card__title" id="pendingTitle">Pending approval</h2>
+            <p class="auth-card__sub" id="pendingEmail"></p>
+        </div>
+        <div class="pending-message" id="pendingMessage">
             <p>Your account has been created, but the owner has to approve it before you can open the dashboard.</p>
-            <p style="margin-top:12px;color:var(--text-secondary);font-size:13px">
-                Once approved, reload this page or sign in again. You will start with <strong>view-only</strong> access — the owner can grant edit rights at any time.
-            </p>
+            <p>Once approved, reload this page or sign in again. You will start with <strong>view only</strong> access — the owner can grant edit rights at any time.</p>
         </div>
-        <button class="btn btn-secondary auth-submit" onclick="handleSignOut()">
-            <i class="fas fa-right-from-bracket"></i> Sign Out
+        <button type="button" class="btn btn-secondary auth-submit" onclick="handleSignOut()">
+            <svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="m16 17 5-5-5-5"></path><path d="M21 12H9"></path></svg>
+            Sign out
         </button>
     </div>
+    </section>
 </div>
 
 <!-- ===== APP SHELL (sidebar + body) ===== -->
 <div class="app-shell" id="appShell">
 
-  <!-- Sidebar -->
-  <aside class="sidebar">
+  <!-- Sidebar (design F): one link per page — the equipment group is picked
+       on the page itself. Implements and Licenses are agricultural pages and
+       Inspection a heavy-equipment one; who sees which is decided in
+       updateNavGroups(). A heading whose links are all hidden is hidden. -->
+  <aside class="sidebar" id="sidebar">
     <div class="sidebar__brand">
         <img src="./logo.png" alt="Operation Technology logo" class="brand-logo">
         <div class="sidebar__brand-text">
             <div class="sidebar__brand-name">Operation Technology</div>
             <div class="sidebar__brand-sub">Dashboard</div>
         </div>
-        <button type="button" class="btn-icon sidebar__close" onclick="closeNav()" aria-label="Close menu" title="Close menu"><i class="fas fa-xmark"></i></button>
+        <button type="button" class="btn-icon sidebar__close" onclick="closeNav()" aria-label="Close menu" title="Close menu"><svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
     </div>
-    <nav class="sidebar__nav" onclick="if(event.target.closest('.nav__link'))closeNav()">
-        <!-- Grouped by what the work is about: the two equipment groups each
-             get their own Dashboard / Unit Database / Kerusakan, which open the
-             shared page on that group (data-group). A group whose links are all
-             hidden for this account is hidden whole — see updateNavGroups(). -->
+    <nav class="sidebar__nav" aria-label="Main menu" onclick="if(event.target.closest('.nav__link'))closeNav()">
         <div class="nav-group">
-            <div class="nav-group__label">Overview</div>
-            <a class="nav__link" data-view="leader" onclick="navigateTo('leader')">
-                <i class="fas fa-inbox"></i> Decision Inbox
+            <button type="button" class="nav__link active" data-view="dashboard" onclick="goNav('dashboard')">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"></rect><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"></rect><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"></rect><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"></rect></svg>
+                <span class="nav__text">Dashboard</span>
+            </button>
+            <button type="button" class="nav__link" data-view="leader" onclick="navigateTo('leader')">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13h5l1.5 2.5h5L16 13h5"></path><path d="M5.5 5h13L21 13v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5z"></path></svg>
+                <span class="nav__text">Decision inbox</span>
                 <span class="nav__badge" id="decisionBadge" style="display:none">0</span>
-            </a>
-            <a class="nav__link" data-view="dashboard" data-group="all" onclick="goNav('dashboard', 'all')">
-                <i class="fas fa-layer-group"></i> All Dashboard
-            </a>
+            </button>
         </div>
-        <div class="nav-group">
-            <div class="nav-group__label">Agricultural Equipment</div>
-            <a class="nav__link active" data-view="dashboard" data-group="tractor" onclick="goNav('dashboard', 'tractor')">
-                <i class="fas fa-chart-line"></i> Dashboard
-            </a>
-            <a class="nav__link" data-view="editUnits" data-group="tractor" onclick="goNav('editUnits', 'tractor')">
-                <i class="fas fa-tractor"></i> Unit Database
-            </a>
-            <a class="nav__link" data-view="implements" onclick="navigateTo('implements')">
-                <i class="fas fa-trailer"></i> Implements
-            </a>
-            <a class="nav__link" data-view="damage" data-group="tractor" onclick="goNav('damage', 'tractor')">
-                <i class="fas fa-screwdriver-wrench"></i> Damage
-            </a>
-            <a class="nav__link" data-view="licenseStock" onclick="navigateTo('licenseStock')">
-                <i class="fas fa-key"></i> License Stock
-            </a>
+        <div class="nav-group" role="group" aria-labelledby="navGroupFleet">
+            <div class="nav-group__label" id="navGroupFleet">Fleet</div>
+            <button type="button" class="nav__link" data-view="editUnits" onclick="goNav('editUnits')">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="16" r="4.5"></circle><circle cx="7" cy="16" r="1.25"></circle><circle cx="18.5" cy="17.5" r="2.5"></circle><path d="M4 11.8V5h7l1.6 6.5"></path><path d="M12.6 11.5H19a2 2 0 0 1 2 2v1.8"></path><path d="M11.5 17.5h4.5"></path><path d="M16.5 11.5V8"></path></svg>
+                <span class="nav__text">Units</span>
+            </button>
+            <button type="button" class="nav__link" data-view="implements" onclick="navigateTo('implements')">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 10h6"></path><rect x="8" y="6" width="13" height="8" rx="1.5"></rect><circle cx="11.5" cy="17.5" r="2.5"></circle><circle cx="17.5" cy="17.5" r="2.5"></circle><path d="M12 10h5"></path></svg>
+                <span class="nav__text">Implements</span>
+            </button>
+            <button type="button" class="nav__link" data-view="damage" onclick="goNav('damage')">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+                <span class="nav__text">Damage</span>
+            </button>
+            <button type="button" class="nav__link" data-view="inspection" onclick="navigateTo('inspection')">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><path d="m9 14 2 2 4-4"></path></svg>
+                <span class="nav__text">Inspection</span>
+                <span class="nav__badge nav__badge--warn" id="inspectionBadge" style="display:none">0</span>
+            </button>
+            <button type="button" class="nav__link" data-view="licenseStock" onclick="navigateTo('licenseStock')">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="m21 2-9.6 9.6"></path><path d="m15.5 7.5 3 3L22 7l-3-3"></path></svg>
+                <span class="nav__text">Licenses</span>
+            </button>
         </div>
-        <div class="nav-group">
-            <div class="nav-group__label">Heavy Equipment</div>
-            <a class="nav__link" data-view="dashboard" data-group="heavy" onclick="goNav('dashboard', 'heavy')">
-                <i class="fas fa-chart-line"></i> Dashboard
-            </a>
-            <a class="nav__link" data-view="editUnits" data-group="heavy" onclick="goNav('editUnits', 'heavy')">
-                <i class="fas fa-person-digging"></i> Unit Database
-            </a>
-            <a class="nav__link" data-view="damage" data-group="heavy" onclick="goNav('damage', 'heavy')">
-                <i class="fas fa-screwdriver-wrench"></i> Damage
-            </a>
-            <a class="nav__link" data-view="inspection" onclick="navigateTo('inspection')">
-                <i class="fas fa-clipboard-check"></i> Inspection
-                <span class="nav__badge" id="inspectionBadge" style="display:none">0</span>
-            </a>
-        </div>
-        <div class="nav-group">
-            <div class="nav-group__label">Team</div>
-            <a class="nav__link" data-view="team" onclick="navigateTo('team')">
-                <i class="fas fa-user-clock"></i> Team
+        <div class="nav-group" role="group" aria-labelledby="navGroupOps">
+            <div class="nav-group__label" id="navGroupOps">Operations</div>
+            <button type="button" class="nav__link" data-view="team" onclick="navigateTo('team')">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                <span class="nav__text">Team</span>
                 <span class="nav__badge" id="teamBadge" style="display:none">0</span>
-            </a>
+            </button>
+            <button type="button" class="nav__link" data-view="warehouse" onclick="navigateTo('warehouse')">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z"></path><path d="M6 18h12"></path><path d="M6 14h12"></path><rect x="6" y="10" width="12" height="12"></rect></svg>
+                <span class="nav__text">Warehouse</span>
+            </button>
         </div>
-        <div class="nav-group">
-            <div class="nav-group__label">Inventory</div>
-            <a class="nav__link" data-view="warehouse" onclick="navigateTo('warehouse')">
-                <i class="fas fa-warehouse"></i> Warehouse
-            </a>
-        </div>
-        <div class="nav-group">
-            <div class="nav-group__label">Admin</div>
-            <a class="nav__link" data-view="users" data-owner-only style="display:none" onclick="navigateTo('users')">
-                <i class="fas fa-users-gear"></i> Users
-            </a>
-            <a class="nav__link" id="navMasterLists" style="display:none" onclick="openMasterLists()" title="Site, Brand and Company lists">
-                <i class="fas fa-list-check"></i> Master Lists
-            </a>
-            <a class="nav__link" id="navHistory" onclick="showHistory()" title="Change History">
-                <i class="fas fa-clock-rotate-left"></i> History
-            </a>
+        <div class="nav-group" role="group" aria-labelledby="navGroupAdmin">
+            <div class="nav-group__label" id="navGroupAdmin">Admin</div>
+            <button type="button" class="nav__link" data-view="users" data-owner-only style="display:none" onclick="navigateTo('users')">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="7" r="4"></circle><path d="M2 21v-1a6 6 0 0 1 9.5-4.9"></path><circle cx="18" cy="17" r="2.5"></circle><path d="M18 12.5V14"></path><path d="M18 20v1.5"></path><path d="M13.5 17H15"></path><path d="M21 17h1.5"></path></svg>
+                <span class="nav__text">Users</span>
+            </button>
+            <button type="button" class="nav__link" id="navMasterLists" style="display:none" onclick="openMasterLists()" title="Site, Brand and Company lists">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 6 1.5 1.5L7 5"></path><path d="m3 12 1.5 1.5L7 11"></path><path d="m3 18 1.5 1.5L7 17"></path><path d="M10 6h11"></path><path d="M10 12h11"></path><path d="M10 18h11"></path></svg>
+                <span class="nav__text">Master lists</span>
+            </button>
+            <button type="button" class="nav__link" id="navHistory" onclick="showHistory()" title="Change history">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></svg>
+                <span class="nav__text">History</span>
+            </button>
         </div>
     </nav>
+
+    <!-- Signed-in person: initial, name, role and sign-out. The name opens the
+         menu with the account details and both sign-out actions. -->
+    <div class="user-pill" id="userPill" style="display:none">
+        <button type="button" class="user-pill__btn" id="userPillBtn" onclick="toggleUserMenu()" aria-expanded="false" aria-controls="userMenu">
+            <span class="user-pill__avatar" id="userPillAvatar" aria-hidden="true">?</span>
+            <span class="user-pill__text">
+                <span class="user-pill__name" id="userPillName">—</span>
+                <span class="user-pill__role" id="userPillRole">—</span>
+            </span>
+        </button>
+        <button type="button" class="user-pill__signout" onclick="handleSignOut()" aria-label="Sign out" title="Sign out">
+            <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="m16 17 5-5-5-5"></path><path d="M21 12H9"></path></svg>
+        </button>
+        <div class="user-menu" id="userMenu">
+            <div class="user-menu__header">
+                <div class="user-menu__email" id="userMenuEmail">—</div>
+                <div class="user-menu__role-label" id="userMenuRoleLabel">—</div>
+            </div>
+            <button type="button" class="user-menu__item" onclick="handleSignOut(); event.stopPropagation();">
+                <i class="fas fa-right-from-bracket" aria-hidden="true"></i> Sign out
+            </button>
+            <button type="button" class="user-menu__item" onclick="handleSignOutErase(); event.stopPropagation();" title="For a shared computer: also removes the records kept here for offline use">
+                <i class="fas fa-broom" aria-hidden="true"></i> Sign out &amp; erase this device
+            </button>
+        </div>
+    </div>
   </aside>
 
   <!-- Body: topbar + main -->
   <div class="app-body">
+    <!-- Top bar (design F): search on the left; sync state and the decision
+         bell on the right. On a phone: menu, page title over the sync line,
+         bell — and the search on its own row underneath. -->
     <div class="topbar">
-        <button class="topbar__burger" title="Menu" aria-label="Menu" onclick="toggleNav()">
-            <i class="fas fa-bars"></i>
+        <button type="button" class="topbar__burger" title="Menu" aria-label="Menu" aria-controls="sidebar" aria-expanded="false" onclick="toggleNav()">
+            <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="18" x2="20" y2="18"></line></svg>
         </button>
-        <div class="header__status">
-            <span class="status-dot" id="connectionDot"></span>
-            <span id="connectionLabel">No Data</span>
-        </div>
-        <span id="lastUpdated"></span>
-        <div class="topbar__spacer"></div>
-        <div class="global-search" id="globalSearchWrap">
-            <i class="fas fa-search"></i>
-            <input type="text" id="globalSearch" aria-label="Search units across the fleet" placeholder="Search units… (name/SN)" autocomplete="off">
+        <div class="topbar__title" id="topbarTitle" aria-hidden="true">Dashboard</div>
+        <div class="global-search" id="globalSearchWrap" role="search">
+            <svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7.5"></circle><path d="m21 21-4.5-4.5"></path></svg>
+            <input type="text" id="globalSearch" aria-label="Search units across the fleet" placeholder="Search unit, serial number or site" autocomplete="off">
             <div class="global-search__results" id="globalSearchResults"></div>
         </div>
-        <div class="user-pill" id="userPill" style="display:none" onclick="toggleUserMenu()">
-            <i class="fas fa-user-circle"></i>
-            <span class="user-pill__name" id="userPillName">—</span>
-            <span class="user-pill__role" id="userPillRole">—</span>
-            <i class="fas fa-chevron-down user-pill__chev"></i>
-            <div class="user-menu" id="userMenu">
-                <div class="user-menu__header">
-                    <div class="user-menu__email" id="userMenuEmail">—</div>
-                    <div class="user-menu__role-label" id="userMenuRoleLabel">—</div>
-                </div>
-                <button class="user-menu__item" onclick="handleSignOut(); event.stopPropagation();">
-                    <i class="fas fa-right-from-bracket"></i> Sign out
-                </button>
-                <button class="user-menu__item" onclick="handleSignOutErase(); event.stopPropagation();" title="For a shared computer: also removes the records kept here for offline use">
-                    <i class="fas fa-broom"></i> Sign out &amp; erase this device
-                </button>
-            </div>
+        <div class="topbar__spacer"></div>
+        <div class="header__status sync-chip" id="syncChip">
+            <span class="status-dot" id="connectionDot"></span>
+            <span id="connectionLabel">No Data</span>
+            <span id="lastUpdated"></span>
         </div>
+        <button type="button" class="topbar__bell" id="topbarBell" onclick="navigateTo('leader')" aria-label="Decision inbox" title="Decision inbox" hidden>
+            <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+            <span class="topbar__bell-dot" aria-hidden="true"></span>
+        </button>
     </div>
 
 <!-- ===== MAIN ===== -->
@@ -1813,6 +1837,37 @@
     </div><!-- /viewUsers -->
 
 </main>
+
+    <!-- Phone (≤700px): bottom bar and a "Report damage" button (design F).
+         A page the person cannot open has no button (updateNavGroups); More
+         opens the full menu. The floating button follows the damage edit
+         right (editonly--damage) and steps aside while a dialog is open. -->
+    <nav class="bottom-nav" id="bottomNav" aria-label="Quick menu">
+        <button type="button" class="bottom-nav__item active" data-bnav="dashboard" onclick="goNav('dashboard')">
+            <svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"></rect><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"></rect><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"></rect><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"></rect></svg>
+            <span>Home</span>
+        </button>
+        <button type="button" class="bottom-nav__item" data-bnav="editUnits" onclick="goNav('editUnits')">
+            <svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="16" r="4.5"></circle><circle cx="7" cy="16" r="1.25"></circle><circle cx="18.5" cy="17.5" r="2.5"></circle><path d="M4 11.8V5h7l1.6 6.5"></path><path d="M12.6 11.5H19a2 2 0 0 1 2 2v1.8"></path><path d="M11.5 17.5h4.5"></path><path d="M16.5 11.5V8"></path></svg>
+            <span>Units</span>
+        </button>
+        <button type="button" class="bottom-nav__item" data-bnav="damage" onclick="goNav('damage')">
+            <svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+            <span>Damage</span>
+        </button>
+        <button type="button" class="bottom-nav__item" data-bnav="leader" id="bottomNavInbox" onclick="navigateTo('leader')">
+            <svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13h5l1.5 2.5h5L16 13h5"></path><path d="M5.5 5h13L21 13v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5z"></path></svg>
+            <span>Inbox</span>
+            <span class="bottom-nav__count" id="bottomNavInboxCount" aria-hidden="true" hidden></span>
+        </button>
+        <button type="button" class="bottom-nav__item bottom-nav__more" onclick="openNav()" aria-label="More pages" aria-controls="sidebar" aria-expanded="false">
+            <svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg>
+            <span>More</span>
+        </button>
+    </nav>
+    <button type="button" class="fab editonly--damage" id="fabReportDamage" onclick="showAddDamageForm()" aria-label="Report damage" title="Report damage">
+        <svg class="ico" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+    </button>
   </div><!-- /app-body -->
 </div><!-- /app-shell -->
 

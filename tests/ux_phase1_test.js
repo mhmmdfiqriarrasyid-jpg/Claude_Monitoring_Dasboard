@@ -30,7 +30,7 @@ const { launch, BASE_URL } = require('./_env');
                     document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === document.getElementById('loadingText')];
         rejectIt(Object.assign(new Error('x'), { code: 'auth/network-request-failed' }));
         await new Promise(r => setTimeout(r, 50));
-        out.done = [btn.disabled, /Sign In/.test(btn.textContent), document.getElementById('loadingOverlay').classList.contains('active'),
+        out.done = [btn.disabled, /Sign in/.test(btn.textContent), document.getElementById('loadingOverlay').classList.contains('active'),
                     document.getElementById('loadingText').textContent];
         // Berhasil: profil masih dibaca, jadi tetap "sibuk" sampai layar berikutnya tampil.
         let resolveIt;

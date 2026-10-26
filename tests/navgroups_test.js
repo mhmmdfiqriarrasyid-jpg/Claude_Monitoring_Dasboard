@@ -1,7 +1,9 @@
-// Menu samping per kelompok alat: Agricultural Equipment dan Heavy Equipment
-// masing-masing punya Dashboard, Unit Database dan Kerusakan sendiri, yang
-// membuka halaman bersama pada kelompok itu. Grup yang isinya tersembunyi
-// semua ikut disembunyikan.
+// Menu samping desain F: satu tautan per halaman. Kelompok alat (Agricultural
+// / Heavy) dipilih DI halaman; menu membuka halaman pada kelompok terakhir.
+// Implements dan Licenses hanya untuk yang boleh melihat alat pertanian,
+// Inspection hanya untuk alat berat; judul grup yang isinya tersembunyi semua
+// ikut disembunyikan. Di HP: bar bawah (Home, Units, Damage, Inbox, More) dan
+// tombol "Report damage" mengikuti hak akses yang sama.
 const { launch, BASE_URL } = require('./_env');
 
 (async () => {
@@ -17,13 +19,16 @@ const { launch, BASE_URL } = require('./_env');
         window.showToast = () => {};
         window.cloud = { isReady: false };
         const as = doc => { currentUser = { uid: 'u', email: 'u@x.id' }; currentUserDoc = { status: 'active', ...doc }; applyRoleGating(); };
-        const groups = () => [...document.querySelectorAll('.sidebar__nav .nav-group')]
-            .filter(g => g.style.display !== 'none').map(g => g.querySelector('.nav-group__label').textContent);
-        const links = label => {
-            const g = [...document.querySelectorAll('.sidebar__nav .nav-group')].find(x => x.querySelector('.nav-group__label').textContent === label);
-            return g ? [...g.querySelectorAll('.nav__link')].filter(l => l.style.display !== 'none').map(l => [...l.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim()) : [];
+        const label = g => { const l = g.querySelector('.nav-group__label'); return l ? l.textContent : '(top)'; };
+        const shownGroups = () => [...document.querySelectorAll('.sidebar__nav .nav-group')]
+            .filter(g => g.style.display !== 'none').map(label);
+        const links = name => {
+            const g = [...document.querySelectorAll('.sidebar__nav .nav-group')].find(x => label(x) === name);
+            return g ? [...g.querySelectorAll('.nav__link')].filter(l => l.style.display !== 'none').map(l => l.querySelector('.nav__text').textContent) : [];
         };
-        const active = () => { const a = document.querySelector('.nav__link.active'); return a ? a.closest('.nav-group').querySelector('.nav-group__label').textContent + ' / ' + a.textContent.trim() : null; };
+        const active = () => [...document.querySelectorAll('.nav__link.active')].map(a => a.querySelector('.nav__text').textContent);
+        const bar = () => [...document.querySelectorAll('.bottom-nav__item')].filter(el => !el.hidden).map(el => el.querySelector('span').textContent);
+        const bell = () => document.getElementById('topbarBell');
 
         as({ role: 'owner' });
         hideAuthGates();
@@ -37,57 +42,130 @@ const { launch, BASE_URL } = require('./_env');
         onDataLoaded();
 
         // =============== susunan ===============
-        t('owner: semua grup', groups(), ['Overview', 'Agricultural Equipment', 'Heavy Equipment', 'Team', 'Inventory', 'Admin']);
-        t('Agricultural: isi menu', links('Agricultural Equipment'), ['Dashboard', 'Unit Database', 'Implements', 'Damage', 'License Stock']);
-        t('Heavy: isi menu', links('Heavy Equipment'), ['Dashboard', 'Unit Database', 'Damage', 'Inspection']);
-        t('Admin: Users, Master Lists dan History', links('Admin'), ['Users', 'Master Lists', 'History']);
+        t('owner: semua grup', shownGroups(), ['(top)', 'Fleet', 'Operations', 'Admin']);
+        t('atas: Dashboard dan Decision inbox', links('(top)'), ['Dashboard', 'Decision inbox']);
+        t('Fleet: satu tautan per halaman', links('Fleet'), ['Units', 'Implements', 'Damage', 'Inspection', 'Licenses']);
+        t('Operations: Team dan Warehouse', links('Operations'), ['Team', 'Warehouse']);
+        t('Admin: Users, Master lists dan History', links('Admin'), ['Users', 'Master lists', 'History']);
+        t('tidak ada lagi tautan per kelompok', document.querySelectorAll('.sidebar [data-group]').length, 0);
+        t('badge tetap di tautannya', ['decisionBadge', 'inspectionBadge', 'teamBadge'].map(id => document.getElementById(id).closest('.nav__link').dataset.view), ['leader', 'inspection', 'team']);
+        t('HP: bar bawah lengkap untuk owner', bar(), ['Home', 'Units', 'Damage', 'Inbox', 'More']);
+        t('lonceng ke Decision inbox tampil untuk owner', bell().hidden, false);
 
         // =============== membuka halaman pada kelompoknya ===============
         goNav('editUnits', 'heavy');
-        t('Unit Database Heavy membuka tab Heavy', [currentView, effectiveEditGroup(), active()], ['editUnits', 'heavy', 'Heavy Equipment / Unit Database']);
+        t('Units pada Heavy: halaman & penanda menu', [currentView, effectiveEditGroup(), active()], ['editUnits', 'heavy', ['Units']]);
+        t('penanda: aria-current pada tautan aktif saja', [...document.querySelectorAll('.nav__link[aria-current="page"]')].map(a => a.dataset.view), ['editUnits']);
         goNav('editUnits', 'tractor');
-        t('Unit Database Agricultural membuka tab Agricultural', [effectiveEditGroup(), active()], ['tractor', 'Agricultural Equipment / Unit Database']);
+        t('Units pada Agricultural', [effectiveEditGroup(), active()], ['tractor', ['Units']]);
         switchEditUnitsGroup('heavy');
-        t('pindah tab di halaman ikut memindahkan penanda menu', active(), 'Heavy Equipment / Unit Database');
+        t('pindah kelompok di halaman: penanda tetap di Units', active(), ['Units']);
         goNav('dashboard', 'heavy');
-        t('Dashboard Heavy', [effectiveDashGroup(), active()], ['heavy', 'Heavy Equipment / Dashboard']);
+        t('Dashboard pada Heavy', [effectiveDashGroup(), active()], ['heavy', ['Dashboard']]);
+        navigateTo('warehouse');
+        t('halaman lain: hanya tautannya yang menyala, judul HP ikut', [active(), document.getElementById('topbarTitle').textContent], [['Warehouse'], 'Warehouse']);
+        document.querySelector('.nav__link[data-view="dashboard"]').click();
+        t('tautan Dashboard membuka kelompok terakhir', [currentView, effectiveDashGroup()], ['dashboard', 'heavy']);
         goNav('dashboard', 'all');
-        t('Dashboard Semua', [dashGroupPref, active()], ['all', 'Overview / All Dashboard']);
+        t('Dashboard Semua', [dashGroupPref, active()], ['all', ['Dashboard']]);
 
         goNav('damage', 'heavy');
         const body = () => document.getElementById('damageBody').textContent;
         t('Kerusakan Heavy: hanya alat berat (termasuk unit yang sudah dihapus)', [body().includes('EX1'), body().includes('EX-OLD'), body().includes('TR1'), active()],
-          [true, true, false, 'Heavy Equipment / Damage']);
+          [true, true, false, ['Damage']]);
         t('saran unit di form = alat berat', [...document.querySelectorAll('#dmgUnitList option')].map(o => o.value.split(' ')[0]), ['EX1']);
         goNav('damage', 'tractor');
-        t('Kerusakan Agricultural: hanya pertanian', [body().includes('TR1'), body().includes('EX1'), active()], [true, false, 'Agricultural Equipment / Damage']);
+        t('Kerusakan Agricultural: hanya pertanian', [body().includes('TR1'), body().includes('EX1'), active()], [true, false, ['Damage']]);
         setDamageGroup('');
-        t('Semua Kelompok: keduanya, tanpa penanda grup', [body().includes('TR1'), body().includes('EX1'), active()], [true, true, null]);
+        t('Semua Kelompok: keduanya, penanda tetap di Damage', [body().includes('TR1'), body().includes('EX1'), active()], [true, true, ['Damage']]);
+        document.querySelector('.bottom-nav__item[data-bnav="editUnits"]').click();
+        t('bar bawah: Units membuka halaman dan menyala; More padam', [currentView, document.querySelector('.bottom-nav__item[data-bnav="editUnits"]').getAttribute('aria-current'), document.querySelector('.bottom-nav__more').classList.contains('active')], ['editUnits', 'page', false]);
+        navigateTo('team');
+        t('bar bawah: halaman tanpa tombol sendiri = More menyala', [document.querySelectorAll('.bottom-nav__item.active').length, document.querySelector('.bottom-nav__more').classList.contains('active')], [1, true]);
 
         // =============== per akun ===============
         as({ role: 'khl', access: { inspection: 'edit' } });
-        t('teknisi alat berat: hanya grup Heavy', groups(), ['Heavy Equipment']);
-        t('dan isinya Dashboard + Pengecekan', links('Heavy Equipment'), ['Dashboard', 'Inspection']);
-        t('dashboard-nya alat berat', effectiveDashGroup(), 'heavy');
+        t('teknisi alat berat: Fleet hanya Inspection', [shownGroups(), links('Fleet')], [['(top)', 'Fleet'], ['Inspection']]);
+        t('dan dashboard-nya alat berat', effectiveDashGroup(), 'heavy');
+        t('bar bawah: hanya Home dan More', bar(), ['Home', 'More']);
+        t('tanpa akses Decision inbox: lonceng tersembunyi', bell().hidden, true);
         as({ role: 'staff', access: { implements: 'edit', licenseStock: 'view' } });
-        t('staf pertanian: tanpa grup Heavy', groups().includes('Heavy Equipment'), false);
+        t('staf pertanian: Implements dan Licenses, tanpa Inspection', links('Fleet'), ['Implements', 'Licenses']);
+        t('dan dashboard-nya pertanian', effectiveDashGroup(), 'tractor');
         as({ role: 'khl', access: { teamLog: 'edit' } });
-        t('akun Tim saja: tetap melihat kedua dashboard seperti sebelumnya', [links('Agricultural Equipment'), links('Heavy Equipment')], [['Dashboard'], ['Dashboard']]);
-        t('Admin tersembunyi untuk bukan owner tanpa History', groups().includes('Admin'), false);
+        t('akun Tim saja: Dashboard + Team, tanpa Fleet/Admin', [shownGroups(), links('(top)'), links('Operations')], [['(top)', 'Operations'], ['Dashboard'], ['Team']]);
         as({ role: 'staff', access: { history: 'view' } });
         t('History tetap terlihat walau bukan owner', links('Admin'), ['History']);
+        as({ role: 'staff', access: { editUnits: 'view', damage: 'view', leader: 'view' } });
+        t('lihat unit & kerusakan + kotak keputusan: bar bawah lengkap', bar(), ['Home', 'Units', 'Damage', 'Inbox', 'More']);
+        t('lonceng tampil', bell().hidden, false);
+        t('kerusakan lihat-saja: tombol Report damage tersembunyi', document.body.dataset.roDamage, '1');
+
+        // =============== akun satu kelompok (unitScope) ===============
+        as({ role: 'staff', access: { editUnits: 'view', damage: 'view', implements: 'edit', licenseStock: 'view', inspection: 'edit', unitScope: 'heavy' } });
+        t('alat berat saja: Implements & Licenses tertutup, Inspection terbuka', links('Fleet'), ['Units', 'Damage', 'Inspection']);
+        as({ role: 'staff', access: { editUnits: 'view', implements: 'edit', inspection: 'edit', unitScope: 'tractor' } });
+        t('pertanian saja: Inspection tertutup', links('Fleet'), ['Units', 'Implements']);
+        t('pertanian saja: tidak ada pilihan kelompok di menu', document.querySelectorAll('.sidebar [data-group], .bottom-nav [data-group]').length, 0);
 
         // =============== armada satu kelompok ===============
         as({ role: 'owner' });
         globalData = [globalData[0]]; saveToStorage(globalData); onDataLoaded();
-        t('tanpa alat berat: tidak ada Dashboard Heavy / Semua', [links('Heavy Equipment').includes('Dashboard'), links('Overview').includes('All Dashboard')], [false, false]);
-        t('Unit Database Heavy tetap ada (untuk menambah unit pertama)', links('Heavy Equipment').includes('Unit Database'), true);
+        t('tanpa alat berat: menu tetap satu Dashboard', [...document.querySelectorAll('.nav__link[data-view="dashboard"]')].length, 1);
+        t('Units dan Inspection tetap ada untuk owner (menambah unit pertama)', links('Fleet'), ['Units', 'Implements', 'Damage', 'Inspection', 'Licenses']);
 
         window.__T = T;
     } catch (e) { window.__T = [{ n: 'EXCEPTION ' + e.message + ' ' + e.stack, pass: false }]; } })();` });
 
     await page.waitForFunction(() => window.__T, null, { timeout: 60000 });
     const T = await page.evaluate(() => window.__T);
+
+    // =============== HP 390px: bar bawah, tombol Report damage, dialog di atas bar ===============
+    await page.setViewportSize({ width: 390, height: 844 });
+    const phone = await page.evaluate(async () => {
+        const tick = ms => new Promise(r => setTimeout(r, ms || 30));
+        window.confirm = () => true;
+        const out = {};
+        const as = doc => { currentUser = { uid: 'u', email: 'u@x.id' }; currentUserDoc = { status: 'active', ...doc }; applyRoleGating(); };
+        const shown = el => getComputedStyle(el).display !== 'none';
+        const fab = document.getElementById('fabReportDamage');
+        const barEl = document.getElementById('bottomNav');
+        as({ role: 'owner' });
+        navigateTo('dashboard'); await tick();
+        out.owner = [shown(barEl), shown(fab)];
+        const r = barEl.getBoundingClientRect();
+        out.barAtBottom = Math.round(r.bottom) === innerHeight && r.height >= 64;
+        // Nothing hides under the bar: the end of the page clears it.
+        window.scrollTo(0, document.documentElement.scrollHeight); await tick();
+        const main = document.querySelector('.main').getBoundingClientRect();
+        out.mainClear = main.bottom <= r.top;
+        out.noSideScroll = document.documentElement.scrollWidth <= innerWidth;
+        fab.click(); await tick();
+        out.fabOpens = document.getElementById('damageModal').classList.contains('open');
+        out.fabHiddenInDialog = !shown(fab);
+        const ov = document.getElementById('damageModal');
+        out.dialogAboveBar = +getComputedStyle(ov).zIndex > +getComputedStyle(barEl).zIndex;
+        closeDamageModal(); await tick();
+        out.fabBack = shown(fab);
+        as({ role: 'staff', access: { damage: 'view', editUnits: 'view' } }); await tick();
+        out.viewOnly = shown(fab);
+        as({ role: 'owner' }); openNav(); await tick();
+        out.moreExpanded = [document.querySelector('.bottom-nav__more').getAttribute('aria-expanded'), document.querySelector('.topbar__burger').getAttribute('aria-expanded')];
+        closeNav(); await tick(300);
+        out.moreCollapsed = document.querySelector('.bottom-nav__more').getAttribute('aria-expanded');
+        return out;
+    });
+    const t = (n, g, w) => T.push({ n, g, w, pass: JSON.stringify(g) === JSON.stringify(w) });
+    t('HP: bar bawah dan tombol Report damage tampil untuk editor kerusakan', phone.owner, [true, true]);
+    t('HP: bar menempel di bawah layar', phone.barAtBottom, true);
+    t('HP: akhir halaman tidak tertutup bar', phone.mainClear, true);
+    t('HP: tidak menggeser ke samping', phone.noSideScroll, true);
+    t('HP: Report damage membuka form kerusakan', phone.fabOpens, true);
+    t('HP: selama dialog terbuka tombolnya hilang, dialog di atas bar', [phone.fabHiddenInDialog, phone.dialogAboveBar], [true, true]);
+    t('HP: dialog ditutup, tombol kembali', phone.fabBack, true);
+    t('HP: kerusakan lihat-saja: tanpa tombol Report damage', phone.viewOnly, false);
+    t('HP: More dan tombol menu menyatakan menu terbuka/tertutup', [phone.moreExpanded, phone.moreCollapsed], [['true', 'true'], 'false']);
+
     let pass = 0;
     T.forEach(x => { if (x.pass) pass++; else console.log('FAIL', x.n, '\n  dapat :', JSON.stringify(x.g), '\n  harap :', JSON.stringify(x.w)); });
     if (errors.length) console.log('PAGE ERRORS:', errors);

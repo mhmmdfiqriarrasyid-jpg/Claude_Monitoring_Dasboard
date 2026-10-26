@@ -729,6 +729,24 @@ function setupEventListeners() {
             } else if (e.key === 'Escape') {
                 closeGlobalSearch();
                 gSearch.blur();
+            } else if (e.key === 'ArrowDown') {
+                const first = document.querySelector('#globalSearchResults .global-search__item');
+                if (first) { e.preventDefault(); first.focus(); }
+            }
+        });
+        // In the list: arrows move between results, Escape goes back to the box.
+        document.getElementById('globalSearchResults')?.addEventListener('keydown', e => {
+            const items = [...document.querySelectorAll('#globalSearchResults .global-search__item')];
+            const i = items.indexOf(document.activeElement);
+            if (i < 0) return;
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                const next = items[i + (e.key === 'ArrowDown' ? 1 : -1)];
+                if (next) next.focus(); else if (e.key === 'ArrowUp') gSearch.focus();
+            } else if (e.key === 'Escape') {
+                e.stopPropagation();
+                closeGlobalSearch();
+                gSearch.focus();
             }
         });
         document.addEventListener('click', e => {
@@ -1080,6 +1098,17 @@ function closeNav() {
     });
 }
 function toggleNav() { if (isNavOpen()) closeNav(); else openNav(); }
+// The buttons that open the menu (top bar, phone bottom bar) say whether it
+// is open. Watched rather than set in openNav/closeNav: Back and a dialog
+// opened from the menu close it too.
+(function watchNavButtons() {
+    const shell = _drawerShell();
+    if (!shell || typeof MutationObserver !== 'function') return;
+    new MutationObserver(() => {
+        const open = isNavOpen() ? 'true' : 'false';
+        document.querySelectorAll('.topbar__burger, .bottom-nav__more').forEach(b => b.setAttribute('aria-expanded', open));
+    }).observe(shell, { attributes: true, attributeFilter: ['class'] });
+})();
 
 function _openLayers() {
     const lb = document.getElementById('photoLightbox');
@@ -1635,87 +1664,89 @@ function navigateTo(view) {
     document.dispatchEvent(new CustomEvent('ot:view', { detail: { view } }));
 }
 
-// ---- Sidebar: one menu per equipment group ----
-// Dashboard, Unit Database and Kerusakan are each ONE page with a group
-// switch; the sidebar lists them under Agricultural and Heavy separately and
-// opens the page on that group.
+// ---- Sidebar: one link per page (design F) ----
+// Dashboard, Units and Damage are each ONE page; the equipment group is
+// picked on the page itself, and the link opens it on the group last shown
+// there. goNav(view, group) still opens a page straight on a given group
+// (the tests use it to set up a page).
 function goNav(view, group) {
     navigateTo(view);
-    if (currentView !== view) return;
-    // Switching group on the same page (Agricultural → Heavy) is a new page
-    // to the person too.
-    _setPageScroll(0);   // refused for lack of access
-    if (view === 'dashboard') setDashGroup(group);
-    else if (view === 'editUnits') switchEditUnitsGroup(group);
-    else if (view === 'damage') setDamageGroup(group === 'all' ? '' : group);
+    if (currentView !== view) return;   // refused for lack of access
+    if (group) {
+        // Switching group on the same page (Agricultural → Heavy) is a new
+        // page to the person too.
+        _setPageScroll(0);
+        if (view === 'dashboard') setDashGroup(group);
+        else if (view === 'editUnits') switchEditUnitsGroup(group);
+        else if (view === 'damage') setDamageGroup(group === 'all' ? '' : group);
+    }
     markActiveNav();
 }
 
-// The group a page is showing right now, in the sidebar's terms.
-function navGroupOf(view) {
-    if (view === 'dashboard') return hasHeavyUnits() && hasTractorUnits() ? dashGroupPref : effectiveDashGroup();
-    if (view === 'editUnits') return effectiveEditGroup();
-    if (view === 'damage') return damageGroup || '';
-    return '';
-}
-
-// Several links share a view; the one for the group on screen lights up.
-// Kerusakan on "Semua Kelompok" matches neither group, so nothing does.
+// The link of the page on screen lights up — in the sidebar and in the
+// phone's bottom bar — and the phone's top row names the page. Pages without
+// a button of their own in the bottom bar are reached through More, so More
+// lights up for them.
 function markActiveNav() {
-    document.querySelectorAll('.nav__link').forEach(el => el.classList.remove('active'));
-    const g = navGroupOf(currentView);
-    const links = [...document.querySelectorAll(`.nav__link[data-view="${currentView}"]`)];
-    const hit = links.find(l => !l.dataset.group || l.dataset.group === g);
-    if (hit) hit.classList.add('active');
+    const mark = (el, on) => {
+        el.classList.toggle('active', on);
+        if (on) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current');
+    };
+    document.querySelectorAll('.nav__link').forEach(el => mark(el, !!el.dataset.view && el.dataset.view === currentView));
+    let inBar = false;
+    document.querySelectorAll('.bottom-nav__item[data-bnav]').forEach(el => {
+        const on = el.dataset.bnav === currentView && !el.hidden;
+        inBar = inBar || on;
+        mark(el, on);
+    });
+    const more = document.querySelector('.bottom-nav__more');
+    if (more) more.classList.toggle('active', !inBar);
+    const title = document.getElementById('topbarTitle');
+    const name = document.querySelector(`.nav__link[data-view="${currentView}"] .nav__text`);
+    if (title) title.textContent = name ? name.textContent : 'Dashboard';
 }
 
-// Per-group dashboards only where there is something to show: with a single
-// group in the fleet the other group's Dashboard, and "Dashboard Semua", would
-// all render the same page. Then every group heading whose links are all
-// hidden for this account goes too, so nobody sees an empty heading.
-// Areas that make someone "work with" a group, for the sidebar only.
+// Areas that make someone "work with" a group, for the menu only.
 const NAV_GROUP_AREAS = {
     tractor: ['editUnits', 'implements', 'damage', 'licenseStock'],
     heavy:   ['editUnits', 'damage', 'inspection', 'inspectionApprove']
 };
+// Pages that belong to one equipment group: listed only for someone who may
+// see that group. Access already closes them for an account limited to the
+// other group (effectiveAccess); the menu checks the limit itself as well,
+// so it never offers a page of the other group.
+const NAV_PAGE_GROUP = { implements: 'tractor', licenseStock: 'tractor', inspection: 'heavy' };
 
 function updateNavGroups() {
     const both = hasHeavyUnits() && hasTractorUnits();
-    const show = {
-        all: both,
-        tractor: hasTractorUnits() || !hasHeavyUnits(),
-        heavy: hasHeavyUnits()
-    };
-    // The dashboard is open to everyone, but a group's dashboard is listed
-    // only for people who work with that group — a heavy-equipment technician
-    // should not get an Agricultural section of one link. Someone with no
-    // area in either group (Tim only, say) keeps both, as before.
     const works = { tractor: NAV_GROUP_AREAS.tractor.some(a => hasAccess(a, 'view')),
                     heavy:   NAV_GROUP_AREAS.heavy.some(a => hasAccess(a, 'view')) };
-    const neither = !works.tractor && !works.heavy;
-    const wants = g => neither || (g === 'all' ? works.tractor && works.heavy : works[g]);
-    document.querySelectorAll('.nav__link[data-view="dashboard"][data-group]').forEach(el => {
-        const g = el.dataset.group;
-        el.style.display = show[g] && wants(g) ? '' : 'none';
-    });
     // Someone who works with one group only lands on that group's dashboard
-    // — not on the other group's, which their menu does not even list.
+    // — not on the other group's, which is not their work.
     const only = works.heavy && !works.tractor ? 'heavy' : works.tractor && !works.heavy ? 'tractor' : '';
     if (only && both && dashGroupPref !== only) {
         if (currentView === 'dashboard') setDashGroup(only, { persist: false });
         else dashGroupPref = only;
     }
-    // A limited account: the other group's links, and "All", are not its.
-    if (isUnitScoped()) {
-        document.querySelectorAll('.nav__link[data-group]').forEach(el => {
-            if (el.dataset.group === 'all' || !unitScopeAllows(el.dataset.group)) el.style.display = 'none';
-        });
-    }
+    // Per-area access was applied by applyAccessVisibility(); the group limit
+    // closes the other group's pages on top of it.
+    document.querySelectorAll('.sidebar__nav .nav__link[data-view]').forEach(el => {
+        const g = NAV_PAGE_GROUP[el.dataset.view];
+        if (g && !unitScopeAllows(g)) el.style.display = 'none';
+    });
+    // Phone bottom bar: a page the person cannot open has no button.
+    document.querySelectorAll('.bottom-nav__item[data-bnav]').forEach(el => {
+        const v = el.dataset.bnav;
+        el.hidden = (GATED_VIEWS.includes(v) && !canViewView(v)) ||
+                    (!!NAV_PAGE_GROUP[v] && !unitScopeAllows(NAV_PAGE_GROUP[v]));
+    });
+    // A heading whose links are all hidden goes too.
     document.querySelectorAll('.sidebar__nav .nav-group').forEach(grp => {
         const any = [...grp.querySelectorAll('.nav__link')].some(l => l.style.display !== 'none');
         grp.style.display = any ? '' : 'none';
     });
     markActiveNav();
+    updateMenuButtonLabel();
 }
 
 // ============================================================
@@ -2414,6 +2445,16 @@ function updateConnectionLabel() {
         el.title = 'Offline — changes saved on this device';
     }
 }
+
+// The sync chip shows the time of the last update; the full date stays in
+// its tooltip. onDataLoaded() writes the long form, this shortens it.
+document.addEventListener('ot:data', () => {
+    const el = document.getElementById('lastUpdated');
+    if (!el) return;
+    const now = new Date();
+    el.textContent = `Updated ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}`;
+    el.title = `Last updated: ${now.toLocaleString()}`;
+});
 
 function watchConnection() {
     window.addEventListener('online', () => {
@@ -7552,11 +7593,12 @@ function renderGlobalSearchResults() {
         document.body.classList.add('gsearch-open');
         return;
     }
+    // Buttons, so Tab and the arrow keys reach every result, not only the first.
     box.innerHTML = hits.map(u => `
-        <div class="global-search__item" onclick="openUnitFromSearch(${jsArg(u.id)})">
+        <button type="button" class="global-search__item" onclick="openUnitFromSearch(${jsArg(u.id)})">
             <span class="global-search__name">${escapeHtml(u.name || '(unnamed)')}</span>
             <span class="global-search__meta"><span class="mono">${escapeHtml(u.sn || '')}</span>${u.site ? ' · ' + escapeHtml(u.site) : ''}${isHeavy(u) ? ' · ' + escapeHtml(UNIT_GROUPS.heavy.shortLabel) : ''}</span>
-        </div>`).join('');
+        </button>`).join('');
     box.style.display = 'block';
     document.body.classList.add('gsearch-open');
 }
@@ -11567,8 +11609,15 @@ function hideAuthGates() {
 
 function switchAuthTab(tab) {
     const isSignIn = tab === 'signin';
-    document.getElementById('authTabSignIn').classList.toggle('active', isSignIn);
-    document.getElementById('authTabSignUp').classList.toggle('active', !isSignIn);
+    [['authTabSignIn', isSignIn], ['authTabSignUp', !isSignIn]].forEach(([id, on]) => {
+        const b = document.getElementById(id);
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    const title = document.getElementById('authTitle');
+    if (title) title.textContent = isSignIn ? 'Sign in' : 'Create account';
+    const sub = document.getElementById('authSub');
+    if (sub) sub.textContent = isSignIn ? 'Use the email your account was created with.' : 'Use your work email. The owner approves new accounts.';
     document.getElementById('signInForm').style.display = isSignIn ? '' : 'none';
     document.getElementById('signUpForm').style.display = isSignIn ? 'none' : '';
     showAuthError('signInError', '');
@@ -11610,7 +11659,7 @@ function signInHint(email, password) {
     if (/^[A-Z][^A-Z]*$/.test(password)) tips.push('only the first letter is a capital — the phone may have added it');
     if (password && password === password.toUpperCase() && /[A-Z]/.test(password) && !/[a-z]/.test(password)) tips.push('it is all capitals — is Caps Lock on?');
     if (email !== email.toLowerCase()) tips.push('the email has capital letters (that is fine, but check the spelling)');
-    return tips.length ? ` Check: ${tips.join('; ')}. Tap the eye icon to see what you typed.` : ' Tap the eye icon to see what you typed, or use "Forgot password?".';
+    return tips.length ? ` Check: ${tips.join('; ')}. Tap "Show" to see what you typed.` : ' Tap "Show" to see what you typed, or use "Forgot password?".';
 }
 
 function togglePasswordVisibility(inputId, btn) {
@@ -11621,7 +11670,7 @@ function togglePasswordVisibility(inputId, btn) {
     if (btn) {
         btn.setAttribute('aria-pressed', show ? 'true' : 'false');
         btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
-        btn.innerHTML = `<i class="fas ${show ? 'fa-eye-slash' : 'fa-eye'}"></i>`;
+        btn.textContent = show ? 'Hide' : 'Show';
     }
 }
 
@@ -12097,8 +12146,10 @@ function renderUserPill() {
     const pill = document.getElementById('userPill');
     if (!pill) return;
     pill.style.display = '';
-    document.getElementById('userPillName').textContent =
-        currentUserDoc.displayName || currentUserDoc.email || 'User';
+    const name = currentUserDoc.displayName || currentUserDoc.email || 'User';
+    document.getElementById('userPillName').textContent = name;
+    const avatar = document.getElementById('userPillAvatar');
+    if (avatar) avatar.textContent = (Array.from(name.trim())[0] || '?').toUpperCase();
     const label = roleLabel(currentUserDoc.role);
     document.getElementById('userPillRole').textContent = label;
     pill.dataset.role = currentUserDoc.role;
@@ -12108,22 +12159,34 @@ function renderUserPill() {
         : `${label} account · ${APP_VERSION}`;
 }
 
+// The account menu at the foot of the sidebar: account details and both
+// sign-out actions. It closes on the next click outside it, or on Escape.
+let _userMenuClose = null;
 function toggleUserMenu() {
     const menu = document.getElementById('userMenu');
     if (!menu) return;
-    menu.classList.toggle('open');
-    // Close on next outside click
-    if (menu.classList.contains('open')) {
-        setTimeout(() => {
-            const close = (e) => {
-                if (!document.getElementById('userPill').contains(e.target)) {
-                    menu.classList.remove('open');
-                    document.removeEventListener('click', close);
-                }
-            };
-            document.addEventListener('click', close);
-        }, 0);
+    const open = !menu.classList.contains('open');
+    menu.classList.toggle('open', open);
+    const btn = document.getElementById('userPillBtn');
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (_userMenuClose) {
+        document.removeEventListener('click', _userMenuClose);
+        document.removeEventListener('keydown', _userMenuClose);
+        _userMenuClose = null;
     }
+    if (!open) return;
+    const close = e => {
+        if (e.type === 'keydown' ? e.key !== 'Escape' : document.getElementById('userPill').contains(e.target)) return;
+        toggleUserMenu();
+        if (e.type === 'keydown' && btn) btn.focus();
+    };
+    _userMenuClose = close;
+    // Added after this click has finished, or it would close the menu at once.
+    setTimeout(() => {
+        if (_userMenuClose !== close) return;
+        document.addEventListener('click', close);
+        document.addEventListener('keydown', close);
+    }, 0);
 }
 
 function isOwner() {
@@ -17581,17 +17644,34 @@ function updateDecisionBadge() {
 }
 
 // On a phone the counts live in the closed menu; the menu button carries a
-// dot (style.css) and says what is waiting.
+// dot (style.css) and says what is waiting. The bell in the top bar and Inbox
+// in the phone's bottom bar carry the decisions; More carries the counts that
+// sit inside the menu.
 function updateMenuButtonLabel() {
-    const btn = document.querySelector('.topbar__burger');
-    if (!btn) return;
     const shown = id => { const b = document.getElementById(id); return b && b.style.display !== 'none' && b.textContent.trim() ? b.textContent.trim() : ''; };
-    const parts = [];
-    if (shown('decisionBadge')) parts.push(`${shown('decisionBadge')} decisions waiting`);
-    if (shown('inspectionBadge')) parts.push(`${shown('inspectionBadge')} check reports`);
-    if (shown('teamBadge')) parts.push(`${shown('teamBadge')} reports to revise`);
-    btn.setAttribute('aria-label', parts.length ? `Menu — ${parts.join(', ')}` : 'Menu');
-    btn.classList.toggle('has-pending', parts.length > 0);
+    const dec = shown('decisionBadge'), ins = shown('inspectionBadge'), team = shown('teamBadge');
+    const inMenu = [ins && `${ins} check reports`, team && `${team} reports to revise`].filter(Boolean);
+    const parts = (dec ? [`${dec} decisions waiting`] : []).concat(inMenu);
+    const btn = document.querySelector('.topbar__burger');
+    if (btn) {
+        btn.setAttribute('aria-label', parts.length ? `Menu — ${parts.join(', ')}` : 'Menu');
+        btn.classList.toggle('has-pending', parts.length > 0);
+    }
+    const bell = document.getElementById('topbarBell');
+    if (bell) {
+        bell.hidden = !canViewView('leader');
+        bell.classList.toggle('has-pending', !!dec);
+        bell.setAttribute('aria-label', dec ? `Decision inbox, ${dec} waiting` : 'Decision inbox');
+    }
+    const count = document.getElementById('bottomNavInboxCount');
+    if (count) { count.textContent = dec; count.hidden = !dec; }
+    const inbox = document.getElementById('bottomNavInbox');
+    if (inbox) inbox.setAttribute('aria-label', dec ? `Inbox, ${dec} waiting` : 'Inbox');
+    const more = document.querySelector('.bottom-nav__more');
+    if (more) {
+        more.classList.toggle('has-pending', inMenu.length > 0);
+        more.setAttribute('aria-label', inMenu.length ? `More pages — ${inMenu.join(', ')}` : 'More pages');
+    }
 }
 
 // ============================================================

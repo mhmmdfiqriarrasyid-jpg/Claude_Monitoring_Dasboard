@@ -1,1 +1,740 @@
 /* design F — shell (concatenated into style.css when merged) */
+/* ============================================================
+   SHELL (design F): sidebar, top bar, phone chrome (top row, bottom bar,
+   "Report damage" button), sign-in / pending screens, account menu, unit
+   search results, toasts, loading overlay, footer.
+   Screen only — print keeps its own rules in style.css. Phone sizes never
+   go under the PHONE section's 44px touch targets and 16px fields.
+   ============================================================ */
+@media screen {
+    .ico { display: block; flex-shrink: 0; }
+
+    /* ---------- Sidebar ---------- */
+    /* 240px (F: 236) so "Operation Technology" fits on one line beside the logo. */
+    .sidebar { width: 240px; padding: 20px 14px 14px; gap: 8px; }
+    .sidebar__brand { padding: 0 4px 12px; gap: 8px; }
+    .sidebar__brand .brand-logo { height: 34px; width: 34px; object-fit: contain; }
+    .sidebar__brand-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+    .sidebar__brand-name { font-family: var(--font-display); font-size: 14px; font-weight: 600; color: var(--text); }
+    .sidebar__brand-sub { font-size: 12px; color: var(--text-secondary); }
+    .sidebar__nav { display: flex; flex-direction: column; gap: 2px; min-height: 0; overflow-y: auto; }
+    .sidebar__nav .nav-group { display: flex; flex-direction: column; gap: 2px; margin: 0; }
+    .sidebar__nav .nav-group__label {
+        margin: 0;
+        padding: 14px 12px 6px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--text-light);
+    }
+    /* Links are buttons (there is no URL per page): reset them to rows. */
+    .sidebar__nav .nav__link {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        min-height: 44px;
+        padding: 0 12px;
+        border: 0;
+        border-radius: var(--radius);
+        background: transparent;
+        color: var(--text-body);
+        font: inherit;
+        font-size: 14px;
+        font-weight: 500;
+        line-height: 1.3;
+        text-align: left;
+        cursor: pointer;
+    }
+    .sidebar__nav .nav__link .ico { width: 20px; height: 20px; }
+    .sidebar__nav .nav__link:hover { background: var(--surface-sunken); color: var(--text); }
+    .sidebar__nav .nav__link.active { background: var(--primary-lighter); color: var(--accent-text); font-weight: 600; }
+    .nav__text { flex: 1 1 auto; min-width: 0; }
+    .sidebar__nav .nav__badge {
+        margin-left: auto;
+        padding: 0 8px;
+        border-radius: 10px;
+        background: var(--danger-tint);
+        color: var(--danger-strong);
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 20px;
+    }
+    .sidebar__nav .nav__badge--warn { background: var(--warning-bg); color: var(--warning-strong); }
+
+    /* ---------- Account block (foot of the sidebar) ---------- */
+    .sidebar .user-pill {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        min-height: 0;
+        margin-top: auto;
+        padding: 14px 0 0;
+        border: 0;
+        border-top: 1px solid var(--border);
+        border-radius: 0;
+        background: none;
+        box-shadow: none;
+        color: var(--text);
+        cursor: default;
+        user-select: auto;
+    }
+    .sidebar .user-pill:hover { background: none; }
+    .user-pill__btn {
+        flex: 1 1 auto;
+        min-width: 0;
+        min-height: 48px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 4px 8px;
+        border: 0;
+        border-radius: var(--radius);
+        background: none;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+    }
+    .user-pill__btn:hover, .user-pill__btn[aria-expanded="true"] { background: var(--surface-sunken); }
+    .user-pill__avatar {
+        flex-shrink: 0;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #CCFBEF;            /* teal-100, design F */
+        color: var(--accent-text);
+        font-weight: 700;
+        font-size: 15px;
+    }
+    .user-pill__text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+    .sidebar .user-pill__name {
+        display: block;
+        max-width: none;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 14px;
+        font-weight: 600;
+    }
+    .sidebar .user-pill .user-pill__role,
+    .sidebar .user-pill[data-role] .user-pill__role {
+        padding: 0;
+        border-radius: 0;
+        background: none;
+        color: var(--text-secondary);
+        font-size: 12px;
+        font-weight: 400;
+        letter-spacing: 0;
+        text-transform: none;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .user-pill__signout {
+        flex-shrink: 0;
+        width: 44px;
+        height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border: 0;
+        border-radius: var(--radius);
+        background: none;
+        color: var(--text-secondary);
+        cursor: pointer;
+    }
+    .user-pill__signout:hover { background: var(--surface-sunken); color: var(--text); }
+    /* The menu opens upwards from the foot of the sidebar. */
+    .sidebar .user-menu {
+        top: auto;
+        bottom: calc(100% + 8px);
+        left: 0;
+        right: 0;
+        min-width: 0;
+        padding: 6px;
+        border: 0;
+        border-radius: 12px;
+        background: var(--card);
+        box-shadow: var(--shadow-lg), var(--ring);
+        z-index: 20;
+    }
+    .user-menu__header { padding: 8px 10px 10px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+    .user-menu__email { font-family: var(--font-sans); font-size: 13px; color: var(--text); overflow-wrap: anywhere; word-break: normal; }
+    .user-menu__role-label { font-size: 12px; color: var(--text-secondary); }
+    .user-menu__item {
+        min-height: 44px;
+        padding: 0 10px;
+        gap: 10px;
+        border-radius: 8px;
+        font-size: 14px;
+        color: var(--text-body);
+    }
+    .user-menu__item:hover { background: var(--surface-sunken); color: var(--text); }
+    .user-menu__item i { width: 16px; text-align: center; color: var(--text-light); }
+
+    /* ---------- Top bar ---------- */
+    .topbar {
+        gap: 12px;
+        min-height: 0;
+        padding: 20px 32px 0;
+        background: transparent;
+        border: 0;
+        color: var(--text-secondary);
+    }
+    .topbar__title { display: none; }
+    .topbar__burger {
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        border: 0;
+        border-radius: 12px;
+        background: var(--card);
+        box-shadow: var(--ring);
+        color: var(--text-body);
+        align-items: center;
+        justify-content: center;
+    }
+    .topbar__burger:hover { background: var(--surface-sunken); color: var(--text); }
+    .topbar__burger.has-pending::after { top: 8px; right: 8px; width: 8px; height: 8px; background: var(--dot-bad); }
+
+    .global-search {
+        order: 0;
+        flex: 0 1 340px;
+        width: 340px;
+        min-width: 0;
+        min-height: 44px;
+        padding: 0 14px;
+        gap: 8px;
+        border-radius: 12px;
+        background: var(--card);
+        box-shadow: 0 1px 2px rgba(16,24,40,0.06), var(--ring);
+        color: var(--text-secondary);
+    }
+    .global-search input { color: var(--text); }
+    .global-search input::placeholder { color: var(--text-light); opacity: 1; }
+    .global-search__results {
+        top: calc(100% + 6px);
+        left: 0;
+        right: auto;
+        width: 100%;
+        min-width: 320px;
+        max-height: 360px;
+        padding: 6px;
+        border: 0;
+        border-radius: 12px;
+        background: var(--card);
+        box-shadow: var(--shadow-lg), var(--ring);
+    }
+    .global-search__item {
+        display: block;
+        width: 100%;
+        min-height: 44px;
+        padding: 8px 10px;
+        border: 0;
+        border-radius: var(--radius);
+        background: none;
+        color: var(--text);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+    }
+    .global-search__item:hover, .global-search__item:focus-visible { background: var(--surface-sunken); }
+    .global-search__name { font-size: 14px; font-weight: 600; }
+    .global-search__meta { font-size: 12px; color: var(--text-secondary); }
+    .global-search__meta .mono { font-size: 12px; }
+    .global-search__empty { padding: 10px; font-size: 14px; color: var(--text-secondary); }
+
+    /* Sync chip: green while connected, amber offline (never green offline —
+       the dot follows body[data-offline], see style.css 1.8). */
+    .sync-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        padding: 4px 10px;
+        border-radius: 12px;
+        background: var(--neutral-tint);
+        color: var(--text-body);
+        font-size: 13px;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+    .sync-chip:has(.status-dot.connected) { background: var(--success-bg); color: var(--success-strong); }
+    body[data-offline] .sync-chip,
+    body[data-offline] .sync-chip:has(.status-dot.connected) { background: var(--warning-bg); color: var(--warning-strong); }
+    .sync-chip .status-dot { flex-shrink: 0; width: 8px; height: 8px; }
+    .sync-chip #connectionLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .sync-chip #lastUpdated {
+        display: inline;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 500;
+    }
+    .sync-chip #lastUpdated:empty { display: none; }
+    .sync-chip #lastUpdated::before { content: "· "; }
+
+    .topbar__bell {
+        position: relative;
+        flex-shrink: 0;
+        width: 44px;
+        height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border: 0;
+        border-radius: 12px;
+        background: var(--card);
+        box-shadow: var(--ring);
+        color: var(--text-body);
+        cursor: pointer;
+    }
+    .topbar__bell[hidden] { display: none; }
+    .topbar__bell:hover { background: var(--surface-sunken); color: var(--text); }
+    .topbar__bell-dot {
+        display: none;
+        position: absolute;
+        top: 9px;
+        right: 10px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--dot-bad);
+        box-shadow: 0 0 0 2px var(--card);
+    }
+    .topbar__bell.has-pending .topbar__bell-dot { display: block; }
+
+    .main { padding-top: 22px; }
+
+    /* Phone chrome is off until the phone section below. */
+    .bottom-nav, .fab { display: none; }
+
+    /* ---------- Toasts, loading, footer ---------- */
+    .toast-container { top: 76px; right: 24px; }   /* under the top row */
+    .toast {
+        gap: 10px;
+        padding: 12px 14px;
+        border-left: 0;
+        border-radius: 12px;
+        background: var(--card);
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.45;
+        box-shadow: var(--shadow-lg), var(--ring);
+    }
+    .toast > i { flex-shrink: 0; font-size: 16px; color: var(--info); }
+    .toast.success > i { color: var(--success); }
+    .toast.error > i { color: var(--danger); }
+    .toast.warning > i { color: var(--warning); }
+
+    .loading-overlay { background: rgba(246,247,251,0.92); }
+    .spinner { border-color: var(--track); border-top-color: var(--accent); }
+
+    .footer {
+        margin: 0;
+        padding: 20px 24px 28px;
+        border-top: 0;
+        background: transparent;
+        color: var(--text-light);
+        font-size: 12px;
+    }
+    .footer__version { border-color: var(--border); background: var(--card); color: var(--text-secondary); }
+
+    /* ---------- Sign-in, sign-up and pending screens ---------- */
+    .auth-gate {
+        flex-wrap: wrap;
+        align-items: stretch;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 15px;
+        line-height: 1.5;
+    }
+    .auth-brand {
+        flex: 1 1 420px;
+        min-height: 320px;
+        padding: 56px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: var(--accent);
+        color: #FFFFFF;
+        text-align: center;
+    }
+    .auth-brand__logo {
+        width: 96px;
+        height: 96px;
+        border-radius: 28px;
+        background: #FFFFFF;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+    .auth-brand__logo .brand-logo--lg { width: 68px; height: 68px; margin: 0; object-fit: contain; }
+    .auth-brand .auth-brand__name {
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        font-family: var(--font-display);
+        font-size: 26px;
+        font-weight: 600;
+        line-height: 1.25;
+        color: #FFFFFF;
+    }
+    .auth-brand__sub { font-family: var(--font-display); font-size: 18px; font-weight: 500; color: #CCFBEF; }
+    .auth-main {
+        flex: 1 1 420px;
+        min-width: 0;
+        padding: 48px 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .auth-card {
+        width: 100%;
+        max-width: 420px;
+        padding: 32px;
+        border-radius: 20px;
+        background: var(--card);
+        box-shadow: 0 1px 2px rgba(16,24,40,0.05), 0 12px 32px -8px rgba(16,24,40,0.12);
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        animation: none;
+    }
+    .auth-card__head { display: flex; flex-direction: column; gap: 4px; }
+    .auth-card .auth-card__title { margin: 0; font-family: var(--font-display); font-size: 24px; font-weight: 600; line-height: 1.3; color: var(--text); }
+    .auth-card__sub { margin: 0; color: var(--text-secondary); overflow-wrap: anywhere; }
+    .auth-card__sub:empty { display: none; }
+    .auth-card__icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--warning-tint);
+        color: var(--warning-strong);
+    }
+    .auth-tabs.seg { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }
+    .auth-tabs .auth-tab { min-height: 40px; padding: 0 10px; border-radius: 9px; font-size: 14px; }
+    .auth-tabs .auth-tab.active {
+        background: var(--card);
+        color: var(--text);
+        font-weight: 600;
+        box-shadow: 0 1px 3px rgba(16,24,40,0.10);
+    }
+    .auth-form { gap: 20px; }
+    .auth-form .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .auth-form .form-label { font-size: 14px; font-weight: 600; color: var(--text); text-transform: none; letter-spacing: 0; }
+    .auth-form .form-input {
+        min-height: 48px;
+        padding: 0 14px;
+        border: 1px solid var(--border-strong);
+        border-radius: 10px;
+        font-size: 16px;
+    }
+    .auth-form .pw-field .form-input { padding-right: 78px; }
+    .auth-form .pw-toggle {
+        right: 6px;
+        width: auto;
+        min-width: 56px;
+        height: 36px;
+        padding: 0 10px;
+        border-radius: 8px;
+        background: var(--neutral-tint);
+        color: var(--text-body);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+    }
+    .auth-form .pw-toggle:hover, .auth-form .pw-toggle:focus-visible { background: var(--track); color: var(--text); }
+    .auth-gate .auth-submit {
+        width: 100%;
+        min-height: 48px;
+        margin: 0;
+        justify-content: center;
+        border-radius: 10px;
+        font-size: 15px;
+        font-weight: 600;
+    }
+    .auth-link { min-height: 44px; margin: -8px auto 0; padding: 0 10px; font-size: 14px; color: var(--accent); }
+    .auth-error { padding: 10px 12px; border-radius: 10px; font-size: 14px; }
+    .auth-notice { margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 14px; }
+    .auth-note,
+    .auth-hint.auth-note {
+        display: flex;
+        gap: 10px;
+        padding: 12px 14px;
+        border: 0;
+        border-radius: 12px;
+        background: var(--surface-sunken);
+        color: var(--text-secondary);
+        font-size: 14px;
+        line-height: 1.5;
+    }
+    .auth-note .ico { margin-top: 1px; }
+    .auth-note strong { font-weight: 600; color: var(--text-body); }
+    .auth-note__link {
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--accent);
+        font: inherit;
+        font-weight: 600;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        cursor: pointer;
+    }
+    .auth-note__link:hover { color: var(--accent-text); }
+    .auth-card__footer {
+        margin: 0;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--text-light);
+        text-align: center;
+    }
+    .pending-message {
+        margin: 0;
+        padding: 14px 16px;
+        border: 0;
+        border-radius: 12px;
+        background: var(--surface-sunken);
+        color: var(--text-secondary);
+        font-size: 14px;
+    }
+    .pending-message p + p { margin-top: 10px; }
+    .pending-message strong { font-weight: 600; color: var(--text-body); }
+    .auth-gate .btn-secondary.auth-submit { gap: 8px; }
+}
+
+/* ---------- Narrow: the sidebar is a drawer (≤900px) ---------- */
+@media screen and (max-width: 900px) {
+    .topbar { padding: 10px 16px; min-height: 64px; background: var(--bg); }
+    /* style.css hides the spacer here: the search fills the row instead, so
+       the sync chip and the bell stay at the right edge. */
+    .global-search { flex: 1 1 auto; width: auto; }
+    .main { padding-top: 12px; }
+    .sidebar__close { border: 0; border-radius: 12px; background: var(--card); box-shadow: var(--ring); }
+    /* The style.css phone topbar hid the name; in the drawer it has room. */
+    .sidebar .user-pill__name { display: block; }
+    /* Sign-in: the brand panel becomes a band above the card. */
+    .auth-gate { align-content: flex-start; }
+    .auth-brand {
+        flex-basis: 100%;
+        min-height: 0;
+        padding: 24px 20px;
+        flex-direction: row;
+        gap: 14px;
+        text-align: left;
+    }
+    .auth-brand__logo { width: 56px; height: 56px; border-radius: 16px; }
+    .auth-brand__logo .brand-logo--lg { width: 40px; height: 40px; }
+    .auth-brand .auth-brand__name { font-size: 20px; }
+    .auth-brand__sub { font-size: 15px; }
+    .auth-main { flex-basis: 100%; padding: 24px 16px 40px; align-items: flex-start; }
+}
+
+/* ---------- Phone (≤700px), design F phone ---------- */
+@media screen and (max-width: 700px) {
+    /* Top: menu · page title over the sync line · bell; search underneath.
+       It scrolls away with the page; the bottom bar stays. */
+    .topbar {
+        position: relative;
+        top: auto;
+        z-index: 200;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-areas:
+            "burger title  bell"
+            "burger sync   bell"
+            "search search search";
+        column-gap: 10px;
+        row-gap: 0;
+        align-items: center;
+        min-height: 0;
+        padding: 12px 16px 4px;
+        background: transparent;
+    }
+    .topbar__burger { grid-area: burger; }
+    .topbar__bell { grid-area: bell; }
+    .topbar__spacer { display: none; }
+    .topbar__title {
+        grid-area: title;
+        display: block;
+        align-self: end;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-family: var(--font-display);
+        font-size: 20px;
+        font-weight: 600;
+        line-height: 1.25;
+        color: var(--text);
+    }
+    .topbar .sync-chip,
+    .topbar .sync-chip:has(.status-dot.connected) {
+        grid-area: sync;
+        align-self: start;
+        justify-self: start;
+        max-width: 100%;
+        padding: 0;
+        border-radius: 0;
+        background: none;
+        color: var(--text-secondary);
+        font-size: 12px;
+        font-weight: 500;
+    }
+    body[data-offline] .topbar .sync-chip { background: none; color: var(--warning-strong); }
+    .topbar .sync-chip .status-dot { width: 7px; height: 7px; }
+    .global-search {
+        grid-area: search;
+        width: auto;
+        margin-top: 12px;
+    }
+    .global-search > .ico { display: block; }
+    /* Results drop under the field, the field's own width (it spans the screen). */
+    .global-search__results {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        right: 0;
+        width: auto;
+        min-width: 0;
+        max-height: 60vh;
+    }
+
+    /* A page heading would repeat the title in the top row; it stays for
+       screen readers (the top-row title is visual only). */
+    .main .page-head__title {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+
+    .main { padding: 8px 16px 24px; }
+    /* The last thing on the page (the footer) clears the bottom bar and the
+       floating button, so nothing ends up hidden under them. */
+    .footer { padding-bottom: calc(168px + env(safe-area-inset-bottom, 0px)); }
+
+    /* Bottom bar: Home, Units, Damage, Inbox, More. */
+    .bottom-nav {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 240;               /* under dialogs (250) and the menu (300+) */
+        display: flex;
+        height: calc(72px + env(safe-area-inset-bottom, 0px));
+        padding: 0 4px calc(6px + env(safe-area-inset-bottom, 0px));
+        background: var(--card);
+        border-top: 1px solid var(--border);
+    }
+    .bottom-nav__item {
+        position: relative;
+        flex: 1 1 0;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--text-secondary);
+        font: inherit;
+        font-size: 12px;
+        font-weight: 500;
+        line-height: 1.2;
+        cursor: pointer;
+    }
+    .bottom-nav__item[hidden] { display: none; }
+    .bottom-nav__item.active { color: var(--accent); font-weight: 700; }
+    .bottom-nav__count {
+        position: absolute;
+        top: 8px;
+        left: 50%;
+        margin-left: 6px;
+        min-width: 18px;
+        padding: 0 5px;
+        border-radius: 9px;
+        background: var(--danger);
+        color: #FFFFFF;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 18px;
+        text-align: center;
+    }
+    .bottom-nav__count[hidden] { display: none; }
+    .bottom-nav__more.has-pending::after {
+        content: "";
+        position: absolute;
+        top: 12px;
+        left: 50%;
+        margin-left: 8px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--dot-bad);
+        box-shadow: 0 0 0 2px var(--card);
+    }
+
+    .fab {
+        position: fixed;
+        right: 16px;
+        bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+        z-index: 240;
+        width: 56px;
+        height: 56px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border: 0;
+        border-radius: 18px;
+        background: var(--accent);
+        color: #FFFFFF;
+        box-shadow: 0 8px 20px -6px rgba(15,118,110,0.6);
+        cursor: pointer;
+    }
+    .fab:hover { background: var(--accent-text); }
+    /* Not while a dialog is open, nor behind the sign-in screens. */
+    body:has(.modal-overlay.open) .fab,
+    body:has(#photoLightbox.open) .fab,
+    body.auth-blocked .fab,
+    body.auth-blocked .bottom-nav { display: none; }
+
+    /* Notices that sit at the bottom stay above the bar. */
+    .unsent-notice { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+    .toast-container { top: calc(env(safe-area-inset-top, 0px) + 12px); left: 12px; right: 12px; }
+    .toast { max-width: none; }
+
+    /* Drawer on a phone: the brand row keeps the close button in reach. */
+    .sidebar { padding: 16px 12px 12px; }
+}
+
+/* Print: the phone bar and the floating button are screen-only (style.css
+   print rules already hide the sidebar and the top bar). */
+@media print {
+    .bottom-nav, .fab { display: none !important; }
+}

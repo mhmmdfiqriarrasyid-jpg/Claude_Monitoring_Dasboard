@@ -111,8 +111,12 @@ const { launch, BASE_URL } = require('./_env');
         // pemilih kelompok
         goNav('dashboard', 'tractor'); await tick(10);
         t('tautan dashboard pertanian tetap mendarat di alat berat, preferensi perangkat tidak berubah', [effectiveDashGroup(), dashGroupPref, localStorage.getItem('dashUnitGroup')], ['heavy', 'heavy', prefDash]);
-        const navShown = g => [...document.querySelectorAll('.nav__link[data-group="' + g + '"]')].some(el => el.style.display !== 'none');
-        t('sidebar: tautan pertanian dan "All" disembunyikan', [navShown('tractor'), navShown('all'), navShown('heavy')], [false, false, true]);
+        // Menu desain F: satu tautan per halaman, kelompok dipilih di halaman.
+        // Halaman pertanian (Implements, Licenses) tertutup, halaman alat berat
+        // (Inspection) terbuka, dan menu tidak menawarkan pilihan kelompok.
+        const navShown = v => [...document.querySelectorAll('.sidebar .nav__link[data-view="' + v + '"]')].some(el => el.style.display !== 'none');
+        t('sidebar: halaman pertanian disembunyikan, alat berat tetap; tanpa pilihan kelompok',
+          [navShown('implements'), navShown('licenseStock'), navShown('inspection'), document.querySelectorAll('.sidebar [data-group]').length], [false, false, true, 0]);
         t('menu Implements dan License Stock tertutup', [canViewView('implements'), canViewView('licenseStock')], [false, false]);
         // langganan
         cloudInitialized = false; initCloudSync(); await tick(20);
