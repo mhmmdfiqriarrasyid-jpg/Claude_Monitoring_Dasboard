@@ -1,60 +1,78 @@
 /* ============================================================
-   Tractor Monitoring Dashboard - Corporate Theme
+   Operation Technology Dashboard — Soft UI theme (design F)
    ============================================================ */
 
 /* --- CSS Variables --- */
 :root {
-    /* Warm editorial palette (Claude Design handoff) — cream paper + terracotta */
-    --primary: #D97757;          /* terracotta accent */
-    --primary-light: #C2613F;
-    --primary-lighter: #FBF0EB;  /* terracotta-50 wash */
-    --accent: #C5522D;
-    --accent-text: #A24E32;
-    --success: #4B7453;
-    --success-bg: #E7EEE7;
-    --danger: #AD443B;
-    --danger-bg: #F5E0DC;
-    --warning: #886421;
-    --warning-bg: #F4EAD3;
-    --info: #4D6B89;
-    --info-bg: #E2E9F0;
-    /* Tinted borders for status chips/cards — these values were already used
-       as one-offs throughout the file; naming them keeps chips consistent. */
-    --success-border: #BFD2C1;
-    --danger-border: #E0B4AE;
-    --warning-border: #E4CE9A;
-    --info-border: #C4D2E0;
-    --bg: #F0EEE6;               /* signature cream app background */
-    --card: #FAF9F5;            /* raised paper */
-    --surface-raised: #FFFFFF;  /* inputs, dialogs, popovers */
-    --text: #141413;           /* warm near-black */
-    --text-secondary: #5A5853;
-    --text-light: #706C5E;
-    --border: #E9E6DC;
-    --border-light: #DEDACE;
-    --border-strong: #CFCABA;
-    /* Soft warm shadows — tinted with warm ink, low opacity */
-    --shadow: 0 1px 2px rgba(20,20,19,0.05), 0 1px 3px rgba(20,20,19,0.04);
-    --shadow-md: 0 4px 10px -2px rgba(20,20,19,0.08), 0 2px 4px -1px rgba(20,20,19,0.05);
-    --shadow-lg: 0 12px 28px -6px rgba(20,20,19,0.12), 0 4px 8px -2px rgba(20,20,19,0.06);
+    /* Soft UI palette (design F) — cool grey ground, white cards, teal accent.
+       Status text uses the darker step of each hue so chips stay readable. */
+    --primary: #0F766E;          /* teal accent */
+    --primary-light: #115E59;
+    --primary-lighter: #F0FDFA;  /* teal-50 wash */
+    --accent: #0F766E;
+    --accent-text: #115E59;
+    --success: #067647;
+    --success-bg: #ECFDF3;
+    --danger: #B42318;
+    --danger-bg: #FEF3F2;
+    --warning: #B54708;
+    --warning-bg: #FFFAEB;
+    --info: #175CD3;
+    --info-bg: #EFF8FF;
+    /* Strong text for tinted chips (design F) */
+    --success-strong: #085D3A;
+    --danger-strong: #912018;
+    --warning-strong: #93370D;
+    --info-strong: #194185;
+    --success-tint: #DCFAE6;
+    --danger-tint: #FEE4E2;
+    --warning-tint: #FEF0C7;
+    --neutral-tint: #F2F4F7;
+    --dot-good: #17B26A;
+    --dot-bad: #F04438;
+    --dot-warn: #F79009;
+    /* Tinted borders for status chips/cards */
+    --success-border: #ABEFC6;
+    --danger-border: #FECDCA;
+    --warning-border: #FEDF89;
+    --info-border: #B2DDFF;
+    --bg: #F6F7FB;               /* app ground */
+    --card: #FFFFFF;
+    --surface-raised: #FFFFFF;   /* inputs, dialogs, popovers */
+    --surface-sunken: #F9FAFB;   /* table heads, quiet panels */
+    --track: #EEF0F4;            /* segmented controls, progress tracks */
+    --text: #101828;
+    --text-secondary: #475467;
+    --text-light: #667085;
+    --text-body: #344054;
+    --border: #EAECF0;
+    --border-light: #EAECF0;
+    --border-strong: #D0D5DD;
+    --shadow: 0 1px 2px rgba(16,24,40,0.05), 0 4px 12px -2px rgba(16,24,40,0.06);
+    --shadow-md: 0 2px 4px -1px rgba(16,24,40,0.06), 0 8px 20px -4px rgba(16,24,40,0.10);
+    --shadow-lg: 0 1px 2px rgba(16,24,40,0.05), 0 12px 32px -8px rgba(16,24,40,0.16);
+    --ring: 0 0 0 1px #EAECF0;
+    --focus-ring: 0 0 0 3px rgba(15,118,110,0.18);
     --radius: 10px;
-    --radius-lg: 14px;
+    --radius-lg: 16px;
     --transition: all 0.14s cubic-bezier(.2,.6,.2,1);
 
-    /* Typography (Google Fonts, loaded in index.html) */
-    --font-serif: 'Newsreader', Georgia, 'Times New Roman', serif;
-    --font-sans: 'Hanken Grotesk', 'Inter', 'Segoe UI', -apple-system, sans-serif;
-    --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+    /* Typography (Google Fonts, loaded in index.html). --font-serif is the
+       display face for titles and big numbers. */
+    --font-serif: 'Poppins', 'Open Sans', 'Segoe UI', sans-serif;
+    --font-display: 'Poppins', 'Open Sans', 'Segoe UI', sans-serif;
+    --font-sans: 'Open Sans', 'Segoe UI', -apple-system, sans-serif;
+    --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
 
-    /* Component Colors — earthy, muted (never neon) */
-    --color-display: #886421;   /* ochre */
-    --color-gps: #4D6B89;       /* slate blue */
-    --color-steering: #4B7453;  /* forest green */
-    --color-jdlink: #403E3A;
-    --color-camera-ai: #6E5A8A;
-    --color-telematic-box: #3E6F73;
-    --color-switch-limiter: #8A5A3C;
-    --color-rotary-lamp: #A07A2A;    /* warm ink */
+    /* Component colors */
+    --color-display: #B54708;
+    --color-gps: #175CD3;
+    --color-steering: #067647;
+    --color-jdlink: #344054;
+    --color-camera-ai: #6941C6;
+    --color-telematic-box: #0E7490;
+    --color-switch-limiter: #C4320A;
+    --color-rotary-lamp: #A15C07;
 }
 
 /* --- Reset & Base --- */
@@ -4637,4 +4655,354 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
     .vehicle-cards { grid-template-columns: minmax(0, 1fr); }
     #fuelTable td.num { text-align: right; }
     .vehicle-card__actions .btn { min-height: 44px; }
+}
+
+/* ============================================================
+   SOFT UI (design F) — shared components
+   Appended last so it wins the cascade over the older card, ledger-KPI
+   and table rules. Screen only: print keeps its own rules above. Sizes
+   for buttons and fields stay out of phone widths (≤700px), where the
+   PHONE section sets the 44px touch floor and 16px fields.
+   ============================================================ */
+@media screen {
+    body { font-family: var(--font-sans); color: var(--text); background: var(--bg); }
+
+    /* Display face for titles and big numbers */
+    h1, h2, h3,
+    .section-title, .table-card__title, .chart-card__title, .modal-header h3,
+    #modalTitle, #implementModalTitle, #damageModalTitle, #licenseModalTitle {
+        font-family: var(--font-display);
+        font-weight: 600;
+        letter-spacing: 0;
+        color: var(--text);
+    }
+    .table-card__title, .chart-card__title, .section-title { font-size: 17px; }
+    .table-card__title i, .chart-card__title i, .section-title i { color: var(--text-light); }
+
+    /* ---- Page header (title + one line + actions) ---- */
+    .page-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 12px 16px;
+        margin: 4px 0 20px;
+    }
+    .page-head__text { display: flex; flex-direction: column; min-width: 0; }
+    .page-head__title {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 26px;
+        font-weight: 600;
+        line-height: 1.3;
+        color: var(--text);
+    }
+    .page-head__sub { color: var(--text-secondary); font-size: 14px; }
+    .page-head__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+    /* ---- Segmented control (equipment group, quick filters) ---- */
+    .seg {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 4px;
+        border-radius: 12px;
+        background: var(--track);
+    }
+    .seg__btn {
+        min-height: 36px;
+        padding: 0 14px;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        color: var(--text-secondary);
+        font: inherit;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    .seg__btn:hover { color: var(--text); }
+    .seg__btn[aria-pressed="true"], .seg__btn.active {
+        background: var(--card);
+        color: var(--text);
+        font-weight: 600;
+        box-shadow: 0 1px 3px rgba(16,24,40,0.10);
+    }
+
+    /* ---- Cards ---- */
+    .kpi-card, .chart-card, .table-card, .filter-bar, .repair-section,
+    .team-no-panel {
+        background: var(--card);
+        border: 1px solid transparent;
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+    }
+
+    /* KPI cards: back to cards (the ledger rules above are undone here) */
+    .kpi-grid {
+        gap: 16px;
+        border: 0;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    }
+    .kpi-grid .kpi-card {
+        background: var(--card);
+        border: 1px solid transparent;
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+        padding: 18px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .kpi-grid .kpi-card + .kpi-card { border-left: 1px solid transparent; }
+    .kpi-grid .kpi-card:hover { transform: none; box-shadow: var(--shadow-md); }
+    .kpi-grid .kpi-card .kpi-card__icon {
+        display: flex;
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        font-size: 16px;
+    }
+    .kpi-card__header { flex-direction: row-reverse; justify-content: flex-end; gap: 10px; margin-bottom: 2px; }
+    .kpi-grid .kpi-card__label {
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--text-secondary);
+    }
+    .kpi-grid .kpi-card__value {
+        font-family: var(--font-display);
+        font-size: 32px;
+        font-weight: 600;
+        line-height: 1.1;
+        color: var(--text);
+    }
+    .kpi-grid .kpi-card.good .kpi-card__value,
+    .kpi-grid .kpi-card.breakdown .kpi-card__value,
+    .kpi-grid .kpi-card.issue .kpi-card__value { color: var(--text); }
+    .kpi-grid .kpi-card__sub { font-size: 13px; color: var(--text-secondary); }
+    .kpi-grid .kpi-card .kpi-card__bar { display: block; height: 6px; border-radius: 3px; background: var(--track); margin-top: 6px; }
+    .kpi-grid .kpi-card .kpi-card__bar-fill { border-radius: 3px; }
+    .kpi-card.total .kpi-card__icon { background: var(--primary-lighter); color: var(--accent-text); }
+    .kpi-card.good .kpi-card__icon { background: var(--success-tint); color: var(--success-strong); }
+    .kpi-card.breakdown .kpi-card__icon { background: var(--danger-tint); color: var(--danger-strong); }
+    .kpi-card.issue .kpi-card__icon { background: var(--warning-tint); color: var(--warning-strong); }
+    .kpi-card.health .kpi-card__icon { background: var(--info-bg); color: var(--info-strong); }
+    .kpi-card.good .kpi-card__bar-fill { background: var(--dot-good); }
+    .kpi-card.breakdown .kpi-card__bar-fill { background: var(--dot-bad); }
+    .kpi-card.issue .kpi-card__bar-fill { background: var(--dot-warn); }
+    .kpi-card.health .kpi-card__bar-fill { background: var(--accent); }
+    .dash-narrative { font-family: var(--font-sans); font-size: 15px; color: var(--text-secondary); }
+
+    .table-card__header { padding: 16px 20px 12px; border-bottom: 0; }
+    .chart-card { padding: 18px 20px; }
+
+    /* ---- Tables ---- */
+    .data-table { font-size: 14px; }
+    .data-table th {
+        background: var(--surface-sunken);
+        padding: 10px 14px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--text-secondary);
+        border-bottom: 1px solid var(--border);
+    }
+    .data-table th:hover { background: var(--track); color: var(--text); }
+    .data-table th.sorted .sort-icon { color: var(--accent); }
+    .data-table td { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+    .data-table tbody tr,
+    .data-table tbody tr:nth-child(even) { background: var(--card); }
+    .data-table tbody tr:hover { background: var(--surface-sunken); }
+    .data-table tbody tr.row-breakdown { background: var(--danger-bg); }
+    .data-table tbody tr.row-breakdown:hover { background: var(--danger-tint); }
+
+    /* ---- Status chips ---- */
+    .badge {
+        gap: 6px;
+        padding: 2px 10px;
+        border: 0;
+        border-radius: 12px;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0;
+    }
+    .badge-good { background: var(--success-bg); color: var(--success-strong); border: 0; }
+    .badge-breakdown { background: var(--danger-bg); color: var(--danger-strong); border: 0; }
+    .badge-component { border-radius: 10px; padding: 2px 8px; font-size: 12px; }
+    .cell-good { color: var(--success); }
+    .cell-bad { color: var(--danger); }
+
+    /* ---- Buttons ---- */
+    .btn {
+        border-radius: 10px;
+        font-weight: 600;
+        gap: 8px;
+    }
+    .btn-primary, .btn-success {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #FFFFFF;
+    }
+    .btn-primary:hover, .btn-success:hover { background: var(--accent-text); border-color: var(--accent-text); }
+    .btn-secondary {
+        background: var(--card);
+        color: var(--text-body);
+        border-color: var(--border-strong);
+        box-shadow: 0 1px 2px rgba(16,24,40,0.05);
+    }
+    .btn-secondary:hover { background: var(--surface-sunken); color: var(--text); }
+    .btn-icon { border-radius: 10px; }
+
+    /* ---- Fields ---- */
+    .form-input, .form-select,
+    .filter-bar__search input, .filter-bar select, .edit-search input {
+        border: 1px solid var(--border-strong);
+        border-radius: 10px;
+        background-color: var(--surface-raised);
+        color: var(--text);
+    }
+    .form-input:focus, .form-select:focus,
+    .filter-bar__search input:focus, .filter-bar select:focus, .edit-search input:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: var(--focus-ring);
+    }
+    :focus-visible { outline-color: var(--accent); }
+
+    /* ---- Tabs (underline, 44px) ---- */
+    .team-tabbar { border-bottom: 1px solid var(--border); }
+    .team-tab {
+        min-height: 44px;
+        padding: 0 14px;
+        margin-bottom: -1px;
+        border-radius: 0;
+        border-bottom: 2px solid transparent;
+        background: none;
+        color: var(--text-secondary);
+        font-weight: 500;
+    }
+    .team-tab:hover { background: none; color: var(--text); }
+    .team-tab.active {
+        background: none;
+        color: var(--text);
+        font-weight: 600;
+        border-bottom-color: var(--accent);
+    }
+    .team-tab__count, .nav__badge {
+        background: var(--danger-tint);
+        color: var(--danger-strong);
+        font-weight: 700;
+    }
+
+    /* ---- Sidebar ---- */
+    .sidebar {
+        width: 236px;
+        background: var(--card);
+        border-right: 1px solid var(--border);
+        padding: 20px 14px 14px;
+    }
+    .sidebar__brand { padding: 0 8px 12px; gap: 10px; }
+    .sidebar__brand-name { font-family: var(--font-display); font-size: 14px; font-weight: 600; letter-spacing: 0; }
+    .sidebar__brand-sub { font-size: 12px; color: var(--text-secondary); }
+    .nav-group { gap: 2px; margin-bottom: 0; }
+    .nav-group__label {
+        margin: 14px 12px 6px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        color: var(--text-light);
+    }
+    .sidebar__nav .nav__link {
+        min-height: 44px;
+        padding: 0 12px;
+        border-radius: 10px;
+        gap: 12px;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text-body);
+    }
+    .sidebar__nav .nav__link i { width: 20px; font-size: 16px; color: var(--text-light); }
+    .sidebar__nav .nav__link:hover { background: var(--surface-sunken); color: var(--text); }
+    .sidebar__nav .nav__link.active { background: var(--primary-lighter); color: var(--accent-text); font-weight: 600; }
+    .sidebar__nav .nav__link.active i { color: var(--accent-text); }
+    .nav__badge { margin-left: auto; padding: 0 8px; border-radius: 10px; font-size: 12px; }
+
+    /* ---- Top bar: sits on the ground, no bar ---- */
+    .topbar {
+        height: auto;
+        min-height: 68px;
+        padding: 12px 32px;
+        gap: 12px;
+        background: var(--bg);
+        border-bottom: 0;
+        color: var(--text-secondary);
+    }
+    .global-search {
+        order: -1;
+        width: 340px;
+        max-width: 100%;
+        min-height: 44px;
+        border-radius: 12px;
+        background: var(--card);
+        box-shadow: 0 1px 2px rgba(16,24,40,0.06), var(--ring);
+    }
+    .global-search { padding: 0 14px; }
+    .global-search > i { font-size: 15px; }
+    .global-search input {
+        flex: 1 1 auto;
+        width: 100%;
+        min-width: 0;
+        min-height: 42px;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        font-size: 14px;
+        box-shadow: none;
+    }
+    .global-search input:focus { box-shadow: none; }
+    .global-search:focus-within { box-shadow: var(--focus-ring), 0 0 0 1px var(--accent); }
+    .global-search__results { left: 0; right: auto; width: 100%; min-width: 300px; }
+    .header__status {
+        padding: 4px 10px;
+        border-radius: 12px;
+        background: var(--neutral-tint);
+        color: var(--text-body);
+        font-size: 13px;
+        font-weight: 600;
+    }
+    .status-dot.connected { background: var(--dot-good); box-shadow: none; animation: none; }
+    .user-pill {
+        min-height: 44px;
+        border-radius: 12px;
+        background: var(--card);
+        box-shadow: var(--ring);
+        border: 0;
+    }
+    .main { max-width: 1280px; margin: 0; padding: 8px 32px 48px; }
+
+    /* ---- Dialogs and toasts ---- */
+    .modal-overlay { background: rgba(16,24,40,0.45); }
+    .modal-card { border-radius: 20px; box-shadow: var(--shadow-lg); background: var(--card); }
+    .modal-header { padding: 18px 24px; border-bottom: 1px solid var(--border); }
+    .modal-header h3 { font-size: 18px; }
+    .toast { border-radius: 12px; border-left-width: 0; box-shadow: var(--shadow-lg), var(--ring); }
+}
+
+/* Desktop sizing (phones keep the PHONE section's 44px / 16px floor) */
+@media screen and (min-width: 701px) {
+    .btn { min-height: 40px; padding: 0 16px; font-size: 14px; }
+    .btn-sm { min-height: 36px; padding: 0 12px; font-size: 13px; }
+    .btn-icon { width: 40px; height: 40px; min-height: 40px; padding: 0; }
+    .form-input, .form-select { min-height: 40px; font-size: 14px; }
+    .filter-bar__search input, .filter-bar select, .edit-search input { min-height: 40px; font-size: 14px; }
+}
+@media screen and (max-width: 900px) {
+    .topbar { padding: 10px 16px; min-height: 60px; }
+    .global-search { order: 0; width: auto; }
+    .main { padding: 8px 16px 48px; }
 }
