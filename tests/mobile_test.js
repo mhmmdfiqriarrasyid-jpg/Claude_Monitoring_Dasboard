@@ -378,7 +378,8 @@ async function run(page, width, body) {
         return { fontInput: fs, tinggiInput: hh, tinggiBtnSm: bh };
     })()`);
 
-    t('desktop: font input tetap 13px', d.fontInput, 13);
+    // v171: design F makes desktop fields 14px; the 16px phone size must still not leak here.
+    t('desktop: font input 14px (desain F), bukan 16px HP', d.fontInput, 14);
     t('desktop: input tetap ramping', d.tinggiInput < 40, true);
     t('desktop: btn-sm tetap ramping', d.tinggiBtnSm < 40, true);
     await desk.close();
