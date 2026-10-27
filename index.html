@@ -1832,323 +1832,321 @@
 
     <div id="viewWarehouse" class="view" style="display:none;">
 
+        <!-- Design F: page head; its actions follow the open tab
+             (renderWarehouseView shows the matching group). -->
+        <div class="page-head wh-head">
+            <div class="page-head__text">
+                <h1 class="page-head__title">Warehouse</h1>
+                <span class="page-head__sub">Precision devices, stock items and operational vehicles</span>
+            </div>
+            <div class="page-head__actions edit-toolbar wh-actions" data-wh-for="devices">
+                <button type="button" class="btn btn-secondary csv-export" onclick="exportDeviceCSV()">
+                    <svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg>
+                    Export
+                </button>
+                <button type="button" class="btn btn-primary editonly editonly--warehouse" onclick="showAddDeviceForm()">
+                    <svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                    Add device
+                </button>
+            </div>
+            <div class="page-head__actions edit-toolbar wh-actions" data-wh-for="stock" style="display:none">
+                <button type="button" class="btn btn-secondary csv-export" onclick="exportStockCSV()">
+                    <svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg>
+                    Export
+                </button>
+                <button type="button" class="btn btn-primary editonly editonly--warehouse" onclick="showAddStockForm()">
+                    <svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3 4 7l4 4"></path><path d="M4 7h16"></path><path d="m16 21 4-4-4-4"></path><path d="M20 17H4"></path></svg>
+                    Record in / out
+                </button>
+            </div>
+            <div class="page-head__actions edit-toolbar wh-actions" data-wh-for="vehicles" style="display:none">
+                <button type="button" class="btn btn-secondary csv-export" onclick="exportFuelCSV()">
+                    <svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg>
+                    Export
+                </button>
+                <button type="button" class="btn btn-secondary editonly editonly--warehouse" onclick="showAddVehicleForm()">
+                    <svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                    Add vehicle
+                </button>
+                <button type="button" class="btn btn-primary editonly editonly--warehouse" onclick="showFuelForm()">
+                    <svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 22h12"></path><path d="M4 9h10"></path><path d="M14 22V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v18"></path><path d="M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 4 0V9.83a2 2 0 0 0-.59-1.42L18 5"></path></svg>
+                    Log fuel
+                </button>
+            </div>
+        </div>
+
         <div class="warehouse-rules-slot"></div>
 
-        <div class="team-tabbar">
+        <div class="team-tabbar wh-tabbar">
             <div class="team-tabs" role="tablist" aria-label="Warehouse sections">
                 <button class="team-tab wh-tab active" data-tab="devices" role="tab" aria-selected="true"
-                        aria-controls="whDevicePanel" onclick="switchWarehouseTab('devices')">
-                    <i class="fas fa-microchip"></i> Devices
-                </button>
+                        aria-controls="whDevicePanel" onclick="switchWarehouseTab('devices')">Devices</button>
                 <button class="team-tab wh-tab" data-tab="stock" role="tab" aria-selected="false"
-                        aria-controls="whStockPanel" onclick="switchWarehouseTab('stock')">
-                    <i class="fas fa-boxes-stacked"></i> Stock Items
-                </button>
+                        aria-controls="whStockPanel" onclick="switchWarehouseTab('stock')">Stock items</button>
                 <button class="team-tab wh-tab" data-tab="vehicles" role="tab" aria-selected="false"
-                        aria-controls="whVehiclePanel" onclick="switchWarehouseTab('vehicles')">
-                    <i class="fas fa-motorcycle"></i> Vehicles &amp; Fuel
-                </button>
+                        aria-controls="whVehiclePanel" onclick="switchWarehouseTab('vehicles')">Vehicles &amp; fuel</button>
             </div>
         </div>
 
         <!-- ---------- Devices, tracked by serial number ---------- -->
         <div id="whDevicePanel" role="tabpanel" aria-label="Devices">
-            <div class="downtime-kpis" style="margin-bottom:16px">
-                <div class="downtime-kpi">
-                    <div class="downtime-kpi__label">In Warehouse</div>
-                    <div class="downtime-kpi__value" id="devKpi_warehouse">0</div>
-                    <div class="downtime-kpi__sub">Ready to install</div>
-                </div>
-                <div class="downtime-kpi">
-                    <div class="downtime-kpi__label">Installed</div>
-                    <div class="downtime-kpi__value" id="devKpi_installed">0</div>
-                    <div class="downtime-kpi__sub">On a unit or in the field</div>
-                </div>
-                <div class="downtime-kpi">
-                    <div class="downtime-kpi__label">Allocated</div>
-                    <div class="downtime-kpi__value" id="devKpi_allocated">0</div>
-                    <div class="downtime-kpi__sub">Handed to a division</div>
-                </div>
-                <div class="downtime-kpi">
-                    <div class="downtime-kpi__label">Damaged</div>
-                    <div class="downtime-kpi__value" id="devKpi_damaged">0</div>
-                    <div class="downtime-kpi__sub">Not yet handled</div>
-                </div>
-                <div class="downtime-kpi">
-                    <div class="downtime-kpi__label">Repair</div>
-                    <div class="downtime-kpi__value" id="devKpi_repair">0</div>
-                    <div class="downtime-kpi__sub">Under repair</div>
-                </div>
-                <div class="downtime-kpi">
-                    <div class="downtime-kpi__label">Retired</div>
-                    <div class="downtime-kpi__value" id="devKpi_retired">0</div>
-                    <div class="downtime-kpi__sub">No longer in use</div>
-                </div>
+            <!-- The tiles are the status filter: pressing one shows only that
+                 status, pressing it again shows all. The counts are always the
+                 whole warehouse. -->
+            <div class="wh-tiles" role="group" aria-label="Device status">
+                <button type="button" class="wh-tile" data-status="warehouse" aria-pressed="false" onclick="toggleDeviceStatusFilter('warehouse')">
+                    <span class="wh-tile__label"><span class="wh-dot wh-dot--warehouse" aria-hidden="true"></span>In warehouse</span>
+                    <span class="wh-tile__value" id="devKpi_warehouse">0</span>
+                    <span class="wh-tile__sub">Ready to install</span>
+                </button>
+                <button type="button" class="wh-tile" data-status="installed" aria-pressed="false" onclick="toggleDeviceStatusFilter('installed')">
+                    <span class="wh-tile__label"><span class="wh-dot wh-dot--installed" aria-hidden="true"></span>Installed</span>
+                    <span class="wh-tile__value" id="devKpi_installed">0</span>
+                    <span class="wh-tile__sub">On a unit or in the field</span>
+                </button>
+                <button type="button" class="wh-tile" data-status="allocated" aria-pressed="false" onclick="toggleDeviceStatusFilter('allocated')">
+                    <span class="wh-tile__label"><span class="wh-dot wh-dot--allocated" aria-hidden="true"></span>Allocated</span>
+                    <span class="wh-tile__value" id="devKpi_allocated">0</span>
+                    <span class="wh-tile__sub">Handed to a division</span>
+                </button>
+                <button type="button" class="wh-tile" data-status="damaged" aria-pressed="false" onclick="toggleDeviceStatusFilter('damaged')">
+                    <span class="wh-tile__label"><span class="wh-dot wh-dot--damaged" aria-hidden="true"></span>Damaged</span>
+                    <span class="wh-tile__value" id="devKpi_damaged">0</span>
+                    <span class="wh-tile__sub">Not handled yet</span>
+                </button>
+                <button type="button" class="wh-tile" data-status="repair" aria-pressed="false" onclick="toggleDeviceStatusFilter('repair')">
+                    <span class="wh-tile__label"><span class="wh-dot wh-dot--repair" aria-hidden="true"></span>In repair</span>
+                    <span class="wh-tile__value" id="devKpi_repair">0</span>
+                    <span class="wh-tile__sub">Under repair</span>
+                </button>
+                <button type="button" class="wh-tile" data-status="retired" aria-pressed="false" onclick="toggleDeviceStatusFilter('retired')">
+                    <span class="wh-tile__label"><span class="wh-dot wh-dot--retired" aria-hidden="true"></span>Retired</span>
+                    <span class="wh-tile__value" id="devKpi_retired">0</span>
+                    <span class="wh-tile__sub">No longer in use</span>
+                </button>
             </div>
+            <!-- Set by the tiles above (renderDeviceTable keeps them in step). -->
+            <input type="hidden" id="devStatusFilter" value="">
 
-            <div class="edit-toolbar">
-                <div class="edit-toolbar__left">
-                    <button class="btn btn-success editonly editonly--warehouse" onclick="showAddDeviceForm()">
-                        <i class="fas fa-plus"></i> Add Device
-                    </button>
-                    <button class="btn btn-secondary csv-export" onclick="exportDeviceCSV()">
-                        <i class="fas fa-download"></i> Export CSV
-                    </button>
+            <section class="table-card wh-card" aria-label="Device list">
+                <div class="adm-filters edit-toolbar">
+                    <label class="adm-search">
+                        <svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7.5"></circle><path d="m21 21-4.5-4.5"></path></svg>
+                        <input type="search" id="devSearch" aria-label="Search devices" placeholder="Search serial number or type" autocomplete="off" oninput="renderDeviceTable()">
+                    </label>
+                    <label class="adm-select"><span class="adm-select__label">Type</span>
+                        <select id="devTypeFilter" aria-label="Filter device type" onchange="renderDeviceTable()">
+                            <option value="">All types</option>
+                        </select>
+                    </label>
+                    <label class="adm-select"><span class="adm-select__label">Location</span>
+                        <select id="devLocationFilter" aria-label="Filter warehouse location" onchange="renderDeviceTable()">
+                            <option value="">All locations</option>
+                        </select>
+                    </label>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="clearDeviceFilter()">Reset</button>
+                    <span class="adm-count" id="deviceCount" role="status">0 devices</span>
                 </div>
-                <div class="edit-toolbar__right">
-                    <select id="devStatusFilter" aria-label="Filter device status" class="btn btn-secondary btn-sm" onchange="renderDeviceTable()">
-                        <option value="">All Status</option>
-                        <option value="warehouse">In Warehouse</option>
-                        <option value="installed">Installed</option>
-                        <option value="allocated">Allocated</option>
-                        <option value="damaged">Damaged</option>
-                        <option value="repair">Repair</option>
-                        <option value="retired">Retired</option>
-                    </select>
-                    <select id="devTypeFilter" aria-label="Filter device type" class="btn btn-secondary btn-sm" onchange="renderDeviceTable()">
-                        <option value="">All Types</option>
-                    </select>
-                    <select id="devLocationFilter" aria-label="Filter warehouse location" class="btn btn-secondary btn-sm" onchange="renderDeviceTable()">
-                        <option value="">All Locations</option>
-                    </select>
-                    <div class="edit-search">
-                        <i class="fas fa-search"></i>
-                        <input type="text" id="devSearch" aria-label="Search devices" placeholder="Search SN / type..." oninput="renderDeviceTable()">
-                    </div>
-                    <button class="btn btn-secondary btn-sm" onclick="clearDeviceFilter()">Reset</button>
-                    <span id="deviceCount">0 devices</span>
-                </div>
-            </div>
-
-            <div class="table-card">
-                <div class="table-card__header">
-                    <div class="table-card__title"><i class="fas fa-microchip"></i> Device List</div>
-                </div>
-                <div class="table-wrapper" style="max-height:600px;">
-                    <table class="data-table table--cardable" id="deviceTable">
+                <div class="table-wrapper" style="max-height:640px;">
+                    <table class="data-table table--cardable adm-table" id="deviceTable">
                         <thead>
                             <tr>
-                                <th>No</th>
-                                <th>Serial Number</th>
-                                <th>Type</th>
-                                <th>Brand / Model</th>
-                                <th>Status</th>
-                                <th>Position</th>
-                                <th>Coordinates</th>
-                                <th>Notes</th>
-                                <th class="col-actions">Actions</th>
+                                <th scope="col">Device</th>
+                                <th scope="col">Serial number</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Where</th>
+                                <th scope="col">Note</th>
+                                <th scope="col" class="col-actions"><span class="adm-sr">Actions</span></th>
                             </tr>
                         </thead>
                         <tbody id="deviceBody"></tbody>
                     </table>
                 </div>
-            </div>
+            </section>
         </div>
 
         <!-- ---------- Stock counted by quantity ---------- -->
-        <div id="whStockPanel" role="tabpanel" aria-label="Stock Items" style="display:none">
-            <div class="table-card" style="margin-bottom:16px">
-                <div class="table-card__header">
-                    <div class="table-card__title"><i class="fas fa-layer-group"></i> Remaining Stock</div>
+        <div id="whStockPanel" role="tabpanel" aria-label="Stock items" style="display:none">
+            <section class="table-card wh-card" aria-labelledby="whStockLeftTitle">
+                <div class="adm-cardhead">
+                    <h2 class="table-card__title" id="whStockLeftTitle">Remaining stock</h2>
+                    <span class="adm-cardhead__sub" id="stockSummarySub"></span>
                 </div>
                 <div class="stock-summary" id="stockSummary"></div>
-            </div>
+            </section>
 
-            <div class="edit-toolbar">
-                <div class="edit-toolbar__left">
-                    <button class="btn btn-success editonly editonly--warehouse" onclick="showAddStockForm()">
-                        <i class="fas fa-plus"></i> Record In/Out
-                    </button>
-                    <button class="btn btn-secondary csv-export" onclick="exportStockCSV()">
-                        <i class="fas fa-download"></i> Export CSV
-                    </button>
+            <section class="table-card wh-card" aria-labelledby="whStockLogTitle">
+                <div class="adm-cardhead">
+                    <h2 class="table-card__title" id="whStockLogTitle">In / out history</h2>
                 </div>
-                <div class="edit-toolbar__right">
-                    <label class="wl-filter-date">
-                        <span>From</span>
-                        <input type="date" id="stkFrom" class="form-input" onchange="renderStockView()">
+                <div class="adm-filters edit-toolbar">
+                    <label class="adm-search">
+                        <svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7.5"></circle><path d="m21 21-4.5-4.5"></path></svg>
+                        <input type="search" id="stkSearch" aria-label="Search stock transactions" placeholder="Search item, unit or note" autocomplete="off" oninput="renderStockView()">
                     </label>
-                    <label class="wl-filter-date">
-                        <span>To</span>
-                        <input type="date" id="stkTo" class="form-input" onchange="renderStockView()">
+                    <label class="adm-select"><span class="adm-select__label">From</span>
+                        <input type="date" id="stkFrom" onchange="renderStockView()">
                     </label>
-                    <select id="stkTypeFilter" aria-label="Filter transaction type" class="btn btn-secondary btn-sm" onchange="renderStockView()">
-                        <option value="">In &amp; Out</option>
-                        <option value="IN">In only</option>
-                        <option value="OUT">Out only</option>
-                    </select>
-                    <select id="stkItemFilter" aria-label="Filter item" class="btn btn-secondary btn-sm" onchange="renderStockView()">
-                        <option value="">All Items</option>
-                    </select>
-                    <select id="stkLocationFilter" aria-label="Filter location" class="btn btn-secondary btn-sm" onchange="renderStockView()">
-                        <option value="">All Locations</option>
-                    </select>
-                    <div class="edit-search">
-                        <i class="fas fa-search"></i>
-                        <input type="text" id="stkSearch" aria-label="Search stock transactions" placeholder="Search items..." oninput="renderStockView()">
-                    </div>
-                    <button class="btn btn-secondary btn-sm" onclick="clearStockFilter()">Reset</button>
-                    <span id="stockCount">0 transactions</span>
-                </div>
-            </div>
-
-            <div class="table-card">
-                <div class="table-card__header">
-                    <div class="table-card__title"><i class="fas fa-right-left"></i> In/Out History</div>
+                    <label class="adm-select"><span class="adm-select__label">To</span>
+                        <input type="date" id="stkTo" onchange="renderStockView()">
+                    </label>
+                    <label class="adm-select"><span class="adm-select__label">Movement</span>
+                        <select id="stkTypeFilter" aria-label="Filter transaction type" onchange="renderStockView()">
+                            <option value="">In &amp; out</option>
+                            <option value="IN">In only</option>
+                            <option value="OUT">Out only</option>
+                        </select>
+                    </label>
+                    <label class="adm-select"><span class="adm-select__label">Item</span>
+                        <select id="stkItemFilter" aria-label="Filter item" onchange="renderStockView()">
+                            <option value="">All items</option>
+                        </select>
+                    </label>
+                    <label class="adm-select"><span class="adm-select__label">Location</span>
+                        <select id="stkLocationFilter" aria-label="Filter location" onchange="renderStockView()">
+                            <option value="">All locations</option>
+                        </select>
+                    </label>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="clearStockFilter()">Reset</button>
+                    <span class="adm-count" id="stockCount" role="status">0 transactions</span>
                 </div>
                 <div class="table-wrapper" style="max-height:600px;">
-                    <table class="data-table table--cardable" id="stockTable">
+                    <table class="data-table table--cardable adm-table" id="stockTable">
                         <thead>
                             <tr>
-                                <th>No</th>
-                                <th>Date</th>
-                                <th>Type</th>
-                                <th>Item</th>
-                                <th>Quantity</th>
-                                <th>Location</th>
-                                <th>For Unit</th>
-                                <th class="col-actions">Actions</th>
+                                <th scope="col">Date</th>
+                                <th scope="col">Movement</th>
+                                <th scope="col">Item</th>
+                                <th scope="col" class="num">Quantity</th>
+                                <th scope="col">Location</th>
+                                <th scope="col">For unit</th>
+                                <th scope="col" class="col-actions"><span class="adm-sr">Actions</span></th>
                             </tr>
                         </thead>
                         <tbody id="stockBody"></tbody>
                     </table>
                 </div>
-            </div>
+            </section>
         </div>
 
         <!-- ---------- Operational vehicles and their fuel log ---------- -->
         <div id="whVehiclePanel" role="tabpanel" aria-label="Vehicles and fuel" style="display:none">
-            <div class="downtime-kpis" style="margin-bottom:16px">
-                <div class="downtime-kpi">
-                    <div class="downtime-kpi__label">Vehicles</div>
-                    <div class="downtime-kpi__value" id="vehKpi_count">0</div>
-                    <div class="downtime-kpi__sub">In use</div>
+            <div class="wh-tiles wh-tiles--static">
+                <div class="wh-tile">
+                    <span class="wh-tile__label">Vehicles</span>
+                    <span class="wh-tile__value" id="vehKpi_count">0</span>
+                    <span class="wh-tile__sub">In use</span>
                 </div>
-                <div class="downtime-kpi">
-                    <div class="downtime-kpi__label">Fuel this month</div>
-                    <div class="downtime-kpi__value" id="vehKpi_liters">0 L</div>
-                    <div class="downtime-kpi__sub" id="vehKpi_fills">0 refuels</div>
+                <div class="wh-tile">
+                    <span class="wh-tile__label">Fuel this month</span>
+                    <span class="wh-tile__value" id="vehKpi_liters">0 L</span>
+                    <span class="wh-tile__sub" id="vehKpi_fills">0 refuels</span>
                 </div>
-                <div class="downtime-kpi">
-                    <div class="downtime-kpi__label">Distance this month</div>
-                    <div class="downtime-kpi__value" id="vehKpi_km">0 km</div>
-                    <div class="downtime-kpi__sub">From the odometer at refuels</div>
+                <div class="wh-tile">
+                    <span class="wh-tile__label">Distance this month</span>
+                    <span class="wh-tile__value" id="vehKpi_km">0 km</span>
+                    <span class="wh-tile__sub">From the odometer at refuels</span>
                 </div>
-                <div class="downtime-kpi">
-                    <div class="downtime-kpi__label">To check</div>
-                    <div class="downtime-kpi__value" id="vehKpi_flags">0</div>
-                    <div class="downtime-kpi__sub">Odometer or fuel looks wrong</div>
-                </div>
-            </div>
-
-            <div class="edit-toolbar">
-                <div class="edit-toolbar__left">
-                    <button class="btn btn-success editonly editonly--warehouse" onclick="showFuelForm()">
-                        <i class="fas fa-gas-pump"></i> Log Fuel
-                    </button>
-                    <button class="btn btn-secondary editonly editonly--warehouse" onclick="showAddVehicleForm()">
-                        <i class="fas fa-plus"></i> Add Vehicle
-                    </button>
-                    <button class="btn btn-secondary csv-export" onclick="exportFuelCSV()">
-                        <i class="fas fa-download"></i> Export CSV
-                    </button>
-                </div>
-                <div class="edit-toolbar__right">
-                    <select id="fuelVehicleFilter" aria-label="Filter fuel records by vehicle" class="btn btn-secondary btn-sm" onchange="renderVehicleView()">
-                        <option value="">All Vehicles</option>
-                    </select>
-                    <input type="month" id="fuelMonthFilter" aria-label="Filter fuel records by month" class="btn btn-secondary btn-sm" onchange="renderVehicleView()">
-                    <button class="btn btn-secondary btn-sm" onclick="clearFuelFilter()">Reset</button>
-                    <span id="fuelCount">0 records</span>
+                <div class="wh-tile" id="vehKpiFlagsTile">
+                    <span class="wh-tile__label"><span class="wh-dot wh-dot--repair" aria-hidden="true"></span>To check</span>
+                    <span class="wh-tile__value" id="vehKpi_flags">0</span>
+                    <span class="wh-tile__sub">Odometer or fuel looks wrong</span>
                 </div>
             </div>
 
             <div class="vehicle-cards" id="vehicleCards"></div>
 
-            <div class="table-card">
-                <div class="table-card__header">
-                    <div class="table-card__title"><i class="fas fa-gas-pump"></i> Fuel Log</div>
+            <section class="table-card wh-card" aria-labelledby="whFuelTitle">
+                <div class="adm-cardhead">
+                    <h2 class="table-card__title" id="whFuelTitle">Fuel log</h2>
+                </div>
+                <div class="adm-filters edit-toolbar">
+                    <label class="adm-select"><span class="adm-select__label">Vehicle</span>
+                        <select id="fuelVehicleFilter" aria-label="Filter fuel records by vehicle" onchange="renderVehicleView()">
+                            <option value="">All vehicles</option>
+                        </select>
+                    </label>
+                    <label class="adm-select"><span class="adm-select__label">Month</span>
+                        <input type="month" id="fuelMonthFilter" aria-label="Filter fuel records by month" onchange="renderVehicleView()">
+                    </label>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="clearFuelFilter()">Reset</button>
+                    <span class="adm-count" id="fuelCount" role="status">0 records</span>
                 </div>
                 <div class="table-wrapper" style="max-height:600px;">
-                    <table class="data-table table--cardable" id="fuelTable">
+                    <table class="data-table table--cardable adm-table" id="fuelTable">
                         <thead>
                             <tr>
-                                <th>No</th>
-                                <th>Date</th>
-                                <th>Vehicle</th>
-                                <th>Odometer</th>
-                                <th>Distance</th>
-                                <th>Liters</th>
-                                <th>km / L</th>
-                                <th>Receipt</th>
-                                <th>Notes</th>
-                                <th class="col-actions">Actions</th>
+                                <th scope="col">Date</th>
+                                <th scope="col">Vehicle</th>
+                                <th scope="col" class="num">Odometer</th>
+                                <th scope="col" class="num">Distance</th>
+                                <th scope="col" class="num">Liters</th>
+                                <th scope="col" class="num">km / L</th>
+                                <th scope="col">Receipt</th>
+                                <th scope="col">Notes</th>
+                                <th scope="col" class="col-actions"><span class="adm-sr">Actions</span></th>
                             </tr>
                         </thead>
                         <tbody id="fuelBody"></tbody>
                     </table>
                 </div>
-            </div>
+            </section>
         </div>
 
     </div><!-- /viewWarehouse -->
 
     <!-- ==================== USERS VIEW (Owner only) ==================== -->
     <div id="viewUsers" class="view" style="display:none;">
-        <div class="edit-toolbar">
-            <div class="edit-toolbar__left">
-                <h2 style="margin:0;font-size:18px;font-weight:600;color:var(--accent-text)">
-                    <i class="fas fa-users-gear"></i> User Management
-                </h2>
+        <div class="page-head usr-head">
+            <div class="page-head__text">
+                <h1 class="page-head__title">Users</h1>
+                <span class="page-head__sub">Who can open the dashboard, and what each person can change</span>
             </div>
-            <div class="edit-toolbar__right">
-                <span id="usersCount">0 user(s)</span>
+            <div class="page-head__actions">
+                <button type="button" class="btn btn-secondary" onclick="openMasterLists()">
+                    <svg class="ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 6 1.5 1.5L7 5"></path><path d="m3 12 1.5 1.5L7 11"></path><path d="m3 18 1.5 1.5L7 17"></path><path d="M10 6h11"></path><path d="M10 12h11"></path><path d="M10 18h11"></path></svg>
+                    Master lists
+                </button>
             </div>
         </div>
 
-        <div class="users-summary" id="usersSummary"></div>
         <div class="group-stamp-notice" id="groupStampNotice" role="status" hidden></div>
 
-        <div class="table-card">
-            <div class="table-card__header">
-                <div class="table-card__title"><i class="fas fa-clock"></i> Pending Approvals</div>
+        <section class="table-card usr-card usr-pending" aria-labelledby="usrPendingTitle">
+            <div class="adm-cardhead">
+                <h2 class="table-card__title" id="usrPendingTitle">Waiting for approval</h2>
+                <span class="adm-pill adm-pill--warn" id="usrPendingCount">0</span>
             </div>
-            <div class="table-wrapper">
-                <table class="data-table table--cardable">
-                    <thead>
-                        <tr>
-                            <th>No</th>
-                            <th>Name</th>
-                            <th>Email</th>
-                            <th>Registered</th>
-                            <th class="col-actions">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="pendingUsersBody"></tbody>
-                </table>
-            </div>
-        </div>
+            <div class="usr-pending__list" id="pendingUsersBody" role="list" aria-labelledby="usrPendingTitle"></div>
+        </section>
 
-        <div class="table-card" style="margin-top:20px">
-            <div class="table-card__header">
-                <div class="table-card__title"><i class="fas fa-user-check"></i> Active Users</div>
-            </div>
-            <div class="table-wrapper">
-                <table class="data-table table--cardable">
-                    <thead>
-                        <tr>
-                            <th>No</th>
-                            <th>Name</th>
-                            <th>Email</th>
-                            <th>Role</th>
-                            <th>Last Changed</th>
-                            <th>Changed By</th>
-                            <th class="col-actions">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="activeUsersBody"></tbody>
-                </table>
-            </div>
+        <div class="usr-layout">
+            <section class="table-card usr-card usr-active" aria-labelledby="usrActiveTitle">
+                <div class="adm-cardhead">
+                    <h2 class="table-card__title" id="usrActiveTitle">Active users</h2>
+                    <span class="adm-cardhead__sub" id="usersCount">0</span>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table table--cardable adm-table usr-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Person</th>
+                                <th scope="col">Role</th>
+                                <th scope="col">Can change</th>
+                                <th scope="col">Last changed</th>
+                                <th scope="col" class="col-actions"><span class="adm-sr">Actions</span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="activeUsersBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <aside class="usr-roles" aria-labelledby="usrRolesTitle">
+                <h2 class="usr-roles__title" id="usrRolesTitle">What the roles mean</h2>
+                <div class="users-summary usr-roles__list" id="usersSummary"></div>
+                <p class="usr-roles__note">New sign-ups wait above until you approve them with a role. A role is a name only: what each person can open and change is set with <strong>Edit access</strong>.</p>
+            </aside>
         </div>
     </div><!-- /viewUsers -->
 
@@ -2415,29 +2413,78 @@
 </div>
 
 <!-- ===== HISTORY MODAL ===== -->
+<!-- Design F: the History page as a large dialog — filters across the top,
+     one row per change with what it was before. -->
 <div class="modal-overlay" id="historyModal">
-    <div class="modal-card modal-card--wide">
-        <div class="modal-header">
-            <h3 id="historyTitle">Change History</h3>
-            <span id="historyCount" style="font-size:12px;color:var(--text-secondary)"></span>
-            <div style="display:flex;gap:8px;align-items:center">
-                <button class="btn btn-secondary btn-sm csv-export" onclick="exportHistory()"><i class="fas fa-download"></i> Export</button>
-                <button class="btn btn-secondary btn-sm" data-owner-only style="display:none" onclick="scanPhantomHistory()" title="Find unit change records the server actually rejected"><i class="fas fa-magnifying-glass"></i> Check</button>
-                <button class="btn btn-secondary btn-sm" onclick="clearHistory()"><i class="fas fa-eraser"></i> Clear</button>
-                <button class="btn-icon" onclick="closeHistory()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+    <div class="modal-card modal-card--wide hist-card" role="dialog" aria-labelledby="historyTitle">
+        <div class="modal-header hist-head">
+            <div class="hist-head__text">
+                <h3 id="historyTitle">History</h3>
+                <span class="hist-head__sub">Every change made in the dashboard — who, what, and what it was before</span>
+            </div>
+            <div class="hist-head__actions">
+                <button type="button" class="btn btn-secondary btn-sm csv-export" onclick="exportHistory()">
+                    <svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg>
+                    Export
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" data-owner-only style="display:none" onclick="scanPhantomHistory()" title="Find unit change records the server actually rejected">
+                    <svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path><path d="m9 12 2 2 4-4"></path></svg>
+                    Check
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="clearHistory()">
+                    <svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    Clear
+                </button>
+                <button type="button" class="btn-icon" onclick="closeHistory()" aria-label="Close" title="Close">
+                    <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+                </button>
             </div>
         </div>
-        <div class="modal-body" style="padding:0">
+        <div class="modal-body hist-body">
             <div class="history-rules-slot"></div>
-            <div class="table-wrapper" style="max-height:60vh">
-                <table class="data-table table--cardable">
+            <div class="adm-filters hist-filters" role="search" aria-label="Filter history">
+                <label class="adm-search">
+                    <svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7.5"></circle><path d="m21 21-4.5-4.5"></path></svg>
+                    <input type="search" id="histSearch" aria-label="Search history" placeholder="Search unit, field or value" autocomplete="off" oninput="renderHistoryTable(true)">
+                </label>
+                <label class="adm-select"><span class="adm-select__label">When</span>
+                    <select id="histWhen" onchange="renderHistoryTable(true)">
+                        <option value="">All time</option>
+                        <option value="1">Today</option>
+                        <option value="7">Last 7 days</option>
+                        <option value="30">Last 30 days</option>
+                        <option value="90">Last 90 days</option>
+                    </select>
+                </label>
+                <label class="adm-select"><span class="adm-select__label">Who</span>
+                    <select id="histWho" onchange="renderHistoryTable(true)">
+                        <option value="">Everyone</option>
+                    </select>
+                </label>
+                <label class="adm-select"><span class="adm-select__label">Action</span>
+                    <select id="histAction" onchange="renderHistoryTable(true)">
+                        <option value="">Any</option>
+                    </select>
+                </label>
+            </div>
+            <div class="table-wrapper hist-wrap">
+                <table class="data-table table--cardable adm-table hist-table">
                     <thead>
                         <tr>
-                            <th>Time</th><th>Action</th><th>By</th><th>Unit</th><th>Field</th><th>Before</th><th>After</th>
+                            <th scope="col">When</th>
+                            <th scope="col">Who</th>
+                            <th scope="col">Action</th>
+                            <th scope="col">Record</th>
+                            <th scope="col">Field</th>
+                            <th scope="col"><span aria-hidden="true">Before <svg class="hist-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg> after</span><span class="adm-sr">Before and after</span></th>
                         </tr>
                     </thead>
                     <tbody id="historyBody"></tbody>
                 </table>
+            </div>
+            <div class="hist-foot">
+                <span class="hist-foot__count" id="historyCount" role="status"></span>
+                <button type="button" class="btn btn-secondary btn-sm" id="historyMore" onclick="showMoreHistory()" hidden>Show more</button>
             </div>
         </div>
     </div>
@@ -2836,9 +2883,9 @@
 <!-- ==================== DEVICE MODAL ==================== -->
 <!-- ===== VEHICLE MODAL ===== -->
 <div class="modal-overlay" id="vehicleModal">
-    <div class="modal-card">
+    <div class="modal-card wh-dialog" role="dialog" aria-labelledby="vehicleModalTitle">
         <div class="modal-header">
-            <h3 id="vehicleModalTitle"><i class="fas fa-motorcycle"></i> Add Vehicle</h3>
+            <h3 id="vehicleModalTitle">Add vehicle</h3>
             <button class="btn-icon" onclick="closeVehicleModal()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
         </div>
         <form id="vehicleForm" onsubmit="saveVehicle(event)">
@@ -2901,9 +2948,9 @@
 
 <!-- ===== FUEL MODAL ===== -->
 <div class="modal-overlay" id="fuelModal">
-    <div class="modal-card">
+    <div class="modal-card wh-dialog" role="dialog" aria-labelledby="fuelModalTitle">
         <div class="modal-header">
-            <h3 id="fuelModalTitle"><i class="fas fa-gas-pump"></i> Log Fuel</h3>
+            <h3 id="fuelModalTitle">Log fuel</h3>
             <button class="btn-icon" onclick="closeFuelModal()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
         </div>
         <form id="fuelForm" onsubmit="saveFuelLog(event)">
@@ -2960,9 +3007,9 @@
 </div>
 
 <div class="modal-overlay" id="deviceModal">
-    <div class="modal-card">
+    <div class="modal-card wh-dialog" role="dialog" aria-labelledby="deviceModalTitle">
         <div class="modal-header">
-            <h3 id="deviceModalTitle"><i class="fas fa-microchip"></i> Add Device</h3>
+            <h3 id="deviceModalTitle">Add device</h3>
             <button class="btn-icon" onclick="closeDeviceModal()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
         </div>
         <form id="deviceForm" onsubmit="saveDevice(event)">
@@ -3064,9 +3111,9 @@
 
 <!-- ==================== STOCK MODAL ==================== -->
 <div class="modal-overlay" id="stockModal">
-    <div class="modal-card">
+    <div class="modal-card wh-dialog" role="dialog" aria-labelledby="stockModalTitle">
         <div class="modal-header">
-            <h3 id="stockModalTitle"><i class="fas fa-boxes-stacked"></i> Record Stock In/Out</h3>
+            <h3 id="stockModalTitle">Record stock in / out</h3>
             <button class="btn-icon" onclick="closeStockModal()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
         </div>
         <form id="stockForm" onsubmit="saveStockItem(event)">
@@ -3487,17 +3534,27 @@
 
 <!-- ===== MASTER LISTS (Site / Brand / Company) ===== -->
 <div class="modal-overlay" id="masterListsModal">
-    <div class="modal-card modal-card--vm">
-        <div class="modal-header">
-            <h3><i class="fas fa-list-check"></i> Master Lists</h3>
-            <button class="btn-icon" onclick="closeMasterLists()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+    <div class="modal-card modal-card--vm ml-card" role="dialog" aria-labelledby="mlTitle">
+        <div class="modal-header ml-head">
+            <div class="ml-head__text">
+                <h3 id="mlTitle">Master lists</h3>
+                <span class="ml-head__sub">The names people pick from when they fill in a record</span>
+            </div>
+            <button type="button" class="btn-icon" onclick="closeMasterLists()" aria-label="Close" title="Close">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+            </button>
+        </div>
+        <div class="team-tabbar ml-tabbar">
+            <div class="team-tabs ml-tabs" id="mlTabs" role="tablist" aria-label="Master lists"></div>
         </div>
         <div class="modal-body">
-            <div class="team-tabs ml-tabs" id="mlTabs" role="tablist" aria-label="Master lists"></div>
-            <p id="mlIntro" style="font-size:12.5px;color:var(--text-secondary);margin:10px 0 12px"></p>
-            <form class="category-add-form" id="mlAddForm" onsubmit="event.preventDefault(); addMasterValue()">
+            <p class="ml-intro" id="mlIntro"></p>
+            <form class="category-add-form ml-add" id="mlAddForm" onsubmit="event.preventDefault(); addMasterValue()">
                 <input type="text" class="form-input" id="mlNewValue" aria-label="New entry" placeholder="New entry…" maxlength="80" autocomplete="off">
-                <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> Add</button>
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                    Add
+                </button>
                 <button type="button" class="btn btn-secondary btn-sm" id="mlFillBtn" style="display:none" onclick="fillMasterFromUsage()"></button>
             </form>
             <ul class="categories-list ml-list" id="mlList"></ul>
@@ -3545,27 +3602,35 @@
 
 <!-- ===== USER ACCESS MODAL (owner) ===== -->
 <div class="modal-overlay" id="accessModal">
-    <div class="modal-card">
-        <div class="modal-header">
-            <h3>Manage Access — <span id="accessUserName">—</span></h3>
-            <button class="btn-icon" onclick="closeAccessModal()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+    <div class="modal-card ac-card" role="dialog" aria-labelledby="accessTitle">
+        <div class="modal-header ac-head">
+            <div class="ac-head__text">
+                <h3 id="accessTitle">Edit access — <span id="accessUserName">—</span></h3>
+                <span class="ac-head__sub">What this person can open and change</span>
+            </div>
+            <button type="button" class="btn-icon" onclick="closeAccessModal()" aria-label="Close" title="Close">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+            </button>
         </div>
         <div class="modal-body">
             <input type="hidden" id="accessUserUid">
-            <p style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px">
-                Set per menu: <strong>None</strong> (cannot open), <strong>View</strong> (read only),
-                or <strong>Edit</strong> (change data). The Dashboard is always accessible.
+            <p class="ac-intro">
+                For each page: <strong>None</strong> (cannot open it), <strong>View</strong> (read only)
+                or <strong>Edit</strong> (can change data). The Dashboard is always open.
             </p>
             <div id="accessGrid" class="access-grid"></div>
-            <p style="font-size:11.5px;color:var(--text-light);margin-top:14px">
-                Note: these settings control what is shown. The real protection lives in
-                <code>firestore.rules</code> — republish that file from the repo whenever
+            <p class="ac-note">
+                These settings decide what is shown. The real protection lives in
+                <code>firestore.rules</code> — publish that file again from the repo whenever
                 there is a new access area or collection.
             </p>
         </div>
         <div class="form-actions">
             <button type="button" class="btn btn-secondary" onclick="closeAccessModal()">Cancel</button>
-            <button type="button" class="btn btn-primary" onclick="saveAccess()"><i class="fas fa-check"></i> Save Access</button>
+            <button type="button" class="btn btn-primary" onclick="saveAccess()">
+                <svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>
+                Save access
+            </button>
         </div>
     </div>
 </div>

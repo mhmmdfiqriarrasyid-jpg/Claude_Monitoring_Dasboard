@@ -2670,20 +2670,119 @@ function stopHistorySubscription() {
     cloudHistory = [];
 }
 
+// ---- History dialog (design F) ----
+// Filters (search, when, who, action) sit above the table and narrow the rows
+// already loaded; they start empty on every fresh open. The list grows by
+// HISTORY_PAGE rows, so even the full 500-row window opens at once.
+const HISTORY_PAGE = 100;
+let _historyShown = HISTORY_PAGE;
+const AUDIT_ACTION_LABEL = {
+    add: 'Added', create: 'Added', update: 'Changed', edit: 'Changed', delete: 'Deleted', remove: 'Removed',
+    restore: 'Restored', migrate: 'Migrated', approve: 'Approved', reject: 'Rejected', 'role-change': 'Role changed',
+    error: 'Not saved'
+};
+function auditActionLabel(a) { return AUDIT_ACTION_LABEL[a] || sentenceCase(String(a || '-').replace(/-/g, ' ')); }
+
+// "23 Oct · 13:52"; the year only when it is not this year.
+function formatHistoryWhen(ms) {
+    if (!ms) return '—';
+    const d = new Date(ms);
+    if (isNaN(d.getTime())) return '—';
+    const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    return `${formatUserDay(ms)} · ${time}`;
+}
+
+// "[Damage] GGTR-009" reads as "Damage · GGTR-009"; a plain unit name that is
+// still in the fleet opens that unit's profile.
+function historyRecordCell(e) {
+    const raw = String(e.unitName == null ? '' : e.unitName).trim();
+    if (!raw || raw === '-') return '<span class="adm-muted">—</span>';
+    const m = raw.match(/^\[([^\]]+)\]\s*(.*)$/);
+    if (m) return `<span><span class="hist-kind">${escapeHtml(sentenceCase(m[1]))}</span> · ${escapeHtml(m[2] || '—')}</span>`;
+    const unit = e.unitId ? globalData.find(u => u.id === e.unitId) : null;
+    return unit
+        ? `<button type="button" class="adm-link" onclick="openHistoryUnit(${jsArg(unit.id)})">${escapeHtml(raw)}</button>`
+        : escapeHtml(raw);
+}
+function openHistoryUnit(id) { closeHistory(); showUnitProfile(id); }
+
+// Before → after, with the arrow hidden from screen readers ("changed to").
+const HIST_ARROW = '<svg class="hist-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>';
+function historyChangeCell(e) {
+    const val = v => (v == null || v === '-' ? '' : String(v));
+    const before = val(e.before), after = val(e.after);
+    const tone = /^(breakdown|damaged|failed)\b/i.test(after) || e.action === 'error' ? ' hist-after--bad'
+               : /^good$/i.test(after) ? ' hist-after--good' : '';
+    if (!after && before && ['delete', 'remove', 'reject'].includes(e.action)) {
+        return `<span class="hist-before hist-before--gone">${escapeHtml(before)}</span>`;
+    }
+    if (!before) return after ? `<strong class="hist-after${tone}">${escapeHtml(after)}</strong>` : '<span class="adm-muted">—</span>';
+    return `<span><span class="hist-before">${escapeHtml(before)}</span> ${HIST_ARROW}<span class="adm-sr"> changed to </span> ${
+        after ? `<strong class="hist-after${tone}">${escapeHtml(after)}</strong>` : '<span class="adm-muted">(empty)</span>'}</span>`;
+}
+
 function showHistory(unitId) {
     if (!hasAccess('history', 'view')) { showToast('You do not have access to History', 'warning'); return; }
     startHistorySubscription();
-    document.getElementById('historyModal').dataset.unitId = unitId || '';
-    const log = getAuditLog();
-    const filtered = unitId ? log.filter(e => e.unitId === unitId) : log;
-    const title = unitId
-        ? `History: ${escapeHtml((globalData.find(u => u.id === unitId) || {}).name || 'Unit')}`
-        : 'Change History';
-    document.getElementById('historyTitle').innerHTML = title;
-
     const modal = document.getElementById('historyModal');
+    // A fresh open starts unfiltered at the first page; a live update of an
+    // open dialog keeps what the reader set.
+    if (!modal.classList.contains('open') || (modal.dataset.unitId || '') !== (unitId || '')) {
+        ['histSearch', 'histWhen', 'histWho', 'histAction'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+        _historyShown = HISTORY_PAGE;
+    }
     // Stash filter so live snapshots can re-render with the same scope.
     modal.dataset.unitId = unitId || '';
+    const title = unitId
+        ? `History: ${escapeHtml((globalData.find(u => u.id === unitId) || {}).name || 'Unit')}`
+        : 'History';
+    document.getElementById('historyTitle').innerHTML = title;
+    renderHistoryTable();
+    modal.classList.add('open');
+}
+
+function showMoreHistory() {
+    _historyShown += HISTORY_PAGE;
+    renderHistoryTable();
+}
+
+function renderHistoryTable(resetPage) {
+    const modal = document.getElementById('historyModal');
+    const tbody = document.getElementById('historyBody');
+    if (!modal || !tbody) return;
+    if (resetPage) _historyShown = HISTORY_PAGE;
+    const unitId = modal.dataset.unitId || '';
+    const log = getAuditLog();
+    const filtered = unitId ? log.filter(e => e.unitId === unitId) : log;
+
+    // Who and Action offer what this log actually holds.
+    const fillSel = (id, values, allLabel) => {
+        const sel = document.getElementById(id);
+        if (!sel) return '';
+        const keep = sel.value;
+        sel.innerHTML = `<option value="">${escapeHtml(allLabel)}</option>` +
+            values.map(([v, label]) => `<option value="${escapeHtml(v)}">${escapeHtml(label)}</option>`).join('');
+        sel.value = values.some(([v]) => v === keep) ? keep : '';
+        return sel.value;
+    };
+    const who = fillSel('histWho', [...new Set(filtered.map(e => e.actorName).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b)).map(n => [n, n]), 'Everyone');
+    const action = fillSel('histAction', [...new Set(filtered.map(e => e.action).filter(Boolean))]
+        .map(a => [a, auditActionLabel(a)]).sort((a, b) => a[1].localeCompare(b[1])), 'Any');
+    const q = (document.getElementById('histSearch')?.value || '').toLowerCase().trim();
+    const days = Number(document.getElementById('histWhen')?.value || 0);
+    let since = 0;
+    if (days === 1) { const d = new Date(); d.setHours(0, 0, 0, 0); since = d.getTime(); }
+    else if (days) since = Date.now() - days * 86400000;
+    const filtersOn = !!(q || days || who || action);
+    const matched = !filtersOn ? filtered : filtered.filter(e => {
+        if (since && (e.timestamp || 0) < since) return false;
+        if (who && e.actorName !== who) return false;
+        if (action && e.action !== action) return false;
+        if (q && ![e.unitName, e.field, e.before, e.after, e.actorName].join(' ').toLowerCase().includes(q)) return false;
+        return true;
+    });
+    const rows = matched.slice(0, _historyShown);
 
     // This view is fed by a subscription capped at the newest 500 and then
     // capped again on merge, with nothing on screen saying so. Someone looking
@@ -2693,38 +2792,48 @@ function showHistory(unitId) {
     const truncated = filtered.length >= AUDIT_LOG_MAX;
     const countEl = document.getElementById('historyCount');
     if (countEl) {
-        countEl.textContent = truncated
-            ? `Showing the latest ${filtered.length} — full history via the Export button`
-            : `${filtered.length} events`;
+        const n = matched.length, noun = `change${n === 1 ? '' : 's'}`;
+        const head = rows.length < n ? `Showing ${rows.length} of ${n} ${filtersOn ? 'matching ' : ''}${noun}`
+                                     : `${n} ${filtersOn ? 'matching ' : ''}${noun}`;
+        countEl.textContent = head + (filtersOn ? ` (${filtered.length} in all)` : '')
+            + (truncated ? ` · showing the latest ${filtered.length} — full history via the Export button` : '');
+    }
+    const more = document.getElementById('historyMore');
+    if (more) {
+        more.hidden = rows.length >= matched.length;
+        more.textContent = `Show ${Math.min(HISTORY_PAGE, matched.length - rows.length)} more`;
     }
 
-    const tbody = document.getElementById('historyBody');
     if (filtered.length === 0) {
         // 'Belum ada riwayat' would be a lie for a unit whose events exist but
         // fall outside the capped window, so separate the two cases.
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+        tbody.innerHTML = `<tr><td colspan="6" class="adm-empty">${
             unitId
                 ? 'No history for this unit in the latest 500 events — use Export for the full history'
                 : 'No history yet'
         }</td></tr>`;
-    } else {
-        tbody.innerHTML = filtered.map(e => {
-            const who = e.actorName
-                ? `<span class="audit-actor" title="${escapeHtml(e.actorEmail || '')}">${escapeHtml(e.actorName)} <em>(${escapeHtml(e.actorRole || '?')})</em></span>`
-                : '<span style="color:var(--text-light)">—</span>';
-            return `
-            <tr>
-                <td data-label="Time" style="white-space:nowrap">${formatUserTime(e.timestamp)}</td>
-                <td data-label="Action"><span class="audit-badge audit-${escapeHtml(e.action)}">${escapeHtml(e.action)}</span></td>
-                <td data-label="By">${who}</td>
-                <td data-label="Unit">${escapeHtml(e.unitName || '-')}</td>
-                <td data-label="Field">${escapeHtml(e.field || '-')}</td>
-                <td data-label="Before">${escapeHtml(e.before != null ? e.before : '-')}</td>
-                <td data-label="After">${escapeHtml(e.after  != null ? e.after  : '-')}</td>
-            </tr>`;
-        }).join('');
+        return;
     }
-    modal.classList.add('open');
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="adm-empty">No changes match the filters</td></tr>';
+        return;
+    }
+    tbody.innerHTML = rows.map(e => {
+        const who = e.actorName
+            ? `<span class="audit-actor" title="${escapeHtml(e.actorEmail || '')}">${escapeHtml(e.actorName)}${
+                e.actorRole ? ` <em>${escapeHtml(roleLabel(e.actorRole))}</em>` : ''}</span>`
+            : '<span class="adm-muted">—</span>';
+        const field = String(e.field || '');
+        return `
+        <tr>
+            <td data-label="When" class="adm-nowrap hist-when" title="${escapeHtml(formatUserTime(e.timestamp))}">${escapeHtml(formatHistoryWhen(e.timestamp))}</td>
+            <td data-label="Who">${who}</td>
+            <td data-label="Action"><span class="audit-badge audit-${escapeHtml(e.action)}">${escapeHtml(auditActionLabel(e.action))}</span></td>
+            <td data-label="Record">${historyRecordCell(e)}</td>
+            <td data-label="Field" class="hist-field">${field && field !== '-' ? escapeHtml(field.charAt(0).toUpperCase() + field.slice(1)) : '<span class="adm-muted">—</span>'}</td>
+            <td data-label="Before → after" class="hist-change">${historyChangeCell(e)}</td>
+        </tr>`;
+    }).join('');
 }
 
 function closeHistory() {
@@ -13559,32 +13668,74 @@ function shortActor(value) {
     return at > 0 ? v.slice(0, at) : v;
 }
 
+// "12 Oct" this year, "12 Oct 2025" before it — the full time stays in the
+// tooltip. The Users table is read for who changed what lately, not when to
+// the minute.
+function formatUserDay(ms) {
+    if (!ms) return '';
+    const d = new Date(ms);
+    if (isNaN(d.getTime())) return '';
+    const opts = { day: 'numeric', month: 'short' };
+    if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+    return d.toLocaleDateString('en-GB', opts);
+}
+
+// Role chips: the owner in the accent, the three job labels in their own
+// tint, the older roles grey.
+function userRoleTone(key) {
+    return key === 'owner' ? 'owner' : key === 'staff' ? 'staff' : key === 'pbt' ? 'pbt' : key === 'khl' ? 'khl' : 'legacy';
+}
+
+// What a person can change, in words, from the access that actually applies
+// (unit-group limit included): the pages they may edit, or "view only".
+function userCanChangeText(u) {
+    if (u.role === 'owner') return { text: 'Everything', tone: '' };
+    const edit = ACCESS_AREAS.filter(a => effectiveAccess(a.key, u) === 'edit').map(a => a.label);
+    if (edit.length > 4) return { text: `${edit.slice(0, 3).join(', ')} + ${edit.length - 3} more`, full: edit.join(', '), tone: '' };
+    if (edit.length) return { text: edit.join(', '), tone: '' };
+    const sees = ACCESS_AREAS.some(a => effectiveAccess(a.key, u) !== 'none');
+    return sees ? { text: 'Nothing · view only', tone: 'muted' } : { text: 'No access granted yet', tone: 'warn' };
+}
+
 function renderUsersView() {
     renderGroupStampNotice();
     if (!isOwner()) return;
     const pending = allUsers.filter(u => u.status !== 'active');
     const active  = allUsers.filter(u => u.status === 'active');
 
-    document.getElementById('usersCount').textContent =
-        `${allUsers.length} user(s) · ${pending.length} pending`;
+    document.getElementById('usersCount').textContent = String(active.length);
+    const pendCount = document.getElementById('usrPendingCount');
+    if (pendCount) { pendCount.textContent = String(pending.length); pendCount.hidden = !pending.length; }
 
-    // Summary chips — one per current role, plus legacy roles only while any
-    // account still holds one, so the row disappears once everyone is moved.
+    // "What the roles mean": every current role with how many hold it, plus
+    // the older roles and the one-group limit only while anyone has them.
     const countOf = key => active.filter(u => u.role === key).length;
-    const icons = { owner: 'crown', staff: 'user-tie', pbt: 'user-gear', khl: 'user' };
-    let chips = ROLES.map(r =>
-        `<div class="user-chip user-chip--${r.key}"><i class="fas fa-${icons[r.key] || 'user'}"></i> ${countOf(r.key)} ${escapeHtml(r.label)}</div>`
-    ).join('');
+    const people = n => `${n} ${n === 1 ? 'person' : 'people'}`;
+    const chip = (key, label) => `<span class="usr-role usr-role--${userRoleTone(key)}">${escapeHtml(label)}</span>`;
+    const labelRoles = ROLES.filter(r => r.key !== 'owner');
     const legacyTotal = LEGACY_ROLES.reduce((n, r) => n + countOf(r.key), 0);
-    if (legacyTotal > 0) {
-        chips += `<div class="user-chip user-chip--legacy" title="Legacy role — assign them a new role"><i class="fas fa-clock-rotate-left"></i> ${legacyTotal} legacy role</div>`;
-    }
-    chips += `<div class="user-chip user-chip--pending"><i class="fas fa-hourglass-half"></i> ${pending.length} Pending</div>`;
-    document.getElementById('usersSummary').innerHTML = chips;
+    const scopedTotal = active.filter(u => u.role !== 'owner' && isUnitScoped(u)).length;
+    let roles = `<div class="usr-roles__item">
+            <div class="usr-roles__chips">${chip('owner', roleLabel('owner'))}<span class="usr-roles__n">${people(countOf('owner'))}</span></div>
+            <p>Sees and changes everything, approves sign-ups and sets everyone's access.</p>
+        </div>
+        <div class="usr-roles__item">
+            <div class="usr-roles__chips">${labelRoles.map(r => `${chip(r.key, r.label)}<span class="usr-roles__n">${countOf(r.key)}</span>`).join('')}</div>
+            <p>Job names only. They open nothing by themselves: each page is set to None, View or Edit per person.</p>
+        </div>`;
+    if (scopedTotal) roles += `<div class="usr-roles__item">
+            <div class="usr-roles__chips"><span class="usr-role usr-role--scope">One group only</span><span class="usr-roles__n">${people(scopedTotal)}</span></div>
+            <p>Limited to one equipment group: they see only its units and damage, view only.</p>
+        </div>`;
+    if (legacyTotal) roles += `<div class="usr-roles__item">
+            <div class="usr-roles__chips">${LEGACY_ROLES.map(r => chip(r.key, r.label)).join('')}<span class="usr-roles__n">${people(legacyTotal)}</span></div>
+            <p>Older roles. They keep the access they had; give each person one of the roles above.</p>
+        </div>`;
+    document.getElementById('usersSummary').innerHTML = roles;
 
-    // Pending table
+    // Waiting for approval
     const pendingBody = document.getElementById('pendingUsersBody');
-    // Any sign-in rewrites a user document and re-renders this table. The
+    // Any sign-in rewrites a user document and re-renders this list. The
     // owner's pick in a pending row must survive that, or "Setujui" a moment
     // later approves the person as KHL.
     const pickedRole = {};
@@ -13592,38 +13743,39 @@ function renderUsersView() {
         pickedRole[sel.id.slice('approveRole_'.length)] = sel.value;
     });
     if (pending.length === 0) {
-        pendingBody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-secondary)">No pending registrations</td></tr>`;
+        pendingBody.innerHTML = `<div class="usr-pend usr-pend--empty" role="listitem">No one is waiting for approval.</div>`;
     } else {
-        pendingBody.innerHTML = pending.map((u, i) => `
-            <tr>
-                <td>${i + 1}</td>
-                <td data-label="Name"><strong>${escapeHtml(u.displayName || '—')}</strong></td>
-                <td data-label="Email"><span class="user-cell-email" title="${escapeHtml(u.email || '')}">${escapeHtml(u.email || '')}</span></td>
-                <td data-label="Registered"><span class="user-cell-time">${formatUserTime(u.createdAt)}</span></td>
-                <td class="col-actions">
-                    <div class="row-actions row-actions--labeled">
-                        <select class="form-select user-role-select" id="approveRole_${escapeHtml(u.uid)}"
+        pendingBody.innerHTML = pending.map(u => {
+            const name = u.displayName || u.email || '—';
+            const day = formatUserDay(u.createdAt);
+            return `
+            <div class="usr-pend" role="listitem">
+                <span class="usr-avatar" aria-hidden="true">${escapeHtml(name.trim().charAt(0).toUpperCase() || '?')}</span>
+                <span class="usr-pend__who">
+                    <span class="usr-pend__name">${escapeHtml(u.displayName || '—')}</span>
+                    <span class="usr-pend__meta"><span class="user-cell-email" title="${escapeHtml(u.email || '')}">${escapeHtml(u.email || '')}</span>${day ? ` · <span class="user-cell-time" title="${escapeHtml(formatUserTime(u.createdAt))}">signed up ${escapeHtml(day)}</span>` : ''}</span>
+                </span>
+                <span class="usr-pend__actions">
+                    <label class="adm-select usr-pend__role"><span class="adm-select__label">As</span>
+                        <select class="user-role-select" id="approveRole_${escapeHtml(u.uid)}"
                                 aria-label="Role for ${escapeHtml(u.email || '')}">
                             ${ROLES.filter(r => r.key !== 'owner').map(r =>
                                 `<option value="${r.key}"${r.key === (pickedRole[u.uid] || 'khl') ? ' selected' : ''}>${escapeHtml(r.label)}</option>`).join('')}
                         </select>
-                        <button class="btn btn-success btn-sm" title="Approve with the selected role" onclick="approveUser(${jsArg(u.uid)})">
-                            <i class="fas fa-check"></i> Approve
-                        </button>
-                        <button class="btn btn-secondary btn-sm row-actions__icon" title="Reject and delete registration" onclick="rejectUser(${jsArg(u.uid)})">
-                            <i class="fas fa-xmark" style="color:var(--danger)"></i>
-                        </button>
-                    </div>
-                </td>
-            </tr>`).join('');
+                    </label>
+                    <button type="button" class="btn btn-secondary" title="Reject and delete registration" onclick="rejectUser(${jsArg(u.uid)})">Reject</button>
+                    <button type="button" class="btn btn-primary" title="Approve with the selected role" onclick="approveUser(${jsArg(u.uid)})">Approve</button>
+                </span>
+            </div>`;
+        }).join('');
     }
 
-    // Active table
+    // Active users
     const activeBody = document.getElementById('activeUsersBody');
     if (active.length === 0) {
-        activeBody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-secondary)">No active users yet</td></tr>`;
+        activeBody.innerHTML = `<tr><td colspan="5" class="adm-empty">No active users yet</td></tr>`;
     } else {
-        activeBody.innerHTML = active.map((u, i) => {
+        activeBody.innerHTML = active.map(u => {
             const isMe = currentUser && u.uid === currentUser.uid;
             const isOwnerRow = u.role === 'owner';
             const legacy = isLegacyRole(u.role);
@@ -13633,7 +13785,7 @@ function renderUsersView() {
             // Super Admin — a promotion by mistake has to be undoable.
             let roleSelect;
             if (isOwnerRow && isMe) {
-                roleSelect = `<span class="badge badge-good"><i class="fas fa-crown"></i> ${escapeHtml(roleLabel('owner'))}</span>`;
+                roleSelect = `<span class="usr-role usr-role--owner">${escapeHtml(roleLabel('owner'))}</span>`;
             } else {
                 // A legacy role is offered only to the account that still holds
                 // it, so it is never handed out again but also never silently
@@ -13642,44 +13794,41 @@ function renderUsersView() {
                     `<option value="${r.key}" ${u.role === r.key ? 'selected' : ''}>${escapeHtml(r.label)}</option>`)
                     .concat(legacy ? [`<option value="${u.role}" selected>${escapeHtml(roleLabel(u.role))} (legacy role)</option>`] : [])
                     .join('');
-                roleSelect = `<select class="form-select user-role-select" title="Role is only a label — set permissions with the Access button"
+                roleSelect = `<select class="user-role-select usr-role usr-role--${userRoleTone(u.role)}" title="Role is only a name — set what they can open with Edit access"
+                           aria-label="Role of ${escapeHtml(u.displayName || u.email || '')}"
                            onchange="changeUserRole(${jsArg(u.uid)}, this.value)">${opts}</select>`;
             }
 
-            // A new role grants nothing by itself, so an account can sit active
-            // with no way in. Say so where the owner will see it.
-            const noAccess = !isOwnerRow &&
-                ACCESS_AREAS.every(a => effectiveAccess(a.key, u) === 'none');
-            const roleNote = (legacy
-                ? '<div class="user-role-note user-role-note--legacy">Legacy role — assign a new role</div>'
-                : (noAccess ? '<div class="user-role-note user-role-note--warn">No access granted yet</div>' : ''))
-                + (!isOwnerRow && isUnitScoped(u) ? `<div class="user-role-note">${escapeHtml(unitScopeLabel(effectiveUnitScope(u)))}</div>` : '');
+            // A legacy role is flagged under the picker; "Can change" says when
+            // an account can open nothing at all (a new role grants nothing).
+            const roleNote = legacy
+                ? '<div class="user-role-note user-role-note--legacy">Legacy role — assign a new role</div>' : '';
+            const can = userCanChangeText(u);
+            const scope = !isOwnerRow && isUnitScoped(u)
+                ? `<span class="user-role-note usr-scope">${escapeHtml(unitScopeLabel(effectiveUnitScope(u)))}</span>` : '';
 
-            // Which device currently holds this account's single session slot.
-            const sess = u.activeSession;
-            const live = sess && sess.id && !String(sess.id).startsWith('revoked_');
-            // escapeHtml: the device string is written by the signed-in user
-            // themselves, about their own account — anyone active can put
-            // markup there, and this row is rendered in the Super Admin's view.
-            const sessionTitle = escapeHtml(live
-                ? `Sign out of active device (${String(sess.device || 'unknown').slice(0, 80)}${sess.startedAt ? ' · signed in ' + formatUserTime(sess.startedAt) : ''})`
-                : 'Sign out of all devices');
+            const day = formatUserDay(u.updatedAt);
 
             return `
             <tr>
-                <td>${i + 1}</td>
-                <td data-label="Name"><strong>${escapeHtml(u.displayName || '—')}</strong>${isMe ? ' <span style="font-size:11px;color:var(--text-secondary)">(You)</span>' : ''}</td>
-                <td data-label="Email"><span class="user-cell-email" title="${escapeHtml(u.email || '')}">${escapeHtml(u.email || '')}</span></td>
-                <td data-label="Role">${roleSelect}${roleNote}</td>
-                <td data-label="Last Updated"><span class="user-cell-time">${formatUserTime(u.updatedAt)}</span></td>
-                <td data-label="Updated By"><span class="user-cell-actor" title="${escapeHtml(u.updatedBy || '')}">${escapeHtml(shortActor(u.updatedBy))}</span></td>
+                <td data-label="Person"><span class="adm-stack usr-person">
+                    <strong>${escapeHtml(u.displayName || '—')}${isMe ? ' <span class="usr-you">(You)</span>' : ''}</strong>
+                    <span class="adm-sub user-cell-email" title="${escapeHtml(u.email || '')}">${escapeHtml(u.email || '')}</span>
+                </span></td>
+                <td data-label="Role"><span class="adm-stack">${roleSelect}${roleNote}</span></td>
+                <td data-label="Can change"><span class="adm-stack usr-can">
+                    <span class="usr-can__text${can.tone ? ' usr-can__text--' + can.tone : ''}"${can.full ? ` title="${escapeHtml(can.full)}"` : ''}>${escapeHtml(can.text)}</span>${scope}
+                </span></td>
+                <td data-label="Last changed">${day
+                    ? `<span class="usr-last"><span class="user-cell-time" title="${escapeHtml(formatUserTime(u.updatedAt))}">${escapeHtml(day)}</span>${u.updatedBy ? ` · <span class="user-cell-actor" title="${escapeHtml(u.updatedBy)}">${escapeHtml(shortActor(u.updatedBy))}</span>` : ''}</span>`
+                    : '<span class="adm-muted">—</span>'}</td>
                 <td class="col-actions">
                     ${isOwnerRow
-                        ? '<span class="user-cell-protected">protected</span>'
+                        ? '<span class="user-cell-protected">Protected</span>'
+                        // Signing out and removing sit in the same dialog, under Account.
                         : `<div class="row-actions row-actions--labeled">
-                            <button class="btn btn-secondary btn-sm" title="Set access per menu" onclick="openAccessModal(${jsArg(u.uid)})"><i class="fas fa-sliders"></i> Access</button>
-                            <button class="btn btn-secondary btn-sm row-actions__icon" title="${sessionTitle}" onclick="forceSignOutUser(${jsArg(u.uid)})"><i class="fas fa-right-from-bracket"></i></button>
-                            <button class="btn btn-secondary btn-sm row-actions__icon" title="Remove user" onclick="removeUser(${jsArg(u.uid)})"><i class="fas fa-user-minus" style="color:var(--danger)"></i></button>
+                            <button type="button" class="btn btn-secondary btn-sm" title="Access, sign-in and removal for this person"
+                                    aria-label="Edit access for ${escapeHtml(u.displayName || u.email || '')}" onclick="openAccessModal(${jsArg(u.uid)})">Edit access</button>
                            </div>`}
                 </td>
             </tr>`;
@@ -13788,32 +13937,58 @@ function openAccessModal(uid) {
     const rawScope = user.access ? user.access.unitScope : undefined;
     const knownScope = rawScope == null || UNIT_SCOPES.includes(rawScope);
     const sc = rawScope == null ? 'all' : (knownScope ? rawScope : '');
-    let rows = `<div class="access-row access-row--scope">
-            <span class="access-row__label">Unit group <small>what this person can see</small></span>
-            <select class="form-select access-select" data-area="unitScope" onchange="refreshAccessScopeNote()">
+    let rows = `<div class="ac-scope">
+        <div class="access-row access-row--scope">
+            <span class="access-row__label">Unit group <small>What this person can see</small></span>
+            <select class="form-select access-select" data-area="unitScope" aria-label="Unit group" onchange="refreshAccessScopeNote()">
                 ${knownScope ? '' : `<option value="" selected disabled>No unit group (stored: ${escapeHtml(String(rawScope))})</option>`}
                 ${UNIT_SCOPES.map(k => `<option value="${k}" ${k === sc ? 'selected' : ''}>${escapeHtml(unitScopeLabel(k))}</option>`).join('')}
             </select>
         </div>
         <div class="access-presets">
+            <span class="access-presets__label">Quick set</span>
             <button type="button" class="btn btn-secondary btn-sm" onclick="applyAccessPreset('tractor')">View only — ${escapeHtml(UNIT_GROUPS.tractor.shortLabel)}</button>
             <button type="button" class="btn btn-secondary btn-sm" onclick="applyAccessPreset('heavy')">View only — ${escapeHtml(UNIT_GROUPS.heavy.shortLabel)}</button>
         </div>
-        <p class="access-scope-note" id="accessScopeNote" hidden></p>`;
+        <p class="access-scope-note" id="accessScopeNote" hidden></p>
+        </div>
+        <h4 class="ac-group-title">Pages</h4>
+        <div class="ac-list">`;
     rows += ACCESS_AREAS.map(area => {
         const cur = grantedAccess(area.key, user);
         const opts = area.levels.map(l => `<option value="${l}" ${l === cur ? 'selected' : ''}>${labels[l]}</option>`).join('');
         return `<div class="access-row" data-row-area="${area.key}">
             <span class="access-row__label">${escapeHtml(area.label)}<small class="access-row__applies" hidden></small></span>
-            <select class="form-select access-select" data-area="${area.key}" onchange="refreshAccessScopeNote()">${opts}</select>
+            <select class="form-select access-select" data-area="${area.key}" aria-label="${escapeHtml(area.label)}" onchange="refreshAccessScopeNote()">${opts}</select>
         </div>`;
-    }).join('');
+    }).join('') + '</div>';
     // CSV export/import capability (its own level set)
     const csvLabels = { none: 'None', export: 'Export only', full: 'Export + Import' };
     const curCsv = effectiveCsv(user);
-    rows += `<div class="access-row">
-        <span class="access-row__label">CSV Export/Import</span>
-        <select class="form-select access-select" data-area="csv">${CSV_LEVELS.map(l => `<option value="${l}" ${l === curCsv ? 'selected' : ''}>${csvLabels[l]}</option>`).join('')}</select>
+    rows += `<h4 class="ac-group-title">Export and import</h4>
+    <div class="ac-list"><div class="access-row">
+        <span class="access-row__label">CSV export / import</span>
+        <select class="form-select access-select" data-area="csv" aria-label="CSV export and import">${CSV_LEVELS.map(l => `<option value="${l}" ${l === curCsv ? 'selected' : ''}>${csvLabels[l]}</option>`).join('')}</select>
+    </div></div>`;
+    // Account: the device holding this person's single session slot, and the
+    // two actions that act on the account itself (they take effect at once,
+    // not on Save). escapeHtml: the device string is written by the signed-in
+    // user themselves — anyone active can put markup there.
+    const sess = user.activeSession;
+    const live = sess && sess.id && !String(sess.id).startsWith('revoked_');
+    const signedIn = live
+        ? `Signed in on ${String(sess.device || 'a device').slice(0, 80)}${sess.startedAt ? ' since ' + formatUserTime(sess.startedAt) : ''}`
+        : 'No active device recorded';
+    rows += `<h4 class="ac-group-title">Account</h4>
+    <div class="ac-list ac-account">
+        <div class="access-row">
+            <span class="access-row__label">Sign-in<small>${escapeHtml(signedIn)}</small></span>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="forceSignOutUser(${jsArg(uid)})"><i class="fas fa-right-from-bracket" aria-hidden="true"></i> Sign out everywhere</button>
+        </div>
+        <div class="access-row">
+            <span class="access-row__label">Remove from the dashboard<small>Their sign-in account stays; they lose all access</small></span>
+            <button type="button" class="btn btn-secondary btn-sm usr-remove" onclick="removeUserFromAccess(${jsArg(uid)})"><i class="fas fa-user-minus" aria-hidden="true"></i> Remove user</button>
+        </div>
     </div>`;
     document.getElementById('accessGrid').innerHTML = rows;
     refreshAccessScopeNote();
@@ -13866,6 +14041,12 @@ function applyAccessPreset(g) {
 
 function closeAccessModal() {
     document.getElementById('accessModal').classList.remove('open');
+}
+
+// Remove from inside the Access dialog: once the person is gone there is
+// nothing left to save, so the dialog closes.
+async function removeUserFromAccess(uid) {
+    if (await removeUser(uid)) closeAccessModal();
 }
 
 async function saveAccess() {
@@ -14049,9 +14230,11 @@ async function removeUser(uid) {
             after: 'removed'
         });
         showToast(`${user.email} removed`, 'success');
+        return true;
     } catch (e) {
         showToast('Failed to remove user — ' + e.message, 'error');
     }
+    return false;
 }
 
 // ============================================================
@@ -16964,6 +17147,10 @@ function renderWarehouseView() {
     if (devPanel) devPanel.style.display = (warehouseTab === 'devices') ? '' : 'none';
     if (stkPanel) stkPanel.style.display = (warehouseTab === 'stock') ? '' : 'none';
     if (vehPanel) vehPanel.style.display = (warehouseTab === 'vehicles') ? '' : 'none';
+    // The page head carries the open tab's actions only.
+    document.querySelectorAll('#viewWarehouse .wh-actions').forEach(g => {
+        g.style.display = g.dataset.whFor === warehouseTab ? '' : 'none';
+    });
 
     if (warehouseTab === 'devices') renderDeviceTable();
     else if (warehouseTab === 'vehicles') renderVehicleView();
@@ -16979,10 +17166,10 @@ function populateWarehouseFilters() {
             values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
         if (keep && sel.querySelector(`option[value="${CSS.escape(keep)}"]`)) sel.value = keep;
     };
-    fill('devTypeFilter', allDeviceTypes(), 'All Types');
-    fill('devLocationFilter', allWarehouseLocations(), 'All Locations');
-    fill('stkLocationFilter', allWarehouseLocations(), 'All Locations');
-    fill('stkItemFilter', allStockItemNames(), 'All Items');
+    fill('devTypeFilter', allDeviceTypes(), 'All types');
+    fill('devLocationFilter', allWarehouseLocations(), 'All locations');
+    fill('stkLocationFilter', allWarehouseLocations(), 'All locations');
+    fill('stkItemFilter', allStockItemNames(), 'All items');
 
     const dl = (id, values) => {
         const el = document.getElementById(id);
@@ -17050,6 +17237,59 @@ function getFilteredDevices() {
     });
 }
 
+// ---- Device list (design F) ----
+// A small picture per kind of device, so a long list reads at a glance. The
+// type is free text: match on words, fall back to a chip.
+const _WH_SVG = (paths) => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+const DEVICE_ICONS = [
+    { re: /gps|starfire|receiver|rtk/i, tone: 'info', svg: '<circle cx="12" cy="12" r="7"></circle><circle cx="12" cy="12" r="2.5"></circle><path d="M12 2v3"></path><path d="M12 19v3"></path><path d="M2 12h3"></path><path d="M19 12h3"></path>' },
+    { re: /display|monitor|screen|tablet/i, tone: 'warn', svg: '<rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8"></path><path d="M12 16v4"></path>' },
+    { re: /jdlink|telematic|modem|modul/i, tone: 'teal', svg: '<rect x="3" y="12" width="18" height="8" rx="2"></rect><path d="M7 16h.01"></path><path d="M11 16h.01"></path><path d="M17 12V6.5"></path><circle cx="17" cy="4.5" r="1.5"></circle>' },
+    { re: /camera/i, tone: 'violet', svg: '<path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><path d="M6.5 12s2-4 5.5-4 5.5 4 5.5 4-2 4-5.5 4-5.5-4-5.5-4z"></path><circle cx="12" cy="12" r="1.5"></circle>' },
+    { re: /weather|station|rain|sensor cuaca/i, tone: 'info', svg: '<path d="M12 2v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="M20 12h2"></path><path d="m19.07 4.93-1.41 1.41"></path><path d="M15.95 12.65a4 4 0 0 0-5.93-4.13"></path><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"></path>' },
+    { re: /steer/i, tone: 'neutral', svg: '<circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="2"></circle><path d="M12 14v7"></path><path d="M10 12H3.2"></path><path d="M14 12h6.8"></path>' }
+];
+const DEVICE_ICON_DEFAULT = { tone: 'neutral', svg: '<rect x="5" y="5" width="14" height="14" rx="2"></rect><rect x="9" y="9" width="6" height="6"></rect><path d="M9 2v3"></path><path d="M15 2v3"></path><path d="M9 19v3"></path><path d="M15 19v3"></path><path d="M2 9h3"></path><path d="M2 15h3"></path><path d="M19 9h3"></path><path d="M19 15h3"></path>' };
+function deviceIcon(type) {
+    const hit = DEVICE_ICONS.find(x => x.re.test(type || '')) || DEVICE_ICON_DEFAULT;
+    return `<span class="wh-devicon wh-devicon--${hit.tone}" aria-hidden="true">${_WH_SVG(hit.svg)}</span>`;
+}
+
+// "Where" cell: the place in words, a unit as a link to its profile, and the
+// coordinates (with a map link when they read as lat/long) on a second line.
+function deviceWhereCell(d) {
+    const dash = '<span class="adm-muted">—</span>';
+    let main;
+    if (d.status === 'installed' && d.unitId) {
+        const live = globalData.find(u => u.id === d.unitId);
+        main = live
+            ? `<button type="button" class="adm-link" onclick="showUnitProfile(${jsArg(live.id)})">${escapeHtml(live.name || d.unitName || '—')}</button>`
+            : escapeHtml(d.unitName || '—');
+    } else if (d.status === 'allocated') {
+        main = d.division ? `Division · ${escapeHtml(d.division)}` : '<span class="adm-muted">Division not set</span>';
+    } else if (d.status === 'installed') {
+        main = d.siteName ? escapeHtml(d.siteName) : '<span class="adm-muted">Installed (location not set)</span>';
+    } else {
+        main = d.location ? escapeHtml(d.location) : dash;
+    }
+    if (!(d.posX || d.posY)) return main;
+    const map = deviceMapLink(d);
+    return `<span class="adm-stack">${main}<span class="adm-sub">${escapeHtml(d.posX || '—')}, ${escapeHtml(d.posY || '—')}${
+        map ? ` · <a href="${map}" target="_blank" rel="noopener">Map<span class="adm-sr"> (opens in a new tab)</span></a>` : ''}</span></span>`;
+}
+
+// "In Warehouse" -> "In warehouse": design F labels in sentence case.
+function sentenceCase(t) { t = String(t || ''); return t.charAt(0) + t.slice(1).toLowerCase(); }
+
+// The status tiles double as the status filter: one press shows only that
+// status, a second press (or Reset) shows everything again.
+function toggleDeviceStatusFilter(key) {
+    const el = document.getElementById('devStatusFilter');
+    if (!el) return;
+    el.value = el.value === key ? '' : key;
+    renderDeviceTable();
+}
+
 function renderDeviceTable() {
     const rows = getFilteredDevices();
     const tbody = document.getElementById('deviceBody');
@@ -17061,44 +17301,42 @@ function renderDeviceTable() {
     DEVICE_STATUSES.forEach(s => {
         setText('devKpi_' + s.key, warehouseDevices.filter(d => d.status === s.key).length);
     });
-    setText('deviceCount', `${rows.length} devices`);
+    const statusOn = document.getElementById('devStatusFilter')?.value || '';
+    document.querySelectorAll('#whDevicePanel .wh-tile[data-status]').forEach(tile => {
+        tile.setAttribute('aria-pressed', tile.dataset.status === statusOn ? 'true' : 'false');
+    });
+    setText('deviceCount', `${rows.length} device${rows.length === 1 ? '' : 's'}`);
 
     const canEdit = hasAccess('warehouse', 'edit');
-    const hasFilter = (document.getElementById('devStatusFilter')?.value || '') ||
+    const hasFilter = statusOn ||
                       (document.getElementById('devTypeFilter')?.value || '') ||
                       (document.getElementById('devLocationFilter')?.value || '') ||
                       (document.getElementById('devSearch')?.value || '');
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+        tbody.innerHTML = `<tr><td colspan="6" class="adm-empty">${
             hasFilter ? 'No devices match the filter'
-                      : 'No devices yet. Click <strong>Add Device</strong> to get started.'
+                      : `No devices yet.${canEdit ? ' Use <strong>Add device</strong> to get started.' : ''}`
         }</td></tr>`;
         return;
     }
 
-    tbody.innerHTML = rows.map((d, i) => {
+    const dash = '<span class="adm-muted">—</span>';
+    tbody.innerHTML = rows.map(d => {
         const st = DEVICE_STATUSES.find(s => s.key === d.status) || DEVICE_STATUSES[0];
-        const map = deviceMapLink(d);
-        const pos = (d.posX || d.posY)
-            ? `${escapeHtml(d.posX || '—')}, ${escapeHtml(d.posY || '—')}${
-                map ? ` <a href="${map}" target="_blank" rel="noopener" title="Open in map"><i class="fas fa-map-location-dot"></i></a>` : ''}`
-            : '<span style="color:var(--text-light)">—</span>';
+        const model = [d.brand, d.model].filter(Boolean).join(' · ');
         return `
         <tr>
-            <td>${i + 1}</td>
-            <td data-label="Serial Number" style="font-family:monospace;font-size:12px">${escapeHtml(d.sn || '')}</td>
-            <td data-label="Type">${d.type ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.type)}</span>` : '<span style="color:var(--text-light)">—</span>'}</td>
-            <td data-label="Brand / Model" style="font-size:12px">${escapeHtml([d.brand, d.model].filter(Boolean).join(' ')) || '<span style="color:var(--text-light)">—</span>'}</td>
-            <td data-label="Status"><span class="wh-status wh-status--${st.key}">${escapeHtml(st.label)}</span></td>
-            <td data-label="Location" style="font-size:12px">${escapeHtml(deviceWhere(d))}</td>
-            <td data-label="Coordinates" style="font-size:12px;white-space:nowrap">${pos}</td>
-            <td data-label="Notes" style="max-width:130px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(d.note || '')}">${
-                d.note ? escapeHtml(d.note) : '<span style="color:var(--text-light)">—</span>'}</td>
+            <td data-label="Device" class="wh-devcell"><span class="wh-dev">${deviceIcon(d.type)}<span class="adm-stack"><strong>${escapeHtml(d.type || 'Device')}</strong>${
+                model ? `<span class="adm-sub">${escapeHtml(model)}</span>` : ''}</span></span></td>
+            <td data-label="Serial number" class="adm-mono">${escapeHtml(d.sn || '')}</td>
+            <td data-label="Status"><span class="wh-status wh-status--${st.key}"><span class="wh-dot wh-dot--${st.key}" aria-hidden="true"></span>${escapeHtml(sentenceCase(st.label))}</span></td>
+            <td data-label="Where">${deviceWhereCell(d)}</td>
+            <td data-label="Note" class="adm-note" title="${escapeHtml(d.note || '')}">${d.note ? escapeHtml(d.note) : dash}</td>
             <td class="col-actions">
                 ${canEdit ? `<div class="row-actions">
-                    <button class="btn btn-secondary" title="Edit" aria-label="Edit device" onclick="editDevice(${jsArg(d.id)})"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Delete" aria-label="Delete device" onclick="deleteDevice(${jsArg(d.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                    <button class="btn btn-secondary" title="Edit" aria-label="Edit device ${escapeHtml(d.sn || '')}" onclick="editDevice(${jsArg(d.id)})"><i class="fas fa-pen" aria-hidden="true"></i></button>
+                    <button class="btn btn-secondary" title="Delete" aria-label="Delete device ${escapeHtml(d.sn || '')}" onclick="deleteDevice(${jsArg(d.id)})"><i class="fas fa-trash" aria-hidden="true"></i></button>
                 </div>` : ''}
             </td>
         </tr>`;
@@ -17129,7 +17367,7 @@ function onDeviceStatusChange() {
 
 function showAddDeviceForm() {
     if (!requireEdit('warehouse')) return;
-    document.getElementById('deviceModalTitle').textContent = 'Add Device';
+    document.getElementById('deviceModalTitle').textContent = 'Add device';
     document.getElementById('editDeviceId').value = '';
     document.getElementById('deviceForm').reset();
     document.getElementById('devStatus').value = 'warehouse';
@@ -17142,7 +17380,7 @@ function editDevice(id) {
     if (!requireEdit('warehouse')) return;
     const d = warehouseDevices.find(x => x.id === id);
     if (!d) return;
-    document.getElementById('deviceModalTitle').textContent = 'Edit Device';
+    document.getElementById('deviceModalTitle').textContent = 'Edit device';
     document.getElementById('editDeviceId').value = d.id;
     populateWarehouseFilters();
     document.getElementById('devSn').value = d.sn || '';
@@ -17481,7 +17719,7 @@ function populateFuelFilters() {
     const sel = document.getElementById('fuelVehicleFilter');
     if (sel) {
         const keep = sel.value;
-        sel.innerHTML = '<option value="">All Vehicles</option>' +
+        sel.innerHTML = '<option value="">All vehicles</option>' +
             vehicles.map(v => `<option value="${escapeHtml(v.id)}">${escapeHtml(vehicleLabel(v))}</option>`).join('');
         if (keep && sel.querySelector(`option[value="${CSS.escape(keep)}"]`)) sel.value = keep;
     }
@@ -17503,6 +17741,7 @@ function renderVehicleView() {
     setText('vehKpi_fills', `${mFills} refuel${mFills === 1 ? '' : 's'}`);
     setText('vehKpi_km', fmtKm(mKm));
     setText('vehKpi_flags', flagged);
+    document.getElementById('vehKpiFlagsTile')?.classList.toggle('wh-tile--warn', flagged > 0);
 
     const canEdit = hasAccess('warehouse', 'edit');
     const cards = document.getElementById('vehicleCards');
@@ -17517,7 +17756,7 @@ function renderVehicleView() {
             <article class="vehicle-card${retired ? ' vehicle-card--retired' : ''}">
                 <header class="vehicle-card__head">
                     <div>
-                        <div class="vehicle-card__plate"><i class="fas fa-${v.type === 'Car' ? 'car' : 'motorcycle'}"></i> ${escapeHtml(v.plate || '')}</div>
+                        <div class="vehicle-card__plate"><span class="vehicle-card__icon" aria-hidden="true"><i class="fas fa-${v.type === 'Car' ? 'car' : 'motorcycle'}"></i></span>${escapeHtml(v.plate || '')}</div>
                         <div class="vehicle-card__sub">${escapeHtml([v.brand, v.model].filter(Boolean).join(' ') || v.type || '')}${v.holder ? ' · ' + escapeHtml(v.holder) : ''}</div>
                     </div>
                     ${retired ? '<span class="wh-status wh-status--retired">Retired</span>' : ''}
@@ -17534,13 +17773,13 @@ function renderVehicleView() {
                     s.flagged ? ` · <span class="vehicle-card__flag"><i class="fas fa-triangle-exclamation"></i> ${s.flagged} to check</span>` : ''}</p>
                 ${v.note ? `<p class="vehicle-card__meta vehicle-card__note">${escapeHtml(v.note)}</p>` : ''}
                 <div class="vehicle-card__actions">
-                    ${canEdit && !retired ? `<button class="btn btn-primary btn-sm" onclick="showFuelForm(${jsArg(v.id)})"><i class="fas fa-gas-pump"></i> Log Fuel</button>` : ''}
-                    <button class="btn btn-secondary btn-sm" onclick="showVehicleHistory(${jsArg(v.id)})"><i class="fas fa-list"></i> Records</button>
-                    ${canEdit ? `<button class="btn btn-secondary btn-sm" onclick="editVehicle(${jsArg(v.id)})"><i class="fas fa-pen"></i> Edit</button>
-                    <button class="btn btn-secondary btn-sm" title="Delete vehicle" aria-label="Delete vehicle ${escapeHtml(v.plate || '')}" onclick="deleteVehicle(${jsArg(v.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>` : ''}
+                    ${canEdit && !retired ? `<button class="btn btn-primary btn-sm" onclick="showFuelForm(${jsArg(v.id)})"><i class="fas fa-gas-pump" aria-hidden="true"></i> Log fuel</button>` : ''}
+                    <button class="btn btn-secondary btn-sm" onclick="showVehicleHistory(${jsArg(v.id)})"><i class="fas fa-list" aria-hidden="true"></i> Records</button>
+                    ${canEdit ? `<button class="btn btn-secondary btn-sm" onclick="editVehicle(${jsArg(v.id)})"><i class="fas fa-pen" aria-hidden="true"></i> Edit</button>
+                    <button class="btn btn-secondary btn-sm vehicle-card__del" title="Delete vehicle" aria-label="Delete vehicle ${escapeHtml(v.plate || '')}" onclick="deleteVehicle(${jsArg(v.id)})"><i class="fas fa-trash" aria-hidden="true"></i></button>` : ''}
                 </div>
             </article>`;
-        }).join('') : `<div class="vehicle-empty">No vehicles yet.${canEdit ? ' Click <strong>Add Vehicle</strong> and enter the handover date and the odometer reading on that day.' : ''}</div>`;
+        }).join('') : `<div class="vehicle-empty">No vehicles yet.${canEdit ? ' Use <strong>Add vehicle</strong> and enter the handover date and the odometer reading on that day.' : ''}</div>`;
     }
     renderFuelTable();
 }
@@ -17572,29 +17811,28 @@ function renderFuelTable() {
     if (count) count.textContent = `${rows.length} record${rows.length === 1 ? '' : 's'}`;
     if (!rows.length) {
         const filtered = (document.getElementById('fuelVehicleFilter')?.value || '') || (document.getElementById('fuelMonthFilter')?.value || '');
-        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-secondary)">${
-            filtered ? 'No fuel records match the filter' : 'No fuel records yet. Use <strong>Log Fuel</strong> after each refuel.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" class="adm-empty">${
+            filtered ? 'No fuel records match the filter' : 'No fuel records yet. Use <strong>Log fuel</strong> after each refuel.'}</td></tr>`;
         return;
     }
     const canEdit = hasAccess('warehouse', 'edit');
-    const dash = '<span style="color:var(--text-light)">—</span>';
-    tbody.innerHTML = rows.map((x, i) => {
+    const dash = '<span class="adm-muted">—</span>';
+    tbody.innerHTML = rows.map(x => {
         const r = x.rec;
         const flags = x.flags.map(f => `<span class="fuel-flag" title="${escapeHtml(FUEL_FLAG_TEXT[f] || f)}"><i class="fas fa-triangle-exclamation"></i> ${escapeHtml(FUEL_FLAG_TEXT[f] || f)}</span>`).join('');
         return `
         <tr${x.flags.length ? ' class="row-flagged"' : ''}>
-            <td>${i + 1}</td>
-            <td data-label="Date" style="white-space:nowrap">${escapeHtml(r.date || '')}</td>
+            <td data-label="Date" class="adm-nowrap">${escapeHtml(r.date || '')}</td>
             <td data-label="Vehicle"><strong>${escapeHtml(x.vehicle ? x.vehicle.plate : (r.vehiclePlate || '(deleted vehicle)'))}</strong></td>
             <td data-label="Odometer" class="num">${fmtKm(x.km)}</td>
             <td data-label="Distance" class="num">${x.distance != null ? '+' + fmtKm(x.distance) : dash}</td>
             <td data-label="Liters" class="num">${fmtLiters(x.liters)}</td>
             <td data-label="km / L" class="num">${x.kmPerL != null ? '≈ ' + fmtNum(x.kmPerL, 1) : dash}</td>
             <td data-label="Receipt">${r.hasPhoto ? `<button type="button" class="wl-photo-btn" title="View receipt" aria-label="View receipt photo" onclick="openFuelPhoto(${jsArg(r.id)}, this)"><i class="fas fa-image"></i> Photo</button>` : dash}</td>
-            <td data-label="Notes" style="max-width:220px;font-size:12px;color:var(--text-secondary);white-space:normal">${flags}${r.note ? `<div>${escapeHtml(r.note)}</div>` : (flags ? '' : dash)}</td>
+            <td data-label="Notes" class="adm-note adm-note--wrap">${flags || r.note ? `<span class="adm-stack">${flags}${r.note ? `<span>${escapeHtml(r.note)}</span>` : ''}</span>` : dash}</td>
             <td class="col-actions">${canEdit ? `<div class="row-actions">
-                <button class="btn btn-secondary" title="Edit" aria-label="Edit fuel record" onclick="editFuelLog(${jsArg(r.id)})"><i class="fas fa-pen"></i></button>
-                <button class="btn btn-secondary" title="Delete" aria-label="Delete fuel record" onclick="deleteFuelLog(${jsArg(r.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                <button class="btn btn-secondary" title="Edit" aria-label="Edit fuel record" onclick="editFuelLog(${jsArg(r.id)})"><i class="fas fa-pen" aria-hidden="true"></i></button>
+                <button class="btn btn-secondary" title="Delete" aria-label="Delete fuel record" onclick="deleteFuelLog(${jsArg(r.id)})"><i class="fas fa-trash" aria-hidden="true"></i></button>
             </div>` : ''}</td>
         </tr>`;
     }).join('');
@@ -17617,7 +17855,7 @@ function showVehicleHistory(id) {
 // ---- Vehicle form ----
 function showAddVehicleForm() {
     if (!requireEdit('warehouse')) return;
-    document.getElementById('vehicleModalTitle').innerHTML = '<i class="fas fa-motorcycle"></i> Add Vehicle';
+    document.getElementById('vehicleModalTitle').textContent = 'Add vehicle';
     document.getElementById('vehicleForm').reset();
     document.getElementById('editVehicleId').value = '';
     document.getElementById('vehType').value = 'Motorbike';
@@ -17631,7 +17869,7 @@ function editVehicle(id) {
     if (!requireEdit('warehouse')) return;
     const v = vehicles.find(x => x.id === id);
     if (!v) return;
-    document.getElementById('vehicleModalTitle').innerHTML = '<i class="fas fa-motorcycle"></i> Edit Vehicle';
+    document.getElementById('vehicleModalTitle').textContent = 'Edit vehicle';
     document.getElementById('editVehicleId').value = v.id;
     populateFuelFilters();
     document.getElementById('vehPlate').value = v.plate || '';
@@ -17804,7 +18042,7 @@ function showFuelForm(vehicleId) {
         showToast(vehicles.length ? 'All vehicles are retired — edit one and set it to In use to log fuel' : 'Add a vehicle first', 'warning');
         return;
     }
-    document.getElementById('fuelModalTitle').innerHTML = '<i class="fas fa-gas-pump"></i> Log Fuel';
+    document.getElementById('fuelModalTitle').textContent = 'Log fuel';
     document.getElementById('fuelForm').reset();
     document.getElementById('editFuelId').value = '';
     _fuelVehicleOptions(vehicleId || (usable.length === 1 ? usable[0].id : ''));
@@ -17819,7 +18057,7 @@ function editFuelLog(id) {
     if (!requireEdit('warehouse')) return;
     const r = fuelLogs.find(x => x.id === id);
     if (!r) return;
-    document.getElementById('fuelModalTitle').innerHTML = '<i class="fas fa-gas-pump"></i> Edit Fuel Record';
+    document.getElementById('fuelModalTitle').textContent = 'Edit fuel record';
     document.getElementById('editFuelId').value = r.id;
     _fuelVehicleOptions(r.vehicleId);
     document.getElementById('fuelDate').value = r.date || '';
@@ -18162,41 +18400,47 @@ function renderStockView() {
     const sumEl = document.getElementById('stockSummary');
     if (sumEl) {
         sumEl.innerHTML = summary.length
-            ? summary.map(s => `
-                <div class="stock-chip${s.qty <= 0 ? ' stock-chip--out' : (s.qty <= STOCK_LOW_THRESHOLD ? ' stock-chip--low' : '')}">
+            ? summary.map(s => {
+                const state = s.qty <= 0 ? 'out' : (s.qty <= STOCK_LOW_THRESHOLD ? 'low' : '');
+                return `
+                <div class="stock-chip${state ? ' stock-chip--' + state : ''}">
                     <span class="stock-chip__name">${escapeHtml(s.name)}</span>
                     <span class="stock-chip__qty">${s.qty}</span>
-                </div>`).join('')
+                    <span class="stock-chip__state">${state === 'out' ? 'Out of stock' : state === 'low' ? 'Running low' : 'In stock'}</span>
+                </div>`;
+            }).join('')
             : '<div class="stock-empty">No items recorded yet.</div>';
     }
+    const sub = document.getElementById('stockSummarySub');
+    if (sub) sub.textContent = `${loc ? loc + ' · ' : ''}running low at ${STOCK_LOW_THRESHOLD} or fewer`;
 
     const rows = getFilteredStock();
     const tbody = document.getElementById('stockBody');
     if (!tbody) return;
     const countEl = document.getElementById('stockCount');
-    if (countEl) countEl.textContent = `${rows.length} transactions`;
+    if (countEl) countEl.textContent = `${rows.length} transaction${rows.length === 1 ? '' : 's'}`;
 
     const canEdit = hasAccess('warehouse', 'edit');
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-secondary)">
-            No stock transactions yet. Click <strong>Record In/Out</strong> to get started.
-        </td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="adm-empty">${stockLedger.length
+            ? 'No stock movements match the filter'
+            : `No stock movements yet.${canEdit ? ' Use <strong>Record in / out</strong> to get started.' : ''}`}</td></tr>`;
         return;
     }
 
-    tbody.innerHTML = rows.map((r, i) => `
+    const dash = '<span class="adm-muted">—</span>';
+    tbody.innerHTML = rows.map(r => `
         <tr>
-            <td>${i + 1}</td>
-            <td data-label="Date" style="white-space:nowrap">${escapeHtml(r.date || '')}</td>
-            <td data-label="Type"><span class="wh-txn wh-txn--${r.txnType === 'OUT' ? 'out' : 'in'}">${r.txnType === 'OUT' ? 'Out' : 'In'}</span></td>
-            <td data-label="Item"><strong>${escapeHtml(r.itemName || '')}</strong></td>
-            <td data-label="Quantity" style="white-space:nowrap">${Number(r.qty) || 0}</td>
-            <td data-label="Location" style="font-size:12px">${escapeHtml(r.location || '') || '<span style="color:var(--text-light)">—</span>'}</td>
-            <td data-label="For Unit" style="font-size:12px">${escapeHtml(r.unitName || '') || '<span style="color:var(--text-light)">—</span>'}</td>
+            <td data-label="Date" class="adm-nowrap">${escapeHtml(r.date || '')}</td>
+            <td data-label="Movement"><span class="wh-txn wh-txn--${r.txnType === 'OUT' ? 'out' : 'in'}">${r.txnType === 'OUT' ? 'Out' : 'In'}</span></td>
+            <td data-label="Item"><span class="adm-stack"><strong>${escapeHtml(r.itemName || '')}</strong>${r.note ? `<span class="adm-sub">${escapeHtml(r.note)}</span>` : ''}</span></td>
+            <td data-label="Quantity" class="num">${r.txnType === 'OUT' ? '−' : '+'}${Number(r.qty) || 0}</td>
+            <td data-label="Location">${escapeHtml(r.location || '') || dash}</td>
+            <td data-label="For unit">${escapeHtml(r.unitName || '') || dash}</td>
             <td class="col-actions">
                 ${canEdit ? `<div class="row-actions">
-                    <button class="btn btn-secondary" title="Edit" aria-label="Edit transaction" onclick="editStockItem(${jsArg(r.id)})"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Delete" aria-label="Delete transaction" onclick="deleteStockItem(${jsArg(r.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                    <button class="btn btn-secondary" title="Edit" aria-label="Edit transaction" onclick="editStockItem(${jsArg(r.id)})"><i class="fas fa-pen" aria-hidden="true"></i></button>
+                    <button class="btn btn-secondary" title="Delete" aria-label="Delete transaction" onclick="deleteStockItem(${jsArg(r.id)})"><i class="fas fa-trash" aria-hidden="true"></i></button>
                 </div>` : ''}
             </td>
         </tr>`).join('');
@@ -18220,7 +18464,7 @@ function onStockTxnChange() {
 
 function showAddStockForm() {
     if (!requireEdit('warehouse')) return;
-    document.getElementById('stockModalTitle').textContent = 'Record Stock In/Out';
+    document.getElementById('stockModalTitle').textContent = 'Record stock in / out';
     document.getElementById('editStockId').value = '';
     document.getElementById('stockForm').reset();
     populateWarehouseFilters();
@@ -18234,7 +18478,7 @@ function editStockItem(id) {
     if (!requireEdit('warehouse')) return;
     const r = stockLedger.find(x => x.id === id);
     if (!r) return;
-    document.getElementById('stockModalTitle').textContent = 'Edit Stock Transaction';
+    document.getElementById('stockModalTitle').textContent = 'Edit stock movement';
     document.getElementById('editStockId').value = r.id;
     populateWarehouseFilters();
     document.getElementById('stkDate').value = r.date || '';
