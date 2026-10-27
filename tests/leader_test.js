@@ -82,6 +82,40 @@ const { launch, BASE_URL } = require('./_env');
         t('kartu terender', document.querySelectorAll('#decisionGroups .decision-card').length, decisionGroups().length);
         t('lencana menu terisi', document.getElementById('decisionBadge').textContent, String(total));
 
+        // ---------- design F: banner, tab count, leave decided in place ----------
+        // The oldest item with a start time is JD-01, down 5 days; reports and
+        // registrations here carry no time and are left out, not guessed.
+        t('banner: sections and the age of the oldest item',
+          document.getElementById('decisionTotalSub').textContent,
+          'Across ' + decisionGroups().length + ' sections · oldest is 5 days old');
+        t('the Decisions tab carries the count',
+          document.getElementById('leaderTabCount').firstChild.textContent, String(total));
+        leaveRequests = [{ id:'lv1', memberId:'m1', memberName:'Andi', type:'sakit',
+            dateFrom:'2026-09-20', dateTo:'2026-09-21', approval:'pending',
+            createdByUid:'u_andi', submittedByUid:'u_andi', submittedAt: Date.now() - 2*DAY }];
+        renderDecisionInbox();
+        const leaveActs = () => {
+            const h = document.getElementById('dg-leave');
+            return h ? [...h.closest('.decision-card').querySelectorAll('.decision-act')] : null;
+        };
+        t('approver: Send back and Approve in the leave row',
+          leaveActs().map(b => b.textContent.trim()), ['Send back', 'Approve']);
+        t('they run the Team page functions (same guards)',
+          leaveActs().map(b => b.getAttribute('onclick')), ['reviseLeave("lv1")', 'approveLeave("lv1")']);
+        currentUser = { uid:'u_andi', email:'andi@x.id' };
+        currentUserDoc = { role:'staff', status:'active',
+                           access:{ leader:'view', teamLog:'edit', teamLogApprove:'edit' } };
+        renderDecisionInbox();
+        t('own request: no Approve in the row (someone else checks it)', leaveActs(), []);
+        currentUser = { uid:'v1', email:'v1@x.id' };
+        currentUserDoc = { role:'staff', status:'active', access:{ leader:'view', teamLog:'view' } };
+        renderDecisionInbox();
+        t('without the approve grant: the row has no buttons', leaveActs(), []);
+        currentUser = { uid:'boss', email:'boss@x.id' };
+        currentUserDoc = { role:'owner', status:'active', email:'boss@x.id' };
+        leaveRequests = [];
+        renderDecisionInbox();
+
         // ---------- kelompok kosong tidak muncul ----------
         workLogs = workLogs.filter(w => workLogApproval(w) !== 'revision');
         t('kelompok revisi hilang saat kosong', !!byKey('revision'), false);

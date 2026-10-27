@@ -1,1 +1,808 @@
 /* design F — inboxteam (concatenated into style.css when merged) */
+/* ============================================================
+   DECISION INBOX (#viewLeader) and TEAM (#viewTeam) — design F
+   Screen only: the printed inbox keeps the print rules in style.css.
+   Desktop sizes sit in min-width:701px so the PHONE section's 44px
+   touch targets and 16px fields stay in charge on phones.
+   ============================================================ */
+@media screen {
+    /* Shift chip colours (F): teal morning, blue afternoon, amber leave,
+       grey off. Night is not in the F set; it takes F's violet. */
+    #viewTeam {
+        --shift-pagi-bg: #CCFBEF;  --shift-pagi-fg: #115E59;
+        --shift-siang-bg: #D1E9FF; --shift-siang-fg: #194185;
+        --shift-malam-bg: #EBE9FE; --shift-malam-fg: #4A1FB8;
+        --shift-leave-bg: #FEF0C7; --shift-leave-fg: #93370D;
+        --shift-libur-bg: #F2F4F7; --shift-libur-fg: #475467;
+    }
+
+    /* Text for screen readers only (counts inside tab labels). */
+    .it-sr {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+    #viewLeader .f-ico, #viewTeam .f-ico { flex-shrink: 0; }
+
+    /* ---- Underline tabs with their counts ---- */
+    #viewLeader .team-tabbar,
+    #viewTeam .team-tabbar { margin-bottom: 20px; }
+    #viewLeader .team-tabs,
+    #viewTeam .team-tabs { gap: 6px; }
+    #viewLeader .team-tab,
+    #viewTeam .team-tab {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        font-size: 14px;
+        white-space: nowrap;
+    }
+    #viewLeader .team-tab__count,
+    #viewTeam .team-tab__count {
+        min-width: 0;
+        margin: 0;
+        padding: 0 7px;
+        border-radius: 10px;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 20px;
+    }
+    #viewLeader .leader-tab__count,
+    #viewTeam .team-tab__count--alert { background: var(--danger-tint); color: var(--danger-strong); }
+    #viewTeam .team-tab__count--info { background: var(--info-bg); color: var(--info-strong); }
+    #viewTeam .team-tab__count--warn { background: var(--warning-bg); color: var(--warning-strong); }
+
+    /* ---- Week / month stepper (shift grid, recap, weekly summary) ---- */
+    #viewLeader .week-nav,
+    #viewTeam .week-nav { gap: 8px; flex-wrap: nowrap; }
+    #viewLeader .week-nav__arrow,
+    #viewTeam .week-nav__arrow {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        color: var(--text-body);
+    }
+    #viewLeader .week-nav__label,
+    #viewTeam .week-nav__label {
+        min-width: 0;
+        margin: 0 6px;
+        font-family: var(--font-display);
+        font-size: 17px;
+        font-weight: 600;
+        line-height: 1.3;
+        text-align: left;
+        white-space: nowrap;
+        color: var(--text);
+    }
+
+    /* ============================================================
+       DECISION INBOX
+       ============================================================ */
+
+    /* Summary banner: big number, then what it counts and how old. */
+    #leaderInboxPanel .inbox-summary {
+        display: block;
+        margin: 0 0 20px;
+    }
+    #leaderInboxPanel .inbox-summary__card {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 16px;
+        padding: 18px 22px;
+        border: 0;
+        border-radius: var(--radius-lg);
+        background: var(--primary-lighter);
+        box-shadow: none;
+        color: var(--accent-text);
+    }
+    #leaderInboxPanel .inbox-summary__num {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 36px;
+        font-weight: 600;
+        line-height: 1;
+        color: var(--accent-text);
+        font-variant-numeric: tabular-nums;
+    }
+    #leaderInboxPanel .inbox-summary__text { display: flex; flex-direction: column; min-width: 0; }
+    #leaderInboxPanel .inbox-summary__label {
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--text);
+    }
+    #leaderInboxPanel .inbox-summary__sub { font-size: 14px; color: var(--text-body); }
+
+    /* Section cards: icon tile, title, count pill, short rows, footer link. */
+    #decisionGroups.decision-grid {
+        grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+        gap: 16px;
+        align-items: stretch;
+    }
+    #decisionGroups .decision-card {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        border-radius: var(--radius-lg);
+        background: var(--card);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+    }
+    #decisionGroups .decision-card__head {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 12px;
+        padding: 16px 20px;
+    }
+    #decisionGroups .decision-card__icon {
+        flex: 0 0 40px;
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 17px;
+        background: var(--info-bg);
+        color: var(--info-strong);
+    }
+    #decisionGroups .decision-card--warning .decision-card__icon { background: var(--warning-tint); color: var(--warning-strong); }
+    #decisionGroups .decision-card--danger  .decision-card__icon { background: var(--danger-tint);  color: var(--danger-strong); }
+    #decisionGroups .decision-card__title {
+        flex: 1 1 auto;
+        min-width: 0;
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 17px;
+        font-weight: 600;
+        line-height: 1.35;
+        color: var(--text);
+    }
+    #decisionGroups .decision-card__count {
+        flex-shrink: 0;
+        min-width: 0;
+        padding: 2px 10px;
+        border: 0;
+        border-radius: 12px;
+        font-size: 14px;
+        font-weight: 700;
+        background: var(--info-bg);
+        color: var(--info-strong);
+    }
+    #decisionGroups .decision-card--warning .decision-card__count { background: var(--warning-bg); color: var(--warning-strong); }
+    #decisionGroups .decision-card--danger  .decision-card__count { background: var(--danger-bg);  color: var(--danger-strong); }
+
+    #decisionGroups .decision-list { flex: 1 1 auto; margin: 0; padding: 0; list-style: none; }
+    #decisionGroups .decision-list li {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 20px;
+        border-top: 1px solid var(--border);
+        border-bottom: 0;
+        font-size: 14px;
+    }
+    #decisionGroups .decision-list__body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+    #decisionGroups .decision-list__text { font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+    #decisionGroups .decision-list__sub {
+        display: -webkit-box;
+        margin: 0;
+        overflow: hidden;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        font-size: 13px;
+        color: var(--text-secondary);
+    }
+    #decisionGroups .decision-list__more { color: var(--text-secondary); font-style: normal; }
+    #decisionGroups .decision-list__acts { display: flex; flex-shrink: 0; gap: 8px; }
+    #decisionGroups .decision-act--ok {
+        background: var(--success-bg);
+        border-color: transparent;
+        color: var(--success-strong);
+        font-weight: 700;
+    }
+    #decisionGroups .decision-act--ok:hover { background: var(--success-tint); }
+    #decisionGroups .decision-card__foot {
+        display: flex;
+        gap: 10px;
+        padding: 14px 20px;
+        border-top: 1px solid var(--border);
+    }
+    #decisionGroups .decision-card .btn { align-self: auto; }
+    #decisionGroups .decision-card__go { gap: 8px; font-size: 14px; font-weight: 600; }
+
+    /* Nothing waiting. */
+    #decisionGroups .decision-clear {
+        grid-column: 1 / -1;
+        align-items: center;
+        gap: 16px;
+        padding: 22px 24px;
+        border: 0;
+        border-radius: var(--radius-lg);
+        background: var(--success-bg);
+        color: var(--success-strong);
+    }
+    #decisionGroups .decision-clear strong {
+        font-family: var(--font-display);
+        font-size: 17px;
+        font-weight: 600;
+        color: var(--text);
+    }
+    #decisionGroups .decision-clear p { margin: 2px 0 0; font-size: 14px; color: var(--text-body); }
+
+    /* ---- Company recap, weekly summary, data check ---- */
+    #viewLeader .edit-toolbar { margin-bottom: 16px; }
+    #recapTable tfoot td,
+    #recapTable tfoot th {
+        border-top: 1px solid var(--border-strong);
+        background: var(--surface-sunken);
+        font-weight: 600;
+        color: var(--text);
+    }
+    #recapMonth { width: auto; }
+
+    #weekSummaryGrid.week-grid {
+        grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+        gap: 16px;
+    }
+    #weekSummaryGrid .week-metric {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+        padding: 16px 18px;
+        border: 0;
+        border-radius: var(--radius-lg);
+        background: var(--card);
+        box-shadow: var(--shadow);
+    }
+    #weekSummaryGrid .week-metric__label {
+        font-size: 14px;
+        font-weight: 400;
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--text-secondary);
+    }
+    #weekSummaryGrid .week-metric__value {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 24px;
+        font-weight: 600;
+        line-height: 1.3;
+    }
+    #weekSummaryGrid .week-metric__delta { font-size: 13px; font-weight: 700; color: var(--text-secondary); }
+    #weekSummaryGrid .week-metric__delta--good { color: var(--success-strong); }
+    #weekSummaryGrid .week-metric__delta--bad  { color: var(--danger-strong); }
+    #weekSummaryGrid .week-metric__prev { font-size: 13px; font-weight: 400; color: var(--text-secondary); }
+    #weekHealth.week-health {
+        margin-top: 16px;
+        padding: 16px 22px;
+        border: 0;
+        border-radius: var(--radius-lg);
+        background: var(--primary-lighter);
+        font-size: 14px;
+        color: var(--text-body);
+    }
+    #weekHealth strong { font-family: var(--font-display); font-size: 17px; font-weight: 600; color: var(--accent-text); }
+
+    #leaderCheckPanel .datacheck-summary { font-size: 14px; font-weight: 600; color: var(--text); }
+    #leaderCheckPanel .datacheck-note { margin: 0 0 16px; font-size: 13px; color: var(--text-secondary); }
+    #dataCheckBody .datacheck-group {
+        margin-bottom: 16px;
+        border-radius: var(--radius-lg);
+        background: var(--card);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+    }
+    #dataCheckBody .datacheck-group h4 {
+        margin: 0;
+        padding: 16px 20px 12px;
+        font-family: var(--font-display);
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--text);
+    }
+    #dataCheckBody .datacheck-count {
+        padding: 2px 10px;
+        border-radius: 12px;
+        background: var(--warning-bg);
+        color: var(--warning-strong);
+        font-family: var(--font-sans);
+        font-size: 13px;
+        font-weight: 700;
+    }
+    #dataCheckBody .data-table td,
+    #dataCheckBody .data-table th { white-space: normal; }
+    #dataCheckBody .data-table td:first-child,
+    #dataCheckBody .data-table th:first-child { padding-left: 20px; }
+    #dataCheckBody .data-table td:last-child { padding-right: 20px; text-align: right; }
+
+    /* ---- Approval chips (recap and the Team tables) ---- */
+    #viewLeader .appr,
+    #viewTeam .appr {
+        padding: 2px 10px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    #viewLeader .appr--pending,  #viewTeam .appr--pending  { background: var(--warning-bg); color: var(--warning-strong); }
+    #viewLeader .appr--approved, #viewTeam .appr--approved { background: var(--success-bg); color: var(--success-strong); }
+    #viewLeader .appr--revision, #viewTeam .appr--revision { background: var(--danger-bg);  color: var(--danger-strong); }
+    #viewLeader .appr--draft,    #viewTeam .appr--draft    { background: var(--neutral-tint); color: var(--text-secondary); }
+    #viewTeam .appr-note { color: var(--danger-strong); font-size: 12px; }
+    #viewTeam .appr-cell .appr-btn {
+        border-radius: 8px;
+        border: 1px solid var(--border-strong);
+        background: var(--card);
+        color: var(--text-body);
+        box-shadow: none;
+        font-weight: 600;
+    }
+    #viewTeam .appr-cell .appr-btn--ok { background: var(--success-bg); border-color: transparent; color: var(--success-strong); }
+    #viewTeam .appr-cell .appr-btn--ok:hover { background: var(--success-tint); }
+    #viewTeam .appr-cell .appr-btn--rev:hover { background: var(--surface-sunken); color: var(--text); }
+
+    /* ============================================================
+       TEAM
+       ============================================================ */
+
+    /* The Members button used to sit on the tab line, lifted 8px clear of
+       the underline (style.css); in the page head it lines up with the rest. */
+    #btnTeamMembers { margin: 0; }
+
+    /* "Copy last week" is a shift action: shown on the shift tab only. */
+    #viewTeam:not([data-team-tab="shift"]) .team-head__shift-only { display: none; }
+
+    /* Today's tiles above the week grid. */
+    #teamKpis.team-kpis {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+        gap: 16px;
+        margin-bottom: 20px;
+    }
+    #teamKpis .team-kpi {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+        padding: 14px 18px;
+        border-radius: var(--radius-lg);
+        background: var(--card);
+        box-shadow: var(--shadow);
+    }
+    #teamKpis .team-kpi__label { color: var(--text-secondary); font-size: 14px; }
+    #teamKpis .team-kpi__value {
+        font-family: var(--font-display);
+        font-size: 24px;
+        font-weight: 600;
+        line-height: 1.3;
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+    }
+    #teamKpis .team-kpi__of {
+        font-family: var(--font-sans);
+        font-size: 14px;
+        font-weight: 400;
+        color: var(--text-secondary);
+    }
+
+    /* Week card: stepper and "This week" left, legend and export right. */
+    #viewTeam .shift-card { overflow: hidden; }
+    #viewTeam .shift-card__head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px 16px;
+        padding: 14px 20px;
+    }
+    #viewTeam .shift-card__head .week-nav { flex: 0 1 auto; min-width: 0; }
+    #viewTeam .week-nav__today.is-current {
+        min-height: 0;
+        min-width: 0;
+        padding: 2px 10px;
+        border: 0;
+        border-radius: 12px;
+        background: var(--primary-lighter);
+        box-shadow: none;
+        color: var(--accent-text);
+        font-size: 13px;
+        font-weight: 600;
+    }
+    #viewTeam .shift-legend {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 12px;
+        margin-left: auto;
+        font-size: 13px;
+        color: var(--text-body);
+    }
+    #viewTeam .shift-legend__item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+    #viewTeam .shift-legend__swatch { width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0; }
+    #viewTeam .shift-legend__swatch--pagi  { background: var(--shift-pagi-bg); }
+    #viewTeam .shift-legend__swatch--siang { background: var(--shift-siang-bg); }
+    #viewTeam .shift-legend__swatch--malam { background: var(--shift-malam-bg); }
+    #viewTeam .shift-legend__swatch--leave { background: var(--shift-leave-bg); }
+    #viewTeam .shift-legend__swatch--libur { background: var(--shift-libur-bg); }
+
+    /* The grid: F's week table with shift chips. */
+    #viewTeam .shift-grid { font-size: 13px; }
+    #viewTeam .shift-grid th,
+    #viewTeam .shift-grid td {
+        padding: 6px;
+        text-align: left;
+        vertical-align: middle;
+        border-bottom: 0;
+        border-top: 1px solid var(--border);
+    }
+    #viewTeam .shift-grid thead th {
+        padding: 10px 6px;
+        border-top: 0;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface-sunken);
+        font-size: 13px;
+        font-weight: 600;
+        text-transform: none;
+        letter-spacing: 0;
+        color: var(--text-secondary);
+        white-space: nowrap;
+    }
+    #viewTeam .shift-grid thead th:hover { background: var(--surface-sunken); color: var(--text-secondary); }
+    #viewTeam .shift-grid .shift-grid__member { padding-left: 20px; padding-right: 12px; }
+    #viewTeam .shift-grid thead th.is-today {
+        background: var(--primary-lighter);
+        color: var(--accent-text);
+        font-weight: 700;
+    }
+    #viewTeam .shift-grid tbody td.is-today { background: var(--primary-lighter); }
+    #viewTeam .shift-grid tbody tr,
+    #viewTeam .shift-grid tbody tr:hover { background: var(--card); }
+    #viewTeam .shift-grid tbody .shift-grid__member {
+        background: var(--card);
+        font-size: 14px;
+        font-weight: 600;
+    }
+    #viewTeam .shift-grid__job { font-size: 12px; color: var(--text-secondary); }
+
+    /* Shift chips: the read-only badge and the editable select look alike. */
+    #viewTeam .shift-select,
+    #viewTeam .shift-badge {
+        display: block;
+        width: 100%;
+        min-width: 0;
+        padding: 8px;
+        border: 0;
+        border-radius: 8px;
+        background-color: var(--card);
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.3;
+        text-align: left;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    #viewTeam .shift-select {
+        -webkit-appearance: none;
+        appearance: none;
+        padding-right: 22px;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23667085' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 7px center;
+        background-size: 12px;
+        cursor: pointer;
+    }
+    #viewTeam .shift-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    #viewTeam .shift-select--pagi,  #viewTeam .shift-badge--pagi  { background-color: var(--shift-pagi-bg);  color: var(--shift-pagi-fg); }
+    #viewTeam .shift-select--siang, #viewTeam .shift-badge--siang { background-color: var(--shift-siang-bg); color: var(--shift-siang-fg); }
+    #viewTeam .shift-select--malam, #viewTeam .shift-badge--malam { background-color: var(--shift-malam-bg); color: var(--shift-malam-fg); }
+    #viewTeam .shift-select--libur, #viewTeam .shift-badge--libur {
+        background-color: var(--shift-libur-bg);
+        color: var(--shift-libur-fg);
+        font-weight: 400;
+    }
+    /* An empty cell is an invitation to fill it, not a chip. */
+    #viewTeam .shift-select--none {
+        background-color: transparent;
+        box-shadow: inset 0 0 0 1px var(--border-strong);
+        color: var(--text-light);
+        font-weight: 400;
+    }
+    #viewTeam .shift-empty { display: block; padding: 8px; color: var(--text-light); }
+
+    /* Approved leave: an amber chip on top; the planned shift under it is
+       kept (it belongs to the planner) but reads as not happening. */
+    #viewTeam .shift-leave {
+        display: block;
+        margin: 0 0 4px;
+        padding: 8px;
+        border-radius: 8px;
+        background: var(--shift-leave-bg);
+        color: var(--shift-leave-fg);
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0;
+        text-transform: none;
+        line-height: 1.3;
+    }
+    #viewTeam .shift-cell:has(.shift-leave) .shift-select,
+    #viewTeam .shift-cell:has(.shift-leave) .shift-badge {
+        padding-top: 3px;
+        padding-bottom: 3px;
+        background-color: transparent;
+        color: var(--text-light);
+        font-weight: 400;
+        text-decoration: line-through;
+    }
+
+    /* Fill-week picker under the name: quiet until used. */
+    #viewTeam .shift-fill {
+        margin-top: 4px;
+        max-width: 150px;
+        padding: 2px 6px;
+        border: 1px dashed var(--border-strong);
+        border-radius: 8px;
+        background: transparent;
+        color: var(--accent-text);
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    /* Company bands and the duty totals. */
+    #viewTeam .shift-group th,
+    #viewTeam .shift-group td {
+        background: var(--surface-sunken);
+        border-top: 1px solid var(--border);
+        border-bottom: 0;
+    }
+    #viewTeam .shift-grid tbody .shift-group__name {
+        background: var(--surface-sunken);
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text);
+    }
+    #viewTeam .shift-group__count { font-size: 12px; font-weight: 400; color: var(--text-secondary); }
+    #viewTeam .shift-group__cell,
+    #viewTeam .shift-grid tfoot td { font-size: 12px; color: var(--text-secondary); }
+    #viewTeam .shift-group__cell.is-today,
+    #viewTeam .shift-grid tfoot td.is-today { background: var(--primary-lighter); }
+    #viewTeam .shift-group__cell strong,
+    #viewTeam .shift-grid tfoot td strong { font-size: 14px; color: var(--text); }
+    #viewTeam .shift-foot__detail { display: block; font-size: 11px; line-height: 1.3; white-space: normal; color: var(--text-light); }
+    #viewTeam .shift-grid tfoot th,
+    #viewTeam .shift-grid tfoot td {
+        border-top: 1px solid var(--border-strong);
+        background: var(--card);
+    }
+    #viewTeam .shift-grid tfoot th { font-size: 13px; font-weight: 600; color: var(--text); text-transform: none; letter-spacing: 0; }
+    #viewTeam .shift-grid tfoot td.is-today { background: var(--primary-lighter); }
+
+    /* ---- Daily reports and leave ---- */
+    #viewTeam .team-tiles {
+        grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+        gap: 16px;
+        margin: 0 0 20px;
+    }
+    #viewTeam .team-tiles .downtime-kpi {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+        padding: 14px 18px;
+        border: 0;
+        border-radius: var(--radius-lg);
+        background: var(--card);
+        box-shadow: var(--shadow);
+    }
+    #viewTeam .team-tiles .downtime-kpi__label {
+        font-size: 14px;
+        font-weight: 400;
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--text-secondary);
+    }
+    #viewTeam .team-tiles .downtime-kpi__value {
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 24px;
+        font-weight: 600;
+        line-height: 1.3;
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+    }
+    #viewTeam .team-tiles .downtime-kpi__sub { font-size: 13px; color: var(--text-light); }
+
+    #viewTeam .my-notice {
+        margin-bottom: 16px;
+        padding: 14px 18px;
+        border: 0;
+        border-radius: var(--radius-lg);
+        background: var(--info-bg);
+        color: var(--text-body);
+        font-size: 14px;
+    }
+    #viewTeam .my-notice--alert { background: var(--danger-bg); box-shadow: inset 0 0 0 1px var(--danger-border); }
+    #viewTeam .my-notice__head { color: var(--danger-strong); }
+    #viewTeam .my-notice__facts { font-size: 13px; color: var(--text-body); }
+
+    /* Actions left, filters as quiet white fields on the right (the row
+       layout is in the desktop block below; phones keep style.css's two
+       filters per row). */
+    #viewTeam .team-toolbar { margin-bottom: 16px; }
+    #viewTeam .team-filters { font-size: 13px; color: var(--text-secondary); }
+    #viewTeam .team-filters select {
+        border: 1px solid var(--border-strong);
+        border-radius: 10px;
+        background-color: var(--card);
+        box-shadow: none;
+        color: var(--text);
+        font-weight: 500;
+    }
+    #viewTeam .team-filters .edit-search input { border-color: var(--border); }
+    #viewTeam .team-filters .wl-filter-date { gap: 6px; font-size: 13px; color: var(--text-secondary); }
+    #viewTeam .team-filters .wl-filter-date .form-input { border-color: var(--border); }
+    #viewTeam .team-filters .mine-filter { font-size: 13px; color: var(--text-body); }
+    #workLogCount, #leaveCount { color: var(--text-secondary); font-size: 13px; white-space: nowrap; }
+
+    /* Tables in their card: 20px gutters like F. */
+    #workLogTable th:first-child, #workLogTable td:first-child,
+    #leaveTable th:first-child, #leaveTable td:first-child,
+    #recapTable th:first-child, #recapTable td:first-child { padding-left: 20px; }
+    #workLogTable th:last-child, #workLogTable td:last-child,
+    #leaveTable th:last-child, #leaveTable td:last-child,
+    #recapTable th:last-child, #recapTable td:last-child { padding-right: 20px; }
+    #workLogTable td:first-child, #leaveTable td:first-child { color: var(--text-light); }
+
+    #viewTeam .lv-type {
+        padding: 2px 10px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    #viewTeam .lv-type--izin  { background: var(--info-bg);    color: var(--info-strong); }
+    #viewTeam .lv-type--sakit { background: var(--shift-leave-bg); color: var(--shift-leave-fg); }
+    #viewTeam .lv-type--alpa  { background: var(--danger-bg);  color: var(--danger-strong); }
+    #viewTeam .wl-duration { color: var(--text-secondary); }
+
+    #viewTeam .team-no-panel { padding: 20px 22px; font-size: 14px; }
+}
+
+/* Desktop sizes (phones keep the PHONE section's 44px / 16px floor). */
+@media screen and (min-width: 701px) {
+    #viewLeader .week-nav__arrow,
+    #viewTeam .week-nav__arrow { width: 40px; height: 40px; min-width: 40px; min-height: 40px; }
+    #viewTeam .shift-grid { min-width: 820px; }
+    /* The whole week in one screen-high frame (F shows the grid uncut); a
+       longer roster still scrolls inside it under the sticky day row. */
+    #viewTeam .shift-grid-wrapper { max-height: max(480px, calc(100vh - 120px)); }
+    #viewTeam .shift-grid .shift-grid__member { width: 180px; }
+    #decisionGroups .decision-act { min-height: 40px; padding: 0 12px; font-size: 14px; }
+    #decisionGroups .decision-card__go { min-height: 44px; padding: 0 16px; }
+    #viewTeam .page-head__actions .btn,
+    #viewLeader .page-head__actions .btn { min-height: 44px; padding: 0 14px; }
+    #viewTeam .team-filters select { min-height: 40px; padding: 0 12px; font-size: 14px; }
+    #viewTeam .team-filters .wl-filter-date .form-input { min-height: 40px; }
+}
+
+/* Wide screens: actions and filters share a row, filters wrapping to the
+   right. Not below 901px: there style.css stacks .edit-toolbar__right in a
+   column, and a wrapping flex column with a basis turns into side-by-side
+   columns wider than a phone. */
+@media screen and (min-width: 901px) {
+    #viewTeam .team-toolbar { align-items: flex-start; gap: 12px 16px; }
+    #viewTeam .team-filters {
+        display: flex;
+        flex: 1 1 520px;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+    }
+}
+
+/* Phones. */
+@media screen and (max-width: 700px) {
+    /* Tabs share the row and wrap between words; never narrower than their
+       longest word (a centred label wider than its tab was cut off on the
+       left). Past that the strip scrolls sideways (style.css .team-tabs). */
+    #viewLeader .team-tab,
+    #viewTeam .team-tab {
+        flex: 1 1 auto;
+        min-width: min-content;
+        padding: 6px 4px;
+        white-space: normal;
+        text-align: center;
+        line-height: 1.25;
+        font-size: 13px;
+    }
+    #viewLeader .team-tabs,
+    #viewTeam .team-tabs { gap: 2px; }
+    #viewLeader .team-tab,
+    #viewTeam .team-tab { gap: 6px; }
+    #viewLeader .team-tab__count,
+    #viewTeam .team-tab__count { flex-shrink: 0; }
+
+    #viewLeader .page-head__actions,
+    #viewTeam .page-head__actions { width: 100%; }
+    /* Side by side while both labels fit, else one per row. */
+    #viewTeam .page-head__actions .btn { flex: 1 1 auto; justify-content: center; }
+
+    #leaderInboxPanel .inbox-summary__card { padding: 14px 16px; }
+    #leaderInboxPanel .inbox-summary__num { font-size: 30px; }
+
+    #decisionGroups .decision-card__head { padding: 14px 16px; }
+    #decisionGroups .decision-list li { padding: 10px 16px; }
+    #decisionGroups .decision-list li.has-acts { flex-wrap: wrap; }
+    #decisionGroups .decision-list li.has-acts .decision-list__acts { width: 100%; }
+    #decisionGroups .decision-list__acts .btn { flex: 1 1 0; justify-content: center; }
+    #decisionGroups .decision-card__foot { padding: 12px 16px; }
+    #decisionGroups .decision-card__go { flex: 1 1 auto; justify-content: center; }
+
+    #viewLeader .week-nav__arrow,
+    #viewTeam .week-nav__arrow { width: 44px; height: 44px; }
+    /* The week label keeps its width (it ran under the next-week arrow on
+       a 320px screen); "This week" drops to its own line instead. */
+    #viewLeader .week-nav,
+    #viewTeam .week-nav { flex-wrap: wrap; row-gap: 8px; }
+    #viewLeader .week-nav__label,
+    #viewTeam .week-nav__label { flex: 0 0 auto; min-width: auto; font-size: 16px; margin: 0 2px; }
+    /* The month field gives way instead: both arrows stay beside it. */
+    #leaderCompanyPanel .week-nav { flex-wrap: nowrap; }
+    #recapMonth { flex: 1 1 0; min-width: 0; }
+
+    /* Data check rows already become cards on a phone; no card around them. */
+    #dataCheckBody .datacheck-group { background: none; box-shadow: none; overflow: visible; }
+    #dataCheckBody .datacheck-group h4 { padding: 0 0 8px; }
+    #dataCheckBody .data-table td:first-child,
+    #dataCheckBody .data-table td:last-child { padding-left: 0; padding-right: 0; }
+
+    #teamKpis.team-kpis,
+    #viewTeam .team-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    #teamKpis .team-kpi,
+    #viewTeam .team-tiles .downtime-kpi { padding: 12px 14px; }
+    #teamKpis .team-kpi__value,
+    #viewTeam .team-tiles .downtime-kpi__value { font-size: 22px; }
+    #teamKpis .team-kpi__label,
+    #viewTeam .team-tiles .downtime-kpi__label { font-size: 13px; }
+    #teamKpis .team-kpi__of { font-size: 13px; }
+
+    #viewTeam .shift-card__head { padding: 12px 14px; }
+    #viewTeam .shift-legend { margin-left: 0; font-size: 12px; }
+    /* The week grid scrolls inside its card under the pinned name column
+       (style.css). Its chips carry 16px text on a phone (no zoom on focus),
+       so each day gets room to show "Afternoon" whole instead of "Mo…". */
+    #viewTeam .shift-grid { min-width: 940px; }
+    #viewTeam .shift-grid th,
+    #viewTeam .shift-grid td { padding: 6px 4px; }
+    #viewTeam .shift-grid .shift-grid__member { width: 136px; padding-left: 12px; }
+    #viewTeam .shift-select { padding: 8px 20px 8px 8px; background-position: right 6px center; }
+    #viewTeam .shift-fill { max-width: 100%; }
+
+    #workLogTable td:first-child, #leaveTable td:first-child,
+    #recapTable td:first-child { padding-left: 0; }
+    #workLogTable td:last-child, #leaveTable td:last-child,
+    #recapTable td:last-child { padding-right: 0; }
+}
+
+/* Paper: the page head is screen furniture; each tab prints its own header. */
+@media print {
+    #viewLeader .page-head { display: none; }
+}

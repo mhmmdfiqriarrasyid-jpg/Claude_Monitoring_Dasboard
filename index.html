@@ -1191,62 +1191,92 @@
 
         <div class="team-rules-slot"></div>
 
+        <!-- Page head: title, one line, actions. "Copy last week" belongs to
+             the shift tab only (hidden on the others via data-team-tab). -->
+        <div class="page-head team-head">
+            <div class="page-head__text">
+                <h1 class="page-head__title">Team</h1>
+                <span class="page-head__sub">Shifts, daily work reports and leave for the field team</span>
+            </div>
+            <div class="page-head__actions">
+                <button type="button" class="btn btn-secondary" id="btnTeamMembers" onclick="openTeamMembersModal()">
+                    <svg class="f-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                    Members
+                </button>
+                <button type="button" class="btn btn-primary editonly editonly--teamshift team-head__shift-only" onclick="copyLastWeekShifts()"
+                        title="Fill the week shown with last week's schedule">
+                    <svg class="f-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="13" height="13" rx="2"></rect><path d="M4 16V5a2 2 0 0 1 2-2h11"></path></svg>
+                    Copy last week
+                </button>
+            </div>
+        </div>
+
         <div class="team-tabbar">
             <div class="team-tabs" role="tablist" aria-label="Team operations sections">
                 <button class="team-tab active" data-tab="shift" role="tab" aria-selected="true"
                         aria-controls="teamShiftPanel" onclick="switchTeamTab('shift')">
-                    <i class="fas fa-calendar-days"></i> Shift Schedule
+                    Shift schedule
                 </button>
                 <button class="team-tab" data-tab="worklog" role="tab" aria-selected="false"
                         aria-controls="teamWorkLogPanel" onclick="switchTeamTab('worklog')">
-                    <i class="fas fa-clipboard-list"></i> Daily Reports
+                    Daily reports
+                    <span class="team-tab__count team-tab__count--info" id="wlTabPending" style="display:none"></span>
                     <span class="team-tab__count team-tab__count--alert" id="wlTabBadge" style="display:none" title="Needs revision">0</span>
                 </button>
                 <button class="team-tab" data-tab="leave" role="tab" aria-selected="false"
                         aria-controls="teamLeavePanel" onclick="switchTeamTab('leave')">
-                    <i class="fas fa-user-clock"></i> Leave / Sick
+                    Leave &amp; sick
+                    <span class="team-tab__count team-tab__count--warn" id="lvTabPending" style="display:none"></span>
                     <span class="team-tab__count team-tab__count--alert" id="lvTabBadge" style="display:none" title="Needs revision">0</span>
                 </button>
             </div>
-            <button class="btn btn-secondary btn-sm" id="btnTeamMembers" onclick="openTeamMembersModal()">
-                <i class="fas fa-user-group"></i> Manage Members
-            </button>
         </div>
 
         <!-- Shown when the user reaches this page through Daftar Anggota only. -->
         <div id="teamNoPanel" class="team-no-panel" style="display:none">
             <i class="fas fa-lock"></i>
             <p>You only have access to the <strong>Member List</strong>. Click
-            <strong>Manage Members</strong> above to open it.</p>
+            <strong>Members</strong> above to open it.</p>
         </div>
 
         <!-- ---------- Shift schedule ---------- -->
-        <div id="teamShiftPanel" role="tabpanel" aria-label="Shift Schedule">
-            <div class="edit-toolbar">
-                <div class="edit-toolbar__left">
-                    <div class="week-nav">
-                        <button class="btn btn-secondary btn-sm" aria-label="Previous week" title="Previous week"
-                                onclick="shiftWeekShift(-1)"><i class="fas fa-chevron-left"></i></button>
-                        <span id="shiftWeekLabel" class="week-nav__label">—</span>
-                        <button class="btn btn-secondary btn-sm" aria-label="Next week" title="Next week"
-                                onclick="shiftWeekShift(1)"><i class="fas fa-chevron-right"></i></button>
-                        <button class="btn btn-secondary btn-sm" onclick="shiftWeekToday()">This Week</button>
-                    </div>
+        <div id="teamShiftPanel" role="tabpanel" aria-label="Shift schedule">
+            <!-- Today at a glance (renderTeamKpis). Hidden without access to
+                 the daily reports and leave it is counted from. -->
+            <section class="team-kpis" id="teamKpis" aria-label="Team today" style="display:none">
+                <div class="team-kpi">
+                    <span class="team-kpi__label">Reported today</span>
+                    <span class="team-kpi__value"><span id="teamKpiReported">0</span> <span class="team-kpi__of" id="teamKpiReportedOf"></span></span>
                 </div>
-                <div class="edit-toolbar__right">
-                    <button class="btn btn-secondary editonly editonly--teamshift" onclick="copyLastWeekShifts()"
-                            title="Fill this week with last week's schedule">
-                        <i class="fas fa-copy"></i> Copy Last Week
-                    </button>
-                    <button class="btn btn-secondary csv-export" onclick="exportShiftCSV()">
-                        <i class="fas fa-download"></i> Export CSV
-                    </button>
+                <div class="team-kpi">
+                    <span class="team-kpi__label">Work hours this week</span>
+                    <span class="team-kpi__value" id="teamKpiHours">0h</span>
                 </div>
-            </div>
+                <div class="team-kpi">
+                    <span class="team-kpi__label">Reports to approve</span>
+                    <span class="team-kpi__value" id="teamKpiPending">0</span>
+                </div>
+                <div class="team-kpi">
+                    <span class="team-kpi__label">Absent today</span>
+                    <span class="team-kpi__value"><span id="teamKpiAbsent">0</span> <span class="team-kpi__of" id="teamKpiAbsentOf"></span></span>
+                </div>
+            </section>
 
-            <div class="table-card">
-                <div class="table-card__header">
-                    <div class="table-card__title"><i class="fas fa-calendar-days"></i> Weekly Shift Schedule</div>
+            <section class="table-card shift-card" aria-labelledby="shiftWeekLabel">
+                <div class="shift-card__head">
+                    <div class="week-nav">
+                        <button type="button" class="btn btn-secondary btn-sm week-nav__arrow" aria-label="Previous week" title="Previous week"
+                                onclick="shiftWeekShift(-1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg></button>
+                        <h2 id="shiftWeekLabel" class="week-nav__label">—</h2>
+                        <button type="button" class="btn btn-secondary btn-sm week-nav__arrow" aria-label="Next week" title="Next week"
+                                onclick="shiftWeekShift(1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></button>
+                        <button type="button" class="btn btn-secondary btn-sm week-nav__today" id="shiftThisWeek" onclick="shiftWeekToday()">This week</button>
+                    </div>
+                    <div class="shift-legend" id="shiftLegend"></div>
+                    <button type="button" class="btn btn-secondary btn-sm csv-export" onclick="exportShiftCSV()">
+                        <svg class="f-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg>
+                        Export CSV
+                    </button>
                 </div>
                 <div class="table-wrapper shift-grid-wrapper">
                     <table class="data-table shift-grid" id="shiftTable">
@@ -1255,29 +1285,29 @@
                         <tfoot id="shiftFoot"></tfoot>
                     </table>
                 </div>
-            </div>
+            </section>
         </div>
 
         <!-- ---------- Daily work logs ---------- -->
-        <div id="teamWorkLogPanel" role="tabpanel" aria-label="Daily Reports" style="display:none">
-            <div class="downtime-kpis" style="margin-bottom:16px">
+        <div id="teamWorkLogPanel" role="tabpanel" aria-label="Daily reports" style="display:none">
+            <div class="downtime-kpis team-tiles">
                 <div class="downtime-kpi">
                     <div class="downtime-kpi__label">Reports</div>
                     <div class="downtime-kpi__value" id="wlKpiCount">0</div>
-                    <div class="downtime-kpi__sub">Matching active filters</div>
+                    <div class="downtime-kpi__sub">Matching the filters</div>
                 </div>
                 <div class="downtime-kpi">
-                    <div class="downtime-kpi__label">Total Work Hours</div>
+                    <div class="downtime-kpi__label">Total work hours</div>
                     <div class="downtime-kpi__value" id="wlKpiHours">0h</div>
                     <div class="downtime-kpi__sub">Summed from start–end times</div>
                 </div>
                 <div class="downtime-kpi">
-                    <div class="downtime-kpi__label">Reported Today</div>
+                    <div class="downtime-kpi__label">Reported today</div>
                     <div class="downtime-kpi__value" id="wlKpiToday">0 / 0</div>
                     <div class="downtime-kpi__sub" id="wlKpiTodaySub">Active members who reported</div>
                 </div>
                 <div class="downtime-kpi">
-                    <div class="downtime-kpi__label">Pending Approval</div>
+                    <div class="downtime-kpi__label">Pending approval</div>
                     <div class="downtime-kpi__value" id="wlKpiPending">0</div>
                     <div class="downtime-kpi__sub">Not yet reviewed</div>
                 </div>
@@ -1285,16 +1315,23 @@
 
             <div class="my-notice" id="wlMyNotice" style="display:none" role="status"></div>
 
-            <div class="edit-toolbar">
+            <div class="edit-toolbar team-toolbar">
                 <div class="edit-toolbar__left">
                     <button class="btn btn-success editonly editonly--teamlog" onclick="showAddWorkLogForm()">
-                        <i class="fas fa-plus"></i> Add Report
+                        <svg class="f-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                        Add report
                     </button>
                     <button class="btn btn-secondary csv-export" onclick="exportWorkLogCSV()">
-                        <i class="fas fa-download"></i> Export CSV
+                        <svg class="f-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg>
+                        Export CSV
                     </button>
                 </div>
-                <div class="edit-toolbar__right">
+                <div class="edit-toolbar__right team-filters">
+                    <div class="edit-search">
+                        <i class="fas fa-search" aria-hidden="true"></i>
+                        <input type="text" id="wlSearch" aria-label="Search reports" placeholder="Search reports"
+                               oninput="renderWorkLogTable()">
+                    </div>
                     <label class="wl-filter-date">
                         <span>From</span>
                         <input type="date" id="wlFrom" class="form-input" onchange="renderWorkLogTable()">
@@ -1303,16 +1340,13 @@
                         <span>To</span>
                         <input type="date" id="wlTo" class="form-input" onchange="renderWorkLogTable()">
                     </label>
-                    <label class="mine-filter" title="Only ones I created">
-                        <input type="checkbox" id="wlMineFilter" onchange="renderWorkLogTable()"> Mine
-                    </label>
                     <select id="wlApprovalFilter" aria-label="Filter approval" class="btn btn-secondary btn-sm"
                             onchange="renderWorkLogTable()">
-                        <option value="">All Approvals</option>
+                        <option value="">All approvals</option>
                         <option value="draft">Draft</option>
                         <option value="pending">Pending</option>
                         <option value="approved">Approved</option>
-                        <option value="revision">Needs Revision</option>
+                        <option value="revision">Needs revision</option>
                     </select>
                     <select id="wlCompanyFilter" aria-label="Filter company" class="btn btn-secondary btn-sm"
                             onchange="renderWorkLogTable()">
@@ -1322,11 +1356,9 @@
                             onchange="renderWorkLogTable()">
                         <option value="">All Members</option>
                     </select>
-                    <div class="edit-search">
-                        <i class="fas fa-search"></i>
-                        <input type="text" id="wlSearch" aria-label="Search reports" placeholder="Search reports..."
-                               oninput="renderWorkLogTable()">
-                    </div>
+                    <label class="mine-filter" title="Only ones I created">
+                        <input type="checkbox" id="wlMineFilter" onchange="renderWorkLogTable()"> Mine
+                    </label>
                     <button class="btn btn-secondary btn-sm" onclick="clearWorkLogFilter()">Reset</button>
                     <span id="workLogCount">0 reports</span>
                 </div>
@@ -1334,7 +1366,7 @@
 
             <div class="table-card">
                 <div class="table-card__header">
-                    <div class="table-card__title"><i class="fas fa-clipboard-list"></i> Daily Work Reports</div>
+                    <h2 class="table-card__title">Daily work reports</h2>
                 </div>
                 <div class="table-wrapper" style="max-height:600px;">
                     <table class="data-table table--cardable" id="workLogTable">
@@ -1361,25 +1393,25 @@
         </div>
 
         <!-- ---------- Leave / sick days ---------- -->
-        <div id="teamLeavePanel" role="tabpanel" aria-label="Leave and Sick" style="display:none">
-            <div class="downtime-kpis">
+        <div id="teamLeavePanel" role="tabpanel" aria-label="Leave and sick" style="display:none">
+            <div class="downtime-kpis team-tiles">
                 <div class="downtime-kpi">
                     <div class="downtime-kpi__label">Requests</div>
                     <div class="downtime-kpi__value" id="lvKpiCount">0</div>
-                    <div class="downtime-kpi__sub">Matching active filters</div>
+                    <div class="downtime-kpi__sub">Matching the filters</div>
                 </div>
                 <div class="downtime-kpi">
-                    <div class="downtime-kpi__label">Total Days</div>
+                    <div class="downtime-kpi__label">Total days</div>
                     <div class="downtime-kpi__value" id="lvKpiDays">0</div>
                     <div class="downtime-kpi__sub">Summed from date ranges</div>
                 </div>
                 <div class="downtime-kpi">
-                    <div class="downtime-kpi__label">Absent Today</div>
+                    <div class="downtime-kpi__label">Absent today</div>
                     <div class="downtime-kpi__value" id="lvKpiToday">0</div>
                     <div class="downtime-kpi__sub">Approved requests covering today</div>
                 </div>
                 <div class="downtime-kpi">
-                    <div class="downtime-kpi__label">Pending Approval</div>
+                    <div class="downtime-kpi__label">Pending approval</div>
                     <div class="downtime-kpi__value" id="lvKpiPending">0</div>
                     <div class="downtime-kpi__sub">Not yet reviewed</div>
                 </div>
@@ -1387,16 +1419,23 @@
 
             <div class="my-notice" id="lvMyNotice" style="display:none" role="status"></div>
 
-            <div class="edit-toolbar">
+            <div class="edit-toolbar team-toolbar">
                 <div class="edit-toolbar__left">
                     <button class="btn btn-success editonly editonly--teamlog" onclick="showAddLeaveForm()">
-                        <i class="fas fa-plus"></i> Add Request
+                        <svg class="f-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                        Add request
                     </button>
                     <button class="btn btn-secondary csv-export" onclick="exportLeaveCSV()">
-                        <i class="fas fa-download"></i> Export CSV
+                        <svg class="f-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg>
+                        Export CSV
                     </button>
                 </div>
-                <div class="edit-toolbar__right">
+                <div class="edit-toolbar__right team-filters">
+                    <div class="edit-search">
+                        <i class="fas fa-search" aria-hidden="true"></i>
+                        <input type="text" id="lvSearch" aria-label="Search leave or sick requests"
+                               placeholder="Search requests" oninput="renderLeaveTable()">
+                    </div>
                     <label class="wl-filter-date">
                         <span>From</span>
                         <input type="date" id="lvFrom" class="form-input" onchange="renderLeaveTable()">
@@ -1407,21 +1446,18 @@
                     </label>
                     <select id="lvTypeFilter" aria-label="Filter type" class="btn btn-secondary btn-sm"
                             onchange="renderLeaveTable()">
-                        <option value="">All Types</option>
+                        <option value="">All types</option>
                         <option value="izin">Leave</option>
                         <option value="sakit">Sick</option>
                         <option value="alpa">Absent</option>
                     </select>
-                    <label class="mine-filter" title="Only ones I created">
-                        <input type="checkbox" id="lvMineFilter" onchange="renderLeaveTable()"> Mine
-                    </label>
                     <select id="lvApprovalFilter" aria-label="Filter approval" class="btn btn-secondary btn-sm"
                             onchange="renderLeaveTable()">
-                        <option value="">All Approvals</option>
+                        <option value="">All approvals</option>
                         <option value="draft">Draft</option>
                         <option value="pending">Pending</option>
                         <option value="approved">Approved</option>
-                        <option value="revision">Needs Revision</option>
+                        <option value="revision">Needs revision</option>
                     </select>
                     <select id="lvCompanyFilter" aria-label="Filter company" class="btn btn-secondary btn-sm"
                             onchange="renderLeaveTable()">
@@ -1431,11 +1467,9 @@
                             onchange="renderLeaveTable()">
                         <option value="">All Members</option>
                     </select>
-                    <div class="edit-search">
-                        <i class="fas fa-search"></i>
-                        <input type="text" id="lvSearch" aria-label="Search leave or sick requests"
-                               placeholder="Search requests..." oninput="renderLeaveTable()">
-                    </div>
+                    <label class="mine-filter" title="Only ones I created">
+                        <input type="checkbox" id="lvMineFilter" onchange="renderLeaveTable()"> Mine
+                    </label>
                     <button class="btn btn-secondary btn-sm" onclick="clearLeaveFilter()">Reset</button>
                     <span id="leaveCount">0 requests</span>
                 </div>
@@ -1443,7 +1477,7 @@
 
             <div class="table-card">
                 <div class="table-card__header">
-                    <div class="table-card__title"><i class="fas fa-user-clock"></i> Leave &amp; Sick</div>
+                    <h2 class="table-card__title">Leave &amp; sick</h2>
                 </div>
                 <div class="table-wrapper" style="max-height:60vh">
                     <table class="data-table table--cardable" id="leaveTable">
@@ -1464,31 +1498,44 @@
 
     <!-- ==================== LEADER: DECISION INBOX ==================== -->
     <div id="viewLeader" class="view" style="display:none;">
+        <!-- Page head: title, one line, Print (screen only — paper has its own
+             .print-header per tab). -->
+        <div class="page-head leader-head">
+            <div class="page-head__text">
+                <h1 class="page-head__title">Decision inbox</h1>
+                <span class="page-head__sub">Everything that is waiting for you to decide, in one place</span>
+            </div>
+            <div class="page-head__actions">
+                <button type="button" class="btn btn-secondary" onclick="window.print()">
+                    <svg class="f-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8" rx="1"></rect></svg>
+                    Print
+                </button>
+            </div>
+        </div>
+
         <div class="team-tabbar">
             <div class="team-tabs" role="tablist" aria-label="Leader pages">
                 <button class="team-tab leader-tab active" data-tab="inbox" role="tab" aria-selected="true"
                         aria-controls="leaderInboxPanel" onclick="switchLeaderTab('inbox')">
-                    <i class="fas fa-inbox"></i> Decision Inbox
+                    Decisions
+                    <span class="team-tab__count leader-tab__count" id="leaderTabCount" style="display:none"></span>
                 </button>
                 <button class="team-tab leader-tab" data-tab="company" role="tab" aria-selected="false"
                         aria-controls="leaderCompanyPanel" onclick="switchLeaderTab('company')">
-                    <i class="fas fa-building"></i> Company Recap
+                    Company recap
                 </button>
                 <button class="team-tab leader-tab" data-tab="week" role="tab" aria-selected="false"
                         aria-controls="leaderWeekPanel" onclick="switchLeaderTab('week')">
-                    <i class="fas fa-chart-line"></i> Weekly Summary
+                    Weekly summary
                 </button>
                 <button class="team-tab leader-tab" data-tab="check" role="tab" aria-selected="false"
                         aria-controls="leaderCheckPanel" onclick="switchLeaderTab('check')">
-                    <i class="fas fa-stethoscope"></i> Data Check
+                    Data check
                 </button>
             </div>
-            <button class="btn btn-secondary btn-sm" onclick="window.print()" style="margin-bottom:8px">
-                <i class="fas fa-print"></i> Print
-            </button>
         </div>
 
-        <div id="leaderInboxPanel" role="tabpanel" aria-label="Decision Inbox">
+        <div id="leaderInboxPanel" role="tabpanel" aria-label="Decisions">
 
         <!-- Only appears on paper: a printout has no sidebar to say what it is. -->
         <div class="print-header">
@@ -1496,11 +1543,16 @@
             <span id="printStamp"></span>
         </div>
 
-        <div class="downtime-kpis" style="grid-template-columns:1fr;margin-bottom:16px">
-            <div class="downtime-kpi">
-                <div class="downtime-kpi__label">Awaiting Your Decision</div>
-                <div class="downtime-kpi__value" id="decisionTotal">0</div>
-                <div class="downtime-kpi__sub" id="decisionTotalSub">—</div>
+        <!-- Summary banner: the count, how many sections, how old the oldest
+             item is (renderDecisionInbox). The downtime-kpi classes stay for
+             the printed page, which styles it as a summary line. -->
+        <div class="downtime-kpis inbox-summary">
+            <div class="downtime-kpi inbox-summary__card">
+                <div class="downtime-kpi__value inbox-summary__num" id="decisionTotal">0</div>
+                <div class="inbox-summary__text">
+                    <div class="downtime-kpi__label inbox-summary__label">waiting for your decision</div>
+                    <div class="downtime-kpi__sub inbox-summary__sub" id="decisionTotalSub">—</div>
+                </div>
             </div>
         </div>
 
@@ -1516,23 +1568,24 @@
             <div class="edit-toolbar">
                 <div class="edit-toolbar__left">
                     <div class="week-nav">
-                        <button class="btn btn-secondary btn-sm" aria-label="Previous month" title="Previous month"
-                                onclick="shiftRecapMonth(-1)"><i class="fas fa-chevron-left"></i></button>
+                        <button type="button" class="btn btn-secondary btn-sm week-nav__arrow" aria-label="Previous month" title="Previous month"
+                                onclick="shiftRecapMonth(-1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg></button>
                         <input type="month" id="recapMonth" class="form-input" aria-label="Select month"
                                onchange="onRecapMonthChange()" style="width:auto">
-                        <button class="btn btn-secondary btn-sm" aria-label="Next month" title="Next month"
-                                onclick="shiftRecapMonth(1)"><i class="fas fa-chevron-right"></i></button>
+                        <button type="button" class="btn btn-secondary btn-sm week-nav__arrow" aria-label="Next month" title="Next month"
+                                onclick="shiftRecapMonth(1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></button>
                     </div>
                 </div>
                 <div class="edit-toolbar__right">
                     <button class="btn btn-secondary csv-export" onclick="exportRecapCSV()">
-                        <i class="fas fa-download"></i> Export CSV
+                        <svg class="f-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg>
+                        Export CSV
                     </button>
                 </div>
             </div>
             <div class="table-card">
                 <div class="table-card__header">
-                    <div class="table-card__title"><i class="fas fa-building"></i> Work Hours by Company</div>
+                    <h2 class="table-card__title">Work hours by company</h2>
                 </div>
                 <div class="table-wrapper">
                     <table class="data-table table--cardable" id="recapTable">
@@ -1564,11 +1617,11 @@
             <div class="edit-toolbar">
                 <div class="edit-toolbar__left">
                     <div class="week-nav">
-                        <button class="btn btn-secondary btn-sm" aria-label="Previous week" title="Previous week"
-                                onclick="shiftSummaryWeek(-1)"><i class="fas fa-chevron-left"></i></button>
-                        <span id="weekSummaryLabel" class="week-nav__label">—</span>
-                        <button class="btn btn-secondary btn-sm" aria-label="Next week" title="Next week"
-                                onclick="shiftSummaryWeek(1)"><i class="fas fa-chevron-right"></i></button>
+                        <button type="button" class="btn btn-secondary btn-sm week-nav__arrow" aria-label="Previous week" title="Previous week"
+                                onclick="shiftSummaryWeek(-1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg></button>
+                        <h2 id="weekSummaryLabel" class="week-nav__label">—</h2>
+                        <button type="button" class="btn btn-secondary btn-sm week-nav__arrow" aria-label="Next week" title="Next week"
+                                onclick="shiftSummaryWeek(1)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></button>
                     </div>
                 </div>
             </div>
@@ -1582,11 +1635,12 @@
             </div>
             <div class="edit-toolbar">
                 <div class="edit-toolbar__left">
-                    <strong id="dataCheckSummary" style="font-size:13px"></strong>
+                    <strong id="dataCheckSummary" class="datacheck-summary"></strong>
                 </div>
                 <div class="edit-toolbar__right">
                     <button class="btn btn-secondary btn-sm" onclick="renderDataCheck()">
-                        <i class="fas fa-rotate"></i> Re-check
+                        <svg class="f-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+                        Re-check
                     </button>
                     <button class="btn btn-primary btn-sm" id="dataCheckImplFixBtn" style="display:none"
                             onclick="matchImplementsToList()"></button>
@@ -1598,7 +1652,7 @@
                             onclick="fixStrayGroupFields()"></button>
                 </div>
             </div>
-            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
+            <p class="datacheck-note">
                 This page only reads and reports. The only things that can be
                 fixed automatically are spaces and hidden characters, because those
                 do not change what the text means. Everything else needs your decision.

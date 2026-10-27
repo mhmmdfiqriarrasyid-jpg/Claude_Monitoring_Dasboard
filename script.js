@@ -14586,9 +14586,77 @@ function renderTeamView() {
     const emptyPanel = document.getElementById('teamNoPanel');
     if (emptyPanel) emptyPanel.style.display = anyTab ? 'none' : '';
 
+    // The page head's "Copy last week" belongs to the shift tab (f-theme CSS
+    // reads this to show it only there).
+    const view = document.getElementById('viewTeam');
+    if (view) view.dataset.teamTab = anyTab && canTab(teamTab) ? teamTab : '';
+
     const active = TEAM_TABS[teamTab];
     if (active && canTab(teamTab)) active.render();
     updateMyTeamNotices();
+}
+
+// ---- Tab counts and today's tiles (design F) ----
+// The Daily reports and Leave & sick tabs carry how many are waiting for
+// approval — for whoever can approve them; the sender keeps the red
+// "needs revision" count beside it. Four tiles above the week grid say how
+// today looks. All counted from the records already loaded, nothing stored.
+function renderTeamCounts() {
+    const approver = canApproveWorkLogs();
+    const pendingLogs = workLogs.filter(w => workLogApproval(w) === 'pending').length;
+    const pendingLeave = leaveRequests.filter(r => workLogApproval(r) === 'pending').length;
+    const pill = (id, n) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const show = approver && n > 0;
+        el.innerHTML = show ? `${n > 99 ? '99+' : n}<span class="it-sr"> waiting for approval</span>` : '';
+        el.style.display = show ? '' : 'none';
+    };
+    pill('wlTabPending', pendingLogs);
+    pill('lvTabPending', pendingLeave);
+    renderTeamKpis(pendingLogs);
+}
+
+function renderTeamKpis(pendingLogs) {
+    const box = document.getElementById('teamKpis');
+    if (!box) return;
+    // Counted from the daily reports and leave: without that area, no tiles.
+    const canLog = hasAccess('teamLog', 'view') || hasAccess('teamLogApprove', 'edit');
+    box.style.display = canLog ? '' : 'none';
+    if (!canLog) return;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const today = toISODate();
+    const active = activeMembers();
+    const away = membersOnLeave(today);
+    const reported = new Set(workLogs
+        .filter(w => w.date === today && w.memberId && isSubmitted(w)).map(w => w.memberId));
+
+    // Reported today, out of who is on shift today. With no schedule for
+    // today it falls back to everyone active and not away, the way the
+    // Daily reports tab counts it.
+    const onShift = active.filter(m => {
+        const sh = shiftFor(m.id, today);
+        return sh && sh !== 'libur' && !away.has(m.id);
+    });
+    const base = onShift.length ? onShift : active.filter(m => !away.has(m.id));
+    set('teamKpiReported', base.filter(m => reported.has(m.id)).length);
+    set('teamKpiReportedOf', onShift.length ? `of ${onShift.length} on shift` : `of ${base.length} active`);
+
+    // Submitted reports dated this calendar week (Mon–Sun), as the weekly
+    // summary counts them.
+    const week = weekDates(startOfWeekISO(today));
+    set('teamKpiHours', formatMinutes(workLogs
+        .filter(w => week.includes(String(w.date || '')) && isSubmitted(w))
+        .reduce((n, w) => n + workLogMinutes(w), 0)));
+    set('teamKpiPending', pendingLogs);
+
+    // Absent today: approved requests covering today, by kind ("1 sick").
+    const absent = leaveRequests.filter(r => workLogApproval(r) === 'approved'
+        && leaveCovers(r, today) && active.some(m => m.id === r.memberId));
+    set('teamKpiAbsent', new Set(absent.map(r => r.memberId)).size);
+    set('teamKpiAbsentOf', LEAVE_TYPES
+        .map(t => ({ t, n: new Set(absent.filter(r => r.type === t.key).map(r => r.memberId)).size }))
+        .filter(x => x.n).map(x => `${x.n} ${x.t.label.toLowerCase()}`).join(' · '));
 }
 
 // ============================================================
@@ -14672,13 +14740,24 @@ function renderShiftGrid() {
 
     const label = document.getElementById('shiftWeekLabel');
     if (label) label.textContent = weekRangeLabel(teamWeekStart);
+    // "This week" reads as a chip while the current week is on screen, and
+    // as the way back to it otherwise.
+    const thisWeek = document.getElementById('shiftThisWeek');
+    if (thisWeek) {
+        const on = teamWeekStart === startOfWeekISO(today);
+        thisWeek.classList.toggle('is-current', on);
+        thisWeek.title = on ? 'Showing this week' : 'Back to this week';
+    }
+    renderShiftLegend();
 
     const head = document.getElementById('shiftHead');
     if (head) {
         head.innerHTML = `<tr><th class="shift-grid__member">Member</th>${
-            dates.map(d => `<th class="${d === today ? 'is-today' : ''}">${escapeHtml(dayLabel(d))}</th>`).join('')
+            dates.map(d => `<th class="${d === today ? 'is-today' : ''}">${escapeHtml(dayLabel(d))}${
+                d === today ? '<span class="shift-today-tag"> · today</span>' : ''}</th>`).join('')
         }</tr>`;
     }
+    renderTeamCounts();
 
     const body = document.getElementById('shiftBody');
     const foot = document.getElementById('shiftFoot');
@@ -14687,7 +14766,7 @@ function renderShiftGrid() {
     const members = activeMembers();
     if (members.length === 0) {
         body.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-secondary)">
-            No active team members yet. Click <strong>Manage Members</strong> to add some.
+            No active team members yet. Click <strong>Members</strong> to add some.
         </td></tr>`;
         if (foot) foot.innerHTML = '';
         return;
@@ -14701,8 +14780,10 @@ function renderShiftGrid() {
             .map(s => ({ s, n: list.filter(m => shiftFor(m.id, d) === s.key && !leaveOn(m.id, d)).length }));
         const working = counts.reduce((a, c) => a + c.n, 0);
         const detail = counts.map(c => `${c.s.label} ${c.n}`).join(' · ');
+        // On screen only the shifts somebody is on; the tooltip keeps all.
+        const shown = counts.filter(c => c.n).map(c => `${c.s.label} ${c.n}`).join(' · ');
         return `<td class="${extraClass}${d === today ? ' is-today' : ''}" title="${escapeHtml(detail)}">
-            <strong>${working}</strong> <span class="shift-foot__detail">${escapeHtml(detail)}</span>
+            <strong>${working}</strong> <span class="shift-foot__detail">${escapeHtml(shown)}</span>
         </td>`;
     }).join('');
 
@@ -14770,6 +14851,17 @@ function renderShiftGrid() {
             dutyCells(members, '')
         }</tr>`;
     }
+}
+
+// The key above the grid, from SHIFT_TYPES so it cannot drift from the
+// cells: "Morning 07–15", …, then leave and days off.
+function renderShiftLegend() {
+    const el = document.getElementById('shiftLegend');
+    if (!el) return;
+    const item = (cls, text) => `<span class="shift-legend__item"><span class="shift-legend__swatch shift-legend__swatch--${cls}" aria-hidden="true"></span>${escapeHtml(text)}</span>`;
+    el.innerHTML = SHIFT_TYPES.filter(s => s.key !== 'libur')
+        .map(s => item(s.key, `${s.label} ${String(s.hours).replace(/:00/g, '')}`)).join('')
+        + item('leave', 'Leave / sick') + item('libur', SHIFT_LABEL.libur);
 }
 
 // Cells this device has written and not yet seen confirmed. See setShift.
@@ -18287,8 +18379,37 @@ function _daysSince(ms) {
     return Math.floor((Date.now() - ms) / 86400000);
 }
 
-// Returns [{ key, title, icon, tone, total, items:[{text, sub}], goto }]
-// Only non-empty groups come back — an empty inbox should look empty.
+// "22 Oct" — inbox rows are short, and the year is nearly always this one.
+function _shortDay(iso) {
+    const d = parseLocalDate(iso);
+    return d ? `${d.getDate()} ${MONTH_NAMES[d.getMonth()]}` : (iso || '-');
+}
+
+// "23–24 Oct", "30 Oct – 2 Nov", or a single day.
+function _shortRange(from, to) {
+    const a = parseLocalDate(from), b = parseLocalDate(to || from);
+    if (!a || !b || +a === +b) return _shortDay(from);
+    return a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear()
+        ? `${a.getDate()}–${b.getDate()} ${MONTH_NAMES[b.getMonth()]}`
+        : `${_shortDay(from)} – ${_shortDay(to)}`;
+}
+
+// When the oldest record in a list started waiting, for the summary line
+// ("oldest is 3 days old"). Records that do not say are left out, not guessed:
+// only a plain epoch-ms number between 2000 and now counts, so a stray string
+// or a server timestamp object cannot turn into "oldest is 20000 days old".
+function _oldestMs(list, at) {
+    const floor = 946684800000, now = Date.now();
+    return list.reduce((m, x) => {
+        const v = at(x);
+        return typeof v === 'number' && v >= floor && v <= now && (!m || v < m) ? v : m;
+    }, 0);
+}
+
+// Returns [{ key, title, icon, tone, total, items:[{text, sub, id?}], goto, since? }]
+// `since` is when the group's oldest item started waiting (ms), where the
+// records say so. Only non-empty groups come back — an empty inbox should
+// look empty.
 function decisionGroups() {
     const groups = [];
     const add = g => { if (g.total > 0) groups.push(g); };
@@ -18298,13 +18419,19 @@ function decisionGroups() {
         const pending = workLogs.filter(w => workLogApproval(w) === 'pending');
         add({
             key: 'approval', icon: 'clipboard-check', tone: 'warning',
-            title: 'Reports pending approval',
+            title: 'Daily reports to review',
             total: pending.length,
-            items: pending.slice(0, 6).map(w => ({
-                text: `${memberNameOf(w)} · ${w.date}`,
-                sub: (w.task || '').slice(0, 70)
-            })),
-            goto: 'approval'
+            // "Andi · 22 Oct · 8h 30m" over "GGTR-014 · paddock B-12 · task".
+            items: pending.slice(0, 6).map(w => {
+                const min = workLogMinutes(w);
+                return {
+                    text: `${memberNameOf(w)} · ${_shortDay(w.date)}${min ? ' · ' + formatMinutes(min) : ''}`,
+                    sub: [workLogUnitNames(w).join(', '), w.paddock ? `paddock ${w.paddock}` : '', w.task || '']
+                        .filter(Boolean).join(' · ').slice(0, 90)
+                };
+            }),
+            goto: 'approval',
+            since: _oldestMs(pending, w => w.submittedAt || w.createdAt)
         });
 
         const revision = workLogs.filter(w => workLogApproval(w) === 'revision');
@@ -18313,10 +18440,11 @@ function decisionGroups() {
             title: 'Reports sent back for revision, not yet fixed',
             total: revision.length,
             items: revision.slice(0, 6).map(w => ({
-                text: `${memberNameOf(w)} · ${w.date}`,
+                text: `${memberNameOf(w)} · ${_shortDay(w.date)}`,
                 sub: w.revisionNote || ''
             })),
-            goto: 'revision'
+            goto: 'revision',
+            since: _oldestMs(revision, w => w.reviewedAt || w.updatedAt)
         });
 
         // Izin / sakit menunggu persetujuan. Digerbang sama dengan laporan,
@@ -18324,13 +18452,21 @@ function decisionGroups() {
         const izin = leaveRequests.filter(r => workLogApproval(r) === 'pending');
         add({
             key: 'leave', icon: 'user-clock', tone: 'warning',
-            title: 'Leave / sick requests pending approval',
+            title: 'Leave & sick requests',
             total: izin.length,
-            items: izin.slice(0, 6).map(r => ({
-                text: `${memberNameOf(r)} · ${leaveTypeLabel(r)}`,
-                sub: `${leaveRangeLabel(r)} — ${Number(r.days) || leaveDays(r.dateFrom, r.dateTo)} day(s)`
-            })),
-            goto: 'leave'
+            // The id lets the inbox approve or send back a request in place —
+            // the row already says everything there is to decide on.
+            items: izin.slice(0, 6).map(r => {
+                const days = Number(r.days) || leaveDays(r.dateFrom, r.dateTo);
+                return {
+                    id: r.id,
+                    text: `${memberNameOf(r)} · ${leaveTypeLabel(r)}`,
+                    sub: [_shortRange(r.dateFrom, r.dateTo), `${days} day${days === 1 ? '' : 's'}`,
+                          leaveDocCount(r) ? 'letter attached' : ''].filter(Boolean).join(' · ')
+                };
+            }),
+            goto: 'leave',
+            since: _oldestMs(izin, r => r.submittedAt || r.createdAt)
         });
     }
 
@@ -18360,7 +18496,8 @@ function decisionGroups() {
             title: 'Check reports pending approval',
             total: waiting.length,
             items: waiting.slice(0, 6).map(r => ({ text: `${inspectionUnitLabel(r)} · ${r.date}`, sub: inspectionResultSummary(r).text })),
-            goto: 'inspection:pending'
+            goto: 'inspection:pending',
+            since: _oldestMs(waiting, r => r.submittedAt || r.createdAt)
         });
         if (hasAccess('damage', 'edit')) {
             const unapplied = inspections.filter(inspectionNeedsApply);
@@ -18369,7 +18506,8 @@ function decisionGroups() {
                 title: 'Approved check findings not yet logged in Damage',
                 total: unapplied.length,
                 items: unapplied.slice(0, 6).map(r => ({ text: `${inspectionUnitLabel(r)} · ${r.date}`, sub: inspectionResultSummary(r).text })),
-                goto: 'inspection:approved'
+                goto: 'inspection:approved',
+                since: _oldestMs(unapplied, r => r.approvedAt)
             });
         }
     }
@@ -18406,7 +18544,8 @@ function decisionGroups() {
             })),
             // With a heavy unit in the list, open the dashboard on "Semua" so
             // the unit is actually on screen when the link lands.
-            goto: dashTargetFor(stuck)
+            goto: dashTargetFor(stuck),
+            since: _oldestMs(stuck, u => u.breakdownStartedAt)
         });
     }
 
@@ -18479,7 +18618,8 @@ function decisionGroups() {
                 text: u.displayName || u.email || '(no name)',
                 sub: u.email || ''
             })),
-            goto: 'users'
+            goto: 'users',
+            since: _oldestMs(pendingUsers, u => u.createdAt)
         });
 
         // An approved account with no area granted cannot do anything; that is
@@ -18599,6 +18739,60 @@ function goDecision(target) {
     }
 }
 
+// Design F: each section gets a tinted icon tile. Stroke icons from the F set
+// where one fits; the rest keep their Font Awesome icon from decisionGroups.
+const DECISION_SVG = {
+    approval: '<rect x="8" y="2" width="8" height="4" rx="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><path d="M9 12h6"></path><path d="M9 16h4"></path>',
+    revision: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path>',
+    leave: '<rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4"></path><path d="M8 2v4"></path><path d="M3 10h18"></path>',
+    insOverdue: '<rect x="8" y="2" width="8" height="4" rx="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><path d="m9 14 2 2 4-4"></path>',
+    insSoon: '<path d="M21 10.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h5.5"></path><path d="M16 2v4"></path><path d="M8 2v4"></path><path d="M3 10h8"></path><circle cx="17.5" cy="17.5" r="4.5"></circle><path d="M17.5 15.5v2l1.5 1"></path>',
+    insPending: '<rect x="8" y="2" width="8" height="4" rx="1"></rect><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><path d="M9 12h6"></path><path d="M9 16h4"></path>',
+    insApply: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>',
+    license: '<circle cx="7.5" cy="15.5" r="5.5"></circle><path d="m21 2-9.6 9.6"></path><path d="m15.5 7.5 3 3L22 7l-3-3"></path>',
+    breakdown: '<polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><path d="m15 9-6 6"></path><path d="m9 9 6 6"></path>',
+    stock: '<path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z"></path><path d="M6 18h12"></path><path d="M6 14h12"></path><rect x="6" y="10" width="12" height="12"></rect>',
+    devices: '<rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8"></path><path d="M12 16v4"></path>',
+    users: '<circle cx="9" cy="7" r="4"></circle><path d="M2 21v-1a6 6 0 0 1 9.5-4.9"></path><circle cx="18" cy="17" r="2.5"></circle><path d="M18 12.5V14"></path><path d="M18 20v1.5"></path><path d="M13.5 17H15"></path><path d="M21 17h1.5"></path>'
+};
+
+// What the footer link of each section says, instead of one "Handle" for all.
+const DECISION_ACTION = {
+    approval: 'Review reports', revision: 'Open reports', leave: 'Open leave list',
+    insOverdue: 'Open inspection status', insSoon: 'Open inspection status',
+    insPending: 'Review check reports', insApply: 'Open approved checks',
+    license: 'Go to licenses', breakdown: 'Show on the dashboard',
+    licenseStock: 'Go to license stock', stock: 'Open warehouse stock',
+    devices: 'Open devices', fuel: 'Check fuel records',
+    users: 'Review registrations', noaccess: 'Set access'
+};
+
+// Approve / Send back in the row itself, where the row already carries
+// everything there is to decide on (a leave or sick request: who, which
+// days, whether a letter came with it). Reports and check reports open their
+// own page instead — those are read before they are approved. The same
+// approveLeave / reviseLeave run as on the Team page, guards included.
+function decisionRowActions(g, it) {
+    if (g.key !== 'leave' || !it.id) return '';
+    const r = leaveRequests.find(x => x.id === it.id);
+    if (!r || workLogApproval(r) !== 'pending' || !canApproveThisLog(r)) return '';
+    const who = escapeHtml(it.text);
+    return `<span class="decision-list__acts">
+        <button type="button" class="btn btn-secondary btn-sm decision-act decision-act--back"
+                aria-label="Send back: ${who}" onclick="reviseLeave(${jsArg(r.id)})">Send back</button>
+        <button type="button" class="btn btn-sm decision-act decision-act--ok"
+                aria-label="Approve: ${who}" onclick="approveLeave(${jsArg(r.id)})">Approve</button>
+    </span>`;
+}
+
+// The count on the Decisions tab follows the inbox.
+function updateLeaderTabCount(total) {
+    const el = document.getElementById('leaderTabCount');
+    if (!el) return;
+    el.innerHTML = total ? `${total > 99 ? '99+' : total}<span class="it-sr"> waiting</span>` : '';
+    el.style.display = total ? '' : 'none';
+}
+
 function renderDecisionInbox() {
     const wrap = document.getElementById('decisionGroups');
     if (!wrap) return;
@@ -18607,6 +18801,7 @@ function renderDecisionInbox() {
     // Handling something here changes the count, so the badge has to follow —
     // otherwise it keeps advertising work that is already done.
     updateDecisionBadge();
+    updateLeaderTabCount(total);
 
     const stamp = document.getElementById('printStamp');
     if (stamp) stamp.textContent = `Printed ${formatUserTime(Date.now())}`;
@@ -18615,14 +18810,19 @@ function renderDecisionInbox() {
     if (countEl) countEl.textContent = total;
     const subEl = document.getElementById('decisionTotalSub');
     if (subEl) {
+        // Age of the oldest item that says when it started waiting.
+        const oldest = groups.reduce((m, g) => g.since && (!m || g.since < m) ? g.since : m, 0);
+        const age = oldest ? _daysSince(oldest) : -1;
+        const ageText = age < 0 ? '' : age === 0 ? ' · oldest is from today'
+            : ` · oldest is ${age} day${age === 1 ? '' : 's'} old`;
         subEl.textContent = total === 0
             ? 'Nothing awaiting your decision'
-            : `Across ${groups.length} sections`;
+            : `Across ${groups.length} section${groups.length === 1 ? '' : 's'}${ageText}`;
     }
 
     if (groups.length === 0) {
         wrap.innerHTML = `<div class="decision-clear">
-            <i class="fas fa-circle-check"></i>
+            <i class="fas fa-circle-check" aria-hidden="true"></i>
             <div>
                 <strong>Nothing pending.</strong>
                 <p>All reports have been reviewed, no license or stock needs action,
@@ -18632,28 +18832,39 @@ function renderDecisionInbox() {
         return;
     }
 
-    wrap.innerHTML = groups.map(g => `
-        <div class="decision-card decision-card--${g.tone}">
+    wrap.innerHTML = groups.map(g => {
+        const rows = g.items.map(it => ({ it, acts: decisionRowActions(g, it) }));
+        const hasActs = rows.some(r => r.acts);
+        const icon = DECISION_SVG[g.key]
+            ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${DECISION_SVG[g.key]}</svg>`
+            : `<i class="fas fa-${g.icon}"></i>`;
+        return `
+        <section class="decision-card decision-card--${g.tone}" aria-labelledby="dg-${g.key}">
             <div class="decision-card__head">
-                <span class="decision-card__title">
-                    <i class="fas fa-${g.icon}"></i> ${escapeHtml(g.title)}
-                </span>
+                <span class="decision-card__icon" aria-hidden="true">${icon}</span>
+                <h2 class="decision-card__title" id="dg-${g.key}">${escapeHtml(g.title)}</h2>
                 <span class="decision-card__count">${g.total}</span>
             </div>
             <ul class="decision-list">
-                ${g.items.map(it => `
-                    <li>
-                        <span class="decision-list__text">${escapeHtml(it.text)}</span>
-                        ${it.sub ? `<span class="decision-list__sub">${escapeHtml(it.sub)}</span>` : ''}
+                ${rows.map(({ it, acts }) => `
+                    <li${acts ? ' class="has-acts"' : ''}>
+                        <span class="decision-list__body">
+                            <span class="decision-list__text">${escapeHtml(it.text)}</span>
+                            ${it.sub ? `<span class="decision-list__sub">${escapeHtml(it.sub)}</span>` : ''}
+                        </span>${acts}
                     </li>`).join('')}
                 ${g.total > g.items.length
                     ? `<li class="decision-list__more">…and ${g.total - g.items.length} more</li>`
                     : ''}
             </ul>
-            <button class="btn btn-secondary btn-sm" onclick="goDecision(${jsArg(g.goto)})">
-                Handle <i class="fas fa-arrow-right"></i>
-            </button>
-        </div>`).join('');
+            <div class="decision-card__foot">
+                <button type="button" class="btn ${hasActs ? 'btn-secondary' : 'btn-primary'} decision-card__go" onclick="goDecision(${jsArg(g.goto)})">
+                    ${escapeHtml(DECISION_ACTION[g.key] || 'Handle')}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+                </button>
+            </div>
+        </section>`;
+    }).join('');
 }
 
 // Snapshots arrive in bursts at sign-in, and the inbox reads every collection,
@@ -18762,6 +18973,7 @@ function updateMyTeamNotices() {
         nav.style.display = totalRevision ? '' : 'none';
         nav.title = totalRevision ? `${totalRevision} need your revision` : '';
     }
+    renderTeamCounts();
     updateMenuButtonLabel();
 }
 
@@ -19669,8 +19881,10 @@ function renderLeaderView() {
         const el = document.getElementById(id);
         if (el) el.style.display = (key === leaderTab) ? '' : 'none';
     });
-    if (leaderTab === 'inbox') renderDecisionInbox();
-    else if (leaderTab === 'company') renderCompanyRecap();
+    if (leaderTab === 'inbox') { renderDecisionInbox(); return; }
+    // The Decisions tab keeps its count while another tab is open.
+    updateLeaderTabCount(decisionTotal());
+    if (leaderTab === 'company') renderCompanyRecap();
     else if (leaderTab === 'check') renderDataCheck();
     else renderWeekSummary();
 }
