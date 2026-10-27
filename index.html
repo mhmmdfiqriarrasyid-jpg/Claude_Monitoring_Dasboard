@@ -837,61 +837,80 @@
     <!-- ==================== IMPLEMENTS VIEW ==================== -->
     <div id="viewImplements" class="view" style="display:none;">
 
-        <!-- Implements Toolbar -->
-        <div class="edit-toolbar">
-            <div class="edit-toolbar__left">
-                <button class="btn btn-success editonly editonly--implements" onclick="showAddImplementForm()">
-                    <i class="fas fa-plus"></i> Add Implement
-                </button>
-                <button class="btn btn-danger" id="btnDeleteSelectedImpl" style="display:none" onclick="deleteSelectedImplements()">
-                    <i class="fas fa-trash"></i> Delete Selected (<span id="selectedImplCount">0</span>)
-                </button>
+        <!-- Page head: title, how many profiles, and the actions. -->
+        <div class="page-head fp-head">
+            <div class="page-head__text">
+                <h1 class="page-head__title">Implements</h1>
+                <span class="page-head__sub">The tools the tractors pull — <span id="implementCount">0 profiles</span></span>
+            </div>
+            <div class="page-head__actions edit-toolbar">
                 <input type="file" id="implementCsvInput" aria-label="Choose an implement CSV file to import" accept=".csv" style="display:none">
                 <button class="btn btn-secondary csv-import" onclick="document.getElementById('implementCsvInput').click()">
-                    <i class="fas fa-file-import"></i> Import CSV
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m17 8-5-5-5 5"></path><path d="M12 3v12"></path></svg>
+                    Import CSV
                 </button>
-                <button class="btn btn-secondary csv-import" onclick="downloadImplementTemplate()">
-                    <i class="fas fa-file-arrow-down"></i> Template
+                <button class="btn btn-secondary csv-import" onclick="downloadImplementTemplate()" title="Download an empty CSV with the import columns">
+                    <i class="fas fa-file-arrow-down" aria-hidden="true"></i> Template
                 </button>
                 <button class="btn btn-secondary csv-export" onclick="exportImplementsCSV()">
-                    <i class="fas fa-download"></i> Export CSV
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg>
+                    Export
                 </button>
-            </div>
-            <div class="edit-toolbar__right">
-                <div class="edit-search">
-                    <i class="fas fa-search"></i>
-                    <input type="text" id="implementSearch" aria-label="Search implements" placeholder="Search implements...">
-                </div>
-                <span id="implementCount">0 implements in database</span>
+                <button class="btn btn-success editonly editonly--implements" onclick="showAddImplementForm()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                    Add implement
+                </button>
             </div>
         </div>
 
-        <!-- Implements Table -->
-        <div class="table-card">
-            <div class="table-card__header">
-                <div class="table-card__title"><i class="fas fa-trailer"></i> Implements Database</div>
+        <!-- Tractors per implement type, from the Unit Database
+             (renderImplementUseTiles). A tile opens those units. -->
+        <section class="fp-use" id="implUseSection" aria-labelledby="implUseTitle" hidden>
+            <h2 class="fp-use__title" id="implUseTitle">Tractors per implement</h2>
+            <div class="fp-use__grid" id="implUseTiles"></div>
+        </section>
+
+        <!-- Implement profiles -->
+        <section class="table-card fp-card" aria-label="Implement profiles">
+            <div class="fp-cardbar">
+                <div class="fp-cardbar__tools fp-cardbar__tools--start edit-toolbar">
+                    <div class="edit-search">
+                        <i class="fas fa-search" aria-hidden="true"></i>
+                        <input type="text" id="implementSearch" aria-label="Search implements" placeholder="Search implements...">
+                    </div>
+                    <label class="fp-select">
+                        <span class="fp-select__label">Type</span>
+                        <select id="implementTypeFilter" class="form-select form-select--sm" aria-label="Filter by equipment type" onchange="renderImplementsTable()">
+                            <option value="">All types</option>
+                        </select>
+                    </label>
+                    <span id="implementShown" class="fp-count"></span>
+                </div>
+                <button class="btn btn-danger" id="btnDeleteSelectedImpl" style="display:none" onclick="deleteSelectedImplements()">
+                    <i class="fas fa-trash" aria-hidden="true"></i> Delete Selected (<span id="selectedImplCount">0</span>)
+                </button>
             </div>
             <div class="table-wrapper" style="max-height:600px;">
-                <table class="data-table table--cardable" id="implementTable">
+                <table class="data-table table--cardable fp-table" id="implementTable">
                     <thead>
                         <tr>
                             <th class="col-check"><input type="checkbox" id="selectAllImpl" aria-label="Select all implements" onchange="toggleSelectAllImplements()"></th>
                             <th>No</th>
-                            <th>Profile Name</th>
+                            <th>Profile</th>
                             <th>Brand</th>
-                            <th>Equipment Type</th>
+                            <th>Type</th>
                             <th>Code</th>
-                            <th>Working Width</th>
+                            <th>Width</th>
                             <th>Operation</th>
-                            <th>Connecting Type</th>
-                            <th>Chart of Account</th>
-                            <th class="col-actions">Actions</th>
+                            <th>Connecting type</th>
+                            <th>Chart of account</th>
+                            <th class="col-actions"><span class="fp-sr">Actions</span></th>
                         </tr>
                     </thead>
                     <tbody id="implementBody"></tbody>
                 </table>
             </div>
-        </div>
+        </section>
 
     </div><!-- /viewImplements -->
 
@@ -1014,37 +1033,58 @@
     <!-- ==================== LICENSE STOCK VIEW ==================== -->
     <div id="viewLicenseStock" class="view" style="display:none;">
 
+        <!-- Page head: title, what the page holds, and the actions. -->
+        <div class="page-head fp-head">
+            <div class="page-head__text">
+                <h1 class="page-head__title">Licenses</h1>
+                <span class="page-head__sub">GPS and display licenses — stock on hand, expiry and what to buy</span>
+            </div>
+            <div class="page-head__actions edit-toolbar">
+                <button type="button" class="btn btn-secondary" onclick="sendLicenseReportFromPage(this)" title="Email the expired and expiring licenses and the low stock (EmailJS)">
+                    <i class="fas fa-envelope" aria-hidden="true"></i> Email report
+                </button>
+                <button class="btn btn-secondary editonly editonly--license" onclick="showAddLicenseForm('OUT')">
+                    <i class="fas fa-share-from-square" aria-hidden="true"></i> Distribute
+                </button>
+                <button class="btn btn-success editonly editonly--license" onclick="showAddLicenseForm('IN')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                    Add stock
+                </button>
+            </div>
+        </div>
+
         <div class="license-rules-slot"></div>
 
-        <div class="team-tabbar">
+        <div class="team-tabbar fp-tabbar">
             <div class="team-tabs" role="tablist" aria-label="License sections">
                 <button class="team-tab lic-tab active" data-tab="stock" role="tab" aria-selected="true"
                         aria-controls="licStockPanel" onclick="switchLicenseTab('stock')">
-                    <i class="fas fa-boxes-stacked"></i> Stock
+                    Stock
                 </button>
                 <button class="team-tab lic-tab" data-tab="plan" role="tab" aria-selected="false"
                         aria-controls="licPlanPanel" onclick="switchLicenseTab('plan')">
-                    <i class="fas fa-cart-shopping"></i> Purchase Plan
+                    Purchase plan
                     <span class="team-tab__count team-tab__count--alert" id="licPlanBadge" style="display:none" title="Licenses to buy">0</span>
                 </button>
             </div>
         </div>
 
         <!-- ---------- Purchase plan ---------- -->
-        <div id="licPlanPanel" role="tabpanel" aria-label="Purchase Plan" style="display:none">
-            <div class="edit-toolbar">
-                <div class="edit-toolbar__left">
-                    <label class="lp-until" for="lpUntil">Plan until
+        <div id="licPlanPanel" role="tabpanel" aria-label="Purchase plan" style="display:none">
+            <div class="fp-filterbar edit-toolbar">
+                <div class="fp-filterbar__left">
+                    <label class="lp-until fp-select" for="lpUntil"><span class="fp-select__label">Plan until</span>
                         <input type="date" class="form-input form-input--sm" id="lpUntil" onchange="renderLicensePlan()">
                     </label>
-                    <label class="mine-filter"><input type="checkbox" id="lpGapsOnly" checked onchange="renderLicensePlan()"> Units with a gap only</label>
+                    <label class="mine-filter fp-toggle"><input type="checkbox" id="lpGapsOnly" checked onchange="renderLicensePlan()"> Units with a gap only</label>
                 </div>
-                <div class="edit-toolbar__right">
+                <div class="fp-filterbar__right">
                     <button class="btn btn-secondary" id="lpRulesBtn" onclick="openLicenseRequirements()">
                         <i class="fas fa-sliders"></i> License Requirements
                     </button>
                     <button class="btn btn-secondary csv-export" onclick="exportLicensePlanCSV()">
-                        <i class="fas fa-download"></i> Export CSV
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg>
+                        Export CSV
                     </button>
                 </div>
             </div>
@@ -1052,84 +1092,95 @@
         </div>
 
         <div id="licStockPanel" role="tabpanel" aria-label="Stock">
-        <!-- Stock summary per license type -->
-        <div class="table-card" style="margin-bottom:16px;">
-            <div class="table-card__header">
-                <div class="table-card__title"><i class="fas fa-boxes-stacked"></i> License Stock Summary</div>
-            </div>
-            <div id="licenseSummary" class="license-summary"></div>
-        </div>
+        <!-- Stock per license type against the low-stock minimum (renderLicenseSummary) -->
+        <div id="licenseSummary" class="license-summary fp-tiles" role="group" aria-label="Stock per license type"></div>
 
-        <!-- License Stock Toolbar -->
-        <div class="edit-toolbar">
-            <div class="edit-toolbar__left">
-                <button class="btn btn-success editonly editonly--license" onclick="showAddLicenseForm('IN')">
-                    <i class="fas fa-plus"></i> Add Stock
-                </button>
-                <button class="btn btn-primary editonly editonly--license" onclick="showAddLicenseForm('OUT')">
-                    <i class="fas fa-share-from-square"></i> Distribute
-                </button>
-                <button class="btn btn-danger" id="btnDeleteSelectedLicense" style="display:none" onclick="deleteSelectedLicenseStock()">
-                    <i class="fas fa-trash"></i> Delete Selected (<span id="selectedLicenseCount">0</span>)
-                </button>
-                <button class="btn btn-secondary" id="licSyncBtn" style="display:none" onclick="syncDistributionsToUnits()" title="Review and apply unit licenses that do not match their latest distribution">
-                    <i class="fas fa-link"></i> Sync to Units
-                    <span class="btn-count" id="licSyncCount" hidden title="Unit licenses out of sync">0</span>
-                </button>
-                <input type="file" id="licenseCsvInput" aria-label="Choose a license CSV file to import" accept=".csv" style="display:none">
-                <button class="btn btn-secondary csv-import" onclick="document.getElementById('licenseCsvInput').click()">
-                    <i class="fas fa-file-import"></i> Import CSV
-                </button>
-                <button class="btn btn-secondary csv-import" onclick="downloadLicenseTemplate()">
-                    <i class="fas fa-file-arrow-down"></i> Template
-                </button>
-                <button class="btn btn-secondary csv-export" onclick="exportLicenseStockCSV()">
-                    <i class="fas fa-download"></i> Export CSV
-                </button>
-            </div>
-            <div class="edit-toolbar__right">
-                <select id="licenseTxnFilter" aria-label="Filter transaction type" class="btn btn-secondary btn-sm">
-                    <option value="">All Transactions</option>
-                    <option value="IN">In</option>
-                    <option value="OUT">Distribution</option>
-                </select>
-                <select id="licenseTypeFilter" aria-label="Filter license type" class="btn btn-secondary btn-sm">
-                    <option value="">All Types</option>
-                </select>
-                <div class="edit-search">
-                    <i class="fas fa-search"></i>
-                    <input type="text" id="licenseSearch" aria-label="Search license or unit" placeholder="Search license / unit...">
+        <!-- Unit licenses expired or ending within 30 days (renderLicenseExpiring) -->
+        <section class="table-card fp-card fp-expiring" aria-labelledby="licExpiringTitle">
+            <div class="fp-cardbar">
+                <div class="fp-cardbar__title fp-cardbar__title--stack">
+                    <h2 class="table-card__title" id="licExpiringTitle">Expiring soon</h2>
+                    <span class="fp-cardbar__sub">Unit licenses expired or ending in the next 30 days</span>
                 </div>
-                <span id="licenseCount">0 transactions</span>
             </div>
-        </div>
+            <ul class="fp-list" id="licExpiringList"></ul>
+            <button type="button" class="fp-more-link" id="licExpiringMore" hidden onclick="toggleLicenseExpiringAll()"></button>
+        </section>
 
-        <!-- License Stock Table -->
-        <div class="table-card">
-            <div class="table-card__header">
-                <div class="table-card__title"><i class="fas fa-key"></i> License Stock History</div>
+        <!-- Stock movements -->
+        <section class="table-card fp-card" aria-labelledby="licHistoryTitle">
+            <div class="fp-cardbar">
+                <div class="fp-cardbar__title">
+                    <h2 class="table-card__title" id="licHistoryTitle">Stock movements</h2>
+                    <span id="licenseCount" class="fp-count">0 transactions</span>
+                </div>
+                <div class="fp-cardbar__tools edit-toolbar">
+                    <div class="edit-search">
+                        <i class="fas fa-search" aria-hidden="true"></i>
+                        <input type="text" id="licenseSearch" aria-label="Search license or unit" placeholder="Search license / unit...">
+                    </div>
+                    <label class="fp-select">
+                        <span class="fp-select__label">Show</span>
+                        <select id="licenseTxnFilter" aria-label="Filter transaction type" class="form-select form-select--sm">
+                            <option value="">In &amp; out</option>
+                            <option value="IN">In only</option>
+                            <option value="OUT">Distributions only</option>
+                        </select>
+                    </label>
+                    <label class="fp-select">
+                        <span class="fp-select__label">Type</span>
+                        <select id="licenseTypeFilter" aria-label="Filter license type" class="form-select form-select--sm">
+                            <option value="">All Types</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
+            <div class="fp-cardbar fp-cardbar--actions">
+                <div class="fp-cardbar__tools fp-cardbar__tools--start edit-toolbar">
+                    <button class="btn btn-danger" id="btnDeleteSelectedLicense" style="display:none" onclick="deleteSelectedLicenseStock()">
+                        <i class="fas fa-trash" aria-hidden="true"></i> Delete Selected (<span id="selectedLicenseCount">0</span>)
+                    </button>
+                    <button class="btn btn-secondary" id="licSyncBtn" style="display:none" onclick="syncDistributionsToUnits()" title="Review and apply unit licenses that do not match their latest distribution">
+                        <i class="fas fa-link" aria-hidden="true"></i> Sync to Units
+                        <span class="btn-count" id="licSyncCount" hidden title="Unit licenses out of sync">0</span>
+                    </button>
+                </div>
+                <div class="fp-cardbar__tools edit-toolbar">
+                    <input type="file" id="licenseCsvInput" aria-label="Choose a license CSV file to import" accept=".csv" style="display:none">
+                    <button class="btn btn-secondary btn-sm csv-import" onclick="document.getElementById('licenseCsvInput').click()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m17 8-5-5-5 5"></path><path d="M12 3v12"></path></svg>
+                        Import CSV
+                    </button>
+                    <button class="btn btn-secondary btn-sm csv-import" onclick="downloadLicenseTemplate()" title="Download an empty CSV with the import columns">
+                        <i class="fas fa-file-arrow-down" aria-hidden="true"></i> Template
+                    </button>
+                    <button class="btn btn-secondary btn-sm csv-export" onclick="exportLicenseStockCSV()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg>
+                        Export CSV
+                    </button>
+                </div>
             </div>
             <div class="table-wrapper" style="max-height:600px;">
-                <table class="data-table table--cardable" id="licenseTable">
+                <table class="data-table table--cardable fp-table" id="licenseTable">
                     <thead>
                         <tr>
                             <th class="col-check"><input type="checkbox" id="selectAllLicense" aria-label="Select all license transactions" onchange="toggleSelectAllLicense()"></th>
                             <th>No</th>
                             <th>Date</th>
-                            <th>Type</th>
-                            <th>License Type</th>
-                            <th>Quantity</th>
+                            <th>Movement</th>
+                            <th>License</th>
+                            <th>Qty</th>
                             <th>Unit</th>
-                            <th>Serial Number</th>
-                            <th title="Whether the unit license matches this distribution">Unit Status</th>
+                            <th>Serial number</th>
+                            <th title="Whether the unit license matches this distribution">Unit status</th>
                             <th>Notes</th>
-                            <th class="col-actions">Actions</th>
+                            <th class="col-actions"><span class="fp-sr">Actions</span></th>
                         </tr>
                     </thead>
                     <tbody id="licenseBody"></tbody>
                 </table>
             </div>
-        </div>
+        </section>
 
         </div><!-- /licStockPanel -->
 
@@ -1562,44 +1613,67 @@
          component, approved or sent back), and the next check 14 days after
          the actual check date. -->
     <div id="viewInspection" class="view" style="display:none;">
-        <div class="team-tabbar">
+        <!-- Page head: what the page is for and its two actions. "Plan a check"
+             shows to schedulers only (.insplan-edit, renderInspectionView),
+             "Log a check" to anyone who may file a report. -->
+        <div class="page-head fp-head">
+            <div class="page-head__text">
+                <h1 class="page-head__title">Inspection</h1>
+                <span class="page-head__sub">Heavy equipment is checked every 14 days, with one photo per component</span>
+            </div>
+            <div class="page-head__actions edit-toolbar">
+                <button type="button" class="btn btn-secondary insplan-edit" onclick="showInspectionPlanForm()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4"></path><path d="M8 2v4"></path><path d="M3 10h18"></path></svg>
+                    Plan a check
+                </button>
+                <button type="button" class="btn btn-success editonly editonly--inspection" onclick="showInspectionForm()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                    Log a check
+                </button>
+            </div>
+        </div>
+
+        <div class="team-tabbar fp-tabbar">
             <div class="team-tabs" role="tablist" aria-label="Inspection sections">
                 <button class="team-tab ins-tab active" data-tab="status" role="tab" aria-selected="true"
                         aria-controls="insStatusPanel" onclick="switchInspectionTab('status')">
-                    <i class="fas fa-gauge"></i> Unit Status
+                    Status
                 </button>
                 <button class="team-tab ins-tab" data-tab="plans" role="tab" aria-selected="false"
                         aria-controls="insPlansPanel" onclick="switchInspectionTab('plans')">
-                    <i class="fas fa-calendar-check"></i> Schedule
+                    Schedule
+                    <span class="fp-pill" id="insPlanOpenCount" hidden title="Schedules with units still to check"></span>
                 </button>
                 <button class="team-tab ins-tab" data-tab="reports" role="tab" aria-selected="false"
                         aria-controls="insReportsPanel" onclick="switchInspectionTab('reports')">
-                    <i class="fas fa-clipboard-list"></i> Check Reports
+                    Reports
+                    <span class="fp-pill fp-pill--info" id="insPendingCount" hidden title="Waiting for approval"></span>
                     <span class="team-tab__count team-tab__count--alert" id="insTabBadge" style="display:none" title="Needs revision">0</span>
                 </button>
             </div>
         </div>
 
-        <div class="downtime-kpis" style="margin-bottom:16px">
-            <div class="downtime-kpi">
-                <div class="downtime-kpi__label">Overdue</div>
-                <div class="downtime-kpi__value" id="insKpiOverdue">0</div>
-                <div class="downtime-kpi__sub">Over 14 days since last check</div>
+        <!-- Check status at a glance (renderInspectionView) -->
+        <div class="fp-tiles" role="group" aria-label="Check status">
+            <div class="fp-tile">
+                <span class="fp-tile__label"><span class="fp-dot fp-dot--bad" aria-hidden="true"></span>Overdue</span>
+                <span class="fp-tile__value" id="insKpiOverdue">0</span>
+                <span class="fp-tile__sub">More than 14 days since the last check</span>
             </div>
-            <div class="downtime-kpi">
-                <div class="downtime-kpi__label">Due in ≤3 Days</div>
-                <div class="downtime-kpi__value" id="insKpiSoon">0</div>
-                <div class="downtime-kpi__sub">Schedule soon</div>
+            <div class="fp-tile">
+                <span class="fp-tile__label"><span class="fp-dot fp-dot--warn" aria-hidden="true"></span>Due within 3 days</span>
+                <span class="fp-tile__value" id="insKpiSoon">0</span>
+                <span class="fp-tile__sub">Schedule them soon</span>
             </div>
-            <div class="downtime-kpi">
-                <div class="downtime-kpi__label">Never Checked</div>
-                <div class="downtime-kpi__value" id="insKpiNever">0</div>
-                <div class="downtime-kpi__sub">Heavy units with no check report</div>
+            <div class="fp-tile">
+                <span class="fp-tile__label"><span class="fp-dot fp-dot--none" aria-hidden="true"></span>Never checked</span>
+                <span class="fp-tile__value" id="insKpiNever">0</span>
+                <span class="fp-tile__sub">No check report yet</span>
             </div>
-            <div class="downtime-kpi">
-                <div class="downtime-kpi__label">Pending Approval</div>
-                <div class="downtime-kpi__value" id="insKpiPending">0</div>
-                <div class="downtime-kpi__sub">Check reports not yet reviewed</div>
+            <div class="fp-tile">
+                <span class="fp-tile__label"><span class="fp-dot fp-dot--info" aria-hidden="true"></span>Waiting for approval</span>
+                <span class="fp-tile__value" id="insKpiPending">0</span>
+                <span class="fp-tile__sub">Reports not reviewed yet</span>
             </div>
         </div>
 
@@ -1607,111 +1681,98 @@
         <div class="my-notice" id="insMyNotice" style="display:none" role="status"></div>
 
         <!-- ---------- Status per unit ---------- -->
-        <div id="insStatusPanel" role="tabpanel" aria-label="Unit Status">
-            <div class="edit-toolbar">
-                <div class="edit-toolbar__left">
-                    <button class="btn btn-success editonly editonly--inspection" onclick="showInspectionForm()">
-                        <i class="fas fa-plus"></i> Check Unit
-                    </button>
-                </div>
-                <div class="edit-toolbar__right">
-                    <select id="insStatusFilter" aria-label="Filter check status" class="btn btn-secondary btn-sm" onchange="renderInspectionStatus()">
-                        <option value="">All Status</option>
-                        <option value="overdue">Overdue</option>
-                        <option value="soon">Due in ≤3 days</option>
-                        <option value="never">Never checked</option>
-                        <option value="ok">OK</option>
-                    </select>
+        <div id="insStatusPanel" role="tabpanel" aria-label="Status">
+            <div class="fp-filterbar edit-toolbar">
+                <!-- Status chips with counts (renderInspectionStatus). The select
+                     below keeps the chosen status; the chips set it. -->
+                <div class="fp-chips" id="insStatusChips" role="group" aria-label="Filter by check status"></div>
+                <select id="insStatusFilter" aria-label="Filter check status" hidden onchange="renderInspectionStatus()">
+                    <option value="">All Status</option>
+                    <option value="overdue">Overdue</option>
+                    <option value="soon">Due in ≤3 days</option>
+                    <option value="never">Never checked</option>
+                    <option value="ok">OK</option>
+                </select>
+                <div class="fp-filterbar__right">
                     <div class="edit-search">
-                        <i class="fas fa-search"></i>
+                        <i class="fas fa-search" aria-hidden="true"></i>
                         <input type="text" id="insStatusSearch" aria-label="Search units" placeholder="Search units..." oninput="renderInspectionStatus()">
                     </div>
+                    <span id="insStatusCount" class="fp-count"></span>
                 </div>
             </div>
-            <div class="table-card">
-                <div class="table-card__header">
-                    <div class="table-card__title"><i class="fas fa-gauge"></i> Heavy Equipment Inspection Status</div>
-                    <span id="insStatusCount" class="table-card__meta"></span>
-                </div>
+            <section class="table-card fp-card" aria-label="Heavy equipment inspection status">
                 <div class="table-wrapper">
-                    <table class="data-table table--cardable" id="insStatusTable">
+                    <table class="data-table table--cardable fp-table" id="insStatusTable">
                         <thead><tr>
-                            <th>No</th><th>Unit</th><th>Machine Type</th><th>Site</th>
-                            <th>Last Check</th><th>Result</th><th>Next Check</th><th class="col-actions">Actions</th>
+                            <th>Unit</th><th>Site</th><th>Last check</th><th>Next check</th>
+                            <th class="col-actions"><span class="fp-sr">Actions</span></th>
                         </tr></thead>
                         <tbody id="insStatusBody"></tbody>
                     </table>
                 </div>
-            </div>
+            </section>
         </div>
 
         <!-- ---------- Schedule ---------- -->
         <div id="insPlansPanel" role="tabpanel" aria-label="Schedule" style="display:none">
-            <div class="edit-toolbar">
-                <div class="edit-toolbar__left">
-                    <button class="btn btn-success insplan-edit" onclick="showInspectionPlanForm()">
-                        <i class="fas fa-calendar-plus"></i> New Schedule
-                    </button>
-                </div>
-            </div>
-            <div class="table-card">
+            <section class="table-card fp-card">
                 <div class="table-card__header">
-                    <div class="table-card__title"><i class="fas fa-calendar-check"></i> Inspection Schedule</div>
+                    <h2 class="table-card__title">Inspection schedule</h2>
                 </div>
                 <div class="table-wrapper">
-                    <table class="data-table table--cardable" id="insPlanTable">
+                    <table class="data-table table--cardable fp-table" id="insPlanTable">
                         <thead><tr>
-                            <th>No</th><th>Date</th><th>Unit</th><th>Progress</th><th>Notes</th><th class="col-actions">Actions</th>
+                            <th>No</th><th>Date</th><th>Unit</th><th>Progress</th><th>Notes</th><th class="col-actions"><span class="fp-sr">Actions</span></th>
                         </tr></thead>
                         <tbody id="insPlanBody"></tbody>
                     </table>
                 </div>
-            </div>
+            </section>
         </div>
 
         <!-- ---------- Reports ---------- -->
-        <div id="insReportsPanel" role="tabpanel" aria-label="Check Reports" style="display:none">
-            <div class="edit-toolbar">
-                <div class="edit-toolbar__left">
-                    <button class="btn btn-success editonly editonly--inspection" onclick="showInspectionForm()">
-                        <i class="fas fa-plus"></i> Check Unit
-                    </button>
-                    <button class="btn btn-secondary csv-export" onclick="exportInspectionCSV()">
-                        <i class="fas fa-download"></i> Export CSV
-                    </button>
-                </div>
-                <div class="edit-toolbar__right">
-                    <label class="mine-filter" title="Only ones I created">
-                        <input type="checkbox" id="insMineFilter" onchange="renderInspectionReports()"> Mine
-                    </label>
-                    <select id="insApprovalFilter" aria-label="Filter approval" class="btn btn-secondary btn-sm" onchange="renderInspectionReports()">
-                        <option value="">All Approvals</option>
-                        <option value="draft">Draft</option>
-                        <option value="pending">Pending</option>
-                        <option value="approved">Approved</option>
-                        <option value="revision">Needs Revision</option>
-                    </select>
-                    <div class="edit-search">
-                        <i class="fas fa-search"></i>
-                        <input type="text" id="insReportSearch" aria-label="Search check reports" placeholder="Search reports..." oninput="renderInspectionReports()">
+        <div id="insReportsPanel" role="tabpanel" aria-label="Reports" style="display:none">
+            <section class="table-card fp-card">
+                <div class="fp-cardbar">
+                    <div class="fp-cardbar__title">
+                        <h2 class="table-card__title">Check reports</h2>
+                        <span id="insReportCount" class="fp-count"></span>
+                    </div>
+                    <div class="fp-cardbar__tools edit-toolbar">
+                        <div class="edit-search">
+                            <i class="fas fa-search" aria-hidden="true"></i>
+                            <input type="text" id="insReportSearch" aria-label="Search check reports" placeholder="Search reports..." oninput="renderInspectionReports()">
+                        </div>
+                        <label class="fp-select">
+                            <span class="fp-select__label">Approval</span>
+                            <select id="insApprovalFilter" aria-label="Filter approval" class="form-select form-select--sm" onchange="renderInspectionReports()">
+                                <option value="">All</option>
+                                <option value="draft">Draft</option>
+                                <option value="pending">Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="revision">Needs Revision</option>
+                            </select>
+                        </label>
+                        <label class="mine-filter fp-toggle" title="Only ones I created">
+                            <input type="checkbox" id="insMineFilter" onchange="renderInspectionReports()"> Mine
+                        </label>
+                        <button class="btn btn-secondary csv-export" onclick="exportInspectionCSV()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg>
+                            Export CSV
+                        </button>
                     </div>
                 </div>
-            </div>
-            <div class="table-card">
-                <div class="table-card__header">
-                    <div class="table-card__title"><i class="fas fa-clipboard-list"></i> Inspection Report</div>
-                    <span id="insReportCount" class="table-card__meta"></span>
-                </div>
                 <div class="table-wrapper">
-                    <table class="data-table table--cardable" id="insReportTable">
+                    <table class="data-table table--cardable fp-table" id="insReportTable">
                         <thead><tr>
-                            <th>No</th><th>Check Date</th><th>Unit</th><th>Component Results</th><th>Schedule</th>
-                            <th>Inspector</th><th>Approval</th><th>Photo</th><th class="col-actions">Actions</th>
+                            <th>No</th><th>Check date</th><th>Unit</th><th>Component results</th><th>Schedule</th>
+                            <th>Inspector</th><th>Approval</th><th>Photo</th><th class="col-actions"><span class="fp-sr">Actions</span></th>
                         </tr></thead>
                         <tbody id="insReportBody"></tbody>
                     </table>
                 </div>
-            </div>
+            </section>
         </div>
     </div>
 

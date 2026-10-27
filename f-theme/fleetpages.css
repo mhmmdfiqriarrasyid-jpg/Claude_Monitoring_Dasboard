@@ -1,1 +1,682 @@
-/* design F — fleetpages (concatenated into style.css when merged) */
+/* design F — fleetpages (concatenated into style.css when merged)
+   Inspection, Licenses and Implements pages and their dialogs. Every rule is
+   scoped to those views and dialogs, screen only (print keeps its rules; the
+   short print block at the end only boxes the new tiles). The
+   action rows carry .edit-toolbar so print leaves them out; their screen
+   layout is set here. Desktop sizes sit in min-width: 701px, so phones keep
+   the PHONE section's 44px touch targets and 16px fields. */
+@media screen {
+    /* ---- Page frame ---- */
+    #viewInspection .fp-head,
+    #viewLicenseStock .fp-head,
+    #viewImplements .fp-head { margin: 4px 0 20px; }
+    #viewInspection .page-head__actions.edit-toolbar,
+    #viewLicenseStock .page-head__actions.edit-toolbar,
+    #viewImplements .page-head__actions.edit-toolbar {
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        margin: 0;
+    }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .page-head__actions .btn svg,
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-cardbar .btn svg,
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-filterbar .btn svg { flex: 0 0 auto; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .page-head__actions .btn i,
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-cardbar .btn i { font-size: 15px; }
+
+    /* Underline tabs (F): label only, the count as a pill */
+    :is(#viewInspection, #viewLicenseStock) .fp-tabbar { margin-bottom: 20px; }
+    :is(#viewInspection, #viewLicenseStock) .fp-tabbar .team-tabs { gap: 6px; }
+    :is(#viewInspection, #viewLicenseStock) .fp-tabbar .team-tab {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        font-size: 14px;
+        white-space: nowrap;
+    }
+    :is(#viewInspection, #viewLicenseStock) .fp-tabbar .team-tab__count,
+    :is(#viewInspection, #viewLicenseStock) .fp-pill {
+        display: inline-block;
+        min-width: 0;
+        margin: 0;
+        padding: 0 7px;
+        border-radius: 10px;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 20px;
+        text-align: center;
+    }
+    :is(#viewInspection, #viewLicenseStock) .fp-pill { background: var(--neutral-tint); color: var(--text-body); }
+    :is(#viewInspection, #viewLicenseStock) .fp-pill--info { background: var(--info-bg); color: var(--info-strong); }
+    :is(#viewInspection, #viewLicenseStock) .fp-tabbar .team-tab__count--alert { background: var(--danger-bg); color: var(--danger-strong); }
+    :is(#viewInspection, #viewLicenseStock) .fp-pill[hidden] { display: none; }
+
+    /* ---- Status tiles (Inspection KPIs, license stock) ---- */
+    :is(#viewInspection, #viewLicenseStock) .fp-tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin: 0 0 20px;
+        padding: 0;
+        border: 0;
+        background: none;
+    }
+    #viewLicenseStock .fp-tiles { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+    #viewInspection .fp-tile,
+    #viewLicenseStock .fp-stock {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 0;
+        padding: 16px 18px;
+        border-radius: var(--radius-lg);
+        background: var(--card);
+        box-shadow: var(--shadow);
+    }
+    .fp-tile__label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 600;
+        color: var(--text-secondary);
+    }
+    .fp-tile__value {
+        font-family: var(--font-display);
+        font-size: 28px;
+        font-weight: 600;
+        line-height: 1.2;
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+    }
+    .fp-tile__sub { font-size: 13px; color: var(--text-secondary); }
+    .fp-dot { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 5px; background: var(--border-strong); }
+    .fp-dot--bad { background: var(--dot-bad); }
+    .fp-dot--warn { background: var(--dot-warn); }
+    .fp-dot--good { background: var(--dot-good); }
+    .fp-dot--info { background: #2E90FA; }
+    .fp-dot--none { background: #98A2B3; }
+
+    /* License stock: stock against the minimum, a bar and a chip */
+    #viewLicenseStock .fp-stock { gap: 10px; padding: 18px 20px; }
+    .fp-stock__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .fp-stock__type { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+    .fp-stock__type svg, .fp-stock__type i { flex: 0 0 auto; color: var(--text-secondary); }
+    .fp-stock__head .fp-chip { flex: 0 0 auto; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 700; }
+    .fp-nowrap { white-space: nowrap; }
+    .fp-stock__big {
+        margin-top: auto;
+        font-family: var(--font-display);
+        font-size: 28px;
+        font-weight: 600;
+        line-height: 1.1;
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+    }
+    .fp-stock__big span { font-family: var(--font-sans); font-size: 14px; font-weight: 500; color: var(--text-secondary); }
+    .fp-stock__sub { font-size: 13px; color: var(--text-secondary); }
+    .fp-bar { height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; }
+    .fp-bar > span { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+    .fp-bar--bad > span { background: var(--dot-bad); }
+    .fp-bar--warn > span { background: var(--dot-warn); }
+    #viewLicenseStock .license-summary__empty {
+        grid-column: 1 / -1;
+        padding: 20px;
+        border-radius: var(--radius-lg);
+        background: var(--card);
+        box-shadow: var(--shadow);
+        color: var(--text-secondary);
+        text-align: center;
+    }
+
+    /* ---- Chips ---- */
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 10px;
+        border-radius: 12px;
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.5;
+        white-space: nowrap;
+    }
+    .fp-chip--good { background: var(--success-bg); color: var(--success-strong); }
+    .fp-chip--bad { background: var(--danger-bg); color: var(--danger-strong); }
+    .fp-chip--warn { background: var(--warning-bg); color: var(--warning-strong); }
+    .fp-chip--info { background: var(--info-bg); color: var(--info-strong); }
+    .fp-chip--neutral { background: var(--neutral-tint); color: var(--text-body); }
+
+    /* Inspection status chips in F's colours (scoped: the Unit Database
+       keeps its own .ins-st chip) */
+    :is(#viewInspection, #inspectionPlanModal) .ins-st {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        width: max-content;
+        max-width: 100%;
+        padding: 2px 10px;
+        border-radius: 12px;
+        font-size: 13px;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+    :is(#viewInspection, #inspectionPlanModal) .ins-st--overdue { background: var(--danger-bg); color: var(--danger-strong); }
+    :is(#viewInspection, #inspectionPlanModal) .ins-st--soon { background: var(--warning-bg); color: var(--warning-strong); }
+    :is(#viewInspection, #inspectionPlanModal) .ins-st--ok { background: var(--success-bg); color: var(--success-strong); }
+    :is(#viewInspection, #inspectionPlanModal) .ins-st--never { background: var(--neutral-tint); color: var(--text-body); }
+    #viewInspection .ins-st--planned { background: var(--info-bg); color: var(--info-strong); }
+
+    /* ---- Filter rows and card headers ---- */
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-filterbar.edit-toolbar {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px 12px;
+        margin: 0 0 16px;
+    }
+    .fp-filterbar__left, .fp-filterbar__right { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-width: 0; }
+    .fp-filterbar__right { margin-left: auto; }
+
+    /* Status chips (F: rounded, dark when on) */
+    .fp-chips { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+    .fp-chip-btn {
+        min-height: 40px;
+        padding: 0 14px;
+        border: 1px solid var(--border-strong);
+        border-radius: 20px;
+        background: var(--card);
+        color: var(--text-body);
+        font: inherit;
+        font-size: 14px;
+        font-weight: 500;
+        white-space: nowrap;
+        cursor: pointer;
+    }
+    .fp-chip-btn:hover { background: var(--surface-sunken); color: var(--text); }
+    .fp-chip-btn[aria-pressed="true"] { border-color: var(--text); background: var(--text); color: #FFFFFF; font-weight: 600; }
+    .fp-chip-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .fp-card { margin-bottom: 20px; overflow: hidden; }
+    .fp-card .table-card__header { padding: 16px 20px 12px; }
+    .fp-card h2.table-card__title { margin: 0; font-size: 17px; line-height: 1.3; }
+    .fp-cardbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px 12px;
+        padding: 16px 20px 12px;
+    }
+    .fp-cardbar--actions { padding-top: 0; }
+    .fp-cardbar__title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; min-width: 0; }
+    .fp-cardbar__title--stack { flex-direction: column; align-items: flex-start; gap: 0; }
+    .fp-cardbar__sub { color: var(--text-secondary); font-size: 14px; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-cardbar__tools.edit-toolbar {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px 10px;
+        margin: 0;
+        min-width: 0;
+    }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-cardbar__tools--start.edit-toolbar { justify-content: flex-start; }
+    .fp-cardbar__tools:empty { display: none; }
+    .fp-count { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
+    .fp-count:empty { display: none; }
+    .fp-sr {
+        position: absolute; width: 1px; height: 1px; overflow: hidden;
+        clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+    }
+
+    /* Search field and labelled selects (F: white field with a hairline ring) */
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .edit-search { display: flex; align-items: center; min-width: 0; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .edit-search i { left: 12px; font-size: 14px; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .edit-search input {
+        width: 260px;
+        max-width: 100%;
+        padding-left: 36px;
+        border-color: var(--border-strong);
+        border-radius: 10px;
+        background: var(--card);
+    }
+    .fp-select {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        padding: 0 4px 0 12px;
+        border-radius: 10px;
+        background: var(--card);
+        box-shadow: 0 0 0 1px var(--border-strong);
+        color: var(--text-secondary);
+        font-size: 14px;
+        white-space: nowrap;
+    }
+    .fp-select:focus-within { box-shadow: 0 0 0 1px var(--accent), var(--focus-ring); }
+    .fp-select__label { flex: 0 0 auto; }
+    .fp-select select, .fp-select input {
+        min-width: 0;
+        max-width: 220px;
+        border: 0 !important;
+        box-shadow: none !important;
+        background-color: transparent;
+        color: var(--text);
+        font-family: inherit;
+        font-weight: 600;
+        cursor: pointer;
+    }
+    .fp-select select:focus, .fp-select input:focus { outline: none; }
+    .fp-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px;
+        border-radius: 10px;
+        background: var(--card);
+        box-shadow: 0 0 0 1px var(--border-strong);
+        color: var(--text-body);
+        font-size: 14px;
+        font-weight: 500;
+    }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) input[type="checkbox"],
+    :is(#inspectionModal, #inspectionPlanModal, #licSyncModal) input[type="checkbox"],
+    :is(#inspectionModal, #inspectionPlanModal) input[type="radio"] { accent-color: var(--accent); }
+
+    /* ---- Tables ---- */
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-card .table-wrapper { border: 0; border-radius: 0; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-table th { white-space: nowrap; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-table th:first-child,
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-table td:first-child { padding-left: 20px; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-table th:last-child,
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-table td:last-child { padding-right: 20px; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-table tbody tr:last-child td { border-bottom: 0; }
+    /* The status list is one row per heavy unit: the page scrolls, not the
+       card. Schedules and reports grow over time and scroll in their card. */
+    #insStatusPanel .table-wrapper { max-height: none; }
+    :is(#insPlansPanel, #insReportsPanel) .table-wrapper { max-height: 600px; }
+    #insStatusTable { min-width: 760px; }
+    #insStatusTable td { vertical-align: middle; }
+    .fp-muted { color: var(--text-secondary); }
+    .fp-stack { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+    .fp-sub { display: block; font-size: 12px; color: var(--text-secondary); line-height: 1.45; }
+    .fp-sub--good { color: var(--success-strong); font-weight: 600; }
+    .fp-sub--bad { color: var(--warning-strong); font-weight: 600; }
+    .fp-sub--pending { color: var(--info-strong); font-weight: 600; }
+    .fp-sub--revision { color: var(--danger-strong); font-weight: 600; }
+    #insStatusTable .fp-sub--bad { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fp-unit { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .fp-unit__icon {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        background: var(--neutral-tint);
+        color: var(--text-body);
+    }
+    .fp-unit__text { display: flex; flex-direction: column; min-width: 0; }
+    .fp-unit__text strong { font-weight: 600; }
+    .fp-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+    .fp-actions .fp-btn-label {
+        position: absolute; width: 1px; height: 1px; overflow: hidden;
+        clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+    }
+    .fp-qty { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+    /* Schedule and reports tables */
+    #viewInspection .ins-chip { padding: 2px 4px 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; background: var(--warning-bg); color: var(--warning-strong); }
+    #viewInspection .ins-chip--done { background: var(--success-bg); color: var(--success-strong); padding-right: 10px; }
+    #viewInspection .ins-chip__go { width: 28px; height: 24px; border-radius: 8px; background: var(--card); color: var(--accent-text); box-shadow: 0 0 0 1px var(--warning-border); }
+    #viewInspection .ins-res { padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+    #viewInspection .ins-res--good { background: var(--success-bg); color: var(--success-strong); }
+    #viewInspection .ins-res--bad { background: var(--danger-bg); color: var(--danger-strong); }
+    #viewInspection .ins-res--none { background: var(--neutral-tint); color: var(--text-body); }
+    #viewInspection .ins-tag { padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; background: var(--info-bg); color: var(--info-strong); }
+    #viewInspection .ins-tag--adhoc { background: var(--neutral-tint); color: var(--text-body); }
+    #viewInspection .ins-tag--queued { background: var(--warning-bg); color: var(--warning-strong); }
+    #viewInspection .ins-sub { font-size: 12px; color: var(--text-secondary); }
+    #viewInspection .ins-sync, #viewInspection .my-notice { border-radius: 12px; margin-bottom: 16px; }
+
+    /* ---- Licenses: expiring soon ---- */
+    /* The rows sit in columns on wide screens. The line under the title runs
+       the full width; each item draws the line below it, and the last row's
+       lines are cut off by the card (the list hangs 1px past it). Every row
+       but the last is full, so each divider spans the card. */
+    .fp-expiring .fp-cardbar { border-bottom: 1px solid var(--border); }
+    .fp-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+        margin: 0 0 -1px;
+        padding: 0;
+        list-style: none;
+    }
+    .fp-list__item, .fp-list__empty {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+        padding: 12px 20px;
+        border-bottom: 1px solid var(--border);
+    }
+    .fp-list__empty { grid-column: 1 / -1; color: var(--text-secondary); }
+    .fp-list__icon {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+    }
+    .fp-list__icon--bad { background: var(--danger-tint); color: var(--danger-strong); }
+    .fp-list__icon--info { background: var(--info-bg); color: var(--info-strong); }
+    .fp-list__text { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; }
+    .fp-list__name { font-weight: 600; overflow-wrap: anywhere; }
+    .fp-list__meta { font-size: 13px; color: var(--text-secondary); }
+    .fp-list__meta--bad { color: var(--danger-strong); font-weight: 600; }
+    .fp-list__item .btn { flex: 0 0 auto; }
+    .fp-more-link {
+        position: relative;
+        display: block;
+        min-height: 44px;
+        margin: 0;
+        padding: 0 20px;
+        border: 0;
+        border-top: 1px solid var(--border);
+        width: 100%;
+        background: none;
+        color: var(--accent-text);
+        font: inherit;
+        font-weight: 600;
+        text-align: left;
+        cursor: pointer;
+    }
+    .fp-more-link:hover { background: var(--surface-sunken); }
+    .fp-more-link[hidden] { display: none; }
+
+    /* License ledger: Unit status chip in F's shape */
+    #viewLicenseStock .lic-status { padding: 2px 10px; border-radius: 12px; border: 0; font-size: 12px; }
+    #viewLicenseStock .lic-status--ok { background: var(--success-bg); color: var(--success-strong); }
+    #viewLicenseStock .lic-status--todo { background: var(--warning-bg); color: var(--warning-strong); }
+    #viewLicenseStock .lic-status--info { background: var(--info-bg); color: var(--info-strong); }
+    #viewLicenseStock .lic-status--warn { background: var(--danger-bg); color: var(--danger-strong); }
+    #viewLicenseStock .lic-status--muted { background: var(--neutral-tint); color: var(--text-secondary); }
+    #viewLicenseStock .btn-count { margin-left: 2px; }
+
+    /* Purchase plan */
+    #viewLicenseStock .lp-until { gap: 8px; }
+    #viewLicenseStock .lp-until .form-input { width: auto; padding: 0 4px; }
+    #viewLicenseStock .lp-cards { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px; }
+    #viewLicenseStock .lp-card {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 16px 18px;
+        border: 0;
+        border-radius: var(--radius-lg);
+        background: var(--card);
+        box-shadow: var(--shadow);
+    }
+    #viewLicenseStock .lp-card--buy { box-shadow: var(--shadow), inset 0 0 0 1px var(--danger-border); }
+    #viewLicenseStock .lp-card--combo { background: var(--card); }
+    #viewLicenseStock .lp-card__type { font-size: 14px; font-weight: 600; color: var(--text-secondary); }
+    #viewLicenseStock .lp-card__big { margin: 0; font-family: var(--font-display); font-size: 28px; font-weight: 600; line-height: 1.2; color: var(--text); }
+    #viewLicenseStock .lp-card--buy .lp-card__big { color: var(--danger-strong); }
+    #viewLicenseStock .lp-card__big small { font-family: var(--font-sans); font-size: 14px; font-weight: 500; color: var(--text-secondary); }
+    #viewLicenseStock .lp-card__sub { font-size: 13px; color: var(--text-secondary); }
+    #viewLicenseStock #lpBody .table-card { margin-bottom: 20px; overflow: hidden; }
+    #viewLicenseStock #lpBody .table-card__header { padding: 16px 20px 12px; }
+    #viewLicenseStock #lpBody h2.table-card__title { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 17px; line-height: 1.3; }
+    #viewLicenseStock #lpBody .table-card__title .fp-pill { font-family: var(--font-sans); }
+    #viewLicenseStock #lpBody .lp-empty { padding: 24px 20px; color: var(--text-secondary); }
+    #viewLicenseStock #lpBody .ins-sync { border-radius: 12px; margin-bottom: 16px; }
+    #viewLicenseStock .lp-chip { padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+
+    /* ---- Implements: tractors per implement ---- */
+    .fp-use { display: flex; flex-direction: column; gap: 10px; margin: 0 0 20px; }
+    .fp-use[hidden] { display: none; }
+    .fp-use__title { margin: 0; font-family: var(--font-display); font-size: 15px; font-weight: 600; color: var(--text-body); }
+    .fp-use__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+    .fp-use__tile {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        min-width: 0;
+        padding: 14px 16px;
+        border: 0;
+        border-radius: 14px;
+        background: var(--card);
+        box-shadow: var(--shadow);
+        color: var(--text);
+        font: inherit;
+        text-align: left;
+    }
+    button.fp-use__tile { cursor: pointer; }
+    button.fp-use__tile:hover { box-shadow: var(--shadow-md); }
+    button.fp-use__tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .fp-use__n { font-family: var(--font-display); font-size: 22px; font-weight: 600; line-height: 1.3; font-variant-numeric: tabular-nums; }
+    .fp-use__label { color: var(--text-secondary); overflow-wrap: anywhere; }
+    .fp-use__tile--warn { background: var(--warning-bg); box-shadow: none; color: var(--warning-strong); }
+    .fp-use__tile--warn .fp-use__label { color: var(--warning-strong); font-weight: 600; }
+    .fp-use__tile--more { justify-content: center; color: var(--accent-text); font-weight: 600; box-shadow: none; background: var(--primary-lighter); }
+    #implementTable td[data-label="Profile Name"] strong { font-weight: 600; }
+    #viewImplements .coa-more { border-radius: 10px; }
+
+    /* ---- Dialogs ---- */
+    /* Inspection report: one card per component, Good / Damaged as a segmented pair */
+    #inspectionModal .ins-components { gap: 12px; }
+    #inspectionModal .ins-comp {
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--card);
+    }
+    #inspectionModal .ins-comp__head strong { font-weight: 600; }
+    #inspectionModal .ins-seg { gap: 4px; padding: 3px; border: 0; border-radius: 10px; background: var(--track); }
+    #inspectionModal .ins-seg__opt {
+        gap: 6px;
+        min-height: 32px;
+        padding: 0 10px;
+        border-radius: 8px;
+        color: var(--text-secondary);
+        font-size: 13px;
+        font-weight: 500;
+    }
+    #inspectionModal .ins-seg__opt--good:has(input:checked) { background: var(--card); color: var(--success-strong); font-weight: 600; box-shadow: 0 1px 3px rgba(16,24,40,0.10); }
+    #inspectionModal .ins-seg__opt--bad:has(input:checked) { background: var(--card); color: var(--danger-strong); font-weight: 600; box-shadow: 0 1px 3px rgba(16,24,40,0.10); }
+    #inspectionModal .ins-photo__add, #inspectionModal .ins-photo__empty {
+        border: 1px dashed var(--border-strong);
+        border-radius: 10px;
+        background: var(--surface-sunken);
+        color: var(--text-secondary);
+    }
+    #inspectionModal .ins-photo img { border-radius: 10px; }
+    #inspectionModal .ins-help { font-size: 13px; }
+    #inspectionModal .ins-plan-tag { border-radius: 12px; padding: 4px 12px; font-size: 13px; font-weight: 600; background: var(--info-bg); color: var(--info-strong); }
+    #inspectionModal .ins-plan-tag--adhoc { background: var(--neutral-tint); color: var(--text-body); }
+
+    /* Inspection schedule: the unit picker */
+    #inspectionPlanModal .ins-plan-pick__head { font-size: 14px; }
+    #inspectionPlanModal .ins-plan-pick { border: 1px solid var(--border); border-radius: 12px; }
+    #inspectionPlanModal .ins-pick { min-height: 52px; padding: 8px 14px; border-bottom-color: var(--border); }
+    #inspectionPlanModal .ins-pick:hover { background: var(--surface-sunken); }
+    #inspectionPlanModal .ins-pick__name { font-size: 14px; font-weight: 600; }
+    #inspectionPlanModal .ins-pick__name .ins-sub { font-size: 12px; font-weight: 400; color: var(--text-secondary); }
+    #inspectionPlanModal .edit-search { display: flex; }
+    #inspectionPlanModal .edit-search input { width: 100%; padding-left: 34px; }
+
+    /* Implement form: the grouped fields as quiet panels */
+    #implementModal .form-section {
+        margin: 16px 0;
+        padding: 12px 16px 16px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+    }
+    #implementModal .form-section legend {
+        padding: 0 6px;
+        font-family: var(--font-display);
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--text-body);
+    }
+
+    /* License requirements and the sync preview */
+    #licenseReqModal .lr-row--head { color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+    #licSyncModal .data-table th { white-space: nowrap; }
+}
+
+/* Desktop sizes */
+@media screen and (min-width: 701px) {
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .page-head__actions .btn { min-height: 44px; }
+    .fp-select { min-height: 40px; }
+    .fp-select select, .fp-select input { min-height: 38px; padding: 0 28px 0 4px; font-size: 14px; }
+    .fp-select input[type="date"] { padding-right: 4px; }
+    .fp-toggle { min-height: 40px; }
+    .fp-actions .btn-sm { min-height: 36px; }
+    .fp-actions .fp-icon-btn { width: 36px; min-width: 36px; padding: 0; justify-content: center; }
+    .fp-list__item .btn-sm { min-height: 36px; }
+    /* Row edit / delete: quiet icon buttons (F), the frame only on hover */
+    :is(#implementTable, #licenseTable, #insPlanTable, #insReportTable) .row-actions { gap: 4px; }
+    :is(#implementTable, #licenseTable, #insPlanTable, #insReportTable) .row-actions .btn {
+        width: 36px;
+        min-width: 36px;
+        height: 36px;
+        padding: 0;
+        justify-content: center;
+        border-color: transparent;
+        background: transparent;
+        box-shadow: none;
+        color: var(--text-secondary);
+    }
+    :is(#implementTable, #licenseTable, #insPlanTable, #insReportTable) .row-actions .btn:hover {
+        border-color: var(--border);
+        background: var(--surface-sunken);
+        color: var(--text);
+    }
+}
+
+/* Tablets: tiles two by two */
+@media screen and (max-width: 900px) {
+    #viewInspection .fp-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Phones */
+@media screen and (max-width: 700px) {
+    #viewInspection .fp-head, #viewLicenseStock .fp-head, #viewImplements .fp-head { margin-bottom: 16px; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .page-head__actions.edit-toolbar { justify-content: flex-start; width: 100%; gap: 8px; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .page-head__actions .btn { flex: 1 1 auto; justify-content: center; }
+
+    :is(#viewInspection, #viewLicenseStock) .fp-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+    #viewInspection .fp-tile, #viewLicenseStock .fp-stock { padding: 12px 14px; gap: 4px; }
+    .fp-tile__label { gap: 8px; font-size: 13px; line-height: 1.35; }
+    .fp-tile__value, .fp-stock__big { font-size: 24px; }
+    .fp-tile__sub, .fp-stock__sub { font-size: 12px; line-height: 1.4; }
+    .fp-stock__head { flex-wrap: wrap; align-items: flex-start; }
+    .fp-stock__big span { display: block; font-size: 12px; margin-top: 2px; }
+
+    .fp-chip-btn { min-height: 44px; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-filterbar.edit-toolbar { gap: 10px; }
+    .fp-filterbar__left, .fp-filterbar__right { width: 100%; margin-left: 0; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .edit-search { flex: 1 1 100%; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .edit-search input { width: 100%; }
+    .fp-cardbar { padding: 14px 14px 10px; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-cardbar__tools.edit-toolbar { width: 100%; justify-content: flex-start; }
+    .fp-select, .fp-toggle { flex: 1 1 auto; min-height: 44px; }
+    .fp-select select, .fp-select input { flex: 1 1 auto; min-height: 42px; max-width: none; padding: 0 4px; }
+    .fp-filterbar__right .btn, .fp-cardbar__tools .btn { flex: 1 1 auto; justify-content: center; }
+
+    /* Cards: the table rows are stacked cards on phones (.table--cardable) */
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-card { overflow: visible; background: none; box-shadow: none; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-card:has(.fp-list) { background: var(--card); box-shadow: var(--shadow); overflow: hidden; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-card .fp-cardbar,
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-card .table-card__header { padding-left: 0; padding-right: 0; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-card:has(.fp-list) .fp-cardbar { padding-left: 14px; padding-right: 14px; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-table { min-width: 0 !important; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-table tr {
+        border: 0;
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow);
+        padding: 12px 14px;
+    }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-table td:first-child,
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-table td:last-child { padding-left: 0; padding-right: 0; }
+    :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-table td[data-label]::before {
+        font-size: 12px; letter-spacing: 0; text-transform: none; font-weight: 600; color: var(--text-secondary);
+    }
+    /* Inspection status card: the unit is the card's title */
+    #insStatusTable td[data-label="Unit"] { justify-content: flex-start; padding-bottom: 8px; }
+    #insStatusTable td[data-label="Unit"]::before { content: none; }
+    #insStatusTable .fp-stack { align-items: flex-end; text-align: right; }
+    #insStatusTable .fp-sub--bad { max-width: 200px; }
+    .fp-actions { width: 100%; }
+    .fp-actions .btn { flex: 1 1 0; justify-content: center; }
+    .fp-actions .fp-btn-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; clip-path: none; }
+
+    /* Card labels read like the column heads (the cells keep their
+       data-label, which tests and the shared card CSS rely on) */
+    #licenseTable td[data-label="Transaction"]::before { content: "Movement"; }
+    #licenseTable td[data-label="Type"]::before { content: "License"; }
+    #licenseTable td[data-label="Quantity"]::before { content: "Qty"; }
+    #licenseTable td[data-label="SN"]::before { content: "Serial number"; }
+    #licenseTable td[data-label="Unit Status"]::before { content: "Unit status"; }
+    #implementTable td[data-label="Profile Name"]::before { content: "Profile"; }
+    #implementTable td[data-label="Equipment Type"]::before { content: "Type"; }
+    #implementTable td[data-label="Working Width"]::before { content: "Width"; }
+    #implementTable td[data-label="Connecting Type"]::before { content: "Connecting type"; }
+    #implementTable td[data-label="Chart of Account"]::before { content: "Chart of account"; }
+    #insReportTable td[data-label="Check Date"]::before { content: "Check date"; }
+    #insReportTable td[data-label="Component Results"]::before { content: "Component results"; }
+    #licenseTable td[data-label="SN"]::before { font-family: var(--font-sans); }
+    #licenseTable td[data-label="Unit"] { flex-wrap: nowrap; justify-content: space-between; }
+    /* A stock-in row has no unit: leave out the empty unit lines */
+    #licenseTable td.fp-empty { display: none; }
+
+    .fp-list { grid-template-columns: minmax(0, 1fr); }
+    .fp-list__item, .fp-list__empty { padding: 10px 14px; }
+    .fp-more-link { padding: 0 14px; }
+
+    .fp-use__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .fp-use__tile { padding: 12px 14px; }
+
+    /* Purchase plan tables: the same stacked row cards as the other lists */
+    #lpBody .table-card { overflow: visible; background: none; box-shadow: none; }
+    #lpBody .table-card__header { padding: 4px 0 10px; }
+    #lpBody .data-table tr { border: 0; border-radius: var(--radius-lg); box-shadow: var(--shadow); padding: 12px 14px; }
+    #lpBody .data-table td[data-label]::before {
+        font-size: 12px; letter-spacing: 0; text-transform: none; font-weight: 600; color: var(--text-secondary);
+    }
+    #lpBody .data-table td[data-label="Unit"],
+    #lpBody .data-table td[data-label="Implement Type"] { flex-wrap: nowrap; justify-content: space-between; }
+    /* "SF-RTK" and "until …" sit together on the right */
+    #lpBody .data-table td:is([data-label="GPS Now"], [data-label="Display Now"]) { justify-content: flex-end; gap: 2px 8px; }
+    #lpBody .data-table td:is([data-label="GPS Now"], [data-label="Display Now"])::before { margin-right: auto; }
+
+    #viewLicenseStock .lp-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    #viewLicenseStock .lp-card { padding: 12px 14px; }
+    #viewLicenseStock .lp-card__big { font-size: 24px; }
+
+    #inspectionModal .ins-seg__opt { min-height: 44px; padding: 0 14px; }
+}
+
+/* Paper: the status tiles and stock tiles replaced .downtime-kpi, which the
+   print section boxes; give the new tiles the same plain boxes. */
+@media print {
+    #viewInspection .fp-tiles,
+    #viewLicenseStock .fp-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 0 0 12px; }
+    #viewInspection .fp-tile,
+    #viewLicenseStock .fp-stock { display: flex; flex-direction: column; padding: 8px 10px; border: 1px solid #999; border-radius: 6px; }
+    .fp-tile__value, .fp-stock__big { font-size: 18px; font-weight: 700; }
+    .fp-bar, .fp-dot, .fp-unit__icon, .fp-list__icon { display: none; }
+    .fp-use__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .fp-use__tile { display: flex; flex-direction: column; padding: 6px 8px; border: 1px solid #999; border-radius: 6px; background: none; }
+    .fp-sr, .fp-actions .fp-btn-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+}
