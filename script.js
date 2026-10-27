@@ -5862,7 +5862,13 @@ function getEditTableRows() {
         : `${d.name} ${d.model} ${d.sn} ${d.implement || ''} ${d.site}`).toLowerCase().includes(query));
     if (statusVal) rows = rows.filter(d => d.status === statusVal);
     if (siteVal) rows = rows.filter(d => d.site === siteVal);
-    if (editMissingFilter) rows = rows.filter(d => isFieldMissing(d, editMissingFilter));
+    if (editMissingFilter === MISSING_ANY) {
+        const fields = REQUIRED_UNIT_FIELDS[g] || [];
+        rows = rows.filter(d => fields.some(f => isFieldMissing(d, f)));
+    } else if (editMissingFilter) rows = rows.filter(d => isFieldMissing(d, editMissingFilter));
+    if (editQuickFilter && !(editQuickFilter === 'license' && !groupDef(g).hasLicences)) {
+        rows = rows.filter(d => quickFilterMatch(d, editQuickFilter));
+    }
     if (editToolFilter) {
         const known = _knownImplementBrands();
         rows = rows.filter(d => toolFilterMatch(d, g, editToolFilter, known));
@@ -5919,8 +5925,8 @@ function renderEditHead() {
     markSortedHeader('#editTable thead', editSortState.key, editSortState.asc);
 }
 
-// The group is picked in the sidebar (Agricultural / Heavy Equipment), so the
-// page only says which one it is showing.
+// The group is picked in the sidebar (Agricultural / Heavy Equipment) or in
+// the page head's switch, and the page says which one it is showing.
 function renderEditGroupTabs() {
     const g = effectiveEditGroup();
     const title = document.getElementById('editTableTitle');
@@ -5932,7 +5938,272 @@ function renderEditGroupTabs() {
             ? `New units go into ${escapeHtml(UNIT_GROUPS.heavy.label)} unless the "Unit Group" column says otherwise. Duplicate serial numbers are skipped.`
             : hint.dataset.tractor;
     }
+    syncUnitsHead();
 }
+
+// ---- Units page head (design F) ----
+// "24 agricultural units across 3 sites", counted from the group on screen.
+// The group switch is only for accounts that may see both groups: a limited
+// account is never offered the other one.
+const UNITS_NOUN = { tractor: 'agricultural', heavy: 'heavy equipment' };
+function syncUnitsHead() {
+    const g = effectiveEditGroup();
+    const sub = document.getElementById('unitsHeadSub');
+    if (sub) {
+        const units = unitsOfGroup(globalData, g);
+        const sites = new Set(units.map(u => _toolNorm(u.site)).filter(Boolean)).size;
+        const n = units.length;
+        sub.textContent = !n ? `No ${UNITS_NOUN[g]} units yet`
+            : `${n} ${UNITS_NOUN[g]} unit${n === 1 ? '' : 's'}`
+              + (sites ? ` ${sites === 1 ? 'at' : 'across'} ${sites} site${sites === 1 ? '' : 's'}` : '');
+    }
+    const seg = document.getElementById('unitsGroupSeg');
+    if (seg) {
+        seg.hidden = isUnitScoped();
+        seg.querySelectorAll('[data-units-group]').forEach(b =>
+            b.setAttribute('aria-pressed', String(b.dataset.unitsGroup === g)));
+    }
+}
+
+// ---- Units: missing key details ----
+// One line above the table when units of the group lack a key field
+// (REQUIRED_UNIT_FIELDS). "Show them" uses the missing-field filter: the one
+// field when only one is short, otherwise any of them (MISSING_ANY).
+const MISSING_ANY = '*';
+function _missingTarget(g) {
+    const units = unitsOfGroup(globalData, g);
+    const per = (REQUIRED_UNIT_FIELDS[g] || []).map(f => ({ f, n: units.filter(u => isFieldMissing(u, f)).length }))
+        .filter(m => m.n).sort((a, b) => b.n - a.n);
+    const unitsShort = units.filter(u => per.some(m => isFieldMissing(u, m.f))).length;
+    return { per, unitsShort, target: per.length === 1 ? per[0].f : MISSING_ANY };
+}
+function renderUnitsMissingBanner() {
+    const box = document.getElementById('unitsMissingBanner');
+    if (!box) return;
+    const { per, unitsShort, target } = _missingTarget(effectiveEditGroup());
+    if (!unitsShort) { box.hidden = true; return; }
+    const list = per.map(m => `${m.n} ${m.n === 1 ? 'has' : 'have'} no ${escapeHtml(REQUIRED_FIELD_LABEL[m.f])}`).join(', ');
+    document.getElementById('unitsMissingText').innerHTML =
+        `<strong>${unitsShort} unit${unitsShort === 1 ? ' is' : 's are'} missing key details</strong> — ${list}.`;
+    const on = editMissingFilter === target;
+    const link = document.getElementById('unitsMissingShow');
+    link.textContent = on ? 'Show all units' : 'Show them';
+    link.setAttribute('aria-pressed', String(on));
+    box.hidden = false;
+}
+function toggleMissingUnits() {
+    const { target } = _missingTarget(effectiveEditGroup());
+    setEditMissingFilter(editMissingFilter === target ? '' : target, true);
+}
+
+// ---- Units: quick filters ----
+// All · Breakdown · Faulty part · License due, each with its count among the
+// group's units at the chosen site. Breakdown is the Status filter's own
+// "Breakdown"; Faulty part (a component not Good, as the dashboard counts
+// issues) and License due (a GPS or display licence expired or within 30
+// days, as the table's red and amber badges say) are editQuickFilter. One
+// chip at a time. "All" is lit only while nothing narrows the list (search
+// and site aside), and clears the status, part, licence, implement and
+// missing-field filters.
+let editQuickFilter = '';          // '' | 'faulty' | 'license'
+function unitHasFaultyPart(u) {
+    return groupDef(unitGroupOf(u)).components.some(c => !isGood(u[c.key]));
+}
+function unitLicenseDue(u) {
+    if (isHeavy(u)) return false;
+    return ['gps', 'display'].some(kind => {
+        const s = getExpiryStatus(getLicenseEndDate(u, kind));
+        return (s.kind === 'expired' || s.kind === 'soon') && !effectiveLicense(u, kind).downgraded;
+    });
+}
+function quickFilterMatch(u, key) {
+    return key === 'faulty' ? unitHasFaultyPart(u) : key === 'license' ? unitLicenseDue(u) : true;
+}
+function renderUnitsQuickFilters() {
+    const box = document.getElementById('unitsQuick');
+    if (!box) return;
+    const g = effectiveEditGroup();
+    const siteVal = document.getElementById('editSiteFilter')?.value || '';
+    const statusVal = document.getElementById('editStatusFilter')?.value || '';
+    const units = unitsOfGroup(globalData, g).filter(d => !siteVal || d.site === siteVal);
+    if (editQuickFilter === 'license' && !groupDef(g).hasLicences) editQuickFilter = '';
+    const chips = [
+        { key: 'all', label: 'All', n: units.length, on: !statusVal && !editQuickFilter && !editToolFilter && !editMissingFilter },
+        { key: 'breakdown', label: 'Breakdown', n: units.filter(u => u.status === 'Breakdown').length, on: statusVal === 'Breakdown' },
+        { key: 'faulty', label: 'Faulty part', n: units.filter(unitHasFaultyPart).length, on: editQuickFilter === 'faulty' }
+    ];
+    if (groupDef(g).hasLicences) chips.push({ key: 'license', label: 'License due', n: units.filter(unitLicenseDue).length, on: editQuickFilter === 'license' });
+    // The chips are redrawn by the click they handle: keep keyboard focus on
+    // the one that was pressed.
+    const had = document.activeElement && document.activeElement.closest && document.activeElement.closest('#unitsQuick [data-key]');
+    box.innerHTML = chips.map(c => `<button type="button" class="units-chip${c.on ? ' is-on' : ''}" data-key="${c.key}" aria-pressed="${c.on}"
+        ${!c.n && !c.on && c.key !== 'all' ? 'disabled' : ''} onclick="setUnitsQuickFilter('${c.key}')">${c.label} · ${c.n}</button>`).join('');
+    if (had) box.querySelector(`[data-key="${had.dataset.key}"]:not(:disabled)`)?.focus();
+}
+function setUnitsQuickFilter(key) {
+    const sf = document.getElementById('editStatusFilter');
+    if (key === 'all') {
+        editQuickFilter = ''; editToolFilter = ''; editMissingFilter = '';
+        if (sf) sf.value = '';
+    } else if (key === 'breakdown') {
+        editQuickFilter = '';
+        if (sf) sf.value = sf.value === 'Breakdown' ? '' : 'Breakdown';
+    } else {
+        editQuickFilter = editQuickFilter === key ? '' : key;
+        if (sf) sf.value = '';
+    }
+    renderEditTable();
+}
+
+// ---- Units: the More menu (Import CSV, Backup, Restore, Auto Backups) ----
+// A disclosure button and a short list of buttons: arrow keys move through
+// it, Escape or a tap outside closes it, and an item closes it as it runs.
+function _unitsMoreItems() {
+    return [...document.querySelectorAll('#unitsMoreMenu > button')].filter(b => b.offsetParent !== null && !b.disabled);
+}
+function toggleUnitsMore(open) {
+    const menu = document.getElementById('unitsMoreMenu');
+    const btn = document.getElementById('unitsMoreBtn');
+    if (!menu || !btn) return;
+    const show = open === undefined ? menu.hidden : !!open;
+    if (show === !menu.hidden) return;
+    menu.hidden = !show;
+    btn.setAttribute('aria-expanded', String(show));
+    if (show) { const first = _unitsMoreItems()[0]; if (first) first.focus(); }
+}
+document.addEventListener('keydown', e => {
+    const more = e.target && e.target.closest && e.target.closest('#unitsMore');
+    if (!more) return;
+    const menu = document.getElementById('unitsMoreMenu');
+    const btn = document.getElementById('unitsMoreBtn');
+    if (e.key === 'Escape' && !menu.hidden) {
+        // Only the menu: the page-wide Escape (a later listener on document)
+        // closes the top dialog.
+        e.stopImmediatePropagation();
+        toggleUnitsMore(false);
+        btn.focus();
+        return;
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+    e.preventDefault();
+    if (menu.hidden) { toggleUnitsMore(true); return; }
+    const items = _unitsMoreItems();
+    if (!items.length) return;
+    const i = items.indexOf(document.activeElement);
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1
+        : e.key === 'ArrowDown' ? (i + 1) % items.length : (i <= 0 ? items.length - 1 : i - 1);
+    items[next].focus();
+});
+document.addEventListener('pointerdown', e => {
+    const menu = document.getElementById('unitsMoreMenu');
+    if (menu && !menu.hidden && !(e.target.closest && e.target.closest('#unitsMore'))) toggleUnitsMore(false);
+});
+document.addEventListener('focusout', e => {
+    if (!(e.target.closest && e.target.closest('#unitsMore'))) return;
+    // Tabbing out of the menu closes it; moving between its items does not.
+    if (!(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('#unitsMore'))) {
+        const menu = document.getElementById('unitsMoreMenu');
+        if (menu && !menu.hidden && e.relatedTarget) toggleUnitsMore(false);
+    }
+});
+document.addEventListener('click', e => {
+    const item = e.target.closest && e.target.closest('#unitsMoreMenu > button');
+    if (!item) return;
+    // The item's own onclick has run by now (it is on the button itself).
+    // Import CSV hands focus to the upload area it just opened.
+    toggleUnitsMore(false);
+    const drop = document.getElementById('editDropZone');
+    if (/toggleImportPanel/.test(item.getAttribute('onclick') || '') && document.getElementById('importPanel')?.classList.contains('open')) drop?.focus();
+    else if (!document.querySelector('.modal-overlay.open')) document.getElementById('unitsMoreBtn')?.focus({ preventScroll: true });
+});
+// The upload area is a button to the keyboard too.
+document.addEventListener('keydown', e => {
+    if (e.target && e.target.id === 'editDropZone' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.target.click(); }
+});
+
+// ---- Units: Good / Breakdown in colour ----
+// The rows' markup is fixed (the golden tests compare it byte for byte), so
+// the status and part cells are coloured without touching it: the CSS Custom
+// Highlight API paints ranges over their text, styled by ::highlight(units-
+// good / units-bad) in f-theme/units.css. Repainted whenever the rows change
+// or a cell is typed into. A browser without the API shows plain text.
+const UNIT_STATE_FIELDS = new Set(['status', ...COMPONENT_KEYS, ...HEAVY_COMPONENT_KEYS]);
+function paintUnitStates() {
+    if (!(window.CSS && CSS.highlights && typeof Highlight === 'function')) return;
+    const good = new Highlight(), bad = new Highlight();
+    document.querySelectorAll('#editBody .inline-edit[data-field]').forEach(el => {
+        if (!UNIT_STATE_FIELDS.has(el.dataset.field) || !clean(el.textContent)) return;
+        const r = document.createRange();
+        r.selectNodeContents(el);
+        (isGood(el.textContent) ? good : bad).add(r);
+    });
+    CSS.highlights.set('units-good', good);
+    CSS.highlights.set('units-bad', bad);
+}
+(() => {
+    const body = document.getElementById('editBody');
+    if (!body || typeof MutationObserver !== 'function') return;
+    new MutationObserver(paintUnitStates).observe(body, { subtree: true, childList: true, characterData: true });
+})();
+
+// ---- Units: data completeness and units per implement, folded ----
+// Both cards filter the table but are not what the page is read for, so they
+// sit behind one line ("Data 96% complete · 5 implement types") until
+// opened. The choice is remembered on this device; a filter set from either
+// card (or from the Decision inbox) opens it, so what narrows the table is
+// always on screen.
+function unitsInsightsOpen() {
+    if (editToolFilter || (editMissingFilter && editMissingFilter !== MISSING_ANY)) return true;
+    try { return localStorage.getItem('unitsInsightsOpen') === '1'; } catch (_) { return false; }
+}
+function syncUnitsInsights() {
+    const btn = document.getElementById('unitsInsightsBtn');
+    const body = document.getElementById('unitsInsightsBody');
+    if (!btn || !body) return;
+    const dq = document.getElementById('dataQuality');
+    const ts = document.getElementById('toolSummary');
+    const hasDq = dq && dq.style.display !== 'none';
+    const hasTs = ts && ts.style.display !== 'none';
+    document.getElementById('unitsInsights').hidden = !hasDq && !hasTs;
+    const g = effectiveEditGroup();
+    const parts = [];
+    const pct = hasDq && dq.querySelector('.dq__pct');
+    if (pct) parts.push(`Data ${pct.textContent} complete`);
+    if (hasTs) {
+        const kinds = toolSummaryRows(g).rows.filter(r => r.key !== TOOL_NONE).length;
+        parts.push(`${kinds} ${g === 'heavy' ? 'work tool' : 'implement'} type${kinds === 1 ? '' : 's'}`);
+    }
+    document.getElementById('unitsInsightsMeta').textContent = parts.join(' · ');
+    const open = unitsInsightsOpen();
+    body.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+}
+function toggleUnitsInsights() {
+    const open = document.getElementById('unitsInsightsBody').hidden;
+    try { localStorage.setItem('unitsInsightsOpen', open ? '1' : ''); } catch (_) {}
+    // Folding it away also drops a filter it was holding, or the table
+    // would stay narrowed by something no longer on screen.
+    if (!open && (editToolFilter || (editMissingFilter && editMissingFilter !== MISSING_ANY))) {
+        editToolFilter = '';
+        if (editMissingFilter !== MISSING_ANY) editMissingFilter = '';
+        renderEditTable();
+        return;
+    }
+    syncUnitsInsights();
+}
+
+// The page head follows the account (its group limit) and the data; a
+// change of limit drops the quick filter with the other filters
+// (applyRoleGating clears those). The menu closes when the page is left.
+let _unitsScopeSeen = null;
+document.addEventListener('ot:gating', () => {
+    const sc = effectiveUnitScope();
+    if (_unitsScopeSeen !== null && sc !== _unitsScopeSeen) editQuickFilter = '';
+    _unitsScopeSeen = sc;
+    syncUnitsHead();
+});
+document.addEventListener('ot:data', syncUnitsHead);
+document.addEventListener('ot:view', () => toggleUnitsMore(false));
 
 function switchEditUnitsGroup(g, opts) {
     const sc = effectiveUnitScope();
@@ -5944,6 +6215,7 @@ function switchEditUnitsGroup(g, opts) {
     editSortState = { key: null, asc: true };
     editToolFilter = '';
     editMissingFilter = '';
+    editQuickFilter = '';
     ['editSearch', 'editStatusFilter', 'editSiteFilter'].forEach(id => {
         const el = document.getElementById(id); if (el) el.value = '';
     });
@@ -6012,8 +6284,11 @@ function renderEditTable() {
 function _renderEditTable() {
     renderEditHead();
     renderEditGroupTabs();
+    renderUnitsMissingBanner();
+    renderUnitsQuickFilters();
     renderDataCompleteness();
     renderToolSummary();
+    syncUnitsInsights();
     updateEditCount();
     // A re-render (search, filter, a cloud snapshot) draws fresh, unticked
     // rows — so the selection is dropped with them. Re-reading the OLD boxes
@@ -6033,11 +6308,16 @@ function _renderEditTable() {
 
     const tbody = document.getElementById('editBody');
     const group = effectiveEditGroup();
+    const shown = document.getElementById('unitsShownCount');
+    if (shown) {
+        const all = unitsOfGroup(globalData, group).length;
+        shown.textContent = !all ? '' : rows.length === all ? `Showing all ${all}` : `Showing ${rows.length} of ${all}`;
+    }
     if (rows.length === 0) {
         const empty = group === 'heavy'
-            ? `No ${escapeHtml(UNIT_GROUPS.heavy.label)} units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.`
-            : 'No units yet. Click <strong>Add Unit</strong> or <strong>Import CSV</strong> to get started.';
-        tbody.innerHTML = `<tr><td colspan="${EDIT_COLSPAN[group]}" style="text-align:center;padding:24px;color:var(--text-secondary)">${(query || statusVal || siteVal || editToolFilter || editMissingFilter) ? 'No units match the filter' : empty}</td></tr>`;
+            ? `No ${escapeHtml(UNIT_GROUPS.heavy.label)} units yet. Click <strong>Add unit</strong>, or <strong>Import CSV</strong> from the More menu, to get started.`
+            : 'No units yet. Click <strong>Add unit</strong>, or <strong>Import CSV</strong> from the More menu, to get started.';
+        tbody.innerHTML = `<tr><td colspan="${EDIT_COLSPAN[group]}" style="text-align:center;padding:24px;color:var(--text-secondary)">${(query || statusVal || siteVal || editToolFilter || editMissingFilter || editQuickFilter) ? 'No units match the filter' : empty}</td></tr>`;
         return;
     }
 
@@ -6285,6 +6565,8 @@ function updateSelectedCount() {
     const bulkCount = document.getElementById('bulkEditCount');
     if (bulkCount) bulkCount.textContent = count;
     if (bulk) bulk.style.display = count > 0 ? '' : 'none';
+    // The table card shows its action bar only while rows are ticked.
+    document.querySelector('.units-table-card')?.classList.toggle('has-selection', count > 0);
 }
 
 // ---- Bulk edit selected units ----
@@ -7983,6 +8265,8 @@ function showUnitProfile(id) {
     document.getElementById('unitProfileModal').dataset.unitId = id;
 
     document.getElementById('unitProfileTitle').textContent = u.name || u.sn || 'Unit Profile';
+    const profSub = document.getElementById('unitProfileSub');
+    if (profSub) profSub.textContent = [isHeavy(u) ? [u.brand, u.model].filter(Boolean).join(' ') : u.model, u.site].filter(Boolean).join(' · ');
     document.getElementById('unitProfileEditBtn').onclick = () => { closeUnitProfile(); editUnit(id); };
     document.getElementById('unitProfileHistoryBtn').onclick = () => showHistory(id);
 
@@ -8022,7 +8306,7 @@ function showUnitProfile(id) {
         ['Site', val(u.site)],
         ['Year Received', val(u.yearReceived)],
         ['User Category', u.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(u.userCategory)}</span>` : dash]
-    ]).map(([l, v]) => `<div class="profile-row"><span class="profile-row__label">${l}</span><span>${v}</span></div>`).join('');
+    ]).map(([l, v]) => `<div class="profile-row"><dt class="profile-row__label">${l}</dt><dd>${v}</dd></div>`).join('');
 
     const statusBadge = isGood(u.status)
         ? '<span class="badge badge-good"><i class="fas fa-check"></i> Good</span>'
@@ -8032,10 +8316,22 @@ function showUnitProfile(id) {
     const compRow = groupDef(unitGroupOf(u)).components.map(c => {
         const label = c.label;
         const good = isGood(u[c.key]);
-        return `<div class="profile-comp ${good ? 'ok' : 'bad'}"><i class="fas fa-${good ? 'circle-check' : 'circle-xmark'}"></i> ${label}</div>`;
+        const state = good ? 'Good' : (clean(u[c.key]) ? escapeHtml(clean(u[c.key])) : 'Not set');
+        return `<div class="profile-comp ${good ? 'ok' : 'bad'}"><i class="fas fa-${good ? 'circle-check' : 'circle-xmark'}" aria-hidden="true"></i> ${label}<span class="profile-comp__state">${state}</span></div>`;
     }).join('');
-    const bdReason = (!isGood(u.status) && u.breakdownReason)
-        ? `<div class="profile-note"><i class="fas fa-triangle-exclamation"></i> ${escapeHtml(u.breakdownReason)}</div>` : '';
+    const dmg = globalDamages
+        .filter(r => r.unitId === id || (snLc && (r.sn || '').toLowerCase() === snLc))
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    // A unit in breakdown leads with why, for how long, and a way to its open
+    // damage records (design F callout).
+    const downFor = !isGood(u.status) && u.breakdownStartedAt ? `Down ${formatDuration(Date.now() - u.breakdownStartedAt)}` : '';
+    const openDmg = dmg.filter(r => !r.resolved).length;
+    const dmgLink = openDmg && hasAccess('damage', 'view')
+        ? `<button type="button" class="profile-note__link" onclick="closeUnitProfile(); goDecision(${jsArg(`damage:${unitGroupOf(u)}:unit:${id}`)})">${
+            openDmg === 1 ? 'Open damage record' : `Open ${openDmg} damage records`}</button>` : '';
+    const bdReason = !isGood(u.status)
+        ? `<div class="profile-note profile-note--bad"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i>
+            <div><strong>${escapeHtml(u.status || 'Breakdown')}${u.breakdownReason ? ' — ' + escapeHtml(u.breakdownReason) : ''}</strong>${downFor ? `<span class="profile-note__sub">${downFor}</span>` : ''}${dmgLink}</div></div>` : '';
     const stray = strayGroupFields(u);
     const strayNote = stray.length
         ? `<div class="profile-note"><i class="fas fa-triangle-exclamation"></i> This unit carries ${stray.length} field(s) belonging to another group — see Decision Inbox → Data Check.</div>` : '';
@@ -8043,13 +8339,10 @@ function showUnitProfile(id) {
     const licenses = ['gps', 'display'].map(kind => {
         const label = kind === 'gps' ? 'GPS License' : 'Display License';
         const end = getLicenseEndDate(u, kind);
-        return `<div class="profile-row"><span class="profile-row__label">${label}</span>
+        return `<div class="profile-row profile-row--lic"><span class="profile-row__label">${label}</span>
             <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${licenseTypeBadge(u, kind)} ${licenseBadgeFor(u, kind)}${end ? ` <span style="font-size:11.5px;color:var(--text-secondary)">exp ${escapeHtml(end)}</span>` : ''}</span></div>`;
     }).join('');
 
-    const dmg = globalDamages
-        .filter(r => r.unitId === id || (snLc && (r.sn || '').toLowerCase() === snLc))
-        .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     const dmgHtml = dmg.length ? dmg.map(r => `
         <div class="profile-item">
             <span class="profile-item__date">${escapeHtml(r.date || '')}</span>
@@ -8101,20 +8394,24 @@ function showUnitProfile(id) {
         </div>`).join('')
         : '<div class="profile-empty">No warehouse devices registered to this unit.</div>';
 
+    // Design F: status and parts first (with the breakdown callout), then
+    // licences, then the identity as a two-column list; the record lists
+    // follow as cards.
     document.getElementById('unitProfileBody').innerHTML = `
         <div class="profile-grid">
-            <div class="profile-section">
-                <div class="profile-section__title">Identity</div>
-                ${identity}
-                ${u.remarks ? `<div class="profile-note">${escapeHtml(u.remarks)}</div>` : ''}
-            </div>
-            <div class="profile-section">
+            <div class="profile-section profile-section--status">
                 <div class="profile-section__title">Status</div>
-                <div style="margin-bottom:10px">${statusBadge}</div>
+                ${bdReason || `<div class="profile-status">${statusBadge}</div>`}
+                <div class="profile-section__title profile-section__title--sub">${heavyUnit ? 'Components' : 'Parts'}</div>
                 <div class="profile-comps">${compRow}</div>
-                ${bdReason}${strayNote}
-                ${heavyUnit ? '' : `<div class="profile-section__title" style="margin-top:16px">Licenses</div>
+                ${strayNote}
+                ${heavyUnit ? '' : `<div class="profile-section__title profile-section__title--sub">Licenses</div>
                 ${licenses}`}
+            </div>
+            <div class="profile-section profile-section--identity">
+                <div class="profile-section__title">Identity</div>
+                <dl class="profile-dl">${identity}</dl>
+                ${u.remarks ? `<div class="profile-note">${escapeHtml(u.remarks)}</div>` : ''}
             </div>
             <div class="profile-section">
                 <div class="profile-section__title">Damage History (${dmg.length})</div>

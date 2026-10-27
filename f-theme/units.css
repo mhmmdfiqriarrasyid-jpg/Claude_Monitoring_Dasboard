@@ -1,1 +1,726 @@
-/* design F — units (concatenated into style.css when merged) */
+/* design F — units (concatenated into style.css when merged)
+   Unit Database page (#viewEditUnits), the unit form (#unitModal), Bulk Edit
+   (#bulkEditModal) and the unit profile (#unitProfileModal). Screen only:
+   print keeps the rules in style.css. Desktop sizes sit in min-width: 701px
+   so the PHONE section's 44px / 16px floor stays in charge on phones. */
+
+@media screen {
+
+    /* ============ Page head ============ */
+    #viewEditUnits .units-head { margin: 4px 0 20px; }
+    /* The action row keeps .edit-toolbar (print leaves it out), so the old
+       toolbar's margin and its column layout under 900px are undone. */
+    #viewEditUnits .units-actions.edit-toolbar {
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 0;
+    }
+    #viewEditUnits .units-actions > .btn,
+    #viewEditUnits .units-more__btn { min-height: 44px; }
+    #viewEditUnits .units-actions svg { flex: 0 0 auto; }
+    /* A limited account never sees the other group (style.css gives .seg a
+       display, which would beat the hidden attribute). */
+    #unitsGroupSeg[hidden],
+    body[data-unit-scope] #unitsGroupSeg { display: none !important; }
+
+    /* ---- More menu ---- */
+    .units-more { position: relative; display: inline-flex; }
+    #viewEditUnits .units-more__btn {
+        width: 44px;
+        min-width: 44px;
+        padding: 0;
+        justify-content: center;
+    }
+    #viewEditUnits .units-more__btn[aria-expanded="true"] { background: var(--surface-sunken); border-color: var(--border-strong); }
+    .units-more__menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        z-index: 60;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 220px;
+        padding: 6px;
+        border-radius: 12px;
+        background: var(--surface-raised);
+        box-shadow: var(--shadow-lg), var(--ring);
+    }
+    .units-more__menu[hidden] { display: none; }
+    #viewEditUnits .units-more__menu .btn,
+    #viewEditUnits .units-more__menu .btn.btn-primary {
+        justify-content: flex-start;
+        width: 100%;
+        min-height: 40px;
+        padding: 0 12px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        box-shadow: none;
+        color: var(--text-body);
+        font-weight: 500;
+        text-align: left;
+        white-space: nowrap;
+    }
+    #viewEditUnits .units-more__menu .btn:hover,
+    #viewEditUnits .units-more__menu .btn:focus-visible { background: var(--surface-sunken); color: var(--text); }
+    #viewEditUnits .units-more__menu .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    #viewEditUnits .units-more__menu .btn i { width: 18px; color: var(--text-light); text-align: center; }
+
+    /* ============ Import panel ============ */
+    #viewEditUnits .import-panel { margin: 0 0 16px; }
+    #viewEditUnits .file-upload-area {
+        border: 1.5px dashed var(--border-strong);
+        border-radius: var(--radius-lg);
+        background: var(--card);
+        padding: 28px 20px;
+    }
+    #viewEditUnits .file-upload-area:hover,
+    #viewEditUnits .file-upload-area:focus-visible { border-color: var(--accent); background: var(--primary-lighter); outline: none; }
+    #viewEditUnits .file-upload-area i { font-size: 28px; color: var(--accent); }
+    #viewEditUnits .file-upload-area p { color: var(--text); font-weight: 600; }
+
+    /* ============ Missing-details banner ============ */
+    .units-banner {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px 14px;
+        margin: 0 0 16px;
+        padding: 12px 16px;
+        border-radius: 12px;
+        background: var(--warning-bg);
+        color: var(--warning-strong);
+    }
+    .units-banner[hidden] { display: none; }
+    .units-banner > svg { flex: 0 0 auto; }
+    .units-banner__text { flex: 1 1 300px; min-width: 0; }
+    .units-banner__text strong { font-weight: 600; }
+    .units-banner__link {
+        display: inline-flex;
+        align-items: center;
+        min-height: 40px;
+        padding: 0 4px;
+        border: 0;
+        background: none;
+        color: var(--warning-strong);
+        font: inherit;
+        font-weight: 600;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        cursor: pointer;
+    }
+    .units-banner__link:hover { text-decoration-thickness: 2px; }
+    .units-banner__link:focus-visible { outline: 2px solid var(--warning-strong); outline-offset: 2px; border-radius: 4px; }
+
+    /* ============ Filters: quick chips, search, status, site ============ */
+    #viewEditUnits .units-filters.edit-toolbar {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 10px 12px;
+        margin: 0 0 16px;
+    }
+    .units-quick { display: flex; flex-wrap: wrap; gap: 8px; }
+    .units-chip {
+        min-height: 40px;
+        padding: 0 14px;
+        border: 1px solid var(--border-strong);
+        border-radius: 20px;
+        background: var(--card);
+        color: var(--text-body);
+        font: inherit;
+        font-size: 14px;
+        font-weight: 500;
+        white-space: nowrap;
+        cursor: pointer;
+    }
+    .units-chip:hover:not(:disabled) { background: var(--surface-sunken); color: var(--text); }
+    .units-chip.is-on,
+    .units-chip.is-on:hover:not(:disabled) {
+        border-color: var(--text);
+        background: var(--text);
+        color: #FFFFFF;
+        font-weight: 600;
+    }
+    .units-chip:disabled { color: var(--text-light); background: var(--surface-sunken); border-color: var(--border); cursor: default; }
+    .units-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    #viewEditUnits .units-filters__right {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-left: auto;
+        flex-direction: row;
+    }
+    #viewEditUnits .units-filters .edit-search input { width: 220px; min-height: 40px; padding-left: 34px; }
+    #viewEditUnits .units-filters .edit-search i { left: 13px; font-size: 13px; }
+    /* Site / Status: a white pill with its name, the choice in bold (F). */
+    .units-select {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 40px;
+        padding: 0 0 0 12px;
+        border-radius: 10px;
+        background: var(--card);
+        box-shadow: var(--ring);
+        color: var(--text-secondary);
+        font-size: 14px;
+        white-space: nowrap;
+    }
+    .units-select:focus-within { box-shadow: var(--focus-ring), 0 0 0 1px var(--accent); }
+    #viewEditUnits .units-select .form-select {
+        min-height: 38px;
+        max-width: 180px;
+        padding: 0 30px 0 2px;
+        border: 0;
+        border-radius: 10px;
+        background-color: transparent;
+        box-shadow: none;
+        color: var(--text);
+        font-weight: 600;
+        cursor: pointer;
+    }
+    #viewEditUnits .units-select .form-select:focus { box-shadow: none; outline: none; }
+    #viewEditUnits #compactToggle { width: 40px; min-width: 40px; padding: 0; justify-content: center; }
+
+    /* ============ Data completeness + units per implement (folded) ============ */
+    .units-insights {
+        margin: 0 0 16px;
+        border-radius: var(--radius-lg);
+        background: var(--card);
+        box-shadow: var(--shadow);
+    }
+    .units-insights[hidden] { display: none; }
+    .units-insights__toggle {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        min-height: 52px;
+        padding: 0 18px;
+        border: 0;
+        border-radius: var(--radius-lg);
+        background: transparent;
+        color: var(--text-light);
+        font: inherit;
+        font-size: 14px;
+        text-align: left;
+        cursor: pointer;
+    }
+    .units-insights__toggle:hover { background: var(--surface-sunken); }
+    .units-insights__toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .units-insights__toggle[aria-expanded="true"] { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+    .units-insights__title { flex: 0 0 auto; font-weight: 600; color: var(--text); }
+    .units-insights__meta {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--text-secondary);
+    }
+    .units-insights__chev { flex: 0 0 auto; margin-left: auto; transition: transform .15s ease; }
+    .units-insights__toggle[aria-expanded="true"] .units-insights__chev { transform: rotate(180deg); }
+    .units-insights__body {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 18px;
+        padding: 16px 18px 18px;
+        border-top: 1px solid var(--border);
+    }
+    .units-insights__body[hidden] { display: none; }
+    .units-insights .dq,
+    .units-insights .tool-summary {
+        margin: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+    }
+    .units-insights .tool-summary { padding-top: 18px; border-top: 1px solid var(--border); }
+    .units-insights .dq[style*="none"] + .tool-summary { padding-top: 0; border-top: 0; }
+
+    /* Data completeness */
+    .units-insights .dq__pct { font-family: var(--font-display); font-size: 30px; font-weight: 600; }
+    .units-insights .dq--good .dq__pct { color: var(--success-strong); }
+    .units-insights .dq--warn .dq__pct { color: var(--warning-strong); }
+    .units-insights .dq--bad .dq__pct { color: var(--danger-strong); }
+    .units-insights .dq__title { font-size: 15px; font-weight: 600; color: var(--text); }
+    .units-insights .dq__sub { font-size: 13px; }
+    .units-insights .dq__bar { height: 6px; background: var(--track); }
+    .units-insights .dq--good .dq__bar span { background: var(--dot-good); }
+    .units-insights .dq--warn .dq__bar span { background: var(--dot-warn); }
+    .units-insights .dq--bad .dq__bar span { background: var(--dot-bad); }
+    .units-insights .dq__gaps { gap: 8px; }
+    .units-insights .dq-chip {
+        min-height: 32px;
+        padding: 0 12px;
+        border: 1px solid var(--border-strong);
+        border-radius: 16px;
+        background: var(--card);
+        color: var(--text-body);
+        font-size: 13px;
+    }
+    .units-insights .dq-chip b { color: var(--danger-strong); }
+    .units-insights .dq-chip.is-on { border-color: var(--text); background: var(--text); color: #FFFFFF; }
+    .units-insights .dq-chip.is-on b { color: #FFFFFF; }
+    .units-insights .dq__ok { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--success-strong); }
+
+    /* Units per implement type / work tool */
+    .units-insights .tool-summary__title { font-size: 15px; font-weight: 600; }
+    .units-insights .tool-summary__title i { color: var(--text-light); }
+    .units-insights .tool-summary__meta { font-size: 13px; }
+    .units-insights .tool-summary__list { gap: 4px 28px; }
+    .units-insights .tool-row { padding: 6px 10px; border-radius: 10px; font-size: 14px; }
+    .units-insights .tool-row:hover { background: var(--surface-sunken); }
+    .units-insights .tool-row.is-on { background: var(--primary-lighter); border-color: var(--accent); }
+    .units-insights .tool-row__bar { height: 6px; background: var(--track); }
+    .units-insights .tool-row__bar span { background: var(--accent); }
+    .units-insights .tool-row__count { color: var(--text); }
+    .units-insights .tool-brands { padding: 0 10px 6px; }
+    .units-insights .tool-brand { border-color: var(--border); background: var(--surface-sunken); font-size: 12px; padding: 2px 10px; }
+    .units-insights .tool-brand.is-on { border-color: var(--accent); background: var(--primary-lighter); color: var(--accent-text); }
+    .units-insights .tool-summary__more { color: var(--accent-text); font-weight: 600; font-size: 13px; }
+
+    /* ============ Table card ============ */
+    .units-table-card { overflow: hidden; }
+    /* Its title names the table for screen readers (aria-labelledby); on
+       screen the page head already says it. The bar shows while rows are
+       ticked, carrying Bulk Edit and Delete. */
+    .units-table-card .table-card__header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px;
+        background: var(--primary-lighter);
+        border-bottom: 1px solid var(--border);
+    }
+    .units-table-card .table-card__title {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+    .units-table-card:not(.has-selection) .table-card__header { display: none; }
+    .units-selbar { display: flex; flex-wrap: wrap; gap: 8px; }
+    .units-selbar .btn { gap: 0; }
+    .units-selbar .btn i { margin-right: 8px; }
+
+    /* Header row: sunken, 12px labels; the sticky cells match it. */
+    #editTable thead th:nth-child(1),
+    #editTable thead th:nth-child(2),
+    #editTable thead th:nth-child(3),
+    #editTable thead th:last-child { background: var(--surface-sunken); }
+    #editTable th { white-space: nowrap; }
+    /* (The first two columns keep their padding: the sticky offsets of
+       style.css — 40px, then 88px — assume those widths.) */
+    #editTable th:nth-child(2), #editTable td:nth-child(2) { color: var(--text-light); font-variant-numeric: tabular-nums; }
+    #editTable td { vertical-align: middle; }
+    #editTable tbody tr:last-child td { border-bottom: 0; }
+
+    /* Unit cell: the nickname leads, the model reads as its second line. */
+    #editTable td[data-label="Nickname"] .inline-edit { font-weight: 600; color: var(--text); }
+    #editTable td[data-label="Model"],
+    #editTable td[data-label="Brand"] { color: var(--text-secondary); }
+    #editTable td[data-label="SN"] { color: var(--text-body); }
+    #editTable td[data-label="Status"] .inline-edit { font-weight: 600; }
+    #editTable .inline-edit { border-radius: 8px; }
+    #editTable .inline-edit:focus { background: var(--card); box-shadow: 0 0 0 2px var(--accent); }
+
+    /* Ticked rows: teal wash and a bar on the leading edge (F). */
+    #editTable tbody tr:has(.unit-check:checked),
+    #editTable tbody tr:has(.unit-check:checked):hover { background: var(--primary-lighter); }
+    #editTable tbody tr:has(.unit-check:checked) td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+
+    /* Row actions: quiet icon buttons until hovered. */
+    #editTable .row-actions { gap: 4px; }
+    #editTable .row-actions .btn { border-radius: 8px; box-shadow: none; }
+
+    /* Licence chips in the table follow the F chip shape. */
+    #editTable .license-badge { padding: 2px 10px; border: 0; border-radius: 12px; font-size: 12px; }
+    #editTable .license-badge--ok { color: var(--success-strong); }
+    #editTable .license-badge--soon { color: var(--warning-strong); }
+    #editTable .license-badge--expired { color: var(--danger-strong); }
+
+    /* Footer: how many rows are on screen, and the database total. */
+    .units-table-foot {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px 12px;
+        padding: 12px 18px;
+        border-top: 1px solid var(--border);
+        color: var(--text-secondary);
+        font-size: 14px;
+    }
+    .units-table-foot span:empty { display: none; }
+    #editUnitCount { color: var(--text-light); font-size: 13px; }
+
+    /* ============ Unit form (#unitModal) ============ */
+    #unitModal .modal-card { max-width: 720px; }
+    #unitModal .modal-header h3 { font-size: 20px; }
+    #unitModal .modal-body { padding: 8px 24px 4px; }
+    #unitModal .unit-form__section {
+        margin: 0;
+        padding: 18px 0 6px;
+        border: 0;
+        border-top: 1px solid var(--border);
+        border-radius: 0;
+        background: none;
+    }
+    #unitModal .unit-form__section:first-of-type { border-top: 0; padding-top: 14px; }
+    #unitModal .unit-form__section legend {
+        float: left;
+        width: 100%;
+        margin: 0 0 12px;
+        padding: 0;
+        font-family: var(--font-sans);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--text-light);
+    }
+    #unitModal .unit-form__section legend + * { clear: both; }
+    #unitModal .form-grid { gap: 14px 16px; margin-bottom: 12px; }
+    #unitModal .form-label,
+    #bulkEditModal .bulk-row > label {
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--text-body);
+    }
+    #unitModal .form-group { gap: 6px; }
+    #unitModal .form-hint { font-size: 12.5px; color: var(--text-secondary); }
+    #unitModal .breakdown-reason-box { border-radius: 10px; }
+    #unitModal .form-actions,
+    #bulkEditModal .form-actions {
+        padding: 14px 24px;
+        border-top: 1px solid var(--border);
+        background: var(--card);
+    }
+
+    /* ============ Bulk Edit ============ */
+    #bulkEditModal .modal-card { max-width: 560px; }
+    #bulkEditModal .modal-body { padding: 16px 24px 8px; }
+    #bulkEditModal .modal-body > p { font-size: 14px !important; color: var(--text-secondary) !important; }
+    #bulkEditModal .bulk-row {
+        gap: 14px;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--border);
+    }
+    #bulkEditModal .bulk-row:last-child { border-bottom: 0; }
+    #bulkEditModal .bulk-row > label { width: 160px; gap: 10px; }
+    #bulkEditModal .bulk-row > label input { accent-color: var(--accent); }
+    /* A field whose box is not ticked reads as off. */
+    #bulkEditModal .bulk-row:has(> label input:not(:checked)) > .form-input,
+    #bulkEditModal .bulk-row:has(> label input:not(:checked)) > .form-select { background-color: var(--surface-sunken); }
+
+    /* ============ Unit profile ============ */
+    #unitProfileModal .modal-card { max-width: 900px; }
+    #unitProfileModal .modal-header { align-items: flex-start; gap: 12px; padding: 20px 24px 16px; }
+    .uprof-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .uprof-head h3 { margin: 0; font-size: 22px; line-height: 1.3; overflow-wrap: anywhere; }
+    .uprof-head__sub { color: var(--text-secondary); font-size: 14px; }
+    .uprof-head__sub:empty { display: none; }
+    .uprof-head__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 0 auto; }
+    #unitProfileModal .uprof-head__actions .btn-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: var(--neutral-tint);
+        color: var(--text-body);
+    }
+    #unitProfileModal .modal-body { padding: 20px 24px 24px; }
+
+    #unitProfileModal .profile-grid { gap: 18px; }
+    #unitProfileModal .profile-section {
+        min-width: 0;
+        padding: 16px 18px;
+        border-radius: 14px;
+        background: var(--card);
+        box-shadow: var(--ring);
+    }
+    #unitProfileModal .profile-section__title {
+        margin: 0 0 10px;
+        padding: 0;
+        border: 0;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--text-light);
+    }
+    #unitProfileModal .profile-section__title--sub { margin-top: 18px; }
+
+    /* Breakdown callout: what is wrong and for how long. */
+    #unitProfileModal .profile-note {
+        display: flex;
+        gap: 10px;
+        margin-top: 10px;
+        padding: 12px 14px;
+        border: 0;
+        border-radius: 12px;
+        background: var(--surface-sunken);
+        color: var(--text-body);
+        font-size: 13.5px;
+    }
+    #unitProfileModal .profile-note > i { margin-top: 3px; }
+    #unitProfileModal .profile-note--bad { margin-top: 0; background: var(--danger-bg); color: var(--danger-strong); }
+    #unitProfileModal .profile-note--bad strong { display: block; font-weight: 700; }
+    .profile-note__sub { display: block; font-size: 13px; }
+    .profile-note__link {
+        display: inline-flex;
+        align-items: center;
+        min-height: 32px;
+        margin-top: 2px;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: inherit;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        cursor: pointer;
+    }
+    .profile-note__link:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; border-radius: 4px; }
+    .profile-status .badge { font-size: 13px; }
+
+    /* Parts: a 2-column grid of tiles, the state on the right. */
+    #unitProfileModal .profile-comps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    #unitProfileModal .profile-comp {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--surface-sunken);
+        color: var(--text);
+        font-size: 14px;
+    }
+    #unitProfileModal .profile-comp > i { font-size: 15px; }
+    #unitProfileModal .profile-comp.ok > i { color: var(--dot-good); }
+    #unitProfileModal .profile-comp.bad > i { color: var(--dot-bad); }
+    .profile-comp__state { margin-left: auto; font-size: 13px; font-weight: 600; white-space: nowrap; }
+    .profile-comp.ok .profile-comp__state { color: var(--success-strong); }
+    .profile-comp.bad .profile-comp__state { color: var(--danger-strong); }
+
+    /* Licences: label left, expiry right. */
+    #unitProfileModal .profile-row {
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 14px;
+    }
+    #unitProfileModal .profile-row:last-child { border-bottom: 0; }
+    #unitProfileModal .profile-row__label { color: var(--text-body); }
+    #unitProfileModal .license-badge { padding: 2px 10px; border: 0; border-radius: 12px; font-size: 12px; }
+
+    /* Identity: a two-column definition list. */
+    .profile-dl {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px 16px;
+        margin: 0;
+    }
+    #unitProfileModal .profile-dl .profile-row {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        padding: 0;
+        border: 0;
+        min-width: 0;
+    }
+    #unitProfileModal .profile-dl dt { font-size: 12px; color: var(--text-secondary); }
+    #unitProfileModal .profile-dl dd { margin: 0; font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
+    #unitProfileModal .profile-dl dd > span[style*="text-align:right"] { text-align: left !important; }
+
+    /* Record lists */
+    #unitProfileModal .profile-list { gap: 0; max-height: 220px; }
+    #unitProfileModal .profile-item { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+    #unitProfileModal .profile-item:last-child { border-bottom: 0; }
+    #unitProfileModal .profile-empty { font-size: 13.5px; color: var(--text-light); }
+}
+
+/* Good / Breakdown in the status and part cells: painted by
+   paintUnitStates (CSS Custom Highlight API) — the row markup stays as is. */
+@media screen {
+    ::highlight(units-good) { color: var(--success-strong); }
+    ::highlight(units-bad) { color: var(--danger-strong); background-color: var(--danger-tint); }
+}
+
+/* ============ Desktop sizes ============ */
+@media screen and (min-width: 701px) {
+    #viewEditUnits .units-actions > .btn { padding: 0 16px; }
+    #viewEditUnits .units-actions .btn-secondary { padding: 0 14px; }
+    #viewEditUnits .units-more__btn { padding: 0; }
+    #editTable .row-actions .btn { width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 0; }
+    /* The upload button is a .btn-icon: the shared 40px square would make
+       every row 65px tall. */
+    #editTable .attach-upload-btn,
+    #unitProfileModal .attach-upload-btn { width: 30px; height: 30px; min-height: 30px; border-radius: 8px; }
+    #editTable.compact .row-actions .btn { width: 28px; min-width: 28px; height: 28px; min-height: 28px; }
+    #unitModal .form-input,
+    #unitModal .form-select,
+    #bulkEditModal .form-input,
+    #bulkEditModal .form-select { min-height: 40px; }
+}
+
+/* Under 1100px the filters drop under the chips as one row. */
+@media screen and (max-width: 1100px) {
+    #viewEditUnits .units-filters__right { margin-left: 0; width: 100%; }
+    #viewEditUnits .units-filters .edit-search { flex: 1 1 200px; }
+    #viewEditUnits .units-filters .edit-search input { width: 100%; }
+}
+
+/* ============ Phones ============ */
+@media screen and (max-width: 700px) {
+    /* Head: the group switch across the top, then Export · More · Add unit. */
+    #viewEditUnits .units-head { margin: 0 0 16px; gap: 12px; }
+    #viewEditUnits .units-head .page-head__text { width: 100%; }
+    #viewEditUnits .units-actions.edit-toolbar { width: 100%; justify-content: stretch; gap: 8px; }
+    #viewEditUnits .units-seg { display: flex; width: 100%; }
+    #viewEditUnits .units-seg .seg__btn { flex: 1 1 0; min-height: 44px; }
+    #viewEditUnits .units-actions > .btn { flex: 1 1 0; min-width: 0; justify-content: center; }
+    #viewEditUnits .units-more { flex: 0 0 auto; }
+    /* The button sits mid-row: the menu opens centred under it. */
+    .units-more__menu { right: auto; left: 50%; transform: translateX(-50%); }
+    #viewEditUnits .units-more__menu .btn,
+    #viewEditUnits .units-more__menu .btn.btn-primary { min-height: 44px; }
+
+    .units-banner__link, .profile-note__link { min-height: 44px; }
+
+    /* Filters: chips wrap; search on its own line; Status and Site share one. */
+    #viewEditUnits .units-filters.edit-toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
+    .units-quick { gap: 6px; }
+    .units-chip { min-height: 44px; padding: 0 14px; font-size: 14px; }
+    #viewEditUnits .units-filters__right {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 8px;
+        width: 100%;
+        margin: 0;
+    }
+    #viewEditUnits .units-filters .edit-search { grid-column: 1 / -1; width: 100%; }
+    #viewEditUnits .units-filters .edit-search input { width: 100%; min-height: 44px; }
+    .units-select { min-width: 0; min-height: 44px; padding-left: 4px; }
+    /* The options name the filter ("All Status", "All Sites"); the select
+       keeps its aria-label. */
+    .units-select__label { display: none; }
+    #viewEditUnits .units-select .form-select { flex: 1 1 auto; min-width: 0; max-width: none; min-height: 42px; padding: 0 28px 0 2px; }
+
+    .units-insights__toggle { padding: 10px 14px; }
+    .units-insights__meta { white-space: normal; }
+    .units-insights__body { padding: 14px; }
+    .units-insights .dq__pct { font-size: 26px; }
+
+    /* Table cards (F): the nickname as the title with its status at the
+       right, the model under it, then the fields as label · value rows. */
+    .units-table-card { overflow: visible; background: transparent; box-shadow: none; }
+    .units-table-card .table-wrapper { overflow: visible; }
+    #editTable tbody tr {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        column-gap: 12px;
+        margin-bottom: 12px;
+        padding: 14px 16px 12px;
+        border: 0;
+        border-radius: var(--radius-lg);
+        background: var(--card);
+        box-shadow: var(--shadow);
+    }
+    #editTable tbody tr:hover { background: var(--card); }
+    #editTable tbody tr > td { grid-column: 1 / -1; min-width: 0; }
+    #editTable tbody tr > td[data-label] { border-top: 1px solid var(--border); border-bottom: 0; padding: 4px 0; }
+    #editTable tbody td[data-label]::before {
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--text-secondary);
+    }
+    #editTable tbody tr > td[data-label="Nickname"] {
+        grid-column: 1;
+        grid-row: 1;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+        gap: 4px 8px;
+        border-top: 0;
+        padding: 0;
+    }
+    #editTable tbody td[data-label="Nickname"] .inline-edit { padding: 6px 4px; min-height: 0; font-size: 16px; }
+    #editTable tbody tr > td[data-label="Model"] {
+        grid-column: 1;
+        grid-row: 2;
+        justify-content: flex-start;
+        padding: 0 0 8px;
+        border-top: 0;
+    }
+    #editTable tbody td[data-label="Model"] .inline-edit { color: var(--text-secondary); padding: 2px 4px; min-height: 0; font-size: 15px; }
+    #editTable tbody tr > td[data-label="Status"] {
+        grid-column: 2;
+        grid-row: 1 / span 2;
+        align-self: start;
+        border-top: 0;
+        padding: 0;
+    }
+    #editTable tbody td[data-label="Nickname"]::before,
+    #editTable tbody td[data-label="Model"]::before,
+    #editTable tbody td[data-label="Status"]::before { content: none; }
+    #editTable tbody td[data-label="Status"] .inline-edit {
+        min-height: 0;
+        padding: 4px 12px;
+        border-radius: 14px;
+        background: var(--neutral-tint);
+        font-size: 15px;
+    }
+    #editTable tbody td.col-actions { padding-top: 10px; border-top: 1px solid var(--border); }
+    #editTable tbody td[colspan] { grid-column: 1 / -1; padding: 16px 0; text-align: center; }
+    #editTable tbody tr:has(td[colspan]) { display: block; }
+    #editTable tbody tr:has(.unit-check:checked) { box-shadow: var(--shadow), inset 3px 0 0 var(--accent); }
+    #editTable tbody tr:has(.unit-check:checked) td:first-child { box-shadow: none; }
+
+    .units-table-card.has-selection .table-card__header { position: sticky; top: 0; z-index: 20; border-radius: 12px; margin-bottom: 10px; }
+    .units-table-foot { padding: 4px 2px 0; border-top: 0; }
+
+    /* Dialogs on a phone: one column, full-width sections. */
+    #unitModal .modal-body { padding: 4px 16px; }
+    #unitModal .form-actions,
+    #bulkEditModal .form-actions { padding: 12px 16px; }
+    #bulkEditModal .modal-body { padding: 12px 16px 4px; }
+    #bulkEditModal .bulk-row { flex-direction: column; align-items: stretch; gap: 6px; }
+    #bulkEditModal .bulk-row > label { width: auto; min-height: 40px; }
+    #unitProfileModal .modal-header { padding: 16px; flex-wrap: wrap; }
+    .uprof-head { flex: 1 1 100%; order: 0; }
+    .uprof-head__actions { order: 1; width: 100%; justify-content: flex-start; }
+    #unitProfileModal .uprof-head__actions .btn-icon { position: absolute; top: 12px; right: 12px; width: 44px; height: 44px; }
+    #unitProfileModal .modal-header { position: relative; padding-right: 64px; }
+    #unitProfileModal .modal-body { padding: 16px; }
+    #unitProfileModal .profile-section { padding: 14px; }
+}
+@media screen and (max-width: 380px) {
+    #unitProfileModal .profile-comps,
+    .profile-dl { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Print: the folded fleet details and the banner's link are screen tools. */
+@media print {
+    .units-insights, .units-banner__link, .units-more__menu { display: none !important; }
+}
