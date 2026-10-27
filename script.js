@@ -6741,12 +6741,94 @@ function saveImplements() {
 
 function updateImplementCount() {
     const el = document.getElementById('implementCount');
-    if (el) el.textContent = `${globalImplements.length} implement(s) in database`;
+    const n = globalImplements.length;
+    if (el) el.textContent = `${n} ${n === 1 ? 'profile' : 'profiles'}`;
+}
+
+// ---- Tractors per implement type (Unit Database) ----
+// Keys match the Unit Database's implement filter (toolKeyOf): the type in
+// lower case, or TOOL_NONE for tractors with no implement.
+let _implUseAll = false;
+const IMPL_USE_LIMIT = 11;
+
+function implementUseRows() {
+    const known = _knownImplementBrands();
+    const map = new Map();
+    let none = 0;
+    const tractors = unitsOfGroup(globalData, 'tractor');
+    tractors.forEach(u => {
+        const t = toolPartsOf(u, 'tractor', known).type;
+        if (!t) { none++; return; }
+        const k = t.toLowerCase();
+        const cur = map.get(k) || { key: k, spell: new Map(), count: 0 };
+        cur.count++;
+        cur.spell.set(t, (cur.spell.get(t) || 0) + 1);
+        map.set(k, cur);
+    });
+    const rows = [...map.values()].map(r => ({ key: r.key, count: r.count, label: _pickLabel(r.spell) }))
+        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+    return { rows, none, total: tractors.length };
+}
+
+function toggleImplementUseAll() {
+    _implUseAll = !_implUseAll;
+    renderImplementUseTiles();
+}
+
+function renderImplementUseTiles() {
+    const sec = document.getElementById('implUseSection');
+    const box = document.getElementById('implUseTiles');
+    if (!sec || !box) return;
+    const { rows, none, total } = implementUseRows();
+    sec.hidden = !total;
+    if (!total) { box.innerHTML = ''; return; }
+    // A tile opens Units filtered to those tractors — for whoever may open Units.
+    const canOpen = canViewView('editUnits');
+    const cut = rows.length > IMPL_USE_LIMIT + 1 && !_implUseAll;
+    const tile = (key, n, label, extra) => {
+        const inner = `<span class="fp-use__n">${n}</span><span class="fp-use__label">${escapeHtml(label)}</span>`;
+        return canOpen
+            ? `<button type="button" class="fp-use__tile${extra}" aria-label="${escapeHtml(label)}: ${n} ${n === 1 ? 'tractor' : 'tractors'}, show them in Units"
+                onclick="openUnitsForImplement(${jsArg(key)})">${inner}</button>`
+            : `<div class="fp-use__tile${extra}">${inner}</div>`;
+    };
+    box.innerHTML = (cut ? rows.slice(0, IMPL_USE_LIMIT) : rows).map(r => tile(r.key, r.count, r.label, '')).join('')
+        + (none ? tile(TOOL_NONE, none, 'No implement set', ' fp-use__tile--warn') : '')
+        + (rows.length > IMPL_USE_LIMIT + 1 ? `<button type="button" class="fp-use__tile fp-use__tile--more" aria-expanded="${_implUseAll}" onclick="toggleImplementUseAll()">${
+            _implUseAll ? 'Show fewer' : `+${rows.length - IMPL_USE_LIMIT} more types`}</button>` : '');
+}
+
+function openUnitsForImplement(key) {
+    navigateTo('editUnits');
+    if (currentView !== 'editUnits') return;   // no access to Units
+    switchEditUnitsGroup('tractor', { persist: false });
+    setEditToolFilter(key);
+}
+
+// Unit snapshots change the tractor counts.
+document.addEventListener('ot:data', () => { if (currentView === 'implements') renderImplementUseTiles(); });
+
+// Equipment types in the Implements list, for the Type filter.
+function populateImplementTypeFilter() {
+    const sel = document.getElementById('implementTypeFilter');
+    if (!sel) return;
+    const byKey = new Map();
+    globalImplements.forEach(d => {
+        const t = _toolNorm(d.equipmentType);
+        if (t && !byKey.has(t.toLowerCase())) byKey.set(t.toLowerCase(), t);
+    });
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">All types</option>' + [...byKey.entries()]
+        .sort((a, b) => a[1].localeCompare(b[1]))
+        .map(([k, t]) => `<option value="${escapeHtml(k)}">${escapeHtml(t)}</option>`).join('');
+    sel.value = byKey.has(cur) ? cur : '';
 }
 
 // ---- Render ----
 function renderImplementsTable() {
     updateImplementCount();
+    renderImplementUseTiles();
+    populateImplementTypeFilter();
     // A re-render (search, filter, a cloud snapshot) draws fresh, unticked
     // rows — so the selection is dropped with them. Re-reading the OLD boxes
     // here kept "Delete selected" armed for rows no longer on screen.
@@ -6758,19 +6840,21 @@ function renderImplementsTable() {
     if (selectAllBox) selectAllBox.checked = false;
 
     const query = (document.getElementById('implementSearch')?.value || '').toLowerCase().trim();
-    const rows = query
-        ? globalImplements.filter(d =>
-            `${d.profileName} ${d.brand || ''} ${d.equipmentType} ${d.code || ''} ${d.operation} ${d.connectingType} ${d.workingWidth}`
-                .toLowerCase().includes(query))
-        : globalImplements;
+    const typeVal = document.getElementById('implementTypeFilter')?.value || '';
+    const rows = globalImplements.filter(d =>
+        (!typeVal || _toolNorm(d.equipmentType).toLowerCase() === typeVal)
+        && (!query || `${d.profileName} ${d.brand || ''} ${d.equipmentType} ${d.code || ''} ${d.operation} ${d.connectingType} ${d.workingWidth}`
+            .toLowerCase().includes(query)));
+    const shown = document.getElementById('implementShown');
+    if (shown) shown.textContent = rows.length === globalImplements.length ? '' : `${rows.length} of ${globalImplements.length}`;
 
     const tbody = document.getElementById('implementBody');
     if (!tbody) return;
 
     if (rows.length === 0) {
         tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--text-secondary)">${
-            query ? 'No implements match your search'
-                  : 'No implements yet. Click <strong>Add Implement</strong> to get started.'
+            query || typeVal ? 'No implements match your search'
+                  : 'No implements yet. Click <strong>Add implement</strong> to get started.'
         }</td></tr>`;
         return;
     }
@@ -6791,9 +6875,9 @@ function renderImplementsTable() {
         <tr>
             <td class="col-check"><input type="checkbox" class="impl-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedImplementCount()"></td>
             <td>${i + 1}</td>
-            <td data-label="Profile Name">${escapeHtml(d.profileName)}</td>
-            <td data-label="Brand">${escapeHtml(d.brand || '')}</td>
-            <td data-label="Equipment Type">${escapeHtml(d.equipmentType)}</td>
+            <td data-label="Profile Name"><strong>${escapeHtml(d.profileName)}</strong></td>
+            <td data-label="Brand" class="fp-muted">${escapeHtml(d.brand || '') || '—'}</td>
+            <td data-label="Equipment Type">${_toolNorm(d.equipmentType) ? `<span class="fp-chip fp-chip--neutral">${escapeHtml(_toolNorm(d.equipmentType))}</span>` : '<span class="fp-muted">—</span>'}</td>
             <td data-label="Code">${escapeHtml(d.code || '')}</td>
             <td data-label="Working Width">${escapeHtml(d.workingWidth)}</td>
             <td data-label="Operation">${escapeHtml(d.operation)}</td>
@@ -6801,8 +6885,8 @@ function renderImplementsTable() {
             <td data-label="Chart of Account" style="max-width:240px;white-space:nowrap">${coaCell}</td>
             <td class="col-actions">
                 <div class="row-actions">
-                    <button class="btn btn-secondary" title="Edit" onclick="editImplement(${jsArg(d.id)})"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Delete" onclick="deleteImplement(${jsArg(d.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                    <button class="btn btn-secondary" title="Edit" aria-label="Edit ${escapeHtml(d.profileName || 'implement')}" onclick="editImplement(${jsArg(d.id)})"><i class="fas fa-pen" aria-hidden="true"></i></button>
+                    <button class="btn btn-secondary" title="Delete" aria-label="Delete ${escapeHtml(d.profileName || 'implement')}" onclick="deleteImplement(${jsArg(d.id)})"><i class="fas fa-trash" style="color:var(--danger)" aria-hidden="true"></i></button>
                 </div>
             </td>
         </tr>`;
@@ -9389,30 +9473,133 @@ function computeLicenseSummary() {
     return map;
 }
 
+// Stock against the minimum the dashboard warns at (LICENSE_LOW_STOCK_THRESHOLD).
+function licenseStockLevel(left) {
+    const min = LICENSE_LOW_STOCK_THRESHOLD;
+    if (left < min) return { tone: 'bad', label: 'Low' };
+    if (left === min) return { tone: 'warn', label: 'At minimum' };
+    return { tone: 'good', label: 'OK' };
+}
+
+// GPS or display, from the requirement options (SF-* / G5 *); '' if neither.
+function licenseKindOf(type) {
+    const k = licenseTypeKey(type);
+    if (LIC_REQ_OPTIONS.gps.some(t => t && licenseTypeKey(t) === k)) return 'gps';
+    if (LIC_REQ_OPTIONS.display.some(t => t && licenseTypeKey(t) === k)) return 'display';
+    return '';
+}
+
+const FP_ICON_GPS = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="7"></circle><circle cx="12" cy="12" r="2.5"></circle><path d="M12 2v3"></path><path d="M12 19v3"></path><path d="M2 12h3"></path><path d="M19 12h3"></path></svg>';
+const FP_ICON_DISPLAY = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8"></path><path d="M12 16v4"></path></svg>';
+
 function renderLicenseSummary() {
     const el = document.getElementById('licenseSummary');
     if (!el) return;
+    renderLicenseExpiring();
     const map = computeLicenseSummary();
-    const types = Object.keys(map).sort((a, b) => a.localeCompare(b));
+    const KIND_ORDER = { gps: 0, display: 1, '': 2 };
+    const types = Object.keys(map).sort((a, b) =>
+        KIND_ORDER[licenseKindOf(a)] - KIND_ORDER[licenseKindOf(b)] || a.localeCompare(b));
     if (types.length === 0) {
         el.innerHTML = '<div class="license-summary__empty">No license stock data yet.</div>';
+        refreshLicensePlan();
         return;
     }
+    const min = LICENSE_LOW_STOCK_THRESHOLD;
     el.innerHTML = types.map(t => {
         const s = map[t];
-        const low = s.sisa <= 0;
+        const lv = licenseStockLevel(s.sisa);
+        const kind = licenseKindOf(t);
+        const pct = Math.round(Math.min(1, Math.max(0, s.sisa) / min) * 100);
         return `
-        <div class="license-sum-card${low ? ' low' : ''}">
-            <div class="license-sum-card__type">${escapeHtml(t)}</div>
-            <div class="license-sum-card__nums">
-                <span title="In"><i class="fas fa-arrow-down" style="color:var(--success)"></i> ${s.in}</span>
-                <span title="Distributed"><i class="fas fa-arrow-up" style="color:var(--primary)"></i> ${s.out}</span>
-                <span class="license-sum-card__sisa" title="Remaining">Remaining: <strong>${s.sisa}</strong></span>
+        <div class="fp-stock">
+            <div class="fp-stock__head">
+                <span class="fp-stock__type">${kind === 'gps' ? FP_ICON_GPS : kind === 'display' ? FP_ICON_DISPLAY : '<i class="fas fa-key" aria-hidden="true"></i>'}
+                    <span>${kind === 'gps' ? 'GPS · ' : kind === 'display' ? 'Display · ' : ''}${escapeHtml(t)}</span></span>
+                <span class="fp-chip fp-chip--${lv.tone}">${lv.label}</span>
             </div>
+            <div class="fp-stock__big">${s.sisa} <span>in stock · keep ${min}</span></div>
+            <div class="fp-bar fp-bar--${lv.tone}" aria-hidden="true"><span style="width:${pct}%"></span></div>
+            <div class="fp-stock__sub">${s.in} in · ${s.out} distributed</div>
         </div>`;
     }).join('');
     refreshLicensePlan();
 }
+
+// ---- Expiring soon: unit licenses expired or ending within 30 days ----
+// The same list the dashboard alerts and the email report use: tractors only,
+// and a premium license already on its fallback tier is not an alert.
+let _licExpiringAll = false;
+const LIC_EXPIRING_LIMIT = 6;
+
+function licenseExpiringRows() {
+    const rows = [];
+    globalData.filter(u => !isHeavy(u)).forEach(unit => {
+        ['gps', 'display'].forEach(kind => {
+            const end = getLicenseEndDate(unit, kind);
+            if (!end || effectiveLicense(unit, kind).downgraded) return;
+            const s = getExpiryStatus(end);
+            if (s.kind === 'expired' || s.kind === 'soon') rows.push({ unit, kind, end, s });
+        });
+    });
+    return rows.sort((a, b) => a.s.daysLeft - b.s.daysLeft || String(a.unit.name || '').localeCompare(String(b.unit.name || '')));
+}
+
+function toggleLicenseExpiringAll() {
+    _licExpiringAll = !_licExpiringAll;
+    renderLicenseExpiring();
+}
+
+function renderLicenseExpiring() {
+    const list = document.getElementById('licExpiringList');
+    if (!list) return;
+    const rows = licenseExpiringRows();
+    const more = document.getElementById('licExpiringMore');
+    if (more) {
+        more.hidden = rows.length <= LIC_EXPIRING_LIMIT;
+        more.textContent = _licExpiringAll ? 'Show fewer' : `Show all ${rows.length}`;
+        more.setAttribute('aria-expanded', String(_licExpiringAll));
+    }
+    if (!rows.length) {
+        list.innerHTML = '<li class="fp-list__empty">No unit license expires in the next 30 days.</li>';
+        return;
+    }
+    const iconExpired = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4"></path><path d="M8 2v4"></path><path d="M3 10h18"></path><path d="m14.5 13.5-5 5"></path><path d="m9.5 13.5 5 5"></path></svg>';
+    const iconSoon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h5.5"></path><path d="M16 2v4"></path><path d="M8 2v4"></path><path d="M3 10h8"></path><circle cx="17.5" cy="17.5" r="4.5"></circle><path d="M17.5 15.5v2l1.5 1"></path></svg>';
+    list.innerHTML = (_licExpiringAll ? rows : rows.slice(0, LIC_EXPIRING_LIMIT)).map(({ unit, kind, end, s }) => {
+        const expired = s.kind === 'expired';
+        const name = unit.name || unit.sn || '-';
+        const type = kind === 'display' ? unit.licenseDisplay : unit.gpsLicense;
+        const what = `${kind === 'display' ? 'Display' : 'GPS'}${type ? ' ' + type : ''}`;
+        const when = expired ? `Expired ${fpShortDate(end)}`
+            : `${fpShortDate(end)} · ${s.daysLeft === 0 ? 'today' : `in ${s.daysLeft} day${s.daysLeft === 1 ? '' : 's'}`}`;
+        return `<li class="fp-list__item">
+            <span class="fp-list__icon fp-list__icon--${expired ? 'bad' : 'info'}" aria-hidden="true">${expired ? iconExpired : iconSoon}</span>
+            <span class="fp-list__text">
+                <span class="fp-list__name">${escapeHtml(name)} · ${escapeHtml(what)}</span>
+                <span class="fp-list__meta${expired ? ' fp-list__meta--bad' : ''}" title="${escapeHtml(end)}">${escapeHtml(when)}</span>
+            </span>
+            <button type="button" class="btn btn-sm ${expired ? 'btn-primary' : 'btn-secondary'} editonly editonly--license"
+                aria-label="Renew the ${escapeHtml(what)} license of ${escapeHtml(name)}" onclick="renewLicenseFor(${jsArg(unit.id)}, ${jsArg(kind)})">Renew</button>
+        </li>`;
+    }).join('');
+}
+
+// Renew = distribute a license to that unit: the distribution form, filled in
+// with the unit and the license type it has now.
+function renewLicenseFor(unitId, kind) {
+    const u = globalData.find(x => x.id === unitId);
+    if (!u) return;
+    showAddLicenseForm('OUT');
+    if (!document.getElementById('licenseModal').classList.contains('open')) return;   // view-only
+    document.getElementById('licenseModalTitle').textContent = 'Renew License';
+    const type = canonicalLicenseType(kind === 'display' ? u.licenseDisplay : u.gpsLicense);
+    if (type) document.getElementById('licType').value = type;
+    populateLicenseUnitList(damageUnitLabel(u));
+}
+
+// Unit snapshots change which unit licenses are expiring.
+document.addEventListener('ot:data', () => { if (currentView === 'licenseStock') renderLicenseExpiring(); });
 
 // ---- Filtering / sort (newest date first) ----
 function getFilteredLicenseStock() {
@@ -9486,7 +9673,7 @@ function renderLicenseStockTable() {
     if (rows.length === 0) {
         tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--text-secondary)">${
             hasFilter ? 'No transactions match the filter'
-                      : 'No license stock transactions yet. Click <strong>Add Stock</strong> or <strong>Distribute</strong>.'
+                      : 'No license stock transactions yet. Click <strong>Add stock</strong> or <strong>Distribute</strong>.'
         }</td></tr>`;
         return;
     }
@@ -9494,8 +9681,8 @@ function renderLicenseStockTable() {
     tbody.innerHTML = rows.map((r, i) => {
         const isOut = r.txnType === 'OUT';
         const badge = isOut
-            ? '<span class="badge badge-cat" style="font-size:10px"><i class="fas fa-share-from-square"></i> Distribution</span>'
-            : '<span class="badge badge-good" style="font-size:10px"><i class="fas fa-arrow-down"></i> Stock In</span>';
+            ? '<span class="fp-chip fp-chip--neutral" title="Distributed to a unit">Out</span>'
+            : '<span class="fp-chip fp-chip--good" title="Stock in">In</span>';
         const note = r.note || '';
         const noteShort = note.length > 40 ? note.slice(0, 40) + '…' : note;
         const lu = isOut ? liveUnitFor(r) : null;
@@ -9508,15 +9695,15 @@ function renderLicenseStockTable() {
             <td data-label="Date" style="white-space:nowrap">${escapeHtml(r.date || '')}</td>
             <td data-label="Transaction">${badge}</td>
             <td data-label="Type"><strong>${escapeHtml(r.licenseType || '')}</strong></td>
-            <td data-label="Quantity">${Number(r.qty) || 0}</td>
+            <td data-label="Quantity" class="fp-qty">${isOut ? '−' : '+'}${Number(r.qty) || 0}</td>
             <td data-label="Unit">${isOut ? escapeHtml(uName) : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td data-label="SN" style="font-family:monospace;font-size:12px">${isOut ? escapeHtml(uSn) : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td data-label="Unit Status">${isOut ? licenseSyncCell(syncPlan.recStatus.get(r.id)) : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td data-label="Notes" style="max-width:200px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(note)}">${escapeHtml(noteShort) || '<span style="color:var(--text-light)">—</span>'}</td>
             <td class="col-actions">
                 <div class="row-actions">
-                    <button class="btn btn-secondary" title="Edit" onclick="editLicenseStock(${jsArg(r.id)})"><i class="fas fa-pen"></i></button>
-                    <button class="btn btn-secondary" title="Delete" onclick="deleteLicenseStock(${jsArg(r.id)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button>
+                    <button class="btn btn-secondary" title="Edit" aria-label="Edit this transaction" onclick="editLicenseStock(${jsArg(r.id)})"><i class="fas fa-pen" aria-hidden="true"></i></button>
+                    <button class="btn btn-secondary" title="Delete" aria-label="Delete this transaction" onclick="deleteLicenseStock(${jsArg(r.id)})"><i class="fas fa-trash" style="color:var(--danger)" aria-hidden="true"></i></button>
                 </div>
             </td>
         </tr>`;
@@ -18725,7 +18912,12 @@ function renderInspectionView() {
     setText('insKpiOverdue', st.filter(s => s.key === 'overdue').length);
     setText('insKpiSoon', st.filter(s => s.key === 'soon').length);
     setText('insKpiNever', st.filter(s => s.key === 'never').length);
-    setText('insKpiPending', inspections.filter(r => workLogApproval(r) === 'pending').length);
+    const pending = inspections.filter(r => workLogApproval(r) === 'pending').length;
+    setText('insKpiPending', pending);
+    // Tab pills: reports waiting for a decision, schedules with units left.
+    const pill = (id, n) => { const el = document.getElementById(id); if (el) { el.textContent = n; el.hidden = !n; } };
+    pill('insPendingCount', pending);
+    pill('insPlanOpenCount', inspectionPlans.filter(p => { const pr = planProgress(p); return pr.done < pr.total; }).length);
 
     if (inspectionTab === 'status') renderInspectionStatus();
     else if (inspectionTab === 'plans') renderInspectionPlans();
@@ -18733,6 +18925,11 @@ function renderInspectionView() {
     renderInspectionSyncNotice();
     updateMyTeamNotices();
 }
+
+// A unit snapshot moves units in and out of the list, and an access change
+// decides who sees "Log check" and "Review": redraw the open page.
+document.addEventListener('ot:data', () => { if (currentView === 'inspection') renderInspectionView(); });
+document.addEventListener('ot:gating', () => { if (currentView === 'inspection') renderInspectionView(); });
 
 function renderInspectionSyncNotice() {
     const el = document.getElementById('insSyncNotice');
@@ -18764,6 +18961,53 @@ function insStatusBadge(s) {
     return `<span class="ins-st ins-st--${s.key}" title="${escapeHtml(s.next ? 'Next check ' + s.next : 'No check report submitted yet')}">${escapeHtml(s.label)}</span>`;
 }
 
+// "5 Oct" — with the year when it is not this year. Tables keep the ISO date
+// in the cell's title.
+function fpShortDate(iso) {
+    const d = parseLocalDate(iso);
+    if (!d) return iso || '';
+    const opts = { day: 'numeric', month: 'short' };
+    if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+    return d.toLocaleDateString('en-GB', opts);
+}
+
+// Status chips above the table. #insStatusFilter (hidden) keeps the choice.
+const INS_STATUS_CHIPS = [['', 'All'], ['overdue', 'Overdue'], ['soon', 'Due soon'], ['never', 'Never checked'], ['ok', 'OK']];
+
+function setInspectionStatusFilter(key) {
+    const sel = document.getElementById('insStatusFilter');
+    if (sel) sel.value = key || '';
+    renderInspectionStatus();
+}
+
+function renderInspectionStatusChips(all, filter) {
+    const box = document.getElementById('insStatusChips');
+    if (!box) return;
+    // Redrawn on every click: keep the keyboard on the chip just pressed.
+    const hadFocus = box.contains(document.activeElement);
+    box.innerHTML = INS_STATUS_CHIPS.map(([k, label]) => {
+        const n = k ? all.filter(x => x.s.key === k).length : all.length;
+        return `<button type="button" class="fp-chip-btn" aria-pressed="${filter === k}" onclick="setInspectionStatusFilter(${jsArg(k)})">${escapeHtml(label)} · ${n}</button>`;
+    }).join('');
+    if (hadFocus) box.querySelector('[aria-pressed="true"]')?.focus();
+}
+
+const FP_ICON_EXCAVATOR = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="16" width="12" height="4.5" rx="2.25"></rect><path d="M3.5 16v-3.5h8.5V16"></path><path d="M5.5 12.5V9h4l1.5 3.5"></path><path d="M12 12.5l4.5-7 3.5 3"></path><path d="M20 8.5l1.5 5.5h-4"></path></svg>';
+
+// Next check: the due date as a chip, and the schedule the unit is on.
+function insNextCell(u, s) {
+    const plan = openPlanFor(u.id);
+    const planned = plan ? `Planned ${fpShortDate(plan.date)}` : '';
+    if (s.key === 'never') {
+        return plan ? `<span class="ins-st ins-st--planned" title="${escapeHtml('Schedule ' + plan.date)}">${escapeHtml(planned)}</span>`
+                    : '<span class="ins-st ins-st--never" title="No check report submitted yet">Not planned</span>';
+    }
+    const text = s.key === 'overdue' ? s.label : s.key === 'soon' ? `${fpShortDate(s.next)} · ${s.label}` : fpShortDate(s.next);
+    const sub = [s.key === 'overdue' ? `Was due ${fpShortDate(s.next)}` : '', planned].filter(Boolean).join(' · ');
+    return `<span class="ins-st ins-st--${s.key}" title="${escapeHtml('Next check ' + s.next + (s.key === 'ok' ? ' · ' + s.label : ''))}">${escapeHtml(text)}</span>${
+        sub ? `<span class="fp-sub">${escapeHtml(sub)}</span>` : ''}`;
+}
+
 function renderInspectionStatus() {
     const tbody = document.getElementById('insStatusBody');
     if (!tbody) return;
@@ -18771,34 +19015,49 @@ function renderInspectionStatus() {
     const q = (document.getElementById('insStatusSearch')?.value || '').toLowerCase().trim();
     const today = toISODate();
     const canCheck = hasAccess('inspection', 'edit');
-    const rows = inspectableUnits()
-        .map(u => ({ u, s: inspectionStatusFor(u, today) }))
+    const canApprove = hasAccess('inspectionApprove', 'edit');
+    const all = inspectableUnits().map(u => ({ u, s: inspectionStatusFor(u, today) }));
+    renderInspectionStatusChips(all, filter);
+    const rows = all
         .filter(({ u, s }) => (!filter || s.key === filter)
             && (!q || `${u.name} ${u.sn} ${u.assetCode || ''} ${u.machineType || ''} ${u.site || ''}`.toLowerCase().includes(q)))
         .sort((a, b) => (INS_STATUS_ORDER[a.s.key] - INS_STATUS_ORDER[b.s.key])
             || ((a.s.days == null ? 0 : a.s.days) - (b.s.days == null ? 0 : b.s.days))
             || String(a.u.name || '').localeCompare(String(b.u.name || '')));
     const count = document.getElementById('insStatusCount');
-    if (count) count.textContent = `${rows.length} unit(s)`;
+    if (count) count.textContent = rows.length === all.length ? '' : `${rows.length} of ${all.length} units`;
     if (!rows.length) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-secondary)">${
-            inspectableUnits().length ? 'No units match the filter' : 'No Heavy Equipment units in the Unit Database yet.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+            all.length ? 'No units match the filter' : 'No Heavy Equipment units in the Unit Database yet.'}</td></tr>`;
         return;
     }
-    tbody.innerHTML = rows.map(({ u, s }, i) => {
-        const res = s.last ? inspectionResultSummary(s.last) : null;
+    tbody.innerHTML = rows.map(({ u, s }) => {
+        const name = u.name || u.sn || '-';
+        const last = s.last;
+        const appr = last ? workLogApproval(last) : '';
+        const res = last ? inspectionResultSummary(last) : null;
+        // A report still waiting is reviewed in Reports, by someone other than its author.
+        const review = last && appr === 'pending' && canApprove && !isMyRecord(last);
+        const main = review
+            ? `<button type="button" class="btn btn-secondary btn-sm" aria-label="Review the check report of ${escapeHtml(name)}" onclick="showInspectionHistory(${jsArg(u.id)})">Review</button>`
+            : canCheck
+            ? `<button type="button" class="btn ${s.key === 'overdue' ? 'btn-primary' : 'btn-secondary'} btn-sm" aria-label="Log a check for ${escapeHtml(name)}" onclick="showInspectionForm(${jsArg(u.id)})">Log check</button>`
+            : '';
         return `<tr>
-            <td>${i + 1}</td>
-            <td data-label="Unit"><strong>${escapeHtml(u.name || '-')}</strong>${u.assetCode ? `<div class="ins-sub">${escapeHtml(u.assetCode)}</div>` : ''}</td>
-            <td data-label="Machine Type">${escapeHtml(u.machineType || '—')}</td>
-            <td data-label="Site">${escapeHtml(u.site || '—')}</td>
-            <td data-label="Last Check">${s.last ? escapeHtml(s.last.date) + (workLogApproval(s.last) !== 'approved'
-                ? ` <span class="appr appr--${workLogApproval(s.last)}">${escapeHtml(APPROVAL_STATES[workLogApproval(s.last)].label)}</span>` : '') : '—'}</td>
-            <td data-label="Result">${res ? `<span class="ins-res ins-res--${res.tone}">${escapeHtml(res.text)}</span>` : '—'}</td>
-            <td data-label="Next Check">${insStatusBadge(s)}${s.next ? `<div class="ins-sub">${escapeHtml(s.next)}</div>` : ''}</td>
-            <td class="col-actions"><div class="row-actions">
-                ${canCheck ? `<button class="btn btn-secondary" title="Check this unit" aria-label="Check ${escapeHtml(u.name || '')}" onclick="showInspectionForm(${jsArg(u.id)})"><i class="fas fa-clipboard-check"></i></button>` : ''}
-                <button class="btn btn-secondary" title="Check history" aria-label="Check history for ${escapeHtml(u.name || '')}" onclick="showInspectionHistory(${jsArg(u.id)})"><i class="fas fa-clock-rotate-left"></i></button>
+            <td data-label="Unit"><div class="fp-unit">
+                <span class="fp-unit__icon" aria-hidden="true">${FP_ICON_EXCAVATOR}</span>
+                <span class="fp-unit__text"><strong>${escapeHtml(name)}</strong><span class="fp-sub">${escapeHtml([u.machineType, u.assetCode].filter(Boolean).join(' · ') || '—')}</span></span>
+            </div></td>
+            <td data-label="Site" class="fp-muted">${escapeHtml(u.site || '—')}</td>
+            <td data-label="Last check">${last ? `<div class="fp-stack">
+                <span title="${escapeHtml(last.date)}">${escapeHtml(fpShortDate(last.date))}</span>
+                <span class="fp-sub fp-sub--${res.tone}" title="${escapeHtml(res.text)}">${escapeHtml(res.text)}</span>
+                ${appr !== 'approved' ? `<span class="fp-sub fp-sub--${appr}">${escapeHtml(appr === 'pending' ? 'Waiting for approval' : APPROVAL_STATES[appr].label)}</span>` : ''}
+            </div>` : '<span class="fp-muted">Never checked</span>'}</td>
+            <td data-label="Next check"><div class="fp-stack">${insNextCell(u, s)}</div></td>
+            <td class="col-actions"><div class="fp-actions">
+                ${main}
+                <button type="button" class="btn btn-secondary btn-sm fp-icon-btn" title="Check history" aria-label="Check history for ${escapeHtml(name)}" onclick="showInspectionHistory(${jsArg(u.id)})"><i class="fas fa-clock-rotate-left" aria-hidden="true"></i><span class="fp-btn-label">History</span></button>
             </div></td>
         </tr>`;
     }).join('');
@@ -18821,7 +19080,7 @@ function renderInspectionPlans() {
     const canPlan = canPlanInspections();
     if (!inspectionPlans.length) {
         tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-secondary)">No inspection schedules yet.${
-            canPlan ? ' Click <strong>New Schedule</strong> to get started.' : ''}</td></tr>`;
+            canPlan ? ' Click <strong>Plan a check</strong> to get started.' : ''}</td></tr>`;
         return;
     }
     tbody.innerHTML = inspectionPlans.map((p, i) => {
