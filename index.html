@@ -900,72 +900,114 @@
 
         <div class="damage-rules-slot"></div>
 
-        <!-- Damage Toolbar -->
-        <div class="edit-toolbar">
-            <div class="edit-toolbar__left">
-                <button class="btn btn-success editonly editonly--damage" onclick="showAddDamageForm()">
-                    <i class="fas fa-plus"></i> Add Damage
-                </button>
-                <button class="btn btn-danger" id="btnDeleteSelectedDamage" style="display:none" onclick="deleteSelectedDamages()">
-                    <i class="fas fa-trash"></i> Delete Selected (<span id="selectedDamageCount">0</span>)
-                </button>
-                <button class="btn btn-secondary csv-export" onclick="exportDamageCSV()">
-                    <i class="fas fa-download"></i> Export CSV
-                </button>
-                <button class="btn btn-secondary csv-export" id="btnExportDamagePhotos" onclick="exportDamagePhotosZip()"
-                        title="All Before / After photos of the records listed, one folder per unit nickname">
-                    <i class="fas fa-file-zipper"></i> Export Photos
-                </button>
+        <!-- Page head: title, one line, actions -->
+        <div class="page-head dmg-head">
+            <div class="page-head__text">
+                <h1 class="page-head__title">Damage</h1>
+                <span class="page-head__sub">Every breakdown and fault, with photos and repair status</span>
             </div>
-            <div class="edit-toolbar__right">
-                <select id="damageGroupFilter" aria-label="Filter unit group" class="btn btn-secondary btn-sm"
-                        onchange="setDamageGroup(this.value)">
-                    <option value="">All Groups</option>
-                    <option value="tractor">Agricultural Equipment</option>
-                    <option value="heavy">Heavy Equipment</option>
-                </select>
-                <select id="damageTypeFilter" aria-label="Filter damage type" class="btn btn-secondary btn-sm">
-                    <option value="">All Types</option>
-                    <option value="Mekanis">Mechanical</option>
-                    <option value="Software">Software</option>
-                    <option value="Device Precision">Device Precision</option>
-                </select>
-                <div class="edit-search">
-                    <i class="fas fa-search"></i>
-                    <input type="text" id="damageSearch" aria-label="Search damage" placeholder="Search damage...">
-                </div>
-                <button type="button" id="damageUnitFilterChip" class="dmg-filter-chip" hidden onclick="clearDamageUnitFilter()" title="Show all units again"></button>
-                <span id="damageCount">0 damage records</span>
+            <div class="page-head__actions">
+                <button type="button" class="btn btn-secondary csv-export" id="btnExportDamagePhotos" onclick="exportDamagePhotosZip()"
+                        title="All Before / After photos of the records listed, one folder per unit nickname">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"></path><circle cx="12" cy="13" r="3.5"></circle></svg>
+                    Photos (ZIP)
+                </button>
+                <button type="button" class="btn btn-secondary csv-export" onclick="exportDamageCSV()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg>
+                    Export CSV
+                </button>
+                <button type="button" class="btn btn-primary editonly editonly--damage" onclick="showAddDamageForm()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                    Report damage
+                </button>
             </div>
         </div>
 
-        <!-- Damage Table -->
-        <div class="table-card">
-            <div class="table-card__header">
-                <div class="table-card__title"><i class="fas fa-screwdriver-wrench"></i> Damage History</div>
+        <!-- Summary of the records in the current group and filters (renderDamageKpis) -->
+        <section class="dmg-kpis" aria-label="Damage summary">
+            <div class="dmg-kpi dmg-kpi--open">
+                <span class="dmg-kpi__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><path d="m15 9-6 6"></path><path d="m9 9 6 6"></path></svg></span>
+                <span class="dmg-kpi__text"><span class="dmg-kpi__value" id="dmgKpiOpen">0</span><span class="dmg-kpi__label">Open</span></span>
             </div>
+            <!-- The data has no "in repair" state: this counts the open records
+                 that keep their unit, or one of its components, in Breakdown now. -->
+            <div class="dmg-kpi dmg-kpi--down" title="Open records that keep their unit, or one of its components, in Breakdown right now">
+                <span class="dmg-kpi__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg></span>
+                <span class="dmg-kpi__text"><span class="dmg-kpi__value" id="dmgKpiDown">0</span><span class="dmg-kpi__label">Unit in Breakdown</span></span>
+            </div>
+            <div class="dmg-kpi dmg-kpi--done">
+                <span class="dmg-kpi__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg></span>
+                <span class="dmg-kpi__text"><span class="dmg-kpi__value" id="dmgKpiRepaired">0</span><span class="dmg-kpi__label" id="dmgKpiRepairedLabel">Repaired this month</span></span>
+            </div>
+            <div class="dmg-kpi dmg-kpi--time" id="dmgKpiAvgTile">
+                <span class="dmg-kpi__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></span>
+                <span class="dmg-kpi__text"><span class="dmg-kpi__value" id="dmgKpiAvg">—</span><span class="dmg-kpi__label">Average repair time</span></span>
+            </div>
+        </section>
+
+        <!-- Filters -->
+        <div class="dmg-filters">
+            <label class="dmg-field dmg-field--search">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7.5"></circle><path d="m21 21-4.5-4.5"></path></svg>
+                <input type="search" id="damageSearch" aria-label="Search damage" placeholder="Search damage" autocomplete="off">
+            </label>
+            <!-- Hidden for an account limited to one group (body[data-unit-scope]) -->
+            <label class="dmg-field dmg-field--group">
+                <span class="dmg-field__label">Group</span>
+                <select id="damageGroupFilter" aria-label="Filter unit group" onchange="setDamageGroup(this.value)">
+                    <option value="">All groups</option>
+                    <option value="tractor">Agricultural</option>
+                    <option value="heavy">Heavy equipment</option>
+                </select>
+            </label>
+            <label class="dmg-field">
+                <span class="dmg-field__label">Type</span>
+                <select id="damageTypeFilter" aria-label="Filter damage type">
+                    <option value="">All types</option>
+                    <option value="Mekanis">Mechanical</option>
+                    <option value="Software">Software</option>
+                    <option value="Device Precision">Device precision</option>
+                </select>
+            </label>
+            <label class="dmg-field">
+                <span class="dmg-field__label">Repair</span>
+                <select id="damageRepairFilter" aria-label="Filter repair status" onchange="renderDamageTable()">
+                    <option value="">Any</option>
+                    <option value="open">Open</option>
+                    <option value="repaired">Repaired</option>
+                </select>
+            </label>
+            <button type="button" id="damageUnitFilterChip" class="dmg-filter-chip" hidden onclick="clearDamageUnitFilter()" title="Show all units again"></button>
+            <!-- Shown while rows are ticked (updateSelectedDamageCount) -->
+            <button type="button" class="btn btn-danger dmg-bulk-delete" id="btnDeleteSelectedDamage" style="display:none" onclick="deleteSelectedDamages()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
+                <span>Delete selected (<span id="selectedDamageCount">0</span>)</span>
+            </button>
+        </div>
+
+        <!-- Damage table -->
+        <section class="table-card dmg-card" aria-label="Damage history">
             <div class="table-wrapper" style="max-height:600px;">
                 <table class="data-table table--cardable" id="damageTable">
                     <thead>
                         <tr>
-                            <th class="col-check"><input type="checkbox" id="selectAllDamage" aria-label="Select all damage records" onchange="toggleSelectAllDamages()"></th>
-                            <th>No</th>
-                            <th>Date</th>
-                            <th>Unit</th>
-                            <th>Serial Number</th>
-                            <th>Site</th>
-                            <th>Damage Type</th>
-                            <th>Component</th>
-                            <th>Description</th>
-                            <th>Photos</th>
-                            <th>Repair</th>
-                            <th class="col-actions">Actions</th>
+                            <th class="col-check" scope="col"><input type="checkbox" id="selectAllDamage" aria-label="Select all damage records" onchange="toggleSelectAllDamages()"></th>
+                            <th scope="col">Date</th>
+                            <th scope="col">Unit</th>
+                            <th scope="col">Type</th>
+                            <th scope="col">What happened</th>
+                            <th scope="col">Photos</th>
+                            <th scope="col">Repair</th>
+                            <th class="col-actions" scope="col"><span class="dmg-sr">Actions</span></th>
                         </tr>
                     </thead>
                     <tbody id="damageBody"></tbody>
                 </table>
             </div>
-        </div>
+            <div class="dmg-card__foot">
+                <span id="damageCount" class="dmg-count" role="status">0 damage records</span>
+            </div>
+        </section>
 
     </div><!-- /viewDamage -->
 
@@ -2521,15 +2563,15 @@
 
 <!-- ===== DAMAGE (KERUSAKAN) MODAL ===== -->
 <div class="modal-overlay" id="damageModal">
-    <div class="modal-card">
+    <div class="modal-card dmg-modal" role="dialog" aria-modal="true" aria-labelledby="damageModalTitle">
         <div class="modal-header">
-            <h3 id="damageModalTitle">Add Damage</h3>
-            <button class="btn-icon" onclick="closeDamageModal()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+            <h3 id="damageModalTitle">Report damage</h3>
+            <button type="button" class="btn-icon" onclick="closeDamageModal()" aria-label="Close" title="Close"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
         </div>
         <div class="modal-body">
             <form id="damageForm" onsubmit="saveDamage(event)">
                 <input type="hidden" id="editDamageId">
-                <div class="form-grid">
+                <div class="form-grid dmg-form">
                     <div class="form-group">
                         <label class="form-label" for="dmgDate">Date</label>
                         <input type="date" class="form-input" id="dmgDate" data-nofuture required>
@@ -2541,7 +2583,7 @@
                         <datalist id="dmgUnitList"></datalist>
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="dmgType">Damage Type</label>
+                        <label class="form-label" for="dmgType">Damage type</label>
                         <select class="form-select" id="dmgType" onchange="onDamageTypeChange()" required>
                             <option value="">Select type…</option>
                             <option value="Mekanis">Mechanical</option>
@@ -2556,68 +2598,74 @@
                                 <option value="">Select component… (optional)</option>
                             </select>
                             <button type="button" class="btn btn-secondary btn-sm" onclick="openDamageComponentsModal()" title="Manage component list">
-                                <i class="fas fa-gear"></i> Manage
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10"></path><path d="M18 6h2"></path><circle cx="16" cy="6" r="2"></circle><path d="M4 12h4"></path><path d="M12 12h8"></path><circle cx="10" cy="12" r="2"></circle><path d="M4 18h10"></path><path d="M18 18h2"></path><circle cx="16" cy="18" r="2"></circle></svg>
+                                Manage
                             </button>
                         </div>
                     </div>
-                    <div class="form-group full-width" id="dmgSetBreakdownGroup">
-                        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+                    <!-- What the record does to its unit: a quiet panel under the fields -->
+                    <div class="form-group full-width dmg-link-panel" id="dmgSetBreakdownGroup">
+                        <label class="dmg-check" for="dmgSetBreakdown">
                             <input type="checkbox" id="dmgSetBreakdown" checked>
-                            Set unit/component status to <strong>Breakdown</strong>
+                            <span>Set unit/component status to <strong>Breakdown</strong></span>
                         </label>
-                        <div id="dmgBreakdownHint" style="font-size:11.5px;color:var(--text-secondary);margin-top:4px">
+                        <div class="dmg-link-panel__hint" id="dmgBreakdownHint">
                             Device Precision → related component (GPS/Display/Steering/JDLink); other types → unit status.
                         </div>
-                        <div id="dmgBreakdownRule" style="font-size:11.5px;color:var(--text-secondary);margin-top:2px">
+                        <div class="dmg-link-panel__hint" id="dmgBreakdownRule">
                             Marked done → back to Good once no other damage on that unit is still open.
                         </div>
                         <div class="dmg-repaired-row" id="dmgAlreadyRepairedRow">
-                            <label for="dmgAlreadyRepaired" style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+                            <label class="dmg-check" for="dmgAlreadyRepaired">
                                 <input type="checkbox" id="dmgAlreadyRepaired" onchange="onDamageAlreadyRepairedChange()">
-                                Already repaired on
+                                <span>Already repaired on</span>
                             </label>
                             <input type="date" class="form-input" id="dmgRepairedDate" aria-label="Date it was repaired" disabled>
                         </div>
                     </div>
-                    <div class="form-group full-width">
+                    <div class="form-group full-width dmg-photo-field">
                         <label class="form-label" for="dmgPhotoInput">Photo — Before <span class="form-optional">(the damage, optional)</span></label>
                         <input type="file" id="dmgPhotoInput" accept="image/*" style="display:none" onchange="handleDamagePhotoChange(event, 'before')">
                         <div class="dmg-photo-row">
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('dmgPhotoInput').click()">
-                                <i class="fas fa-camera"></i> Choose Photo
+                            <button type="button" class="btn btn-secondary btn-sm dmg-photo-pick" onclick="document.getElementById('dmgPhotoInput').click()">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"></path><circle cx="12" cy="13" r="3.5"></circle></svg>
+                                Choose photo
                             </button>
                             <span id="dmgPhotoLoading" class="wl-photo__loading" style="display:none">
-                                <i class="fas fa-spinner fa-spin"></i> Loading photo…
+                                <i class="fas fa-spinner fa-spin" aria-hidden="true"></i> Loading photo…
                             </span>
                             <div id="dmgPhotoPreviewWrap" class="dmg-photo-preview" style="display:none">
                                 <img id="dmgPhotoPreview" alt="Photo preview" onclick="openPhotoLightbox(this.src)">
-                                <button type="button" class="btn btn-secondary btn-sm" id="dmgPhotoRemove" onclick="removeDamagePhoto('before')">
-                                    <i class="fas fa-trash" style="color:var(--danger)"></i> Delete photo
+                                <button type="button" class="btn btn-secondary btn-sm dmg-photo-del" id="dmgPhotoRemove" onclick="removeDamagePhoto('before')">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
+                                    Delete photo
                                 </button>
                             </div>
                         </div>
                     </div>
                     <!-- Shown when editing; a new record gets its After photo from "Mark done". -->
-                    <div class="form-group full-width" id="dmgAfterGroup" style="display:none">
+                    <div class="form-group full-width dmg-photo-field" id="dmgAfterGroup" style="display:none">
                         <label class="form-label" for="dmgAfterInput">Photo — After <span class="form-optional">(repaired, optional)</span></label>
                         <input type="file" id="dmgAfterInput" accept="image/*" style="display:none" onchange="handleDamagePhotoChange(event, 'after')">
                         <div class="dmg-photo-row">
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('dmgAfterInput').click()">
-                                <i class="fas fa-camera"></i> Choose Photo
+                            <button type="button" class="btn btn-secondary btn-sm dmg-photo-pick" onclick="document.getElementById('dmgAfterInput').click()">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"></path><circle cx="12" cy="13" r="3.5"></circle></svg>
+                                Choose photo
                             </button>
                             <span id="dmgAfterLoading" class="wl-photo__loading" style="display:none">
-                                <i class="fas fa-spinner fa-spin"></i> Loading photo…
+                                <i class="fas fa-spinner fa-spin" aria-hidden="true"></i> Loading photo…
                             </span>
                             <div id="dmgAfterPreviewWrap" class="dmg-photo-preview" style="display:none">
                                 <img id="dmgAfterPreview" alt="After photo preview" onclick="openPhotoLightbox(this.src)">
-                                <button type="button" class="btn btn-secondary btn-sm" id="dmgAfterRemove" onclick="removeDamagePhoto('after')">
-                                    <i class="fas fa-trash" style="color:var(--danger)"></i> Delete photo
+                                <button type="button" class="btn btn-secondary btn-sm dmg-photo-del" id="dmgAfterRemove" onclick="removeDamagePhoto('after')">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
+                                    Delete photo
                                 </button>
                             </div>
                         </div>
                     </div>
                     <div class="form-group full-width">
-                        <label class="form-label" for="dmgDescription">Description <span class="form-optional">(optional)</span></label>
+                        <label class="form-label" for="dmgDescription">What happened <span class="form-optional">(optional)</span></label>
                         <textarea class="form-input form-textarea" id="dmgDescription" rows="4" placeholder="Damage details, symptoms, or repair notes…"></textarea>
                     </div>
                 </div>
@@ -2625,34 +2673,36 @@
         </div>
         <div class="form-actions">
             <button type="button" class="btn btn-secondary" onclick="closeDamageModal()">Cancel</button>
-            <button type="submit" class="btn btn-primary" form="damageForm"><i class="fas fa-check"></i> Save</button>
+            <button type="submit" class="btn btn-primary" form="damageForm"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg> Save</button>
         </div>
     </div>
 </div>
 
 <!-- ===== MARK AS REPAIRED (with the After photo) ===== -->
 <div class="modal-overlay" id="damageRepairModal">
-    <div class="modal-card dmg-repair">
+    <div class="modal-card dmg-repair" role="dialog" aria-modal="true" aria-labelledby="damageRepairTitle">
         <div class="modal-header">
             <h3 id="damageRepairTitle"><i class="fas fa-wrench"></i> Mark as repaired</h3>
-            <button class="btn-icon" onclick="closeDamageRepair()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+            <button type="button" class="btn-icon" onclick="closeDamageRepair()" aria-label="Close" title="Close"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
         </div>
         <div class="modal-body">
             <div class="dmg-repair__summary" id="damageRepairSummary"></div>
-            <div class="form-group">
+            <div class="form-group dmg-photo-field">
                 <label class="form-label" for="dmgRepairInput">Photo — After <span class="form-optional" id="dmgRepairOptional">(optional)</span></label>
                 <input type="file" id="dmgRepairInput" accept="image/*" style="display:none" onchange="handleRepairPhotoChange(event)">
                 <div class="dmg-photo-row">
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('dmgRepairInput').click()">
-                        <i class="fas fa-camera"></i> Take / Choose Photo
+                    <button type="button" class="btn btn-secondary btn-sm dmg-photo-pick" onclick="document.getElementById('dmgRepairInput').click()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"></path><circle cx="12" cy="13" r="3.5"></circle></svg>
+                        Take / choose photo
                     </button>
                     <span id="dmgRepairLoading" class="wl-photo__loading" style="display:none">
-                        <i class="fas fa-spinner fa-spin"></i> Processing photo…
+                        <i class="fas fa-spinner fa-spin" aria-hidden="true"></i> Processing photo…
                     </span>
                     <div id="dmgRepairPreviewWrap" class="dmg-photo-preview" style="display:none">
                         <img id="dmgRepairPreview" alt="After photo preview" onclick="openPhotoLightbox(this.src)">
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="removeRepairPhoto()">
-                            <i class="fas fa-trash" style="color:var(--danger)"></i> Delete photo
+                        <button type="button" class="btn btn-secondary btn-sm dmg-photo-del" onclick="removeRepairPhoto()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path></svg>
+                            Delete photo
                         </button>
                     </div>
                 </div>
@@ -3406,16 +3456,19 @@
 </div>
 
 <!-- ===== PHOTO LIGHTBOX ===== -->
-<div class="photo-lightbox" id="photoLightbox" onclick="closePhotoLightbox()">
+<!-- A tap on the dark ground closes it, as does Escape or the X. -->
+<div class="photo-lightbox" id="photoLightbox" role="dialog" aria-modal="true" aria-label="Photo viewer" onclick="closePhotoLightbox()">
     <span class="photo-lightbox__caption" id="photoLightboxCaption" style="display:none"></span>
+    <button type="button" class="photo-lightbox__close" aria-label="Close photo" title="Close"
+            onclick="event.stopPropagation();closePhotoLightbox()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
     <button type="button" class="photo-lightbox__nav" id="photoLightboxPrev"
             aria-label="Previous photo" title="Previous photo"
-            onclick="event.stopPropagation();stepPhotoLightbox(-1)">&#10094;</button>
+            onclick="event.stopPropagation();stepPhotoLightbox(-1)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg></button>
     <img id="photoLightboxImg" alt="Photo">
     <div class="photo-lightbox__compare" id="photoLightboxCompare" style="display:none"></div>
     <button type="button" class="photo-lightbox__nav" id="photoLightboxNext"
             aria-label="Next photo" title="Next photo"
-            onclick="event.stopPropagation();stepPhotoLightbox(1)">&#10095;</button>
+            onclick="event.stopPropagation();stepPhotoLightbox(1)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></button>
     <span class="photo-lightbox__count" id="photoLightboxCount"></span>
     <button type="button" class="photo-lightbox__mode" id="photoLightboxMode" style="display:none"
             onclick="event.stopPropagation();togglePhotoLightboxCompare()"></button>
