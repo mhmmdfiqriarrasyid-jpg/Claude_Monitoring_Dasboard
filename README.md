@@ -320,8 +320,37 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
   Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
   **Implement Brands** (`masterLists/brand`) untuk Agricultural.
+- **Tampilan "F · Soft UI" v171 (dijaga `tests/navgroups_test.js`, `leader_test`,
+  `leave_test`, `unitgroups_test` dan semua suite lain).** Seluruh aplikasi
+  memakai gaya desain F: latar abu-abu muda `#F6F7FB`, kartu putih dengan
+  bayangan lembut (radius 16px), aksen teal `#0F766E`, judul Poppins dan teks
+  Open Sans, chip status berwarna lembut, tab bergaris bawah.
+  - *Menu samping* kini satu tautan per halaman: Dashboard, Decision inbox ·
+    Fleet (Units, Implements, Damage, Inspection, Licenses) · Operations (Team,
+    Warehouse) · Admin (Users, Master lists, History). Kelompok alat dipilih di
+    halaman itu sendiri (Agricultural / Heavy / All). Akun yang dibatasi satu
+    kelompok tetap hanya melihat halaman dan tombol kelompoknya. Akun ada di
+    bawah menu.
+  - *Bar atas*: kotak cari, chip sinkron (titik hijau hanya saat tersambung),
+    lonceng ke Decision inbox dengan titik merah bila ada yang menunggu.
+  - *HP*: baris atas ringkas, **navigasi bawah** (Home, Units, Damage, Inbox,
+    More) dan tombol bulat **+ Report damage** untuk yang boleh mengubah
+    Damage; item yang tidak boleh dibuka disembunyikan.
+  - *Setiap halaman* punya kepala halaman (judul, satu baris keterangan, aksi
+    di kanan) dan ubin angka dari data nyata: Dashboard (tab Overview /
+    Reliability, Needs attention, lingkaran Fleet health, bilah per site),
+    Units (filter cepat berjumlah, menu ⋯ untuk Import/Backup/Restore, banner
+    data kurang), Damage (Open, unit Breakdown, diperbaiki bulan ini, rata-rata
+    lama perbaikan; filter Repair), Inspection, Licenses (stok vs minimum,
+    Expiring soon), Implements (traktor per implement), Decision inbox
+    (ringkasan + Approve/Send back cuti langsung di baris), Team (ubin hari
+    ini/minggu ini), Warehouse (ubin status perangkat sebagai filter), Users
+    (menunggu persetujuan, tabel pengguna, arti peran), History (filter When /
+    Who / Action).
+  - Semua id, handler, hak akses, golden traktor dan perilaku HP (44px, 16px,
+    tanpa geser samping) tetap. Rules tidak berubah.
 - **Export Photos v170 (dijaga `tests/damage_beforeafter_test.js`).** Tombol
-  *Export Photos* di halaman Damage mengunduh semua foto Before/After dari
+  *Photos (ZIP)* (dulu *Export Photos*) di halaman Damage mengunduh semua foto Before/After dari
   catatan yang sedang tampil (ikut filter kelompok/tipe/pencarian/unit) dalam
   satu ZIP: satu folder per **Nickname unit** (nickname sama → ditambah SN),
   nama file `tanggal_tipe_komponen_before|after.jpg`, plus `photo_list.csv`.
