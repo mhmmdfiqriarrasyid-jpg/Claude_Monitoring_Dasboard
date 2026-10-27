@@ -198,7 +198,14 @@
     #decisionGroups .decision-list__body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
     #decisionGroups .decision-list__text { font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
     #decisionGroups .decision-list__sub {
+        display: -webkit-box;
         margin: 0;
+        overflow: hidden;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        white-space: normal;
+        overflow-wrap: anywhere;
         font-size: 13px;
         color: var(--text-secondary);
     }
@@ -218,6 +225,7 @@
         border-top: 1px solid var(--border);
     }
     #decisionGroups .decision-card .btn { align-self: auto; }
+    #decisionGroups .decision-card__go { gap: 8px; font-size: 14px; font-weight: 600; }
 
     /* Nothing waiting. */
     #decisionGroups .decision-clear {
@@ -354,6 +362,10 @@
        TEAM
        ============================================================ */
 
+    /* The Members button used to sit on the tab line, lifted 8px clear of
+       the underline (style.css); in the page head it lines up with the rest. */
+    #btnTeamMembers { margin: 0; }
+
     /* "Copy last week" is a shift action: shown on the shift tab only. */
     #viewTeam:not([data-team-tab="shift"]) .team-head__shift-only { display: none; }
 
@@ -364,7 +376,6 @@
         gap: 16px;
         margin-bottom: 20px;
     }
-    #teamKpis[style*="none"] { display: none; }
     #teamKpis .team-kpi {
         display: flex;
         flex-direction: column;
@@ -631,25 +642,18 @@
     #viewTeam .my-notice__head { color: var(--danger-strong); }
     #viewTeam .my-notice__facts { font-size: 13px; color: var(--text-body); }
 
-    /* Actions left, filters as quiet white fields on the right. */
-    #viewTeam .team-toolbar { align-items: flex-start; gap: 12px 16px; margin-bottom: 16px; }
-    #viewTeam .team-filters {
-        display: flex;
-        flex: 1 1 520px;
-        flex-wrap: wrap;
-        align-items: center;
-        justify-content: flex-end;
-        gap: 8px;
-        font-size: 13px;
-        color: var(--text-secondary);
-    }
+    /* Actions left, filters as quiet white fields on the right (the row
+       layout is in the desktop block below; phones keep style.css's two
+       filters per row). */
+    #viewTeam .team-toolbar { margin-bottom: 16px; }
+    #viewTeam .team-filters { font-size: 13px; color: var(--text-secondary); }
     #viewTeam .team-filters select {
-        border: 1px solid var(--border);
+        border: 1px solid var(--border-strong);
         border-radius: 10px;
         background-color: var(--card);
         box-shadow: none;
         color: var(--text);
-        font-weight: 600;
+        font-weight: 500;
     }
     #viewTeam .team-filters .edit-search input { border-color: var(--border); }
     #viewTeam .team-filters .wl-filter-date { gap: 6px; font-size: 13px; color: var(--text-secondary); }
@@ -685,6 +689,9 @@
     #viewLeader .week-nav__arrow,
     #viewTeam .week-nav__arrow { width: 40px; height: 40px; min-width: 40px; min-height: 40px; }
     #viewTeam .shift-grid { min-width: 820px; }
+    /* The whole week in one screen-high frame (F shows the grid uncut); a
+       longer roster still scrolls inside it under the sticky day row. */
+    #viewTeam .shift-grid-wrapper { max-height: max(480px, calc(100vh - 120px)); }
     #viewTeam .shift-grid .shift-grid__member { width: 180px; }
     #decisionGroups .decision-act { min-height: 40px; padding: 0 12px; font-size: 14px; }
     #decisionGroups .decision-card__go { min-height: 44px; padding: 0 16px; }
@@ -694,25 +701,49 @@
     #viewTeam .team-filters .wl-filter-date .form-input { min-height: 40px; }
 }
 
+/* Wide screens: actions and filters share a row, filters wrapping to the
+   right. Not below 901px: there style.css stacks .edit-toolbar__right in a
+   column, and a wrapping flex column with a basis turns into side-by-side
+   columns wider than a phone. */
+@media screen and (min-width: 901px) {
+    #viewTeam .team-toolbar { align-items: flex-start; gap: 12px 16px; }
+    #viewTeam .team-filters {
+        display: flex;
+        flex: 1 1 520px;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+    }
+}
+
 /* Phones. */
 @media screen and (max-width: 700px) {
-    /* Tabs share the row and wrap their words instead of scrolling away. */
+    /* Tabs share the row and wrap between words; never narrower than their
+       longest word (a centred label wider than its tab was cut off on the
+       left). Past that the strip scrolls sideways (style.css .team-tabs). */
     #viewLeader .team-tab,
     #viewTeam .team-tab {
-        flex: 1 1 0;
-        min-width: 0;
-        padding: 6px 6px;
+        flex: 1 1 auto;
+        min-width: min-content;
+        padding: 6px 4px;
         white-space: normal;
         text-align: center;
         line-height: 1.25;
         font-size: 13px;
     }
+    #viewLeader .team-tabs,
+    #viewTeam .team-tabs { gap: 2px; }
+    #viewLeader .team-tab,
+    #viewTeam .team-tab { gap: 6px; }
     #viewLeader .team-tab__count,
     #viewTeam .team-tab__count { flex-shrink: 0; }
 
     #viewLeader .page-head__actions,
     #viewTeam .page-head__actions { width: 100%; }
-    #viewTeam .page-head__actions .btn { flex: 1 1 0; }
+    /* Side by side while both labels fit, else one per row. */
+    #viewTeam .page-head__actions .btn { flex: 1 1 auto; justify-content: center; }
 
     #leaderInboxPanel .inbox-summary__card { padding: 14px 16px; }
     #leaderInboxPanel .inbox-summary__num { font-size: 30px; }
@@ -721,14 +752,21 @@
     #decisionGroups .decision-list li { padding: 10px 16px; }
     #decisionGroups .decision-list li.has-acts { flex-wrap: wrap; }
     #decisionGroups .decision-list li.has-acts .decision-list__acts { width: 100%; }
-    #decisionGroups .decision-list__acts .btn { flex: 1 1 0; }
+    #decisionGroups .decision-list__acts .btn { flex: 1 1 0; justify-content: center; }
     #decisionGroups .decision-card__foot { padding: 12px 16px; }
     #decisionGroups .decision-card__go { flex: 1 1 auto; justify-content: center; }
 
     #viewLeader .week-nav__arrow,
     #viewTeam .week-nav__arrow { width: 44px; height: 44px; }
+    /* The week label keeps its width (it ran under the next-week arrow on
+       a 320px screen); "This week" drops to its own line instead. */
+    #viewLeader .week-nav,
+    #viewTeam .week-nav { flex-wrap: wrap; row-gap: 8px; }
     #viewLeader .week-nav__label,
-    #viewTeam .week-nav__label { font-size: 16px; margin: 0 2px; }
+    #viewTeam .week-nav__label { flex: 0 0 auto; min-width: auto; font-size: 16px; margin: 0 2px; }
+    /* The month field gives way instead: both arrows stay beside it. */
+    #leaderCompanyPanel .week-nav { flex-wrap: nowrap; }
+    #recapMonth { flex: 1 1 0; min-width: 0; }
 
     /* Data check rows already become cards on a phone; no card around them. */
     #dataCheckBody .datacheck-group { background: none; box-shadow: none; overflow: visible; }
@@ -748,10 +786,15 @@
 
     #viewTeam .shift-card__head { padding: 12px 14px; }
     #viewTeam .shift-legend { margin-left: 0; font-size: 12px; }
-    #viewTeam .shift-grid { min-width: 700px; }
-    #viewTeam .shift-grid .shift-grid__member { padding-left: 12px; }
-    #viewTeam .shift-select,
-    #viewTeam .shift-badge { padding-left: 6px; font-size: 12px; }
+    /* The week grid scrolls inside its card under the pinned name column
+       (style.css). Its chips carry 16px text on a phone (no zoom on focus),
+       so each day gets room to show "Afternoon" whole instead of "Mo…". */
+    #viewTeam .shift-grid { min-width: 940px; }
+    #viewTeam .shift-grid th,
+    #viewTeam .shift-grid td { padding: 6px 4px; }
+    #viewTeam .shift-grid .shift-grid__member { width: 136px; padding-left: 12px; }
+    #viewTeam .shift-select { padding: 8px 20px 8px 8px; background-position: right 6px center; }
+    #viewTeam .shift-fill { max-width: 100%; }
 
     #workLogTable td:first-child, #leaveTable td:first-child,
     #recapTable td:first-child { padding-left: 0; }

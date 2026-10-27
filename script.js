@@ -17290,11 +17290,14 @@ function _shortRange(from, to) {
 }
 
 // When the oldest record in a list started waiting, for the summary line
-// ("oldest is 3 days old"). Records that do not say are left out, not guessed.
+// ("oldest is 3 days old"). Records that do not say are left out, not guessed:
+// only a plain epoch-ms number between 2000 and now counts, so a stray string
+// or a server timestamp object cannot turn into "oldest is 20000 days old".
 function _oldestMs(list, at) {
+    const floor = 946684800000, now = Date.now();
     return list.reduce((m, x) => {
-        const v = Number(at(x)) || 0;
-        return v > 0 && (!m || v < m) ? v : m;
+        const v = at(x);
+        return typeof v === 'number' && v >= floor && v <= now && (!m || v < m) ? v : m;
     }, 0);
 }
 
@@ -17311,7 +17314,7 @@ function decisionGroups() {
         const pending = workLogs.filter(w => workLogApproval(w) === 'pending');
         add({
             key: 'approval', icon: 'clipboard-check', tone: 'warning',
-            title: 'Reports pending approval',
+            title: 'Daily reports to review',
             total: pending.length,
             // "Andi · 22 Oct · 8h 30m" over "GGTR-014 · paddock B-12 · task".
             items: pending.slice(0, 6).map(w => {
@@ -17344,7 +17347,7 @@ function decisionGroups() {
         const izin = leaveRequests.filter(r => workLogApproval(r) === 'pending');
         add({
             key: 'leave', icon: 'user-clock', tone: 'warning',
-            title: 'Leave / sick requests pending approval',
+            title: 'Leave & sick requests',
             total: izin.length,
             // The id lets the inbox approve or send back a request in place —
             // the row already says everything there is to decide on.

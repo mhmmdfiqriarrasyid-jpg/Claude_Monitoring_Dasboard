@@ -311,6 +311,37 @@ const { launch, BASE_URL } = require('./_env');
         t('dan panelnya tampil',
           document.getElementById('teamLeavePanel').style.display, '');
 
+        // ---------- TEAM TILES (design F): today, counted from the records ----------
+        const hariIni = toISODate();
+        teamShifts = [
+            { id: hariIni + '_m1', date: hariIni, memberId: 'm1', shift: 'pagi' },
+            { id: hariIni + '_m2', date: hariIni, memberId: 'm2', shift: 'siang' }
+        ];
+        workLogs = [
+            { id: 'wA', date: hariIni, memberId: 'm2', start: '07:00', end: '15:00', approval: 'pending' },
+            { id: 'wD', date: hariIni, memberId: 'm1', start: '07:00', end: '09:00', approval: 'draft' }
+        ];
+        leaveRequests = [{ id: 'lvS', memberId: 'm1', type: 'sakit', dateFrom: hariIni, dateTo: hariIni,
+            days: 1, approval: 'approved' }];
+        switchTeamTab('shift');
+        const tile = id => document.getElementById(id).textContent;
+        t('tiles: reported today, out of who is on shift (the sick one is not)',
+          [tile('teamKpiReported'), tile('teamKpiReportedOf')], ['1', 'of 1 on shift']);
+        t('tiles: hours this week from sent reports only (a draft is not counted)',
+          tile('teamKpiHours'), '8h');
+        t('tiles: reports to approve', tile('teamKpiPending'), '1');
+        t('tiles: absent today, by kind', [tile('teamKpiAbsent'), tile('teamKpiAbsentOf')], ['1', '1 sick']);
+        t('tab count: reports waiting for approval',
+          document.getElementById('wlTabPending').firstChild.textContent, '1');
+        currentUserDoc = { role: 'khl', status: 'active', access: { teamShift: 'view', teamLog: 'none' } };
+        applyRoleGating();
+        switchTeamTab('shift');
+        t('tiles hidden without access to the reports they are counted from',
+          document.getElementById('teamKpis').style.display, 'none');
+        t('and no approval count on the tabs',
+          document.getElementById('wlTabPending').style.display, 'none');
+        workLogs = []; teamShifts = []; leaveRequests = [];
+
         // ---------- REGRESI: tab halaman lain tidak ikut disembunyikan ----------
         // renderTeamView dulu menyapu SEMUA .team-tab di dokumen. Kotak
         // Keputusan dan Gudang memakai kelas yang sama, jadi begitu Tim dibuka,
