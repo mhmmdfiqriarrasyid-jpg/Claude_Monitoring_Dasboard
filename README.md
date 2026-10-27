@@ -111,7 +111,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-2.052 pemeriksaan di lima puluh suite, menggerakkan Chromium sungguhan terhadap
+2.091 pemeriksaan di lima puluh suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
