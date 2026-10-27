@@ -4458,16 +4458,14 @@ function renderNarrative(data) {
     const sites = [...new Set(data.map(d => d.site).filter(Boolean))].length || 1;
     const breakdown = data.filter(d => !isGood(d.status)).length;
     const issues = data.filter(d => detectIssues(d).length > 0).length;
-    // Expired and expiring are two different facts; "akan expire" counted both.
-    const al = _buildAlertList(scopeDashUnits());
-    const expired = al.expiredCount || 0;
-    const soon = al.soonCount != null ? al.soonCount : Math.max(0, al.total - expired);
+    // Only licences still running out count here. Expired ones are listed in
+    // the Units table (GPS / Display Expiry), not on the dashboard (v171).
+    const soon = _buildAlertList(scopeDashUnits()).soonCount || 0;
 
     const clauses = [
         breakdown === 0 ? 'all units are operating today' : `${breakdown} unit${breakdown === 1 ? ' is' : 's are'} in breakdown`
     ];
     if (issues > 0) clauses.push(`${issues} running with component issues`);
-    if (expired > 0) clauses.push(`${expired} license${expired === 1 ? ' has' : 's have'} expired`);
     if (soon > 0) clauses.push(`${soon} license${soon === 1 ? '' : 's'} expiring in the next 30 days`);
 
     let tail;
@@ -4536,8 +4534,6 @@ function renderDashOverview(data) {
     if (licCard) licCard.hidden = scope === 'heavy';
     const due = document.getElementById('dashLicDue');
     if (due) due.textContent = lic.soonCount;
-    const exp = document.getElementById('dashLicExpired');
-    if (exp) { exp.hidden = !lic.expiredCount; exp.textContent = `${lic.expiredCount} expired`; }
 
     // Fleet health ring: the health rate, as the arc of a circle r=38.
     const rate = pct(good, total);
@@ -4591,20 +4587,21 @@ function renderDashAttention(data, now) {
             issue: u.breakdownReason || openDamage(u) || '—', status: u.status || 'Breakdown',
             since: ms == null ? '—' : dashSpan(ms) });
     });
-    // Same selection as renderLicenseAlerts / _buildAlertList.
+    // Same selection as renderLicenseAlerts: licences running out in the next
+    // 30 days. Expired ones stay in the Units table only.
     data.filter(u => !isHeavy(u)).forEach(u => ['gps', 'display'].forEach(kind => {
         const end = getLicenseEndDate(u, kind);
         if (!end) return;
         const s = getExpiryStatus(end);
         if (effectiveLicense(u, kind).downgraded) return;
-        if (!(s.kind === 'expired' || s.kind === 'soon' || (s.kind === 'ok' && s.daysLeft <= 30))) return;
+        if (s.kind !== 'soon') return;
         const what = kind === 'gps' ? 'GPS' : 'Display';
         const type = kind === 'gps' ? u.gpsLicense : u.licenseDisplay;
         const days = Math.abs(s.daysLeft);
         const n = `${days} day${days === 1 ? '' : 's'}`;
         rows.push({ u, kind: 'license', order: 1, rank: s.daysLeft,
-            issue: `${what} license${type ? ' ' + type : ''} ${s.kind === 'expired' ? 'expired' : 'expires'}`,
-            status: 'License', since: s.daysLeft < 0 ? n : s.daysLeft === 0 ? 'today' : `in ${n}` });
+            issue: `${what} license${type ? ' ' + type : ''} expires`,
+            status: 'License', since: s.daysLeft === 0 ? 'today' : `in ${n}` });
     }));
     rows.sort((a, b) => a.order - b.order || a.rank - b.rank);
 
@@ -4759,7 +4756,9 @@ function renderLicenseAlerts(data) {
             // Auto-downgraded premium (expired SF-RTK/G5 Advance) is now on its
             // stable fallback tier — no action needed, so drop it from alerts.
             if (effectiveLicense(unit, kind).downgraded) return;
-            if (s.kind === 'expired' || (s.kind === 'soon' || (s.kind === 'ok' && s.daysLeft <= SOON_DAYS))) {
+            // Expired licences are not dashboard alerts: the Units table shows
+            // them (GPS / Display Expiry). Only the next 30 days are listed here.
+            if (s.kind === 'soon') {
                 const licName = kind === 'display'
                     ? (unit.licenseDisplay || 'Display')
                     : (unit.gpsLicense || 'GPS');
@@ -4768,7 +4767,7 @@ function renderLicenseAlerts(data) {
                     kind,
                     licName,
                     endDate: end,
-                    status: s.kind === 'expired' ? 'expired' : 'soon',
+                    status: 'soon',
                     daysLeft: s.daysLeft,
                     label: s.label
                 });
@@ -4783,14 +4782,8 @@ function renderLicenseAlerts(data) {
 
     alerts.sort((a, b) => a.daysLeft - b.daysLeft);
 
-    const expiredCount = alerts.filter(a => a.status === 'expired').length;
-    const soonCount = alerts.filter(a => a.status === 'soon').length;
-
     section.style.display = '';
-    summary.innerHTML = [
-        expiredCount ? `<span class="la-chip expired"><i class="fas fa-circle-xmark"></i> ${expiredCount} Expired</span>` : '',
-        soonCount ? `<span class="la-chip soon"><i class="fas fa-triangle-exclamation"></i> ${soonCount} Expiring ≤${SOON_DAYS}d</span>` : ''
-    ].filter(Boolean).join('');
+    summary.innerHTML = `<span class="la-chip soon"><i class="fas fa-triangle-exclamation"></i> ${alerts.length} Expiring ≤${SOON_DAYS}d</span>`;
 
     container.innerHTML = alerts.map(a => {
         const meta = [a.licName, a.unit.model, a.unit.site, `Exp: ${a.endDate}`]
@@ -4798,7 +4791,7 @@ function renderLicenseAlerts(data) {
         return `
         <div class="la-card ${a.status}">
             <div class="la-card__icon">
-                <i class="fas fa-${a.status === 'expired' ? 'circle-xmark' : 'triangle-exclamation'}"></i>
+                <i class="fas fa-triangle-exclamation"></i>
             </div>
             <div class="la-card__body">
                 <div class="la-card__name">${escapeHtml(a.unit.name || a.unit.sn)}</div>

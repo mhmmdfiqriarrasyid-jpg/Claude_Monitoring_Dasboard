@@ -161,7 +161,18 @@ const { launch, BASE_URL } = require('./_env');
         saveToStorage(globalData);
         renderNarrative(globalData);
         const nar = document.getElementById('dashNarrative').textContent;
-        t('ringkasan memisahkan yang sudah dan akan expire', [/1 license has expired/.test(nar), /1 license expiring/.test(nar)], [true, true]);
+        // v171: lisensi yang sudah expired tidak disebut di dashboard (cukup di tabel Units).
+        t('ringkasan hanya menyebut yang akan expire', [/expired/.test(nar), /1 license expiring/.test(nar)], [false, true]);
+        // Kartu License Alerts dan Needs attention: hanya yang akan habis (E2);
+        // yang sudah expired (E1) tetap terlihat di tabel Units.
+        renderLicenseAlerts(globalData);
+        renderDashAttention(globalData, Date.now());
+        const la = document.getElementById('licenseAlertsCards').textContent;
+        const attn = document.getElementById('dashAttention').textContent;
+        t('dashboard: lisensi expired tidak masuk alert / needs attention',
+          [/E2/.test(la), /E1/.test(la), /Expired/.test(la), /E2/.test(attn), /\bE1\b/.test(attn), /expired/i.test(attn)],
+          [true, false, false, true, false, false]);
+        t('tabel Units tetap menandai lisensi expired', /Expired 5d ago/.test(licenseBadgeFor(globalData[0], 'gps')), true);
 
         // =============== 15. impor implement ganda ===============
         navigateTo('implements');

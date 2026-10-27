@@ -347,6 +347,11 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
     ini/minggu ini), Warehouse (ubin status perangkat sebagai filter), Users
     (menunggu persetujuan, tabel pengguna, arti peran), History (filter When /
     Who / Action).
+  - *Lisensi expired tidak lagi tampil di Dashboard* (kartu License Alerts,
+    Needs attention, kartu Licenses due, kalimat ringkasan): Dashboard hanya
+    memuat lisensi yang **akan habis dalam 30 hari**. Lisensi yang sudah lewat
+    tetap terlihat di tabel **Units** (kolom GPS / Display Expiry, "Expired …
+    ago") dan filter cepat *License due*. Dijaga `tests/lowfix_test.js`.
   - Semua id, handler, hak akses, golden traktor dan perilaku HP (44px, 16px,
     tanpa geser samping) tetap. Rules tidak berubah.
 - **Export Photos v170 (dijaga `tests/damage_beforeafter_test.js`).** Tombol
