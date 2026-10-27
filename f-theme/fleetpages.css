@@ -1,6 +1,7 @@
 /* design F — fleetpages (concatenated into style.css when merged)
    Inspection, Licenses and Implements pages and their dialogs. Every rule is
-   scoped to those views and dialogs, screen only (print keeps its rules). The
+   scoped to those views and dialogs, screen only (print keeps its rules; the
+   short print block at the end only boxes the new tiles). The
    action rows carry .edit-toolbar so print leaves them out; their screen
    layout is set here. Desktop sizes sit in min-width: 701px, so phones keep
    the PHONE section's 44px touch targets and 16px fields. */
@@ -27,7 +28,14 @@
     /* Underline tabs (F): label only, the count as a pill */
     :is(#viewInspection, #viewLicenseStock) .fp-tabbar { margin-bottom: 20px; }
     :is(#viewInspection, #viewLicenseStock) .fp-tabbar .team-tabs { gap: 6px; }
-    :is(#viewInspection, #viewLicenseStock) .fp-tabbar .team-tab { gap: 8px; font-size: 14px; }
+    :is(#viewInspection, #viewLicenseStock) .fp-tabbar .team-tab {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        font-size: 14px;
+        white-space: nowrap;
+    }
     :is(#viewInspection, #viewLicenseStock) .fp-tabbar .team-tab__count,
     :is(#viewInspection, #viewLicenseStock) .fp-pill {
         display: inline-block;
@@ -96,7 +104,9 @@
     .fp-stock__type { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
     .fp-stock__type svg, .fp-stock__type i { flex: 0 0 auto; color: var(--text-secondary); }
     .fp-stock__head .fp-chip { flex: 0 0 auto; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 700; }
+    .fp-nowrap { white-space: nowrap; }
     .fp-stock__big {
+        margin-top: auto;
         font-family: var(--font-display);
         font-size: 28px;
         font-weight: 600;
@@ -286,6 +296,10 @@
     :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-table th:last-child,
     :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-table td:last-child { padding-right: 20px; }
     :is(#viewInspection, #viewLicenseStock, #viewImplements) .fp-table tbody tr:last-child td { border-bottom: 0; }
+    /* The status list is one row per heavy unit: the page scrolls, not the
+       card. Schedules and reports grow over time and scroll in their card. */
+    #insStatusPanel .table-wrapper { max-height: none; }
+    :is(#insPlansPanel, #insReportsPanel) .table-wrapper { max-height: 600px; }
     #insStatusTable { min-width: 760px; }
     #insStatusTable td { vertical-align: middle; }
     .fp-muted { color: var(--text-secondary); }
@@ -332,11 +346,15 @@
     #viewInspection .ins-sync, #viewInspection .my-notice { border-radius: 12px; margin-bottom: 16px; }
 
     /* ---- Licenses: expiring soon ---- */
-    .fp-expiring { padding-bottom: 4px; }
+    /* The rows sit in columns on wide screens. The line under the title runs
+       the full width; each item draws the line below it, and the last row's
+       lines are cut off by the card (the list hangs 1px past it). Every row
+       but the last is full, so each divider spans the card. */
+    .fp-expiring .fp-cardbar { border-bottom: 1px solid var(--border); }
     .fp-list {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-        margin: 0;
+        margin: 0 0 -1px;
         padding: 0;
         list-style: none;
     }
@@ -346,7 +364,7 @@
         gap: 12px;
         min-width: 0;
         padding: 12px 20px;
-        border-top: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
     }
     .fp-list__empty { grid-column: 1 / -1; color: var(--text-secondary); }
     .fp-list__icon {
@@ -366,6 +384,7 @@
     .fp-list__meta--bad { color: var(--danger-strong); font-weight: 600; }
     .fp-list__item .btn { flex: 0 0 auto; }
     .fp-more-link {
+        position: relative;
         display: block;
         min-height: 44px;
         margin: 0;
@@ -414,6 +433,10 @@
     #viewLicenseStock .lp-card__big small { font-family: var(--font-sans); font-size: 14px; font-weight: 500; color: var(--text-secondary); }
     #viewLicenseStock .lp-card__sub { font-size: 13px; color: var(--text-secondary); }
     #viewLicenseStock #lpBody .table-card { margin-bottom: 20px; overflow: hidden; }
+    #viewLicenseStock #lpBody .table-card__header { padding: 16px 20px 12px; }
+    #viewLicenseStock #lpBody h2.table-card__title { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 17px; line-height: 1.3; }
+    #viewLicenseStock #lpBody .table-card__title .fp-pill { font-family: var(--font-sans); }
+    #viewLicenseStock #lpBody .lp-empty { padding: 24px 20px; color: var(--text-secondary); }
     #viewLicenseStock #lpBody .ins-sync { border-radius: 12px; margin-bottom: 16px; }
     #viewLicenseStock .lp-chip { padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
 
@@ -421,7 +444,7 @@
     .fp-use { display: flex; flex-direction: column; gap: 10px; margin: 0 0 20px; }
     .fp-use[hidden] { display: none; }
     .fp-use__title { margin: 0; font-family: var(--font-display); font-size: 15px; font-weight: 600; color: var(--text-body); }
-    .fp-use__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+    .fp-use__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
     .fp-use__tile {
         display: flex;
         flex-direction: column;
@@ -521,6 +544,24 @@
     .fp-actions .btn-sm { min-height: 36px; }
     .fp-actions .fp-icon-btn { width: 36px; min-width: 36px; padding: 0; justify-content: center; }
     .fp-list__item .btn-sm { min-height: 36px; }
+    /* Row edit / delete: quiet icon buttons (F), the frame only on hover */
+    :is(#implementTable, #licenseTable, #insPlanTable, #insReportTable) .row-actions { gap: 4px; }
+    :is(#implementTable, #licenseTable, #insPlanTable, #insReportTable) .row-actions .btn {
+        width: 36px;
+        min-width: 36px;
+        height: 36px;
+        padding: 0;
+        justify-content: center;
+        border-color: transparent;
+        background: transparent;
+        box-shadow: none;
+        color: var(--text-secondary);
+    }
+    :is(#implementTable, #licenseTable, #insPlanTable, #insReportTable) .row-actions .btn:hover {
+        border-color: var(--border);
+        background: var(--surface-sunken);
+        color: var(--text);
+    }
 }
 
 /* Tablets: tiles two by two */
@@ -534,8 +575,7 @@
     :is(#viewInspection, #viewLicenseStock, #viewImplements) .page-head__actions.edit-toolbar { justify-content: flex-start; width: 100%; gap: 8px; }
     :is(#viewInspection, #viewLicenseStock, #viewImplements) .page-head__actions .btn { flex: 1 1 auto; justify-content: center; }
 
-    :is(#viewInspection, #viewLicenseStock) .fp-tiles,
-    #viewLicenseStock .fp-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+    :is(#viewInspection, #viewLicenseStock) .fp-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
     #viewInspection .fp-tile, #viewLicenseStock .fp-stock { padding: 12px 14px; gap: 4px; }
     .fp-tile__label { gap: 8px; font-size: 13px; line-height: 1.35; }
     .fp-tile__value, .fp-stock__big { font-size: 24px; }
@@ -581,6 +621,25 @@
     .fp-actions .btn { flex: 1 1 0; justify-content: center; }
     .fp-actions .fp-btn-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; clip-path: none; }
 
+    /* Card labels read like the column heads (the cells keep their
+       data-label, which tests and the shared card CSS rely on) */
+    #licenseTable td[data-label="Transaction"]::before { content: "Movement"; }
+    #licenseTable td[data-label="Type"]::before { content: "License"; }
+    #licenseTable td[data-label="Quantity"]::before { content: "Qty"; }
+    #licenseTable td[data-label="SN"]::before { content: "Serial number"; }
+    #licenseTable td[data-label="Unit Status"]::before { content: "Unit status"; }
+    #implementTable td[data-label="Profile Name"]::before { content: "Profile"; }
+    #implementTable td[data-label="Equipment Type"]::before { content: "Type"; }
+    #implementTable td[data-label="Working Width"]::before { content: "Width"; }
+    #implementTable td[data-label="Connecting Type"]::before { content: "Connecting type"; }
+    #implementTable td[data-label="Chart of Account"]::before { content: "Chart of account"; }
+    #insReportTable td[data-label="Check Date"]::before { content: "Check date"; }
+    #insReportTable td[data-label="Component Results"]::before { content: "Component results"; }
+    #licenseTable td[data-label="SN"]::before { font-family: var(--font-sans); }
+    #licenseTable td[data-label="Unit"] { flex-wrap: nowrap; justify-content: space-between; }
+    /* A stock-in row has no unit: leave out the empty unit lines */
+    #licenseTable td.fp-empty { display: none; }
+
     .fp-list { grid-template-columns: minmax(0, 1fr); }
     .fp-list__item, .fp-list__empty { padding: 10px 14px; }
     .fp-more-link { padding: 0 14px; }
@@ -588,9 +647,36 @@
     .fp-use__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
     .fp-use__tile { padding: 12px 14px; }
 
+    /* Purchase plan tables: the same stacked row cards as the other lists */
+    #lpBody .table-card { overflow: visible; background: none; box-shadow: none; }
+    #lpBody .table-card__header { padding: 4px 0 10px; }
+    #lpBody .data-table tr { border: 0; border-radius: var(--radius-lg); box-shadow: var(--shadow); padding: 12px 14px; }
+    #lpBody .data-table td[data-label]::before {
+        font-size: 12px; letter-spacing: 0; text-transform: none; font-weight: 600; color: var(--text-secondary);
+    }
+    #lpBody .data-table td[data-label="Unit"],
+    #lpBody .data-table td[data-label="Implement Type"] { flex-wrap: nowrap; justify-content: space-between; }
+    /* "SF-RTK" and "until …" sit together on the right */
+    #lpBody .data-table td:is([data-label="GPS Now"], [data-label="Display Now"]) { justify-content: flex-end; gap: 2px 8px; }
+    #lpBody .data-table td:is([data-label="GPS Now"], [data-label="Display Now"])::before { margin-right: auto; }
+
     #viewLicenseStock .lp-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
     #viewLicenseStock .lp-card { padding: 12px 14px; }
     #viewLicenseStock .lp-card__big { font-size: 24px; }
 
-    #inspectionModal .ins-seg__opt { min-height: 40px; padding: 0 12px; }
+    #inspectionModal .ins-seg__opt { min-height: 44px; padding: 0 14px; }
+}
+
+/* Paper: the status tiles and stock tiles replaced .downtime-kpi, which the
+   print section boxes; give the new tiles the same plain boxes. */
+@media print {
+    #viewInspection .fp-tiles,
+    #viewLicenseStock .fp-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 0 0 12px; }
+    #viewInspection .fp-tile,
+    #viewLicenseStock .fp-stock { display: flex; flex-direction: column; padding: 8px 10px; border: 1px solid #999; border-radius: 6px; }
+    .fp-tile__value, .fp-stock__big { font-size: 18px; font-weight: 700; }
+    .fp-bar, .fp-dot, .fp-unit__icon, .fp-list__icon { display: none; }
+    .fp-use__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .fp-use__tile { display: flex; flex-direction: column; padding: 6px 8px; border: 1px solid #999; border-radius: 6px; background: none; }
+    .fp-sr, .fp-actions .fp-btn-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 }

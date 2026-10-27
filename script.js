@@ -9515,7 +9515,7 @@ function renderLicenseSummary() {
         <div class="fp-stock">
             <div class="fp-stock__head">
                 <span class="fp-stock__type">${kind === 'gps' ? FP_ICON_GPS : kind === 'display' ? FP_ICON_DISPLAY : '<i class="fas fa-key" aria-hidden="true"></i>'}
-                    <span>${kind === 'gps' ? 'GPS · ' : kind === 'display' ? 'Display · ' : ''}${escapeHtml(t)}</span></span>
+                    <span>${kind === 'gps' ? 'GPS · ' : kind === 'display' ? 'Display · ' : ''}<span class="fp-nowrap">${escapeHtml(t)}</span></span></span>
                 <span class="fp-chip fp-chip--${lv.tone}">${lv.label}</span>
             </div>
             <div class="fp-stock__big">${s.sisa} <span>in stock · keep ${min}</span></div>
@@ -9570,13 +9570,15 @@ function renderLicenseExpiring() {
         const expired = s.kind === 'expired';
         const name = unit.name || unit.sn || '-';
         const type = kind === 'display' ? unit.licenseDisplay : unit.gpsLicense;
-        const what = `${kind === 'display' ? 'Display' : 'GPS'}${type ? ' ' + type : ''}`;
-        const when = expired ? `Expired ${fpShortDate(end)}`
-            : `${fpShortDate(end)} · ${s.daysLeft === 0 ? 'today' : `in ${s.daysLeft} day${s.daysLeft === 1 ? '' : 's'}`}`;
+        const kindLabel = kind === 'display' ? 'Display' : 'GPS';
+        const what = `${kindLabel}${type ? ' ' + type : ''}`;
+        // The unit and GPS / Display on top, the license type and the date below.
+        const when = [type || '', expired ? `Expired ${fpShortDate(end)}`
+            : `${fpShortDate(end)} · ${s.daysLeft === 0 ? 'today' : `in ${s.daysLeft} day${s.daysLeft === 1 ? '' : 's'}`}`].filter(Boolean).join(' · ');
         return `<li class="fp-list__item">
             <span class="fp-list__icon fp-list__icon--${expired ? 'bad' : 'info'}" aria-hidden="true">${expired ? iconExpired : iconSoon}</span>
             <span class="fp-list__text">
-                <span class="fp-list__name">${escapeHtml(name)} · ${escapeHtml(what)}</span>
+                <span class="fp-list__name">${escapeHtml(name)} · ${kindLabel}</span>
                 <span class="fp-list__meta${expired ? ' fp-list__meta--bad' : ''}" title="${escapeHtml(end)}">${escapeHtml(when)}</span>
             </span>
             <button type="button" class="btn btn-sm ${expired ? 'btn-primary' : 'btn-secondary'} editonly editonly--license"
@@ -9596,6 +9598,22 @@ function renewLicenseFor(unitId, kind) {
     const type = canonicalLicenseType(kind === 'display' ? u.licenseDisplay : u.gpsLicense);
     if (type) document.getElementById('licType').value = type;
     populateLicenseUnitList(damageUnitLabel(u));
+    document.getElementById('licNote').value = 'Renewal';
+}
+
+// "Email report" on this page: the dashboard's sender (it marks only the
+// dashboard's button as sending), with this button held until it is done.
+function sendLicenseReportFromPage(btn) {
+    const dash = document.getElementById('btnEmailAlert');
+    sendLicenseAlertEmail();
+    if (!btn || !dash || !dash.disabled) return;   // not sent: no settings or nothing to report
+    btn.disabled = true;
+    const done = new MutationObserver(() => {
+        if (dash.disabled) return;
+        btn.disabled = false;
+        done.disconnect();
+    });
+    done.observe(dash, { attributes: true, attributeFilter: ['disabled'] });
 }
 
 // Unit snapshots change which unit licenses are expiring.
@@ -9696,10 +9714,10 @@ function renderLicenseStockTable() {
             <td data-label="Transaction">${badge}</td>
             <td data-label="Type"><strong>${escapeHtml(r.licenseType || '')}</strong></td>
             <td data-label="Quantity" class="fp-qty">${isOut ? '−' : '+'}${Number(r.qty) || 0}</td>
-            <td data-label="Unit">${isOut ? escapeHtml(uName) : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
-            <td data-label="SN" style="font-family:monospace;font-size:12px">${isOut ? escapeHtml(uSn) : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
-            <td data-label="Unit Status">${isOut ? licenseSyncCell(syncPlan.recStatus.get(r.id)) : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
-            <td data-label="Notes" style="max-width:200px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(note)}">${escapeHtml(noteShort) || '<span style="color:var(--text-light)">—</span>'}</td>
+            <td data-label="Unit"${isOut ? '' : ' class="fp-empty"'}>${isOut ? escapeHtml(uName) : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
+            <td data-label="SN" style="font-family:monospace;font-size:12px"${isOut ? '' : ' class="fp-empty"'}>${isOut ? escapeHtml(uSn) : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
+            <td data-label="Unit Status"${isOut ? '' : ' class="fp-empty"'}>${isOut ? licenseSyncCell(syncPlan.recStatus.get(r.id)) : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
+            <td data-label="Notes" style="max-width:200px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(note)}"${note ? '' : ' class="fp-empty"'}>${escapeHtml(noteShort) || '<span style="color:var(--text-light)">—</span>'}</td>
             <td class="col-actions">
                 <div class="row-actions">
                     <button class="btn btn-secondary" title="Edit" aria-label="Edit this transaction" onclick="editLicenseStock(${jsArg(r.id)})"><i class="fas fa-pen" aria-hidden="true"></i></button>
@@ -19015,7 +19033,7 @@ function renderInspectionStatus() {
     const q = (document.getElementById('insStatusSearch')?.value || '').toLowerCase().trim();
     const today = toISODate();
     const canCheck = hasAccess('inspection', 'edit');
-    const canApprove = hasAccess('inspectionApprove', 'edit');
+    const canPlan = canPlanInspections();
     const all = inspectableUnits().map(u => ({ u, s: inspectionStatusFor(u, today) }));
     renderInspectionStatusChips(all, filter);
     const rows = all
@@ -19036,10 +19054,14 @@ function renderInspectionStatus() {
         const last = s.last;
         const appr = last ? workLogApproval(last) : '';
         const res = last ? inspectionResultSummary(last) : null;
-        // A report still waiting is reviewed in Reports, by someone other than its author.
-        const review = last && appr === 'pending' && canApprove && !isMyRecord(last);
+        // A report still waiting is reviewed in Reports, by whoever may approve
+        // it; a unit never checked and on no schedule is planned first.
+        const review = last && appr === 'pending' && canApproveThisLog(last, INS_AREAS);
+        const plan = !last && canPlan && !openPlanFor(u.id);
         const main = review
             ? `<button type="button" class="btn btn-secondary btn-sm" aria-label="Review the check report of ${escapeHtml(name)}" onclick="showInspectionHistory(${jsArg(u.id)})">Review</button>`
+            : plan
+            ? `<button type="button" class="btn btn-secondary btn-sm" aria-label="Plan a check for ${escapeHtml(name)}" onclick="planInspectionFor(${jsArg(u.id)})">Plan check</button>`
             : canCheck
             ? `<button type="button" class="btn ${s.key === 'overdue' ? 'btn-primary' : 'btn-secondary'} btn-sm" aria-label="Log a check for ${escapeHtml(name)}" onclick="showInspectionForm(${jsArg(u.id)})">Log check</button>`
             : '';
@@ -19123,6 +19145,14 @@ function showInspectionPlanForm(id) {
     _insPlanPick = new Set(p ? (p.unitIds || []) : []);
     renderInspectionPlanPicker();
     document.getElementById('inspectionPlanModal').classList.add('open');
+}
+
+// "Plan check" on a unit's row: a new schedule with that unit ticked.
+function planInspectionFor(unitId) {
+    showInspectionPlanForm();
+    if (!document.getElementById('inspectionPlanModal').classList.contains('open')) return;
+    _insPlanPick.add(unitId);
+    renderInspectionPlanPicker();
 }
 
 function closeInspectionPlanModal() {
@@ -20854,7 +20884,7 @@ function renderLicensePlan() {
             </div>`).join('')}
         </div>
         <div class="table-card" style="margin-bottom:16px">
-            <div class="table-card__header"><div class="table-card__title"><i class="fas fa-layer-group"></i> Per Implement Type</div></div>
+            <div class="table-card__header"><h2 class="table-card__title">Per implement type</h2></div>
             <div class="table-wrapper"><table class="data-table table--cardable">
                 <thead><tr><th>Implement Type</th><th>Requirement</th><th>Units</th><th>Buy SF-RTK</th><th>Buy G5 Advance</th><th>Free to set</th></tr></thead>
                 <tbody>${[...types.entries()].sort((a, b) => (b[1].rtk + b[1].adv) - (a[1].rtk + a[1].adv) || a[0].localeCompare(b[0])).map(([t, v]) => `<tr>
@@ -20868,7 +20898,7 @@ function renderLicensePlan() {
             </table></div>
         </div>
         <div class="table-card">
-            <div class="table-card__header"><div class="table-card__title"><i class="fas fa-tractor"></i> Units (${unitRows.length})</div></div>
+            <div class="table-card__header"><h2 class="table-card__title">Units <span class="fp-pill">${unitRows.length}</span></h2></div>
             <div class="table-wrapper" style="max-height:600px"><table class="data-table table--cardable" id="lpUnitTable">
                 <thead><tr><th>Unit</th><th>Implement Type</th><th>Site</th><th>Needs</th><th>GPS Now</th><th>Display Now</th><th>To Do</th></tr></thead>
                 <tbody>${unitRows.length ? unitRows.map(r => `<tr>
