@@ -130,7 +130,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v179';
+const APP_VERSION = 'v180';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -12847,9 +12847,31 @@ function initAuthRipples() {
                 }
             }
             ctx.putImageData(st.img, 0, 0);
+            floatContent();
             st.quiet = energy < 2 ? st.quiet + 1 : 0;
-            if (st.quiet > 30) { st.running = false; ctx.clearRect(0, 0, w, h); st.a.fill(0); st.b.fill(0); return; }
+            if (st.quiet > 30) {
+                st.running = false; ctx.clearRect(0, 0, w, h); st.a.fill(0); st.b.fill(0);
+                floaters.forEach(el => { el.style.transform = ''; });
+                return;
+            }
             requestAnimationFrame(step);
+        };
+        // The logo and the name float on the water: each leans and drifts with
+        // the slope of the surface under its middle.
+        const floaters = [...panel.children].filter(el => el !== canvas && !el.classList.contains('auth-cane'));
+        const floatContent = () => {
+            const pr = panel.getBoundingClientRect();
+            const { w, h, a } = st;
+            floaters.forEach(el => {
+                const r = el.getBoundingClientRect();
+                const x = Math.round((r.left + r.width / 2 - pr.left) / SCALE), y = Math.round((r.top + r.height / 2 - pr.top) / SCALE);
+                if (x < 2 || y < 2 || x >= w - 2 || y >= h - 2) return;
+                const i = y * w + x;
+                const sx = (a[i - 2] - a[i + 2]) / 4, sy = (a[i - 2 * w] - a[i + 2 * w]) / 4;
+                const dx = Math.max(-6, Math.min(6, sx * 0.9)), dy = Math.max(-6, Math.min(6, sy * 0.9));
+                const rot = Math.max(-2.5, Math.min(2.5, sx * 0.15));
+                el.style.transform = `translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px) rotate(${rot.toFixed(2)}deg)`;
+            });
         };
         resize();
         if (window.ResizeObserver) new ResizeObserver(resize).observe(panel);
