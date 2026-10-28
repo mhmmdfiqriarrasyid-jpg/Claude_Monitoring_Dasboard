@@ -10171,3 +10171,20 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
 .form-check input { flex-shrink: 0; accent-color: var(--accent); }
 @media (min-width: 701px) { .form-check input { width: 20px; height: 20px; } }
 @media (max-width: 700px) { .form-check { min-height: 44px; } }
+
+/* Device profile: allocation history (v173) */
+.wh-devname { font-weight: 700; color: var(--text); text-align: left; }
+.wh-devname:hover { color: var(--accent-text); text-decoration: underline; }
+.dev-alloc-title { margin: 18px 0 8px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.dev-alloc-table td, .dev-alloc-table th { white-space: nowrap; }
+.dev-alloc-table tr.dev-alloc--current td { background: var(--primary-lighter); }
+#deviceProfileModal .modal-card { max-width: 780px; }
+.dev-alloc-title .team-tab__count { background: var(--neutral-tint); color: var(--text-body); }
+@media (max-width: 700px) {
+    .dev-alloc-table thead { display: none; }
+    .dev-alloc-table, .dev-alloc-table tbody, .dev-alloc-table tr, .dev-alloc-table td { display: block; width: 100%; }
+    .dev-alloc-table tr { border: 1px solid var(--border); border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
+    .dev-alloc-table td { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; white-space: normal; border-bottom: 1px solid var(--border); }
+    .dev-alloc-table td:last-child { border-bottom: 0; }
+    .dev-alloc-table td::before { content: attr(data-label); color: var(--text-secondary); font-weight: 600; font-size: 13px; }
+}

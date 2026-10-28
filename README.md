@@ -111,7 +111,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-2.107 pemeriksaan di lima puluh suite, menggerakkan Chromium sungguhan terhadap
+2.111 pemeriksaan di lima puluh suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -320,6 +320,13 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
   Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
   **Implement Brands** (`masterLists/brand`) untuk Agricultural.
+- **Profil perangkat v173 (dijaga `tests/warehouse_test.js`).** Klik nama
+  perangkat di tabel Warehouse untuk membuka profilnya: SN, tipe, brand/model,
+  status, lokasi, SN baterai, catatan, dan **Allocation history** — setiap
+  alokasi (divisi, penerima, jabatan, tanggal alokasi, tanggal kembali, lama
+  dipegang), terbaru di atas; alokasi yang masih berjalan ditandai *Still
+  allocated*. Bisa dibuka semua yang boleh melihat Warehouse; tombol Edit hanya
+  untuk yang boleh mengubah. Di HP tiap alokasi tampil sebagai kartu.
 - **Warehouse: penerima, tanggal alokasi/kembali, SN baterai v172 (dijaga
   `tests/warehouse_test.js`).** Perangkat *Allocated* kini mencatat **divisi**,
   **nama penerima** (wajib), **jabatan** (opsional) dan **tanggal alokasi**

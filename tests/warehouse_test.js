@@ -126,6 +126,20 @@ const { launch, BASE_URL } = require('./_env');
         closeDeviceModal();
         warehouseDevices.pop(); renderDeviceTable();
 
+        // ---------- profil perangkat: riwayat alokasi ----------
+        warehouseDevices.push({ id: 'dp1', sn: 'TAB-7', type: 'Tablet', status: 'allocated', division: 'IT', recipientName: 'Citra',
+            recipientTitle: 'Staff', allocatedAt: '2026-10-01',
+            allocationHistory: [{ division: 'Plantation', recipientName: 'Budi', recipientTitle: 'Estate Manager', allocatedAt: '2026-08-01', returnedAt: '2026-08-31' }] });
+        renderDeviceTable();
+        t('nama perangkat di tabel membuka profil', !!document.querySelector('#deviceBody .wh-devname[onclick*="dp1"]'), true);
+        showDeviceProfile('dp1');
+        const prow = [...document.querySelectorAll('#deviceProfileBody .dev-alloc-table tbody tr')].map(r => r.textContent.replace(/\\s+/g, ' ').trim());
+        t('profil: riwayat alokasi terbaru dulu, yang aktif ditandai', [prow.length, /^IT Citra Staff .*Still allocated/.test(prow[0]), /^Plantation Budi Estate Manager .* 30 days$/.test(prow[1])], [2, true, true]);
+        t('profil terbuka & tertutup lewat penutup modal', [document.getElementById('deviceProfileModal').classList.contains('open'), (closeTopModal(), document.getElementById('deviceProfileModal').classList.contains('open'))], [true, false]);
+        showDeviceProfile('x-tidak-ada');
+        t('perangkat tak dikenal: profil tidak terbuka', document.getElementById('deviceProfileModal').classList.contains('open'), false);
+        warehouseDevices.pop(); renderDeviceTable();
+
         // ---------- "di mana perangkat ini" ----------
         t('di gudang -> nama gudang', deviceWhere(warehouseDevices[0]), 'Gudang Pusat');
         t('terpasang di unit -> nama unit hidup', deviceWhere(warehouseDevices[1]), 'JD-6110B-01');

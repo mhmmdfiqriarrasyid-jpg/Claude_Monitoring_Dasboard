@@ -3132,6 +3132,21 @@
     </div>
 </div>
 
+<!-- ==================== DEVICE PROFILE ==================== -->
+<div class="modal-overlay" id="deviceProfileModal">
+    <div class="modal-card wh-dialog" role="dialog" aria-labelledby="deviceProfileTitle">
+        <div class="modal-header">
+            <h3 id="deviceProfileTitle">Device</h3>
+            <button class="btn-icon" onclick="closeDeviceProfile()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body" id="deviceProfileBody"></div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeDeviceProfile()">Close</button>
+            <button type="button" class="btn btn-primary editonly editonly--warehouse" id="deviceProfileEdit"><i class="fas fa-pen"></i> Edit</button>
+        </div>
+    </div>
+</div>
+
 <!-- ==================== STOCK MODAL ==================== -->
 <div class="modal-overlay" id="stockModal">
     <div class="modal-card wh-dialog" role="dialog" aria-labelledby="stockModalTitle">

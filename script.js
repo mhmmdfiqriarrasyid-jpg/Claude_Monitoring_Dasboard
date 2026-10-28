@@ -127,7 +127,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v172';
+const APP_VERSION = 'v173';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -879,6 +879,7 @@ const MODAL_CLOSERS = {
     workLogModal:         'closeWorkLogModal',
     leaveModal:           'closeLeaveModal',
     deviceModal:          'closeDeviceModal',
+    deviceProfileModal:   'closeDeviceProfile',
     vehicleModal:         'closeVehicleModal',
     fuelModal:            'closeFuelModal',
     stockModal:           'closeStockModal',
@@ -17354,7 +17355,7 @@ function renderDeviceTable() {
         const model = [d.brand, d.model].filter(Boolean).join(' · ');
         return `
         <tr>
-            <td data-label="Device" class="wh-devcell"><span class="wh-dev">${deviceIcon(d.type)}<span class="adm-stack"><strong>${escapeHtml(d.type || 'Device')}</strong>${
+            <td data-label="Device" class="wh-devcell"><span class="wh-dev">${deviceIcon(d.type)}<span class="adm-stack"><button type="button" class="adm-link wh-devname" title="View device profile" onclick="showDeviceProfile(${jsArg(d.id)})">${escapeHtml(d.type || 'Device')}</button>${
                 model ? `<span class="adm-sub">${escapeHtml(model)}</span>` : ''}${
                 d.batterySn ? `<span class="adm-sub"><i class="fas fa-battery-three-quarters" aria-hidden="true"></i> Battery SN ${escapeHtml(d.batterySn)}</span>` : ''}</span></span></td>
             <td data-label="Serial number" class="adm-mono">${escapeHtml(d.sn || '')}</td>
@@ -17457,6 +17458,71 @@ function editDevice(id) {
 
 function closeDeviceModal() {
     document.getElementById('deviceModal').classList.remove('open');
+}
+
+// ---- Device profile: details and allocation history (read-only) ----
+function _devDays(from, to) {
+    const a = parseLocalDate(from), b = parseLocalDate(to);
+    if (!a || !b) return '';
+    const n = Math.round((b - a) / 86400000);
+    return n >= 0 ? `${n} day${n === 1 ? '' : 's'}` : '';
+}
+
+function deviceAllocationRows(d) {
+    const rows = (Array.isArray(d.allocationHistory) ? d.allocationHistory : []).map(h => ({ ...h, current: false }));
+    if (d.status === 'allocated') rows.push({ division: d.division || '', recipientName: d.recipientName || '',
+        recipientTitle: d.recipientTitle || '', allocatedAt: d.allocatedAt || '', returnedAt: '', current: true });
+    // Newest first.
+    return rows.reverse();
+}
+
+function showDeviceProfile(id) {
+    const d = warehouseDevices.find(x => x.id === id);
+    if (!d) return;
+    const st = DEVICE_STATUSES.find(s => s.key === d.status) || DEVICE_STATUSES[0];
+    const dash = '<span class="adm-muted">—</span>';
+    const row = (label, html) => `<div class="profile-row"><span class="profile-row__label">${label}</span><span>${html || dash}</span></div>`;
+    const esc = v => v ? escapeHtml(v) : '';
+    const allocs = deviceAllocationRows(d);
+    const today = toISODate();
+    const hist = allocs.length ? `
+        <div class="table-wrapper" style="max-height:none">
+        <table class="data-table dev-alloc-table">
+            <thead><tr><th>Division</th><th>Recipient</th><th>Position</th><th>Allocated</th><th>Returned</th><th>Duration</th></tr></thead>
+            <tbody>${allocs.map(h => `<tr${h.current ? ' class="dev-alloc--current"' : ''}>
+                <td data-label="Division">${esc(h.division) || dash}</td>
+                <td data-label="Recipient">${esc(h.recipientName) || dash}</td>
+                <td data-label="Position">${esc(h.recipientTitle) || dash}</td>
+                <td data-label="Allocated">${h.allocatedAt ? escapeHtml(fpShortDate(h.allocatedAt)) : dash}</td>
+                <td data-label="Returned">${h.current ? '<span class="wh-status wh-status--allocated"><span class="wh-dot wh-dot--allocated" aria-hidden="true"></span>Still allocated</span>'
+                    : (h.returnedAt ? escapeHtml(fpShortDate(h.returnedAt)) : dash)}</td>
+                <td data-label="Duration">${escapeHtml(_devDays(h.allocatedAt, h.current ? today : h.returnedAt)) || dash}</td>
+            </tr>`).join('')}</tbody>
+        </table></div>`
+        : '<p class="adm-muted">This device has never been allocated to a division.</p>';
+    document.getElementById('deviceProfileTitle').textContent = `${d.type || 'Device'} · ${d.sn || ''}`;
+    document.getElementById('deviceProfileBody').innerHTML = `
+        <div class="profile-section">
+            ${row('Serial number', esc(d.sn))}
+            ${row('Type', esc(d.type))}
+            ${row('Brand / model', esc([d.brand, d.model].filter(Boolean).join(' · ')))}
+            ${row('Status', `<span class="wh-status wh-status--${st.key}"><span class="wh-dot wh-dot--${st.key}" aria-hidden="true"></span>${escapeHtml(sentenceCase(st.label))}</span>`)}
+            ${row('Where', deviceWhereCell(d))}
+            ${row('Battery SN', esc(d.batterySn))}
+            ${row('Notes', esc(d.note))}
+        </div>
+        <h4 class="dev-alloc-title">Allocation history <span class="team-tab__count">${allocs.length}</span></h4>
+        ${hist}`;
+    const edit = document.getElementById('deviceProfileEdit');
+    if (edit) {
+        edit.style.display = hasAccess('warehouse', 'edit') ? '' : 'none';
+        edit.onclick = () => { closeDeviceProfile(); editDevice(d.id); };
+    }
+    document.getElementById('deviceProfileModal').classList.add('open');
+}
+
+function closeDeviceProfile() {
+    document.getElementById('deviceProfileModal').classList.remove('open');
 }
 
 function saveDevice(event) {
