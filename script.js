@@ -130,7 +130,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v183';
+const APP_VERSION = 'v184';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -1472,8 +1472,9 @@ function showToast(message, type = 'info') {
 }
 
 // text: an optional line under the spinner saying what is being waited for.
-let _loadingDoneTimer = null;
-function showLoading(show, text) {
+let _loadingDoneTimer = null, _loadingHintTimer = null;
+// hint: a quieter second line, shown only if the wait runs past a few seconds.
+function showLoading(show, text, hint) {
     const ov = document.getElementById('loadingOverlay');
     // Done: the logo shows in full colour for a moment, then the card goes.
     // 'active' drops at once (nothing waits on the overlay any more); the
@@ -1486,6 +1487,13 @@ function showLoading(show, text) {
     ov.classList.toggle('active', show);
     const t = document.getElementById('loadingText');
     if (t) t.textContent = show && text ? text : '';
+    const h = document.getElementById('loadingHint');
+    clearTimeout(_loadingHintTimer);
+    if (h) {
+        h.hidden = true;
+        h.textContent = show && hint ? hint : '';
+        if (show && hint) _loadingHintTimer = setTimeout(() => { h.hidden = false; }, 6000);
+    }
 }
 
 // Signing in is not over when signIn() resolves: the profile is read next,
@@ -1493,9 +1501,9 @@ function showLoading(show, text) {
 // the app, the pending screen or the sign-in screen again.
 let _authBusy = false;
 let _authBusyTimer = null;
-function setAuthBusy(formId, label, text) {
+function setAuthBusy(formId, label, text, hint) {
     _authBusy = true;
-    showLoading(true, text);
+    showLoading(true, text, hint);
     setFormBusy(formId, true, label);
     clearTimeout(_authBusyTimer);
     // Safety net: never leave the overlay up if no screen ever follows.
@@ -13423,7 +13431,7 @@ async function handleSignIn(event) {
     const email = document.getElementById('signInEmail').value.trim();
     const password = document.getElementById('signInPassword').value;
     try {
-        setAuthBusy('signInForm', 'Signing in…', 'Signing in… on a weak signal this can take a while');
+        setAuthBusy('signInForm', 'Signing in…', 'Signing you in', 'Taking longer than usual — please keep this page open.');
         _explicitSignIn = true;
         // A fresh 24h window BEFORE signing in: Firebase calls the auth
         // listener before signIn() resolves, and the listener checks the
@@ -13451,7 +13459,7 @@ async function handleSignUp(event) {
     const email = document.getElementById('signUpEmail').value.trim();
     const password = document.getElementById('signUpPassword').value;
     try {
-        setAuthBusy('signUpForm', 'Creating account…', 'Creating the account…');
+        setAuthBusy('signUpForm', 'Creating account…', 'Creating your account', 'Taking longer than usual — please keep this page open.');
         _explicitSignIn = true;
         const user = await window.cloud.signUp(email, password, name);
         startSessionClock(); // fresh 24h window

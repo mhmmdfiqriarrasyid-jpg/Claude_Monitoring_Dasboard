@@ -285,7 +285,7 @@ const { launch, BASE_URL } = require('./_env');
     });
     t('laptop: Back memulihkan posisi .main, jendela dan bar atas tidak bergeser', desk, ['editUnits', true, 0, 0, 0]);
     t('masuk akun: tombol nonaktif, teks proses, lapisan loading di atas kartu', signin.busy,
-      [true, 'Signing in…', 'Signing in… on a weak signal this can take a while', true]);
+      [true, 'Signing in…', 'Signing you in', true]);
     t('gagal masuk: tombol aktif lagi, loading hilang', signin.done, [false, true, false, '']);
     t('berhasil: tetap sibuk selama profil dimuat', signin.afterResolve, [true, true]);
     t('layar berikutnya tampil: sibuk selesai', signin.afterScreen, [false, false]);
