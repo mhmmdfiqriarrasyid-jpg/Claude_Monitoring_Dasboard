@@ -130,7 +130,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v177';
+const APP_VERSION = 'v178';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -12761,8 +12761,32 @@ function pruneForeignLocalAudit(uid) {
 // pointer move drops a ripple, the waves spread, reflect and fade. It only
 // runs while waves are moving, never while the panel is hidden, and not at
 // all for people who asked their system for reduced motion.
+// A few sugarcane stalks along the bottom of the panel: jointed stems and
+// long arching leaves, drawn in light teal so they stay in the background.
+const _caneStalk = (x, h, lean) => {
+    const top = 420 - h;
+    let nodes = '';
+    for (let y = 410; y > top + 20; y -= 42) nodes += `<path d="M${x - 7} ${y}h14" />`;
+    return `<g transform="rotate(${lean} ${x} 420)">
+        <rect x="${x - 6}" y="${top}" width="12" height="${h}" rx="6" class="cane-stem"/>
+        <g class="cane-node">${nodes}</g>
+        <path class="cane-leaf" d="M${x} ${top + 30} C ${x - 40} ${top - 10}, ${x - 90} ${top + 10}, ${x - 120} ${top + 70}"/>
+        <path class="cane-leaf" d="M${x} ${top + 20} C ${x + 40} ${top - 30}, ${x + 95} ${top - 5}, ${x + 125} ${top + 55}"/>
+        <path class="cane-leaf" d="M${x} ${top + 90} C ${x - 30} ${top + 50}, ${x - 70} ${top + 70}, ${x - 95} ${top + 125}"/>
+        <path class="cane-leaf" d="M${x} ${top + 140} C ${x + 35} ${top + 100}, ${x + 80} ${top + 120}, ${x + 100} ${top + 175}"/>
+        <path class="cane-leaf" d="M${x} ${top + 4} C ${x - 6} ${top - 40}, ${x + 4} ${top - 70}, ${x + 14} ${top - 95}"/>
+    </g>`;
+};
+const AUTH_CANE_SVG = `<svg class="auth-cane" viewBox="0 0 520 420" preserveAspectRatio="xMidYMax meet" aria-hidden="true" focusable="false">
+    ${_caneStalk(70, 250, -6)}${_caneStalk(150, 330, -2)}${_caneStalk(235, 280, 3)}
+    ${_caneStalk(330, 360, -3)}${_caneStalk(420, 300, 4)}${_caneStalk(490, 230, 7)}
+</svg>`;
+
 const _rippleState = new WeakMap();
 function initAuthRipples() {
+    document.querySelectorAll('.auth-brand').forEach(panel => {
+        if (!panel.querySelector('.auth-cane')) panel.insertAdjacentHTML('afterbegin', AUTH_CANE_SVG);
+    });
     if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     document.querySelectorAll('.auth-brand').forEach(panel => {
         if (_rippleState.has(panel)) return;
