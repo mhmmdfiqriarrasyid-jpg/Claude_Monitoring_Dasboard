@@ -10294,3 +10294,24 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
 @keyframes loadingIn { from { opacity: 0; transform: translateY(6px) scale(0.98); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .loading-card { animation: none; } }
 
+/* Waiting logo (v183): the logo starts pale and fills with its own colours
+   from the bottom while we wait; when done it shows in full colour. */
+.loading-logo { position: relative; width: 64px; height: 64px; }
+.loading-logo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.loading-logo__base { filter: grayscale(1) brightness(2.4); opacity: 0.35; }
+.loading-logo__fill { clip-path: inset(100% 0 0 0); animation: logoFill 1.6s cubic-bezier(.45,.05,.35,1) infinite; }
+@keyframes logoFill {
+    0%   { clip-path: inset(100% 0 0 0); opacity: 1; }
+    70%  { clip-path: inset(0 0 0 0);    opacity: 1; }
+    88%  { clip-path: inset(0 0 0 0);    opacity: 1; }
+    100% { clip-path: inset(0 0 0 0);    opacity: 0; }
+}
+.loading-overlay.finishing { display: flex; pointer-events: none; animation: loadingOut 0.45s ease forwards; }
+.loading-overlay.finishing .loading-logo__fill { animation: none; clip-path: inset(0 0 0 0); opacity: 1; }
+.loading-overlay.finishing .loading-logo { animation: logoPop 0.3s ease-out; }
+@keyframes loadingOut { 0%, 55% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes logoPop { from { transform: scale(0.92); } to { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+    .loading-logo__fill { animation: none; clip-path: inset(0 0 0 0); opacity: 0.6; }
+}
+

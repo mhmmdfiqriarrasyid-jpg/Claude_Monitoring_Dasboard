@@ -130,7 +130,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v182';
+const APP_VERSION = 'v183';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -1472,8 +1472,18 @@ function showToast(message, type = 'info') {
 }
 
 // text: an optional line under the spinner saying what is being waited for.
+let _loadingDoneTimer = null;
 function showLoading(show, text) {
-    document.getElementById('loadingOverlay').classList.toggle('active', show);
+    const ov = document.getElementById('loadingOverlay');
+    // Done: the logo shows in full colour for a moment, then the card goes.
+    // 'active' drops at once (nothing waits on the overlay any more); the
+    // 'finishing' look is decoration only and lets every click through.
+    clearTimeout(_loadingDoneTimer);
+    if (!show && ov.classList.contains('active')) {
+        ov.classList.add('finishing');
+        _loadingDoneTimer = setTimeout(() => ov.classList.remove('finishing'), 450);
+    } else if (show) ov.classList.remove('finishing');
+    ov.classList.toggle('active', show);
     const t = document.getElementById('loadingText');
     if (t) t.textContent = show && text ? text : '';
 }
