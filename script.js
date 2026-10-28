@@ -137,7 +137,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.8.0';
+const APP_VERSION = 'v2.8.1';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -13053,6 +13053,13 @@ function hideAuthGates() {
 
 function switchAuthTab(tab) {
     const isSignIn = tab === 'signin';
+    const card = document.querySelector('#authGate .auth-card');
+    const wasSignIn = document.getElementById('signInForm').style.display !== 'none';
+    const animate = card && wasSignIn !== isSignIn && card.offsetParent
+        && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+    const fromH = animate ? card.getBoundingClientRect().height : 0;
+    const tabs = document.querySelector('#authGate .auth-tabs');
+    if (tabs) tabs.dataset.on = isSignIn ? 'signin' : 'signup';
     [['authTabSignIn', isSignIn], ['authTabSignUp', !isSignIn]].forEach(([id, on]) => {
         const b = document.getElementById(id);
         b.classList.toggle('active', on);
@@ -13066,6 +13073,18 @@ function switchAuthTab(tab) {
     document.getElementById('signUpForm').style.display = isSignIn ? 'none' : '';
     showAuthError('signInError', '');
     showAuthError('signUpError', '');
+    // Smooth switch: the card eases to its new height while the new form and
+    // heading fade in from the side the tab moved to.
+    if (animate && card.animate) {
+        const toH = card.getBoundingClientRect().height;
+        if (Math.abs(toH - fromH) > 1) card.animate([{ height: fromH + 'px' }, { height: toH + 'px' }],
+            { duration: 280, easing: 'cubic-bezier(.2,.7,.2,1)' });
+        const dx = isSignIn ? -14 : 14;
+        const form = document.getElementById(isSignIn ? 'signInForm' : 'signUpForm');
+        [form, document.querySelector('#authGate .auth-card__head')].forEach((el, i) => el && el.animate(
+            [{ opacity: 0, transform: `translateX(${i ? 0 : dx}px)` }, { opacity: 1, transform: 'none' }],
+            { duration: i ? 200 : 260, easing: 'cubic-bezier(.2,.7,.2,1)' }));
+    }
 }
 
 function showAuthError(id, msg) {

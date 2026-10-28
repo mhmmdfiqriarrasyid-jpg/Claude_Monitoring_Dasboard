@@ -10367,3 +10367,26 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
 .wh-photo-chip:hover { background: var(--primary-lighter); color: var(--accent-text); }
 @media (max-width: 700px) { .wh-photo__del { width: 32px; height: 32px; } .wh-photo-chip { min-height: 32px; } }
 
+/* Sign in ↔ Create account (2.8.1): one white thumb slides under the tabs. */
+@media screen {
+    .auth-tabs.seg { position: relative; isolation: isolate; }
+    .auth-tabs.seg::before {
+        content: '';
+        position: absolute;
+        top: 4px; bottom: 4px; left: 4px;
+        width: calc(50% - 6px);
+        border-radius: 9px;
+        background: var(--card);
+        box-shadow: 0 1px 3px rgba(16,24,40,0.10);
+        transition: transform 0.28s cubic-bezier(.2,.7,.2,1);
+        z-index: -1;
+    }
+    .auth-tabs.seg[data-on="signup"]::before { transform: translateX(calc(100% + 4px)); }
+    .auth-tabs .auth-tab, .auth-tabs .auth-tab.active { background: transparent; box-shadow: none; border: 0; transition: color 0.2s ease; }
+    .auth-tabs .auth-tab.active { color: var(--text); }
+    .auth-tabs .auth-tab:focus { outline: none; }
+    .auth-tabs .auth-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    #authGate .auth-card { overflow: hidden; }
+}
+@media (prefers-reduced-motion: reduce) { .auth-tabs.seg::before { transition: none; } }
+
