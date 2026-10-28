@@ -130,7 +130,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v178';
+const APP_VERSION = 'v179';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -12784,8 +12784,9 @@ const AUTH_CANE_SVG = `<svg class="auth-cane" viewBox="0 0 520 420" preserveAspe
 
 const _rippleState = new WeakMap();
 function initAuthRipples() {
-    document.querySelectorAll('.auth-brand').forEach(panel => {
-        if (!panel.querySelector('.auth-cane')) panel.insertAdjacentHTML('afterbegin', AUTH_CANE_SVG);
+    // The cane grows in the light area around the sign-in card.
+    document.querySelectorAll('.auth-main').forEach(area => {
+        if (!area.querySelector('.auth-cane')) area.insertAdjacentHTML('afterbegin', AUTH_CANE_SVG);
     });
     if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     document.querySelectorAll('.auth-brand').forEach(panel => {

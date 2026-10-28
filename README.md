@@ -326,8 +326,8 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   gelombang kecil di `<canvas>` di belakang logo, berhenti sendiri saat air
   tenang dan saat panel tersembunyi, dan tidak berjalan sama sekali bila
   perangkat meminta *reduced motion*.
-  Sejak v178 panel itu juga berlatar titik-titik grid halus dan beberapa
-  batang tebu samar di bagian bawahnya (disembunyikan di layar HP).
+  Sejak v179 area terang di sekitar kartu Sign in berlatar titik-titik grid
+  gelap yang halus dan beberapa batang tebu samar (teal) di bagian bawahnya.
 - **Peran kustom & Daily Report "Own only" v175 (dijaga
   `tests/roles_custom_test.js`, `unitscope_test`, dan 32 skenario baru di
   `tests/rules_test.js`).** Akses kini **murni lewat peran**:
