@@ -111,7 +111,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-2.091 pemeriksaan di lima puluh suite, menggerakkan Chromium sungguhan terhadap
+2.107 pemeriksaan di lima puluh suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -320,6 +320,18 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
   Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
   **Implement Brands** (`masterLists/brand`) untuk Agricultural.
+- **Warehouse: penerima, tanggal alokasi/kembali, SN baterai v172 (dijaga
+  `tests/warehouse_test.js`).** Perangkat *Allocated* kini mencatat **divisi**,
+  **nama penerima** (wajib), **jabatan** (opsional) dan **tanggal alokasi**
+  (wajib, default hari ini). Saat perangkat yang dialokasikan diubah ke
+  status lain, form meminta **tanggal kembali**; alokasi itu (divisi, orang,
+  jabatan, tanggal alokasi & kembali) disimpan di `allocationHistory`
+  perangkat dan tabel menampilkan "Returned … from …". Centang **Has a
+  battery** memunculkan **Battery serial number** (wajib bila dicentang, tidak
+  boleh sama dengan baterai perangkat lain); SN baterai tampil di kolom
+  perangkat dan ikut pencarian. CSV perangkat mendapat kolom Recipient Name,
+  Recipient Position, Allocation Date, Last Returned, Battery SN. Rules tidak
+  berubah.
 - **Tampilan "F · Soft UI" v171 (dijaga `tests/navgroups_test.js`, `leader_test`,
   `leave_test`, `unitgroups_test` dan semua suite lain).** Seluruh aplikasi
   memakai gaya desain F: latar abu-abu muda `#F6F7FB`, kartu putih dengan

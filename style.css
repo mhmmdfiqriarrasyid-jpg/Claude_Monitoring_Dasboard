@@ -10165,3 +10165,9 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
     .adm-filters, .wh-devicon, .wh-dot { display: none !important; }
     .adm-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 }
+
+/* Device form: "Has a battery" tick box (v172) */
+.form-check { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; font-size: 14px; font-weight: 600; color: var(--text-body); cursor: pointer; }
+.form-check input { flex-shrink: 0; accent-color: var(--accent); }
+@media (min-width: 701px) { .form-check input { width: 20px; height: 20px; } }
+@media (max-width: 700px) { .form-check { min-height: 44px; } }

@@ -66,11 +66,64 @@ const { launch, BASE_URL } = require('./_env');
         t('Allocated tanpa divisi ditolak', saved.length, nSaved);
         document.getElementById('devDivision').value = 'Plantation';
         saveDevice({ preventDefault() {} });
+        t('Allocated tanpa nama penerima ditolak', saved.length, nSaved);
+        t('form Allocated: nama, jabatan, tanggal alokasi tampil; tanggal default hari ini',
+          [document.getElementById('devRecipientGroup').style.display, document.getElementById('devRecipientTitleGroup').style.display,
+           document.getElementById('devAllocatedAtGroup').style.display, document.getElementById('devAllocatedAt').value], ['', '', '', toISODate()]);
+        document.getElementById('devRecipientName').value = 'Budi';
+        document.getElementById('devRecipientTitle').value = 'Estate Manager';
+        document.getElementById('devAllocatedAt').value = '2026-09-01';
+        saveDevice({ preventDefault() {} });
         const alloc = (saved[saved.length - 1] || [])[1] || {};
-        t('Allocated tersimpan dengan divisi penerima', [alloc.status, alloc.division, alloc.location], ['allocated', 'Plantation', '']);
-        t('di mana perangkat ini: nama divisi', deviceWhere(alloc), 'Division: Plantation');
+        t('Allocated tersimpan dengan divisi, orang, jabatan, tanggal',
+          [alloc.status, alloc.division, alloc.recipientName, alloc.recipientTitle, alloc.allocatedAt, alloc.location],
+          ['allocated', 'Plantation', 'Budi', 'Estate Manager', '2026-09-01', '']);
+        t('di mana perangkat ini: divisi + orang + sejak', deviceWhere(alloc), 'Division: Plantation (Budi, Estate Manager) since 2026-09-01');
         warehouseDevices.push(alloc); renderDeviceTable();
         t('KPI dialokasikan', document.getElementById('devKpi_allocated').textContent, '1');
+        t('tabel: orang & tanggal alokasi tampil', /Budi · Estate Manager · since/.test(document.getElementById('deviceBody').textContent), true);
+
+        // dikembalikan: tanggal kembali wajib, tersimpan di riwayat alokasi
+        editDevice(alloc.id);
+        document.getElementById('devStatus').value = 'warehouse'; onDeviceStatusChange();
+        t('kembali dari alokasi: kolom tanggal kembali tampil, default hari ini',
+          [document.getElementById('devReturnedAtGroup').style.display, document.getElementById('devReturnedAt').value], ['', toISODate()]);
+        document.getElementById('devReturnedAt').value = '2026-08-01';
+        const nBefore = saved.length;
+        saveDevice({ preventDefault() {} });
+        t('tanggal kembali sebelum tanggal alokasi ditolak', saved.length, nBefore);
+        document.getElementById('devReturnedAt').value = '2026-09-20';
+        document.getElementById('devLocation').value = 'Gudang Pusat';
+        saveDevice({ preventDefault() {} });
+        const back = (saved[saved.length - 1] || [])[1] || {};
+        t('dikembalikan: riwayat alokasi menyimpan tanggal kembali', [back.status, back.division, back.recipientName, back.allocationHistory],
+          ['warehouse', '', '', [{ division: 'Plantation', recipientName: 'Budi', recipientTitle: 'Estate Manager', allocatedAt: '2026-09-01', returnedAt: '2026-09-20' }]]);
+        warehouseDevices.pop(); warehouseDevices.push(back); renderDeviceTable();
+        t('tabel: "Returned … from Plantation · Budi"', /Returned .* from Plantation · Budi/.test(document.getElementById('deviceBody').textContent), true);
+        warehouseDevices.pop(); renderDeviceTable();
+
+        // ---------- baterai ----------
+        showAddDeviceForm();
+        document.getElementById('devSn').value = 'GPS-B1'; document.getElementById('devType').value = 'GPS';
+        document.getElementById('devHasBattery').checked = true; onDeviceBatteryChange();
+        t('centang baterai: kolom SN baterai tampil', document.getElementById('devBatteryGroup').style.display, '');
+        const nB = saved.length;
+        saveDevice({ preventDefault() {} });
+        t('baterai dicentang tanpa SN ditolak', saved.length, nB);
+        document.getElementById('devBatterySn').value = 'BAT-777';
+        saveDevice({ preventDefault() {} });
+        const bat = (saved[saved.length - 1] || [])[1] || {};
+        t('SN baterai tersimpan', [bat.hasBattery, bat.batterySn], [true, 'BAT-777']);
+        warehouseDevices.push(bat); renderDeviceTable();
+        t('tabel: SN baterai tampil di kolom perangkat', /Battery SN BAT-777/.test(document.getElementById('deviceBody').textContent), true);
+        showAddDeviceForm();
+        document.getElementById('devSn').value = 'GPS-B2';
+        document.getElementById('devHasBattery').checked = true; onDeviceBatteryChange();
+        document.getElementById('devBatterySn').value = 'bat-777';
+        const nB2 = saved.length;
+        saveDevice({ preventDefault() {} });
+        t('SN baterai ganda ditolak', saved.length, nB2);
+        closeDeviceModal();
         warehouseDevices.pop(); renderDeviceTable();
 
         // ---------- "di mana perangkat ini" ----------

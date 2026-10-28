@@ -127,7 +127,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v171';
+const APP_VERSION = 'v172';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -17187,6 +17187,10 @@ function populateWarehouseFilters() {
     dl('deviceTypeList', allDeviceTypes());
     dl('warehouseLocationList', allWarehouseLocations());
     dl('devDivisionList', [...new Set(warehouseDevices.map(d => (d.division || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)));
+    const past = f => [...new Set(warehouseDevices.flatMap(d => [d[f]].concat((d.allocationHistory || []).map(h => h[f])))
+        .map(v => (v || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    dl('devRecipientList', past('recipientName'));
+    dl('devRecipientTitleList', past('recipientTitle'));
     dl('stockItemList', allStockItemNames());
 
     const unitOpts = [...globalData]
@@ -17213,7 +17217,11 @@ function deviceWhere(d) {
         }
         return d.siteName || 'Installed (location not set)';
     }
-    if (d.status === 'allocated') return d.division ? `Division: ${d.division}` : 'Allocated (division not set)';
+    if (d.status === 'allocated') {
+        if (!d.division) return 'Allocated (division not set)';
+        const who = [d.recipientName, d.recipientTitle].filter(Boolean).join(', ');
+        return `Division: ${d.division}${who ? ` (${who})` : ''}${d.allocatedAt ? ` since ${d.allocatedAt}` : ''}`;
+    }
     return d.location || '—';
 }
 
@@ -17239,7 +17247,7 @@ function getFilteredDevices() {
         if (loc && (d.location || '') !== loc) return false;
         if (q) {
             const hay = [d.sn, d.type, d.brand, d.model, d.location, d.siteName,
-                         deviceWhere(d), d.note].join(' ').toLowerCase();
+                         deviceWhere(d), d.note, d.batterySn, d.recipientName, d.recipientTitle].join(' ').toLowerCase();
             if (!hay.includes(q)) return false;
         }
         return true;
@@ -17276,10 +17284,20 @@ function deviceWhereCell(d) {
             : escapeHtml(d.unitName || '—');
     } else if (d.status === 'allocated') {
         main = d.division ? `Division · ${escapeHtml(d.division)}` : '<span class="adm-muted">Division not set</span>';
+        const who = [d.recipientName, d.recipientTitle].filter(Boolean).join(' · ');
+        const since = d.allocatedAt ? `since ${fpShortDate(d.allocatedAt)}` : '';
+        const sub = [who, since].filter(Boolean).map(escapeHtml).join(' · ');
+        if (sub) main = `<span class="adm-stack">${main}<span class="adm-sub">${sub}</span></span>`;
     } else if (d.status === 'installed') {
         main = d.siteName ? escapeHtml(d.siteName) : '<span class="adm-muted">Installed (location not set)</span>';
     } else {
         main = d.location ? escapeHtml(d.location) : dash;
+    }
+    // Back from an allocation: say when and from whom.
+    const last = d.status !== 'allocated' && Array.isArray(d.allocationHistory) ? d.allocationHistory[d.allocationHistory.length - 1] : null;
+    if (last && last.returnedAt) {
+        const from = [last.division, last.recipientName].filter(Boolean).join(' · ');
+        main = `<span class="adm-stack">${main}<span class="adm-sub">Returned ${escapeHtml(fpShortDate(last.returnedAt))}${from ? ' from ' + escapeHtml(from) : ''}</span></span>`;
     }
     if (!(d.posX || d.posY)) return main;
     const map = deviceMapLink(d);
@@ -17337,7 +17355,8 @@ function renderDeviceTable() {
         return `
         <tr>
             <td data-label="Device" class="wh-devcell"><span class="wh-dev">${deviceIcon(d.type)}<span class="adm-stack"><strong>${escapeHtml(d.type || 'Device')}</strong>${
-                model ? `<span class="adm-sub">${escapeHtml(model)}</span>` : ''}</span></span></td>
+                model ? `<span class="adm-sub">${escapeHtml(model)}</span>` : ''}${
+                d.batterySn ? `<span class="adm-sub"><i class="fas fa-battery-three-quarters" aria-hidden="true"></i> Battery SN ${escapeHtml(d.batterySn)}</span>` : ''}</span></span></td>
             <td data-label="Serial number" class="adm-mono">${escapeHtml(d.sn || '')}</td>
             <td data-label="Status"><span class="wh-status wh-status--${st.key}"><span class="wh-dot wh-dot--${st.key}" aria-hidden="true"></span>${escapeHtml(sentenceCase(st.label))}</span></td>
             <td data-label="Where">${deviceWhereCell(d)}</td>
@@ -17372,6 +17391,25 @@ function onDeviceStatusChange() {
     if (locGroup) locGroup.style.display = installed || allocated ? 'none' : '';
     if (instGroup) instGroup.style.display = installed ? '' : 'none';
     if (divGroup) divGroup.style.display = allocated ? '' : 'none';
+    ['devRecipientGroup', 'devRecipientTitleGroup', 'devAllocatedAtGroup'].forEach(gid => {
+        const g = document.getElementById(gid); if (g) g.style.display = allocated ? '' : 'none';
+    });
+    const at = document.getElementById('devAllocatedAt');
+    if (allocated && at && !at.value) at.value = toISODate();
+    // Leaving "Allocated" on a device that was allocated = it came back.
+    const id = document.getElementById('editDeviceId').value;
+    const before = id ? warehouseDevices.find(d => d.id === id) : null;
+    const returning = !!(before && before.status === 'allocated' && !allocated);
+    const retGroup = document.getElementById('devReturnedAtGroup');
+    if (retGroup) retGroup.style.display = returning ? '' : 'none';
+    const ret = document.getElementById('devReturnedAt');
+    if (returning && ret && !ret.value) ret.value = toISODate();
+}
+
+function onDeviceBatteryChange() {
+    const on = document.getElementById('devHasBattery').checked;
+    document.getElementById('devBatteryGroup').style.display = on ? '' : 'none';
+    if (on) document.getElementById('devBatterySn').focus();
 }
 
 function showAddDeviceForm() {
@@ -17382,6 +17420,7 @@ function showAddDeviceForm() {
     document.getElementById('devStatus').value = 'warehouse';
     populateWarehouseFilters();
     onDeviceStatusChange();
+    onDeviceBatteryChange();
     document.getElementById('deviceModal').classList.add('open');
 }
 
@@ -17399,6 +17438,13 @@ function editDevice(id) {
     document.getElementById('devStatus').value = d.status || 'warehouse';
     document.getElementById('devLocation').value = d.location || '';
     document.getElementById('devDivision').value = d.division || '';
+    document.getElementById('devRecipientName').value = d.recipientName || '';
+    document.getElementById('devRecipientTitle').value = d.recipientTitle || '';
+    document.getElementById('devAllocatedAt').value = d.allocatedAt || '';
+    document.getElementById('devReturnedAt').value = '';
+    document.getElementById('devHasBattery').checked = !!(d.hasBattery || d.batterySn);
+    document.getElementById('devBatterySn').value = d.batterySn || '';
+    onDeviceBatteryChange();
     const live = d.unitId ? globalData.find(u => u.id === d.unitId) : null;
     document.getElementById('devUnit').value = live ? damageUnitLabel(live) : (d.unitName || '');
     document.getElementById('devSite').value = d.siteName || '';
@@ -17431,6 +17477,20 @@ function saveDevice(event) {
     const allocated = status === 'allocated';
     const division = allocated ? (document.getElementById('devDivision').value || '').trim() : '';
     if (allocated && !division) { showToast('Fill in the division that receives the device', 'warning'); return; }
+    const recipientName = allocated ? (document.getElementById('devRecipientName').value || '').trim() : '';
+    const recipientTitle = allocated ? (document.getElementById('devRecipientTitle').value || '').trim() : '';
+    const allocatedAt = allocated ? (document.getElementById('devAllocatedAt').value || '') : '';
+    if (allocated && !recipientName) { showToast('Fill in the name of the person who receives the device', 'warning'); return; }
+    if (allocated && !allocatedAt) { showToast('Fill in the allocation date', 'warning'); return; }
+    if (allocated && allocatedAt > toISODate()) { showToast('The allocation date cannot be in the future', 'warning'); return; }
+
+    const hasBattery = document.getElementById('devHasBattery').checked;
+    const batterySn = hasBattery ? (document.getElementById('devBatterySn').value || '').trim() : '';
+    if (hasBattery && !batterySn) { showToast('Fill in the battery serial number', 'warning'); return; }
+    if (batterySn) {
+        const batClash = warehouseDevices.find(d => d.id !== id && (d.batterySn || '').toLowerCase() === batterySn.toLowerCase());
+        if (batClash) { showToast(`Battery SN "${batterySn}" is already on device ${batClash.sn}`, 'warning'); return; }
+    }
 
     let unit = null;
     const unitRaw = (document.getElementById('devUnit').value || '').trim();
@@ -17452,6 +17512,18 @@ function saveDevice(event) {
     }
 
     const existing = id ? warehouseDevices.find(d => d.id === id) : null;
+    // An allocated device set back to another status has come back: keep that
+    // allocation, with its return date, in the device's allocation history.
+    let allocationHistory = existing && Array.isArray(existing.allocationHistory) ? existing.allocationHistory.slice() : [];
+    if (existing && existing.status === 'allocated' && !allocated) {
+        const returnedAt = document.getElementById('devReturnedAt').value || '';
+        if (!returnedAt) { showToast('Fill in the return date', 'warning'); return; }
+        if (existing.allocatedAt && returnedAt < existing.allocatedAt) { showToast('The return date is before the allocation date', 'warning'); return; }
+        if (returnedAt > toISODate()) { showToast('The return date cannot be in the future', 'warning'); return; }
+        allocationHistory.push({ division: existing.division || '', recipientName: existing.recipientName || '',
+            recipientTitle: existing.recipientTitle || '', allocatedAt: existing.allocatedAt || '', returnedAt });
+        allocationHistory = allocationHistory.slice(-20);
+    }
     const rec = {
         id: id || generateDeviceId(),
         sn,
@@ -17461,6 +17533,12 @@ function saveDevice(event) {
         status,
         location: installed || allocated ? '' : (document.getElementById('devLocation').value || '').trim(),
         division,
+        recipientName,
+        recipientTitle,
+        allocatedAt,
+        allocationHistory,
+        hasBattery,
+        batterySn,
         unitId: unit ? unit.id : '',
         unitName: unit ? (unit.name || '') : '',
         siteName,
@@ -17517,13 +17595,17 @@ function exportDeviceCSV() {
     const rows = getFilteredDevices();
     if (rows.length === 0) { showToast('No devices to export', 'warning'); return; }
     const headers = ['No', 'Serial Number', 'Type', 'Brand', 'Model', 'Status',
-                     'Warehouse Location', 'Installed on Unit', 'Installation Site', 'Position X', 'Position Y', 'Notes', 'Division'];
+                     'Warehouse Location', 'Installed on Unit', 'Installation Site', 'Position X', 'Position Y', 'Notes', 'Division',
+                     'Recipient Name', 'Recipient Position', 'Allocation Date', 'Last Returned', 'Battery SN'];
     const dataRows = rows.map((d, i) => [
         i + 1, d.sn || '', d.type || '', d.brand || '', d.model || '',
         DEVICE_STATUS_LABEL[d.status] || d.status || '',
         d.location || '',
         d.unitId ? deviceWhere(d) : '',
-        d.siteName || '', d.posX || '', d.posY || '', d.note || '', d.division || ''
+        d.siteName || '', d.posX || '', d.posY || '', d.note || '', d.division || '',
+        d.recipientName || '', d.recipientTitle || '', d.allocatedAt || '',
+        (() => { const h = d.allocationHistory || []; const l = h[h.length - 1]; return l ? `${l.returnedAt} (${[l.division, l.recipientName].filter(Boolean).join(', ')})` : ''; })(),
+        d.batterySn || ''
     ]);
     const csv = toCSV(headers, dataRows);
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });

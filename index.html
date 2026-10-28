@@ -3044,6 +3044,28 @@
                                placeholder="e.g. Plantation, Workshop, IT…">
                         <datalist id="devDivisionList"></datalist>
                     </div>
+                    <!-- Who in that division holds it, and since when. -->
+                    <div class="form-group" id="devRecipientGroup" style="display:none">
+                        <label class="form-label" for="devRecipientName">Recipient name</label>
+                        <input class="form-input" id="devRecipientName" list="devRecipientList" maxlength="60" autocomplete="off"
+                               placeholder="Person who received it">
+                        <datalist id="devRecipientList"></datalist>
+                    </div>
+                    <div class="form-group" id="devRecipientTitleGroup" style="display:none">
+                        <label class="form-label" for="devRecipientTitle">Position <span class="form-optional">(optional)</span></label>
+                        <input class="form-input" id="devRecipientTitle" list="devRecipientTitleList" maxlength="60" autocomplete="off"
+                               placeholder="e.g. Estate Manager, Supervisor…">
+                        <datalist id="devRecipientTitleList"></datalist>
+                    </div>
+                    <div class="form-group" id="devAllocatedAtGroup" style="display:none">
+                        <label class="form-label" for="devAllocatedAt">Allocation date</label>
+                        <input class="form-input" id="devAllocatedAt" type="date">
+                    </div>
+                    <!-- Shown only when an allocated device is set back to another status. -->
+                    <div class="form-group" id="devReturnedAtGroup" style="display:none">
+                        <label class="form-label" for="devReturnedAt">Return date</label>
+                        <input class="form-input" id="devReturnedAt" type="date">
+                    </div>
                     <div class="form-group" id="devLocationGroup">
                         <label class="form-label" for="devLocation">Warehouse Location</label>
                         <input class="form-input" id="devLocation" list="warehouseLocationList" maxlength="60" autocomplete="off"
@@ -3086,6 +3108,15 @@
                 </div>
 
                 <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-check" for="devHasBattery">
+                            <input type="checkbox" id="devHasBattery" onchange="onDeviceBatteryChange()"> Has a battery
+                        </label>
+                    </div>
+                    <div class="form-group" id="devBatteryGroup" style="display:none">
+                        <label class="form-label" for="devBatterySn">Battery serial number</label>
+                        <input class="form-input" id="devBatterySn" maxlength="60" autocomplete="off" placeholder="Battery SN…">
+                    </div>
                     <div class="form-group full-width">
                         <label class="form-label" for="devNote">Notes <span class="form-optional">(optional)</span></label>
                         <textarea class="form-input form-textarea" id="devNote" rows="2"
