@@ -200,7 +200,8 @@ service cloud.firestore {
     function canEditMasterList(kind) {
       return (kind in ['site', 'heavyBrand'] && canEditArea('editUnits'))
           || (kind == 'brand' && (canEditArea('implements') || canEditArea('editUnits')))
-          || (kind == 'company' && canEditArea('teamMembers'));
+          || (kind == 'company' && canEditArea('teamMembers'))
+          || (kind == 'damageType' && canEditArea('damage'));
     }
     match /masterLists/{kind} {
       allow read: if isActive();

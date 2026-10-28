@@ -84,8 +84,8 @@ const LIC_PAID = ['SF-RTK', 'G5 Advance'];
 const LIC_REQ_OPTIONS = { gps: ['', 'SF-1', 'SF-RTK'], display: ['', 'G5 Basic', 'G5 Advance'] };
 let licenseTab = 'stock';
 // Master lists (Site / Brand / Company). An empty list means "anything goes".
-let masterLists = { site: [], brand: [], heavyBrand: [], company: [] };
-const MASTER_KINDS = ['site', 'brand', 'heavyBrand', 'company'];
+let masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [] };
+const MASTER_KINDS = ['site', 'brand', 'heavyBrand', 'company', 'damageType'];
 const MASTER_DEF = {
     site:    { label: 'Site',    plural: 'Sites',     edit: ['editUnits'],              view: ['editUnits'],
                hint: 'Used by every unit (both groups).' },
@@ -94,7 +94,11 @@ const MASTER_DEF = {
     heavyBrand: { label: 'Heavy Equipment Brand', plural: 'Heavy Equipment Brands', edit: ['editUnits'], view: ['editUnits'],
                hint: 'Brands of Heavy Equipment units (LiuGong, Komatsu, …).' },
     company: { label: 'Company', plural: 'Companies', edit: ['teamMembers'],            view: ['teamMembers'],
-               hint: 'Used by team members, their shifts and reports.' }
+               hint: 'Used by team members, their shifts and reports.' },
+    // v186: extra damage types next to the three built in ones. Unlike the
+    // other lists it never restricts anything — it only adds choices.
+    damageType: { label: 'Damage Type', plural: 'Damage Types', edit: ['damage'], view: ['damage'],
+               hint: 'Extra types for damage records, next to Mechanical, Software and Device Precision.' }
 };
 // Clean Up Values fields whose target must come from a master list.
 const MERGE_MASTER_KIND = { site: 'site', implBrand: 'brand', brand: 'heavyBrand', company: 'company' };
@@ -130,7 +134,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v185';
+const APP_VERSION = 'v186';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -8930,6 +8934,7 @@ function renderDamageKpis(rows) {
 }
 
 function renderDamageTable() {
+    populateDamageTypeOptions();
     closeDamageMenu();
     updateDamageCount();
     // A re-render (search, filter, a cloud snapshot) draws fresh, unticked
@@ -9126,6 +9131,32 @@ function updateSelectedDamageCount() {
 // ---- Component sub-field ----
 // The component list applies to every damage type (mechanical, software,
 // device precision), so the field stays visible; it is always optional.
+// Built-in types first, then the owner's extra ones (Master Lists → Damage
+// Types). A record keeps a type that has since left the list.
+function damageTypeChoices(keep) {
+    const list = DAMAGE_TYPES.concat((masterLists.damageType || []).filter(t => !DAMAGE_TYPES.includes(t)));
+    if (keep && !list.includes(keep)) list.push(keep);
+    return list;
+}
+function populateDamageTypeOptions(keep) {
+    const form = document.getElementById('dmgType');
+    if (form) {
+        const cur = keep !== undefined ? keep : form.value;
+        form.innerHTML = '<option value="">Select type…</option>' + damageTypeChoices(cur).map(t =>
+            `<option value="${escapeHtml(t)}">${escapeHtml(damageTypeLabel(t))}</option>`).join('');
+        form.value = cur || '';
+    }
+    const filter = document.getElementById('damageTypeFilter');
+    if (filter) {
+        const cur = filter.value;
+        const used = [...new Set(globalDamages.map(d => d.damageType).filter(Boolean))];
+        const opts = damageTypeChoices().concat(used.filter(t => !damageTypeChoices().includes(t)));
+        filter.innerHTML = '<option value="">All types</option>' + opts.map(t =>
+            `<option value="${escapeHtml(t)}">${escapeHtml(t === 'Device Precision' ? 'Device precision' : damageTypeLabel(t))}</option>`).join('');
+        filter.value = opts.includes(cur) ? cur : '';
+    }
+}
+
 function onDamageTypeChange() {
     const group = document.getElementById('dmgComponentGroup');
     if (group) group.style.display = '';
@@ -9140,6 +9171,7 @@ function showAddDamageForm() {
     document.getElementById('dmgDate').value = toISODate();
     populateDamageUnitSelect();
     renderDamageComponentOptions();
+    populateDamageTypeOptions('');
     onDamageTypeChange();
     _dmgFormGen++;
     _dmgPhotoBusy = 0;
@@ -9190,7 +9222,7 @@ function editDamage(id) {
     if (dmgUnitInput && !dmgUnitInput.value) {
         dmgUnitInput.value = `${rec.unitName || ''}${rec.sn ? ' — ' + rec.sn : ''}`;
     }
-    document.getElementById('dmgType').value = rec.damageType || '';
+    populateDamageTypeOptions(rec.damageType || '');
     renderDamageComponentOptions();
     // Keep a component that was deleted from the list still selectable here.
     const compSel = document.getElementById('dmgComponent');
@@ -12713,7 +12745,7 @@ function tearDownCloudSync() {
     // What was typed belongs to the account that typed it.
     if (typeof clearUnsent === 'function') clearUnsent();
     licenseRequirements = [];
-    masterLists = { site: [], brand: [], heavyBrand: [], company: [] };
+    masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [] };
     if (cloudDamageComponentsUnsub) { try { cloudDamageComponentsUnsub(); } catch (_) {} cloudDamageComponentsUnsub = null; }
     if (cloudDevicesUnsub) { try { cloudDevicesUnsub(); } catch (_) {} cloudDevicesUnsub = null; }
     if (cloudStockUnsub) { try { cloudStockUnsub(); } catch (_) {} cloudStockUnsub = null; }
@@ -22576,18 +22608,20 @@ function masterUsage(kind) {
     if (kind === 'brand') globalImplements.forEach(i => add(i.brand));
     if (kind === 'heavyBrand') unitsOfGroup(globalData, 'heavy').forEach(u => add(u.brand));
     if (kind === 'company') (teamMembers || []).forEach(m => add(companyOf(m)));
+    if (kind === 'damageType') globalDamages.forEach(d => { if (!DAMAGE_TYPES.includes(d.damageType)) add(d.damageType); });
     return counts;
 }
-const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', heavyBrand: 'unit', company: 'member' };
+const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', heavyBrand: 'unit', company: 'member', damageType: 'damage record' };
 
 function applyMasterListsSnapshot(docs) {
     _markLoaded('masterLists');
-    const next = { site: [], brand: [], heavyBrand: [], company: [] };
+    const next = { site: [], brand: [], heavyBrand: [], company: [], damageType: [] };
     (docs || []).forEach(d => {
         if (MASTER_KINDS.includes(d.id) && Array.isArray(d.values)) next[d.id] = d.values.map(_toolNorm).filter(Boolean);
     });
     masterLists = next;
     populateMasterDatalists();
+    populateDamageTypeOptions();
     if (document.getElementById('masterListsModal')?.classList.contains('open')) renderMasterLists();
     if (currentView === 'editUnits') renderEditTable();
 }
@@ -22622,12 +22656,12 @@ function renderMasterLists() {
     const tabs = document.getElementById('mlTabs');
     tabs.innerHTML = MASTER_KINDS.filter(canViewMasterList).map(k => `<button type="button" role="tab"
         class="team-tab${k === _mlKind ? ' active' : ''}" aria-selected="${k === _mlKind}" onclick="switchMasterList(${jsArg(k)})">
-        ${escapeHtml(MASTER_DEF[k].plural)} <span class="team-tab__count">${masterLists[k].length}</span></button>`).join('');
+        ${escapeHtml(MASTER_DEF[k].plural)} <span class="team-tab__count">${(masterLists[k] || []).length}</span></button>`).join('');
     const def = MASTER_DEF[_mlKind];
     const canEdit = canEditMasterList(_mlKind);
     const usage = masterUsage(_mlKind);
     const noun = MASTER_USED_NOUN[_mlKind];
-    const list = masterLists[_mlKind];
+    const list = masterLists[_mlKind] || [];
     const usedBy = v => [...usage.entries()].filter(([u]) => _simKey(u) === _simKey(v) || u.toLowerCase() === v.toLowerCase())
         .reduce((n, e) => n + e[1], 0);
     const outside = [...usage.entries()].filter(([v]) => !masterMatch(_mlKind, v)).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
@@ -22665,7 +22699,7 @@ function renderMasterLists() {
 }
 
 function _saveMasterList(kind, values, what) {
-    const before = masterLists[kind].slice();
+    const before = (masterLists[kind] || []).slice();
     const next = [...new Set(values.map(_toolNorm).filter(Boolean))].sort((a, b) => a.localeCompare(b));
     masterLists = { ...masterLists, [kind]: next };
     populateMasterDatalists();
@@ -22695,8 +22729,11 @@ function addMasterValue(value) {
     if (v.length > 80) { showToast('Keep it under 80 characters', 'warning'); return; }
     const dup = masterMatch(kind, v);
     if (dup) { showToast(`Already in the list as "${dup}"`, 'info'); return; }
-    if (masterLists[kind].length >= 500) { showToast('A list can hold at most 500 entries', 'warning'); return; }
-    _saveMasterList(kind, masterLists[kind].concat([v]), `Added "${v}"`);
+    if (kind === 'damageType' && DAMAGE_TYPES.concat(Object.values(DAMAGE_TYPE_LABEL)).some(t => t.toLowerCase() === v.toLowerCase())) {
+        showToast(`"${v}" is already a built-in damage type`, 'info'); return;
+    }
+    if ((masterLists[kind] || []).length >= 500) { showToast('A list can hold at most 500 entries', 'warning'); return; }
+    _saveMasterList(kind, (masterLists[kind] || []).concat([v]), `Added "${v}"`);
     if (value == null) input.value = '';
     showToast(`"${v}" added to the ${MASTER_DEF[kind].label} list`, 'success');
 }
@@ -22727,7 +22764,7 @@ function fillMasterFromUsage() {
     if (!confirm(`Add ${picks.length} ${MASTER_DEF[kind].label.toLowerCase()}(s) to the list?\n\n${picks.join('\n')}`
         + (folded ? `\n\n${folded} spelling(s) that differ only in capitals, spaces or punctuation were added once.` : '')
         + (lookAlike.length ? `\n\nThese look alike — check whether they are the same thing (Clean Up Values can merge them):\n${lookAlike.join('\n')}` : ''))) return;
-    _saveMasterList(kind, masterLists[kind].concat(picks), `Added ${picks.length} value(s) in use`);
+    _saveMasterList(kind, (masterLists[kind] || []).concat(picks), `Added ${picks.length} value(s) in use`);
     showToast(`${picks.length} value(s) added to the ${MASTER_DEF[kind].label} list`, 'success');
 }
 
@@ -22737,7 +22774,7 @@ function removeMasterValue(v) {
     const n = [...masterUsage(kind).entries()].filter(([u]) => masterMatch(kind, u) === v).reduce((a, e) => a + e[1], 0);
     if (!confirm(`Remove "${v}" from the ${MASTER_DEF[kind].label} list?`
         + (n ? `\n\n${n} ${MASTER_USED_NOUN[kind]}(s) still use it. They keep the value, and Data Check will list them.` : ''))) return;
-    _saveMasterList(kind, masterLists[kind].filter(x => x !== v), `Removed "${v}"`);
+    _saveMasterList(kind, (masterLists[kind] || []).filter(x => x !== v), `Removed "${v}"`);
 }
 
 // Renames the entry AND every record that uses it.
@@ -22785,8 +22822,19 @@ function renameMasterValue(v) {
         if (!requireEdit('editUnits')) return;
         const changes = new Map(unitsOfGroup(globalData, 'heavy').filter(u => uses(u.brand)).map(u => [u.id, { brand: to }]));
         n = updateUnitsBatch(changes).length;
+    } else if (kind === 'damageType') {
+        if (!requireEdit('damage')) return;
+        const parts = globalDamages.filter(d => uses(d.damageType)).map(d => ({ id: d.id, damageType: to, updatedAt: Date.now() }));
+        parts.forEach(p => { const d = globalDamages.find(x => x.id === p.id); if (d) Object.assign(d, p); });
+        if (parts.length) {
+            saveDamages();
+            if (window.cloud && window.cloud.updateDamagesFields && !suppressCloudWrites)
+                window.cloud.updateDamagesFields(parts).catch(err => cloudWriteFailed(err, { what: 'damage types', label: '[Master] Damage Types', resync: resyncDamages }));
+            if (currentView === 'damage') renderDamageTable();
+        }
+        n = parts.length;
     }
-    _saveMasterList(kind, masterLists[kind].map(x => (x === v ? to : x)), `Renamed "${v}" → "${to}"`);
+    _saveMasterList(kind, (masterLists[kind] || []).map(x => (x === v ? to : x)), `Renamed "${v}" → "${to}"`);
     showToast(`Renamed to "${to}"${n ? ` — ${n} ${MASTER_USED_NOUN[kind]}(s) updated` : ''}`, 'success');
     _afterDataFix();
 }
@@ -22795,7 +22843,8 @@ function renameMasterValue(v) {
 function dcNotInMasterLists() {
     const out = [];
     MASTER_KINDS.forEach(kind => {
-        if (!masterListActive(kind)) return;
+        // Damage types only add choices; a type outside the list is not wrong.
+        if (kind === 'damageType' || !masterListActive(kind)) return;
         [...masterUsage(kind).entries()].filter(([v]) => !masterMatch(kind, v)).sort((a, b) => b[1] - a[1]).forEach(([v, n]) => {
             out.push(dc('master-luar', `${MASTER_DEF[kind].label}: ${v}`,
                 `${n} ${MASTER_USED_NOUN[kind]}(s) — not in the ${MASTER_DEF[kind].label} list`,

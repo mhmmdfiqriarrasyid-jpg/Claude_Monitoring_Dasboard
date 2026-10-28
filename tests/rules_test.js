@@ -458,6 +458,10 @@ async function check(name, p, expectOk) {
     await check('foto gudang: foto terlalu besar DITOLAK', setDoc(doc(PH_ED, 'warehousePhotos', 'd1__p3'), { id: 'd1__p3', ownerId: 'd1', photo: 'x'.repeat(400001) }), false);
     await check('foto gudang: editor menghapus foto', deleteDoc(doc(PH_ED, 'warehousePhotos', 'd1__p1')), true);
 
+    // ---- v186: daftar Damage Types ----
+    await check('Damage Types: editor Damage menyimpan daftar', setDoc(doc(as('sup'), 'masterLists', 'damageType'), { id: 'damageType', values: ['Electrical'] }), true);
+    await check('Damage Types: tanpa edit Damage DITOLAK', setDoc(doc(as('whv'), 'masterLists', 'damageType'), { id: 'damageType', values: ['X'] }), false);
+
     await env.cleanup();
     let pass = 0;
     T.forEach(x => { if (x.pass) pass++; else console.log('FAIL', x.name, '\n   ', x.err || ''); });

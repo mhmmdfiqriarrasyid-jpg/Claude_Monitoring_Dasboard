@@ -320,6 +320,16 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
   Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
   **Implement Brands** (`masterLists/brand`) untuk Agricultural.
+- **Damage Types sendiri v186 (dijaga `tests/masterlist_test.js` dan
+  rules_test).** Admin → **Master Lists** punya daftar baru **Damage Types**
+  yang bisa diisi siapa pun dengan hak ubah Damage. Isinya **menambah**
+  pilihan di form kerusakan dan filter tipe, di samping Mechanical, Software
+  dan Device Precision (bawaan, tidak bisa dihapus). Tipe tambahan berlaku
+  seperti Mechanical terhadap status unit; aturan khusus Device Precision
+  tidak berubah. Ganti nama di daftar ikut mengganti tipe di catatan
+  kerusakan; catatan dengan tipe yang sudah dihapus dari daftar tetap bisa
+  diedit. **Perlu publish ulang `firestore.rules`** (izin daftar
+  `damageType`).
 - **Foto Warehouse v185 (dijaga `tests/warehouse_test.js` dan 6 skenario
   baru di `tests/rules_test.js`).** Form **Device** dan **Stock in / out**
   punya bagian *Photos*: sampai **10 foto** per item (pilih beberapa sekaligus),
@@ -855,7 +865,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   stempel `appliedAt` supaya hanya sekali); tanpa akses itu muncul di Kotak
   Keputusan. Foto di `inspectionPhotos/{id}` (tidak di-subscribe), ditulis
   SEBELUM laporannya.
-- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (251 skenario;
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (253 skenario;
   bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
   kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
   alur persetujuan laporan/izin (transisi status di atas, kunci isi dan foto

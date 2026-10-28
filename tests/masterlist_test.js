@@ -186,6 +186,17 @@ const { launch, BASE_URL } = require('./_env');
         await tick();
         t('nama berisi markup tidak dirender', [document.querySelectorAll('#masterListsModal img').length, window.__pwn || 0], [0, 0]);
 
+        // ---------- v186: Damage Types (tambahan, tidak membatasi) ----------
+        masterLists = { ...masterLists, damageType: ['Electrical'] };
+        showAddDamageForm();
+        const typeOpts = [...document.querySelectorAll('#dmgType option')].map(o => o.value);
+        t('form kerusakan: tipe bawaan + tambahan dari Master Lists', typeOpts, ['', 'Mekanis', 'Software', 'Device Precision', 'Electrical']);
+        closeDamageModal(true);
+        t('filter tipe ikut menampilkan tipe tambahan', [...document.querySelectorAll('#damageTypeFilter option')].map(o => o.value).includes('Electrical'), true);
+        populateDamageTypeOptions('Lama');
+        t('catatan dengan tipe yang sudah dihapus dari daftar tetap bisa diedit', [...document.querySelectorAll('#dmgType option')].map(o => o.value).includes('Lama'), true);
+        t('daftar Damage Types tidak dilaporkan Data Check sebagai "di luar daftar"', dcNotInMasterLists().some(x => /Damage Type/.test(x.label || x.title || JSON.stringify(x))), false);
+
         window.__T = T;
     } catch (e) { window.__T = [{ n: 'EXCEPTION ' + e.message + ' ' + e.stack, pass: false }]; } })();` });
 
