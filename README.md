@@ -351,7 +351,14 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
     Needs attention, kartu Licenses due, kalimat ringkasan): Dashboard hanya
     memuat lisensi yang **akan habis dalam 30 hari**. Lisensi yang sudah lewat
     tetap terlihat di tabel **Units** (kolom GPS / Display Expiry, "Expired …
-    ago") dan filter cepat *License due*. Dijaga `tests/lowfix_test.js`.
+    ago") dan filter cepat *License due*. Email laporan harian juga hanya
+    memuat yang akan habis. Decision inbox dan *Expiring soon* di halaman
+    Licenses tetap menampilkan yang expired.
+  - *SF-1 dan G5 Basic tidak punya masa berlaku*: tanggal akhir yang
+    tersimpan pada tier dasar ini (mis. dari impor tanggal lama per serial
+    number atau CSV) diabaikan (`licenseExpiryEnd`), jadi tidak pernah tampil
+    "Expired" atau masuk hitungan. Datanya tidak dihapus. Dijaga
+    `tests/lowfix_test.js`.
   - Semua id, handler, hak akses, golden traktor dan perilaku HP (44px, 16px,
     tanpa geser samping) tetap. Rules tidak berubah.
 - **Export Photos v170 (dijaga `tests/damage_beforeafter_test.js`).** Tombol

@@ -156,8 +156,8 @@ const { launch, BASE_URL } = require('./_env');
         navigateTo('dashboard');
         const iso = d => toISODate(new Date(Date.now() + d * 86400000));
         globalData = [
-            { id: 'e1', name: 'E1', sn: 'E1', status: 'Good', display: 'Good', gps: 'Good', steering: 'Good', jdlink: 'Good', gpsLicense: 'SF-1', gpsLicenseEndDate: iso(-5) },
-            { id: 'e2', name: 'E2', sn: 'E2', status: 'Good', display: 'Good', gps: 'Good', steering: 'Good', jdlink: 'Good', gpsLicense: 'SF-1', gpsLicenseEndDate: iso(10) }];
+            { id: 'e1', name: 'E1', sn: 'E1', status: 'Good', display: 'Good', gps: 'Good', steering: 'Good', jdlink: 'Good', gpsLicense: 'SF-3', gpsLicenseEndDate: iso(-5) },
+            { id: 'e2', name: 'E2', sn: 'E2', status: 'Good', display: 'Good', gps: 'Good', steering: 'Good', jdlink: 'Good', gpsLicense: 'SF-RTK', gpsLicenseEndDate: iso(10) }];
         saveToStorage(globalData);
         renderNarrative(globalData);
         const nar = document.getElementById('dashNarrative').textContent;
@@ -173,6 +173,12 @@ const { launch, BASE_URL } = require('./_env');
           [/E2/.test(la), /E1/.test(la), /Expired/.test(la), /E2/.test(attn), /\bE1\b/.test(attn), /expired/i.test(attn)],
           [true, false, false, true, false, false]);
         t('tabel Units tetap menandai lisensi expired', /Expired 5d ago/.test(licenseBadgeFor(globalData[0], 'gps')), true);
+        // SF-1 / G5 Basic tidak punya masa berlaku: tanggal lama diabaikan.
+        const base = { id: 'e3', name: 'E3', gpsLicense: 'SF-1', gpsLicenseEndDate: iso(-40), licenseDisplay: 'G5 Basic', displayLicenseEndDate: iso(-3) };
+        t('SF-1 / G5 Basic tidak pernah expired', [/Expired/.test(licenseBadgeFor(base, 'gps')), /Expired/.test(licenseBadgeFor(base, 'display')),
+            unitLicenseDue(base), _buildAlertList([base]).total], [false, false, false, 0]);
+        t('email hanya memuat yang akan habis', [_buildAlertList(globalData, { soonOnly: true }).expiredCount, _buildAlertList(globalData, { soonOnly: true }).soonCount,
+            _buildAlertList(globalData).expiredCount], [0, 1, 1]);
 
         // =============== 15. impor implement ganda ===============
         navigateTo('implements');

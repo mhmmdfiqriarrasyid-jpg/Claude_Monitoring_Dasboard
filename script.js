@@ -4590,7 +4590,7 @@ function renderDashAttention(data, now) {
     // Same selection as renderLicenseAlerts: licences running out in the next
     // 30 days. Expired ones stay in the Units table only.
     data.filter(u => !isHeavy(u)).forEach(u => ['gps', 'display'].forEach(kind => {
-        const end = getLicenseEndDate(u, kind);
+        const end = licenseExpiryEnd(u, kind);
         if (!end) return;
         const s = getExpiryStatus(end);
         if (effectiveLicense(u, kind).downgraded) return;
@@ -4750,7 +4750,7 @@ function renderLicenseAlerts(data) {
 
     data.filter(u => !isHeavy(u)).forEach(unit => {
         ['gps', 'display'].forEach(kind => {
-            const end = getLicenseEndDate(unit, kind);
+            const end = licenseExpiryEnd(unit, kind);
             if (!end) return;
             const s = getExpiryStatus(end);
             // Auto-downgraded premium (expired SF-RTK/G5 Advance) is now on its
@@ -4867,17 +4867,20 @@ function saveEmailSettings() {
 // SF/G5 licences are John Deere only, so heavy units never produce an alert.
 // Called with no argument (the email report, the decision inbox) it stays
 // fleet-wide.
-function _buildAlertList(units) {
+// opts.soonOnly leaves expired licences out (the email report, v171).
+function _buildAlertList(units, opts) {
     const SOON_DAYS = 30;
+    const soonOnly = !!(opts && opts.soonOnly);
     const lines = [];
     let expiredCount = 0, soonCount = 0;
 
     (units || globalData).filter(u => !isHeavy(u)).forEach(unit => {
         ['gps', 'display'].forEach(kind => {
-            const end = getLicenseEndDate(unit, kind);
+            const end = licenseExpiryEnd(unit, kind);
             if (!end) return;
             const s = getExpiryStatus(end);
             if (effectiveLicense(unit, kind).downgraded) return; // on fallback tier — not an alert
+            if (soonOnly && s.kind === 'expired') return;
             if (s.kind === 'expired' || s.kind === 'soon' || (s.kind === 'ok' && s.daysLeft <= SOON_DAYS)) {
                 const licName = kind === 'display' ? (unit.licenseDisplay || 'Display') : (unit.gpsLicense || 'GPS');
                 const tag = s.kind === 'expired' ? 'EXPIRED' : 'EXPIRING';
@@ -4901,7 +4904,9 @@ function sendLicenseAlertEmail() {
         return;
     }
 
-    const report = _buildAlertList();
+    // Expired licences are in the Units table; the email lists what is still
+    // running out.
+    const report = _buildAlertList(undefined, { soonOnly: true });
     if (report.total === 0) {
         showToast('No license alerts to send', 'info'); return;
     }
@@ -4910,7 +4915,7 @@ function sendLicenseAlertEmail() {
     const lowStock = _lowStockList();
     const body = [
         `License Alert Report — ${today}`,
-        `Expired: ${report.expiredCount} | Expiring soon: ${report.soonCount}`,
+        `Expiring in the next 30 days: ${report.soonCount}`,
         '',
         'Status | Unit | Model | Serial Number | License | Site | Expiry Date | Remaining',
         '—'.repeat(60),
@@ -4925,7 +4930,7 @@ function sendLicenseAlertEmail() {
     emailjs.init(s.publicKey);
     emailjs.send(s.serviceId, s.templateId, {
         to_email: s.recipient,
-        subject: `License Alert: ${report.expiredCount} expired, ${report.soonCount} expiring soon`,
+        subject: `License Alert: ${report.soonCount} expiring soon`,
         message: body
     }).then(() => {
         showToast(`Alert report sent to ${s.recipient}`, 'success');
@@ -4944,7 +4949,7 @@ function _tryAutoDailyEmail() {
     if (!s.autoDaily || !s.publicKey) return;
     const lastSent = localStorage.getItem('emailjs_last_sent');
     if (lastSent === new Date().toDateString()) return;
-    const report = _buildAlertList();
+    const report = _buildAlertList(undefined, { soonOnly: true });
     if (report.total === 0) return;
     sendLicenseAlertEmail();
 }
@@ -6114,7 +6119,7 @@ function unitHasFaultyPart(u) {
 function unitLicenseDue(u) {
     if (isHeavy(u)) return false;
     return ['gps', 'display'].some(kind => {
-        const s = getExpiryStatus(getLicenseEndDate(u, kind));
+        const s = getExpiryStatus(licenseExpiryEnd(u, kind));
         return (s.kind === 'expired' || s.kind === 'soon') && !effectiveLicense(u, kind).downgraded;
     });
 }
@@ -7412,9 +7417,20 @@ function getLicenseEndDate(unit, kind) {
     return unit.gpsLicenseEndDate || unit.licenseEndDate || '';
 }
 
+// The end date that can make a licence expire. SF-1 and G5 Basic are the base
+// tiers and do not run out, so a date stored on them (an old one-off import,
+// a CSV column) is ignored here: no "Expired" badge, alert or count. The
+// stored date itself is left alone — getLicenseEndDate still returns it.
+function licenseExpiryEnd(unit, kind) {
+    if (!unit) return '';
+    const type = canonicalLicenseType(kind === 'display' ? unit.licenseDisplay : unit.gpsLicense);
+    if (type === (kind === 'display' ? 'G5 Basic' : 'SF-1')) return '';
+    return getLicenseEndDate(unit, kind);
+}
+
 // Render an expiry badge for either 'gps' or 'display' license.
 function licenseBadgeFor(unit, kind) {
-    const end = getLicenseEndDate(unit, kind);
+    const end = licenseExpiryEnd(unit, kind);
     const s = getExpiryStatus(end);
     if (s.kind === 'none') return '<span style="color:var(--text-light);font-size:11px">—</span>';
     // Auto-downgraded premium → show a neutral "on fallback tier" badge instead
@@ -8524,7 +8540,7 @@ function showUnitProfile(id) {
 
     const licenses = ['gps', 'display'].map(kind => {
         const label = kind === 'gps' ? 'GPS License' : 'Display License';
-        const end = getLicenseEndDate(u, kind);
+        const end = licenseExpiryEnd(u, kind);
         return `<div class="profile-row profile-row--lic"><span class="profile-row__label">${label}</span>
             <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${licenseTypeBadge(u, kind)} ${licenseBadgeFor(u, kind)}${end ? ` <span style="font-size:11.5px;color:var(--text-secondary)">exp ${escapeHtml(end)}</span>` : ''}</span></div>`;
     }).join('');
@@ -10517,7 +10533,7 @@ function licenseExpiringRows() {
     const rows = [];
     globalData.filter(u => !isHeavy(u)).forEach(unit => {
         ['gps', 'display'].forEach(kind => {
-            const end = getLicenseEndDate(unit, kind);
+            const end = licenseExpiryEnd(unit, kind);
             if (!end || effectiveLicense(unit, kind).downgraded) return;
             const s = getExpiryStatus(end);
             if (s.kind === 'expired' || s.kind === 'soon') rows.push({ unit, kind, end, s });
