@@ -134,7 +134,10 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v186';
+// MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
+// MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
+// Bump it together with CACHE_NAME in service-worker.js.
+const APP_VERSION = 'v2.8.0';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';

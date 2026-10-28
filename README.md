@@ -320,6 +320,19 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
   Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
   **Implement Brands** (`masterLists/brand`) untuk Agricultural.
+- **Nomor versi 2.8.0 (sebelumnya v186).** Versi kini memakai format
+  **MAJOR.MINOR.PATCH**:
+  - **PATCH** (angka belakang, 2.8.**1**): perbaikan kecil atau penyetelan
+    tampilan.
+  - **MINOR** (angka tengah, 2.**9**.0): fitur baru.
+  - **MAJOR** (angka depan, **3**.0.0): desain ulang atau perubahan besar yang
+    harus dipelajari ulang pengguna.
+  Pemetaan riwayat: 1.x = v1–v170 (dashboard awal sampai Export Photos),
+  **2.0.0 = v171** (desain F), 2.1.0 v172 penerima alokasi, 2.2.0 v173 profil
+  perangkat, 2.2.1 v174 catatan rapi, 2.3.0 v175 peran kustom, 2.4.0 v176 riak
+  air, 2.4.1 v177, 2.5.0 v178 grid & tebu, 2.5.1–2.5.3 v179–v181 penyetelan
+  halaman masuk, 2.6.0 v182 layar tunggu, 2.6.1–2.6.2 v183–v184, 2.7.0 v185
+  foto Warehouse, **2.8.0 = v186** Damage Types.
 - **Damage Types sendiri v186 (dijaga `tests/masterlist_test.js` dan
   rules_test).** Admin → **Master Lists** punya daftar baru **Damage Types**
   yang bisa diisi siapa pun dengan hak ubah Damage. Isinya **menambah**
