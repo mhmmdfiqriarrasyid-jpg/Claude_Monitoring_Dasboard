@@ -130,7 +130,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v175';
+const APP_VERSION = 'v176';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -12756,7 +12756,91 @@ function pruneForeignLocalAudit(uid) {
     } catch (e) { /* ignore */ }
 }
 
+// ---- Sign-in panel: water ripples that follow the pointer (v176) ----
+// A small height-field wave on a low-resolution canvas behind the logo: each
+// pointer move drops a ripple, the waves spread, reflect and fade. It only
+// runs while waves are moving, never while the panel is hidden, and not at
+// all for people who asked their system for reduced motion.
+const _rippleState = new WeakMap();
+function initAuthRipples() {
+    if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    document.querySelectorAll('.auth-brand').forEach(panel => {
+        if (_rippleState.has(panel)) return;
+        const canvas = document.createElement('canvas');
+        canvas.className = 'auth-ripples';
+        canvas.setAttribute('aria-hidden', 'true');
+        panel.prepend(canvas);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        const SCALE = 4;              // one simulation cell per 4×4 CSS pixels
+        const st = { w: 0, h: 0, a: null, b: null, img: null, running: false, quiet: 0 };
+        _rippleState.set(panel, st);
+        const resize = () => {
+            const r = panel.getBoundingClientRect();
+            const w = Math.max(2, Math.round(r.width / SCALE)), h = Math.max(2, Math.round(r.height / SCALE));
+            if (w === st.w && h === st.h) return;
+            st.w = w; st.h = h;
+            canvas.width = w; canvas.height = h;
+            st.a = new Float32Array(w * h); st.b = new Float32Array(w * h);
+            st.img = ctx.createImageData(w, h);
+        };
+        const drop = (cx, cy, strength) => {
+            const r = panel.getBoundingClientRect();
+            const x = Math.round((cx - r.left) / SCALE), y = Math.round((cy - r.top) / SCALE);
+            for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+                const xx = x + dx, yy = y + dy;
+                if (xx < 1 || yy < 1 || xx >= st.w - 1 || yy >= st.h - 1) continue;
+                if (dx * dx + dy * dy <= 4) st.a[yy * st.w + xx] += strength;
+            }
+            st.quiet = 0;
+            if (!st.running) { st.running = true; requestAnimationFrame(step); }
+        };
+        const step = () => {
+            if (!panel.offsetParent && getComputedStyle(panel).position !== 'fixed') { st.running = false; return; }
+            const { w, h } = st;
+            let a = st.a, b = st.b, energy = 0;
+            for (let y = 1; y < h - 1; y++) {
+                for (let x = 1; x < w - 1; x++) {
+                    const i = y * w + x;
+                    const v = ((a[i - 1] + a[i + 1] + a[i - w] + a[i + w]) / 2 - b[i]) * 0.975;
+                    b[i] = v;
+                    energy += v < 0 ? -v : v;
+                }
+            }
+            st.a = b; st.b = a; a = st.a;
+            // Light from the upper left: slopes facing it brighten, the rest shade.
+            const d = st.img.data;
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const i = y * w + x;
+                    const sx = x > 0 && x < w - 1 ? a[i - 1] - a[i + 1] : 0;
+                    const sy = y > 0 && y < h - 1 ? a[i - w] - a[i + w] : 0;
+                    const s = (sx + sy) * 3;
+                    const o = i * 4;
+                    if (s >= 0) { d[o] = 255; d[o + 1] = 255; d[o + 2] = 255; d[o + 3] = Math.min(55, s); }
+                    else { d[o] = 8; d[o + 1] = 60; d[o + 2] = 56; d[o + 3] = Math.min(40, -s); }
+                }
+            }
+            ctx.putImageData(st.img, 0, 0);
+            st.quiet = energy < 2 ? st.quiet + 1 : 0;
+            if (st.quiet > 30) { st.running = false; ctx.clearRect(0, 0, w, h); st.a.fill(0); st.b.fill(0); return; }
+            requestAnimationFrame(step);
+        };
+        resize();
+        if (window.ResizeObserver) new ResizeObserver(resize).observe(panel);
+        let last = 0;
+        panel.addEventListener('pointermove', e => {
+            const now = performance.now();
+            if (now - last < 16) return;
+            last = now;
+            drop(e.clientX, e.clientY, 50);
+        }, { passive: true });
+        panel.addEventListener('pointerdown', e => drop(e.clientX, e.clientY, 160), { passive: true });
+    });
+}
+
 function showAuthGate(tab) {
+    initAuthRipples();
     releaseAuthBusy();
     document.getElementById('authGate').style.display = 'flex';
     document.getElementById('pendingGate').style.display = 'none';
@@ -12765,6 +12849,7 @@ function showAuthGate(tab) {
 }
 
 function showPendingGate(email) {
+    initAuthRipples();
     releaseAuthBusy();
     document.getElementById('authGate').style.display = 'none';
     const el = document.getElementById('pendingGate');

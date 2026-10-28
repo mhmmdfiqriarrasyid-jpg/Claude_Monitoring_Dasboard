@@ -320,6 +320,12 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
   Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
   **Implement Brands** (`masterLists/brand`) untuk Agricultural.
+- **Riak air di halaman masuk v176.** Panel teal di halaman Sign in dan
+  halaman menunggu persetujuan menampilkan riak air yang mengikuti kursor
+  (atau jari di HP); klik/tap membuat riak yang lebih besar. Simulasi
+  gelombang kecil di `<canvas>` di belakang logo, berhenti sendiri saat air
+  tenang dan saat panel tersembunyi, dan tidak berjalan sama sekali bila
+  perangkat meminta *reduced motion*.
 - **Peran kustom & Daily Report "Own only" v175 (dijaga
   `tests/roles_custom_test.js`, `unitscope_test`, dan 32 skenario baru di
   `tests/rules_test.js`).** Akses kini **murni lewat peran**:
