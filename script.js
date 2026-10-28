@@ -137,7 +137,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.8.1';
+const APP_VERSION = 'v2.8.2';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -13078,12 +13078,13 @@ function switchAuthTab(tab) {
     if (animate && card.animate) {
         const toH = card.getBoundingClientRect().height;
         if (Math.abs(toH - fromH) > 1) card.animate([{ height: fromH + 'px' }, { height: toH + 'px' }],
-            { duration: 280, easing: 'cubic-bezier(.2,.7,.2,1)' });
-        const dx = isSignIn ? -14 : 14;
+            { duration: 240, easing: 'cubic-bezier(.2,.7,.2,1)' });
+        const dx = isSignIn ? -10 : 10;
         const form = document.getElementById(isSignIn ? 'signInForm' : 'signUpForm');
-        [form, document.querySelector('#authGate .auth-card__head')].forEach((el, i) => el && el.animate(
-            [{ opacity: 0, transform: `translateX(${i ? 0 : dx}px)` }, { opacity: 1, transform: 'none' }],
-            { duration: i ? 200 : 260, easing: 'cubic-bezier(.2,.7,.2,1)' }));
+        // Starts partly visible, so no frame of the card is ever empty.
+        if (form) form.animate(
+            [{ opacity: 0.35, transform: `translateX(${dx}px)` }, { opacity: 1, transform: 'none' }],
+            { duration: 220, easing: 'cubic-bezier(.2,.7,.2,1)' });
     }
 }
 

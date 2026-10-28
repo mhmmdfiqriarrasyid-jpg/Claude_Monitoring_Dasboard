@@ -10390,3 +10390,14 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
 }
 @media (prefers-reduced-motion: reduce) { .auth-tabs.seg::before { transition: none; } }
 
+/* Smoother Sign in ↔ Create account (2.8.2): the scrollbar's room is kept
+   all the time (no sideways jump when the longer form needs it), and the
+   card hangs from a fixed top instead of re-centring, so it only grows
+   downward. */
+@media screen {
+    .auth-gate { scrollbar-gutter: stable; }
+}
+@media screen and (min-width: 901px) {
+    #authGate .auth-main { align-items: flex-start; padding-top: clamp(32px, 9vh, 96px); }
+}
+
