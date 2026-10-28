@@ -127,7 +127,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v173';
+const APP_VERSION = 'v174';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -17361,7 +17361,7 @@ function renderDeviceTable() {
             <td data-label="Serial number" class="adm-mono">${escapeHtml(d.sn || '')}</td>
             <td data-label="Status"><span class="wh-status wh-status--${st.key}"><span class="wh-dot wh-dot--${st.key}" aria-hidden="true"></span>${escapeHtml(sentenceCase(st.label))}</span></td>
             <td data-label="Where">${deviceWhereCell(d)}</td>
-            <td data-label="Note" class="adm-note" title="${escapeHtml(d.note || '')}">${d.note ? escapeHtml(d.note) : dash}</td>
+            <td data-label="Note" class="adm-note" title="${escapeHtml(d.note || '')}">${d.note ? `<span class="adm-clamp">${escapeHtml(d.note)}</span>` : dash}</td>
             <td class="col-actions">
                 ${canEdit ? `<div class="row-actions">
                     <button class="btn btn-secondary" title="Edit" aria-label="Edit device ${escapeHtml(d.sn || '')}" onclick="editDevice(${jsArg(d.id)})"><i class="fas fa-pen" aria-hidden="true"></i></button>

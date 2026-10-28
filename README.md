@@ -327,6 +327,8 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   dipegang), terbaru di atas; alokasi yang masih berjalan ditandai *Still
   allocated*. Bisa dibuka semua yang boleh melihat Warehouse; tombol Edit hanya
   untuk yang boleh mengubah. Di HP tiap alokasi tampil sebagai kartu.
+  Sejak v174 catatan panjang di tabel perangkat dipotong rapi (2 baris di
+  desktop, 3 di HP, dengan "…"); teks lengkapnya ada di tooltip dan profil.
 - **Warehouse: penerima, tanggal alokasi/kembali, SN baterai v172 (dijaga
   `tests/warehouse_test.js`).** Perangkat *Allocated* kini mencatat **divisi**,
   **nama penerima** (wajib), **jabatan** (opsional) dan **tanggal alokasi**
