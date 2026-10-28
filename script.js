@@ -130,7 +130,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v180';
+const APP_VERSION = 'v181';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -12827,7 +12827,7 @@ function initAuthRipples() {
             for (let y = 1; y < h - 1; y++) {
                 for (let x = 1; x < w - 1; x++) {
                     const i = y * w + x;
-                    const v = ((a[i - 1] + a[i + 1] + a[i - w] + a[i + w]) / 2 - b[i]) * 0.97;
+                    const v = ((a[i - 1] + a[i + 1] + a[i - w] + a[i + w]) / 2 - b[i]) * 0.96;
                     b[i] = v;
                     energy += v < 0 ? -v : v;
                 }
@@ -12848,30 +12848,115 @@ function initAuthRipples() {
             }
             ctx.putImageData(st.img, 0, 0);
             floatContent();
-            st.quiet = energy < 2 ? st.quiet + 1 : 0;
+            // Calm once the average movement per cell is too small to see.
+            st.quiet = energy < w * h * 0.01 ? st.quiet + 1 : 0;
             if (st.quiet > 30) {
                 st.running = false; ctx.clearRect(0, 0, w, h); st.a.fill(0); st.b.fill(0);
-                floaters.forEach(el => { el.style.transform = ''; });
+                bend(false);
                 return;
             }
             requestAnimationFrame(step);
         };
-        // The logo and the name float on the water: each leans and drifts with
-        // the slope of the surface under its middle.
+        // The logo and the name sit under the water: while it moves they are
+        // drawn into a canvas and bent by the slope of the surface (the real
+        // elements fade out meanwhile, and come back sharp once it is calm).
         const floaters = [...panel.children].filter(el => el !== canvas && !el.classList.contains('auth-cane'));
-        const floatContent = () => {
+        const refr = document.createElement('canvas');
+        refr.className = 'auth-refract';
+        refr.setAttribute('aria-hidden', 'true');
+        panel.appendChild(refr);
+        const rctx = refr.getContext('2d');
+        const rs = { box: null, src: null, out: null };
+        // Paint the logo tile and the text as they stand into a texture.
+        const snapshot = () => {
             const pr = panel.getBoundingClientRect();
-            const { w, h, a } = st;
-            floaters.forEach(el => {
-                const r = el.getBoundingClientRect();
-                const x = Math.round((r.left + r.width / 2 - pr.left) / SCALE), y = Math.round((r.top + r.height / 2 - pr.top) / SCALE);
-                if (x < 2 || y < 2 || x >= w - 2 || y >= h - 2) return;
-                const i = y * w + x;
-                const sx = (a[i - 2] - a[i + 2]) / 4, sy = (a[i - 2 * w] - a[i + 2 * w]) / 4;
-                const dx = Math.max(-6, Math.min(6, sx * 0.9)), dy = Math.max(-6, Math.min(6, sy * 0.9));
-                const rot = Math.max(-2.5, Math.min(2.5, sx * 0.15));
-                el.style.transform = `translate(${dx.toFixed(2)}px, ${dy.toFixed(2)}px) rotate(${rot.toFixed(2)}deg)`;
+            let l = Infinity, t = Infinity, r = -Infinity, btm = -Infinity;
+            floaters.forEach(el => { const b = el.getBoundingClientRect(); l = Math.min(l, b.left); t = Math.min(t, b.top); r = Math.max(r, b.right); btm = Math.max(btm, b.bottom); });
+            if (!isFinite(l)) return false;
+            const PAD = 24;
+            const box = { x: Math.floor(l - pr.left - PAD), y: Math.floor(t - pr.top - PAD), w: Math.ceil(r - l + PAD * 2), h: Math.ceil(btm - t + PAD * 2) };
+            const tex = document.createElement('canvas');
+            tex.width = box.w; tex.height = box.h;
+            const tc = tex.getContext('2d');
+            const ox = pr.left + box.x, oy = pr.top + box.y;
+            panel.querySelectorAll('.auth-brand__logo').forEach(tile => {
+                const b = tile.getBoundingClientRect(), cs = getComputedStyle(tile);
+                tc.fillStyle = cs.backgroundColor || '#fff';
+                const rad = parseFloat(cs.borderTopLeftRadius) || 0;
+                tc.beginPath();
+                if (tc.roundRect) tc.roundRect(b.left - ox, b.top - oy, b.width, b.height, rad); else tc.rect(b.left - ox, b.top - oy, b.width, b.height);
+                tc.fill();
+                tile.querySelectorAll('img').forEach(img => {
+                    const ib = img.getBoundingClientRect();
+                    if (img.complete && img.naturalWidth) tc.drawImage(img, ib.left - ox, ib.top - oy, ib.width, ib.height);
+                });
             });
+            // Every text run where the browser laid it out, in its own font.
+            floaters.forEach(el => {
+                const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+                let n;
+                while ((n = walker.nextNode())) {
+                    const txt = n.textContent.trim();
+                    if (!txt) continue;
+                    const range = document.createRange(); range.selectNodeContents(n);
+                    const rect = range.getBoundingClientRect();
+                    const cs = getComputedStyle(n.parentElement);
+                    tc.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+                    tc.fillStyle = cs.color;
+                    tc.textBaseline = 'middle';
+                    tc.fillText(txt, rect.left - ox + (rect.width - tc.measureText(txt).width) / 2, rect.top - oy + rect.height / 2);
+                }
+            });
+            refr.width = box.w; refr.height = box.h;
+            refr.style.left = box.x + 'px'; refr.style.top = box.y + 'px';
+            refr.style.width = box.w + 'px'; refr.style.height = box.h + 'px';
+            rs.box = box;
+            try { rs.src = tc.getImageData(0, 0, box.w, box.h); } catch (_) { rs.src = null; return false; }
+            rs.out = rctx.createImageData(box.w, box.h);
+            return true;
+        };
+        let bent = false;
+        const bend = (on) => {
+            if (on === bent) return;
+            if (on && !snapshot()) return;
+            bent = on;
+            floaters.forEach(el => { el.style.opacity = on ? '0' : ''; });
+            refr.style.display = on ? 'block' : 'none';
+        };
+        const floatContent = () => {
+            bend(true);
+            if (!bent || !rs.src) return;
+            const { box, src, out } = rs;
+            const { w, a } = st;
+            const S = src.data, D = out.data, bw = box.w, bh = box.h;
+            const K = 1.6, MAX = 16, H = st.h;
+            // Slope per cell once, then smoothly between cells per pixel.
+            if (!rs.gx || rs.gx.length !== w * H) { rs.gx = new Float32Array(w * H); rs.gy = new Float32Array(w * H); }
+            const GX = rs.gx, GY = rs.gy;
+            for (let y = 1; y < H - 1; y++) for (let x = 1; x < w - 1; x++) {
+                const i = y * w + x;
+                GX[i] = a[i - 1] - a[i + 1]; GY[i] = a[i - w] - a[i + w];
+            }
+            for (let y = 0; y < bh; y++) {
+                const fy = (box.y + y) / SCALE;
+                const y0 = fy < 1 ? 1 : fy > H - 3 ? H - 3 : fy | 0, ty = Math.min(1, Math.max(0, fy - y0));
+                for (let x = 0; x < bw; x++) {
+                    const fx = (box.x + x) / SCALE;
+                    const x0 = fx < 1 ? 1 : fx > w - 3 ? w - 3 : fx | 0, tx = Math.min(1, Math.max(0, fx - x0));
+                    const i = y0 * w + x0;
+                    const gxa = GX[i] + (GX[i + 1] - GX[i]) * tx, gxb = GX[i + w] + (GX[i + w + 1] - GX[i + w]) * tx;
+                    const gya = GY[i] + (GY[i + 1] - GY[i]) * tx, gyb = GY[i + w] + (GY[i + w + 1] - GY[i + w]) * tx;
+                    let dx = (gxa + (gxb - gxa) * ty) * K, dy = (gya + (gyb - gya) * ty) * K;
+                    dx = dx > MAX ? MAX : dx < -MAX ? -MAX : dx;
+                    dy = dy > MAX ? MAX : dy < -MAX ? -MAX : dy;
+                    const sx = Math.round(x + dx), sy = Math.round(y + dy);
+                    const o = (y * bw + x) * 4;
+                    if (sx < 0 || sy < 0 || sx >= bw || sy >= bh) { D[o + 3] = 0; continue; }
+                    const q = (sy * bw + sx) * 4;
+                    D[o] = S[q]; D[o + 1] = S[q + 1]; D[o + 2] = S[q + 2]; D[o + 3] = S[q + 3];
+                }
+            }
+            rctx.putImageData(out, 0, 0);
         };
         resize();
         if (window.ResizeObserver) new ResizeObserver(resize).observe(panel);

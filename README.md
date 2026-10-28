@@ -326,7 +326,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   gelombang kecil di `<canvas>` di belakang logo, berhenti sendiri saat air
   tenang dan saat panel tersembunyi, dan tidak berjalan sama sekali bila
   perangkat meminta *reduced motion*.
-  Sejak v180 logo dan nama ikut mengapung (bergeser dan miring sedikit) mengikuti riak di bawahnya.
+  Sejak v181 logo dan nama ikut terdistorsi oleh air: selama riak bergerak keduanya digambar ke canvas dan dibengkokkan mengikuti kemiringan permukaan, lalu kembali tajam saat air tenang.
   Sejak v179 area terang di sekitar kartu Sign in berlatar titik-titik grid
   gelap yang halus dan beberapa batang tebu samar (teal) di bagian bawahnya.
 - **Peran kustom & Daily Report "Own only" v175 (dijaga
