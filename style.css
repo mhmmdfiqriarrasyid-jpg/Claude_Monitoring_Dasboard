@@ -10341,3 +10341,29 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
 }
 .loading-overlay__hint[hidden] { display: none; }
 
+/* Warehouse photos (v185) */
+.wh-photo-count { margin-left: 6px; font-weight: 600; color: var(--text-light); font-size: 12px; }
+.wh-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; margin-top: 6px; }
+.wh-photo {
+    position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden;
+    border: 1px solid var(--border); background: var(--surface-sunken); padding: 0;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.wh-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wh-photo__wait { font-size: 11px; color: var(--text-light); }
+.wh-photo__del {
+    position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border: 0; border-radius: 50%;
+    background: rgba(16,24,40,0.65); color: #fff; font-size: 12px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+}
+.wh-photo--add { flex-direction: column; gap: 4px; border-style: dashed; border-color: var(--border-strong); color: var(--accent-text); font: inherit; font-size: 12px; font-weight: 600; background: var(--card); }
+.wh-photo--add i { font-size: 18px; }
+.wh-photo--add:hover { border-color: var(--accent); background: var(--primary-lighter); }
+.wh-photo-chip {
+    display: inline-flex; align-items: center; gap: 5px; margin-top: 4px; padding: 2px 9px;
+    border: 0; border-radius: 10px; background: var(--neutral-tint); color: var(--text-body);
+    font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.wh-photo-chip:hover { background: var(--primary-lighter); color: var(--accent-text); }
+@media (max-width: 700px) { .wh-photo__del { width: 32px; height: 32px; } .wh-photo-chip { min-height: 32px; } }
+

@@ -130,7 +130,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v184';
+const APP_VERSION = 'v185';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -17633,6 +17633,118 @@ function populateWarehouseFilters() {
     if (su) su.innerHTML = unitOpts;
 }
 
+// ---- Warehouse photos (v185): devices and stock movements ----
+// Up to ten per item, one Firestore document each (warehousePhotos/{id}), so
+// no item can outgrow the 1 MB document limit. The item itself keeps only the
+// list of photo ids; photos load when a form, profile or gallery opens.
+const WH_PHOTO_MAX = 10;
+const _whPhotoCache = new Map();               // photo id → data URL
+const _whPh = { device: { items: [], removed: [] }, stock: { items: [], removed: [] } };
+const _WH_PH_EL = { device: 'dev', stock: 'stk' };
+function _whPhotoId(ownerId) { return `${ownerId}__p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`; }
+async function loadWhPhoto(id) {
+    if (_whPhotoCache.has(id)) return _whPhotoCache.get(id);
+    let src = '';
+    try { src = window.cloud && window.cloud.getWhPhoto ? await window.cloud.getWhPhoto(id) : ''; } catch (e) { console.warn('[warehouse] photo not loaded', id, e && e.code); }
+    if (src) _whPhotoCache.set(id, src);
+    return src;
+}
+// A form opens: its photos are the item's stored ones, loaded in the background.
+function whPhotoReset(kind, ids) {
+    const st = _whPh[kind];
+    st.items = (Array.isArray(ids) ? ids : []).slice(0, WH_PHOTO_MAX).map(id => ({ id, src: _whPhotoCache.get(id) || '', isNew: false }));
+    st.removed = [];
+    whPhotoRender(kind);
+    st.items.filter(it => !it.src).forEach(it => loadWhPhoto(it.id).then(src => { it.src = src; it.missing = !src; whPhotoRender(kind); }));
+}
+function whPhotoRender(kind) {
+    const k = _WH_PH_EL[kind];
+    const grid = document.getElementById(k + 'PhotoGrid');
+    if (!grid) return;
+    const st = _whPh[kind];
+    grid.innerHTML = st.items.map((it, i) => `
+        <div class="wh-photo">
+            ${it.src ? `<img src="${escapeHtml(it.src)}" alt="Photo ${i + 1}" onclick="whPhotoView('${kind}', ${i})">`
+                     : `<span class="wh-photo__wait">${it.missing ? 'Not found' : 'Loading…'}</span>`}
+            <button type="button" class="wh-photo__del" aria-label="Remove photo ${i + 1}" onclick="whPhotoRemove('${kind}', ${i})"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+        </div>`).join('') + (st.items.length < WH_PHOTO_MAX ? `
+        <button type="button" class="wh-photo wh-photo--add" onclick="document.getElementById('${k}PhotoInput').click()">
+            <i class="fas fa-camera" aria-hidden="true"></i><span>Add photo</span>
+        </button>` : '');
+    const c = document.getElementById(k + 'PhotoCount');
+    if (c) c.textContent = st.items.length ? `${st.items.length}/${WH_PHOTO_MAX}` : '';
+}
+async function whPhotoAdd(kind, event) {
+    const input = event && event.target;
+    const files = input ? [...(input.files || [])] : [];
+    if (input) input.value = '';
+    const st = _whPh[kind];
+    const room = WH_PHOTO_MAX - st.items.length;
+    if (files.length > room) showToast(`Up to ${WH_PHOTO_MAX} photos — ${files.length - room} not added`, 'warning');
+    for (const f of files.slice(0, Math.max(0, room))) {
+        if (!/^image\//.test(f.type || '')) continue;
+        try {
+            const src = await compressImageToDataURL(f, { maxBytes: 250 * 1024 });
+            st.items.push({ id: '', src, isNew: true });
+            whPhotoRender(kind);
+        } catch (e) { showToast('A photo could not be read', 'warning'); }
+    }
+}
+function whPhotoRemove(kind, i) {
+    const st = _whPh[kind];
+    const it = st.items[i];
+    if (!it) return;
+    if (!it.isNew && it.id) st.removed.push(it.id);
+    st.items.splice(i, 1);
+    whPhotoRender(kind);
+}
+function whPhotoView(kind, i) {
+    const srcs = _whPh[kind].items.map(it => it.src).filter(Boolean);
+    openPhotoLightbox(srcs, Math.min(i, srcs.length - 1));
+}
+// Save: new photos get ids and are written, removed ones deleted. Returns the
+// ids the item should keep, in order.
+function whPhotoCommit(kind, ownerId) {
+    const st = _whPh[kind];
+    const ids = [];
+    st.items.forEach(it => {
+        if (it.isNew) {
+            it.id = _whPhotoId(ownerId);
+            it.isNew = false;
+            _whPhotoCache.set(it.id, it.src);
+            if (window.cloud && window.cloud.saveWhPhoto && !suppressCloudWrites) {
+                window.cloud.saveWhPhoto(it.id, ownerId, it.src).catch(err => {
+                    console.error('[warehouse] photo not saved:', err);
+                    showToast(err && err.code === 'permission-denied' ? 'Photos need the new firestore.rules — publish them first' : 'A photo was not saved — try again', 'error');
+                });
+            }
+        }
+        if (it.id) ids.push(it.id);
+    });
+    deleteWhPhotos(st.removed);
+    st.removed = [];
+    return ids;
+}
+function deleteWhPhotos(ids) {
+    (ids || []).forEach(id => {
+        _whPhotoCache.delete(id);
+        if (window.cloud && window.cloud.deleteWhPhoto && !suppressCloudWrites) window.cloud.deleteWhPhoto(id).catch(() => {});
+    });
+}
+// Gallery from a table row or a profile: load them all, then open.
+async function openWhPhotos(ids, start) {
+    if (!ids || !ids.length) return;
+    showToast(`Loading ${ids.length} photo${ids.length === 1 ? '' : 's'}…`, 'info');
+    const srcs = (await Promise.all(ids.map(loadWhPhoto))).filter(Boolean);
+    if (!srcs.length) { showToast('Photos could not be loaded', 'warning'); return; }
+    openPhotoLightbox(srcs, start || 0);
+}
+function whPhotoChip(ids, label) {
+    const n = Array.isArray(ids) ? ids.length : 0;
+    if (!n) return '';
+    return `<button type="button" class="wh-photo-chip" aria-label="View ${n} photo${n === 1 ? '' : 's'} of ${escapeHtml(label)}" onclick="openWhPhotos(${escapeHtml(JSON.stringify(ids))})"><i class="fas fa-camera" aria-hidden="true"></i> ${n}</button>`;
+}
+
 // ============================================================
 // DEVICES (serial-tracked)
 // ============================================================
@@ -17786,7 +17898,8 @@ function renderDeviceTable() {
         <tr>
             <td data-label="Device" class="wh-devcell"><span class="wh-dev">${deviceIcon(d.type)}<span class="adm-stack"><button type="button" class="adm-link wh-devname" title="View device profile" onclick="showDeviceProfile(${jsArg(d.id)})">${escapeHtml(d.type || 'Device')}</button>${
                 model ? `<span class="adm-sub">${escapeHtml(model)}</span>` : ''}${
-                d.batterySn ? `<span class="adm-sub"><i class="fas fa-battery-three-quarters" aria-hidden="true"></i> Battery SN ${escapeHtml(d.batterySn)}</span>` : ''}</span></span></td>
+                d.batterySn ? `<span class="adm-sub"><i class="fas fa-battery-three-quarters" aria-hidden="true"></i> Battery SN ${escapeHtml(d.batterySn)}</span>` : ''}${
+                whPhotoChip(d.photoIds, d.sn || 'device')}</span></span></td>
             <td data-label="Serial number" class="adm-mono">${escapeHtml(d.sn || '')}</td>
             <td data-label="Status"><span class="wh-status wh-status--${st.key}"><span class="wh-dot wh-dot--${st.key}" aria-hidden="true"></span>${escapeHtml(sentenceCase(st.label))}</span></td>
             <td data-label="Where">${deviceWhereCell(d)}</td>
@@ -17851,6 +17964,7 @@ function showAddDeviceForm() {
     populateWarehouseFilters();
     onDeviceStatusChange();
     onDeviceBatteryChange();
+    whPhotoReset('device', []);
     document.getElementById('deviceModal').classList.add('open');
 }
 
@@ -17882,6 +17996,7 @@ function editDevice(id) {
     document.getElementById('devPosY').value = d.posY || '';
     document.getElementById('devNote').value = d.note || '';
     onDeviceStatusChange();
+    whPhotoReset('device', d.photoIds);
     document.getElementById('deviceModal').classList.add('open');
 }
 
@@ -17940,6 +18055,9 @@ function showDeviceProfile(id) {
             ${row('Battery SN', esc(d.batterySn))}
             ${row('Notes', esc(d.note))}
         </div>
+        ${(d.photoIds || []).length ? `<h4 class="dev-alloc-title">Photos <span class="team-tab__count">${d.photoIds.length}</span></h4>
+        <div class="wh-photos wh-photos--view" id="devProfilePhotos">${d.photoIds.map((pid, i) =>
+            `<button type="button" class="wh-photo" data-photo="${escapeHtml(pid)}" aria-label="Open photo ${i + 1}" onclick="openWhPhotos(${escapeHtml(JSON.stringify(d.photoIds))}, ${i})"><span class="wh-photo__wait">Loading…</span></button>`).join('')}</div>` : ''}
         <h4 class="dev-alloc-title">Allocation history <span class="team-tab__count">${allocs.length}</span></h4>
         ${hist}`;
     const edit = document.getElementById('deviceProfileEdit');
@@ -17948,6 +18066,12 @@ function showDeviceProfile(id) {
         edit.onclick = () => { closeDeviceProfile(); editDevice(d.id); };
     }
     document.getElementById('deviceProfileModal').classList.add('open');
+    // Thumbnails fill in as each photo arrives.
+    document.querySelectorAll('#devProfilePhotos [data-photo]').forEach(btn => {
+        loadWhPhoto(btn.dataset.photo).then(src => {
+            btn.innerHTML = src ? `<img src="${escapeHtml(src)}" alt="">` : '<span class="wh-photo__wait">Not found</span>';
+        });
+    });
 }
 
 function closeDeviceProfile() {
@@ -18019,8 +18143,11 @@ function saveDevice(event) {
             recipientTitle: existing.recipientTitle || '', allocatedAt: existing.allocatedAt || '', returnedAt });
         allocationHistory = allocationHistory.slice(-20);
     }
+    const devId = id || generateDeviceId();
+    const photoIds = whPhotoCommit('device', devId);
     const rec = {
-        id: id || generateDeviceId(),
+        id: devId,
+        photoIds,
         sn,
         type: (document.getElementById('devType').value || '').trim(),
         brand: (document.getElementById('devBrand').value || '').trim(),
@@ -18070,6 +18197,7 @@ function deleteDevice(id) {
     const d = warehouseDevices.find(x => x.id === id);
     if (!d) return;
     if (!confirm(`Delete device ${d.type || ''} SN ${d.sn}?\n\nIts history in the audit log is kept.`)) return;
+    deleteWhPhotos(d.photoIds);
     cloudWrite(
         { action: 'delete',
           unitName: `[Inventory] ${d.type || 'Device'} ${d.sn}`,
@@ -19019,7 +19147,7 @@ function renderStockView() {
         <tr>
             <td data-label="Date" class="adm-nowrap">${escapeHtml(r.date || '')}</td>
             <td data-label="Movement"><span class="wh-txn wh-txn--${r.txnType === 'OUT' ? 'out' : 'in'}">${r.txnType === 'OUT' ? 'Out' : 'In'}</span></td>
-            <td data-label="Item"><span class="adm-stack"><strong>${escapeHtml(r.itemName || '')}</strong>${r.note ? `<span class="adm-sub">${escapeHtml(r.note)}</span>` : ''}</span></td>
+            <td data-label="Item"><span class="adm-stack"><strong>${escapeHtml(r.itemName || '')}</strong>${r.note ? `<span class="adm-sub">${escapeHtml(r.note)}</span>` : ''}${whPhotoChip(r.photoIds, r.itemName || 'item')}</span></td>
             <td data-label="Quantity" class="num">${r.txnType === 'OUT' ? '−' : '+'}${Number(r.qty) || 0}</td>
             <td data-label="Location">${escapeHtml(r.location || '') || dash}</td>
             <td data-label="For unit">${escapeHtml(r.unitName || '') || dash}</td>
@@ -19057,6 +19185,7 @@ function showAddStockForm() {
     document.getElementById('stkDate').value = toISODate();
     document.getElementById('stkTxnType').value = 'IN';
     onStockTxnChange();
+    whPhotoReset('stock', []);
     document.getElementById('stockModal').classList.add('open');
 }
 
@@ -19076,6 +19205,7 @@ function editStockItem(id) {
     document.getElementById('stkUnit').value = live ? damageUnitLabel(live) : (r.unitName || '');
     document.getElementById('stkNote').value = r.note || '';
     onStockTxnChange();
+    whPhotoReset('stock', r.photoIds);
     document.getElementById('stockModal').classList.add('open');
 }
 
@@ -19114,8 +19244,11 @@ function saveStockItem(event) {
     // stockSummary would happily render a negative balance.
     if (txnType === 'OUT' && !checkStockBalance(itemName, qty, existing)) return;
 
+    const stkId = id || generateStockId();
+    const photoIds = whPhotoCommit('stock', stkId);
     const rec = {
-        id: id || generateStockId(),
+        id: stkId,
+        photoIds,
         date: document.getElementById('stkDate').value,
         txnType,
         itemName,
@@ -19154,6 +19287,7 @@ function deleteStockItem(id) {
     const r = stockLedger.find(x => x.id === id);
     if (!r) return;
     if (!confirm(`Delete stock-${r.txnType === 'OUT' ? 'out' : 'in'} transaction ${r.qty} ${r.itemName} (${r.date})?`)) return;
+    deleteWhPhotos(r.photoIds);
     cloudWrite(
         { action: 'delete',
           unitName: `[Inventory] ${r.itemName}`,

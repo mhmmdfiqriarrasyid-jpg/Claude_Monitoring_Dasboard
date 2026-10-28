@@ -13,6 +13,9 @@ const { launch, BASE_URL } = require('./_env');
         const saved = [];
         window.cloud = { isReady: true,
             saveDevice: r => { saved.push(['device', r]); return Promise.resolve(); },
+            saveWhPhoto: (id, owner, photo) => { saved.push(['photo', id, owner]); return Promise.resolve(); },
+            deleteWhPhoto: id => { saved.push(['delPhoto', id]); return Promise.resolve(); },
+            getWhPhoto: id => Promise.resolve('data:image/png;base64,AA'),
             deleteDevice: id => { saved.push(['delDevice', id]); return Promise.resolve(); },
             saveStockItem: r => { saved.push(['stock', r]); return Promise.resolve(); },
             deleteStockItem: id => { saved.push(['delStock', id]); return Promise.resolve(); } };
@@ -125,6 +128,42 @@ const { launch, BASE_URL } = require('./_env');
         t('SN baterai ganda ditolak', saved.length, nB2);
         closeDeviceModal();
         warehouseDevices.pop(); renderDeviceTable();
+
+        // ---------- foto perangkat & stok (v185): sampai 10, satu dokumen per foto ----------
+        showAddDeviceForm();
+        document.getElementById('devSn').value = 'CAM-P1'; document.getElementById('devType').value = 'Camera';
+        const px = 'data:image/png;base64,AA';
+        for (let i = 0; i < 12; i++) if (_whPh.device.items.length < WH_PHOTO_MAX) _whPh.device.items.push({ id: '', src: px, isNew: true });
+        whPhotoRender('device');
+        t('form: 10 foto, tombol tambah hilang saat penuh', [document.querySelectorAll('#devPhotoGrid .wh-photo img').length, !!document.querySelector('#devPhotoGrid .wh-photo--add'), document.getElementById('devPhotoCount').textContent], [10, false, '10/10']);
+        whPhotoRemove('device', 0); whPhotoRender('device');
+        t('hapus satu: tombol tambah kembali', [_whPh.device.items.length, !!document.querySelector('#devPhotoGrid .wh-photo--add')], [9, true]);
+        const nP = saved.length;
+        saveDevice({ preventDefault() {} });
+        const devP = (saved.filter(x => x[0] === 'device').pop() || [])[1] || {};
+        const photoWrites = saved.slice(nP).filter(x => x[0] === 'photo');
+        t('simpan: 9 foto ditulis terpisah, perangkat menyimpan id-nya', [photoWrites.length, (devP.photoIds || []).length, photoWrites.every(w => w[2] === devP.id), (devP.photoIds || []).every(id => id.startsWith(devP.id + '__p'))], [9, 9, true, true]);
+        warehouseDevices.push(devP); renderDeviceTable();
+        t('tabel: chip jumlah foto', /9/.test((document.querySelector('#deviceBody .wh-photo-chip') || {}).textContent || ''), true);
+        editDevice(devP.id);
+        t('edit: foto lama tampil (dari cache)', _whPh.device.items.filter(it => it.src).length, 9);
+        whPhotoRemove('device', 0);
+        const removedId = devP.photoIds[0];
+        saveDevice({ preventDefault() {} });
+        t('edit: foto yang dibuang dihapus dari cloud', saved.some(x => x[0] === 'delPhoto' && x[1] === removedId), true);
+        const devP2 = (saved.filter(x => x[0] === 'device').pop() || [])[1] || {};
+        warehouseDevices.pop(); warehouseDevices.push(devP2);
+        const nD = saved.length;
+        window.confirm = () => true; deleteDevice(devP2.id);
+        t('hapus perangkat: semua fotonya ikut dihapus', saved.slice(nD).filter(x => x[0] === 'delPhoto').length, 8);
+        warehouseDevices = warehouseDevices.filter(d => d.id !== devP2.id); renderDeviceTable();
+        // stok
+        showAddStockForm();
+        document.getElementById('stkItem').value = 'Kabel'; document.getElementById('stkQty').value = '2';
+        _whPh.stock.items.push({ id: '', src: px, isNew: true }, { id: '', src: px, isNew: true });
+        saveStockItem({ preventDefault() {} });
+        const stkP = (saved.filter(x => x[0] === 'stock').pop() || [])[1] || {};
+        t('stok: foto tersimpan pada transaksi', (stkP.photoIds || []).length, 2);
 
         // ---------- profil perangkat: riwayat alokasi ----------
         warehouseDevices.push({ id: 'dp1', sn: 'TAB-7', type: 'Tablet', status: 'allocated', division: 'IT', recipientName: 'Citra',

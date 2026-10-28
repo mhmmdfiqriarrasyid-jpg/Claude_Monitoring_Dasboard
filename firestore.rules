@@ -478,6 +478,11 @@ service cloud.firestore {
     match /fuelLogs/{id}   { allow read: if isActive(); allow delete: if canEditArea('warehouse');
                              allow create, update: if canEditArea('warehouse') && idMatches(id); }
     match /fuelPhotos/{id} { allow read: if canViewArea('warehouse'); allow write: if canEditArea('warehouse'); }
+    // Device and stock photos (v185), one document per photo, up to ten per item.
+    match /warehousePhotos/{id} { allow read: if canViewArea('warehouse'); allow delete: if canEditArea('warehouse');
+                                  allow create, update: if canEditArea('warehouse') && idMatches(id)
+                                    && request.resource.data.get('photo', '') is string
+                                    && request.resource.data.get('photo', '').size() <= 400000; }
 
     // ---- Accounts ----
     // Sign-up may only ever create a PENDING VIEWER. Without this, any signed-in

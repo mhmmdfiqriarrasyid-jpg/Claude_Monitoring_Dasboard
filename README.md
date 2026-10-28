@@ -320,6 +320,16 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
   Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
   **Implement Brands** (`masterLists/brand`) untuk Agricultural.
+- **Foto Warehouse v185 (dijaga `tests/warehouse_test.js` dan 6 skenario
+  baru di `tests/rules_test.js`).** Form **Device** dan **Stock in / out**
+  punya bagian *Photos*: sampai **10 foto** per item (pilih beberapa sekaligus),
+  pratinjau kotak dengan tombol hapus, klik untuk memperbesar. Setiap foto
+  satu dokumen di koleksi baru `warehousePhotos/{id}` (dikompres ≤250 KB),
+  item hanya menyimpan daftar `photoIds`, jadi tidak pernah kena batas 1 MB.
+  Tabel menampilkan chip 📷 jumlah foto (klik = galeri), profil perangkat
+  menampilkan galeri foto. Menghapus item ikut menghapus fotonya. Rules:
+  baca = lihat Warehouse, tulis = ubah Warehouse, maksimal ~400 KB per foto.
+  **Perlu publish ulang `firestore.rules`.**
 - **Riak air di halaman masuk v176.** Panel teal di halaman Sign in dan
   halaman menunggu persetujuan menampilkan riak air yang mengikuti kursor
   (atau jari di HP); klik/tap membuat riak yang lebih besar. Simulasi
@@ -845,7 +855,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   stempel `appliedAt` supaya hanya sekali); tanpa akses itu muncul di Kotak
   Keputusan. Foto di `inspectionPhotos/{id}` (tidak di-subscribe), ditulis
   SEBELUM laporannya.
-- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (245 skenario;
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (251 skenario;
   bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
   kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
   alur persetujuan laporan/izin (transisi status di atas, kunci isi dan foto

@@ -449,6 +449,15 @@ async function check(name, p, expectOk) {
     await check('peran: owner memberi peran (roleId + access)', updateDoc(doc(O, 'users', 'mine2'), { roleId: 'role_x', roleName: 'Field', access: { teamLog: 'own', unitScope: 'all' } }), true);
     await check('peran: orang itu TIDAK bisa memberi dirinya peran', updateDoc(doc(MY2, 'users', 'mine2'), { roleId: 'role_y', access: { teamLog: 'edit' } }), false);
 
+    // ---- v185: foto warehouse ----
+    const PH_ED = as('wh'), PH_RD = as('whv');
+    await check('foto gudang: editor warehouse menyimpan foto', setDoc(doc(PH_ED, 'warehousePhotos', 'd1__p1'), { id: 'd1__p1', ownerId: 'd1', photo: 'data:image/jpeg;base64,AA' }), true);
+    await check('foto gudang: pembaca warehouse bisa membuka', getDoc(doc(PH_RD, 'warehousePhotos', 'd1__p1')), true);
+    await check('foto gudang: pembaca TIDAK bisa menulis', setDoc(doc(PH_RD, 'warehousePhotos', 'd1__p2'), { id: 'd1__p2', ownerId: 'd1', photo: 'x' }), false);
+    await check('foto gudang: tanpa akses warehouse TIDAK bisa membaca', getDoc(doc(N, 'warehousePhotos', 'd1__p1')), false);
+    await check('foto gudang: foto terlalu besar DITOLAK', setDoc(doc(PH_ED, 'warehousePhotos', 'd1__p3'), { id: 'd1__p3', ownerId: 'd1', photo: 'x'.repeat(400001) }), false);
+    await check('foto gudang: editor menghapus foto', deleteDoc(doc(PH_ED, 'warehousePhotos', 'd1__p1')), true);
+
     await env.cleanup();
     let pass = 0;
     T.forEach(x => { if (x.pass) pass++; else console.log('FAIL', x.name, '\n   ', x.err || ''); });

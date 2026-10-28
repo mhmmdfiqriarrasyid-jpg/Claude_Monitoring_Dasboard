@@ -141,6 +141,7 @@ const STOCK_ITEMS_COL = 'stockItems';
 // record's receipt photo lives in fuelPhotos/{recordId}, never subscribed.
 const VEHICLES_COL = 'vehicles';
 const FUEL_LOGS_COL = 'fuelLogs';
+const WH_PHOTOS_COL = 'warehousePhotos';
 const FUEL_PHOTOS_COL = 'fuelPhotos';
 const TEAM_MEMBERS_COL = 'teamMembers';
 const SHIFTS_COL = 'shifts';
@@ -698,6 +699,20 @@ window.cloud = {
         );
     },
     // Receipt photo of a fuel record, one document per record, read on demand.
+    // ---- Warehouse photos (v185): one document per photo, for devices and
+    // stock movements, so ten photos never meet the 1 MB document limit.
+    async getWhPhoto(id) {
+        const snap = await getDoc(doc(db, WH_PHOTOS_COL, id));
+        if (!snap.exists()) return '';
+        const data = snap.data();
+        return typeof data.photo === 'string' ? data.photo : '';
+    },
+    async saveWhPhoto(id, ownerId, photo) {
+        await setDoc(doc(db, WH_PHOTOS_COL, id), { id, ownerId, photo, updatedAt: Date.now() });
+    },
+    async deleteWhPhoto(id) {
+        await deleteDoc(doc(db, WH_PHOTOS_COL, id));
+    },
     async getFuelPhoto(id) {
         const snap = await getDoc(doc(db, FUEL_PHOTOS_COL, id));
         if (!snap.exists()) return '';

@@ -3124,6 +3124,11 @@
                         <input class="form-input" id="devBatterySn" maxlength="60" autocomplete="off" placeholder="Battery SN…">
                     </div>
                     <div class="form-group full-width">
+                        <span class="form-label">Photos <span class="form-optional">(up to 10)</span> <span class="wh-photo-count" id="devPhotoCount"></span></span>
+                        <div class="wh-photos" id="devPhotoGrid"></div>
+                        <input type="file" id="devPhotoInput" accept="image/*" multiple hidden onchange="whPhotoAdd('device', event)">
+                    </div>
+                    <div class="form-group full-width">
                         <label class="form-label" for="devNote">Notes <span class="form-optional">(optional)</span></label>
                         <textarea class="form-input form-textarea" id="devNote" rows="2"
                                   placeholder="Condition, warranty, service ticket number…"></textarea>
@@ -3195,6 +3200,11 @@
                         <input class="form-input" id="stkUnit" list="stkUnitList" autocomplete="off"
                                placeholder="Type unit name or SN…">
                         <datalist id="stkUnitList"></datalist>
+                    </div>
+                    <div class="form-group full-width">
+                        <span class="form-label">Photos <span class="form-optional">(up to 10)</span> <span class="wh-photo-count" id="stkPhotoCount"></span></span>
+                        <div class="wh-photos" id="stkPhotoGrid"></div>
+                        <input type="file" id="stkPhotoInput" accept="image/*" multiple hidden onchange="whPhotoAdd('stock', event)">
                     </div>
                     <div class="form-group full-width">
                         <label class="form-label" for="stkNote">Notes <span class="form-optional">(optional)</span></label>
