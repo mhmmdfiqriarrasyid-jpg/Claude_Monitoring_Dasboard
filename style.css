@@ -10224,5 +10224,5 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
 /* Sign-in panel: water ripples under the logo (v176) */
 .auth-brand { position: relative; overflow: hidden; }
 .auth-brand > :not(.auth-ripples) { position: relative; z-index: 1; }
-.auth-ripples { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; image-rendering: auto; filter: blur(2.5px); }
+.auth-ripples { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; image-rendering: auto; filter: blur(3px); }
 

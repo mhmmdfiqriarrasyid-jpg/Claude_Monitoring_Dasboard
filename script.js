@@ -130,7 +130,7 @@ let authInitialized = false;
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v176';
+const APP_VERSION = 'v177';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -12802,7 +12802,7 @@ function initAuthRipples() {
             for (let y = 1; y < h - 1; y++) {
                 for (let x = 1; x < w - 1; x++) {
                     const i = y * w + x;
-                    const v = ((a[i - 1] + a[i + 1] + a[i - w] + a[i + w]) / 2 - b[i]) * 0.975;
+                    const v = ((a[i - 1] + a[i + 1] + a[i - w] + a[i + w]) / 2 - b[i]) * 0.97;
                     b[i] = v;
                     energy += v < 0 ? -v : v;
                 }
@@ -12815,10 +12815,10 @@ function initAuthRipples() {
                     const i = y * w + x;
                     const sx = x > 0 && x < w - 1 ? a[i - 1] - a[i + 1] : 0;
                     const sy = y > 0 && y < h - 1 ? a[i - w] - a[i + w] : 0;
-                    const s = (sx + sy) * 3;
+                    const s = (sx + sy) * 2;
                     const o = i * 4;
-                    if (s >= 0) { d[o] = 255; d[o + 1] = 255; d[o + 2] = 255; d[o + 3] = Math.min(55, s); }
-                    else { d[o] = 8; d[o + 1] = 60; d[o + 2] = 56; d[o + 3] = Math.min(40, -s); }
+                    if (s >= 0) { d[o] = 255; d[o + 1] = 255; d[o + 2] = 255; d[o + 3] = Math.min(28, s); }
+                    else { d[o] = 8; d[o + 1] = 60; d[o + 2] = 56; d[o + 3] = Math.min(18, -s); }
                 }
             }
             ctx.putImageData(st.img, 0, 0);
@@ -12833,9 +12833,9 @@ function initAuthRipples() {
             const now = performance.now();
             if (now - last < 16) return;
             last = now;
-            drop(e.clientX, e.clientY, 50);
+            drop(e.clientX, e.clientY, 22);
         }, { passive: true });
-        panel.addEventListener('pointerdown', e => drop(e.clientX, e.clientY, 160), { passive: true });
+        panel.addEventListener('pointerdown', e => drop(e.clientX, e.clientY, 70), { passive: true });
     });
 }
 
