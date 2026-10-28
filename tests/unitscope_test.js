@@ -185,30 +185,32 @@ const { launch, BASE_URL } = require('./_env');
 
         // =============== dialog Access ===============
         allUsers = [Object.assign({ email: 'hv@x.id', displayName: 'Hv', status: 'active' }, hvDoc), { uid: 'w', email: 'w@x.id', role: 'staff', status: 'active', access: { teamLog: 'edit' } }];
+        // v175: dialog Access = satu peran + kelompok unit
+        customRoles = [{ id: 'r1', name: 'Tech', access: { teamLog: 'edit', editUnits: 'edit' }, csv: 'none' }];
         openAccessModal('w'); await tick(10);
         const grid = document.getElementById('accessGrid');
-        t('dialog: baris kelompok unit di atas, nilai sekarang "All groups"', [grid.querySelector('.access-select').dataset.area, grid.querySelector('[data-area="unitScope"]').value], ['unitScope', 'all']);
-        applyAccessPreset('heavy');
-        t('preset "View only — Heavy Equipment": kelompok + View pada unit, damage, inspection',
-          ['unitScope', 'editUnits', 'damage', 'inspection', 'teamLog'].map(a => grid.querySelector('[data-area="' + a + '"]').value), ['heavy', 'view', 'view', 'view', 'edit']);
-        grid.querySelector('[data-area="implements"]').value = 'edit'; refreshAccessScopeNote();
-        const tagImpl = grid.querySelector('[data-row-area="implements"] .access-row__applies');
-        t('dialog menyebut efek kelompok pada baris lain, tanpa mengubah nilainya',
-          [tagImpl.hidden, tagImpl.textContent.trim(), grid.querySelector('[data-area="implements"]').value, document.getElementById('accessScopeNote').hidden], [false, '→ None with this group', 'edit', false]);
+        t('dialog: pilihan peran + kelompok unit, nilai sekarang "All groups"', [grid.querySelectorAll('input[name="accessRole"]').length, grid.querySelector('[data-area="unitScope"]').value], [1, 'all']);
+        grid.querySelector('input[name="accessRole"][value="r1"]').checked = true;
+        grid.querySelector('[data-area="unitScope"]').value = 'heavy'; refreshAccessScopeNote();
+        t('dialog menyebut efek kelompok', document.getElementById('accessScopeNote').hidden, false);
         await saveAccess();
-        t('simpan: unitScope ikut tersimpan', accessWrites.length && accessWrites[0][1].unitScope, 'heavy');
+        const lastW = (accessWrites[accessWrites.length - 1] || [])[1] || {};
+        t('simpan: unitScope ikut tersimpan bersama level peran', [lastW.unitScope, lastW.teamLog, lastW.editUnits, lastW.damage],
+          ['heavy', 'edit', 'edit', 'none']);
         openAccessModal('hv'); await tick(10);
-        t('dialog akun terbatas: nilai tersimpan yang tampil (Edit), bukan yang berlaku', [grid.querySelector('[data-area="unitScope"]').value, grid.querySelector('[data-area="editUnits"]').value], ['heavy', 'edit']);
+        t('dialog akun terbatas: kelompok tersimpan yang tampil', grid.querySelector('[data-area="unitScope"]').value, 'heavy');
         closeAccessModal();
         // nilai kelompok yang tidak dikenal: tampil apa adanya, tidak bisa disimpan sebelum dipilih
         allUsers.push({ uid: 'bad', email: 'bad@x.id', role: 'staff', status: 'active', access: { editUnits: 'view', unitScope: 'Heavy' } });
         openAccessModal('bad'); await tick(10);
         const scSel = grid.querySelector('[data-area="unitScope"]');
         t('dialog: nilai tersimpan tak dikenal tampil sebagai "No unit group"', [scSel.value, /No unit group \\(stored: Heavy\\)/.test(scSel.textContent), document.getElementById('accessScopeNote').hidden], ['', true, false]);
+        grid.querySelector('input[name="accessRole"][value="r1"]').checked = true;
         accessWrites.length = 0; toasts.length = 0;
         await saveAccess();
         t('... dan tidak tersimpan sebelum kelompok dipilih', [accessWrites.length, toasts.pop()], [0, 'Pick a unit group first']);
         closeAccessModal();
+        customRoles = [];
         navigateTo('users'); renderUsersView(); await tick(10);
         t('tabel pengguna menyebut batas kelompok', /Heavy Equipment only/.test(document.querySelector('#viewUsers') ? document.querySelector('#viewUsers').textContent : document.body.textContent), true);
 

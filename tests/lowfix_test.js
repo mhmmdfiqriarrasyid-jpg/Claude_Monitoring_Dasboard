@@ -117,11 +117,14 @@ const { launch, BASE_URL } = require('./_env');
         navigateTo('users');
         const users = [{ uid: 'p1', email: 'p@x.id', displayName: 'P', role: 'viewer', status: 'pending', createdAt: 1 },
                        { uid: 'uO', email: 'o@x.id', displayName: 'Owner', role: 'owner', status: 'active', createdAt: 1 }];
+        // v175: pilihannya peran buatan owner, bukan lagi jabatan KHL/Staff.
+        customRoles = [{ id: 'rA', name: 'Field', access: {} }, { id: 'rB', name: 'Tech', access: {} }];
         allUsers = users; renderUsersView();
-        document.getElementById('approveRole_p1').value = 'staff';
+        document.getElementById('approveRole_p1').value = 'rB';
         allUsers = users.map(u => u.uid === 'uO' ? { ...u, activeSession: { id: 's', startedAt: 2, device: 'x' } } : u);
         renderUsersView();
-        t('pilihan role pendaftar bertahan saat data user berubah', document.getElementById('approveRole_p1').value, 'staff');
+        t('pilihan role pendaftar bertahan saat data user berubah', document.getElementById('approveRole_p1').value, 'rB');
+        customRoles = [];
 
         // =============== 9. waktu CSV riwayat ===============
         const ts = new Date(2026, 8, 30, 7, 5, 9).getTime();

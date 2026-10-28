@@ -129,6 +129,7 @@ const IMPL_COL = 'implements';
 const DAMAGE_COL = 'damageRecords';
 const LICENSE_COL = 'licenseStock';
 const USERS_COL = 'users';
+const ROLES_COL = 'roles';
 const HISTORY_COL = 'history';
 const USER_CATEGORIES_COL = 'userCategories';
 const MASTER_LISTS_COL = 'masterLists';
@@ -437,12 +438,34 @@ window.cloud = {
         );
     },
 
-    async updateUserAccess(uid, access, updatedByEmail) {
-        await setDoc(doc(db, USERS_COL, uid), {
+    // extra: other fields written with it — the role a person holds
+    // (roleId, roleName, v175). The access map is REPLACED, not merged, so a
+    // level the role no longer grants does not linger.
+    async updateUserAccess(uid, access, updatedByEmail, extra) {
+        await updateDoc(doc(db, USERS_COL, uid), {
+            ...(extra || {}),
             access,
             updatedAt: Date.now(),
             updatedBy: updatedByEmail || null
-        }, { merge: true });
+        });
+    },
+
+    // ---- Roles (v175): named sets of access levels, owner only ----
+    async saveRole(rec) {
+        await setDoc(doc(db, ROLES_COL, rec.id), rec);
+    },
+    async deleteRole(id) {
+        await deleteDoc(doc(db, ROLES_COL, id));
+    },
+    subscribeRoles(callback, errorCallback) {
+        return onSnapshot(
+            collection(db, ROLES_COL),
+            snap => callback(snap.docs.map(withDocId)),
+            err => {
+                console.error('[cloud] roles subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
     },
     async deleteUserDoc(uid) {
         await deleteDoc(doc(db, USERS_COL, uid));
@@ -787,9 +810,12 @@ window.cloud = {
         const snap = await getDocs(collection(db, WORK_LOGS_COL));
         return snap.docs.map(withDocId);
     },
-    subscribeWorkLogs(callback, errorCallback) {
+    // authorUid: only that account's own reports (Daily Report 'own'). No
+    // orderBy then — date + author would need a composite index; the app sorts.
+    subscribeWorkLogs(callback, errorCallback, authorUid) {
         return _onSnapshotWithPending(
-            query(collection(db, WORK_LOGS_COL), orderBy('date', 'desc')),
+            authorUid ? query(collection(db, WORK_LOGS_COL), where('createdByUid', '==', authorUid))
+                      : query(collection(db, WORK_LOGS_COL), orderBy('date', 'desc')),
             callback,
             err => {
                 console.error('[cloud] workLogs subscription error:', err);
@@ -820,9 +846,10 @@ window.cloud = {
         const snap = await getDocs(collection(db, LEAVE_COL));
         return snap.docs.map(withDocId);
     },
-    subscribeLeaveRequests(callback, errorCallback) {
+    subscribeLeaveRequests(callback, errorCallback, authorUid) {
         return _onSnapshotWithPending(
-            query(collection(db, LEAVE_COL), orderBy('dateFrom', 'desc')),
+            authorUid ? query(collection(db, LEAVE_COL), where('createdByUid', '==', authorUid))
+                      : query(collection(db, LEAVE_COL), orderBy('dateFrom', 'desc')),
             callback,
             err => {
                 console.error('[cloud] leaveRequests subscription error:', err);

@@ -113,6 +113,7 @@ service cloud.firestore {
       let sc = scopeOf(d);
       return isActive() && (role == 'owner'
         || editOn(a, role, 'teamShift') || editOn(a, role, 'teamLog') || editOn(a, role, 'teamMembers')
+        || a.get('teamLog', null) == 'own'
         || editOn(a, role, 'teamLogApprove') || editOn(a, role, 'warehouse')
         || (sc == 'all' && (editOn(a, role, 'editUnits') || editOn(a, role, 'damage')))
         || (sc in ['all', 'tractor'] && (editOn(a, role, 'implements') || editOn(a, role, 'licenseStock')))
@@ -320,6 +321,11 @@ service cloud.firestore {
     function teamLogReader() {
       return canViewArea('teamLog') || canViewArea('teamLogApprove') || canViewArea('leader');
     }
+    // Daily Report 'own' (v175): files reports and leave, and reads, changes
+    // and deletes only the ones it filed — while they are open. Its queries
+    // must ask where('createdByUid', '==', <its uid>).
+    function teamLogOwn() { return isActive() && lvl('teamLog') == 'own'; }
+    function mineIn(d)    { return d.get('createdByUid', '') == request.auth.uid; }
 
     // Work logs are written by whoever may edit them, and approved by whoever
     // holds 'teamLogApprove' — a separate grant, so a checker need not be able
@@ -328,11 +334,13 @@ service cloud.firestore {
     // nothing else, so they cannot quietly change the hours or the description
     // on their way past. Deleting follows editing: only an open record.
     match /workLogs/{id} {
-      allow read:   if teamLogReader();
-      allow create: if isOwner() || (canEditArea('teamLog') && newRecord(id));
-      allow delete: if isOwner() || (canEditArea('teamLog') && isOpen(resource.data));
+      allow read:   if teamLogReader() || (teamLogOwn() && mineIn(resource.data));
+      allow create: if isOwner() || ((canEditArea('teamLog') || teamLogOwn()) && newRecord(id));
+      allow delete: if isOwner() || (canEditArea('teamLog') && isOpen(resource.data))
+                    || (teamLogOwn() && mineIn(resource.data) && isOpen(resource.data));
       allow update: if isOwner()
                     || (idMatches(id) && canEditArea('teamLog') && (editorWrite() || withdrawWrite()))
+                    || (idMatches(id) && teamLogOwn() && mineIn(resource.data) && (editorWrite() || withdrawWrite()))
                     || (canEditArea('teamLogApprove') && approverWrite());
     }
 
@@ -352,11 +360,13 @@ service cloud.firestore {
     // Leave reasons are personal; the shift grid shows approved leave, so
     // whoever can see the schedule may read them too.
     match /leaveRequests/{id} {
-      allow read:   if teamLogReader() || canViewArea('teamShift');
-      allow create: if isOwner() || (canEditArea('teamLog') && newRecord(id));
-      allow delete: if isOwner() || (canEditArea('teamLog') && isOpen(resource.data));
+      allow read:   if teamLogReader() || canViewArea('teamShift') || (teamLogOwn() && mineIn(resource.data));
+      allow create: if isOwner() || ((canEditArea('teamLog') || teamLogOwn()) && newRecord(id));
+      allow delete: if isOwner() || (canEditArea('teamLog') && isOpen(resource.data))
+                    || (teamLogOwn() && mineIn(resource.data) && isOpen(resource.data));
       allow update: if isOwner()
                     || (idMatches(id) && canEditArea('teamLog') && (editorWrite() || withdrawWrite()))
+                    || (idMatches(id) && teamLogOwn() && mineIn(resource.data) && (editorWrite() || withdrawWrite()))
                     || (canEditArea('teamLogApprove') && approverWrite());
     }
 
@@ -379,9 +389,20 @@ service cloud.firestore {
     // photos, so there is no new permission to hand out per person.
     // Holds sick-leave letters — medical data. Only people who work with
     // reports and leave may read it.
+    // The record a photo belongs to was filed by this account ('own'); with
+    // no record yet (photos are written first) it is about to be.
+    function recordMine(id, orNew) {
+      return exists(/databases/$(database)/documents/workLogs/$(id))
+          ? mineIn(get(/databases/$(database)/documents/workLogs/$(id)).data)
+          : (exists(/databases/$(database)/documents/leaveRequests/$(id))
+              ? mineIn(get(/databases/$(database)/documents/leaveRequests/$(id)).data)
+              : orNew);
+    }
     match /workLogPhotos/{id} {
-      allow read:  if canViewArea('teamLog') || canViewArea('teamLogApprove');
-      allow write: if isOwner() || (canEditArea('teamLog') && recordOpen(id));
+      allow read:  if canViewArea('teamLog') || canViewArea('teamLogApprove')
+                    || (teamLogOwn() && recordMine(id, false));
+      allow write: if isOwner() || (canEditArea('teamLog') && recordOpen(id))
+                    || (teamLogOwn() && recordOpen(id) && recordMine(id, true));
     }
 
     // Damage photos, one document per record. Split out for the same reason as
@@ -474,6 +495,19 @@ service cloud.firestore {
       return isOwnerAccount()
              && request.resource.data.role == 'owner'
              && request.resource.data.status == 'active';
+    }
+
+    // ---- Roles (v175) ----
+    // Named sets of area levels the owner defines once and gives to people.
+    // Saving a role writes its levels into each holder's own access map, so
+    // every other rule keeps reading the user document only.
+    match /roles/{id} {
+      allow read, delete: if isOwner();
+      allow create, update: if isOwner() && idMatches(id)
+                   && request.resource.data.get('name', '') is string
+                   && request.resource.data.get('name', '').size() > 0
+                   && request.resource.data.get('name', '').size() <= 60
+                   && request.resource.data.get('access', {}) is map;
     }
 
     match /users/{uid} {

@@ -2135,9 +2135,9 @@
             </section>
 
             <aside class="usr-roles" aria-labelledby="usrRolesTitle">
-                <h2 class="usr-roles__title" id="usrRolesTitle">What the roles mean</h2>
+                <h2 class="usr-roles__title" id="usrRolesTitle">Roles</h2>
                 <div class="users-summary usr-roles__list" id="usersSummary"></div>
-                <p class="usr-roles__note">New sign-ups wait above until you approve them with a role. A role is a name only: what each person can open and change is set with <strong>Edit access</strong>.</p>
+                <p class="usr-roles__note">A role is what a person can open and change. Make your own roles here, then give each person one with <strong>Edit access</strong>. Changing a role changes it for everyone who holds it.</p>
             </aside>
         </div>
     </div><!-- /viewUsers -->
@@ -3639,12 +3639,41 @@
 </div>
 
 <!-- ===== USER ACCESS MODAL (owner) ===== -->
+<!-- ==================== ROLE EDITOR (v175) ==================== -->
+<div class="modal-overlay" id="roleModal">
+    <div class="modal-card ac-card" role="dialog" aria-labelledby="roleModalTitle">
+        <div class="modal-header ac-head">
+            <div class="ac-head__text">
+                <h3 id="roleModalTitle">New role</h3>
+                <span class="ac-head__sub">What everyone with this role can open and change</span>
+            </div>
+            <button type="button" class="btn-icon" onclick="closeRoleModal()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="roleId">
+            <div class="form-group">
+                <label class="form-label" for="roleName">Role name</label>
+                <input class="form-input" id="roleName" maxlength="60" autocomplete="off" placeholder="e.g. Field Team, Mechanic, Supervisor">
+            </div>
+            <p class="ac-intro"><strong>None</strong> = cannot open · <strong>View</strong> = read only ·
+                <strong>Edit</strong> = can change · <strong>Own only</strong> (Daily Report) = files their own reports and sees only those.</p>
+            <div id="roleGrid" class="access-grid ac-list"></div>
+            <p class="ac-note" id="roleHolders"></p>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary usr-remove" id="roleDeleteBtn" onclick="deleteRole()" hidden><i class="fas fa-trash" aria-hidden="true"></i> Delete role</button>
+            <button type="button" class="btn btn-secondary" onclick="closeRoleModal()">Cancel</button>
+            <button type="button" class="btn btn-primary" onclick="saveRole()"><i class="fas fa-check" aria-hidden="true"></i> Save role</button>
+        </div>
+    </div>
+</div>
+
 <div class="modal-overlay" id="accessModal">
     <div class="modal-card ac-card" role="dialog" aria-labelledby="accessTitle">
         <div class="modal-header ac-head">
             <div class="ac-head__text">
                 <h3 id="accessTitle">Edit access — <span id="accessUserName">—</span></h3>
-                <span class="ac-head__sub">What this person can open and change</span>
+                <span class="ac-head__sub">Their role, unit group and account</span>
             </div>
             <button type="button" class="btn-icon" onclick="closeAccessModal()" aria-label="Close" title="Close">
                 <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
@@ -3652,10 +3681,7 @@
         </div>
         <div class="modal-body">
             <input type="hidden" id="accessUserUid">
-            <p class="ac-intro">
-                For each page: <strong>None</strong> (cannot open it), <strong>View</strong> (read only)
-                or <strong>Edit</strong> (can change data). The Dashboard is always open.
-            </p>
+            <p class="ac-intro">Pick the role this person holds. What each role can do is set under <strong>Roles</strong> on the Users page.</p>
             <div id="accessGrid" class="access-grid"></div>
             <p class="ac-note">
                 These settings decide what is shown. The real protection lives in

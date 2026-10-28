@@ -121,13 +121,16 @@ let _firstLicenseSnapshot = true;
 let currentUser = null;        // Firebase Auth user object
 let currentUserDoc = null;     // Firestore profile doc { email, role, status, ... }
 let allUsers = [];             // Mirror of users collection (owner only)
+let customRoles = [];          // v175: owner-defined roles [{ id, name, access{}, csv }]
+let cloudRolesUnsub = null;
+let _rolesLoaded = false;
 let authInitialized = false;
 
 // ---- Constants ----
 // Build marker, shown in the footer and the account menu. Bumped with the
 // service worker's CACHE_NAME on every deploy, so "is this the new version?"
 // is answerable by looking at the page instead of guessing at caches.
-const APP_VERSION = 'v174';
+const APP_VERSION = 'v175';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -880,6 +883,7 @@ const MODAL_CLOSERS = {
     leaveModal:           'closeLeaveModal',
     deviceModal:          'closeDeviceModal',
     deviceProfileModal:   'closeDeviceProfile',
+    roleModal:            'closeRoleModal',
     vehicleModal:         'closeVehicleModal',
     fuelModal:            'closeFuelModal',
     stockModal:           'closeStockModal',
@@ -12500,13 +12504,17 @@ function initCloudSync() {
         // read them — subscribing without the right would just fail and put
         // up a "rules not published" banner that is not true.
         const canReadLogs = ['teamLog', 'teamLogApprove', 'leader'].some(a => hasAccess(a, 'view'));
+        // Daily Report 'own' reads only its own reports: firestore.rules lets
+        // it read nothing else, so it must ask for exactly those.
+        const ownLogs = ownTeamOnly() && !['teamLogApprove', 'leader'].some(a => hasAccess(a, 'view'));
         if (window.cloud.subscribeWorkLogs && canReadLogs) {
             cloudWorkLogsUnsub = window.cloud.subscribeWorkLogs(
                 (list, queued) => { setQueued('workLogs', queued); applyCloudWorkLogsSnapshot(list); },
                 err => {
                     console.warn('[cloud] workLogs offline:', err && err.code);
                     if (err && err.code === 'permission-denied') showTeamRulesBanner();
-                }
+                },
+                ownLogs ? myUid() : ''
             );
         }
         // Checks are read by whoever checks, approves, or reads the inbox —
@@ -12528,7 +12536,10 @@ function initCloudSync() {
                 err => {
                     console.warn('[cloud] leaveRequests offline:', err && err.code);
                     if (err && err.code === 'permission-denied') showTeamRulesBanner();
-                }
+                },
+                // The shift grid shows everyone's approved leave, so whoever
+                // sees the schedule reads all of it.
+                ownLogs && !hasAccess('teamShift', 'view') ? myUid() : ''
             );
         }
         if (window.cloud.subscribeLicenseRequirements && unitScopeAllows('tractor')) {
@@ -12672,6 +12683,8 @@ function tearDownCloudSync() {
     if (cloudDamageUnsub) { try { cloudDamageUnsub(); } catch (_) {} cloudDamageUnsub = null; }
     if (cloudLicenseUnsub) { try { cloudLicenseUnsub(); } catch (_) {} cloudLicenseUnsub = null; }
     if (cloudUsersUnsub) { try { cloudUsersUnsub(); } catch (_) {} cloudUsersUnsub = null; }
+    if (cloudRolesUnsub) { try { cloudRolesUnsub(); } catch (_) {} cloudRolesUnsub = null; }
+    customRoles = []; _rolesLoaded = false;
     if (cloudHistoryUnsub) { try { cloudHistoryUnsub(); } catch (_) {} cloudHistoryUnsub = null; }
     // Claims belong to the session that made them; a new sign-in must not
     // inherit them and warn about its own writes.
@@ -13311,7 +13324,7 @@ function renderUserPill() {
     document.getElementById('userPillName').textContent = name;
     const avatar = document.getElementById('userPillAvatar');
     if (avatar) avatar.textContent = (Array.from(name.trim())[0] || '?').toUpperCase();
-    const label = roleLabel(currentUserDoc.role);
+    const label = currentUserDoc.role !== 'owner' && currentUserDoc.roleName ? currentUserDoc.roleName : roleLabel(currentUserDoc.role);
     document.getElementById('userPillRole').textContent = label;
     pill.dataset.role = currentUserDoc.role;
     document.getElementById('userMenuEmail').textContent = currentUserDoc.email || '';
@@ -13368,7 +13381,9 @@ const ACCESS_AREAS = [
     // read the roster and file their own daily report while having no say over
     // the shift schedule, which a single team-wide level cannot express.
     { key: 'teamShift',    label: 'Shift Schedule',   levels: ['none', 'view', 'edit'] },
-    { key: 'teamLog',      label: 'Daily Report', levels: ['none', 'view', 'edit'] },
+    // 'own' (v175): files their own reports, sees and changes only those —
+    // and only while open; once approved they can only read them.
+    { key: 'teamLog',      label: 'Daily Report', levels: ['none', 'own', 'view', 'edit'] },
     { key: 'teamMembers',  label: 'Member List', levels: ['none', 'view', 'edit'] },
     // Separate from teamLog on purpose: a checker should be able to approve a
     // report without being able to rewrite the thing they are checking.
@@ -13412,7 +13427,9 @@ const RO_FLAGS = {
     teamMembers: 'roTeammembers', teamLogApprove: 'roTeamapprove',
     warehouse: 'roWarehouse', inspection: 'roInspection'
 };
-const _LVL_RANK = { none: 0, view: 1, edit: 2 };
+// 'own' acts as edit for the area's buttons; which records it may touch is
+// decided per record (ownTeamOnly / canEditTeamRecord).
+const _LVL_RANK = { none: 0, view: 1, own: 2, edit: 2 };
 
 // ---- Roles ----
 // 'owner' keeps its internal key: the owner e-mail allowlist and the Firestore
@@ -13654,6 +13671,16 @@ function ensureUsersSubscription() {
     }, err => {
         console.warn('[cloud] users subscription error:', err);
     });
+    if (window.cloud.subscribeRoles && !cloudRolesUnsub) {
+        cloudRolesUnsub = window.cloud.subscribeRoles(list => {
+            customRoles = (list || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+            _rolesLoaded = true;
+            if (currentView === 'users') renderUsersView();
+        }, err => {
+            console.warn('[cloud] roles subscription error:', err && err.code);
+            if (err && err.code === 'permission-denied') showToast('Roles need the new firestore.rules — publish them first', 'warning');
+        });
+    }
 }
 
 // Compact, Indonesian, no seconds — the default toLocaleString() renders
@@ -13700,7 +13727,8 @@ function userRoleTone(key) {
 // (unit-group limit included): the pages they may edit, or "view only".
 function userCanChangeText(u) {
     if (u.role === 'owner') return { text: 'Everything', tone: '' };
-    const edit = ACCESS_AREAS.filter(a => effectiveAccess(a.key, u) === 'edit').map(a => a.label);
+    const edit = ACCESS_AREAS.filter(a => ['edit', 'own'].includes(effectiveAccess(a.key, u)))
+        .map(a => effectiveAccess(a.key, u) === 'own' ? `${a.label} (own)` : a.label);
     if (edit.length > 4) return { text: `${edit.slice(0, 3).join(', ')} + ${edit.length - 3} more`, full: edit.join(', '), tone: '' };
     if (edit.length) return { text: edit.join(', '), tone: '' };
     const sees = ACCESS_AREAS.some(a => effectiveAccess(a.key, u) !== 'none');
@@ -13717,31 +13745,7 @@ function renderUsersView() {
     const pendCount = document.getElementById('usrPendingCount');
     if (pendCount) { pendCount.textContent = String(pending.length); pendCount.hidden = !pending.length; }
 
-    // "What the roles mean": every current role with how many hold it, plus
-    // the older roles and the one-group limit only while anyone has them.
-    const countOf = key => active.filter(u => u.role === key).length;
-    const people = n => `${n} ${n === 1 ? 'person' : 'people'}`;
-    const chip = (key, label) => `<span class="usr-role usr-role--${userRoleTone(key)}">${escapeHtml(label)}</span>`;
-    const labelRoles = ROLES.filter(r => r.key !== 'owner');
-    const legacyTotal = LEGACY_ROLES.reduce((n, r) => n + countOf(r.key), 0);
-    const scopedTotal = active.filter(u => u.role !== 'owner' && isUnitScoped(u)).length;
-    let roles = `<div class="usr-roles__item">
-            <div class="usr-roles__chips">${chip('owner', roleLabel('owner'))}<span class="usr-roles__n">${people(countOf('owner'))}</span></div>
-            <p>Sees and changes everything, approves sign-ups and sets everyone's access.</p>
-        </div>
-        <div class="usr-roles__item">
-            <div class="usr-roles__chips">${labelRoles.map(r => `${chip(r.key, r.label)}<span class="usr-roles__n">${countOf(r.key)}</span>`).join('')}</div>
-            <p>Job names only. They open nothing by themselves: each page is set to None, View or Edit per person.</p>
-        </div>`;
-    if (scopedTotal) roles += `<div class="usr-roles__item">
-            <div class="usr-roles__chips"><span class="usr-role usr-role--scope">One group only</span><span class="usr-roles__n">${people(scopedTotal)}</span></div>
-            <p>Limited to one equipment group: they see only its units and damage, view only.</p>
-        </div>`;
-    if (legacyTotal) roles += `<div class="usr-roles__item">
-            <div class="usr-roles__chips">${LEGACY_ROLES.map(r => chip(r.key, r.label)).join('')}<span class="usr-roles__n">${people(legacyTotal)}</span></div>
-            <p>Older roles. They keep the access they had; give each person one of the roles above.</p>
-        </div>`;
-    document.getElementById('usersSummary').innerHTML = roles;
+    renderRolesPanel(active);
 
     // Waiting for approval
     const pendingBody = document.getElementById('pendingUsersBody');
@@ -13769,8 +13773,9 @@ function renderUsersView() {
                     <label class="adm-select usr-pend__role"><span class="adm-select__label">As</span>
                         <select class="user-role-select" id="approveRole_${escapeHtml(u.uid)}"
                                 aria-label="Role for ${escapeHtml(u.email || '')}">
-                            ${ROLES.filter(r => r.key !== 'owner').map(r =>
-                                `<option value="${r.key}"${r.key === (pickedRole[u.uid] || 'khl') ? ' selected' : ''}>${escapeHtml(r.label)}</option>`).join('')}
+                            <option value="">Role later</option>
+                            ${customRoles.map(r =>
+                                `<option value="${escapeHtml(r.id)}"${r.id === pickedRole[u.uid] ? ' selected' : ''}>${escapeHtml(r.name)}</option>`).join('')}
                         </select>
                     </label>
                     <button type="button" class="btn btn-secondary" title="Reject and delete registration" onclick="rejectUser(${jsArg(u.uid)})">Reject</button>
@@ -13790,29 +13795,20 @@ function renderUsersView() {
             const isOwnerRow = u.role === 'owner';
             const legacy = isLegacyRole(u.role);
 
-            // Your own Super Admin row stays locked so you cannot lock yourself
-            // out; every other row is changeable, including demoting another
-            // Super Admin — a promotion by mistake has to be undoable.
-            let roleSelect;
-            if (isOwnerRow && isMe) {
+            // v175: what a person may do comes from the role they hold. The
+            // Super Admin is the only built-in one.
+            let roleSelect, roleNote = '';
+            if (isOwnerRow) {
                 roleSelect = `<span class="usr-role usr-role--owner">${escapeHtml(roleLabel('owner'))}</span>`;
             } else {
-                // A legacy role is offered only to the account that still holds
-                // it, so it is never handed out again but also never silently
-                // swapped underneath someone.
-                const opts = ROLES.map(r =>
-                    `<option value="${r.key}" ${u.role === r.key ? 'selected' : ''}>${escapeHtml(r.label)}</option>`)
-                    .concat(legacy ? [`<option value="${u.role}" selected>${escapeHtml(roleLabel(u.role))} (legacy role)</option>`] : [])
-                    .join('');
-                roleSelect = `<select class="user-role-select usr-role usr-role--${userRoleTone(u.role)}" title="Role is only a name — set what they can open with Edit access"
-                           aria-label="Role of ${escapeHtml(u.displayName || u.email || '')}"
-                           onchange="changeUserRole(${jsArg(u.uid)}, this.value)">${opts}</select>`;
+                const r = userCustomRole(u);
+                roleSelect = r ? `<span class="usr-role usr-role--custom">${escapeHtml(r.name)}</span>`
+                    : `<span class="usr-role usr-role--none">No role yet</span>`;
+                if (r && !userRoleInSync(u, r)) roleNote = `<div class="user-role-note user-role-note--legacy">Not in sync with the role
+                    <button type="button" class="adm-link" onclick="syncRoleHolders(${jsArg(r.id)})">Sync</button></div>`;
+                else if (!r && u.roleId) roleNote = '<div class="user-role-note user-role-note--legacy">Their role was deleted — pick another</div>';
+                else if (!r && legacy) roleNote = '<div class="user-role-note user-role-note--legacy">Legacy role — give them a role</div>';
             }
-
-            // A legacy role is flagged under the picker; "Can change" says when
-            // an account can open nothing at all (a new role grants nothing).
-            const roleNote = legacy
-                ? '<div class="user-role-note user-role-note--legacy">Legacy role — assign a new role</div>' : '';
             const can = userCanChangeText(u);
             const scope = !isOwnerRow && isUnitScoped(u)
                 ? `<span class="user-role-note usr-scope">${escapeHtml(unitScopeLabel(effectiveUnitScope(u)))}</span>` : '';
@@ -13833,7 +13829,7 @@ function renderUsersView() {
                     ? `<span class="usr-last"><span class="user-cell-time" title="${escapeHtml(formatUserTime(u.updatedAt))}">${escapeHtml(day)}</span>${u.updatedBy ? ` · <span class="user-cell-actor" title="${escapeHtml(u.updatedBy)}">${escapeHtml(shortActor(u.updatedBy))}</span>` : ''}</span>`
                     : '<span class="adm-muted">—</span>'}</td>
                 <td class="col-actions">
-                    ${isOwnerRow
+                    ${isOwnerRow && isMe
                         ? '<span class="user-cell-protected">Protected</span>'
                         // Signing out and removing sit in the same dialog, under Account.
                         : `<div class="row-actions row-actions--labeled">
@@ -13937,17 +13933,245 @@ async function storeUnitGroups() {
 }
 
 // ---- Per-user access editor (owner) ----
+// ---- Roles (v175) ----
+// The owner defines roles once (a name and a level per page) and gives each
+// person one. Saving a role writes its levels into every holder's access map,
+// so firestore.rules keeps reading only the user document. Murni lewat peran:
+// there are no per-person exceptions.
+const ROLE_LEVEL_LABELS = { none: 'None', own: 'Own only', view: 'View', edit: 'Edit' };
+const ROLE_CSV_LABELS = { none: 'None', export: 'Export only', full: 'Export + Import' };
+// Examples the owner can add with one click, then change or delete.
+const STARTER_ROLES = [
+    { name: 'Field Team', csv: 'none', access: { teamShift: 'view', teamLog: 'own' } },
+    { name: 'Technician', csv: 'none', access: { teamShift: 'view', teamLog: 'own', editUnits: 'view', damage: 'edit',
+        warehouse: 'view', inspection: 'edit' } },
+    { name: 'Supervisor', csv: 'export', access: { teamShift: 'edit', teamLog: 'view', teamMembers: 'view', teamLogApprove: 'edit',
+        editUnits: 'view', implements: 'view', damage: 'view', licenseStock: 'view', warehouse: 'view',
+        inspection: 'view', inspectionApprove: 'edit', leader: 'view' } },
+    { name: 'Viewer', csv: 'none', access: { editUnits: 'view', implements: 'view', damage: 'view', licenseStock: 'view',
+        warehouse: 'view', inspection: 'view', leader: 'view' } }
+];
+
+// Every area with a level, missing ones as none, unknown levels refused.
+function normalizeRoleAccess(raw) {
+    const out = {};
+    ACCESS_AREAS.forEach(a => {
+        const v = raw && raw[a.key];
+        out[a.key] = a.levels.includes(v) ? v : 'none';
+    });
+    return out;
+}
+// The access map a holder of `role` gets: the role's levels, its CSV right,
+// and the person's own unit group.
+function roleAccessFor(role, unitScope) {
+    return { ...normalizeRoleAccess(role.access), csv: CSV_LEVELS.includes(role.csv) ? role.csv : 'none',
+             unitScope: UNIT_SCOPES.includes(unitScope) ? unitScope : 'all' };
+}
+function userCustomRole(u) {
+    return u && u.roleId ? customRoles.find(r => r.id === u.roleId) || null : null;
+}
+function roleHolders(roleId) {
+    return allUsers.filter(u => u.role !== 'owner' && u.roleId === roleId);
+}
+function userRoleInSync(u, role) {
+    const want = roleAccessFor(role, 'all');
+    const have = u.access || {};
+    return ACCESS_AREAS.every(a => (have[a.key] || 'none') === want[a.key]) && (have.csv || 'none') === want.csv;
+}
+// "Edit: Damage, Inspection · Own: Daily Report · View: 3 pages"
+function roleSummary(role) {
+    const acc = normalizeRoleAccess(role.access);
+    const by = lvl => ACCESS_AREAS.filter(a => acc[a.key] === lvl).map(a => a.label);
+    const part = (label, list) => !list.length ? '' : `${label}: ${list.length > 3 ? `${list.slice(0, 2).join(', ')} + ${list.length - 2} more` : list.join(', ')}`;
+    const parts = [part('Edit', by('edit')), part('Own', by('own')), part('View', by('view'))].filter(Boolean);
+    return parts.length ? parts.join(' · ') : 'Opens nothing yet';
+}
+
+function renderRolesPanel(active) {
+    const box = document.getElementById('usersSummary');
+    if (!box) return;
+    const people = n => `${n} ${n === 1 ? 'person' : 'people'}`;
+    const owners = active.filter(u => u.role === 'owner').length;
+    const noRole = active.filter(u => u.role !== 'owner' && !userCustomRole(u)).length;
+    let html = `<div class="usr-roles__item">
+            <div class="usr-roles__chips"><span class="usr-role usr-role--owner">${escapeHtml(roleLabel('owner'))}</span><span class="usr-roles__n">${people(owners)}</span></div>
+            <p>Sees and changes everything, approves sign-ups, and manages roles.</p>
+        </div>`;
+    html += customRoles.map(r => {
+        const n = roleHolders(r.id).length;
+        return `<div class="usr-roles__item role-card">
+            <div class="usr-roles__chips"><span class="usr-role usr-role--custom">${escapeHtml(r.name)}</span><span class="usr-roles__n">${people(n)}</span>
+                <button type="button" class="btn btn-secondary btn-sm role-card__edit" aria-label="Edit role ${escapeHtml(r.name)}" onclick="openRoleModal(${jsArg(r.id)})">Edit</button></div>
+            <p>${escapeHtml(roleSummary(r))}</p>
+        </div>`;
+    }).join('');
+    if (!customRoles.length) {
+        html += `<div class="usr-roles__item role-empty">
+            <p>No roles yet. Make your own, or start from four examples (Field Team, Technician, Supervisor, Viewer) and change them.</p>
+            ${_rolesLoaded ? '<button type="button" class="btn btn-secondary btn-sm" onclick="addStarterRoles()">Add the example roles</button>' : ''}
+        </div>`;
+    }
+    if (noRole) html += `<div class="usr-roles__item"><div class="usr-roles__chips"><span class="usr-role usr-role--none">No role yet</span><span class="usr-roles__n">${people(noRole)}</span></div>
+        <p>They keep the access they had until you give them a role with <strong>Edit access</strong>.</p></div>`;
+    html += `<button type="button" class="btn btn-primary btn-sm role-new" onclick="openRoleModal()"><i class="fas fa-plus" aria-hidden="true"></i> New role</button>`;
+    box.innerHTML = html;
+}
+
+async function addStarterRoles() {
+    if (!isOwner() || !window.cloud?.saveRole) return;
+    const now = Date.now();
+    try {
+        for (const r of STARTER_ROLES) {
+            if (customRoles.some(x => x.name.toLowerCase() === r.name.toLowerCase())) continue;
+            const rec = { id: 'role_' + generateId(), name: r.name, access: normalizeRoleAccess(r.access), csv: r.csv,
+                          createdAt: now, updatedAt: now, updatedBy: currentUserDoc.email || '' };
+            await window.cloud.saveRole(rec);
+        }
+        logEvent({ action: 'create', unitName: '[Roles] Example roles', field: 'role', after: STARTER_ROLES.map(r => r.name).join(', ') });
+        showToast('Example roles added — change them to fit your team', 'success');
+    } catch (e) {
+        showToast(e && e.code === 'permission-denied' ? 'Publish the new firestore.rules first, then try again' : 'Roles not saved — ' + (e && e.message), 'error');
+    }
+}
+
+// ---- Role editor ----
+function openRoleModal(id) {
+    if (!isOwner()) return;
+    const role = id ? customRoles.find(r => r.id === id) : null;
+    if (id && !role) return;
+    document.getElementById('roleId').value = role ? role.id : '';
+    document.getElementById('roleModalTitle').textContent = role ? `Edit role — ${role.name}` : 'New role';
+    document.getElementById('roleName').value = role ? role.name : '';
+    const acc = normalizeRoleAccess(role ? role.access : {});
+    document.getElementById('roleGrid').innerHTML = ACCESS_AREAS.map(a => `
+        <div class="access-row">
+            <label class="access-row__label" for="roleLvl_${a.key}">${escapeHtml(a.label)}${a.key === 'teamLog' ? '<small>Own only = files their own reports, sees only those, and cannot change them once approved</small>' : ''}</label>
+            <select class="form-select role-select" id="roleLvl_${a.key}" data-area="${a.key}">${a.levels.map(l =>
+                `<option value="${l}"${l === acc[a.key] ? ' selected' : ''}>${ROLE_LEVEL_LABELS[l]}</option>`).join('')}</select>
+        </div>`).join('') + `
+        <div class="access-row">
+            <label class="access-row__label" for="roleCsv">CSV export / import</label>
+            <select class="form-select role-select" id="roleCsv" data-area="csv">${CSV_LEVELS.map(l =>
+                `<option value="${l}"${l === (role ? role.csv || 'none' : 'none') ? ' selected' : ''}>${ROLE_CSV_LABELS[l]}</option>`).join('')}</select>
+        </div>`;
+    const holders = role ? roleHolders(role.id) : [];
+    document.getElementById('roleHolders').textContent = role
+        ? (holders.length ? `Held by ${holders.length} ${holders.length === 1 ? 'person' : 'people'}: ${holders.map(u => u.displayName || u.email).join(', ')}` : 'Nobody holds this role yet')
+        : '';
+    const del = document.getElementById('roleDeleteBtn');
+    if (del) del.hidden = !role;
+    document.getElementById('roleModal').classList.add('open');
+    setTimeout(() => document.getElementById('roleName').focus(), 0);
+}
+function closeRoleModal() {
+    document.getElementById('roleModal').classList.remove('open');
+}
+
+async function saveRole() {
+    if (!isOwner() || !window.cloud?.saveRole) return;
+    const id = document.getElementById('roleId').value;
+    const old = id ? customRoles.find(r => r.id === id) : null;
+    const name = (document.getElementById('roleName').value || '').trim().replace(/\s+/g, ' ');
+    if (!name) { showToast('Give the role a name', 'warning'); return; }
+    if (name.length > 60) { showToast('Keep the role name under 60 characters', 'warning'); return; }
+    if (customRoles.some(r => r.id !== id && r.name.toLowerCase() === name.toLowerCase())) { showToast(`A role named "${name}" already exists`, 'warning'); return; }
+    if (name.toLowerCase() === roleLabel('owner').toLowerCase()) { showToast('That name belongs to the built-in Super Admin', 'warning'); return; }
+    const access = {};
+    document.querySelectorAll('#roleGrid .role-select').forEach(sel => { if (sel.dataset.area !== 'csv') access[sel.dataset.area] = sel.value; });
+    const rec = { id: id || 'role_' + generateId(), name, access: normalizeRoleAccess(access),
+                  csv: document.getElementById('roleCsv').value || 'none',
+                  createdAt: old ? (old.createdAt || Date.now()) : Date.now(), updatedAt: Date.now(), updatedBy: currentUserDoc.email || '' };
+    // Say what changes, and for how many people, before it happens.
+    const holders = old ? roleHolders(old.id) : [];
+    if (old && holders.length) {
+        const was = { ...normalizeRoleAccess(old.access), csv: old.csv || 'none' };
+        const now = { ...rec.access, csv: rec.csv };
+        const lab = k => k === 'csv' ? 'CSV' : (ACCESS_AREAS.find(a => a.key === k) || {}).label || k;
+        const name2 = (k, v) => k === 'csv' ? ROLE_CSV_LABELS[v] : ROLE_LEVEL_LABELS[v];
+        const diff = Object.keys(now).filter(k => was[k] !== now[k]).map(k => `• ${lab(k)}: ${name2(k, was[k])} → ${name2(k, now[k])}`);
+        if (diff.length && !confirm(`${rec.name}: ${diff.length} change(s)\n\n${diff.join('\n')}\n\nThis applies to ${holders.length} ${holders.length === 1 ? 'person' : 'people'} right away. Continue?`)) return;
+    }
+    try {
+        await window.cloud.saveRole(rec);
+    } catch (e) {
+        showToast(e && e.code === 'permission-denied' ? 'Publish the new firestore.rules first, then save again' : 'Role not saved — ' + (e && e.message), 'error');
+        return;
+    }
+    const idx = customRoles.findIndex(r => r.id === rec.id);
+    if (idx >= 0) customRoles[idx] = rec; else customRoles.push(rec);
+    logEvent({ action: old ? 'update' : 'create', unitName: `[Role] ${rec.name}`, field: 'role',
+               before: old ? roleSummary(old) : '', after: `${roleSummary(rec)} · CSV ${ROLE_CSV_LABELS[rec.csv]}` });
+    closeRoleModal();
+    const r = await syncRoleHolders(rec.id, { quiet: true });
+    showToast(old ? `Role "${rec.name}" saved${r.total ? ` — applied to ${r.done} of ${r.total} ${r.total === 1 ? 'person' : 'people'}` : ''}` : `Role "${rec.name}" created`, r.failed ? 'warning' : 'success');
+    if (currentView === 'users') renderUsersView();
+}
+
+// Writes the role's levels into each holder. A write that fails (offline,
+// rules not published) leaves that person "Not in sync" with a Sync button.
+async function syncRoleHolders(roleId, opts) {
+    const role = customRoles.find(r => r.id === roleId);
+    const out = { total: 0, done: 0, failed: 0 };
+    if (!isOwner() || !role || !window.cloud?.updateUserAccess) return out;
+    const holders = roleHolders(roleId).filter(u => !userRoleInSync(u, role) || u.roleName !== role.name);
+    out.total = holders.length;
+    for (const u of holders) {
+        const access = roleAccessFor(role, (u.access && u.access.unitScope) || 'all');
+        try {
+            await window.cloud.updateUserAccess(u.uid, access, currentUserDoc.email, { roleId: role.id, roleName: role.name });
+            u.access = access; u.roleName = role.name;
+            out.done++;
+        } catch (e) {
+            console.warn('[roles] could not update', u.uid, e && e.code);
+            out.failed++;
+        }
+    }
+    if (!(opts && opts.quiet)) showToast(out.failed ? `${out.failed} of ${out.total} not updated — try Sync again` : `${out.done} ${out.done === 1 ? 'person' : 'people'} updated`, out.failed ? 'warning' : 'success');
+    if (currentView === 'users') renderUsersView();
+    return out;
+}
+
+async function deleteRole() {
+    if (!isOwner()) return;
+    const id = document.getElementById('roleId').value;
+    const role = customRoles.find(r => r.id === id);
+    if (!role) return;
+    const holders = roleHolders(id);
+    if (holders.length) { showToast(`${holders.length} ${holders.length === 1 ? 'person holds' : 'people hold'} this role — give them another role first`, 'warning'); return; }
+    if (!confirm(`Delete the role "${role.name}"?`)) return;
+    try {
+        await window.cloud.deleteRole(id);
+        customRoles = customRoles.filter(r => r.id !== id);
+        logEvent({ action: 'delete', unitName: `[Role] ${role.name}`, field: 'role', before: roleSummary(role), after: '' });
+        showToast(`Role "${role.name}" deleted`, 'success');
+        closeRoleModal();
+        if (currentView === 'users') renderUsersView();
+    } catch (e) {
+        showToast('Role not deleted — ' + (e && e.message), 'error');
+    }
+}
+
+// ---- Per-person: pick one role and the unit group ----
 function openAccessModal(uid) {
     if (!isOwner()) return;
     const user = allUsers.find(u => u.uid === uid);
     if (!user) return;
     document.getElementById('accessUserUid').value = uid;
     document.getElementById('accessUserName').textContent = user.displayName || user.email || uid;
-    const labels = { none: 'None', view: 'View', edit: 'Edit' };
     const rawScope = user.access ? user.access.unitScope : undefined;
     const knownScope = rawScope == null || UNIT_SCOPES.includes(rawScope);
     const sc = rawScope == null ? 'all' : (knownScope ? rawScope : '');
-    let rows = `<div class="ac-scope">
+    const cur = user.role === 'owner' ? '' : (userCustomRole(user) || {}).id || '';
+    let rows = `<h4 class="ac-group-title">Role</h4>`;
+    rows += customRoles.length ? `<div class="role-picks" role="radiogroup" aria-label="Role">${customRoles.map(r => `
+        <label class="role-pick">
+            <input type="radio" name="accessRole" value="${escapeHtml(r.id)}"${r.id === cur ? ' checked' : ''}>
+            <span class="role-pick__body"><strong>${escapeHtml(r.name)}</strong><span>${escapeHtml(roleSummary(r))}</span></span>
+        </label>`).join('')}</div>`
+        : `<p class="adm-muted">No roles yet — create one first under <strong>Roles</strong> on the Users page.</p>`;
+    if (user.role === 'owner') rows += `<p class="access-scope-note">This person is a Super Admin. Picking a role removes Super Admin.</p>`;
+    else if (!cur) rows += `<p class="access-scope-note">No role yet: they keep the access they had until you pick one.</p>`;
+    rows += `<div class="ac-scope">
         <div class="access-row access-row--scope">
             <span class="access-row__label">Unit group <small>What this person can see</small></span>
             <select class="form-select access-select" data-area="unitScope" aria-label="Unit group" onchange="refreshAccessScopeNote()">
@@ -13955,35 +14179,8 @@ function openAccessModal(uid) {
                 ${UNIT_SCOPES.map(k => `<option value="${k}" ${k === sc ? 'selected' : ''}>${escapeHtml(unitScopeLabel(k))}</option>`).join('')}
             </select>
         </div>
-        <div class="access-presets">
-            <span class="access-presets__label">Quick set</span>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="applyAccessPreset('tractor')">View only — ${escapeHtml(UNIT_GROUPS.tractor.shortLabel)}</button>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="applyAccessPreset('heavy')">View only — ${escapeHtml(UNIT_GROUPS.heavy.shortLabel)}</button>
-        </div>
         <p class="access-scope-note" id="accessScopeNote" hidden></p>
-        </div>
-        <h4 class="ac-group-title">Pages</h4>
-        <div class="ac-list">`;
-    rows += ACCESS_AREAS.map(area => {
-        const cur = grantedAccess(area.key, user);
-        const opts = area.levels.map(l => `<option value="${l}" ${l === cur ? 'selected' : ''}>${labels[l]}</option>`).join('');
-        return `<div class="access-row" data-row-area="${area.key}">
-            <span class="access-row__label">${escapeHtml(area.label)}<small class="access-row__applies" hidden></small></span>
-            <select class="form-select access-select" data-area="${area.key}" aria-label="${escapeHtml(area.label)}" onchange="refreshAccessScopeNote()">${opts}</select>
         </div>`;
-    }).join('') + '</div>';
-    // CSV export/import capability (its own level set)
-    const csvLabels = { none: 'None', export: 'Export only', full: 'Export + Import' };
-    const curCsv = effectiveCsv(user);
-    rows += `<h4 class="ac-group-title">Export and import</h4>
-    <div class="ac-list"><div class="access-row">
-        <span class="access-row__label">CSV export / import</span>
-        <select class="form-select access-select" data-area="csv" aria-label="CSV export and import">${CSV_LEVELS.map(l => `<option value="${l}" ${l === curCsv ? 'selected' : ''}>${csvLabels[l]}</option>`).join('')}</select>
-    </div></div>`;
-    // Account: the device holding this person's single session slot, and the
-    // two actions that act on the account itself (they take effect at once,
-    // not on Save). escapeHtml: the device string is written by the signed-in
-    // user themselves — anyone active can put markup there.
     const sess = user.activeSession;
     const live = sess && sess.id && !String(sess.id).startsWith('revoked_');
     const signedIn = live
@@ -13995,6 +14192,10 @@ function openAccessModal(uid) {
             <span class="access-row__label">Sign-in<small>${escapeHtml(signedIn)}</small></span>
             <button type="button" class="btn btn-secondary btn-sm" onclick="forceSignOutUser(${jsArg(uid)})"><i class="fas fa-right-from-bracket" aria-hidden="true"></i> Sign out everywhere</button>
         </div>
+        ${user.role === 'owner' ? '' : `<div class="access-row">
+            <span class="access-row__label">Super Admin<small>Everything, including users and roles</small></span>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="makeSuperAdmin(${jsArg(uid)})"><i class="fas fa-user-shield" aria-hidden="true"></i> Make Super Admin</button>
+        </div>`}
         <div class="access-row">
             <span class="access-row__label">Remove from the dashboard<small>Their sign-in account stays; they lose all access</small></span>
             <button type="button" class="btn btn-secondary btn-sm usr-remove" onclick="removeUserFromAccess(${jsArg(uid)})"><i class="fas fa-user-minus" aria-hidden="true"></i> Remove user</button>
@@ -14005,9 +14206,6 @@ function openAccessModal(uid) {
     document.getElementById('accessModal').classList.add('open');
 }
 
-// What the chosen unit group does to the rows below, shown next to them. The
-// stored levels stay as they are, so setting "All groups" again gives back
-// exactly what was granted.
 function refreshAccessScopeNote() {
     const grid = document.getElementById('accessGrid');
     if (!grid) return;
@@ -14021,32 +14219,51 @@ function refreshAccessScopeNote() {
             : `Sees only ${groupDef(sc).label} units and their damage records. `
               + 'Unit Database and Damage are view only; the other group\'s menus close.';
     }
-    const probe = { role: 'staff', access: { unitScope: sc } };
-    grid.querySelectorAll('[data-row-area]').forEach(row => {
-        const area = row.dataset.rowArea;
-        const granted = row.querySelector('.access-select').value;
-        probe.access[area] = granted;
-        const applies = effectiveAccess(area, probe);
-        const tag = row.querySelector('.access-row__applies');
-        if (tag) {
-            tag.hidden = applies === granted;
-            tag.textContent = applies === granted ? '' : ` → ${applies === 'none' ? 'None' : applies === 'view' ? 'View' : 'Edit'} with this group`;
-        }
-    });
 }
 
-// A ready-made view-only account for one group: the unit group, View on the
-// fleet menus that group uses. Team, warehouse and CSV rows are left alone.
-function applyAccessPreset(g) {
-    const grid = document.getElementById('accessGrid');
-    if (!grid) return;
-    const set = (area, v) => { const el = grid.querySelector(`[data-area="${area}"]`); if (el) el.value = v; };
-    set('unitScope', g);
-    set('editUnits', 'view');
-    set('damage', 'view');
-    if (g === 'tractor') { set('implements', 'view'); set('licenseStock', 'view'); }
-    else { set('inspection', 'view'); }
-    refreshAccessScopeNote();
+async function makeSuperAdmin(uid) {
+    const user = allUsers.find(u => u.uid === uid);
+    if (!user) return;
+    await changeUserRole(uid, 'owner');   // asks for a deliberate yes itself
+    closeAccessModal();
+}
+
+async function saveAccess() {
+    if (!isOwner()) return;
+    const uid = document.getElementById('accessUserUid').value;
+    const user = allUsers.find(u => u.uid === uid);
+    if (!user) return;
+    const picked = document.querySelector('#accessGrid input[name="accessRole"]:checked');
+    const role = picked ? customRoles.find(r => r.id === picked.value) : null;
+    if (!role) { showToast('Pick a role', 'warning'); return; }
+    const scSel = document.querySelector('#accessGrid [data-area="unitScope"]');
+    const unitScope = scSel ? scSel.value : 'all';
+    if (!UNIT_SCOPES.includes(unitScope)) { showToast('Pick a unit group first', 'warning'); return; }
+    if (user.role === 'owner') {
+        if (currentUser && uid === currentUser.uid) { showToast('You cannot remove your own Super Admin', 'warning'); return; }
+        if (!confirm(`Remove Super Admin from ${user.displayName || user.email} and give them the role "${role.name}"?`)) return;
+    }
+    const access = roleAccessFor(role, unitScope);
+    try {
+        const fn = cloudFn('updateUserAccess');
+        if (!fn) return;
+        // The job title no longer grants anything; legacy titles (and a
+        // demoted Super Admin) become a plain account first.
+        if (user.role !== 'staff') await window.cloud.updateUserRole(uid, 'staff', 'active', currentUserDoc.email);
+        await fn(uid, access, currentUserDoc.email, { roleId: role.id, roleName: role.name });
+        logEvent({
+            action: 'update',
+            unitId: uid,
+            unitName: `[User] ${user.displayName || user.email}`,
+            field: 'role',
+            before: user.role === 'owner' ? roleLabel('owner') : ((userCustomRole(user) || {}).name || ''),
+            after: `${role.name} · Unit group: ${unitScopeLabel(unitScope)}`
+        });
+        showToast(`${user.displayName || user.email} is now "${role.name}"`, 'success');
+        closeAccessModal();
+    } catch (e) {
+        showToast('Failed to save access: ' + e.message, 'error');
+    }
 }
 
 function closeAccessModal() {
@@ -14059,62 +14276,31 @@ async function removeUserFromAccess(uid) {
     if (await removeUser(uid)) closeAccessModal();
 }
 
-async function saveAccess() {
-    if (!isOwner()) return;
-    const uid = document.getElementById('accessUserUid').value;
-    const user = allUsers.find(u => u.uid === uid);
-    if (!user) return;
-    const access = {};
-    document.querySelectorAll('#accessGrid .access-select').forEach(sel => {
-        access[sel.dataset.area] = sel.value;
-    });
-    if (!UNIT_SCOPES.includes(access.unitScope)) { showToast('Pick a unit group first', 'warning'); return; }
-    try {
-        const fn = cloudFn('updateUserAccess');
-        if (!fn) return;
-        await fn(uid, access, currentUserDoc.email);
-        logEvent({
-            action: 'update',
-            unitId: uid,
-            unitName: `[User] ${user.displayName || user.email}`,
-            field: 'access',
-            after: [`Unit group:${unitScopeLabel(access.unitScope || 'all')}`,
-                    ...ACCESS_AREAS.map(a => `${a.label}:${access[a.key]}`), `CSV:${access.csv}`].join(', ')
-        });
-        showToast(`Access for "${user.displayName || user.email}" updated`, 'success');
-        closeAccessModal();
-    } catch (e) {
-        showToast('Failed to save access: ' + e.message, 'error');
-    }
-}
-
-async function approveUser(uid, role) {
+async function approveUser(uid, roleId) {
     if (!isOwner()) return;
     const user = allUsers.find(u => u.uid === uid);
     if (!user) return;
-    // Role comes from the picker in that user's own pending row.
-    if (!role) {
+    // The role comes from the picker in that user's own pending row; "choose
+    // later" approves them with nothing open.
+    if (roleId === undefined) {
         const sel = document.getElementById('approveRole_' + uid);
-        role = sel ? sel.value : 'khl';
+        roleId = sel ? sel.value : '';
     }
-    if (!ROLES.some(r => r.key === role) || role === 'owner') {
-        showToast('Unknown role', 'warning');
-        return;
-    }
-    const label = roleLabel(role);
+    const role = roleId ? customRoles.find(r => r.id === roleId) : null;
+    if (roleId && !role) { showToast('Unknown role', 'warning'); return; }
     try {
-        await window.cloud.updateUserRole(uid, role, 'active', currentUserDoc.email);
+        await window.cloud.updateUserRole(uid, 'staff', 'active', currentUserDoc.email);
+        if (role) await window.cloud.updateUserAccess(uid, roleAccessFor(role, 'all'), currentUserDoc.email, { roleId: role.id, roleName: role.name });
         logEvent({
             action: 'approve',
             unitId: uid,
             unitName: `[User] ${user.displayName || user.email}`,
             field: 'role',
             before: 'pending',
-            after: label
+            after: role ? role.name : 'no role yet'
         });
-        // The new roles carry no access, so approving alone leaves them with an
-        // empty app — point the owner straight at the next step.
-        showToast(`${user.email} approved as ${label} — set their access rights with the Access button`, 'success');
+        showToast(role ? `${user.email} approved as "${role.name}"`
+            : `${user.email} approved — give them a role with Edit access`, 'success');
     } catch (e) {
         console.error('[users] approve failed:', e);
         showToast('Failed to approve user — ' + e.message, 'error');
@@ -14440,8 +14626,14 @@ function visibleToMe(rec) {
 // inspectionApprove. Same flow, same rules, different people.
 const TEAM_AREAS = { edit: 'teamLog', approve: 'teamLogApprove' };
 
+// Daily Report at 'own': only this account's own reports and leave.
+function ownTeamOnly(areas = TEAM_AREAS) {
+    return !isOwner() && effectiveAccess(areas.edit) === 'own';
+}
+
 function canEditTeamRecord(rec, areas = TEAM_AREAS) {
     if (!hasAccess(areas.edit, 'edit')) return false;
+    if (ownTeamOnly(areas) && !isMyRecord(rec)) return false;
     return isOwner() || approvalOpen(rec);
 }
 
@@ -14449,11 +14641,13 @@ function canEditTeamRecord(rec, areas = TEAM_AREAS) {
 // recorded have no sender to match, so any editor may pull those back.
 function canWithdrawTeamRecord(rec, areas = TEAM_AREAS) {
     if (!hasAccess(areas.edit, 'edit') || workLogApproval(rec) !== 'pending') return false;
+    if (ownTeamOnly(areas)) return isMyRecord(rec);
     return isOwner() || !rec.createdByUid || isMyRecord(rec);
 }
 
 // Why the edit button is shut, in the words the person needs.
 function lockedReason(rec, noun, areas = TEAM_AREAS) {
+    if (ownTeamOnly(areas) && rec && !isMyRecord(rec)) return `This ${noun.toLowerCase()} belongs to someone else`;
     const st = workLogApproval(rec);
     if (st === 'pending') {
         return canWithdrawTeamRecord(rec, areas)

@@ -400,6 +400,55 @@ async function check(name, p, expectOk) {
     await check('riwayat lama: bukan owner TIDAK boleh menambahkan kelompok', updateDoc(doc(W, 'history', 'h1'), { unitGroup: 'shared' }), false);
     await check('riwayat lama: owner TIDAK boleh mengubah kolom lain', updateDoc(doc(O, 'history', 'h1'), { unitGroup: 'shared', after: 'diubah' }), false);
 
+    // ---- v175: Daily Report "own" dan peran kustom ----
+    await env.withSecurityRulesDisabled(async ctx => {
+        const db = ctx.firestore();
+        await setDoc(doc(db, 'users', 'mine'), { uid: 'mine', email: 'mine@x.id', role: 'staff', status: 'active', access: { teamLog: 'own', teamShift: 'view' } });
+        await setDoc(doc(db, 'users', 'mine2'), { uid: 'mine2', email: 'mine2@x.id', role: 'staff', status: 'active', access: { teamLog: 'own' } });
+        await setDoc(doc(db, 'workLogs', 'own_open'), { id: 'own_open', task: 'x', approval: 'draft', createdByUid: 'mine' });
+        await setDoc(doc(db, 'workLogs', 'own_ok'), { id: 'own_ok', task: 'x', approval: 'approved', approvedByEmail: 'boss@x.id', createdByUid: 'mine' });
+        await setDoc(doc(db, 'workLogs', 'other_open'), { id: 'other_open', task: 'x', approval: 'draft', createdByUid: 'mine2' });
+        await setDoc(doc(db, 'leaveRequests', 'own_lv'), { id: 'own_lv', reason: 'x', approval: 'draft', createdByUid: 'mine' });
+        await setDoc(doc(db, 'leaveRequests', 'other_lv'), { id: 'other_lv', reason: 'x', approval: 'draft', createdByUid: 'mine2' });
+        await setDoc(doc(db, 'workLogPhotos', 'own_open'), { id: 'own_open', photos: [] });
+        await setDoc(doc(db, 'workLogPhotos', 'other_open'), { id: 'other_open', photos: [] });
+        await setDoc(doc(db, 'roles', 'role_x'), { id: 'role_x', name: 'Field', access: { teamLog: 'own' }, csv: 'none' });
+    });
+    const MY = as('mine'), MY2 = as('mine2');
+    await check('own: membaca laporannya sendiri', getDoc(doc(MY, 'workLogs', 'own_open')), true);
+    await check('own: membaca laporan orang lain DITOLAK', getDoc(doc(MY, 'workLogs', 'other_open')), false);
+    await check('own: query laporannya sendiri (where createdByUid)', getDocs(query(collection(MY, 'workLogs'), where('createdByUid', '==', 'mine'))), true);
+    await check('own: query semua laporan DITOLAK', getDocs(collection(MY, 'workLogs')), false);
+    await check('own: membuat laporan atas namanya sendiri', setDoc(doc(MY, 'workLogs', 'own_new'), { id: 'own_new', task: 'y', approval: 'pending', createdByUid: 'mine', submittedByUid: 'mine' }), true);
+    await check('own: membuat laporan atas nama orang lain DITOLAK', setDoc(doc(MY, 'workLogs', 'own_bad'), { id: 'own_bad', task: 'y', approval: 'draft', createdByUid: 'mine2' }), false);
+    await check('own: mengubah draf sendiri', setDoc(doc(MY, 'workLogs', 'own_open'), { task: 'lebih lengkap', approval: 'draft' }, { merge: true }), true);
+    await check('own: mengubah draf orang lain DITOLAK', setDoc(doc(MY, 'workLogs', 'other_open'), { task: 'diubah', approval: 'draft' }, { merge: true }), false);
+    await check('own: menghapus draf orang lain DITOLAK', deleteDoc(doc(MY, 'workLogs', 'other_open')), false);
+    await check('own: laporan sendiri yang DISETUJUI hanya bisa dibaca', setDoc(doc(MY, 'workLogs', 'own_ok'), { task: 'diubah', approval: 'pending', submittedByUid: 'mine' }, { merge: true }), false);
+    await check('own: laporan sendiri yang DISETUJUI tetap bisa dibaca', getDoc(doc(MY, 'workLogs', 'own_ok')), true);
+    await check('own: menghapus laporan sendiri yang disetujui DITOLAK', deleteDoc(doc(MY, 'workLogs', 'own_ok')), false);
+    await check('own: menyetujui laporan sendiri DITOLAK', setDoc(doc(MY, 'workLogs', 'own_new'), { approval: 'approved', approvedByEmail: 'mine@x.id', approvedAt: 1 }, { merge: true }), false);
+    await check('own: menarik kembali kirimannya sendiri', setDoc(doc(MY, 'workLogs', 'own_new'), { approval: 'draft', updatedAt: 9 }, { merge: true }), true);
+    await check('own: menghapus draf sendiri', deleteDoc(doc(MY, 'workLogs', 'own_new')), true);
+    await check('own: izin sendiri bisa dibuat', setDoc(doc(MY2, 'leaveRequests', 'lv_new2'), { id: 'lv_new2', reason: 'y', approval: 'draft', createdByUid: 'mine2' }), true);
+    await check('own (tanpa jadwal): membaca izin orang lain DITOLAK', getDoc(doc(MY2, 'leaveRequests', 'own_lv')), false);
+    await check('own (dengan jadwal): membaca izin orang lain untuk jadwal', getDoc(doc(MY, 'leaveRequests', 'other_lv')), true);
+    await check('own: mengubah izin orang lain DITOLAK', setDoc(doc(MY, 'leaveRequests', 'other_lv'), { reason: 'ubah', approval: 'draft' }, { merge: true }), false);
+    await check('own: foto laporannya sendiri bisa dibaca', getDoc(doc(MY, 'workLogPhotos', 'own_open')), true);
+    await check('own: foto laporan orang lain DITOLAK', getDoc(doc(MY, 'workLogPhotos', 'other_open')), false);
+    await check('own: menulis foto laporan orang lain DITOLAK', setDoc(doc(MY, 'workLogPhotos', 'other_open'), { id: 'other_open', photos: ['x'] }), false);
+    await check('own: menulis foto laporan baru (belum ada laporan)', setDoc(doc(MY, 'workLogPhotos', 'own_fresh'), { id: 'own_fresh', photos: ['x'] }), true);
+    await check('own: boleh menulis riwayat (laporannya sendiri)', setDoc(doc(MY, 'history', 'h_own'),
+        { id: 'h_own', timestamp: Date.now(), action: 'create', unitId: '', unitName: '[Team] x', field: '', before: '', after: '', actorUid: 'mine', actorEmail: 'mine@x.id', actorName: 'm', actorRole: 'staff', unitGroup: 'shared' }), true);
+    await check('peran: owner membaca dan membuat peran', getDocs(collection(O, 'roles')), true);
+    await check('peran: owner menyimpan peran', setDoc(doc(O, 'roles', 'role_y'), { id: 'role_y', name: 'Tech', access: { damage: 'edit' }, csv: 'none' }), true);
+    await check('peran: nama kosong DITOLAK', setDoc(doc(O, 'roles', 'role_z'), { id: 'role_z', name: '', access: {} }), false);
+    await check('peran: bukan owner TIDAK bisa membaca', getDocs(collection(W, 'roles')), false);
+    await check('peran: bukan owner TIDAK bisa menulis', setDoc(doc(W, 'roles', 'role_w'), { id: 'role_w', name: 'X', access: {} }), false);
+    await check('peran: owner menghapus peran', deleteDoc(doc(O, 'roles', 'role_y')), true);
+    await check('peran: owner memberi peran (roleId + access)', updateDoc(doc(O, 'users', 'mine2'), { roleId: 'role_x', roleName: 'Field', access: { teamLog: 'own', unitScope: 'all' } }), true);
+    await check('peran: orang itu TIDAK bisa memberi dirinya peran', updateDoc(doc(MY2, 'users', 'mine2'), { roleId: 'role_y', access: { teamLog: 'edit' } }), false);
+
     await env.cleanup();
     let pass = 0;
     T.forEach(x => { if (x.pass) pass++; else console.log('FAIL', x.name, '\n   ', x.err || ''); });

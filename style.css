@@ -10204,3 +10204,20 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
     #deviceTable td.adm-note { max-width: none; min-width: 0; }
     #deviceTable td.adm-note .adm-clamp { -webkit-line-clamp: 3; text-align: right; }
 }
+
+/* Roles (v175) */
+.usr-role--custom { background: var(--primary-lighter); color: var(--accent-text); }
+.usr-role--none { background: var(--warning-bg); color: var(--warning-strong); }
+.role-card .usr-roles__chips { align-items: center; }
+.role-card__edit { margin-left: auto; }
+.role-new { margin-top: 10px; }
+.role-empty p { margin-bottom: 8px; }
+.role-picks { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.role-pick { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: 12px; cursor: pointer; background: var(--card); }
+.role-pick:hover { border-color: var(--accent); }
+.role-pick:has(input:checked) { border-color: var(--accent); background: var(--primary-lighter); box-shadow: var(--focus-ring); }
+.role-pick input { margin-top: 3px; accent-color: var(--accent); flex-shrink: 0; }
+.role-pick__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.role-pick__body span { font-size: 13px; color: var(--text-secondary); }
+#roleGrid .access-row small { display: block; font-weight: 400; color: var(--text-secondary); font-size: 12px; }
+

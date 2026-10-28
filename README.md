@@ -111,7 +111,7 @@ npm install            # sekali saja
 npm test               # menyalakan server sendiri, lalu menjalankan semua suite
 ```
 
-2.111 pemeriksaan di lima puluh suite, menggerakkan Chromium sungguhan terhadap
+2.140 pemeriksaan di lima puluh satu suite, menggerakkan Chromium sungguhan terhadap
 aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
 Playwright mengunduh miliknya:
 
@@ -320,6 +320,30 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
   Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
   **Implement Brands** (`masterLists/brand`) untuk Agricultural.
+- **Peran kustom & Daily Report "Own only" v175 (dijaga
+  `tests/roles_custom_test.js`, `unitscope_test`, dan 32 skenario baru di
+  `tests/rules_test.js`).** Akses kini **murni lewat peran**:
+  - *Roles* (panel di halaman Users, hanya Super Admin): **New role** → beri
+    nama, lalu set tiap halaman *None / View / Edit*, CSV, dan untuk Daily
+    Report pilihan **Own only**. Tombol *Add the example roles* membuat Field
+    Team, Technician, Supervisor, Viewer yang bisa diubah atau dihapus.
+  - *Edit access* per orang hanya memilih **satu peran** + **Unit group**
+    (dan akun: sign out, jadikan Super Admin, hapus). Tidak ada pengecualian
+    per orang. Pendaftar baru bisa langsung disetujui dengan peran.
+  - **Mengubah peran berlaku untuk semua pemegangnya**: sebelum disimpan
+    muncul daftar perubahan + jumlah orang; level ditulis ke dokumen tiap
+    orang (`access`, `roleId`, `roleName`). Yang gagal ditulis tampil *Not
+    in sync* dengan tombol Sync. Peran yang masih dipakai tidak bisa dihapus.
+    Akun lama tampil *No role yet* dan tetap dengan akses lamanya sampai
+    diberi peran.
+  - **Daily Report "Own only"**: mengisi laporan & izin sendiri, hanya
+    melihat miliknya (query `where createdByUid == uid`), bisa mengubah /
+    menghapus / menarik kembali selama draf atau dikembalikan, dan **setelah
+    disetujui hanya bisa dilihat**. Ditegakkan juga di rules (`teamLogOwn`,
+    `mineIn`, `recordMine`). Pemegang Edit biasa tidak berubah.
+  - Rules: koleksi baru `roles/{id}` (hanya Super Admin), level `own` di
+    workLogs / leaveRequests / workLogPhotos. **Perlu publish ulang
+    `firestore.rules`.**
 - **Profil perangkat v173 (dijaga `tests/warehouse_test.js`).** Klik nama
   perangkat di tabel Warehouse untuk membuka profilnya: SN, tipe, brand/model,
   status, lokasi, SN baterai, catatan, dan **Allocation history** — setiap
@@ -812,7 +836,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   stempel `appliedAt` supaya hanya sekali); tanpa akses itu muncul di Kotak
   Keputusan. Foto di `inspectionPhotos/{id}` (tidak di-subscribe), ditulis
   SEBELUM laporannya.
-- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (213 skenario;
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (245 skenario;
   bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
   kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
   alur persetujuan laporan/izin (transisi status di atas, kunci isi dan foto
