@@ -99,6 +99,18 @@ kerusakan (v162): status, delapan field komponen, alasan breakdown, jam
 downtime dan `breakdownDamageId` — nilai Good/Breakdown saja, dan riwayat
 downtime hanya bisa bertambah satu interval (`damageLinkOnly` di rules).
 
+**Purchase Request (2.9.0):** area `purchase` = `none` / `own` / `view` /
+`edit`. Halaman *Purchase Requests* mengikuti isian sistem kantor (Title, PT,
+PR No., PR date, Normal/Urgent, CAPEX/Expense, item + spesifikasi) dan
+melacak status Draft → Submitted → Approved → PO issued → Partially
+received → Received (atau Rejected / Cancelled, wajib alasan). `edit`
+menyetujui, mencatat PO dan menerima barang — penerimaan menyimpan foto
+dokumentasi dan bisa langsung mencatat **Stock in** di Warehouse (perlu edit
+`warehouse`). `own` hanya membuat dan melihat permintaannya sendiri, dan
+hanya bisa mengubah selama masih draf. Lampiran dan foto penerimaan disimpan
+di `purchasePhotos` (maks. 10 per form). PR yang menunggu persetujuan, Urgent,
+atau tertahan ≥ 7 hari di satu langkah muncul di Decision inbox.
+
 **Satu akun hanya boleh aktif di satu perangkat.** Login terbaru menang;
 perangkat lain keluar sendiri.
 

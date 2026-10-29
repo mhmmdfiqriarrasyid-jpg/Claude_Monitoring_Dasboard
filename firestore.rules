@@ -114,6 +114,7 @@ service cloud.firestore {
       return isActive() && (role == 'owner'
         || editOn(a, role, 'teamShift') || editOn(a, role, 'teamLog') || editOn(a, role, 'teamMembers')
         || a.get('teamLog', null) == 'own'
+        || editOn(a, role, 'purchase') || a.get('purchase', null) == 'own'
         || editOn(a, role, 'teamLogApprove') || editOn(a, role, 'warehouse')
         || (sc == 'all' && (editOn(a, role, 'editUnits') || editOn(a, role, 'damage')))
         || (sc in ['all', 'tractor'] && (editOn(a, role, 'implements') || editOn(a, role, 'licenseStock')))
@@ -479,6 +480,30 @@ service cloud.firestore {
     match /fuelLogs/{id}   { allow read: if isActive(); allow delete: if canEditArea('warehouse');
                              allow create, update: if canEditArea('warehouse') && idMatches(id); }
     match /fuelPhotos/{id} { allow read: if canViewArea('warehouse'); allow write: if canEditArea('warehouse'); }
+    // ---- Purchase requests (2.9.0) ----
+    // 'edit' manages every request (approve, PO, receive). 'own' files its own
+    // requests and changes them only while they are drafts; it reads only
+    // those (queries must ask where('createdByUid', '==', <its uid>)).
+    function purchaseOwn() { return isActive() && lvl('purchase') == 'own'; }
+    match /purchaseRequests/{id} {
+      allow read:   if canViewArea('purchase') || (purchaseOwn() && mineIn(resource.data));
+      allow create: if idMatches(id) && request.resource.data.get('createdByUid', '') == request.auth.uid
+                    && (canEditArea('purchase')
+                        || (purchaseOwn() && request.resource.data.get('status', '') in ['draft', 'submitted']));
+      allow update: if idMatches(id) && (canEditArea('purchase')
+                    || (purchaseOwn() && mineIn(resource.data) && resource.data.get('status', '') == 'draft'
+                        && request.resource.data.get('createdByUid', '') == request.auth.uid
+                        && request.resource.data.get('status', '') in ['draft', 'submitted']));
+      allow delete: if canEditArea('purchase')
+                    || (purchaseOwn() && mineIn(resource.data) && resource.data.get('status', '') == 'draft');
+    }
+    match /purchasePhotos/{id} {
+      allow read:   if canViewArea('purchase') || purchaseOwn();
+      allow delete: if canEditArea('purchase') || purchaseOwn();
+      allow create, update: if (canEditArea('purchase') || purchaseOwn()) && idMatches(id)
+                    && request.resource.data.get('photo', '') is string
+                    && request.resource.data.get('photo', '').size() <= 400000;
+    }
     // Device and stock photos (v185), one document per photo, up to ten per item.
     match /warehousePhotos/{id} { allow read: if canViewArea('warehouse'); allow delete: if canEditArea('warehouse');
                                   allow create, update: if canEditArea('warehouse') && idMatches(id)

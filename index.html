@@ -212,6 +212,11 @@
                 <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z"></path><path d="M6 18h12"></path><path d="M6 14h12"></path><rect x="6" y="10" width="12" height="12"></rect></svg>
                 <span class="nav__text">Warehouse</span>
             </button>
+            <button type="button" class="nav__link" data-view="purchase" onclick="navigateTo('purchase')">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M8 13h8"></path><path d="M8 17h5"></path></svg>
+                <span class="nav__text">Purchase Requests</span>
+                <span class="nav__badge" id="purchaseBadge" style="display:none">0</span>
+            </button>
         </div>
         <div class="nav-group" role="group" aria-labelledby="navGroupAdmin">
             <div class="nav-group__label" id="navGroupAdmin">Admin</div>
@@ -2093,6 +2098,47 @@
 
     </div><!-- /viewWarehouse -->
 
+    <!-- ==================== PURCHASE REQUESTS (2.9.0) ==================== -->
+    <div id="viewPurchase" class="view" style="display:none;">
+        <div class="page-head">
+            <div class="page-head__text">
+                <h1 class="page-head__title">Purchase Requests</h1>
+                <span class="page-head__sub">From request to PO to goods received, per company</span>
+            </div>
+            <div class="page-head__actions">
+                <button type="button" class="btn btn-primary" id="btnNewPr" onclick="showAddPurchaseForm()"><i class="fas fa-plus" aria-hidden="true"></i> New request</button>
+            </div>
+        </div>
+        <div class="wh-tiles wh-tiles--static" id="prTiles"></div>
+        <div class="table-card">
+            <div class="adm-filters pr-filters">
+                <label class="adm-search"><i class="fas fa-search" aria-hidden="true"></i><span class="adm-sr">Search requests</span>
+                    <input type="search" id="prSearch" placeholder="Search PR no., title or item" oninput="renderPurchaseView()"></label>
+                <label class="adm-select"><span class="adm-select__label">Company</span>
+                    <select id="prCompanyFilter" onchange="renderPurchaseView()"><option value="">All companies</option></select></label>
+                <label class="adm-select"><span class="adm-select__label">Status</span>
+                    <select id="prStatusFilter" onchange="renderPurchaseView()"><option value="">Any status</option><option value="open">Open (not closed)</option></select></label>
+                <label class="adm-select"><span class="adm-select__label">Type</span>
+                    <select id="prTypeFilter" onchange="renderPurchaseView()"><option value="">All</option><option value="CAPEX">CAPEX</option><option value="Expense">Expense</option></select></label>
+                <span class="pr-count" id="prCount"></span>
+            </div>
+            <div class="table-wrapper" style="max-height:none">
+                <table class="data-table table--cardable adm-table" id="prTable">
+                    <thead><tr>
+                        <th scope="col">PR</th>
+                        <th scope="col">Company</th>
+                        <th scope="col">Date</th>
+                        <th scope="col">Type</th>
+                        <th scope="col" class="num">Items</th>
+                        <th scope="col">Status</th>
+                        <th scope="col" class="col-actions"><span class="adm-sr">Actions</span></th>
+                    </tr></thead>
+                    <tbody id="prBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div><!-- /viewPurchase -->
+
     <!-- ==================== USERS VIEW (Owner only) ==================== -->
     <div id="viewUsers" class="view" style="display:none;">
         <div class="page-head usr-head">
@@ -3155,6 +3201,123 @@
             <button type="button" class="btn btn-secondary" onclick="closeDeviceProfile()">Close</button>
             <button type="button" class="btn btn-primary editonly editonly--warehouse" id="deviceProfileEdit"><i class="fas fa-pen"></i> Edit</button>
         </div>
+    </div>
+</div>
+
+<!-- ==================== PURCHASE REQUEST FORM (2.9.0) ==================== -->
+<div class="modal-overlay" id="prModal">
+    <div class="modal-card pr-dialog" role="dialog" aria-labelledby="prModalTitle">
+        <div class="modal-header">
+            <h3 id="prModalTitle">New purchase request</h3>
+            <button class="btn-icon" onclick="closePurchaseModal()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form id="prForm" onsubmit="savePurchaseRequest(event)">
+            <input type="hidden" id="prId">
+            <div class="modal-body">
+                <div class="pr-section-title">Purchase request</div>
+                <div class="form-grid">
+                    <div class="form-group full-width">
+                        <label class="form-label" for="prTitle">Title purchase request</label>
+                        <input class="form-input" id="prTitle" maxlength="160" autocomplete="off" placeholder="e.g. Maintenance, Toolkit and Operational Kit OT">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="prCompany">Company</label>
+                        <select class="form-select" id="prCompany"></select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="prNo">PR No.</label>
+                        <input class="form-input" id="prNo" maxlength="60" autocomplete="off" placeholder="PR/L/MNM2026…">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="prDate">PR date</label>
+                        <input class="form-input" id="prDate" type="date">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="prRequestType">Request type</label>
+                        <select class="form-select" id="prRequestType"><option value="Normal">Normal</option><option value="Urgent">Urgent</option></select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="prBudget">CAPEX / Expense</label>
+                        <select class="form-select" id="prBudget"><option value="Expense">Expense</option><option value="CAPEX">CAPEX</option></select>
+                    </div>
+                </div>
+                <div class="pr-section-title">Purchase details</div>
+                <div class="pr-items" id="prItems"></div>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="addPurchaseItemRow()"><i class="fas fa-plus" aria-hidden="true"></i> Add item</button>
+                <div class="pr-total" id="prTotal"></div>
+                <div class="form-grid">
+                    <div class="form-group full-width">
+                        <span class="form-label">Documents <span class="form-optional">(PR / quotation, up to 10)</span> <span class="wh-photo-count" id="prDocPhotoCount"></span></span>
+                        <div class="wh-photos" id="prDocPhotoGrid"></div>
+                        <input type="file" id="prDocPhotoInput" accept="image/*" multiple hidden onchange="whPhotoAdd('prDoc', event)">
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="prNotes">Notes <span class="form-optional">(optional)</span></label>
+                        <textarea class="form-input form-textarea" id="prNotes" rows="2" placeholder="Purpose, unit or site it is for…"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closePurchaseModal()">Cancel</button>
+                <button type="button" class="btn btn-secondary" id="prSaveDraft" onclick="savePurchaseRequest(null, 'draft')">Save draft</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane" aria-hidden="true"></i> Submit</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ==================== PURCHASE REQUEST DETAIL ==================== -->
+<div class="modal-overlay" id="prDetailModal">
+    <div class="modal-card pr-dialog" role="dialog" aria-labelledby="prDetailTitle">
+        <div class="modal-header">
+            <h3 id="prDetailTitle">Purchase request</h3>
+            <button class="btn-icon" onclick="closePurchaseDetail()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body" id="prDetailBody"></div>
+        <div class="form-actions pr-detail-actions" id="prDetailActions"></div>
+    </div>
+</div>
+
+<!-- ==================== RECEIVE GOODS ==================== -->
+<div class="modal-overlay" id="prReceiveModal">
+    <div class="modal-card pr-dialog" role="dialog" aria-labelledby="prReceiveTitle">
+        <div class="modal-header">
+            <h3 id="prReceiveTitle">Receive goods</h3>
+            <button class="btn-icon" onclick="closePurchaseReceive()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form id="prReceiveForm" onsubmit="savePurchaseReceipt(event)">
+            <input type="hidden" id="prReceiveId">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="prReceiveDate">Received on</label>
+                        <input class="form-input" id="prReceiveDate" type="date">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="prReceiveLocation">Warehouse location</label>
+                        <input class="form-input" id="prReceiveLocation" list="warehouseLocationList" maxlength="60" autocomplete="off" placeholder="Where the goods go">
+                    </div>
+                </div>
+                <div class="pr-section-title">Quantity received now</div>
+                <div class="pr-receive-items" id="prReceiveItems"></div>
+                <label class="form-check" for="prReceiveToStock"><input type="checkbox" id="prReceiveToStock" checked> Also record as <strong>Stock in</strong> in Warehouse</label>
+                <div class="form-grid">
+                    <div class="form-group full-width">
+                        <span class="form-label">Receipt photos <span class="form-optional">(goods, delivery note — up to 10)</span> <span class="wh-photo-count" id="prRcvPhotoCount"></span></span>
+                        <div class="wh-photos" id="prRcvPhotoGrid"></div>
+                        <input type="file" id="prRcvPhotoInput" accept="image/*" multiple hidden onchange="whPhotoAdd('prReceipt', event)">
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="prReceiveNote">Note <span class="form-optional">(optional)</span></label>
+                        <input class="form-input" id="prReceiveNote" maxlength="200" autocomplete="off" placeholder="Delivery note no., condition…">
+                    </div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closePurchaseReceive()">Cancel</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-box-open" aria-hidden="true"></i> Record receipt</button>
+            </div>
+        </form>
     </div>
 </div>
 

@@ -110,6 +110,8 @@ let cloudInspectionsUnsub = null;
 let cloudDevicesUnsub = null;
 let cloudVehiclesUnsub = null;
 let cloudFuelUnsub = null;
+let purchaseRequests = [];           // 2.9.0: purchase requests (cloud only)
+let cloudPurchaseUnsub = null;
 let warehouseDevices = [];           // serial-tracked devices
 let cloudStockUnsub = null;
 let stockLedger = [];                // IN/OUT rows for quantity-counted items
@@ -137,7 +139,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.8.2';
+const APP_VERSION = 'v2.9.0';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -890,6 +892,9 @@ const MODAL_CLOSERS = {
     leaveModal:           'closeLeaveModal',
     deviceModal:          'closeDeviceModal',
     deviceProfileModal:   'closeDeviceProfile',
+    prModal:              'closePurchaseModal',
+    prDetailModal:        'closePurchaseDetail',
+    prReceiveModal:       'closePurchaseReceive',
     roleModal:            'closeRoleModal',
     vehicleModal:         'closeVehicleModal',
     fuelModal:            'closeFuelModal',
@@ -1608,6 +1613,8 @@ function navigateTo(view) {
     if (teamView) teamView.style.display = (view === 'team') ? 'block' : 'none';
     const whView = document.getElementById('viewWarehouse');
     if (whView) whView.style.display = (view === 'warehouse') ? 'block' : 'none';
+    const prView = document.getElementById('viewPurchase');
+    if (prView) prView.style.display = (view === 'purchase') ? 'block' : 'none';
     const leaderView = document.getElementById('viewLeader');
     if (leaderView) leaderView.style.display = (view === 'leader') ? 'block' : 'none';
     const insView = document.getElementById('viewInspection');
@@ -1677,6 +1684,8 @@ function navigateTo(view) {
         populateWarehouseFilters();
         renderWarehouseView();
     }
+
+    if (view === 'purchase') renderPurchaseView();
 
     if (view === 'inspection') renderInspectionView();
 
@@ -12507,6 +12516,15 @@ function initCloudSync() {
                 }
             );
         }
+        if (window.cloud.subscribePurchaseRequests && canViewView('purchase')) {
+            // 'own' may read only its own requests, so it must ask for those.
+            const ownPr = purchaseOwnOnly();
+            cloudPurchaseUnsub = window.cloud.subscribePurchaseRequests(
+                (list, queued) => { setQueued('purchaseRequests', queued); applyCloudPurchaseSnapshot(list); },
+                err => console.warn('[cloud] purchaseRequests offline:', err && err.code),
+                ownPr ? myUid() : ''
+            );
+        }
         if (window.cloud.subscribeDevices) {
             cloudDevicesUnsub = window.cloud.subscribeDevices(
                 applyCloudDevicesSnapshot,
@@ -12751,6 +12769,8 @@ function tearDownCloudSync() {
     masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [] };
     if (cloudDamageComponentsUnsub) { try { cloudDamageComponentsUnsub(); } catch (_) {} cloudDamageComponentsUnsub = null; }
     if (cloudDevicesUnsub) { try { cloudDevicesUnsub(); } catch (_) {} cloudDevicesUnsub = null; }
+    if (cloudPurchaseUnsub) { try { cloudPurchaseUnsub(); } catch (_) {} cloudPurchaseUnsub = null; }
+    purchaseRequests = [];
     if (cloudStockUnsub) { try { cloudStockUnsub(); } catch (_) {} cloudStockUnsub = null; }
     warehouseDevices = [];
     stockLedger = [];
@@ -13679,6 +13699,9 @@ const ACCESS_AREAS = [
     // report without being able to rewrite the thing they are checking.
     { key: 'teamLogApprove', label: 'Report Approval', levels: ['none', 'edit'] },
     { key: 'warehouse',    label: 'Warehouse',         levels: ['none', 'view', 'edit'] },
+    // 2.9.0: 'own' files purchase requests and follows only their own;
+    // 'edit' approves, records the PO and receives the goods.
+    { key: 'purchase',     label: 'Purchase Request',  levels: ['none', 'own', 'view', 'edit'] },
     // Heavy-equipment checks: the technician who checks and files, and —
     // separately, for the same reason as teamLogApprove — the supervisor who
     // approves or sends a report back.
@@ -13700,6 +13723,7 @@ const VIEW_AREAS = {
     licenseStock: ['licenseStock'],
     team:         ['teamShift', 'teamLog', 'teamMembers', 'teamLogApprove'],
     warehouse:    ['warehouse'],
+    purchase:     ['purchase'],
     inspection:   ['inspection', 'inspectionApprove'],
     leader:       ['leader']
 };
@@ -13715,7 +13739,7 @@ const RO_FLAGS = {
     editUnits: 'roEditunits', implements: 'roImplements', damage: 'roDamage',
     licenseStock: 'roLicense', teamShift: 'roTeamshift', teamLog: 'roTeamlog',
     teamMembers: 'roTeammembers', teamLogApprove: 'roTeamapprove',
-    warehouse: 'roWarehouse', inspection: 'roInspection'
+    warehouse: 'roWarehouse', inspection: 'roInspection', purchase: 'roPurchase'
 };
 // 'own' acts as edit for the area's buttons; which records it may touch is
 // decided per record (ownTeamOnly / canEditTeamRecord).
@@ -17688,19 +17712,501 @@ function populateWarehouseFilters() {
     if (su) su.innerHTML = unitOpts;
 }
 
+// ============================================================
+// PURCHASE REQUESTS (2.9.0)
+// ------------------------------------------------------------
+// A request as the office system writes it (title, company, PR no., date,
+// Normal/Urgent, CAPEX/Expense, the items), followed here from submission
+// to PO to the goods arriving — with receipt photos, and the goods booked
+// into Warehouse stock in the same step. Cloud only, like the warehouse.
+// Access area 'purchase': 'edit' manages every request; 'own' files its own
+// and may change them only while they are drafts.
+// ============================================================
+const PR_STATUSES = [
+    { key: 'draft',     label: 'Draft',              tone: 'neutral' },
+    { key: 'submitted', label: 'Submitted',          tone: 'info' },
+    { key: 'approved',  label: 'Approved',           tone: 'teal' },
+    { key: 'po',        label: 'PO issued',          tone: 'info' },
+    { key: 'partial',   label: 'Partially received', tone: 'warn' },
+    { key: 'received',  label: 'Received',           tone: 'good' },
+    { key: 'rejected',  label: 'Rejected',           tone: 'bad' },
+    { key: 'cancelled', label: 'Cancelled',          tone: 'neutral' }
+];
+const PR_CLOSED = ['received', 'rejected', 'cancelled'];
+const PR_STALL_DAYS = 7;           // a step waiting this long shows in the inbox
+const PR_UOMS = ['pcs', 'set', 'unit', 'box', 'pack', 'roll', 'm', 'kg', 'liter'];
+let _prItems = [];                 // the form's item rows
+
+function prStatusDef(k) { return PR_STATUSES.find(s => s.key === k) || PR_STATUSES[0]; }
+function prStatusChip(k) {
+    const d = prStatusDef(k);
+    return `<span class="pr-status pr-status--${d.tone}"><span class="pr-dot" aria-hidden="true"></span>${escapeHtml(d.label)}</span>`;
+}
+// Access 'own': only this account's own requests, changes only to drafts.
+function purchaseOwnOnly() { return !isOwner() && effectiveAccess('purchase') === 'own'; }
+function canManagePurchase() { return !purchaseOwnOnly() && hasAccess('purchase', 'edit'); }
+function canEditPurchaseRecord(r) {
+    if (!r) return canManagePurchase() || purchaseOwnOnly();
+    if (canManagePurchase()) return true;
+    return purchaseOwnOnly() && isMyRecord(r) && r.status === 'draft';
+}
+function prItemsTotal(items) {
+    return (items || []).reduce((sum, it) => sum + (Number(it.qty) || 0) * (Number(it.price) || 0), 0);
+}
+function prMoney(n) { return n ? 'Rp ' + Math.round(n).toLocaleString('id-ID') : '—'; }
+function prLastChange(r) {
+    const h = Array.isArray(r.statusHistory) ? r.statusHistory : [];
+    return (h.length && h[h.length - 1].at) || r.updatedAt || r.createdAt || 0;
+}
+function prCompanyChoices(keep) {
+    const list = companySuggestions().slice();
+    purchaseRequests.forEach(r => { if (r.company && !list.includes(r.company)) list.push(r.company); });
+    if (keep && !list.includes(keep)) list.push(keep);
+    return list.sort((a, b) => a.localeCompare(b));
+}
+
+function applyCloudPurchaseSnapshot(list) {
+    purchaseRequests = (list || []).slice().sort((a, b) =>
+        String(b.prDate || '').localeCompare(String(a.prDate || '')) || ((b.createdAt || 0) - (a.createdAt || 0)));
+    if (currentView === 'purchase') renderPurchaseView();
+    updatePurchaseBadge();
+    if (typeof scheduleDecisionRefresh === 'function') scheduleDecisionRefresh();
+}
+function updatePurchaseBadge() {
+    const b = document.getElementById('purchaseBadge');
+    if (!b) return;
+    const n = canManagePurchase() ? purchaseRequests.filter(r => r.status === 'submitted').length : 0;
+    b.textContent = String(n);
+    b.style.display = n ? '' : 'none';
+}
+
+// ---- List ----
+function getFilteredPurchase() {
+    const q = (document.getElementById('prSearch')?.value || '').toLowerCase().trim();
+    const co = document.getElementById('prCompanyFilter')?.value || '';
+    const st = document.getElementById('prStatusFilter')?.value || '';
+    const ty = document.getElementById('prTypeFilter')?.value || '';
+    return purchaseRequests.filter(r => {
+        if (co && r.company !== co) return false;
+        if (st === 'open' ? PR_CLOSED.includes(r.status) : (st && r.status !== st)) return false;
+        if (ty && r.budgetType !== ty) return false;
+        if (q) {
+            const hay = [r.prNo, r.title, r.company, r.poNo, ...(r.items || []).map(i => i.spec)].join(' ').toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
+}
+function renderPurchaseView() {
+    const coSel = document.getElementById('prCompanyFilter');
+    if (coSel) {
+        const cur = coSel.value;
+        const cos = [...new Set(purchaseRequests.map(r => r.company).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+        coSel.innerHTML = '<option value="">All companies</option>' + cos.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+        coSel.value = cos.includes(cur) ? cur : '';
+    }
+    const stSel = document.getElementById('prStatusFilter');
+    if (stSel && stSel.options.length < 3) {
+        stSel.insertAdjacentHTML('beforeend', PR_STATUSES.map(s => `<option value="${s.key}">${escapeHtml(s.label)}</option>`).join(''));
+    }
+    const newBtn = document.getElementById('btnNewPr');
+    if (newBtn) newBtn.style.display = canEditPurchaseRecord(null) ? '' : 'none';
+
+    // Tiles: a standing summary of all requests, not of the filtered slice.
+    const open = purchaseRequests.filter(r => !PR_CLOSED.includes(r.status));
+    const month = toISODate().slice(0, 7);
+    const receivedMonth = purchaseRequests.filter(r => r.status === 'received'
+        && (r.receipts || []).some(x => String(x.date || '').startsWith(month))).length;
+    const tile = (n, label, sub, tone) => `<div class="wh-tile pr-tile--${tone}"><span class="wh-tile__label">${label}</span><span class="wh-tile__value">${n}</span><span class="wh-tile__sub">${sub}</span></div>`;
+    const tiles = document.getElementById('prTiles');
+    if (tiles) tiles.innerHTML =
+        tile(open.length, 'Open', 'Not yet received or closed', 'teal') +
+        tile(open.filter(r => r.requestType === 'Urgent').length, 'Urgent', 'Open and marked urgent', 'bad') +
+        tile(purchaseRequests.filter(r => r.status === 'submitted' || r.status === 'approved').length, 'Waiting for PO', 'Submitted or approved', 'info') +
+        tile(purchaseRequests.filter(r => r.status === 'po' || r.status === 'partial').length, 'Waiting for goods', 'PO issued, not all received', 'warn') +
+        tile(receivedMonth, 'Received this month', 'Fully received', 'good');
+
+    const rows = getFilteredPurchase();
+    const cnt = document.getElementById('prCount');
+    if (cnt) cnt.textContent = `${rows.length} request${rows.length === 1 ? '' : 's'}`;
+    const tbody = document.getElementById('prBody');
+    if (!tbody) return;
+    if (!rows.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="adm-empty">${purchaseRequests.length ? 'No requests match the filter'
+            : `No purchase requests yet.${canEditPurchaseRecord(null) ? ' Use <strong>New request</strong> to add one.' : ''}`}</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = rows.map(r => {
+        const items = r.items || [];
+        const recv = items.reduce((n, i) => n + (Number(i.receivedQty) || 0), 0);
+        const ordered = items.reduce((n, i) => n + (Number(i.qty) || 0), 0);
+        const canEdit = canEditPurchaseRecord(r);
+        return `<tr class="pr-row" onclick="showPurchaseDetail(${jsArg(r.id)})">
+            <td data-label="PR"><span class="adm-stack"><strong>${escapeHtml(r.prNo || '(no PR no. yet)')}</strong>
+                <span class="adm-sub">${escapeHtml(r.title || '')}</span>
+                ${r.requestType === 'Urgent' ? '<span class="pr-urgent">Urgent</span>' : ''}</span></td>
+            <td data-label="Company">${escapeHtml(r.company || '—')}</td>
+            <td data-label="Date" class="adm-nowrap">${escapeHtml(r.prDate || '—')}</td>
+            <td data-label="Type"><span class="pr-budget pr-budget--${r.budgetType === 'CAPEX' ? 'capex' : 'expense'}">${escapeHtml(r.budgetType || 'Expense')}</span></td>
+            <td data-label="Items" class="num">${items.length}${ordered ? `<span class="adm-sub">${recv}/${ordered} received</span>` : ''}</td>
+            <td data-label="Status">${prStatusChip(r.status)}${(r.photoIds || []).length ? whPhotoChip(r.photoIds, r.prNo || r.title || 'request', 'pr') : ''}</td>
+            <td class="col-actions">${canEdit ? `<div class="row-actions">
+                <button class="btn btn-secondary" title="Edit" aria-label="Edit ${escapeHtml(r.prNo || r.title || 'request')}" onclick="event.stopPropagation(); editPurchase(${jsArg(r.id)})"><i class="fas fa-pen" aria-hidden="true"></i></button>
+                <button class="btn btn-secondary" title="Delete" aria-label="Delete ${escapeHtml(r.prNo || r.title || 'request')}" onclick="event.stopPropagation(); deletePurchase(${jsArg(r.id)})"><i class="fas fa-trash" aria-hidden="true"></i></button>
+            </div>` : ''}</td>
+        </tr>`;
+    }).join('');
+}
+
+// ---- Form ----
+function _prNewItem() { return { id: 'it_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), spec: '', qty: 1, uom: 'pcs', price: '', note: '', receivedQty: 0 }; }
+function renderPurchaseItems() {
+    const box = document.getElementById('prItems');
+    if (!box) return;
+    box.innerHTML = `<div class="pr-item pr-item--head" aria-hidden="true"><span>#</span><span>Specification</span><span>Qty</span><span>Unit</span><span>Est. price / unit</span><span></span></div>` +
+        _prItems.map((it, i) => `
+        <div class="pr-item">
+            <span class="pr-item__no">${i + 1}</span>
+            <input class="form-input" aria-label="Item ${i + 1} specification" value="${escapeHtml(it.spec)}" maxlength="300" placeholder="Brand, type, size…" oninput="_prItems[${i}].spec = this.value">
+            <input class="form-input" aria-label="Item ${i + 1} quantity" type="number" min="1" step="1" value="${escapeHtml(String(it.qty))}" oninput="_prItems[${i}].qty = this.value; updatePurchaseTotal()">
+            <input class="form-input" aria-label="Item ${i + 1} unit" list="prUomList" value="${escapeHtml(it.uom || '')}" maxlength="20" oninput="_prItems[${i}].uom = this.value">
+            <input class="form-input" aria-label="Item ${i + 1} estimated price per unit" type="number" min="0" step="1" value="${escapeHtml(String(it.price || ''))}" placeholder="optional" oninput="_prItems[${i}].price = this.value; updatePurchaseTotal()">
+            <button type="button" class="btn btn-secondary btn-icon" aria-label="Remove item ${i + 1}" onclick="removePurchaseItemRow(${i})" ${(Number(it.receivedQty) || 0) > 0 ? 'disabled title="Already partly received"' : ''}><i class="fas fa-xmark" aria-hidden="true"></i></button>
+        </div>`).join('') + `<datalist id="prUomList">${PR_UOMS.map(u => `<option value="${u}"></option>`).join('')}</datalist>`;
+    updatePurchaseTotal();
+}
+function updatePurchaseTotal() {
+    const el = document.getElementById('prTotal');
+    if (el) { const t = prItemsTotal(_prItems); el.textContent = t ? `Estimated total ${prMoney(t)}` : ''; }
+}
+function addPurchaseItemRow() { _prItems.push(_prNewItem()); renderPurchaseItems(); }
+function removePurchaseItemRow(i) { _prItems.splice(i, 1); if (!_prItems.length) _prItems.push(_prNewItem()); renderPurchaseItems(); }
+
+function _fillPurchaseCompanies(keep) {
+    const sel = document.getElementById('prCompany');
+    sel.innerHTML = '<option value="">Select company…</option>' + prCompanyChoices(keep).map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+    sel.value = keep || '';
+}
+function showAddPurchaseForm() {
+    if (!canEditPurchaseRecord(null)) { showToast('You cannot file purchase requests', 'warning'); return; }
+    document.getElementById('prModalTitle').textContent = 'New purchase request';
+    document.getElementById('prForm').reset();
+    document.getElementById('prId').value = '';
+    _fillPurchaseCompanies('');
+    document.getElementById('prDate').value = toISODate();
+    _prItems = [_prNewItem()];
+    renderPurchaseItems();
+    whPhotoReset('prDoc', []);
+    document.getElementById('prSaveDraft').style.display = '';
+    document.getElementById('prModal').classList.add('open');
+}
+function editPurchase(id) {
+    const r = purchaseRequests.find(x => x.id === id);
+    if (!r) return;
+    if (!canEditPurchaseRecord(r)) { showToast('This request can no longer be changed', 'warning'); return; }
+    closePurchaseDetail();
+    document.getElementById('prModalTitle').textContent = `Edit ${r.prNo || 'purchase request'}`;
+    document.getElementById('prId').value = r.id;
+    document.getElementById('prTitle').value = r.title || '';
+    _fillPurchaseCompanies(r.company || '');
+    document.getElementById('prNo').value = r.prNo || '';
+    document.getElementById('prDate').value = r.prDate || '';
+    document.getElementById('prRequestType').value = r.requestType === 'Urgent' ? 'Urgent' : 'Normal';
+    document.getElementById('prBudget').value = r.budgetType === 'CAPEX' ? 'CAPEX' : 'Expense';
+    document.getElementById('prNotes').value = r.notes || '';
+    _prItems = (r.items || []).map(it => ({ ...it }));
+    if (!_prItems.length) _prItems.push(_prNewItem());
+    renderPurchaseItems();
+    whPhotoReset('prDoc', r.photoIds);
+    // Only a draft has a draft to keep; a submitted one is saved as it stands.
+    document.getElementById('prSaveDraft').style.display = r.status === 'draft' ? '' : 'none';
+    document.getElementById('prModal').classList.add('open');
+}
+function closePurchaseModal() { document.getElementById('prModal').classList.remove('open'); }
+
+function _prPush(rec, msg, existing) {
+    const i = purchaseRequests.findIndex(x => x.id === rec.id);
+    if (i >= 0) purchaseRequests[i] = rec; else purchaseRequests.unshift(rec);
+    cloudWrite(
+        { action: existing ? 'update' : 'create', unitName: `[Purchase] ${rec.prNo || rec.title}`, field: 'Purchase request',
+          before: existing ? prStatusDef(existing.status).label : '', after: prStatusDef(rec.status).label },
+        cloudCall('savePurchaseRequest', rec),
+        msg,
+        err => {
+            console.error('[purchase] save failed:', err);
+            showToast(err && err.code === 'permission-denied' ? 'Purchase requests need the new firestore.rules — publish them first' : 'Failed to save the purchase request', 'error');
+        }
+    );
+    if (currentView === 'purchase') renderPurchaseView();
+    updatePurchaseBadge();
+}
+function _prWithStatus(rec, status, note) {
+    const hist = Array.isArray(rec.statusHistory) ? rec.statusHistory.slice() : [];
+    if (rec.status !== status || !hist.length) hist.push({ status, at: Date.now(), by: (currentUser && currentUser.email) || '', note: note || '' });
+    return { ...rec, status, statusHistory: hist.slice(-50), updatedAt: Date.now() };
+}
+
+function savePurchaseRequest(event, mode) {
+    if (event) event.preventDefault();
+    const id = document.getElementById('prId').value;
+    const existing = id ? purchaseRequests.find(x => x.id === id) : null;
+    if (!canEditPurchaseRecord(existing)) { showToast('This request can no longer be changed', 'warning'); return; }
+    const title = (document.getElementById('prTitle').value || '').trim();
+    const company = document.getElementById('prCompany').value;
+    const prNo = (document.getElementById('prNo').value || '').trim();
+    if (!title) { showToast('Fill in the title of the purchase request', 'warning'); return; }
+    if (!company) { showToast('Pick the company', 'warning'); return; }
+    const items = _prItems.map(it => ({ ...it, spec: (it.spec || '').trim(), qty: Math.max(0, parseInt(it.qty, 10) || 0),
+        uom: (it.uom || '').trim(), price: it.price === '' || it.price == null ? '' : Math.max(0, Number(it.price) || 0),
+        receivedQty: Number(it.receivedQty) || 0 })).filter(it => it.spec);
+    if (!items.length) { showToast('Add at least one item with its specification', 'warning'); return; }
+    if (items.some(it => it.qty < 1)) { showToast('Every item needs a quantity of at least 1', 'warning'); return; }
+    if (items.some(it => it.receivedQty > it.qty)) { showToast('An item cannot be fewer than what was already received', 'warning'); return; }
+    if (prNo) {
+        const clash = purchaseRequests.find(r => r.id !== id && (r.prNo || '').toLowerCase() === prNo.toLowerCase());
+        if (clash) { showToast(`PR No. "${prNo}" is already used`, 'warning'); return; }
+    }
+    const recId = id || 'pr_' + generateId();
+    const photoIds = whPhotoCommit('prDoc', recId);
+    let rec = {
+        ...(existing || {}),
+        id: recId, prNo, title, company,
+        prDate: document.getElementById('prDate').value || toISODate(),
+        requestType: document.getElementById('prRequestType').value === 'Urgent' ? 'Urgent' : 'Normal',
+        budgetType: document.getElementById('prBudget').value === 'CAPEX' ? 'CAPEX' : 'Expense',
+        notes: (document.getElementById('prNotes').value || '').trim(),
+        items, photoIds,
+        receipts: existing ? (existing.receipts || []) : [],
+        createdByUid: existing ? existing.createdByUid : myUid(),
+        createdBy: existing ? existing.createdBy : ((currentUserDoc && (currentUserDoc.displayName || currentUserDoc.email)) || ''),
+        createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),
+        updatedAt: Date.now()
+    };
+    const status = mode === 'draft' ? 'draft' : (!existing || existing.status === 'draft' ? 'submitted' : existing.status);
+    rec = _prWithStatus(rec, status);
+    _prPush(rec, status === 'draft' ? 'Draft saved' : existing && existing.status !== 'draft' ? 'Request updated' : 'Request submitted', existing);
+    closePurchaseModal();
+}
+
+function deletePurchase(id) {
+    const r = purchaseRequests.find(x => x.id === id);
+    if (!r || !canEditPurchaseRecord(r)) return;
+    if (!confirm(`Delete purchase request ${r.prNo || r.title}?\n\nIts photos are deleted too. Stock already booked in Warehouse stays.`)) return;
+    deleteWhPhotos([...(r.photoIds || []), ...(r.receipts || []).flatMap(x => x.photoIds || [])], 'pr');
+    purchaseRequests = purchaseRequests.filter(x => x.id !== id);
+    cloudWrite({ action: 'delete', unitName: `[Purchase] ${r.prNo || r.title}`, field: 'Purchase request', before: prStatusDef(r.status).label, after: '' },
+        cloudCall('deletePurchaseRequest', id), 'Request deleted',
+        err => { console.error('[purchase] delete failed:', err); showToast('Failed to delete the request', 'error'); });
+    closePurchaseDetail();
+    if (currentView === 'purchase') renderPurchaseView();
+    updatePurchaseBadge();
+}
+
+// ---- Detail ----
+function showPurchaseDetail(id) {
+    const r = purchaseRequests.find(x => x.id === id);
+    if (!r) return;
+    const dash = '<span class="adm-muted">—</span>';
+    const row = (label, html) => `<div class="profile-row"><span class="profile-row__label">${label}</span><span>${html || dash}</span></div>`;
+    const items = r.items || [];
+    const total = prItemsTotal(items);
+    const receipts = (r.receipts || []).slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    const hist = (r.statusHistory || []).slice().reverse();
+    document.getElementById('prDetailTitle').textContent = r.prNo || r.title || 'Purchase request';
+    document.getElementById('prDetailBody').innerHTML = `
+        <div class="pr-section-title">Purchase request</div>
+        <div class="profile-section">
+            ${row('Title purchase request', escapeHtml(r.title || ''))}
+            ${row('Company', escapeHtml(r.company || ''))}
+            ${row('PR No.', escapeHtml(r.prNo || ''))}
+            ${row('PR date', escapeHtml(r.prDate || ''))}
+            ${row('Request type', r.requestType === 'Urgent' ? '<span class="pr-urgent">Urgent</span>' : 'Normal')}
+            ${row('Status', prStatusChip(r.status))}
+            ${r.poNo || r.poDate ? row('PO', escapeHtml([r.poNo, r.poDate].filter(Boolean).join(' · '))) : ''}
+            ${row('Requested by', escapeHtml(r.createdBy || ''))}
+            ${r.notes ? row('Notes', escapeHtml(r.notes)) : ''}
+        </div>
+        <div class="pr-section-title">Purchase details</div>
+        <div class="table-wrapper" style="max-height:none"><table class="data-table pr-detail-items">
+            <thead><tr><th>#</th><th>Specification</th><th class="num">Qty</th><th>Unit</th><th class="num">Received</th><th class="num">Est. price</th></tr></thead>
+            <tbody>${items.map((it, i) => `<tr><td>${i + 1}</td><td class="pr-spec">${escapeHtml(it.spec || '')}</td><td class="num">${Number(it.qty) || 0}</td><td>${escapeHtml(it.uom || '')}</td>
+                <td class="num">${Number(it.receivedQty) || 0}</td><td class="num">${it.price !== '' && it.price != null ? prMoney((Number(it.qty) || 0) * (Number(it.price) || 0)) : dash}</td></tr>`).join('')}</tbody>
+        </table></div>
+        ${total ? `<div class="pr-total">Estimated total ${prMoney(total)}</div>` : ''}
+        <div class="pr-section-title">CAPEX / Expense</div>
+        <div class="profile-section">${row('CAPEX / Expense', escapeHtml(r.budgetType || 'Expense'))}</div>
+        ${(r.photoIds || []).length ? `<div class="pr-section-title">Documents</div>${whPhotoChip(r.photoIds, r.prNo || 'request', 'pr')}` : ''}
+        ${receipts.length ? `<div class="pr-section-title">Goods received</div>
+            <div class="pr-receipts">${receipts.map(x => `<div class="pr-receipt">
+                <div><strong>${escapeHtml(x.date || '')}</strong>${x.by ? ` · ${escapeHtml(x.by)}` : ''}${(x.stockIds || []).length ? ' · <span class="pr-budget pr-budget--expense">In Warehouse stock</span>' : ''}</div>
+                <div class="adm-sub">${(x.items || []).map(ri => { const it = items.find(i => i.id === ri.itemId); return `${escapeHtml(it ? it.spec : 'item')} × ${ri.qty}`; }).join(' · ')}</div>
+                ${x.note ? `<div class="adm-sub">${escapeHtml(x.note)}</div>` : ''}
+                ${whPhotoChip(x.photoIds, 'receipt ' + (x.date || ''), 'pr')}
+            </div>`).join('')}</div>` : ''}
+        ${hist.length ? `<div class="pr-section-title">History</div>
+            <ol class="pr-timeline">${hist.map(h => `<li>${prStatusChip(h.status)} <span class="adm-sub">${escapeHtml(formatUserTime(h.at))}${h.by ? ' · ' + escapeHtml(shortActor(h.by)) : ''}${h.note ? ' · ' + escapeHtml(h.note) : ''}</span></li>`).join('')}</ol>` : ''}`;
+    // What can happen next, for who may do it.
+    const acts = [];
+    const btn = (label, fn, primary) => `<button type="button" class="btn ${primary ? 'btn-primary' : 'btn-secondary'}" onclick="${fn}">${label}</button>`;
+    const idArg = escapeHtml(jsArg(r.id));
+    if (canEditPurchaseRecord(r)) acts.push(btn('<i class="fas fa-pen" aria-hidden="true"></i> Edit', `editPurchase(${idArg})`));
+    if (r.status === 'draft' && canEditPurchaseRecord(r)) acts.push(btn('Submit', `setPurchaseStatus(${idArg}, 'submitted')`, true));
+    if (canManagePurchase()) {
+        if (r.status === 'submitted') { acts.push(btn('Reject', `setPurchaseStatus(${idArg}, 'rejected')`)); acts.push(btn('Approve', `setPurchaseStatus(${idArg}, 'approved')`, true)); }
+        if (r.status === 'approved' || r.status === 'po') acts.push(btn(r.status === 'po' ? 'Edit PO' : 'Record PO', `recordPurchasePO(${idArg})`, r.status === 'approved'));
+        if (r.status === 'po' || r.status === 'partial') acts.push(btn('<i class="fas fa-box-open" aria-hidden="true"></i> Receive goods', `showPurchaseReceive(${idArg})`, true));
+        if (!PR_CLOSED.includes(r.status)) acts.push(btn('Cancel request', `setPurchaseStatus(${idArg}, 'cancelled')`));
+    }
+    acts.push(btn('Close', 'closePurchaseDetail()'));
+    document.getElementById('prDetailActions').innerHTML = acts.join('');
+    document.getElementById('prDetailModal').classList.add('open');
+}
+function closePurchaseDetail() { document.getElementById('prDetailModal').classList.remove('open'); }
+
+function setPurchaseStatus(id, status) {
+    const r = purchaseRequests.find(x => x.id === id);
+    if (!r) return;
+    const own = status === 'submitted' && canEditPurchaseRecord(r);
+    if (!own && !canManagePurchase()) { showToast('You cannot change this request', 'warning'); return; }
+    let note = '';
+    if (status === 'rejected' || status === 'cancelled') {
+        note = prompt(status === 'rejected' ? 'Why is it rejected?' : 'Why is it cancelled?', '');
+        if (note == null) return;
+        note = note.trim();
+        if (!note) { showToast('Write the reason first', 'warning'); return; }
+    }
+    _prPush(_prWithStatus(r, status, note), `Request ${prStatusDef(status).label.toLowerCase()}`, r);
+    showPurchaseDetail(id);
+}
+function recordPurchasePO(id) {
+    const r = purchaseRequests.find(x => x.id === id);
+    if (!r || !canManagePurchase()) return;
+    const no = prompt('PO number:', r.poNo || '');
+    if (no == null) return;
+    if (!no.trim()) { showToast('Fill in the PO number', 'warning'); return; }
+    const date = prompt('PO date (YYYY-MM-DD):', r.poDate || toISODate());
+    if (date == null) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) { showToast('Write the date as YYYY-MM-DD', 'warning'); return; }
+    const next = { ...r, poNo: no.trim(), poDate: date.trim() };
+    _prPush(r.status === 'approved' ? _prWithStatus(next, 'po', next.poNo) : { ...next, updatedAt: Date.now() }, 'PO recorded', r);
+    showPurchaseDetail(id);
+}
+
+// ---- Receiving: quantities, photos, and the same goods into Warehouse ----
+function showPurchaseReceive(id) {
+    const r = purchaseRequests.find(x => x.id === id);
+    if (!r || !canManagePurchase()) return;
+    closePurchaseDetail();
+    document.getElementById('prReceiveForm').reset();
+    document.getElementById('prReceiveId').value = r.id;
+    document.getElementById('prReceiveDate').value = toISODate();
+    document.getElementById('prReceiveTitle').textContent = `Receive goods — ${r.prNo || r.title}`;
+    const toStock = document.getElementById('prReceiveToStock');
+    toStock.checked = hasAccess('warehouse', 'edit');
+    toStock.disabled = !hasAccess('warehouse', 'edit');
+    if (typeof populateWarehouseFilters === 'function') populateWarehouseFilters();
+    document.getElementById('prReceiveItems').innerHTML = (r.items || []).map((it, i) => {
+        const left = Math.max(0, (Number(it.qty) || 0) - (Number(it.receivedQty) || 0));
+        return `<div class="pr-recv">
+            <span class="pr-recv__spec">${escapeHtml(it.spec || '')}<span class="adm-sub">Ordered ${Number(it.qty) || 0} ${escapeHtml(it.uom || '')} · received ${Number(it.receivedQty) || 0}</span></span>
+            <input class="form-input" type="number" min="0" max="${left}" step="1" value="${left}" data-item="${escapeHtml(it.id)}" aria-label="Received now: ${escapeHtml(it.spec || 'item ' + (i + 1))}" ${left ? '' : 'disabled'}>
+        </div>`;
+    }).join('');
+    whPhotoReset('prReceipt', []);
+    document.getElementById('prReceiveModal').classList.add('open');
+}
+function closePurchaseReceive() { document.getElementById('prReceiveModal').classList.remove('open'); }
+
+function savePurchaseReceipt(event) {
+    if (event) event.preventDefault();
+    const id = document.getElementById('prReceiveId').value;
+    const r = purchaseRequests.find(x => x.id === id);
+    if (!r || !canManagePurchase()) return;
+    const date = document.getElementById('prReceiveDate').value || toISODate();
+    if (date > toISODate()) { showToast('The receipt date cannot be in the future', 'warning'); return; }
+    const got = [];
+    for (const inp of document.querySelectorAll('#prReceiveItems input[data-item]')) {
+        const it = (r.items || []).find(x => x.id === inp.dataset.item);
+        if (!it) continue;
+        const q = parseInt(inp.value, 10) || 0;
+        const left = (Number(it.qty) || 0) - (Number(it.receivedQty) || 0);
+        if (q < 0 || q > left) { showToast(`"${it.spec}": at most ${left} left to receive`, 'warning'); return; }
+        if (q > 0) got.push({ it, q });
+    }
+    if (!got.length) { showToast('Enter what arrived', 'warning'); return; }
+    const receiptId = 'rc_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const photoIds = whPhotoCommit('prReceipt', `${r.id}__${receiptId}`);
+    // The same goods into Warehouse stock, one IN row per item.
+    const stockIds = [];
+    const toStock = document.getElementById('prReceiveToStock').checked && hasAccess('warehouse', 'edit');
+    if (toStock) {
+        const location = (document.getElementById('prReceiveLocation').value || '').trim();
+        got.forEach(({ it, q }) => {
+            const rec = { id: generateStockId(), date, txnType: 'IN', itemName: it.spec, qty: q, location,
+                unitId: '', unitName: '', note: `${r.prNo ? 'PR ' + r.prNo : 'Purchase request'}${r.poNo ? ' · PO ' + r.poNo : ''}`,
+                photoIds: [], purchaseId: r.id, createdAt: Date.now(), updatedAt: Date.now() };
+            stockIds.push(rec.id);
+            cloudWrite({ action: 'create', unitName: `[Inventory] ${rec.itemName}`, field: 'Stock in', before: '', after: `IN ${q} (purchase)` },
+                cloudCall('saveStockItem', rec), null,
+                err => { console.error('[purchase] stock in failed:', err); showToast('Goods received, but the Warehouse stock was not recorded', 'warning'); });
+        });
+    }
+    const items = (r.items || []).map(it => {
+        const g = got.find(x => x.it.id === it.id);
+        return g ? { ...it, receivedQty: (Number(it.receivedQty) || 0) + g.q } : it;
+    });
+    const all = items.every(it => (Number(it.receivedQty) || 0) >= (Number(it.qty) || 0));
+    const receipt = { id: receiptId, date, items: got.map(g => ({ itemId: g.it.id, qty: g.q })), photoIds,
+        note: (document.getElementById('prReceiveNote').value || '').trim(), stockIds,
+        by: (currentUser && currentUser.email) || '', at: Date.now() };
+    const next = _prWithStatus({ ...r, items, receipts: [...(r.receipts || []), receipt] }, all ? 'received' : 'partial');
+    _prPush(next, all ? 'All goods received' : 'Partial receipt recorded', r);
+    closePurchaseReceive();
+    showPurchaseDetail(r.id);
+}
+
+// ---- Decision inbox ----
+function purchaseDecisionGroup() {
+    if (!canManagePurchase()) return null;
+    const now = Date.now();
+    const stalled = r => ['submitted', 'approved', 'po', 'partial'].includes(r.status) && now - prLastChange(r) >= PR_STALL_DAYS * 86400000;
+    const list = purchaseRequests.filter(r => r.status === 'submitted' || (!PR_CLOSED.includes(r.status) && r.status !== 'draft'
+        && (r.requestType === 'Urgent' || stalled(r))));
+    const why = r => r.status === 'submitted' ? 'waiting for approval' : stalled(r) ? `${prStatusDef(r.status).label.toLowerCase()} for ${Math.floor((now - prLastChange(r)) / 86400000)} days` : prStatusDef(r.status).label.toLowerCase();
+    return {
+        key: 'purchase', icon: 'file-invoice', tone: list.some(r => r.requestType === 'Urgent') ? 'danger' : 'warning',
+        title: 'Purchase requests to act on',
+        total: list.length,
+        items: list.slice(0, 6).map(r => ({
+            text: `${r.prNo || r.title}${r.requestType === 'Urgent' ? ' · Urgent' : ''}`,
+            sub: `${r.company || ''} · ${why(r)}`
+        })),
+        goto: 'purchase',
+        since: _oldestMs(list, prLastChange)
+    };
+}
+
 // ---- Warehouse photos (v185): devices and stock movements ----
 // Up to ten per item, one Firestore document each (warehousePhotos/{id}), so
 // no item can outgrow the 1 MB document limit. The item itself keeps only the
 // list of photo ids; photos load when a form, profile or gallery opens.
 const WH_PHOTO_MAX = 10;
 const _whPhotoCache = new Map();               // photo id → data URL
-const _whPh = { device: { items: [], removed: [] }, stock: { items: [], removed: [] } };
-const _WH_PH_EL = { device: 'dev', stock: 'stk' };
+const _whPh = { device: { items: [], removed: [] }, stock: { items: [], removed: [] },
+                prDoc: { items: [], removed: [] }, prReceipt: { items: [], removed: [] } };
+const _WH_PH_EL = { device: 'dev', stock: 'stk', prDoc: 'prDoc', prReceipt: 'prRcv' };
+// Where each kind's photos live: warehousePhotos ('wh') or purchasePhotos ('pr').
+const _PH_STORE = { device: 'wh', stock: 'wh', prDoc: 'pr', prReceipt: 'pr' };
+const _PH_FN = {
+    wh: { get: 'getWhPhoto', save: 'saveWhPhoto', del: 'deleteWhPhoto' },
+    pr: { get: 'getPurchasePhoto', save: 'savePurchasePhoto', del: 'deletePurchasePhoto' }
+};
 function _whPhotoId(ownerId) { return `${ownerId}__p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`; }
-async function loadWhPhoto(id) {
+async function loadWhPhoto(id, store) {
     if (_whPhotoCache.has(id)) return _whPhotoCache.get(id);
+    const fn = _PH_FN[store || 'wh'].get;
     let src = '';
-    try { src = window.cloud && window.cloud.getWhPhoto ? await window.cloud.getWhPhoto(id) : ''; } catch (e) { console.warn('[warehouse] photo not loaded', id, e && e.code); }
+    try { src = window.cloud && window.cloud[fn] ? await window.cloud[fn](id) : ''; } catch (e) { console.warn('[photos] not loaded', id, e && e.code); }
     if (src) _whPhotoCache.set(id, src);
     return src;
 }
@@ -17710,7 +18216,7 @@ function whPhotoReset(kind, ids) {
     st.items = (Array.isArray(ids) ? ids : []).slice(0, WH_PHOTO_MAX).map(id => ({ id, src: _whPhotoCache.get(id) || '', isNew: false }));
     st.removed = [];
     whPhotoRender(kind);
-    st.items.filter(it => !it.src).forEach(it => loadWhPhoto(it.id).then(src => { it.src = src; it.missing = !src; whPhotoRender(kind); }));
+    st.items.filter(it => !it.src).forEach(it => loadWhPhoto(it.id, _PH_STORE[kind]).then(src => { it.src = src; it.missing = !src; whPhotoRender(kind); }));
 }
 function whPhotoRender(kind) {
     const k = _WH_PH_EL[kind];
@@ -17767,37 +18273,39 @@ function whPhotoCommit(kind, ownerId) {
             it.id = _whPhotoId(ownerId);
             it.isNew = false;
             _whPhotoCache.set(it.id, it.src);
-            if (window.cloud && window.cloud.saveWhPhoto && !suppressCloudWrites) {
-                window.cloud.saveWhPhoto(it.id, ownerId, it.src).catch(err => {
-                    console.error('[warehouse] photo not saved:', err);
+            const saveFn = _PH_FN[_PH_STORE[kind]].save;
+            if (window.cloud && window.cloud[saveFn] && !suppressCloudWrites) {
+                window.cloud[saveFn](it.id, ownerId, it.src).catch(err => {
+                    console.error('[photos] not saved:', err);
                     showToast(err && err.code === 'permission-denied' ? 'Photos need the new firestore.rules — publish them first' : 'A photo was not saved — try again', 'error');
                 });
             }
         }
         if (it.id) ids.push(it.id);
     });
-    deleteWhPhotos(st.removed);
+    deleteWhPhotos(st.removed, _PH_STORE[kind]);
     st.removed = [];
     return ids;
 }
-function deleteWhPhotos(ids) {
+function deleteWhPhotos(ids, store) {
+    const fn = _PH_FN[store || 'wh'].del;
     (ids || []).forEach(id => {
         _whPhotoCache.delete(id);
-        if (window.cloud && window.cloud.deleteWhPhoto && !suppressCloudWrites) window.cloud.deleteWhPhoto(id).catch(() => {});
+        if (window.cloud && window.cloud[fn] && !suppressCloudWrites) window.cloud[fn](id).catch(() => {});
     });
 }
 // Gallery from a table row or a profile: load them all, then open.
-async function openWhPhotos(ids, start) {
+async function openWhPhotos(ids, start, store) {
     if (!ids || !ids.length) return;
     showToast(`Loading ${ids.length} photo${ids.length === 1 ? '' : 's'}…`, 'info');
-    const srcs = (await Promise.all(ids.map(loadWhPhoto))).filter(Boolean);
+    const srcs = (await Promise.all(ids.map(id => loadWhPhoto(id, store)))).filter(Boolean);
     if (!srcs.length) { showToast('Photos could not be loaded', 'warning'); return; }
     openPhotoLightbox(srcs, start || 0);
 }
-function whPhotoChip(ids, label) {
+function whPhotoChip(ids, label, store) {
     const n = Array.isArray(ids) ? ids.length : 0;
     if (!n) return '';
-    return `<button type="button" class="wh-photo-chip" aria-label="View ${n} photo${n === 1 ? '' : 's'} of ${escapeHtml(label)}" onclick="openWhPhotos(${escapeHtml(JSON.stringify(ids))})"><i class="fas fa-camera" aria-hidden="true"></i> ${n}</button>`;
+    return `<button type="button" class="wh-photo-chip" aria-label="View ${n} photo${n === 1 ? '' : 's'} of ${escapeHtml(label)}" onclick="event.stopPropagation(); openWhPhotos(${escapeHtml(JSON.stringify(ids))}, 0, '${store || 'wh'}')"><i class="fas fa-camera" aria-hidden="true"></i> ${n}</button>`;
 }
 
 // ============================================================
@@ -19626,6 +20134,9 @@ function decisionGroups() {
         });
     }
 
+    // ---- Purchase requests waiting on someone ----
+    { const g = purchaseDecisionGroup(); if (g) add(g); }
+
     // ---- Pendaftar menunggu disetujui ----
     if (isOwner()) {
         const pendingUsers = allUsers.filter(u => u.status !== 'active');
@@ -19720,6 +20231,12 @@ function goDecision(target) {
         return;
     }
     switch (target) {
+        case 'purchase': {
+            navigateTo('purchase');
+            const f = document.getElementById('prStatusFilter');
+            if (f && currentView === 'purchase') { f.value = 'open'; renderPurchaseView(); }
+            break;
+        }
         case 'leave': {
             navigateTo('team');
             switchTeamTab('leave');

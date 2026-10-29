@@ -10401,3 +10401,72 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
     #authGate .auth-main { align-items: flex-start; padding-top: clamp(32px, 9vh, 96px); }
 }
 
+
+/* ===== Purchase Requests (2.9.0) ===== */
+.pr-count { margin-left: auto; font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
+.pr-row { cursor: pointer; }
+.pr-row:hover td { background: var(--primary-lighter); }
+.pr-tile--bad .wh-tile__value { color: var(--danger); }
+.pr-tile--warn .wh-tile__value { color: var(--warning-strong, var(--warning)); }
+.pr-tile--good .wh-tile__value { color: var(--success); }
+.pr-status {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: 999px;
+    font-size: 12px; font-weight: 600; line-height: 1.5; white-space: nowrap;
+    background: var(--border-light); color: var(--text-secondary);
+}
+.pr-dot { width: 7px; height: 7px; border-radius: 4px; background: currentColor; }
+.pr-status--info  { background: var(--info-bg, #EAF2FF); color: var(--info, #2F6FDB); }
+.pr-status--teal  { background: var(--primary-lighter); color: var(--accent); }
+.pr-status--warn  { background: var(--warning-bg); color: var(--warning); }
+.pr-status--good  { background: var(--success-bg); color: var(--success); }
+.pr-status--bad   { background: var(--danger-bg); color: var(--danger); }
+.pr-status + .wh-photo-chip { margin-left: 6px; }
+.pr-urgent {
+    display: inline-block; margin-top: 2px; padding: 1px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 700; letter-spacing: .02em;
+    background: var(--danger-bg); color: var(--danger); width: fit-content;
+}
+.pr-budget { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+.pr-budget--capex   { background: var(--warning-bg); color: var(--warning); }
+.pr-budget--expense { background: var(--border-light); color: var(--text-secondary); }
+
+.pr-dialog { width: min(860px, calc(100vw - 32px)); max-width: none; }
+.pr-section-title {
+    margin: 18px 0 8px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-light);
+    font-size: 13px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase;
+    color: var(--text-secondary);
+}
+.modal-body > .pr-section-title:first-child { margin-top: 0; }
+.pr-items { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.pr-item {
+    display: grid; align-items: center; gap: 8px;
+    grid-template-columns: 24px minmax(0, 1fr) 80px 90px 150px 40px;
+}
+.pr-item--head { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.pr-item__no { font-size: 13px; color: var(--text-secondary); text-align: center; }
+.pr-total { margin: 8px 0 4px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pr-total:empty { display: none; }
+.pr-detail-items .pr-spec { white-space: normal; min-width: 220px; }
+.pr-receipts { display: flex; flex-direction: column; gap: 8px; }
+.pr-receipt { padding: 10px 12px; border-radius: 10px; background: var(--bg, #F6F7F9); display: flex; flex-direction: column; gap: 4px; }
+.pr-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pr-timeline li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.pr-detail-actions { flex-wrap: wrap; }
+.pr-receive-items { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.pr-recv { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 10px; align-items: center; }
+.pr-recv__spec { display: flex; flex-direction: column; min-width: 0; }
+
+@media (max-width: 720px) {
+    .pr-item { grid-template-columns: 20px minmax(0, 1fr) 64px 40px; grid-template-areas: none; }
+    .pr-item--head { display: none; }
+    .pr-item > input:nth-of-type(1) { grid-column: 2 / 5; }
+    .pr-item > input:nth-of-type(2) { grid-column: 2; }
+    .pr-item > input:nth-of-type(3) { grid-column: 3 / 5; }
+    .pr-item > input:nth-of-type(4) { grid-column: 2 / 4; }
+    .pr-item { padding-bottom: 8px; border-bottom: 1px solid var(--border-light); }
+    .pr-count { margin-left: 0; }
+}
+.pr-items + .btn + .pr-total + .form-grid { margin-top: 14px; }
+.pr-receipt .wh-photo-chip { align-self: flex-start; }

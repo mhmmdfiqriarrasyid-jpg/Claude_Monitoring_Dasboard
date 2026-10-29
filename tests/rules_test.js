@@ -462,6 +462,43 @@ async function check(name, p, expectOk) {
     await check('Damage Types: editor Damage menyimpan daftar', setDoc(doc(as('sup'), 'masterLists', 'damageType'), { id: 'damageType', values: ['Electrical'] }), true);
     await check('Damage Types: tanpa edit Damage DITOLAK', setDoc(doc(as('whv'), 'masterLists', 'damageType'), { id: 'damageType', values: ['X'] }), false);
 
+    // ---- 2.9.0: Purchase Request ----
+    await env.withSecurityRulesDisabled(async ctx => {
+        const db = ctx.firestore();
+        await setDoc(doc(db, 'users', 'prE'), { uid: 'prE', email: 'pre@x.id', role: 'staff', status: 'active', access: { purchase: 'edit' } });
+        await setDoc(doc(db, 'users', 'prV'), { uid: 'prV', email: 'prv@x.id', role: 'staff', status: 'active', access: { purchase: 'view' } });
+        await setDoc(doc(db, 'users', 'prO'), { uid: 'prO', email: 'pro@x.id', role: 'staff', status: 'active', access: { purchase: 'own' } });
+        await setDoc(doc(db, 'purchaseRequests', 'pr_mine'), { id: 'pr_mine', title: 'x', status: 'draft', createdByUid: 'prO' });
+        await setDoc(doc(db, 'purchaseRequests', 'pr_sub'), { id: 'pr_sub', title: 'x', status: 'submitted', createdByUid: 'prO' });
+        await setDoc(doc(db, 'purchaseRequests', 'pr_other'), { id: 'pr_other', title: 'x', status: 'draft', createdByUid: 'prE' });
+    });
+    const PE = as('prE'), PV = as('prV'), PO_ = as('prO');
+    await check('PR: editor membaca semua', getDocs(collection(PE, 'purchaseRequests')), true);
+    await check('PR: editor membuat permintaan', setDoc(doc(PE, 'purchaseRequests', 'pr_new'), { id: 'pr_new', title: 'y', status: 'submitted', createdByUid: 'prE' }), true);
+    await check('PR: editor menyetujui / mencatat PO', setDoc(doc(PE, 'purchaseRequests', 'pr_sub'), { status: 'po', poNo: 'PO-1' }, { merge: true }), true);
+    await check('PR: editor atas nama orang lain DITOLAK', setDoc(doc(PE, 'purchaseRequests', 'pr_fake'), { id: 'pr_fake', title: 'y', status: 'draft', createdByUid: 'prO' }), false);
+    await check('PR: pembaca membaca semua', getDocs(collection(PV, 'purchaseRequests')), true);
+    await check('PR: pembaca TIDAK bisa menulis', setDoc(doc(PV, 'purchaseRequests', 'pr_v'), { id: 'pr_v', title: 'y', status: 'draft', createdByUid: 'prV' }), false);
+    await check('PR: tanpa akses TIDAK bisa membaca', getDocs(collection(N, 'purchaseRequests')), false);
+    await check('PR own: query miliknya sendiri', getDocs(query(collection(PO_, 'purchaseRequests'), where('createdByUid', '==', 'prO'))), true);
+    await check('PR own: query semua DITOLAK', getDocs(collection(PO_, 'purchaseRequests')), false);
+    await check('PR own: membaca milik orang lain DITOLAK', getDoc(doc(PO_, 'purchaseRequests', 'pr_other')), false);
+    await check('PR own: membuat draf sendiri', setDoc(doc(PO_, 'purchaseRequests', 'pr_o1'), { id: 'pr_o1', title: 'y', status: 'draft', createdByUid: 'prO' }), true);
+    await check('PR own: membuat langsung Approved DITOLAK', setDoc(doc(PO_, 'purchaseRequests', 'pr_o2'), { id: 'pr_o2', title: 'y', status: 'approved', createdByUid: 'prO' }), false);
+    await check('PR own: mengajukan drafnya', setDoc(doc(PO_, 'purchaseRequests', 'pr_mine'), { status: 'submitted' }, { merge: true }), true);
+    await check('PR own: mengubah yang sudah diajukan DITOLAK', setDoc(doc(PO_, 'purchaseRequests', 'pr_mine'), { title: 'ubah' }, { merge: true }), false);
+    await check('PR own: menghapus yang sudah diajukan DITOLAK', deleteDoc(doc(PO_, 'purchaseRequests', 'pr_mine')), false);
+    await check('PR own: menghapus drafnya sendiri', deleteDoc(doc(PO_, 'purchaseRequests', 'pr_o1')), true);
+    await check('PR own: mengubah draf orang lain DITOLAK', setDoc(doc(PO_, 'purchaseRequests', 'pr_other'), { title: 'ubah' }, { merge: true }), false);
+    await check('PR foto: editor menyimpan', setDoc(doc(PE, 'purchasePhotos', 'pr_new__p1'), { id: 'pr_new__p1', ownerId: 'pr_new', photo: 'data:image/jpeg;base64,AA' }), true);
+    await check('PR foto: own menyimpan lampiran', setDoc(doc(PO_, 'purchasePhotos', 'pr_mine__p1'), { id: 'pr_mine__p1', ownerId: 'pr_mine', photo: 'data:image/jpeg;base64,AA' }), true);
+    await check('PR foto: pembaca membuka', getDoc(doc(PV, 'purchasePhotos', 'pr_new__p1')), true);
+    await check('PR foto: pembaca TIDAK bisa menulis', setDoc(doc(PV, 'purchasePhotos', 'pr_v__p1'), { id: 'pr_v__p1', ownerId: 'pr_v', photo: 'x' }), false);
+    await check('PR foto: tanpa akses TIDAK bisa membaca', getDoc(doc(N, 'purchasePhotos', 'pr_new__p1')), false);
+    await check('PR foto: terlalu besar DITOLAK', setDoc(doc(PE, 'purchasePhotos', 'pr_new__p2'), { id: 'pr_new__p2', ownerId: 'pr_new', photo: 'x'.repeat(400001) }), false);
+    await check('PR: pemegang own boleh menulis riwayat', setDoc(doc(PO_, 'history', 'h_pr'),
+        { id: 'h_pr', timestamp: Date.now(), action: 'create', unitId: '', unitName: '[Purchase] x', field: '', before: '', after: '', actorUid: 'prO', actorEmail: 'prO@x.id', actorName: 'p', actorRole: 'staff', unitGroup: 'shared' }), true);
+
     await env.cleanup();
     let pass = 0;
     T.forEach(x => { if (x.pass) pass++; else console.log('FAIL', x.name, '\n   ', x.err || ''); });

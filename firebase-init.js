@@ -136,6 +136,8 @@ const MASTER_LISTS_COL = 'masterLists';
 const LICENSE_REQ_COL = 'licenseRequirements';
 const DAMAGE_COMPONENTS_COL = 'damageComponents';
 const DEVICES_COL = 'devices';
+const PURCHASE_COL = 'purchaseRequests';
+const PURCHASE_PHOTOS_COL = 'purchasePhotos';
 const STOCK_ITEMS_COL = 'stockItems';
 // Operational vehicles (company motorbikes) and their fuel log. A fuel
 // record's receipt photo lives in fuelPhotos/{recordId}, never subscribed.
@@ -610,6 +612,38 @@ window.cloud = {
         const snap = await getDocs(collection(db, DEVICES_COL));
         return snap.docs.map(withDocId);
     },
+    // ---- Purchase requests (2.9.0) ----
+    // authorUid: only that account's own requests (access level 'own').
+    async savePurchaseRequest(rec) {
+        await setDoc(doc(db, PURCHASE_COL, rec.id), rec);
+    },
+    async deletePurchaseRequest(id) {
+        await deleteDoc(doc(db, PURCHASE_COL, id));
+    },
+    subscribePurchaseRequests(callback, errorCallback, authorUid) {
+        return _onSnapshotWithPending(
+            authorUid ? query(collection(db, PURCHASE_COL), where('createdByUid', '==', authorUid))
+                      : collection(db, PURCHASE_COL),
+            callback,
+            err => {
+                console.error('[cloud] purchaseRequests subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
+    },
+    async getPurchasePhoto(id) {
+        const snap = await getDoc(doc(db, PURCHASE_PHOTOS_COL, id));
+        if (!snap.exists()) return '';
+        const data = snap.data();
+        return typeof data.photo === 'string' ? data.photo : '';
+    },
+    async savePurchasePhoto(id, ownerId, photo) {
+        await setDoc(doc(db, PURCHASE_PHOTOS_COL, id), { id, ownerId, photo, updatedAt: Date.now() });
+    },
+    async deletePurchasePhoto(id) {
+        await deleteDoc(doc(db, PURCHASE_PHOTOS_COL, id));
+    },
+
     subscribeDevices(callback, errorCallback) {
         return onSnapshot(
             collection(db, DEVICES_COL),

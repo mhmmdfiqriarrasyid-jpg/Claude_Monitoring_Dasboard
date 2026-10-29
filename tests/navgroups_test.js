@@ -45,7 +45,7 @@ const { launch, BASE_URL } = require('./_env');
         t('owner: semua grup', shownGroups(), ['(top)', 'Fleet', 'Operations', 'Admin']);
         t('atas: Dashboard dan Decision inbox', links('(top)'), ['Dashboard', 'Decision inbox']);
         t('Fleet: satu tautan per halaman', links('Fleet'), ['Units', 'Implements', 'Damage', 'Inspection', 'Licenses']);
-        t('Operations: Team dan Warehouse', links('Operations'), ['Team', 'Warehouse']);
+        t('Operations: Team, Warehouse dan Purchase Requests', links('Operations'), ['Team', 'Warehouse', 'Purchase Requests']);
         t('Admin: Users, Master lists dan History', links('Admin'), ['Users', 'Master lists', 'History']);
         t('tidak ada lagi tautan per kelompok', document.querySelectorAll('.sidebar [data-group]').length, 0);
         t('badge tetap di tautannya', ['decisionBadge', 'inspectionBadge', 'teamBadge'].map(id => document.getElementById(id).closest('.nav__link').dataset.view), ['leader', 'inspection', 'team']);
