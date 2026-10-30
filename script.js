@@ -146,7 +146,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.10.0';
+const APP_VERSION = 'v2.10.1';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -16224,8 +16224,11 @@ function renderWorkLogTable() {
             <td data-label="Unit">${names.length
                 ? names.map(n => `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(n)}</span>`).join(' ')
                 : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
-            <td data-label="Paddock" style="font-size:12px">${(() => {
-                const js = workLogJobs(w).filter(j => j.paddock || j.jobType);
+            <td data-label="Paddock" class="wl-paddock-col">${(() => {
+                // One paddock per line. Older reports typed several into one
+                // field ("A, B" / "A dan B"); those are split the same way.
+                const js = workLogJobs(w).filter(j => j.paddock || j.jobType).flatMap(j => j.jobType ? [j]
+                    : String(j.paddock).split(/\s*(?:,|;|\/|&|\bdan\b|\band\b)\s*/i).filter(Boolean).map(p => ({ paddock: p, jobType: '' })));
                 return js.length ? js.map(j => `<div class="wl-job-cell">${escapeHtml(j.paddock || '—')}${j.jobType
                     ? ` <span class="wl-job-type">${escapeHtml(j.jobType)}</span>` : ''}</div>`).join('')
                     : '<span style="color:var(--text-light)">—</span>';

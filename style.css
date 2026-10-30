@@ -10529,7 +10529,9 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
 .wl-job .form-group:last-child { margin-bottom: 0; }
 .wl-job .form-input, .wl-job .form-select { background: var(--card); }
 .wl-job-add { margin-top: 10px; align-self: flex-start; width: auto; }
-.wl-job-cell { white-space: nowrap; }
+.wl-paddock-col { font-size: 12px; min-width: 110px; max-width: 170px; }
+.wl-job-cell { overflow-wrap: anywhere; line-height: 1.35; }
+.wl-job-cell + .wl-job-cell { margin-top: 3px; }
 .wl-job-type {
     display: inline-block; padding: 0 6px; border-radius: 6px;
     background: var(--primary-lighter); color: var(--accent-text, var(--accent));
