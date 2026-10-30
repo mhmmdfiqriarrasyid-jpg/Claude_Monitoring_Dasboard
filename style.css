@@ -5406,6 +5406,24 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
         color: #FFFFFF;
     }
     .auth-brand__sub { font-family: var(--font-display); font-size: 18px; font-weight: 500; color: #CCFBEF; }
+    .auth-brand .auth-brand__tag {
+        margin-top: 6px;
+        font-family: var(--font-display);
+        font-size: 15px;
+        font-weight: 500;
+        line-height: 1.4;
+        color: #FFFFFF;
+        opacity: .85;
+    }
+    .auth-brand .auth-brand__foot {
+        position: absolute;
+        left: 0; right: 0; bottom: 24px;
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.4;
+        color: #CCFBEF;
+        opacity: .9;
+    }
     .auth-main {
         flex: 1 1 420px;
         min-width: 0;
@@ -5557,6 +5575,9 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
     .auth-brand__logo .brand-logo--lg { width: 40px; height: 40px; }
     .auth-brand .auth-brand__name { font-size: 20px; }
     .auth-brand__sub { font-size: 15px; }
+    .auth-brand { flex-wrap: wrap; }
+    .auth-brand .auth-brand__tag { margin-top: 2px; font-size: 13px; }
+    .auth-brand .auth-brand__foot { position: static; flex-basis: 100%; font-size: 12px; }
     .auth-main { flex-basis: 100%; padding: 24px 16px 40px; align-items: flex-start; }
 }
 
@@ -10224,6 +10245,8 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
 /* Sign-in panel: water ripples under the logo (v176) */
 .auth-brand { position: relative; overflow: hidden; }
 .auth-brand > :not(.auth-ripples):not(.auth-refract) { position: relative; z-index: 1; }
+.auth-brand > .auth-brand__foot:not(.auth-refract) { position: absolute; }
+@media screen and (max-width: 900px) { .auth-brand > .auth-brand__foot:not(.auth-refract) { position: static; } }
 .auth-ripples { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; image-rendering: auto; filter: blur(3px); }
 
 /* Sign-in: dark dot grid and faint sugarcane around the card (v179) */

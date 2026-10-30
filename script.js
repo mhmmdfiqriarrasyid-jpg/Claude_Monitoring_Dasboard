@@ -139,7 +139,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.9.1';
+const APP_VERSION = 'v2.9.2';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -12933,7 +12933,7 @@ function initAuthRipples() {
         // The logo and the name sit under the water: while it moves they are
         // drawn into a canvas and bent by the slope of the surface (the real
         // elements fade out meanwhile, and come back sharp once it is calm).
-        const floaters = [...panel.children].filter(el => el !== canvas && !el.classList.contains('auth-cane'));
+        const floaters = [...panel.children].filter(el => el !== canvas && !el.classList.contains('auth-cane') && !el.classList.contains('auth-brand__foot'));
         const refr = document.createElement('canvas');
         refr.className = 'auth-refract';
         refr.setAttribute('aria-hidden', 'true');
