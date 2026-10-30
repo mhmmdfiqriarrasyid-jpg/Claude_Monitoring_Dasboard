@@ -146,7 +146,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.10.3';
+const APP_VERSION = 'v2.10.4';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -6076,6 +6076,55 @@ function heavyEditHead() {
         <th>Remarks</th><th>Attachments</th><th class="col-actions">Actions</th>
     </tr>`;
 }
+// ---- Column views (2.10.4) ----
+// About twenty columns do not fit a laptop screen, and dragging the table
+// sideways to reach the licences was the daily annoyance. Each view shows
+// the columns for one question; "All" is the old wide table. Columns are
+// hidden by position (CSS), so rows, sorting and inline edits are untouched.
+// Positions count from 1, the checkbox column included.
+const UNIT_COL_VIEWS = {
+    tractor: [
+        { key: 'overview',   label: 'Overview',   show: [1, 2, 3, 4, 5, 7, 12, 14, 21] },
+        { key: 'components', label: 'Components', show: [1, 2, 3, 7, 8, 9, 10, 11, 12, 21] },
+        { key: 'licenses',   label: 'Licenses',   show: [1, 2, 3, 7, 12, 15, 16, 17, 18, 21] },
+        { key: 'all',        label: 'All',        show: null }
+    ],
+    heavy: [
+        { key: 'overview',   label: 'Overview',   show: [1, 2, 3, 4, 6, 7, 10, 15, 20] },
+        { key: 'components', label: 'Components', show: [1, 2, 3, 10, 11, 12, 13, 14, 15, 20] },
+        { key: 'all',        label: 'All',        show: null }
+    ]
+};
+function unitColView(group) {
+    const views = UNIT_COL_VIEWS[group] || UNIT_COL_VIEWS.tractor;
+    let k = '';
+    try { k = localStorage.getItem('unitsColView') || ''; } catch (_) {}
+    return views.find(v => v.key === k) || views[0];
+}
+function setUnitColView(key) {
+    try { localStorage.setItem('unitsColView', key); } catch (_) {}
+    applyUnitColView();
+}
+function applyUnitColView() {
+    const g = effectiveEditGroup();
+    const views = UNIT_COL_VIEWS[g] || UNIT_COL_VIEWS.tractor;
+    const cur = unitColView(g);
+    const seg = document.getElementById('unitsColView');
+    if (seg) seg.innerHTML = views.map(v => `<button type="button" class="units-colview__btn" aria-pressed="${v.key === cur.key}"
+        onclick="setUnitColView(${jsArg(v.key)})">${escapeHtml(v.label)}</button>`).join('');
+    let st = document.getElementById('unitsColViewStyle');
+    if (!st) { st = document.createElement('style'); st.id = 'unitsColViewStyle'; document.head.appendChild(st); }
+    const total = EDIT_COLSPAN[g] || 21;
+    const hide = cur.show ? Array.from({ length: total }, (_, i) => i + 1).filter(n => !cur.show.includes(n)) : [];
+    // Only where the table is a table: on a phone rows are stacked cards
+    // (max-width 700px) and every field stays.
+    st.textContent = hide.length
+        ? `@media (min-width: 701px) { ${hide.map(n => `#editTable > thead > tr > :nth-child(${n}), #editTable > tbody > tr > td:nth-child(${n}):not([colspan])`).join(',\n')} { display: none !important; } }`
+        : '';
+    const t = document.getElementById('editTable');
+    if (t) t.dataset.colView = cur.key;
+}
+
 function renderEditHead() {
     const g = effectiveEditGroup();
     const head = document.querySelector('#editTable thead');
@@ -6084,6 +6133,7 @@ function renderEditHead() {
         _editHeadGroup = g;
     }
     markSortedHeader('#editTable thead', editSortState.key, editSortState.asc);
+    applyUnitColView();
 }
 
 // The group is picked in the sidebar (Agricultural / Heavy Equipment) or in

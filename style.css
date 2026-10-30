@@ -10581,3 +10581,24 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
 @media (hover: none) { .usr-rename { width: 36px; height: 36px; margin-top: -8px; } }
 .un-card { width: min(440px, calc(100vw - 32px)); }
 .un-email { display: block; margin-top: 6px; font-size: 13px; color: var(--text-secondary); overflow-wrap: anywhere; }
+
+/* ===== Units: column views (2.10.4) ===== */
+@media (max-width: 700px) { .units-colbar { display: none; } }
+.units-colbar { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; flex-wrap: wrap; }
+.units-colbar__label { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.units-colview { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 3px; border-radius: 10px; background: var(--border-light, #F2F4F7); }
+.units-colview .units-colview__btn {
+    min-height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent;
+    font: inherit; font-size: 13px; font-weight: 600; color: var(--text-secondary); cursor: pointer;
+}
+.units-colview .units-colview__btn[aria-pressed="true"] { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgba(16, 24, 40, .08); }
+.units-colview .units-colview__btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (hover: none) { .units-colview .units-colview__btn { min-height: 40px; } }
+/* Outside "All", long text wraps so the view fits the screen without
+   scrolling sideways; names, numbers and the row buttons stay on one line. */
+#editTable:not([data-col-view="all"]) td[data-label="Site"],
+#editTable:not([data-col-view="all"]) td[data-label="Implement"],
+#editTable:not([data-col-view="all"]) td[data-label="User Category"],
+#editTable:not([data-col-view="all"]) td[data-label="Work Tool"],
+#editTable:not([data-col-view="all"]) td[data-label="Machine Type"] { white-space: normal; min-width: 110px; max-width: 200px; }
+#editTable:not([data-col-view="all"]) th { white-space: normal; }
