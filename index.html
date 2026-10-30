@@ -3845,6 +3845,31 @@
     </div>
 </div>
 
+<div class="modal-overlay" id="userNameModal">
+    <div class="modal-card un-card" role="dialog" aria-labelledby="userNameTitle">
+        <div class="modal-header">
+            <h3 id="userNameTitle">Change name</h3>
+            <button type="button" class="btn-icon" onclick="closeUserNameModal()" aria-label="Close" title="Close">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+            </button>
+        </div>
+        <form id="userNameForm" onsubmit="event.preventDefault(); saveUserName()">
+            <input type="hidden" id="userNameUid">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label" for="userNameInput">Name shown in the dashboard</label>
+                    <input class="form-input" id="userNameInput" maxlength="80" autocomplete="off" required>
+                    <span class="un-email" id="userNameEmail"></span>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeUserNameModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save name</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="modal-overlay" id="accessModal">
     <div class="modal-card ac-card" role="dialog" aria-labelledby="accessTitle">
         <div class="modal-header ac-head">

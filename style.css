@@ -9785,7 +9785,8 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
     #viewUsers .usr-table th { text-align: left; }
     #viewUsers .usr-table th.col-actions { text-align: right; }
     .usr-table th, .usr-table td { padding-left: 12px; padding-right: 12px; }
-    .usr-table .usr-person { max-width: 200px; }
+    .usr-table .usr-person { max-width: 240px; min-width: 0; }
+    .usr-table .usr-person strong { overflow-wrap: anywhere; }
     .usr-table .usr-person strong { font-weight: 600; }
     .usr-you { font-size: 12px; font-weight: 400; color: var(--text-secondary); }
     .usr-table .user-cell-email {
@@ -10566,3 +10567,17 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
 .pd-import__row > div { display: flex; flex-direction: column; min-width: 0; align-self: center; }
 .pd-import__row .form-group { margin: 0; }
 @media (max-width: 600px) { .pd-import__row { grid-template-columns: 1fr; } }
+
+/* ===== Change a person's name (2.10.3) ===== */
+.usr-name { display: inline-flex; align-items: flex-start; gap: 4px; max-width: 100%; }
+.usr-rename {
+    flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; margin-top: -3px; padding: 0;
+    border: 0; border-radius: 7px; background: transparent; color: var(--text-light, #98A2B3);
+    cursor: pointer; transition: background-color .15s ease, color .15s ease;
+}
+.usr-rename:hover { background: var(--primary-lighter); color: var(--accent-text, var(--accent)); }
+.usr-rename:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (hover: none) { .usr-rename { width: 36px; height: 36px; margin-top: -8px; } }
+.un-card { width: min(440px, calc(100vw - 32px)); }
+.un-email { display: block; margin-top: 6px; font-size: 13px; color: var(--text-secondary); overflow-wrap: anywhere; }

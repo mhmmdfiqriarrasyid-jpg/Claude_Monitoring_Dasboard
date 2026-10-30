@@ -146,7 +146,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.10.2';
+const APP_VERSION = 'v2.10.3';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -894,6 +894,7 @@ const MODAL_CLOSERS = {
     categoriesModal:      'closeCategoriesModal',
     damageComponentsModal:'closeDamageComponentsModal',
     accessModal:          'closeAccessModal',
+    userNameModal:        'closeUserNameModal',
     teamMembersModal:     'closeTeamMembersModal',
     workLogModal:         'closeWorkLogModal',
     leaveModal:           'closeLeaveModal',
@@ -14154,7 +14155,9 @@ function renderUsersView() {
             return `
             <tr>
                 <td data-label="Person"><span class="adm-stack usr-person">
-                    <strong>${escapeHtml(u.displayName || '—')}${isMe ? ' <span class="usr-you">(You)</span>' : ''}</strong>
+                    <span class="usr-name"><strong>${escapeHtml(u.displayName || '—')}${isMe ? ' <span class="usr-you">(You)</span>' : ''}</strong>
+                        <button type="button" class="usr-rename" title="Change name" aria-label="Change the name of ${escapeHtml(u.displayName || u.email || '')}"
+                            onclick="openUserNameModal(${jsArg(u.uid)})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></button></span>
                     <span class="adm-sub user-cell-email" title="${escapeHtml(u.email || '')}">${escapeHtml(u.email || '')}</span>
                 </span></td>
                 <td data-label="Role"><span class="adm-stack">${roleSelect}${roleNote}</span></td>
@@ -14488,6 +14491,46 @@ async function deleteRole() {
 }
 
 // ---- Per-person: pick one role and the unit group ----
+// ---- Name shown for a person (2.10.3) ----
+// Accounts arrive with whatever name was typed at sign-up (or the e-mail
+// prefix); the owner can tidy it. Their sign-in e-mail does not change.
+function openUserNameModal(uid) {
+    if (!isOwner()) return;
+    const u = allUsers.find(x => x.uid === uid);
+    if (!u) return;
+    document.getElementById('userNameUid').value = uid;
+    document.getElementById('userNameInput').value = u.displayName || '';
+    document.getElementById('userNameEmail').textContent = `Signs in as ${u.email || uid} — that does not change.`;
+    document.getElementById('userNameModal').classList.add('open');
+    setTimeout(() => { const el = document.getElementById('userNameInput'); el.focus(); el.select(); }, 30);
+}
+function closeUserNameModal() { document.getElementById('userNameModal').classList.remove('open'); }
+// "fikri.suleman" / "FAREL MOHAMMAD" → spacing tidied; capitals left as typed.
+function tidyPersonName(v) { return String(v || '').replace(/\s+/g, ' ').trim(); }
+async function saveUserName() {
+    if (!isOwner()) return;
+    const uid = document.getElementById('userNameUid').value;
+    const u = allUsers.find(x => x.uid === uid);
+    if (!u) return;
+    const name = tidyPersonName(document.getElementById('userNameInput').value);
+    if (!name) { showToast('Type a name', 'warning'); return; }
+    if (name.length > 80) { showToast('Keep the name under 80 characters', 'warning'); return; }
+    if (name === (u.displayName || '')) { closeUserNameModal(); return; }
+    const before = u.displayName || '';
+    try {
+        await window.cloud.updateUserName(uid, name, (currentUser && currentUser.email) || '');
+        Object.assign(u, { displayName: name, updatedAt: Date.now(), updatedBy: (currentUser && currentUser.email) || '' });
+        if (currentUserDoc && currentUserDoc.uid === uid) currentUserDoc.displayName = name;
+        logEvent({ action: 'update', unitName: `[User] ${u.email || uid}`, field: 'Name', before, after: name });
+        closeUserNameModal();
+        renderUsersView();
+        showToast(`Name changed to "${name}"`, 'success');
+    } catch (err) {
+        console.error('[users] rename failed:', err);
+        showToast(err && err.code === 'permission-denied' ? 'Refused by the server — only the owner can change names' : 'Failed to change the name', 'error');
+    }
+}
+
 function openAccessModal(uid) {
     if (!isOwner()) return;
     const user = allUsers.find(u => u.uid === uid);

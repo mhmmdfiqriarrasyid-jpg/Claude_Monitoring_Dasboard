@@ -23,7 +23,9 @@ const { launch, BASE_URL } = require('./_env');
             saveRole: r => { savedRoles.push(JSON.parse(JSON.stringify(r))); return ok(); },
             deleteRole: ok,
             updateUserAccess: (uid, access, by, extra) => { accessWrites.push([uid, access, extra]); return ok(); },
-            updateUserRole: (uid, role) => { roleWrites.push([uid, role]); return ok(); } };
+            updateUserRole: (uid, role) => { roleWrites.push([uid, role]); return ok(); },
+            updateUserName: (uid, n) => { nameWrites.push([uid, n]); return ok(); } };
+        const nameWrites = [];
         currentUser = { uid: 'o', email: 'o@x.id' };
         currentUserDoc = { uid: 'o', role: 'owner', status: 'active', displayName: 'Owner', email: 'o@x.id' };
         hideAuthGates(); applyRoleGating();
@@ -83,9 +85,21 @@ const { launch, BASE_URL } = require('./_env');
         renderUsersView(); await tick(5);
         t('tabel: nama peran tampil', /Mekanik Lapangan/.test(document.getElementById('activeUsersBody').textContent), true);
 
+        // ---------- 2.10.3: owner mengganti nama tampilan ----------
+        openUserNameModal('a');
+        t('dialog nama berisi nama sekarang', document.getElementById('userNameInput').value, 'Andi');
+        document.getElementById('userNameInput').value = '';
+        await saveUserName();
+        t('nama kosong ditolak', [toasts.pop(), nameWrites.length], ['Type a name', 0]);
+        document.getElementById('userNameInput').value = '  Andi   Pratama ';
+        await saveUserName();
+        t('nama disimpan dan dirapikan', nameWrites.pop(), ['a', 'Andi Pratama']);
+        t('tabel memakai nama baru', /Andi Pratama/.test(document.getElementById('activeUsersBody').textContent), true);
+        t('dialog tertutup', document.getElementById('userNameModal').classList.contains('open'), false);
+
         // ---------- mengubah peran = berlaku untuk semua pemegangnya ----------
         openRoleModal(mek.id); await tick(5);
-        t('editor menyebut pemegang peran', document.getElementById('roleHolders').textContent, 'Held by 1 person: Andi');
+        t('editor menyebut pemegang peran', document.getElementById('roleHolders').textContent, 'Held by 1 person: Andi Pratama');
         document.getElementById('roleLvl_warehouse').value = 'view';
         accessWrites.length = 0; asked.length = 0;
         answer = false; await saveRole();

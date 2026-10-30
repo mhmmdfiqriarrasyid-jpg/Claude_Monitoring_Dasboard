@@ -445,6 +445,14 @@ window.cloud = {
     // extra: other fields written with it — the role a person holds
     // (roleId, roleName, v175). The access map is REPLACED, not merged, so a
     // level the role no longer grants does not linger.
+    // The name shown for a person (2.10.3) — set by the owner.
+    async updateUserName(uid, displayName, updatedByEmail) {
+        await updateDoc(doc(db, USERS_COL, uid), {
+            displayName,
+            updatedAt: Date.now(),
+            updatedBy: updatedByEmail || null
+        });
+    },
     async updateUserAccess(uid, access, updatedByEmail, extra) {
         await updateDoc(doc(db, USERS_COL, uid), {
             ...(extra || {}),
