@@ -41,6 +41,13 @@ const { launch, BASE_URL } = require('./_env');
         renderEditTable(); await tick();
         t('render ulang tetap di tab yang dipilih', heads().includes('GPS Expiry') && !heads().includes('Remarks'), true);
         t('baris tetap lengkap (data tidak dibuang)', document.querySelectorAll('#editBody tr')[0].children.length, 21);
+        // 2.10.6: satu scroll saja — kotak tabel tidak lagi punya scroll vertikal sendiri
+        globalData = Array.from({ length: 60 }, (_, i) => ({ ...seed[0], id: 'v' + i, name: 'V' + i, sn: 'SV' + i }));
+        renderEditTable(); await tick();
+        const w = wrap();
+        t('kotak tabel tidak scroll vertikal sendiri', [getComputedStyle(w).maxHeight, w.scrollHeight <= w.clientHeight + 2], ['none', true]);
+        setUnitColView('all'); renderEditTable(); await tick();
+        t('All: tetap tanpa scroll vertikal di dalam kotak', wrap().scrollHeight <= wrap().clientHeight + 2, true);
         window.__T = T;
     } catch (e) { window.__T = [{ n: 'CRASH ' + e.message + ' ' + (e.stack || '').split('\\n')[1], pass: false }]; } })()` });
 

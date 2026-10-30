@@ -146,7 +146,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.10.5';
+const APP_VERSION = 'v2.10.6';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -6123,6 +6123,9 @@ function applyUnitColView() {
         : '';
     const t = document.getElementById('editTable');
     if (t) t.dataset.colView = cur.key;
+    // The card follows the view: see style.css "one scroll" (2.10.6).
+    const card = t && t.closest('.units-table-card');
+    if (card) card.dataset.colView = cur.key;
 }
 
 function renderEditHead() {

@@ -10606,3 +10606,22 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
     #editTable:not([data-col-view="all"]) td,
     #editTable:not([data-col-view="all"]) th { padding-left: 10px; padding-right: 10px; }
 }
+
+/* ===== Units: one scroll (2.10.6) =====
+   The table used to scroll inside a 600px box inside a scrolling page — two
+   scrollbars. Now only the page scrolls. In the condensed views nothing is
+   wider than the screen, so the card clips instead of scrolling (overflow:
+   clip makes no scroll box) and the column titles stick to the top of the
+   window. "All" still scrolls sideways inside the card. */
+@media (min-width: 701px) {
+    .units-table-card .table-wrapper { max-height: none !important; }
+    .units-table-card:not([data-col-view="all"]) { overflow: clip; }
+    .units-table-card:not([data-col-view="all"]) .table-wrapper { overflow: clip; }
+    /* thead is already sticky (top: 0); .main scrolls and its 22px top
+       padding would leave a strip of rows showing above the titles. */
+    .units-table-card:not([data-col-view="all"]) #editTable thead { top: -22px; }
+}
+@media (min-width: 701px) and (max-width: 900px) {
+    /* the page scrolls here (not .main) and the top bar sticks: titles sit under it */
+    .units-table-card:not([data-col-view="all"]) #editTable thead { top: 64px; }
+}
