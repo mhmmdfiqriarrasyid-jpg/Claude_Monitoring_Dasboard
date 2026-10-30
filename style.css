@@ -5412,8 +5412,7 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
         font-size: 15px;
         font-weight: 500;
         line-height: 1.4;
-        color: #FFFFFF;
-        opacity: .85;
+        color: rgba(255, 255, 255, 0.85);
     }
     .auth-brand .auth-brand__foot {
         position: absolute;
@@ -5422,7 +5421,6 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
         font-size: 13px;
         line-height: 1.4;
         color: #CCFBEF;
-        opacity: .9;
     }
     .auth-main {
         flex: 1 1 420px;
