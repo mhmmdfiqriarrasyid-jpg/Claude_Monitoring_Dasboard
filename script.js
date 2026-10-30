@@ -139,7 +139,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.9.3';
+const APP_VERSION = 'v2.9.4';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -4601,7 +4601,13 @@ function dashSpan(ms) {
 const DASH_ATTENTION_ROWS = 8;
 const DASH_ICON_STOP = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 9-6 6"></path><path d="m9 9 6 6"></path><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon></svg>';
 const DASH_ICON_KEY = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="m21 2-9.6 9.6"></path><path d="m15.5 7.5 3 3L22 7l-3-3"></path></svg>';
+let _dashAttnAll = false, _dashAttnData = [];
+function toggleDashAttention() {
+    _dashAttnAll = !_dashAttnAll;
+    renderDashAttention(_dashAttnData, Date.now());
+}
 function renderDashAttention(data, now) {
+    _dashAttnData = data;
     const host = document.getElementById('dashAttention');
     if (!host) return;
     const inbox = document.getElementById('dashAttnInbox');
@@ -4649,7 +4655,7 @@ function renderDashAttention(data, now) {
             effectiveDashGroup() === 'heavy' ? '' : ' and no license is due in the next 30 days'}.</p>`;
         return;
     }
-    const shown = rows.slice(0, DASH_ATTENTION_ROWS);
+    const shown = _dashAttnAll ? rows : rows.slice(0, DASH_ATTENTION_ROWS);
     const site = r => escapeHtml(r.u.site || '—');
     host.innerHTML = `
         <div class="dash-table-wrap">
@@ -4657,7 +4663,7 @@ function renderDashAttention(data, now) {
             <thead><tr><th scope="col">Unit</th><th scope="col">Issue</th><th scope="col">Site</th>
                 <th scope="col">Status</th><th scope="col" class="dash-num">Since</th></tr></thead>
             <tbody>${shown.map(r => `
-                <tr class="dash-attn__row dash-attn__row--${r.kind}">
+                <tr class="dash-attn__row dash-attn__row--${r.kind}" onclick="if (!event.target.closest('button')) showUnitProfile(${jsArg(r.u.id)})">
                     <td class="dash-attn__unit"><button type="button" class="dash-unit" title="View unit profile"
                         onclick="showUnitProfile(${jsArg(r.u.id)})">${escapeHtml(r.u.name || r.u.sn || 'Unnamed')}</button></td>
                     <td class="dash-attn__issue">${escapeHtml(r.issue)}<span class="dash-attn__site-inline"> · ${site(r)}</span></td>
@@ -4669,7 +4675,8 @@ function renderDashAttention(data, now) {
             </tbody>
         </table>
         </div>
-        ${rows.length > shown.length ? `<p class="dash-card__foot">Showing ${shown.length} of ${rows.length} — the rest are in Unit Detail and License Alerts below.</p>` : ''}`;
+        ${rows.length > DASH_ATTENTION_ROWS ? `<p class="dash-card__foot">${_dashAttnAll ? `Showing all ${rows.length}` : `Showing ${shown.length} of ${rows.length}`}
+            <button type="button" class="dash-link dash-attn__more" onclick="toggleDashAttention()">${_dashAttnAll ? 'Show fewer' : `Show all ${rows.length}`}</button></p>` : ''}`;
 }
 
 // Sites: good units out of all units per site, largest site first.
@@ -18177,7 +18184,8 @@ function purchaseDecisionGroup() {
         key: 'purchase', icon: 'file-invoice', tone: list.some(r => r.requestType === 'Urgent') ? 'danger' : 'warning',
         title: 'Purchase requests to act on',
         total: list.length,
-        items: list.slice(0, 6).map(r => ({
+        items: list.map(r => ({
+            open: `showPurchaseDetail(${jsArg(r.id)})`,
             text: `${r.prNo || r.title}${r.requestType === 'Urgent' ? ' · Urgent' : ''}`,
             sub: `${r.company || ''} · ${why(r)}`
         })),
@@ -20059,13 +20067,15 @@ function decisionGroups() {
 
         // ---- Unit breakdown terlalu lama ----
         const stuck = globalData
-            .filter(u => u.breakdownStartedAt && _daysSince(u.breakdownStartedAt) >= LEADER_BREAKDOWN_DAYS)
+            .filter(u => !isGood(u.status) && u.breakdownStartedAt && _daysSince(u.breakdownStartedAt) >= LEADER_BREAKDOWN_DAYS)
             .sort((a, b) => a.breakdownStartedAt - b.breakdownStartedAt);
         add({
             key: 'breakdown', icon: 'triangle-exclamation', tone: 'danger',
             title: `Units in breakdown over ${LEADER_BREAKDOWN_DAYS} days`,
             total: stuck.length,
-            items: stuck.slice(0, 6).map(u => ({
+            // `open`: an onclick, built only with jsArg (already attribute-safe).
+            items: stuck.map(u => ({
+                open: `showUnitProfile(${jsArg(u.id)})`,
                 text: u.name || u.sn || '(no name)',
                 sub: `${_daysSince(u.breakdownStartedAt)} day(s) · ${u.site || '-'}${u.breakdownReason ? ' · ' + u.breakdownReason : ''}${isHeavy(u) ? ' · ' + UNIT_GROUPS.heavy.shortLabel : ''}`
             })),
@@ -20329,6 +20339,13 @@ function updateLeaderTabCount(total) {
     el.style.display = total ? '' : 'none';
 }
 
+const DECISION_ROWS = 6;
+const _decisionExpanded = new Set();
+function toggleDecisionGroup(key) {
+    if (_decisionExpanded.has(key)) _decisionExpanded.delete(key); else _decisionExpanded.add(key);
+    renderDecisionInbox();
+}
+
 function renderDecisionInbox() {
     const wrap = document.getElementById('decisionGroups');
     if (!wrap) return;
@@ -20369,7 +20386,11 @@ function renderDecisionInbox() {
     }
 
     wrap.innerHTML = groups.map(g => {
-        const rows = g.items.map(it => ({ it, acts: decisionRowActions(g, it) }));
+        // Six rows per card; a section that hands over its whole list can be
+        // opened up with "…and N more".
+        const open = _decisionExpanded.has(g.key);
+        const shownItems = open ? g.items : g.items.slice(0, DECISION_ROWS);
+        const rows = shownItems.map(it => ({ it, acts: decisionRowActions(g, it) }));
         const hasActs = rows.some(r => r.acts);
         const icon = DECISION_SVG[g.key]
             ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${DECISION_SVG[g.key]}</svg>`
@@ -20382,15 +20403,20 @@ function renderDecisionInbox() {
                 <span class="decision-card__count">${g.total}</span>
             </div>
             <ul class="decision-list">
-                ${rows.map(({ it, acts }) => `
-                    <li${acts ? ' class="has-acts"' : ''}>
-                        <span class="decision-list__body">
-                            <span class="decision-list__text">${escapeHtml(it.text)}</span>
-                            ${it.sub ? `<span class="decision-list__sub">${escapeHtml(it.sub)}</span>` : ''}
-                        </span>${acts}
-                    </li>`).join('')}
-                ${g.total > g.items.length
-                    ? `<li class="decision-list__more">…and ${g.total - g.items.length} more</li>`
+                ${rows.map(({ it, acts }) => {
+                    const body = `<span class="decision-list__text">${escapeHtml(it.text)}</span>
+                            ${it.sub ? `<span class="decision-list__sub">${escapeHtml(it.sub)}</span>` : ''}`;
+                    return it.open && !acts
+                        ? `<li class="is-open"><button type="button" class="decision-list__open" onclick="${it.open}"><span class="decision-list__body">${body}</span>
+                            <svg class="decision-list__chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></button></li>`
+                        : `<li${acts ? ' class="has-acts"' : ''}><span class="decision-list__body">${body}</span>${acts}</li>`;
+                }).join('')}
+                ${g.items.length > shownItems.length
+                    ? `<li class="decision-list__more"><button type="button" class="decision-list__morebtn" onclick="toggleDecisionGroup(${jsArg(g.key)})">…and ${g.total - shownItems.length} more</button></li>`
+                    : open && g.items.length > DECISION_ROWS
+                    ? `<li class="decision-list__more"><button type="button" class="decision-list__morebtn" onclick="toggleDecisionGroup(${jsArg(g.key)})">Show fewer</button></li>`
+                    : g.total > shownItems.length
+                    ? `<li class="decision-list__more">…and ${g.total - shownItems.length} more</li>`
                     : ''}
             </ul>
             <div class="decision-card__foot">
