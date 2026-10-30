@@ -10625,3 +10625,8 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
     /* the page scrolls here (not .main) and the top bar sticks: titles sit under it */
     .units-table-card:not([data-col-view="all"]) #editTable thead { top: 64px; }
 }
+
+/* ===== Implement groups (2.10.7) ===== */
+.impl-group-chip { background: var(--primary-lighter); color: var(--accent-text, var(--accent)); }
+/* One scroll: the table grows with the page instead of a 600px box. */
+@media (min-width: 701px) { #viewImplements .fp-card .table-wrapper { max-height: none !important; } }

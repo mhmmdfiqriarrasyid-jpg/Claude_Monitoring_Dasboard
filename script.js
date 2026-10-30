@@ -84,8 +84,8 @@ const LIC_PAID = ['SF-RTK', 'G5 Advance'];
 const LIC_REQ_OPTIONS = { gps: ['', 'SF-1', 'SF-RTK'], display: ['', 'G5 Basic', 'G5 Advance'] };
 let licenseTab = 'stock';
 // Master lists (Site / Brand / Company). An empty list means "anything goes".
-let masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [] };
-const MASTER_KINDS = ['site', 'brand', 'heavyBrand', 'company', 'damageType', 'jobType'];
+let masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [] };
+const MASTER_KINDS = ['site', 'brand', 'heavyBrand', 'company', 'damageType', 'jobType', 'implGroup'];
 const MASTER_DEF = {
     site:    { label: 'Site',    plural: 'Sites',     edit: ['editUnits'],              view: ['editUnits'],
                hint: 'Used by every unit (both groups).' },
@@ -101,6 +101,9 @@ const MASTER_DEF = {
                hint: 'Extra types for damage records, next to Mechanical, Software and Device Precision.' },
     // 2.10.0: what was done on each paddock line of a Daily Report. Empty =
     // the four built-in types (DEFAULT_JOB_TYPES).
+    // 2.10.7: which group an implement belongs to (Primary Tillage, …).
+    implGroup: { label: 'Implement Group', plural: 'Implement Groups', edit: ['implements'], view: ['implements'],
+               hint: 'Groups the implements are sorted into, chosen on each implement.' },
     jobType: { label: 'Job Type', plural: 'Job Types', edit: ['teamMembers'], view: ['teamMembers'],
                hint: 'Chosen for each paddock in a Daily Report. While the list is empty: Application, Tillage, Harvesting and Planting.' }
 };
@@ -146,7 +149,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.10.6';
+const APP_VERSION = 'v2.10.7';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -7570,6 +7573,7 @@ const IMPLEMENT_FIELDS = [
     { key: 'profileName',        inputId: 'implProfileName',        label: 'Profile Name' },
     { key: 'brand',              inputId: 'implBrand',              label: 'Brand' },
     { key: 'equipmentType',      inputId: 'implEquipmentType',      label: 'Type of Equipment' },
+    { key: 'group',              inputId: 'implGroup',              label: 'Implement Group' },
     { key: 'code',               inputId: 'implCode',               label: 'Code' },
     { key: 'lateralOffset',      inputId: 'implLateralOffset',      label: 'Lateral Offset' },
     { key: 'centerOfRotation',   inputId: 'implCenterOfRotation',   label: 'Center of Rotation' },
@@ -7724,6 +7728,22 @@ function openUnitsForImplement(key) {
 document.addEventListener('ot:data', () => { if (currentView === 'implements') renderImplementUseTiles(); });
 
 // Equipment types in the Implements list, for the Type filter.
+// 2.10.7: the Group filter lists the groups in use (and the master list).
+function populateImplementGroupFilter() {
+    const sel = document.getElementById('implementGroupFilter');
+    if (!sel) return;
+    const byKey = new Map();
+    (masterLists.implGroup || []).concat(globalImplements.map(d => d.group)).forEach(g => {
+        g = _toolNorm(g);
+        if (g && !byKey.has(g.toLowerCase())) byKey.set(g.toLowerCase(), g);
+    });
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">All groups</option>' + [...byKey.entries()]
+        .sort((a, b) => a[1].localeCompare(b[1]))
+        .map(([k, g]) => `<option value="${escapeHtml(k)}">${escapeHtml(g)}</option>`).join('')
+        + (globalImplements.some(d => !_toolNorm(d.group)) ? '<option value="__none__">No group yet</option>' : '');
+    sel.value = byKey.has(cur) || cur === '__none__' ? cur : '';
+}
 function populateImplementTypeFilter() {
     const sel = document.getElementById('implementTypeFilter');
     if (!sel) return;
@@ -7744,6 +7764,7 @@ function renderImplementsTable() {
     updateImplementCount();
     renderImplementUseTiles();
     populateImplementTypeFilter();
+    populateImplementGroupFilter();
     // A re-render (search, filter, a cloud snapshot) draws fresh, unticked
     // rows — so the selection is dropped with them. Re-reading the OLD boxes
     // here kept "Delete selected" armed for rows no longer on screen.
@@ -7756,9 +7777,11 @@ function renderImplementsTable() {
 
     const query = (document.getElementById('implementSearch')?.value || '').toLowerCase().trim();
     const typeVal = document.getElementById('implementTypeFilter')?.value || '';
+    const groupVal = document.getElementById('implementGroupFilter')?.value || '';
     const rows = globalImplements.filter(d =>
         (!typeVal || _toolNorm(d.equipmentType).toLowerCase() === typeVal)
-        && (!query || `${d.profileName} ${d.brand || ''} ${d.equipmentType} ${d.code || ''} ${d.operation} ${d.connectingType} ${d.workingWidth}`
+        && (!groupVal || (groupVal === '__none__' ? !_toolNorm(d.group) : _toolNorm(d.group).toLowerCase() === groupVal))
+        && (!query || `${d.profileName} ${d.brand || ''} ${d.equipmentType} ${d.group || ''} ${d.code || ''} ${d.operation} ${d.connectingType} ${d.workingWidth}`
             .toLowerCase().includes(query)));
     const shown = document.getElementById('implementShown');
     if (shown) shown.textContent = rows.length === globalImplements.length ? '' : `${rows.length} of ${globalImplements.length}`;
@@ -7767,8 +7790,8 @@ function renderImplementsTable() {
     if (!tbody) return;
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--text-secondary)">${
-            query || typeVal ? 'No implements match your search'
+        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+            query || typeVal || groupVal ? 'No implements match your search'
                   : 'No implements yet. Click <strong>Add implement</strong> to get started.'
         }</td></tr>`;
         return;
@@ -7793,6 +7816,7 @@ function renderImplementsTable() {
             <td data-label="Profile Name"><strong>${escapeHtml(d.profileName)}</strong></td>
             <td data-label="Brand" class="fp-muted">${escapeHtml(d.brand || '') || '—'}</td>
             <td data-label="Equipment Type">${_toolNorm(d.equipmentType) ? `<span class="fp-chip fp-chip--neutral">${escapeHtml(_toolNorm(d.equipmentType))}</span>` : '<span class="fp-muted">—</span>'}</td>
+            <td data-label="Implement Group">${_toolNorm(d.group) ? `<span class="fp-chip impl-group-chip">${escapeHtml(_toolNorm(d.group))}</span>` : '<span class="fp-muted">—</span>'}</td>
             <td data-label="Code">${escapeHtml(d.code || '')}</td>
             <td data-label="Working Width">${escapeHtml(d.workingWidth)}</td>
             <td data-label="Operation">${escapeHtml(d.operation)}</td>
@@ -7823,6 +7847,32 @@ function updateSelectedImplementCount() {
     const btn = document.getElementById('btnDeleteSelectedImpl');
     if (countEl) countEl.textContent = count;
     if (btn) btn.style.display = count > 0 ? '' : 'none';
+    const gb = document.getElementById('btnGroupSelectedImpl');
+    if (gb) gb.style.display = count > 0 && hasAccess('implements', 'edit') ? '' : 'none';
+    const gc = document.getElementById('groupImplCount');
+    if (gc) gc.textContent = count;
+}
+
+// Puts the ticked implements in one group at once (2.10.7).
+function setGroupForSelectedImplements() {
+    if (!requireEdit('implements')) return;
+    const imps = globalImplements.filter(d => selectedImplementIds.has(d.id));
+    if (!imps.length) return;
+    const choices = masterListActive('implGroup') ? masterLists.implGroup : [...masterUsage('implGroup').keys()].sort((a, b) => a.localeCompare(b));
+    const raw = prompt(`Group for ${imps.length} implement(s)` + (choices.length ? `:\n\n${choices.join('\n')}\n\nType one of the groups above` : '') + ' (leave empty to clear):', '');
+    if (raw == null) return;
+    const r = checkMasterValue('implGroup', raw);
+    if (!r.ok) { showToast(`Implement Group "${r.value}" ${masterNotInList('implGroup')}`, 'warning'); return; }
+    imps.forEach(imp => {
+        const idx = globalImplements.findIndex(d => d.id === imp.id);
+        if (_toolNorm(imp.group) === r.value) return;
+        globalImplements[idx] = { ...imp, group: r.value, updatedAt: Date.now() };
+        cloudPushImplement(globalImplements[idx]);
+        logEvent({ action: 'update', unitId: imp.id, unitName: `[Implement] ${imp.profileName || ''}`, field: 'Implement Group', before: imp.group || '', after: r.value });
+    });
+    saveImplements();
+    renderImplementsTable();
+    showToast(r.value ? `${imps.length} implement(s) put in "${r.value}"` : `Group cleared on ${imps.length} implement(s)`, 'success');
 }
 
 // ---- Modal: Add / Edit ----
@@ -7873,6 +7923,16 @@ function saveImplement(event) {
             return;
         }
         data.brand = r.value;
+    }
+    {
+        const prev = id ? (globalImplements.find(d => d.id === id) || {}).group : null;
+        const r = checkMasterValue('implGroup', data.group, prev);
+        if (!r.ok) {
+            showToast(`Implement Group "${r.value}" ${masterNotInList('implGroup')}`, 'warning');
+            document.getElementById('implGroup')?.focus();
+            return;
+        }
+        data.group = r.value;
     }
 
     if (id) {
@@ -12842,7 +12902,7 @@ function tearDownCloudSync() {
     // What was typed belongs to the account that typed it.
     if (typeof clearUnsent === 'function') clearUnsent();
     licenseRequirements = [];
-    masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [] };
+    masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [] };
     if (cloudDamageComponentsUnsub) { try { cloudDamageComponentsUnsub(); } catch (_) {} cloudDamageComponentsUnsub = null; }
     if (cloudDevicesUnsub) { try { cloudDevicesUnsub(); } catch (_) {} cloudDevicesUnsub = null; }
     if (cloudPurchaseUnsub) { try { cloudPurchaseUnsub(); } catch (_) {} cloudPurchaseUnsub = null; }
@@ -23384,13 +23444,14 @@ function masterUsage(kind) {
     if (kind === 'company') (teamMembers || []).forEach(m => add(companyOf(m)));
     if (kind === 'damageType') globalDamages.forEach(d => { if (!DAMAGE_TYPES.includes(d.damageType)) add(d.damageType); });
     if (kind === 'jobType') (workLogs || []).forEach(w => workLogJobs(w).forEach(j => add(j.jobType)));
+    if (kind === 'implGroup') globalImplements.forEach(i => add(i.group));
     return counts;
 }
-const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', heavyBrand: 'unit', company: 'member', damageType: 'damage record', jobType: 'report line' };
+const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', heavyBrand: 'unit', company: 'member', damageType: 'damage record', jobType: 'report line', implGroup: 'implement' };
 
 function applyMasterListsSnapshot(docs) {
     _markLoaded('masterLists');
-    const next = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [] };
+    const next = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [] };
     (docs || []).forEach(d => {
         if (MASTER_KINDS.includes(d.id) && Array.isArray(d.values)) next[d.id] = d.values.map(_toolNorm).filter(Boolean);
     });
@@ -23410,6 +23471,7 @@ function populateMasterDatalists() {
     fill('siteList', masterListActive('site') ? masterLists.site : sorted(masterUsage('site')));
     fill('brandList', masterListActive('brand') ? masterLists.brand : sorted(masterUsage('brand')));
     fill('heavyBrandList', masterListActive('heavyBrand') ? masterLists.heavyBrand : sorted(masterUsage('heavyBrand')));
+    fill('implGroupList', masterListActive('implGroup') ? masterLists.implGroup : sorted(masterUsage('implGroup')));
     fill('companyList', companySuggestions());
 }
 
@@ -23599,6 +23661,16 @@ function renameMasterValue(v) {
         });
         if (imps.length) { saveImplements(); if (currentView === 'implements') renderImplementsTable(); }
         if (unitChanges.size && hasAccess('editUnits', 'edit')) updateUnitsBatch(unitChanges);
+        n = imps.length;
+    } else if (kind === 'implGroup') {
+        if (!requireEdit('implements')) return;
+        const imps = globalImplements.filter(i => uses(i.group));
+        imps.forEach(imp => {
+            const idx = globalImplements.findIndex(i => i.id === imp.id);
+            globalImplements[idx] = { ...imp, group: to, updatedAt: Date.now() };
+            cloudPushImplement(globalImplements[idx]);
+        });
+        if (imps.length) { saveImplements(); if (currentView === 'implements') renderImplementsTable(); }
         n = imps.length;
     } else if (kind === 'heavyBrand') {
         if (!requireEdit('editUnits')) return;
@@ -23912,7 +23984,7 @@ function dcNotInMasterLists() {
         [...masterUsage(kind).entries()].filter(([v]) => !masterMatch(kind, v)).sort((a, b) => b[1] - a[1]).forEach(([v, n]) => {
             out.push(dc('master-luar', `${MASTER_DEF[kind].label}: ${v}`,
                 `${n} ${MASTER_USED_NOUN[kind]}(s) — not in the ${MASTER_DEF[kind].label} list`,
-                kind === 'brand' ? 'implements' : kind === 'company' ? 'team' : kind === 'heavyBrand' ? 'editUnits:heavy' : 'editUnits',
+                kind === 'brand' || kind === 'implGroup' ? 'implements' : kind === 'company' ? 'team' : kind === 'heavyBrand' ? 'editUnits:heavy' : 'editUnits',
                 MASTER_MERGE_FIELD[kind] ? { merge: { field: MASTER_MERGE_FIELD[kind], values: [v] } } : {}));
         });
     });

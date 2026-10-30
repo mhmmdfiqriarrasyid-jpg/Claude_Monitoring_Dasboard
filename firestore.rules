@@ -203,7 +203,8 @@ service cloud.firestore {
           || (kind == 'brand' && (canEditArea('implements') || canEditArea('editUnits')))
           || (kind == 'company' && canEditArea('teamMembers'))
           || (kind == 'damageType' && canEditArea('damage'))
-          || (kind == 'jobType' && canEditArea('teamMembers'));
+          || (kind == 'jobType' && canEditArea('teamMembers'))
+          || (kind == 'implGroup' && canEditArea('implements'));
     }
     // Paddocks (2.10.0): one list per company, chosen from in Daily Reports.
     // Read by every active account; kept by whoever manages team members.

@@ -123,6 +123,12 @@ juga master list (`masterLists/jobType`); selama kosong pilihannya
 Application, Tillage, Harvesting, Planting. Field lama `paddock` (gabungan)
 dan `units` (tanpa ganda) tetap diisi untuk tampilan dan ekspor lama.
 
+**Implement Group (2.10.7):** setiap implement punya field `group`
+(misalnya Primary Tillage, Planting). Daftarnya master list
+`masterLists/implGroup` (edit oleh pemegang edit `implements`); selama
+kosong, isian bebas. Tabel Implements punya kolom dan filter Group, dan
+tombol **Set group** untuk implement yang dicentang.
+
 **Satu akun hanya boleh aktif di satu perangkat.** Login terbaru menang;
 perangkat lain keluar sendiri.
 

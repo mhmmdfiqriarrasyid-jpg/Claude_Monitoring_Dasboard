@@ -897,8 +897,17 @@
                             <option value="">All types</option>
                         </select>
                     </label>
+                    <label class="fp-select">
+                        <span class="fp-select__label">Group</span>
+                        <select id="implementGroupFilter" class="form-select form-select--sm" aria-label="Filter by implement group" onchange="renderImplementsTable()">
+                            <option value="">All groups</option>
+                        </select>
+                    </label>
                     <span id="implementShown" class="fp-count"></span>
                 </div>
+                <button class="btn btn-secondary editonly editonly--implements" id="btnGroupSelectedImpl" style="display:none" onclick="setGroupForSelectedImplements()">
+                    <i class="fas fa-layer-group" aria-hidden="true"></i> Set group (<span id="groupImplCount">0</span>)
+                </button>
                 <button class="btn btn-danger" id="btnDeleteSelectedImpl" style="display:none" onclick="deleteSelectedImplements()">
                     <i class="fas fa-trash" aria-hidden="true"></i> Delete Selected (<span id="selectedImplCount">0</span>)
                 </button>
@@ -912,6 +921,7 @@
                             <th>Profile</th>
                             <th>Brand</th>
                             <th>Type</th>
+                            <th>Group</th>
                             <th>Code</th>
                             <th>Width</th>
                             <th>Operation</th>
@@ -2709,6 +2719,11 @@
                     <div class="form-group">
                         <label class="form-label" for="implEquipmentType">Type of Equipment</label>
                         <input class="form-input" id="implEquipmentType" placeholder="e.g. Plow, Sprayer, Seeder">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="implGroup">Implement Group</label>
+                        <input class="form-input" id="implGroup" list="implGroupList" autocomplete="off" maxlength="80" placeholder="e.g. Primary Tillage, Planting">
+                        <datalist id="implGroupList"></datalist>
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="implCode">Code</label>

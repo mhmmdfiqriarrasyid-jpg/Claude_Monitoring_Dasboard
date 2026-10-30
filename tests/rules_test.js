@@ -515,6 +515,14 @@ async function check(name, p, expectOk) {
     await check('laporan: baris paddock (jobs) boleh disimpan', setDoc(doc(as('writer'), 'workLogs', 'wl_jobs'), { id: 'wl_jobs', task: 'olah', approval: 'pending',
         createdByUid: 'writer', submittedByUid: 'writer', paddock: 'JAGF-1-A-001', jobs: [{ paddock: 'JAGF-1-A-001', jobType: 'Tillage', units: [{ id: 'u1', name: 'T', sn: '' }] }] }), true);
 
+    // ---- 2.10.7: Implement Groups ----
+    await env.withSecurityRulesDisabled(async ctx => {
+        await setDoc(doc(ctx.firestore(), 'users', 'implEd'), { uid: 'implEd', email: 'implEd@x.id', role: 'staff', status: 'active', access: { implements: 'edit' } });
+    });
+    await check('Implement Groups: editor Implements menyimpan daftar', setDoc(doc(as('implEd'), 'masterLists', 'implGroup'), { id: 'implGroup', values: ['Primary Tillage'] }), true);
+    await check('Implement Groups: tanpa edit Implements DITOLAK', setDoc(doc(as('writer'), 'masterLists', 'implGroup'), { id: 'implGroup', values: ['X'] }), false);
+    await check('Implement: field group boleh disimpan', setDoc(doc(as('implEd'), 'implements', 'imp_g'), { id: 'imp_g', profileName: 'Harrow', group: 'Primary Tillage' }), true);
+
     await env.cleanup();
     let pass = 0;
     T.forEach(x => { if (x.pass) pass++; else console.log('FAIL', x.name, '\n   ', x.err || ''); });
