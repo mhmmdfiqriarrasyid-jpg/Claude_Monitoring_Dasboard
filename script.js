@@ -146,7 +146,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.10.1';
+const APP_VERSION = 'v2.10.2';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -16351,8 +16351,8 @@ function renderWorkLogJobs() {
         return `<div class="wl-job">
             <div class="wl-job__head">
                 <span class="wl-job__no">Paddock ${i + 1}</span>
-                ${_wlJobs.length > 1 ? `<button type="button" class="btn-icon wl-job__x" aria-label="Remove paddock ${i + 1}" title="Remove this paddock"
-                    onclick="removeWorkLogJob(${i})"><i class="fas fa-xmark" aria-hidden="true"></i></button>` : ''}
+                ${_wlJobs.length > 1 ? `<button type="button" class="wl-job__x" aria-label="Remove paddock ${i + 1}" title="Remove this paddock"
+                    onclick="removeWorkLogJob(${i})"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg>Remove</button>` : ''}
             </div>
             <div class="wl-job__grid">
                 <label class="form-group"><span class="form-label">Paddock Area</span>
