@@ -133,6 +133,7 @@ const ROLES_COL = 'roles';
 const HISTORY_COL = 'history';
 const USER_CATEGORIES_COL = 'userCategories';
 const MASTER_LISTS_COL = 'masterLists';
+const PADDOCKS_COL = 'paddocks';         // 2.10.0: one paddock list per company
 const LICENSE_REQ_COL = 'licenseRequirements';
 const DAMAGE_COMPONENTS_COL = 'damageComponents';
 const DEVICES_COL = 'devices';
@@ -979,6 +980,25 @@ window.cloud = {
     // everyone, so a whole list is one document and one write.
     async saveMasterList(kind, values, by) {
         await setDoc(doc(db, MASTER_LISTS_COL, kind), { id: kind, values, updatedAt: Date.now(), updatedBy: by || '' });
+    },
+    // ---- Paddocks (2.10.0): one document per company ----
+    // { id (company key), company, items: [{ pid, landuse, ha }], updatedAt, updatedBy }.
+    // A few hundred rows per company: one document keeps it to one read.
+    async savePaddockList(rec) {
+        await setDoc(doc(db, PADDOCKS_COL, rec.id), rec);
+    },
+    async deletePaddockList(id) {
+        await deleteDoc(doc(db, PADDOCKS_COL, id));
+    },
+    subscribePaddocks(callback, errorCallback) {
+        return onSnapshot(
+            collection(db, PADDOCKS_COL),
+            snap => callback(snap.docs.map(withDocId)),
+            err => {
+                console.error('[cloud] paddocks subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
     },
     subscribeMasterLists(callback, errorCallback) {
         return onSnapshot(

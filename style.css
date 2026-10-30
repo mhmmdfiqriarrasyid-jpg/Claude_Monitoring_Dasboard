@@ -10512,3 +10512,46 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
 }
 .pr-items + .btn + .pr-total + .form-grid { margin-top: 14px; }
 .pr-receipt .wh-photo-chip { align-self: flex-start; }
+
+/* ===== Paddocks & Daily Report paddock lines (2.10.0) ===== */
+.wl-jobs { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+.wl-job {
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg, #F6F7F9);
+}
+.wl-job__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; min-height: 28px; }
+.wl-job__no { font-size: 13px; font-weight: 700; color: var(--text-secondary); }
+.wl-job__x { width: 32px; height: 32px; }
+.wl-job__grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 10px; }
+.wl-job .form-group { margin: 0 0 8px; }
+.wl-job .form-group:last-child { margin-bottom: 0; }
+.wl-job .form-input, .wl-job .form-select { background: var(--card); }
+.wl-job-add { margin-top: 10px; align-self: flex-start; width: auto; }
+.wl-job-cell { white-space: nowrap; }
+.wl-job-type {
+    display: inline-block; padding: 0 6px; border-radius: 6px;
+    background: var(--primary-lighter); color: var(--accent-text, var(--accent));
+    font-size: 11px; font-weight: 600;
+}
+@media (max-width: 600px) {
+    .wl-job__grid { grid-template-columns: 1fr; gap: 0; }
+    .wl-job .wl-job__grid .form-group { margin-bottom: 8px; }
+}
+
+.pd-panel .ml-intro { margin-bottom: 12px; }
+.pd-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; justify-content: flex-end; }
+.pd-bar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+.pd-bar .adm-search { flex: 1 1 200px; max-width: none; }
+.pd-count { margin: 8px 0 6px; font-size: 13px; color: var(--text-secondary); }
+.pd-list { max-height: 360px; overflow-y: auto; }
+.pd-delete { margin-top: 12px; }
+.pd-import { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.pd-import__row {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 150px; gap: 10px; align-items: end;
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+}
+.pd-import__row > div { display: flex; flex-direction: column; min-width: 0; align-self: center; }
+.pd-import__row .form-group { margin: 0; }
+@media (max-width: 600px) { .pd-import__row { grid-template-columns: 1fr; } }

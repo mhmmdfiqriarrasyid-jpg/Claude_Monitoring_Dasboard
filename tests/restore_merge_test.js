@@ -66,7 +66,7 @@ const { launch, BASE_URL } = require('./_env');
         const oldFile = await exportNow();
         t('cadangan membawa License Requirements', oldFile.licenseRequirements, [{ id: 'bed-ripper', type: 'Bed Ripper', gps: 'SF-RTK', display: 'G5 Advance' }]);
         t('cadangan membawa Master Lists', oldFile.masterLists.map(r => [r.id, r.values]),
-          [['site', ['PT. GPA']], ['brand', ['Gessner']], ['heavyBrand', []], ['company', ['PT. GPA']], ['damageType', []]]);
+          [['site', ['PT. GPA']], ['brand', ['Gessner']], ['heavyBrand', []], ['company', ['PT. GPA']], ['damageType', []], ['jobType', []]]);
         t('keduanya tidak lagi dilaporkan hilang', oldFile.omitted.filter(o => /Master|License Req/.test(o.label)), []);
 
         // =============== keadaan sekarang (lebih baru) ===============

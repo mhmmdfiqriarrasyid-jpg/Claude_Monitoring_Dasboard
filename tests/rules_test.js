@@ -499,6 +499,22 @@ async function check(name, p, expectOk) {
     await check('PR: pemegang own boleh menulis riwayat', setDoc(doc(PO_, 'history', 'h_pr'),
         { id: 'h_pr', timestamp: Date.now(), action: 'create', unitId: '', unitName: '[Purchase] x', field: '', before: '', after: '', actorUid: 'prO', actorEmail: 'prO@x.id', actorName: 'p', actorRole: 'staff', unitGroup: 'shared' }), true);
 
+    // ---- 2.10.0: Paddock per PT dan Job Types ----
+    const PTM = as('team');   // teamMembers: edit
+    const PDL = { id: 'ptglobalpapuaabadi', company: 'PT. Global Papua Abadi', items: [{ pid: 'JAGF-1-A-001', landuse: 'CU', ha: 3.6 }] };
+    await check('paddock: pengelola anggota menyimpan daftar PT', setDoc(doc(PTM, 'paddocks', PDL.id), PDL), true);
+    await check('paddock: semua akun aktif bisa membaca', getDocs(collection(as('writer'), 'paddocks')), true);
+    await check('paddock: tanpa edit anggota DITOLAK', setDoc(doc(as('writer'), 'paddocks', PDL.id), PDL), false);
+    await check('paddock: id dokumen harus sama', setDoc(doc(PTM, 'paddocks', 'lain'), PDL), false);
+    await check('paddock: tanpa nama PT DITOLAK', setDoc(doc(PTM, 'paddocks', 'x'), { id: 'x', company: '', items: [] }), false);
+    await check('paddock: items harus daftar', setDoc(doc(PTM, 'paddocks', 'y'), { id: 'y', company: 'PT. Y', items: 'JAGF' }), false);
+    await check('paddock: lebih dari 3000 DITOLAK', setDoc(doc(PTM, 'paddocks', 'z'), { id: 'z', company: 'PT. Z', items: Array.from({ length: 3001 }, (_, i) => ({ pid: 'P-' + i })) }), false);
+    await check('paddock: pengelola menghapus daftar', deleteDoc(doc(PTM, 'paddocks', PDL.id)), true);
+    await check('Job Types: pengelola anggota menyimpan daftar', setDoc(doc(PTM, 'masterLists', 'jobType'), { id: 'jobType', values: ['Tillage'] }), true);
+    await check('Job Types: penulis laporan saja DITOLAK', setDoc(doc(as('writer'), 'masterLists', 'jobType'), { id: 'jobType', values: ['X'] }), false);
+    await check('laporan: baris paddock (jobs) boleh disimpan', setDoc(doc(as('writer'), 'workLogs', 'wl_jobs'), { id: 'wl_jobs', task: 'olah', approval: 'pending',
+        createdByUid: 'writer', submittedByUid: 'writer', paddock: 'JAGF-1-A-001', jobs: [{ paddock: 'JAGF-1-A-001', jobType: 'Tillage', units: [{ id: 'u1', name: 'T', sn: '' }] }] }), true);
+
     await env.cleanup();
     let pass = 0;
     T.forEach(x => { if (x.pass) pass++; else console.log('FAIL', x.name, '\n   ', x.err || ''); });

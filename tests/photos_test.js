@@ -45,7 +45,8 @@ const { launch, BASE_URL } = require('./_env');
         const mk = (id, extra) => Object.assign({
             id, date:'2026-09-15', memberId:'m1', memberName:'Andi',
             start:'08:00', end:'16:00', unitId:'u_1', unitName:'JD-6110B-01', sn:'SN111',
-            task:'Servis ' + id, issue:'', createdByUid:'zz' }, extra);
+            task:'Servis ' + id, issue:'', createdByUid:'zz',
+            jobs:[{ paddock:'P-1', jobType:'Tillage', units:[{ id:'u_1', name:'JD-6110B-01', sn:'SN111' }] }] }, extra);
         workLogs = [
             mk('wOld',   { photos:[PH('O1'), PH('O2')] }),
             mk('wSplit', { photoCount:3 }),

@@ -87,29 +87,32 @@ const { launch, BASE_URL } = require('./_env');
         t('durasi memang ditampilkan sebagai blok terpisah',
           getComputedStyle(jamCell.querySelector('.wl-duration')).display, 'block');
 
-        // ---------- form: chip unit ----------
+        // ---------- form: baris paddock dengan chip unit (2.10.0) ----------
         showAddWorkLogForm();
-        t('form baru: chip kosong', _wlUnits.length, 0);
+        t('form baru: satu baris paddock kosong', JSON.stringify(_wlJobs), JSON.stringify([{ paddock: '', jobType: '', units: [] }]));
         t('placeholder chip muncul',
-          !!document.querySelector('#wlUnitChips .unit-chip__empty'), true);
-        document.getElementById('wlUnit').value = 'JD-6110B-01 — SN111';
-        addWorkLogUnit();
-        t('unit pertama masuk', _wlUnits.map(u=>u.id), ['u_1']);
-        t('input dikosongkan setelah tambah', document.getElementById('wlUnit').value, '');
-        document.getElementById('wlUnit').value = 'SN222';
-        addWorkLogUnit();
-        t('unit kedua masuk lewat SN', _wlUnits.map(u=>u.id), ['u_1','u_2']);
-        document.getElementById('wlUnit').value = 'SN222';
-        addWorkLogUnit();
-        t('duplikat ditolak', _wlUnits.length, 2);
-        document.getElementById('wlUnit').value = 'UNIT TIDAK ADA';
-        addWorkLogUnit();
-        t('unit tak dikenal ditolak', _wlUnits.length, 2);
-        t('input tetap terisi agar bisa diperbaiki', document.getElementById('wlUnit').value, 'UNIT TIDAK ADA');
-        document.getElementById('wlUnit').value = '';
-        t('dua chip terender', document.querySelectorAll('#wlUnitChips .unit-chip').length, 2);
-        removeWorkLogUnit(0);
-        t('chip bisa dihapus', _wlUnits.map(u=>u.id), ['u_2']);
+          !!document.querySelector('#wlJobs .unit-chip__empty'), true);
+        t('pilihan Type Job bawaan', [...document.querySelectorAll('#wlJobType_0 option')].map(o => o.value).slice(1),
+          ['Application', 'Tillage', 'Harvesting', 'Planting']);
+        const uIn = () => document.getElementById('wlJobUnit_0');
+        uIn().value = 'JD-6110B-01 — SN111';
+        addWorkLogJobUnit(0);
+        t('unit pertama masuk', _wlJobs[0].units.map(u=>u.id), ['u_1']);
+        t('input dikosongkan setelah tambah', uIn().value, '');
+        uIn().value = 'SN222';
+        addWorkLogJobUnit(0);
+        t('unit kedua masuk lewat SN', _wlJobs[0].units.map(u=>u.id), ['u_1','u_2']);
+        uIn().value = 'SN222';
+        addWorkLogJobUnit(0);
+        t('duplikat ditolak', _wlJobs[0].units.length, 2);
+        uIn().value = 'UNIT TIDAK ADA';
+        addWorkLogJobUnit(0);
+        t('unit tak dikenal ditolak', _wlJobs[0].units.length, 2);
+        t('input tetap terisi agar bisa diperbaiki', uIn().value, 'UNIT TIDAK ADA');
+        uIn().value = '';
+        t('dua chip terender', document.querySelectorAll('#wlJobs .unit-chip').length, 2);
+        removeWorkLogJobUnit(0, 0);
+        t('chip bisa dihapus', _wlJobs[0].units.map(u=>u.id), ['u_2']);
 
         // ---------- form: foto ----------
         _wlPhotos = ['data:image/jpeg;base64,X'];
@@ -125,14 +128,15 @@ const { launch, BASE_URL } = require('./_env');
         document.getElementById('wlDate').value = '2026-09-16';
         document.getElementById('wlStart').value = '07:00';
         document.getElementById('wlEnd').value = '15:00';
-        document.getElementById('wlPaddock').value = 'Paddock C-3';
+        _wlJobs[0].paddock = 'Paddock C-3'; _wlJobs[0].jobType = 'Tillage';
         document.getElementById('wlTask').value = 'Perawatan berkala';
         // Unit diketik tapi lupa ditekan Tambah — harus tetap ikut tersimpan.
-        document.getElementById('wlUnit').value = 'JD-5045D-09 — SN333';
+        uIn().value = 'JD-5045D-09 — SN333';
         saveWorkLog({ preventDefault(){} });
         const rec = saved[saved.length-1];
         t('unit yang lupa ditambahkan ikut tersimpan', rec.units.map(u=>u.id), ['u_2','u_3']);
         t('paddock tersimpan', rec.paddock, 'Paddock C-3');
+        t('baris paddock tersimpan', rec.jobs.map(j => [j.paddock, j.jobType, j.units.length]), [['Paddock C-3', 'Tillage', 2]]);
         t('jumlah foto tersimpan di laporan', rec.photoCount, 1);
         t('foto tidak lagi ikut di dokumen laporan', rec.photos, []);
         t('foto ditulis ke koleksi terpisah',
@@ -147,7 +151,8 @@ const { launch, BASE_URL } = require('./_env');
         document.getElementById('wlMember').value = 'm1';
         document.getElementById('wlDate').value = '2026-09-16';
         document.getElementById('wlTask').value = 'Uji';
-        document.getElementById('wlUnit').value = 'NGACO';
+        _wlJobs[0].paddock = 'P-1'; _wlJobs[0].jobType = 'Tillage';
+        uIn().value = 'NGACO';
         saveWorkLog({ preventDefault(){} });
         t('unit ngaco membatalkan simpan', saved.length, before);
 

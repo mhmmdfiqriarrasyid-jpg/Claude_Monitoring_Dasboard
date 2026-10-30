@@ -172,7 +172,8 @@ const { launch, BASE_URL } = require('./_env');
         // =============== 2b. FOTO LAPORAN HARIAN ===============
         globalData = [TR('u_t1')];
         workLogs = [{ id: 'wA', date: '2026-09-15', memberId: 'm1', memberName: 'Andi', start: '08:00', end: '16:00',
-                      unitId: 'u_t1', unitName: 'GGTRu_t1', sn: 'SNu_t1', task: 'Servis', issue: '', photoCount: 2 }];
+                      unitId: 'u_t1', unitName: 'GGTRu_t1', sn: 'SNu_t1', task: 'Servis', issue: '', photoCount: 2,
+                      jobs: [{ paddock: 'P-1', jobType: 'Tillage', units: [{ id: 'u_t1', name: 'GGTRu_t1', sn: 'SNu_t1' }] }] }];
         switchTeamTab('worklog');
         const wlAdd = () => document.getElementById('wlPhotoAddBtn');
         editWorkLog('wA');

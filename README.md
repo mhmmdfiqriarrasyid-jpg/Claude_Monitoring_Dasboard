@@ -111,6 +111,18 @@ hanya bisa mengubah selama masih draf. Lampiran dan foto penerimaan disimpan
 di `purchasePhotos` (maks. 10 per form). PR yang menunggu persetujuan, Urgent,
 atau tertahan ≥ 7 hari di satu langkah muncul di Decision inbox.
 
+**Paddock & Daily Report (2.10.0):** Daily Report berisi satu atau lebih
+baris *Paddock → Type Job → Unit*. Saat dikirim, setiap baris wajib punya
+paddock, jenis pekerjaan dan minimal satu unit (draf boleh belum lengkap).
+Paddock dipilih dari daftar per PT (koleksi `paddocks`, satu dokumen per PT)
+sesuai PT anggota; PT tanpa daftar menawarkan semua paddock. Daftar diatur di
+Master lists → **Paddocks** oleh pemegang edit `teamMembers`: impor Excel
+(satu sheet per PT, kolom *Paddock ID (PID)*; sheet "GPA" otomatis cocok ke
+"PT. Global Papua Abadi") atau CSV, tambah/hapus satu per satu. **Job Types**
+juga master list (`masterLists/jobType`); selama kosong pilihannya
+Application, Tillage, Harvesting, Planting. Field lama `paddock` (gabungan)
+dan `units` (tanpa ganda) tetap diisi untuk tampilan dan ekspor lama.
+
 **Satu akun hanya boleh aktif di satu perangkat.** Login terbaru menang;
 perangkat lain keluar sendiri.
 

@@ -3440,7 +3440,7 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="wlMember">Member</label>
-                        <select class="form-select" id="wlMember" required>
+                        <select class="form-select" id="wlMember" required onchange="populatePaddockList(_wlCompany())">
                             <option value="">— Select member —</option>
                         </select>
                     </div>
@@ -3453,23 +3453,13 @@
                         <input type="time" class="form-input" id="wlEnd">
                     </div>
                     <div class="form-group full-width">
-                        <label class="form-label" for="wlPaddock">Paddock Area <span class="form-optional">(optional)</span></label>
-                        <input class="form-input" id="wlPaddock" list="paddockList" autocomplete="off"
-                               maxlength="60" placeholder="Paddock / block name…">
+                        <span class="form-label" id="wlJobsLabel">Paddock &amp; Job <span class="form-optional">(one line per paddock)</span></span>
+                        <div class="wl-jobs" id="wlJobs" aria-labelledby="wlJobsLabel"></div>
+                        <button type="button" class="btn btn-secondary btn-sm wl-job-add" onclick="addWorkLogJob()">
+                            <i class="fas fa-plus" aria-hidden="true"></i> Add paddock
+                        </button>
                         <datalist id="paddockList"></datalist>
-                    </div>
-                    <div class="form-group full-width">
-                        <label class="form-label" for="wlUnit">Units Worked On <span class="form-optional">(multiple allowed)</span></label>
-                        <div class="wl-unit-add">
-                            <input class="form-input" id="wlUnit" list="wlUnitList" autocomplete="off"
-                                   placeholder="Type unit name or SN, then Add…"
-                                   onkeydown="if(event.key==='Enter'){event.preventDefault();addWorkLogUnit();}">
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="addWorkLogUnit()">
-                                <i class="fas fa-plus"></i> Add
-                            </button>
-                        </div>
                         <datalist id="wlUnitList"></datalist>
-                        <div class="unit-chips" id="wlUnitChips"></div>
                     </div>
                     <div class="form-group full-width">
                         <label class="form-label" for="wlPhotoInput">Field Photos
@@ -3782,6 +3772,8 @@
             </form>
             <ul class="categories-list ml-list" id="mlList"></ul>
             <div class="ml-outside" id="mlOutside"></div>
+            <div class="pd-panel" id="mlPaddocks" hidden></div>
+            <input type="file" id="pdImportInput" accept=".xlsx,.xls,.csv" hidden onchange="importPaddockFile(event)">
         </div>
         <div class="form-actions">
             <button type="button" class="btn btn-secondary" onclick="closeMasterLists()">Close</button>

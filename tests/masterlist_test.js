@@ -165,7 +165,7 @@ const { launch, BASE_URL } = require('./_env');
         // =============== hak akses ===============
         as({ role: 'staff', access: { teamMembers: 'edit' } });
         openMasterLists();
-        t('editor anggota: hanya tab Companies', [...document.querySelectorAll('#mlTabs .team-tab')].map(x => x.textContent.trim().split(' ')[0]), ['Companies']);
+        t('editor anggota: tab Companies, Job Types dan Paddocks', [...document.querySelectorAll('#mlTabs .team-tab')].map(x => x.textContent.trim().replace(/\\s+\\d+$/, '')), ['Companies', 'Job Types', 'Paddocks']);
         t('editor anggota: Companies bisa diubah', document.getElementById('mlAddForm').style.display, '');
         closeMasterLists();
         as({ role: 'staff', access: { editUnits: 'view' } });

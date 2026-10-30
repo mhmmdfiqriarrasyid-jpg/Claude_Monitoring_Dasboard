@@ -84,8 +84,8 @@ const LIC_PAID = ['SF-RTK', 'G5 Advance'];
 const LIC_REQ_OPTIONS = { gps: ['', 'SF-1', 'SF-RTK'], display: ['', 'G5 Basic', 'G5 Advance'] };
 let licenseTab = 'stock';
 // Master lists (Site / Brand / Company). An empty list means "anything goes".
-let masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [] };
-const MASTER_KINDS = ['site', 'brand', 'heavyBrand', 'company', 'damageType'];
+let masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [] };
+const MASTER_KINDS = ['site', 'brand', 'heavyBrand', 'company', 'damageType', 'jobType'];
 const MASTER_DEF = {
     site:    { label: 'Site',    plural: 'Sites',     edit: ['editUnits'],              view: ['editUnits'],
                hint: 'Used by every unit (both groups).' },
@@ -98,8 +98,15 @@ const MASTER_DEF = {
     // v186: extra damage types next to the three built in ones. Unlike the
     // other lists it never restricts anything — it only adds choices.
     damageType: { label: 'Damage Type', plural: 'Damage Types', edit: ['damage'], view: ['damage'],
-               hint: 'Extra types for damage records, next to Mechanical, Software and Device Precision.' }
+               hint: 'Extra types for damage records, next to Mechanical, Software and Device Precision.' },
+    // 2.10.0: what was done on each paddock line of a Daily Report. Empty =
+    // the four built-in types (DEFAULT_JOB_TYPES).
+    jobType: { label: 'Job Type', plural: 'Job Types', edit: ['teamMembers'], view: ['teamMembers'],
+               hint: 'Chosen for each paddock in a Daily Report. While the list is empty: Application, Tillage, Harvesting and Planting.' }
 };
+const DEFAULT_JOB_TYPES = ['Application', 'Tillage', 'Harvesting', 'Planting'];
+let paddockLists = [];               // 2.10.0: [{ id, company, items: [{ pid, landuse, ha }] }]
+let cloudPaddocksUnsub = null;
 // Clean Up Values fields whose target must come from a master list.
 const MERGE_MASTER_KIND = { site: 'site', implBrand: 'brand', brand: 'heavyBrand', company: 'company' };
 // …and the other way: the Clean Up Values field that rewrites a list's records.
@@ -139,7 +146,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.9.4';
+const APP_VERSION = 'v2.10.0';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -926,7 +933,7 @@ function _formStateKey(formId) {
     // A check report's results, and a daily report's units, are buttons and
     // chips, not inputs.
     if (formId === 'inspectionForm' && typeof _insResults !== 'undefined') key += JSON.stringify(_insResults || {});
-    if (formId === 'workLogForm' && typeof _wlUnits !== 'undefined') key += JSON.stringify(_wlUnits || []);
+    if (formId === 'workLogForm' && typeof _wlJobs !== 'undefined') key += JSON.stringify(_wlJobs || []);
     return key;
 }
 function watchFormEdits() {
@@ -12626,6 +12633,12 @@ function initCloudSync() {
                 err => console.warn('[cloud] licenseRequirements offline:', err && err.code)
             );
         }
+        if (window.cloud.subscribePaddocks) {
+            cloudPaddocksUnsub = window.cloud.subscribePaddocks(
+                applyPaddocksSnapshot,
+                err => console.warn('[cloud] paddocks offline:', err && err.code)
+            );
+        }
         if (window.cloud.subscribeMasterLists) {
             cloudMasterListsUnsub = window.cloud.subscribeMasterLists(
                 applyMasterListsSnapshot,
@@ -12769,11 +12782,13 @@ function tearDownCloudSync() {
     _shiftPendingWrites.clear();
     if (cloudUserCategoriesUnsub) { try { cloudUserCategoriesUnsub(); } catch (_) {} cloudUserCategoriesUnsub = null; }
     if (cloudMasterListsUnsub) { try { cloudMasterListsUnsub(); } catch (_) {} cloudMasterListsUnsub = null; }
+    if (cloudPaddocksUnsub) { try { cloudPaddocksUnsub(); } catch (_) {} cloudPaddocksUnsub = null; }
+    paddockLists = [];
     if (cloudLicenseReqUnsub) { try { cloudLicenseReqUnsub(); } catch (_) {} cloudLicenseReqUnsub = null; }
     // What was typed belongs to the account that typed it.
     if (typeof clearUnsent === 'function') clearUnsent();
     licenseRequirements = [];
-    masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [] };
+    masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [] };
     if (cloudDamageComponentsUnsub) { try { cloudDamageComponentsUnsub(); } catch (_) {} cloudDamageComponentsUnsub = null; }
     if (cloudDevicesUnsub) { try { cloudDevicesUnsub(); } catch (_) {} cloudDevicesUnsub = null; }
     if (cloudPurchaseUnsub) { try { cloudPurchaseUnsub(); } catch (_) {} cloudPurchaseUnsub = null; }
@@ -13888,7 +13903,7 @@ function applyRoleGating() {
             if (hasAccess('history', 'view')) showHistory(hm.dataset.unitId || undefined); else closeHistory();
         }
         if (document.getElementById('masterListsModal')?.classList.contains('open')) {
-            if (MASTER_KINDS.some(canViewMasterList)) openMasterLists(); else closeMasterLists();
+            if (masterTabs().length) openMasterLists(); else closeMasterLists();
         }
         editSortState = { key: null, asc: true }; editToolFilter = ''; editMissingFilter = '';
         ['editSearch', 'editStatusFilter', 'editSiteFilter'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
@@ -13943,7 +13958,7 @@ function applyAccessVisibility() {
     const navHistory = document.getElementById('navHistory');
     if (navHistory) navHistory.style.display = hasAccess('history', 'view') ? '' : 'none';
     const navMaster = document.getElementById('navMasterLists');
-    if (navMaster) navMaster.style.display = MASTER_KINDS.some(k => canViewMasterList(k)) ? '' : 'none';
+    if (navMaster) navMaster.style.display = masterTabs().length ? '' : 'none';
     // The owner can change someone's access while they are signed in. Hiding
     // the menu is not enough — the stream has to stop too.
     if (!hasAccess('history', 'view')) stopHistorySubscription();
@@ -14886,6 +14901,20 @@ function workLogUnits(rec) {
     return [];
 }
 
+// 2.10.0: a report is a list of paddock lines — paddock, job type, units.
+// Older reports had one paddock and one unit list; they read as one line.
+function workLogJobs(rec) {
+    if (rec && Array.isArray(rec.jobs) && rec.jobs.length) return rec.jobs;
+    const units = workLogUnits(rec);
+    if (rec && (rec.paddock || units.length)) return [{ paddock: rec.paddock || '', jobType: '', units }];
+    return [];
+}
+function jobTypeChoices() { return masterListActive('jobType') ? masterLists.jobType.slice() : DEFAULT_JOB_TYPES.slice(); }
+function workLogUnitName(u) {
+    const live = liveUnitFor({ unitId: u.id, sn: u.sn });
+    return live ? (live.name || '') : (u.name || u.sn || '');
+}
+
 // Display names, preferring the live unit record over the stored copy so a
 // renamed unit reads correctly on old reports.
 function workLogUnitNames(rec) {
@@ -15031,8 +15060,10 @@ function submittedByFor(existing, asDraft) {
 function allPaddocks() {
     const seen = new Map();
     workLogs.forEach(w => {
-        const p = ((w && w.paddock) || '').trim();
-        if (p && !seen.has(p.toLowerCase())) seen.set(p.toLowerCase(), p);
+        workLogJobs(w).forEach(j => {
+            const p = ((j && j.paddock) || '').trim();
+            if (p && !seen.has(p.toLowerCase())) seen.set(p.toLowerCase(), p);
+        });
     });
     return [...seen.values()].sort((a, b) => a.localeCompare(b));
 }
@@ -16079,8 +16110,7 @@ function populateWorkLogFilters() {
     const comps = allCompanies();
     const dl = document.getElementById('companyList');
     if (dl) dl.innerHTML = companySuggestions().map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
-    const pdl = document.getElementById('paddockList');
-    if (pdl) pdl.innerHTML = allPaddocks().map(p => `<option value="${escapeHtml(p)}"></option>`).join('');
+    populatePaddockList(_wlCompany());
     const compFilter = document.getElementById('wlCompanyFilter');
     if (compFilter) {
         const keep = compFilter.value;
@@ -16112,7 +16142,7 @@ function getFilteredWorkLogs() {
         }
         if (approval && workLogApproval(w) !== approval) return false;
         if (q) {
-            const hay = [memberNameOf(w), companyOfRecord(w), w.paddock,
+            const hay = [memberNameOf(w), companyOfRecord(w), w.paddock, ...workLogJobs(w).map(j => j.jobType),
                          ...workLogUnitNames(w), w.task, w.issue]
                 .join(' ').toLowerCase();
             if (!hay.includes(q)) return false;
@@ -16194,9 +16224,12 @@ function renderWorkLogTable() {
             <td data-label="Unit">${names.length
                 ? names.map(n => `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(n)}</span>`).join(' ')
                 : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
-            <td data-label="Paddock" style="font-size:12px">${w.paddock
-                ? escapeHtml(w.paddock)
-                : '<span style="color:var(--text-light)">—</span>'}</td>
+            <td data-label="Paddock" style="font-size:12px">${(() => {
+                const js = workLogJobs(w).filter(j => j.paddock || j.jobType);
+                return js.length ? js.map(j => `<div class="wl-job-cell">${escapeHtml(j.paddock || '—')}${j.jobType
+                    ? ` <span class="wl-job-type">${escapeHtml(j.jobType)}</span>` : ''}</div>`).join('')
+                    : '<span style="color:var(--text-light)">—</span>';
+            })()}</td>
             <td data-label="Work Description" style="max-width:150px;font-size:12px" title="${escapeHtml(task)}">${escapeHtml(taskShort)}</td>
             <td data-label="Issues" style="max-width:110px;font-size:12px;color:var(--text-secondary)" title="${escapeHtml(issue)}">${
                 issueShort ? escapeHtml(issueShort) : '<span style="color:var(--text-light)">—</span>'}</td>
@@ -16271,7 +16304,7 @@ function clearWorkLogFilter() {
 
 // ---- Work log form: unit chips + documentation photos ----
 // Held outside the DOM while the modal is open, like _dmgPhotoData.
-let _wlUnits = [];   // [{ id, name, sn }]
+let _wlJobs = [];    // [{ paddock, jobType, units: [{ id, name, sn }] }] — 2.10.0
 let _wlPhotos = [];  // data URLs
 // Set only when a photo is actually added or removed. saveWorkLog writes the
 // photo document only then — so editing just the description never rewrites
@@ -16297,43 +16330,91 @@ function setPhotoAddState(btnId, loading, failed, what) {
         : failed ? `Existing ${what.toLowerCase()} failed to load — close and reopen to change them` : '';
 }
 
-function renderWorkLogUnitChips() {
-    const wrap = document.getElementById('wlUnitChips');
-    if (!wrap) return;
-    wrap.innerHTML = _wlUnits.length
-        ? _wlUnits.map((u, i) => `
-            <span class="unit-chip">
-                ${escapeHtml(u.name || u.sn || '(unit)')}
-                <button type="button" class="unit-chip__x" aria-label="Remove ${escapeHtml(u.name || u.sn)}"
-                        title="Remove from list" onclick="removeWorkLogUnit(${i})">&times;</button>
-            </span>`).join('')
-        : '<span class="unit-chip__empty">No units selected</span>';
+function _wlNewJob() { return { paddock: '', jobType: '', units: [] }; }
+function _wlCompany() {
+    const m = memberById(document.getElementById('wlMember')?.value || '');
+    return m ? companyOf(m) : '';
 }
-
-function addWorkLogUnit() {
-    const input = document.getElementById('wlUnit');
-    if (!input) return;
+// One card per paddock: the paddock (from the company's list), what was done
+// there, and the tractors that did it.
+function renderWorkLogJobs() {
+    const box = document.getElementById('wlJobs');
+    if (!box) return;
+    if (!_wlJobs.length) _wlJobs.push(_wlNewJob());
+    populatePaddockList(_wlCompany());
+    const types = jobTypeChoices();
+    box.innerHTML = _wlJobs.map((j, i) => {
+        const opts = types.includes(j.jobType) || !j.jobType ? types : types.concat([j.jobType]);
+        return `<div class="wl-job">
+            <div class="wl-job__head">
+                <span class="wl-job__no">Paddock ${i + 1}</span>
+                ${_wlJobs.length > 1 ? `<button type="button" class="btn-icon wl-job__x" aria-label="Remove paddock ${i + 1}" title="Remove this paddock"
+                    onclick="removeWorkLogJob(${i})"><i class="fas fa-xmark" aria-hidden="true"></i></button>` : ''}
+            </div>
+            <div class="wl-job__grid">
+                <label class="form-group"><span class="form-label">Paddock Area</span>
+                    <input class="form-input" id="wlJobPaddock_${i}" list="paddockList" autocomplete="off" maxlength="60"
+                        placeholder="${paddockLists.length ? 'Pick a paddock, e.g. JAGF-1-A-001' : 'Paddock / block name…'}"
+                        value="${escapeHtml(j.paddock)}" oninput="_wlJobs[${i}].paddock = this.value" onchange="tidyWorkLogPaddock(${i}, this)"></label>
+                <label class="form-group"><span class="form-label">Type Job</span>
+                    <select class="form-select" id="wlJobType_${i}" onchange="_wlJobs[${i}].jobType = this.value">
+                        <option value="">— Select job —</option>
+                        ${opts.map(t => `<option value="${escapeHtml(t)}"${t === j.jobType ? ' selected' : ''}>${escapeHtml(t)}</option>`).join('')}
+                    </select></label>
+            </div>
+            <div class="form-group">
+                <span class="form-label">Units</span>
+                <div class="wl-unit-add">
+                    <input class="form-input" id="wlJobUnit_${i}" list="wlUnitList" autocomplete="off" aria-label="Unit for paddock ${i + 1}"
+                        placeholder="Type unit name or SN, then Add…"
+                        onkeydown="if(event.key==='Enter'){event.preventDefault();addWorkLogJobUnit(${i});}">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="addWorkLogJobUnit(${i})"><i class="fas fa-plus" aria-hidden="true"></i> Add</button>
+                </div>
+                <div class="unit-chips">${j.units.length ? j.units.map((u, k) => `
+                    <span class="unit-chip">${escapeHtml(workLogUnitName(u) || '(unit)')}
+                        <button type="button" class="unit-chip__x" aria-label="Remove ${escapeHtml(workLogUnitName(u))}" title="Remove from list"
+                            onclick="removeWorkLogJobUnit(${i}, ${k})">&times;</button></span>`).join('')
+                    : '<span class="unit-chip__empty">No units selected</span>'}</div>
+            </div>
+        </div>`;
+    }).join('');
+}
+// A paddock typed in another case ("jagf-1-a-001") becomes the list's spelling.
+function tidyWorkLogPaddock(i, input) {
+    const hit = findPaddock(input.value, _wlCompany());
+    if (hit) { input.value = hit.pid; _wlJobs[i].paddock = hit.pid; }
+}
+function addWorkLogJob() {
+    _wlJobs.push(_wlNewJob());
+    renderWorkLogJobs();
+    document.getElementById(`wlJobPaddock_${_wlJobs.length - 1}`)?.focus();
+}
+function removeWorkLogJob(i) {
+    const j = _wlJobs[i];
+    if (j && (j.paddock || j.units.length) && !confirm(`Remove paddock ${i + 1}${j.paddock ? ` (${j.paddock})` : ''} from the report?`)) return;
+    _wlJobs.splice(i, 1);
+    renderWorkLogJobs();
+}
+function addWorkLogJobUnit(i) {
+    const input = document.getElementById(`wlJobUnit_${i}`);
+    if (!input || !_wlJobs[i]) return;
     const raw = (input.value || '').trim();
     if (!raw) return;
     const unit = resolveDamageUnit(raw);
-    if (!unit) {
-        showToast(`Unit "${raw}" not found — pick one from the list`, 'warning');
-        return;
-    }
-    if (_wlUnits.some(u => u.id === unit.id)) {
-        showToast(`${unit.name || unit.sn} is already in the list`, 'warning');
+    if (!unit) { showToast(`Unit "${raw}" not found — pick one from the list`, 'warning'); return; }
+    if (_wlJobs[i].units.some(u => u.id === unit.id)) {
+        showToast(`${unit.name || unit.sn} is already on this paddock`, 'warning');
         input.value = '';
         return;
     }
-    _wlUnits.push({ id: unit.id, name: unit.name || '', sn: unit.sn || '' });
-    input.value = '';
-    input.focus();
-    renderWorkLogUnitChips();
+    _wlJobs[i].units.push({ id: unit.id, name: unit.name || '', sn: unit.sn || '' });
+    renderWorkLogJobs();
+    document.getElementById(`wlJobUnit_${i}`)?.focus();
 }
-
-function removeWorkLogUnit(index) {
-    _wlUnits.splice(index, 1);
-    renderWorkLogUnitChips();
+function removeWorkLogJobUnit(i, k) {
+    if (!_wlJobs[i]) return;
+    _wlJobs[i].units.splice(k, 1);
+    renderWorkLogJobs();
 }
 
 function renderWorkLogPhotos() {
@@ -16431,14 +16512,14 @@ function showAddWorkLogForm() {
     document.getElementById('workLogModalTitle').textContent = 'Add Daily Report';
     document.getElementById('editWorkLogId').value = '';
     document.getElementById('workLogForm').reset();
-    _wlUnits = [];
+    _wlJobs = [_wlNewJob()];
     _wlPhotosGen++;
     _wlPhotos = [];
     _wlPhotosDirty = false;
     _wlPhotosLoading = false;
     _wlPhotosFailed = false;
     populateWorkLogFilters();
-    renderWorkLogUnitChips();
+    renderWorkLogJobs();
     renderWorkLogPhotos();
     document.getElementById('wlDate').value = toISODate();
     showRevisionNote('wlRevisionNote', null);
@@ -16477,7 +16558,7 @@ function editWorkLog(id) {
     document.getElementById('wlStart').value = w.start || '';
     document.getElementById('wlEnd').value = w.end || '';
     // Copies, so cancelling the modal leaves the stored record untouched.
-    _wlUnits = workLogUnits(w).map(u => ({ ...u }));
+    _wlJobs = workLogJobs(w).map(j => ({ paddock: j.paddock || '', jobType: j.jobType || '', units: (j.units || []).map(u => ({ ...u })) }));
     const gen = ++_wlPhotosGen;
     _wlPhotos = [];
     _wlPhotosDirty = false;
@@ -16485,9 +16566,7 @@ function editWorkLog(id) {
     // Photos arrive separately; until they do the strip shows a placeholder.
     // Nothing is lost if they never arrive — see _wlPhotosDirty in saveWorkLog.
     _wlPhotosLoading = workLogPhotoCount(w) > 0;
-    document.getElementById('wlUnit').value = '';
-    document.getElementById('wlPaddock').value = w.paddock || '';
-    renderWorkLogUnitChips();
+    renderWorkLogJobs();
     renderWorkLogPhotos();
     document.getElementById('wlTask').value = w.task || '';
     document.getElementById('wlIssue').value = w.issue || '';
@@ -16559,12 +16638,38 @@ function saveWorkLog(event, mode) {
 
     // A unit left typed but not added is an easy mistake to make, so fold it in
     // rather than dropping it silently.
-    const pending = (document.getElementById('wlUnit').value || '').trim();
-    if (pending) {
-        addWorkLogUnit();
-        if ((document.getElementById('wlUnit').value || '').trim()) return; // unresolved
+    for (let i = 0; i < _wlJobs.length; i++) {
+        const el = document.getElementById(`wlJobUnit_${i}`);
+        if (el && (el.value || '').trim()) {
+            addWorkLogJobUnit(i);
+            const again = document.getElementById(`wlJobUnit_${i}`);
+            if (again && (again.value || '').trim()) return; // unresolved
+        }
     }
-    const units = _wlUnits.map(u => ({ ...u }));
+    // Paddock lines: the paddock in the list's spelling; empty lines dropped.
+    const company = companyOf(member);
+    const jobs = _wlJobs.map(j => {
+        const hit = findPaddock(j.paddock, company);
+        return { paddock: hit ? hit.pid : _toolNorm(j.paddock), jobType: j.jobType || '', units: j.units.map(u => ({ ...u })) };
+    }).filter(j => j.paddock || j.jobType || j.units.length);
+    // What is sent for checking names a paddock, a job and a unit on every line.
+    if (!asDraft) {
+        if (!jobs.length) { showToast('Fill in the paddock area', 'warning'); return; }
+        for (let i = 0; i < jobs.length; i++) {
+            const j = jobs[i], at = jobs.length > 1 ? ` (paddock ${i + 1})` : '';
+            if (!j.paddock) { showToast(`Fill in the paddock area${at}`, 'warning'); return; }
+            if (paddockLists.length && !findPaddock(j.paddock, company)) {
+                const own = paddockListFor(company);
+                showToast(`Paddock "${j.paddock}" is not in the paddock list${own ? ' of ' + own.company : ''} — pick one from the list`, 'warning');
+                return;
+            }
+            if (!j.jobType) { showToast(`Select the type of job${at}`, 'warning'); return; }
+            if (!j.units.length) { showToast(`Add the unit worked on${at}`, 'warning'); return; }
+        }
+    }
+    // Every unit once, in order — the report-level list older views read.
+    const units = [];
+    jobs.forEach(j => j.units.forEach(u => { if (!units.some(x => x.id === u.id)) units.push({ ...u }); }));
 
     const existing = id ? workLogs.find(w => w.id === id) : null;
     // Sent or approved while the form was open (another device, or the
@@ -16586,7 +16691,8 @@ function saveWorkLog(event, mode) {
         unitId: units.length ? units[0].id : '',
         unitName: units.length ? (units[0].name || '') : '',
         sn: units.length ? (units[0].sn || '') : '',
-        paddock: (document.getElementById('wlPaddock').value || '').trim(),
+        jobs,
+        paddock: [...new Set(jobs.map(j => j.paddock).filter(Boolean))].join(', '),
         // Only the count lives on the report; the images go to workLogPhotos.
         photoCount: _wlPhotosDirty ? _wlPhotos.length : workLogPhotoCount(existing),
         task,
@@ -16803,7 +16909,7 @@ function exportWorkLogCSV() {
     const rows = getFilteredWorkLogs();
     if (rows.length === 0) { showToast('No reports to export', 'warning'); return; }
     const headers = ['No', 'Date', 'Company', 'Member', 'Job Title', 'Start', 'End', 'Duration (hours)',
-                     'Paddock Area', 'Unit', 'Serial Number', 'Photo Count', 'Work Description', 'Issues',
+                     'Paddock Area', 'Job Type', 'Paddock Lines', 'Unit', 'Serial Number', 'Photo Count', 'Work Description', 'Issues',
                      'Approval', 'Approved By', 'Revision Notes'];
     const dataRows = rows.map((w, i) => {
         const m = w.memberId ? memberById(w.memberId) : null;
@@ -16813,6 +16919,9 @@ function exportWorkLogCSV() {
             w.start || '', w.end || '',
             (workLogMinutes(w) / 60).toFixed(2),
             w.paddock || '',
+            [...new Set(workLogJobs(w).map(j => j.jobType).filter(Boolean))].join(' | '),
+            // "JAGF-1-A-001 Tillage: TR-01, TR-02 | …" — which unit did what where.
+            workLogJobs(w).map(j => `${j.paddock || '-'}${j.jobType ? ' ' + j.jobType : ''}: ${(j.units || []).map(workLogUnitName).join(', ') || '-'}`).join(' | '),
             // Several units share one cell, separated so the column stays readable.
             workLogUnitNames(w).join(' | '),
             us.map(u => u.sn || '').filter(Boolean).join(' | '),
@@ -23175,13 +23284,14 @@ function masterUsage(kind) {
     if (kind === 'heavyBrand') unitsOfGroup(globalData, 'heavy').forEach(u => add(u.brand));
     if (kind === 'company') (teamMembers || []).forEach(m => add(companyOf(m)));
     if (kind === 'damageType') globalDamages.forEach(d => { if (!DAMAGE_TYPES.includes(d.damageType)) add(d.damageType); });
+    if (kind === 'jobType') (workLogs || []).forEach(w => workLogJobs(w).forEach(j => add(j.jobType)));
     return counts;
 }
-const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', heavyBrand: 'unit', company: 'member', damageType: 'damage record' };
+const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', heavyBrand: 'unit', company: 'member', damageType: 'damage record', jobType: 'report line' };
 
 function applyMasterListsSnapshot(docs) {
     _markLoaded('masterLists');
-    const next = { site: [], brand: [], heavyBrand: [], company: [], damageType: [] };
+    const next = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [] };
     (docs || []).forEach(d => {
         if (MASTER_KINDS.includes(d.id) && Array.isArray(d.values)) next[d.id] = d.values.map(_toolNorm).filter(Boolean);
     });
@@ -23207,8 +23317,10 @@ function populateMasterDatalists() {
 // ---- Modal ----
 let _mlKind = 'site';
 
+// The tabs: every list this account may see, and Paddocks (2.10.0).
+function masterTabs() { return MASTER_KINDS.filter(canViewMasterList).concat(canViewPaddocks() ? ['paddock'] : []); }
 function openMasterLists(kind) {
-    const kinds = MASTER_KINDS.filter(canViewMasterList);
+    const kinds = masterTabs();
     if (!kinds.length) { showToast('You do not have access to any master list', 'warning'); return; }
     _mlKind = kind && kinds.includes(kind) ? kind : (kinds.includes(_mlKind) ? _mlKind : kinds[0]);
     document.getElementById('mlNewValue').value = '';
@@ -23216,13 +23328,18 @@ function openMasterLists(kind) {
     document.getElementById('masterListsModal').classList.add('open');
 }
 function closeMasterLists() { document.getElementById('masterListsModal').classList.remove('open'); }
-function switchMasterList(kind) { _mlKind = kind; document.getElementById('mlNewValue').value = ''; renderMasterLists(); }
+function switchMasterList(kind) { _mlKind = kind; _pdImport = null; document.getElementById('mlNewValue').value = ''; renderMasterLists(); }
 
 function renderMasterLists() {
     const tabs = document.getElementById('mlTabs');
-    tabs.innerHTML = MASTER_KINDS.filter(canViewMasterList).map(k => `<button type="button" role="tab"
+    tabs.innerHTML = masterTabs().map(k => `<button type="button" role="tab"
         class="team-tab${k === _mlKind ? ' active' : ''}" aria-selected="${k === _mlKind}" onclick="switchMasterList(${jsArg(k)})">
-        ${escapeHtml(MASTER_DEF[k].plural)} <span class="team-tab__count">${(masterLists[k] || []).length}</span></button>`).join('');
+        ${escapeHtml(k === 'paddock' ? 'Paddocks' : MASTER_DEF[k].plural)} <span class="team-tab__count">${k === 'paddock' ? paddockCount() : (masterLists[k] || []).length}</span></button>`).join('');
+    // Paddocks are lists per company, with a panel of their own.
+    const pd = _mlKind === 'paddock';
+    document.getElementById('mlPaddocks').hidden = !pd;
+    ['mlIntro', 'mlAddForm', 'mlList', 'mlOutside'].forEach(id => { document.getElementById(id).style.display = pd ? 'none' : ''; });
+    if (pd) { renderPaddockPanel(); return; }
     const def = MASTER_DEF[_mlKind];
     const canEdit = canEditMasterList(_mlKind);
     const usage = masterUsage(_mlKind);
@@ -23405,12 +23522,294 @@ function renameMasterValue(v) {
     _afterDataFix();
 }
 
+// ============================================================
+// PADDOCKS (2.10.0)
+// ------------------------------------------------------------
+// One list per company (PT), picked from in every Daily Report line, so the
+// team chooses "JAGF-1-A-001" instead of typing it. Kept under Master lists
+// by whoever manages team members; filled by hand or from the paddock Excel
+// (one sheet per company, a "Paddock ID (PID)" column).
+// ============================================================
+const PADDOCK_MAX = 3000;
+const PADDOCK_SHOW = 300;            // rows drawn at once in the editor
+let _pdCompany = '';                 // editor: the company shown
+let _pdSearch = '';
+let _pdImport = null;                // editor: a parsed file waiting to be saved
+
+function canViewPaddocks() { return hasAccess('teamMembers', 'view'); }
+function canEditPaddocks() { return hasAccess('teamMembers', 'edit'); }
+function paddockKey(company) {
+    return _simKey(company).slice(0, 60) || 'company';
+}
+function normPid(v) { return _toolNorm(v).toUpperCase(); }
+function _normPaddockItems(items) {
+    const seen = new Map();
+    (Array.isArray(items) ? items : []).forEach(it => {
+        const pid = normPid(it && it.pid);
+        if (!pid) return;
+        const prev = seen.get(pid);
+        const lu = _toolNorm(it.landuse);
+        const ha = Number(it.ha) || 0;
+        if (!prev) seen.set(pid, { pid, landuse: lu, ha });
+        else {
+            if (lu && !prev.landuse.split(', ').includes(lu)) prev.landuse = prev.landuse ? `${prev.landuse}, ${lu}` : lu;
+            prev.ha += ha;
+        }
+    });
+    return [...seen.values()].sort((a, b) => a.pid.localeCompare(b.pid));
+}
+function applyPaddocksSnapshot(docs) {
+    paddockLists = (docs || []).filter(d => d && d.company).map(d => ({
+        id: d.id, company: _toolNorm(d.company), items: _normPaddockItems(d.items)
+    })).sort((a, b) => a.company.localeCompare(b.company));
+    populatePaddockList();
+    if (document.getElementById('masterListsModal')?.classList.contains('open') && _mlKind === 'paddock') renderMasterLists();
+    if (document.getElementById('workLogModal')?.classList.contains('open')) renderWorkLogJobs();
+}
+function paddockCount() { return paddockLists.reduce((n, l) => n + l.items.length, 0); }
+// The list of a company: same name ignoring case and punctuation.
+function paddockListFor(company) {
+    const k = _simKey(company);
+    return k ? paddockLists.find(l => _simKey(l.company) === k) || null : null;
+}
+// The paddocks a report line may name: the member's company, or every
+// company when that one has no list.
+function paddockChoices(company) {
+    const own = paddockListFor(company);
+    if (own && own.items.length) return own.items;
+    return paddockLists.flatMap(l => l.items);
+}
+function findPaddock(pid, company) {
+    const p = normPid(pid);
+    if (!p) return null;
+    return paddockChoices(company).find(it => it.pid === p) || null;
+}
+function populatePaddockList(company) {
+    const dl = document.getElementById('paddockList');
+    if (!dl) return;
+    const items = paddockLists.length ? paddockChoices(company) : allPaddocks().map(pid => ({ pid }));
+    dl.innerHTML = items.map(it => `<option value="${escapeHtml(it.pid)}">${it.landuse ? escapeHtml(it.landuse) : ''}</option>`).join('');
+}
+
+// ---- Editor (a tab of Master lists) ----
+function renderPaddockPanel() {
+    const host = document.getElementById('mlPaddocks');
+    if (!host) return;
+    const canEdit = canEditPaddocks();
+    if (_pdImport) { renderPaddockImport(host); return; }
+    if (_pdCompany && !paddockListFor(_pdCompany)) _pdCompany = '';
+    if (!_pdCompany && paddockLists.length) _pdCompany = paddockLists[0].company;
+    const list = paddockListFor(_pdCompany);
+    host.innerHTML = `
+        <p class="ml-intro">One list per company. A Daily Report picks its paddocks from the member's company${paddockLists.length ? '' : ' — none yet, so paddocks are typed freely'}.
+            ${canEdit ? 'Import the paddock Excel (one sheet per company, with a <strong>Paddock ID (PID)</strong> column) or add them one by one.' : ''}</p>
+        ${canEdit ? `<div class="pd-actions">
+            <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('pdImportInput').click()">
+                <i class="fas fa-file-import" aria-hidden="true"></i> Import Excel / CSV</button>
+        </div>` : ''}
+        ${paddockLists.length ? `
+        <div class="pd-bar">
+            <label class="adm-select"><span class="adm-select__label">Company</span>
+                <select id="pdCompany" onchange="_pdCompany = this.value; renderPaddockPanel()">
+                    ${paddockLists.map(l => `<option value="${escapeHtml(l.company)}"${l.company === _pdCompany ? ' selected' : ''}>${escapeHtml(l.company)} (${l.items.length})</option>`).join('')}
+                </select></label>
+            <label class="adm-search"><i class="fas fa-search" aria-hidden="true"></i><span class="adm-sr">Search paddocks</span>
+                <input type="search" id="pdSearch" value="${escapeHtml(_pdSearch)}" placeholder="Search PID or landuse" oninput="_pdSearch = this.value; renderPaddockRows()"></label>
+        </div>
+        ${canEdit ? `<form class="category-add-form ml-add" onsubmit="event.preventDefault(); addPaddock()">
+            <input type="text" class="form-input" id="pdNewPid" aria-label="New paddock ID" placeholder="New paddock ID, e.g. JAGF-1-A-001" maxlength="40" autocomplete="off">
+            <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-plus" aria-hidden="true"></i> Add</button>
+        </form>` : ''}
+        <div id="pdRows"></div>
+        ${canEdit && list ? `<button type="button" class="btn btn-secondary btn-sm pd-delete" onclick="deletePaddockList(${jsArg(list.company)})">
+            <i class="fas fa-trash" aria-hidden="true" style="color:var(--danger)"></i> Delete the ${escapeHtml(list.company)} list</button>` : ''}
+        ` : `<p class="category-empty">No paddock list yet.</p>`}`;
+    renderPaddockRows();
+}
+function renderPaddockRows() {
+    const box = document.getElementById('pdRows');
+    if (!box) return;
+    const list = paddockListFor(_pdCompany);
+    const q = _pdSearch.toLowerCase().trim();
+    const rows = list ? list.items.filter(it => !q || it.pid.toLowerCase().includes(q) || (it.landuse || '').toLowerCase().includes(q)) : [];
+    const canEdit = canEditPaddocks();
+    const fmtHa = n => n ? n.toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' ha' : '';
+    box.innerHTML = `<p class="pd-count">${rows.length} paddock${rows.length === 1 ? '' : 's'}${q ? ' match' : ''}${rows.length > PADDOCK_SHOW ? ` — showing the first ${PADDOCK_SHOW}, search to narrow down` : ''}</p>
+        <ul class="categories-list ml-list pd-list">${rows.slice(0, PADDOCK_SHOW).map(it => `<li class="category-item ml-item">
+            <span class="category-item__name"><strong>${escapeHtml(it.pid)}</strong> <small class="ml-used">${escapeHtml([it.landuse, fmtHa(it.ha)].filter(Boolean).join(' · '))}</small></span>
+            ${canEdit ? `<span class="row-actions row-actions--labeled">
+                <button type="button" class="btn btn-secondary btn-sm row-actions__icon" title="Remove" aria-label="Remove ${escapeHtml(it.pid)}"
+                    onclick="removePaddock(${jsArg(it.pid)})"><i class="fas fa-trash" style="color:var(--danger)"></i></button></span>` : ''}
+        </li>`).join('') || '<li class="category-empty">Nothing matches.</li>'}</ul>`;
+}
+
+function _savePaddockList(company, items, what) {
+    company = _toolNorm(company);
+    const rec = { id: paddockKey(company), company, items: _normPaddockItems(items),
+        updatedAt: Date.now(), updatedBy: (currentUser && currentUser.email) || '' };
+    if (rec.items.length > PADDOCK_MAX) { showToast(`A company can hold at most ${PADDOCK_MAX} paddocks`, 'warning'); return false; }
+    const before = paddockLists;
+    const others = paddockLists.filter(l => l.id !== rec.id && _simKey(l.company) !== _simKey(company));
+    paddockLists = others.concat([{ id: rec.id, company, items: rec.items }]).sort((a, b) => a.company.localeCompare(b.company));
+    populatePaddockList();
+    cloudWrite(
+        { action: 'update', unitName: `[Master] Paddocks`, field: company, before: '', after: what },
+        cloudCall('savePaddockList', rec),
+        null,
+        err => {
+            console.error('[paddocks] save failed:', err);
+            paddockLists = before;
+            populatePaddockList();
+            if (_mlKind === 'paddock') renderMasterLists();
+            showToast(err && err.code === 'permission-denied'
+                ? 'Refused by the server — publish the latest firestore.rules (Paddocks) and check your access'
+                : 'Failed to save the paddock list — change reverted', 'error');
+        }
+    );
+    return true;
+}
+function addPaddock() {
+    if (!canEditPaddocks()) return;
+    const list = paddockListFor(_pdCompany);
+    const input = document.getElementById('pdNewPid');
+    const pid = normPid(input && input.value);
+    if (!list || !pid) { showToast('Type a paddock ID', 'warning'); return; }
+    if (list.items.some(it => it.pid === pid)) { showToast(`${pid} is already in the list`, 'info'); return; }
+    if (_savePaddockList(list.company, list.items.concat([{ pid }]), `Added ${pid}`)) {
+        showToast(`${pid} added to ${list.company}`, 'success');
+        renderPaddockPanel();
+        document.getElementById('pdNewPid')?.focus();
+    }
+}
+function removePaddock(pid) {
+    const list = paddockListFor(_pdCompany);
+    if (!list || !canEditPaddocks()) return;
+    if (!confirm(`Remove ${pid} from the ${list.company} list?\n\nReports that name it keep it.`)) return;
+    if (_savePaddockList(list.company, list.items.filter(it => it.pid !== pid), `Removed ${pid}`)) renderPaddockPanel();
+}
+function deletePaddockList(company) {
+    const list = paddockListFor(company);
+    if (!list || !canEditPaddocks()) return;
+    if (!confirm(`Delete the whole paddock list of ${list.company} (${list.items.length} paddocks)?\n\nReports that name them keep them.`)) return;
+    const before = paddockLists;
+    paddockLists = paddockLists.filter(l => l !== list);
+    _pdCompany = '';
+    populatePaddockList();
+    renderMasterLists();
+    cloudWrite({ action: 'delete', unitName: '[Master] Paddocks', field: list.company, before: `${list.items.length} paddocks`, after: '' },
+        cloudCall('deletePaddockList', list.id), 'Paddock list deleted',
+        err => { console.error('[paddocks] delete failed:', err); paddockLists = before; renderMasterLists(); showToast('Failed to delete the paddock list', 'error'); });
+}
+
+// ---- Import: an Excel workbook (one sheet per company) or a CSV ----
+// The company of a sheet named "GPA": a company called "PT. GPA", or one
+// whose initials are G-P-A ("PT. Global Papua Abadi").
+function companyForSheet(sheet) {
+    const k = _simKey(sheet);
+    if (!k) return '';
+    const initials = c => _toolNorm(c).replace(/^pt\.?\s+/i, '').split(/[\s.]+/).filter(Boolean).map(w => w[0]).join('').toLowerCase();
+    const names = [...new Set(companySuggestions().concat(paddockLists.map(l => l.company)))];
+    return names.find(c => _simKey(c) === k)
+        || names.find(c => _toolNorm(c).toLowerCase().split(/[^a-z0-9]+/).includes(k))
+        || names.find(c => initials(c) === k) || '';
+}
+// Rows → paddocks: the header row is the one naming the paddock ID.
+function paddocksFromRows(rows) {
+    const cell = v => String(v == null ? '' : v).trim();
+    const h = rows.findIndex(r => (r || []).some(c => /paddock\s*id|^pid$/i.test(cell(c))));
+    if (h < 0) return null;
+    const head = rows[h].map(c => cell(c).toLowerCase());
+    const col = re => head.findIndex(c => re.test(c));
+    const cPid = col(/paddock\s*id|^pid$/), cLu = col(/land\s*use/), cHa = col(/luas|^ha\b|area/);
+    return _normPaddockItems(rows.slice(h + 1).map(r => ({
+        pid: cell(r[cPid]), landuse: cLu >= 0 ? cell(r[cLu]) : '', ha: cHa >= 0 ? Number(String(r[cHa]).replace(',', '.')) || 0 : 0
+    })).filter(it => /^[A-Za-z0-9]+(-[A-Za-z0-9]+)+$/.test(it.pid)));
+}
+let _xlsxLoading = null;
+function loadSheetJs() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    if (!_xlsxLoading) _xlsxLoading = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        s.onload = () => window.XLSX ? resolve(window.XLSX) : reject(new Error('XLSX missing'));
+        s.onerror = () => { _xlsxLoading = null; reject(new Error('XLSX failed to load')); };
+        document.head.appendChild(s);
+    });
+    return _xlsxLoading;
+}
+async function importPaddockFile(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file || !canEditPaddocks()) return;
+    try {
+        let sheets = [];
+        if (/\.csv$/i.test(file.name)) {
+            const rows = await new Promise((res, rej) => Papa.parse(file, { skipEmptyLines: true, complete: r => res(r.data), error: rej }));
+            sheets = [{ name: file.name.replace(/\.[^.]+$/, ''), rows }];
+        } else {
+            const XLSX = await loadSheetJs();
+            const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+            sheets = wb.SheetNames.map(n => ({ name: n, rows: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' }) }));
+        }
+        const found = sheets.map(sh => ({ sheet: sh.name, items: paddocksFromRows(sh.rows) })).filter(x => x.items && x.items.length);
+        if (!found.length) { showToast('No "Paddock ID (PID)" column found in the file', 'warning'); return; }
+        _pdImport = found.map(x => ({ ...x, company: companyForSheet(x.sheet) || (paddockListFor(x.sheet) ? x.sheet : ''), mode: 'replace' }));
+        renderMasterLists();
+    } catch (err) {
+        console.error('[paddocks] import failed:', err);
+        showToast(navigator.onLine ? 'Could not read that file' : 'Reading Excel needs a signal the first time — or save the sheet as CSV', 'error');
+    }
+}
+function renderPaddockImport(host) {
+    host.innerHTML = `
+        <p class="ml-intro">Found in the file — pick the company of each sheet, then save. <em>Replace</em> makes the list exactly the file; <em>Add</em> keeps paddocks already in the list.</p>
+        <div class="pd-import">${_pdImport.map((x, i) => {
+            const cur = paddockListFor(x.company);
+            return `<div class="pd-import__row">
+                <div><strong>${escapeHtml(x.sheet)}</strong><span class="adm-sub">${x.items.length} paddocks · ${escapeHtml(x.items.slice(0, 3).map(it => it.pid).join(', '))}…</span></div>
+                <label class="form-group"><span class="form-label">Company</span>
+                    <input class="form-input" list="companyList" value="${escapeHtml(x.company)}" maxlength="120" placeholder="Skip this sheet"
+                        oninput="_pdImport[${i}].company = this.value" onchange="renderMasterLists()"></label>
+                <label class="form-group"><span class="form-label">${cur ? `Now ${cur.items.length} in the list` : 'New list'}</span>
+                    <select class="form-select" onchange="_pdImport[${i}].mode = this.value">
+                        <option value="replace"${x.mode === 'replace' ? ' selected' : ''}>Replace</option>
+                        <option value="add"${x.mode === 'add' ? ' selected' : ''}>Add</option></select></label>
+            </div>`;
+        }).join('')}</div>
+        <div class="pd-actions">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="_pdImport = null; renderMasterLists()">Cancel</button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="savePaddockImport()">Save paddocks</button>
+        </div>`;
+}
+function savePaddockImport() {
+    if (!_pdImport || !canEditPaddocks()) return;
+    const picks = _pdImport.filter(x => _toolNorm(x.company));
+    if (!picks.length) { showToast('Pick a company for at least one sheet', 'warning'); return; }
+    for (const x of picks) {
+        const r = checkMasterValue('company', x.company);
+        if (!r.ok) { showToast(`Company "${x.company}" ${masterNotInList('company')}`, 'warning'); return; }
+        x.company = r.value;
+    }
+    let n = 0;
+    for (const x of picks) {
+        const cur = paddockListFor(x.company);
+        const items = x.mode === 'add' && cur ? cur.items.concat(x.items.filter(it => !cur.items.some(c => c.pid === it.pid))) : x.items;
+        if (!_savePaddockList(x.company, items, `Imported ${x.items.length} from ${x.sheet} (${x.mode})`)) return;
+        n += x.items.length;
+        _pdCompany = x.company;
+    }
+    _pdImport = null;
+    showToast(`${n} paddocks saved for ${picks.map(x => x.company).join(', ')}`, 'success');
+    renderMasterLists();
+}
+
 // ---- Data Check ----
 function dcNotInMasterLists() {
     const out = [];
     MASTER_KINDS.forEach(kind => {
         // Damage types only add choices; a type outside the list is not wrong.
-        if (kind === 'damageType' || !masterListActive(kind)) return;
+        // Job types live on reports that are often locked once approved.
+        if (kind === 'damageType' || kind === 'jobType' || !masterListActive(kind)) return;
         [...masterUsage(kind).entries()].filter(([v]) => !masterMatch(kind, v)).sort((a, b) => b[1] - a[1]).forEach(([v, n]) => {
             out.push(dc('master-luar', `${MASTER_DEF[kind].label}: ${v}`,
                 `${n} ${MASTER_USED_NOUN[kind]}(s) — not in the ${MASTER_DEF[kind].label} list`,
@@ -23813,7 +24212,7 @@ function clearUnsent() { _unsent.clear(); renderUnsentNotice(); }
 
 // ---- per form: what to keep, and how to open it again ----
 function _snapWorkLog() {
-    return { vals: captureFormState('workLogForm'), units: _wlUnits.map(u => ({ ...u })),
+    return { vals: captureFormState('workLogForm'), jobs: JSON.parse(JSON.stringify(_wlJobs)),
              photos: _wlPhotosDirty ? _wlPhotos.slice() : null };
 }
 function _reopenWorkLog(snap) {
@@ -23822,9 +24221,9 @@ function _reopenWorkLog(snap) {
     if (w && !snap.photos && canEditTeamRecord(w)) editWorkLog(id); else showAddWorkLogForm();
     applyFormState(snap.vals);
     ensureMemberOption('wlMember', snap.vals.wlMember);
-    _wlUnits = snap.units.map(u => ({ ...u }));
+    _wlJobs = JSON.parse(JSON.stringify(snap.jobs || []));
     if (snap.photos) { _wlPhotosGen++; _wlPhotos = snap.photos.slice(); _wlPhotosDirty = true; _wlPhotosLoading = false; }
-    renderWorkLogUnitChips();
+    renderWorkLogJobs();
     renderWorkLogPhotos();
     // What it holds was never saved — when it did open (it may be refused).
     const opened = document.getElementById('workLogModal').classList.contains('open');

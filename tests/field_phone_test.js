@@ -102,6 +102,7 @@ const { launch, BASE_URL } = require('./_env');
         document.getElementById('wlMember').value = 'm1';
         document.getElementById('wlStart').value = '07:00'; document.getElementById('wlEnd').value = '15:00';
         document.getElementById('wlTask').value = 'Kalibrasi GPS di blok 7';
+        _wlJobs = [{ paddock: 'P-7', jobType: 'Tillage', units: [{ id: 'u_x', name: 'TR1', sn: '' }] }];
         _wlPhotos = ['data:image/jpeg;base64,UEhPVE8='];
         _wlPhotosDirty = true;
         failNext = 'permission-denied';
@@ -114,8 +115,8 @@ const { launch, BASE_URL } = require('./_env');
         document.querySelector('#unsentNotice .btn-primary').click();
         await tick(80);
         t('Open it again: form berisi isian dan foto yang sama',
-          [isOpen('workLogModal'), document.getElementById('wlTask').value, _wlPhotos.length, _wlPhotosDirty, document.getElementById('wlMember').value],
-          [true, 'Kalibrasi GPS di blok 7', 1, true, 'm1']);
+          [isOpen('workLogModal'), document.getElementById('wlTask').value, _wlPhotos.length, _wlPhotosDirty, document.getElementById('wlMember').value, _wlJobs[0].paddock],
+          [true, 'Kalibrasi GPS di blok 7', 1, true, 'm1', 'P-7']);
         t('pemberitahuan hilang setelah dibuka', !!document.getElementById('unsentNotice'), false);
         saveWorkLog(new Event('submit'));
         await tick(80);

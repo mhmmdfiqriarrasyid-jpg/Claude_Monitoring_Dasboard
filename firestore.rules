@@ -202,7 +202,21 @@ service cloud.firestore {
       return (kind in ['site', 'heavyBrand'] && canEditArea('editUnits'))
           || (kind == 'brand' && (canEditArea('implements') || canEditArea('editUnits')))
           || (kind == 'company' && canEditArea('teamMembers'))
-          || (kind == 'damageType' && canEditArea('damage'));
+          || (kind == 'damageType' && canEditArea('damage'))
+          || (kind == 'jobType' && canEditArea('teamMembers'));
+    }
+    // Paddocks (2.10.0): one list per company, chosen from in Daily Reports.
+    // Read by every active account; kept by whoever manages team members.
+    match /paddocks/{id} {
+      allow read: if isActive();
+      allow delete: if canEditArea('teamMembers');
+      allow create, update: if canEditArea('teamMembers')
+        && request.resource.data.get('id', '') == id
+        && request.resource.data.get('company', '') is string
+        && request.resource.data.get('company', '').size() > 0
+        && request.resource.data.get('company', '').size() <= 120
+        && request.resource.data.get('items', null) is list
+        && request.resource.data.get('items', []).size() <= 3000;
     }
     match /masterLists/{kind} {
       allow read: if isActive();
