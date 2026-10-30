@@ -146,7 +146,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.10.4';
+const APP_VERSION = 'v2.10.5';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -6084,7 +6084,7 @@ function heavyEditHead() {
 // Positions count from 1, the checkbox column included.
 const UNIT_COL_VIEWS = {
     tractor: [
-        { key: 'overview',   label: 'Overview',   show: [1, 2, 3, 4, 5, 7, 12, 14, 21] },
+        { key: 'overview',   label: 'Overview',   show: [1, 2, 3, 4, 5, 6, 7, 12, 14, 21] },
         { key: 'components', label: 'Components', show: [1, 2, 3, 7, 8, 9, 10, 11, 12, 21] },
         { key: 'licenses',   label: 'Licenses',   show: [1, 2, 3, 7, 12, 15, 16, 17, 18, 21] },
         { key: 'all',        label: 'All',        show: null }

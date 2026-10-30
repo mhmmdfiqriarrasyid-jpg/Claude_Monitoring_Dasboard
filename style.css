@@ -10602,3 +10602,7 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
 #editTable:not([data-col-view="all"]) td[data-label="Work Tool"],
 #editTable:not([data-col-view="all"]) td[data-label="Machine Type"] { white-space: normal; min-width: 110px; max-width: 200px; }
 #editTable:not([data-col-view="all"]) th { white-space: normal; }
+@media (min-width: 701px) {
+    #editTable:not([data-col-view="all"]) td,
+    #editTable:not([data-col-view="all"]) th { padding-left: 10px; padding-right: 10px; }
+}
