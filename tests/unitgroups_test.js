@@ -144,8 +144,16 @@ const SETUP = `(() => {
         // field kunci yang kosong (dilaporkan sebagai satu ringkasan).
         // v162: status alat berat vs kerusakan terbuka — 0 tanpa alat berat.
         const expChecks = golden.dataChecks.concat([['kelompok', 0], ['kelompok-ref', 0], ['mirip', 0], ['kurang', 1], ['impl-db', 0], ['master', 0], ['kerusakan-status', 0]]);
+        //  - 2.10.9: ekspor Units punya kolom "Implement Group" sesudah
+        //    "Implement" (kosong di armada golden: implement-nya tanpa group).
+        const withGroupCol = csv => csv && csv.split('\n').map((line, i) => {
+            const cells = line.split('","');
+            cells.splice(5, 0, i === 0 ? 'Implement Group' : '');
+            return cells.join('","');
+        }).join('\n');
         Object.keys(golden).forEach(k => {
-            const want = k === 'csvImport' ? expCsv : k === 'dataChecks' ? expChecks : golden[k];
+            const want = k === 'csvImport' ? expCsv : k === 'dataChecks' ? expChecks
+                : (k === 'csvDashboard' || k === 'csvEdit') ? withGroupCol(golden[k]) : golden[k];
             t(`tanpa alat berat identik dengan kode lama: ${k}`, out[k], want);
         });
         const ui = await page.evaluate(() => ({

@@ -74,6 +74,18 @@ const { launch, BASE_URL } = require('./_env');
         document.getElementById('editSearch').value = 'planting'; renderEditTable(); await tick();
         t('Units: cari berdasarkan group', document.querySelectorAll('#editBody tr').length, 1);
         document.getElementById('editSearch').value = '';
+
+        // Ekspor CSV Units membawa kolom Implement Group
+        let blobText = null;
+        const origURL = URL.createObjectURL;
+        URL.createObjectURL = b => { b.text().then(x => { blobText = x; }); return 'blob:x'; };
+        const origClick = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () {};
+        exportCSV(units); await tick(80);
+        URL.createObjectURL = origURL; HTMLAnchorElement.prototype.click = origClick;
+        const lines = (blobText || '').replace(/^\\uFEFF/, '').split('\\n').map(l => l.replace(/"/g, ''));
+        const head = lines[0].split(','), r1 = lines[1].split(',');
+        t('ekspor: kolom Implement Group setelah Implement', head.slice(4, 6), ['Implement', 'Implement Group']);
+        t('ekspor: isi group per unit', [r1[5], lines[2].split(',')[5]], ['Primary Tillage', 'Planting']);
         window.__T = T;
     } catch (e) { window.__T = [{ n: 'CRASH ' + e.message + ' ' + (e.stack || '').split('\\n')[1], pass: false }]; } })()` });
 

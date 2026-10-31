@@ -149,7 +149,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.10.8';
+const APP_VERSION = 'v2.10.9';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -5413,11 +5413,11 @@ function exportCSV(data) {
     // new units keeps each unit in its group.
     const heavyN = exportData.filter(isHeavy).length;
     if (heavyN) { exportUnitsCSVGrouped(exportData, heavyN === exportData.length); return; }
-    const headers = ['No', 'Nickname', 'Model', 'Serial Number', 'Implement', 'Status', 'Display', 'GPS', 'Steering', 'JDLink', 'Site',
+    const headers = ['No', 'Nickname', 'Model', 'Serial Number', 'Implement', 'Implement Group', 'Status', 'Display', 'GPS', 'Steering', 'JDLink', 'Site',
                      'Year Received', 'User Category', 'GPS License', 'Display License',
                      'GPS License Start Date', 'GPS License Expiration Date',
                      'Display License Start Date', 'Display License Expiration Date', 'Remarks', 'Breakdown Reason'];
-    const rows = exportData.map((d, i) => [i + 1, d.name, d.model, d.sn, d.implement || '', d.status, d.display, d.gps, d.steering, d.jdlink, d.site,
+    const rows = exportData.map((d, i) => [i + 1, d.name, d.model, d.sn, d.implement || '', unitImplementGroup(d), d.status, d.display, d.gps, d.steering, d.jdlink, d.site,
                      d.yearReceived || '', d.userCategory || '',
                      effectiveLicense(d, 'gps').type || '', effectiveLicense(d, 'display').type || '',
                      d.gpsLicenseStartDate || d.licenseStartDate || '',
@@ -5452,7 +5452,7 @@ function exportUnitsCSVGrouped(exportData, heavyOnly) {
                    (!isGood(d.status) && d.breakdownReason) ? d.breakdownReason : '']);
         prefix = UNIT_GROUPS.heavy.csvPrefix;
     } else {
-        headers = ['No', 'Nickname', 'Model', 'Serial Number', 'Implement', 'Status', 'Display', 'GPS', 'Steering', 'JDLink', 'Site',
+        headers = ['No', 'Nickname', 'Model', 'Serial Number', 'Implement', 'Implement Group', 'Status', 'Display', 'GPS', 'Steering', 'JDLink', 'Site',
                    'Year Received', 'User Category', 'GPS License', 'Display License',
                    'GPS License Start Date', 'GPS License Expiration Date',
                    'Display License Start Date', 'Display License Expiration Date', 'Remarks', 'Breakdown Reason',
@@ -5460,7 +5460,7 @@ function exportUnitsCSVGrouped(exportData, heavyOnly) {
         rows = exportData.map((d, i) => {
             const h = isHeavy(d);
             // A row never reads the other group's fields.
-            return [i + 1, d.name, d.model, d.sn, h ? '' : (d.implement || ''), d.status,
+            return [i + 1, d.name, d.model, d.sn, h ? '' : (d.implement || ''), h ? '' : unitImplementGroup(d), d.status,
                 h ? '' : d.display, h ? '' : d.gps, h ? '' : d.steering, h ? '' : d.jdlink, d.site,
                 d.yearReceived || '', d.userCategory || '',
                 h ? '' : (effectiveLicense(d, 'gps').type || ''), h ? '' : (effectiveLicense(d, 'display').type || ''),
