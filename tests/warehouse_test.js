@@ -1,0 +1,348 @@
+const { launch, BASE_URL } = require('./_env');
+
+(async () => {
+    const b = await launch();
+    const page = await b.newPage({ viewport: { width: 1440, height: 1000 } });
+    const errors = [];
+    page.on('pageerror', e => { if (!/Chart is not defined/.test(e.message)) errors.push(e.message); });
+    await page.goto(BASE_URL + '/index.html', { waitUntil: 'load' });
+    await page.waitForTimeout(1000);
+
+    await page.addScriptTag({ content: `(() => { try {
+        const T = []; const t = (n, g, w) => T.push({ n, g, w, pass: JSON.stringify(g) === JSON.stringify(w) });
+        const saved = [];
+        window.cloud = { isReady: true,
+            saveDevice: r => { saved.push(['device', r]); return Promise.resolve(); },
+            saveWhPhoto: (id, owner, photo) => { saved.push(['photo', id, owner]); return Promise.resolve(); },
+            deleteWhPhoto: id => { saved.push(['delPhoto', id]); return Promise.resolve(); },
+            getWhPhoto: id => Promise.resolve('data:image/png;base64,AA'),
+            deleteDevice: id => { saved.push(['delDevice', id]); return Promise.resolve(); },
+            saveStockItem: r => { saved.push(['stock', r]); return Promise.resolve(); },
+            deleteStockItem: id => { saved.push(['delStock', id]); return Promise.resolve(); } };
+        currentUser = { uid:'u1', email:'o@x.id' };
+        currentUserDoc = { role:'owner', status:'active', email:'o@x.id' };
+        hideAuthGates(); applyRoleGating();
+        globalData = [
+            { id:'u_1', name:'JD-6110B-01', sn:'SN111', site:'Timika', status:'Good' },
+            { id:'u_2', name:'JD-5075E-04', sn:'SN222', site:'Timika', status:'Good' }
+        ];
+
+        warehouseDevices = [
+            { id:'d1', sn:'RTK-0001', type:'GPS / StarFire', brand:'John Deere', model:'SF6000',
+              status:'warehouse', location:'Gudang Pusat' },
+            { id:'d2', sn:'DSP-0002', type:'Display', status:'installed', unitId:'u_1', unitName:'JD-6110B-01' },
+            { id:'d3', sn:'WS-0003', type:'Weather Station', status:'installed',
+              siteName:'Weather Station Blok C', posX:'136.8901', posY:'-4.5432' },
+            { id:'d4', sn:'UTM-0004', type:'Weather Station', status:'installed',
+              siteName:'Blok D', posX:'742110', posY:'9497880' },
+            { id:'d5', sn:'STR-0005', type:'Steering Sensor', status:'damaged', location:'Gudang Site' }
+        ];
+        stockLedger = [
+            { id:'s1', date:'2026-09-10', txnType:'IN',  itemName:'Filter Oli', qty:20, location:'Gudang Pusat' },
+            { id:'s2', date:'2026-09-12', txnType:'OUT', itemName:'Filter Oli', qty:16, location:'Gudang Pusat',
+              unitId:'u_1', unitName:'JD-6110B-01' },
+            { id:'s3', date:'2026-09-13', txnType:'IN',  itemName:'Selang Hidrolik', qty:3, location:'Gudang Site' },
+            { id:'s4', date:'2026-09-14', txnType:'OUT', itemName:'Selang Hidrolik', qty:3, location:'Gudang Site' }
+        ];
+
+        navigateTo('warehouse');
+
+        // ---------- akses & menu ----------
+        t('view gudang terlihat', document.getElementById('viewWarehouse').style.display, 'block');
+        t("area 'warehouse' terdaftar", ACCESS_AREAS.some(a=>a.key==='warehouse'), true);
+        t('menu gudang ada di nav', !!document.querySelector('.nav__link[data-view="warehouse"]'), true);
+
+        // ---------- perangkat: KPI per status ----------
+        t('KPI di gudang', document.getElementById('devKpi_warehouse').textContent, '1');
+        t('KPI terpasang', document.getElementById('devKpi_installed').textContent, '3');
+        t('KPI rusak', document.getElementById('devKpi_damaged').textContent, '1');
+        t('KPI afkir', document.getElementById('devKpi_retired').textContent, '0');
+
+        // ---------- dialokasikan ke divisi ----------
+        showAddDeviceForm();
+        document.getElementById('devSn').value = 'TAB-0099'; document.getElementById('devType').value = 'Tablet';
+        document.getElementById('devStatus').value = 'allocated'; onDeviceStatusChange();
+        t('status Allocated: kolom divisi tampil, lokasi gudang & pemasangan disembunyikan',
+          [document.getElementById('devDivisionGroup').style.display, document.getElementById('devLocationGroup').style.display, document.getElementById('devInstallGroup').style.display], ['', 'none', 'none']);
+        const nSaved = saved.length;
+        saveDevice({ preventDefault() {} });
+        t('Allocated tanpa divisi ditolak', saved.length, nSaved);
+        document.getElementById('devDivision').value = 'Plantation';
+        saveDevice({ preventDefault() {} });
+        t('Allocated tanpa nama penerima ditolak', saved.length, nSaved);
+        t('form Allocated: nama, jabatan, tanggal alokasi tampil; tanggal default hari ini',
+          [document.getElementById('devRecipientGroup').style.display, document.getElementById('devRecipientTitleGroup').style.display,
+           document.getElementById('devAllocatedAtGroup').style.display, document.getElementById('devAllocatedAt').value], ['', '', '', toISODate()]);
+        document.getElementById('devRecipientName').value = 'Budi';
+        document.getElementById('devRecipientTitle').value = 'Estate Manager';
+        document.getElementById('devAllocatedAt').value = '2026-09-01';
+        saveDevice({ preventDefault() {} });
+        const alloc = (saved[saved.length - 1] || [])[1] || {};
+        t('Allocated tersimpan dengan divisi, orang, jabatan, tanggal',
+          [alloc.status, alloc.division, alloc.recipientName, alloc.recipientTitle, alloc.allocatedAt, alloc.location],
+          ['allocated', 'Plantation', 'Budi', 'Estate Manager', '2026-09-01', '']);
+        t('di mana perangkat ini: divisi + orang + sejak', deviceWhere(alloc), 'Division: Plantation (Budi, Estate Manager) since 2026-09-01');
+        warehouseDevices.push(alloc); renderDeviceTable();
+        t('KPI dialokasikan', document.getElementById('devKpi_allocated').textContent, '1');
+        t('tabel: orang & tanggal alokasi tampil', /Budi · Estate Manager · since/.test(document.getElementById('deviceBody').textContent), true);
+
+        // dikembalikan: tanggal kembali wajib, tersimpan di riwayat alokasi
+        editDevice(alloc.id);
+        document.getElementById('devStatus').value = 'warehouse'; onDeviceStatusChange();
+        t('kembali dari alokasi: kolom tanggal kembali tampil, default hari ini',
+          [document.getElementById('devReturnedAtGroup').style.display, document.getElementById('devReturnedAt').value], ['', toISODate()]);
+        document.getElementById('devReturnedAt').value = '2026-08-01';
+        const nBefore = saved.length;
+        saveDevice({ preventDefault() {} });
+        t('tanggal kembali sebelum tanggal alokasi ditolak', saved.length, nBefore);
+        document.getElementById('devReturnedAt').value = '2026-09-20';
+        document.getElementById('devLocation').value = 'Gudang Pusat';
+        saveDevice({ preventDefault() {} });
+        const back = (saved[saved.length - 1] || [])[1] || {};
+        t('dikembalikan: riwayat alokasi menyimpan tanggal kembali', [back.status, back.division, back.recipientName, back.allocationHistory],
+          ['warehouse', '', '', [{ division: 'Plantation', recipientName: 'Budi', recipientTitle: 'Estate Manager', allocatedAt: '2026-09-01', returnedAt: '2026-09-20' }]]);
+        warehouseDevices.pop(); warehouseDevices.push(back); renderDeviceTable();
+        t('tabel: "Returned … from Plantation · Budi"', /Returned .* from Plantation · Budi/.test(document.getElementById('deviceBody').textContent), true);
+        warehouseDevices.pop(); renderDeviceTable();
+
+        // ---------- baterai ----------
+        showAddDeviceForm();
+        document.getElementById('devSn').value = 'GPS-B1'; document.getElementById('devType').value = 'GPS';
+        document.getElementById('devHasBattery').checked = true; onDeviceBatteryChange();
+        t('centang baterai: kolom SN baterai tampil', document.getElementById('devBatteryGroup').style.display, '');
+        const nB = saved.length;
+        saveDevice({ preventDefault() {} });
+        t('baterai dicentang tanpa SN ditolak', saved.length, nB);
+        document.getElementById('devBatterySn').value = 'BAT-777';
+        saveDevice({ preventDefault() {} });
+        const bat = (saved[saved.length - 1] || [])[1] || {};
+        t('SN baterai tersimpan', [bat.hasBattery, bat.batterySn], [true, 'BAT-777']);
+        warehouseDevices.push(bat); renderDeviceTable();
+        t('tabel: SN baterai tampil di kolom perangkat', /Battery SN BAT-777/.test(document.getElementById('deviceBody').textContent), true);
+        showAddDeviceForm();
+        document.getElementById('devSn').value = 'GPS-B2';
+        document.getElementById('devHasBattery').checked = true; onDeviceBatteryChange();
+        document.getElementById('devBatterySn').value = 'bat-777';
+        const nB2 = saved.length;
+        saveDevice({ preventDefault() {} });
+        t('SN baterai ganda ditolak', saved.length, nB2);
+        closeDeviceModal();
+        warehouseDevices.pop(); renderDeviceTable();
+
+        // ---------- foto perangkat & stok (v185): sampai 10, satu dokumen per foto ----------
+        showAddDeviceForm();
+        document.getElementById('devSn').value = 'CAM-P1'; document.getElementById('devType').value = 'Camera';
+        const px = 'data:image/png;base64,AA';
+        for (let i = 0; i < 12; i++) if (_whPh.device.items.length < WH_PHOTO_MAX) _whPh.device.items.push({ id: '', src: px, isNew: true });
+        whPhotoRender('device');
+        t('form: 10 foto, tombol tambah hilang saat penuh', [document.querySelectorAll('#devPhotoGrid .wh-photo img').length, !!document.querySelector('#devPhotoGrid .wh-photo--add'), document.getElementById('devPhotoCount').textContent], [10, false, '10/10']);
+        whPhotoRemove('device', 0); whPhotoRender('device');
+        t('hapus satu: tombol tambah kembali', [_whPh.device.items.length, !!document.querySelector('#devPhotoGrid .wh-photo--add')], [9, true]);
+        const nP = saved.length;
+        saveDevice({ preventDefault() {} });
+        const devP = (saved.filter(x => x[0] === 'device').pop() || [])[1] || {};
+        const photoWrites = saved.slice(nP).filter(x => x[0] === 'photo');
+        t('simpan: 9 foto ditulis terpisah, perangkat menyimpan id-nya', [photoWrites.length, (devP.photoIds || []).length, photoWrites.every(w => w[2] === devP.id), (devP.photoIds || []).every(id => id.startsWith(devP.id + '__p'))], [9, 9, true, true]);
+        warehouseDevices.push(devP); renderDeviceTable();
+        t('tabel: chip jumlah foto', /9/.test((document.querySelector('#deviceBody .wh-photo-chip') || {}).textContent || ''), true);
+        editDevice(devP.id);
+        t('edit: foto lama tampil (dari cache)', _whPh.device.items.filter(it => it.src).length, 9);
+        whPhotoRemove('device', 0);
+        const removedId = devP.photoIds[0];
+        saveDevice({ preventDefault() {} });
+        t('edit: foto yang dibuang dihapus dari cloud', saved.some(x => x[0] === 'delPhoto' && x[1] === removedId), true);
+        const devP2 = (saved.filter(x => x[0] === 'device').pop() || [])[1] || {};
+        warehouseDevices.pop(); warehouseDevices.push(devP2);
+        const nD = saved.length;
+        window.confirm = () => true; deleteDevice(devP2.id);
+        t('hapus perangkat: semua fotonya ikut dihapus', saved.slice(nD).filter(x => x[0] === 'delPhoto').length, 8);
+        warehouseDevices = warehouseDevices.filter(d => d.id !== devP2.id); renderDeviceTable();
+        // stok
+        showAddStockForm();
+        document.getElementById('stkItem').value = 'Kabel'; document.getElementById('stkQty').value = '2';
+        _whPh.stock.items.push({ id: '', src: px, isNew: true }, { id: '', src: px, isNew: true });
+        saveStockItem({ preventDefault() {} });
+        const stkP = (saved.filter(x => x[0] === 'stock').pop() || [])[1] || {};
+        t('stok: foto tersimpan pada transaksi', (stkP.photoIds || []).length, 2);
+
+        // ---------- profil perangkat: riwayat alokasi ----------
+        warehouseDevices.push({ id: 'dp1', sn: 'TAB-7', type: 'Tablet', status: 'allocated', division: 'IT', recipientName: 'Citra',
+            recipientTitle: 'Staff', allocatedAt: '2026-10-01',
+            allocationHistory: [{ division: 'Plantation', recipientName: 'Budi', recipientTitle: 'Estate Manager', allocatedAt: '2026-08-01', returnedAt: '2026-08-31' }] });
+        renderDeviceTable();
+        t('nama perangkat di tabel membuka profil', !!document.querySelector('#deviceBody .wh-devname[onclick*="dp1"]'), true);
+        showDeviceProfile('dp1');
+        const prow = [...document.querySelectorAll('#deviceProfileBody .dev-alloc-table tbody tr')].map(r => r.textContent.replace(/\\s+/g, ' ').trim());
+        t('profil: riwayat alokasi terbaru dulu, yang aktif ditandai', [prow.length, /^IT Citra Staff .*Still allocated/.test(prow[0]), /^Plantation Budi Estate Manager .* 30 days$/.test(prow[1])], [2, true, true]);
+        t('profil terbuka & tertutup lewat penutup modal', [document.getElementById('deviceProfileModal').classList.contains('open'), (closeTopModal(), document.getElementById('deviceProfileModal').classList.contains('open'))], [true, false]);
+        showDeviceProfile('x-tidak-ada');
+        t('perangkat tak dikenal: profil tidak terbuka', document.getElementById('deviceProfileModal').classList.contains('open'), false);
+        warehouseDevices.pop(); renderDeviceTable();
+
+        // ---------- "di mana perangkat ini" ----------
+        t('di gudang -> nama gudang', deviceWhere(warehouseDevices[0]), 'Gudang Pusat');
+        t('terpasang di unit -> nama unit hidup', deviceWhere(warehouseDevices[1]), 'JD-6110B-01');
+        t('terpasang di lapangan -> nama titik', deviceWhere(warehouseDevices[2]), 'Weather Station Blok C');
+        t('terpasang tanpa lokasi -> diberi tahu',
+          deviceWhere({ status:'installed' }), 'Installed (location not set)');
+        t('nama unit diambil dari data hidup, bukan salinan basi',
+          deviceWhere({ status:'installed', unitId:'u_1', unitName:'NAMA BASI' }), 'JD-6110B-01');
+
+        // ---------- tautan peta hanya untuk koordinat yang masuk akal ----------
+        t('lat/long -> ada tautan peta',
+          deviceMapLink(warehouseDevices[2]), 'https://www.google.com/maps?q=-4.5432,136.8901');
+        t('UTM -> TIDAK ada tautan peta (agar tidak salah pin)',
+          deviceMapLink(warehouseDevices[3]), '');
+        t('kosong -> tidak ada tautan', deviceMapLink({}), '');
+        t('0,0 -> tidak ada tautan', deviceMapLink({ posX:'0', posY:'0' }), '');
+
+        // ---------- filter perangkat ----------
+        t('semua perangkat tampil', document.querySelectorAll('#deviceBody tr').length, 5);
+        document.getElementById('devStatusFilter').value = 'installed';
+        renderDeviceTable();
+        t('filter status', document.querySelectorAll('#deviceBody tr').length, 3);
+        document.getElementById('devStatusFilter').value = '';
+        document.getElementById('devLocationFilter').value = 'Gudang Site';
+        renderDeviceTable();
+        t('filter lokasi', document.querySelectorAll('#deviceBody tr').length, 1);
+        clearDeviceFilter();
+        document.getElementById('devSearch').value = 'weather';
+        renderDeviceTable();
+        t('pencarian jenis', document.querySelectorAll('#deviceBody tr').length, 2);
+        document.getElementById('devSearch').value = 'blok c';
+        renderDeviceTable();
+        t('pencarian nama titik pemasangan', document.querySelectorAll('#deviceBody tr').length, 1);
+        clearDeviceFilter();
+        t('reset mengembalikan semua', document.querySelectorAll('#deviceBody tr').length, 5);
+
+        // ---------- saran jenis & lokasi ----------
+        t('jenis bawaan + yang dipakai ada di saran',
+          allDeviceTypes().includes('Weather Station') && allDeviceTypes().includes('JDLink'), true);
+        t('lokasi dikumpulkan dari perangkat dan stok',
+          allWarehouseLocations(), ['Gudang Pusat','Gudang Site']);
+
+        // ---------- form perangkat: field mengikuti status ----------
+        showAddDeviceForm();
+        t('status awal = di gudang', document.getElementById('devStatus').value, 'warehouse');
+        t('di gudang: field lokasi tampil',
+          document.getElementById('devLocationGroup').style.display, '');
+        t('di gudang: field pemasangan tersembunyi',
+          document.getElementById('devInstallGroup').style.display, 'none');
+        document.getElementById('devStatus').value = 'installed';
+        onDeviceStatusChange();
+        t('terpasang: field pemasangan tampil',
+          document.getElementById('devInstallGroup').style.display, '');
+        t('terpasang: field lokasi gudang tersembunyi',
+          document.getElementById('devLocationGroup').style.display, 'none');
+
+        // ---------- simpan perangkat ----------
+        let before = saved.length;
+        document.getElementById('devSn').value = 'RTK-0001';   // SN sudah dipakai
+        saveDevice({ preventDefault(){} });
+        t('SN duplikat ditolak', saved.length, before);
+
+        document.getElementById('devSn').value = 'WS-0009';
+        document.getElementById('devType').value = 'Weather Station';
+        saveDevice({ preventDefault(){} });
+        t('terpasang tanpa unit & tanpa lokasi ditolak', saved.length, before);
+
+        document.getElementById('devSite').value = 'Weather Station Blok E';
+        document.getElementById('devPosX').value = '136.9';
+        document.getElementById('devPosY').value = '-4.6';
+        saveDevice({ preventDefault(){} });
+        t('tersimpan setelah lokasi diisi', saved.length, before + 1);
+        const dev = saved[saved.length-1][1];
+        t('koordinat tersimpan', [dev.posX, dev.posY], ['136.9','-4.6']);
+        t('lokasi gudang dikosongkan saat terpasang', dev.location, '');
+
+        // Pindah ke gudang: data pemasangan harus dibersihkan.
+        showAddDeviceForm();
+        document.getElementById('devSn').value = 'RTK-0010';
+        document.getElementById('devStatus').value = 'warehouse';
+        onDeviceStatusChange();
+        document.getElementById('devLocation').value = 'Gudang Pusat';
+        document.getElementById('devPosX').value = '999';   // sisa isian lama
+        saveDevice({ preventDefault(){} });
+        const dev2 = saved[saved.length-1][1];
+        t('kembali ke gudang: koordinat dibersihkan', [dev2.posX, dev2.posY, dev2.siteName], ['','','']);
+        t('kembali ke gudang: lokasi tersimpan', dev2.location, 'Gudang Pusat');
+
+        // ---------- profil unit ----------
+        t('perangkat terpasang muncul di unit', devicesForUnit('u_1').map(d=>d.sn), ['DSP-0002']);
+        t('unit tanpa perangkat', devicesForUnit('u_2').length, 0);
+
+        // ---------- stok: sisa ----------
+        switchWarehouseTab('stock');
+        const sum = stockSummary('');
+        t('sisa filter oli (20 masuk - 16 keluar)', sum.find(s=>s.name==='Filter Oli').qty, 4);
+        t('sisa selang habis (3 - 3)', sum.find(s=>s.name==='Selang Hidrolik').qty, 0);
+        t('sisa per lokasi', stockSummary('Gudang Site').map(s=>s.name), ['Selang Hidrolik']);
+        t('chip stok menipis ditandai',
+          document.querySelectorAll('#stockSummary .stock-chip--low').length, 1);
+        t('chip stok habis ditandai',
+          document.querySelectorAll('#stockSummary .stock-chip--out').length, 1);
+
+        // ---------- stok: filter ----------
+        t('semua transaksi tampil', document.querySelectorAll('#stockBody tr').length, 4);
+        document.getElementById('stkTypeFilter').value = 'OUT';
+        renderStockView();
+        t('filter keluar saja', document.querySelectorAll('#stockBody tr').length, 2);
+        document.getElementById('stkTypeFilter').value = '';
+        document.getElementById('stkFrom').value = '2026-09-13';
+        renderStockView();
+        t('filter tanggal', document.querySelectorAll('#stockBody tr').length, 2);
+        clearStockFilter();
+        t('reset stok', document.querySelectorAll('#stockBody tr').length, 4);
+
+        // ---------- form stok ----------
+        showAddStockForm();
+        t('masuk: field unit tersembunyi', document.getElementById('stkUnitGroup').style.display, 'none');
+        document.getElementById('stkTxnType').value = 'OUT';
+        onStockTxnChange();
+        t('keluar: field unit tampil', document.getElementById('stkUnitGroup').style.display, '');
+        before = saved.length;
+        document.getElementById('stkItem').value = 'Filter Oli';
+        document.getElementById('stkQty').value = '2';
+        document.getElementById('stkUnit').value = 'UNIT NGACO';
+        saveStockItem({ preventDefault(){} });
+        t('unit ngaco membatalkan simpan', saved.length, before);
+        document.getElementById('stkUnit').value = 'SN222';
+        saveStockItem({ preventDefault(){} });
+        t('tersimpan setelah unit benar', saved.length, before + 1);
+        const stk = saved[saved.length-1][1];
+        t('unit terhubung', [stk.unitId, stk.unitName], ['u_2','JD-5075E-04']);
+        t('jenis transaksi tersimpan', stk.txnType, 'OUT');
+
+        // ---------- akses hanya-lihat ----------
+        currentUserDoc = { role:'khl', status:'active', access:{ warehouse:'view' } };
+        renderWarehouseView();
+        t('hanya-lihat: tabel stok tanpa tombol aksi',
+          document.querySelectorAll('#stockBody .row-actions').length, 0);
+        switchWarehouseTab('devices');
+        t('hanya-lihat: tabel perangkat tanpa tombol aksi',
+          document.querySelectorAll('#deviceBody .row-actions').length, 0);
+        applyAccessVisibility();
+        t('hanya-lihat: body ditandai read-only', document.body.dataset.roWarehouse, '1');
+        before = saved.length;
+        showAddDeviceForm();
+        t('hanya-lihat: form tambah ditolak', saved.length, before);
+
+        currentUserDoc = { role:'khl', status:'active', access:{ warehouse:'none' } };
+        t('tanpa akses: menu gudang tertutup', canViewView('warehouse'), false);
+        applyAccessVisibility();
+        t('tanpa akses: link nav disembunyikan',
+          document.querySelector('.nav__link[data-view="warehouse"]').style.display, 'none');
+
+        currentUserDoc = { role:'owner', status:'active' };
+        window.__T = T;
+    } catch (e) { window.__T = [{n:'THREW: '+e.message+' | '+(e.stack||'').split('\\n')[1], g:1, w:0, pass:false}]; }
+    })();` });
+
+    const res = await page.evaluate(() => window.__T);
+    const fail = res.filter(r => !r.pass);
+    res.forEach(r => console.log(`${r.pass ? 'PASS' : 'FAIL'}  ${r.n}${r.pass ? '' : `\n        dapat=${JSON.stringify(r.g)} harap=${JSON.stringify(r.w)}`}`));
+    console.log(`\n${res.length - fail.length}/${res.length} lulus`);
+    console.log('PAGE ERRORS:', errors.length ? errors : 'none');
+    await b.close();
+    process.exit(fail.length ? 1 : 0);
+})();
