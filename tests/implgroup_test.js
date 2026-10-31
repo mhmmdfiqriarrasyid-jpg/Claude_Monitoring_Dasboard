@@ -65,6 +65,15 @@ const { launch, BASE_URL } = require('./_env');
         openMasterLists('implGroup'); await tick();
         t('tab Implement Groups di Master lists', [...document.querySelectorAll('#mlTabs .team-tab')].some(x => /Implement Groups/.test(x.textContent)), true);
         closeMasterLists();
+
+        // Units: group tampil di bawah nama implement, dan bisa dicari
+        const units = [{ id: 'u1', name: 'GGTR130G_OHZ', implement: 'Offset Harrow — Grizzly', status: 'Good', site: 'PT. A' },
+                       { id: 'u2', name: 'GGTR131G_BPH', implement: 'Billet Planter — Hodge', status: 'Good', site: 'PT. A' }];
+        globalData = units.slice(); navigateTo('editUnits'); globalData = units.slice(); renderEditTable(); await tick();
+        t('Units: group di kolom Implement', [...document.querySelectorAll('#editBody td[data-label="Implement"] .unit-impl-group')].map(x => x.textContent), ['Primary Tillage', 'Planting']);
+        document.getElementById('editSearch').value = 'planting'; renderEditTable(); await tick();
+        t('Units: cari berdasarkan group', document.querySelectorAll('#editBody tr').length, 1);
+        document.getElementById('editSearch').value = '';
         window.__T = T;
     } catch (e) { window.__T = [{ n: 'CRASH ' + e.message + ' ' + (e.stack || '').split('\\n')[1], pass: false }]; } })()` });
 

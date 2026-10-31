@@ -149,7 +149,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.10.7';
+const APP_VERSION = 'v2.10.8';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -6023,7 +6023,7 @@ function getEditTableRows() {
     let rows = unitsOfGroup(globalData, g);
     if (query) rows = rows.filter(d => (g === 'heavy'
         ? `${d.name} ${d.brand || ''} ${d.model} ${d.sn} ${d.machineType || ''} ${d.assetCode || ''} ${d.workTool || ''} ${d.site}`
-        : `${d.name} ${d.model} ${d.sn} ${d.implement || ''} ${d.site}`).toLowerCase().includes(query));
+        : `${d.name} ${d.model} ${d.sn} ${d.implement || ''} ${unitImplementGroup(d)} ${d.site}`).toLowerCase().includes(query));
     if (statusVal) rows = rows.filter(d => d.status === statusVal);
     if (siteVal) rows = rows.filter(d => d.site === siteVal);
     if (editMissingFilter === MISSING_ANY) {
@@ -6559,7 +6559,10 @@ function _renderEditTable() {
             <td data-label="Nickname"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="name" onblur="saveInlineEdit(this)">${escapeHtml(d.name)}</span></td>
             <td data-label="Model"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="model" onblur="saveInlineEdit(this)">${escapeHtml(d.model)}</span></td>
             <td data-label="SN" style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
-            <td data-label="Implement"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="implement" onblur="saveInlineEdit(this)">${escapeHtml(d.implement || '')}</span></td>
+            <td data-label="Implement"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="implement" onblur="saveInlineEdit(this)">${escapeHtml(d.implement || '')}</span>${(() => {
+                const grp = unitImplementGroup(d);
+                return grp ? `<span class="unit-impl-group" title="Implement Group">${escapeHtml(grp)}</span>` : '';
+            })()}</td>
             <td data-label="Status"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="status" onblur="saveInlineEdit(this)">${escapeHtml(d.status)}</span></td>
             <td data-label="Display"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="display" onblur="saveInlineEdit(this)">${escapeHtml(d.display)}</span></td>
             <td data-label="GPS"><span class="inline-edit" contenteditable="${_ceEdit}" data-id="${escapeHtml(d.id)}" data-field="gps" onblur="saveInlineEdit(this)">${escapeHtml(d.gps)}</span></td>
@@ -7005,6 +7008,11 @@ function implementListActive() { return globalImplements.length > 0; }
 
 // The list record a typed value means: exact label first, then by type and
 // brand (any case, either order, "-" or "—").
+// The Implement Group (2.10.7) of the implement a unit carries, or ''.
+function unitImplementGroup(u) {
+    const rec = u && u.implement ? findImplementRecord(u.implement) : null;
+    return rec ? _toolNorm(rec.group) : '';
+}
 function findImplementRecord(text) {
     const t = _toolNorm(text);
     if (!t) return null;

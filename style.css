@@ -10630,3 +10630,9 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
 .impl-group-chip { background: var(--primary-lighter); color: var(--accent-text, var(--accent)); }
 /* One scroll: the table grows with the page instead of a 600px box. */
 @media (min-width: 701px) { #viewImplements .fp-card .table-wrapper { max-height: none !important; } }
+#editTable .unit-impl-group {
+    display: inline-block; margin-top: 4px; padding: 1px 8px; border-radius: 10px;
+    background: var(--primary-lighter); color: var(--accent-text, var(--accent));
+    font-size: 11px; font-weight: 600; line-height: 1.5; white-space: nowrap;
+}
+#editTable td[data-label="Implement"] .inline-edit { display: block; }
