@@ -16,7 +16,7 @@ const { launch, BASE_URL } = require('./_env');
     const csp = (html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/) || [])[1] || '';
     t('CSP terpasang', !!csp, true);
     t('CSP: object-src none, base-uri self', /object-src 'none'/.test(csp) && /base-uri 'self'/.test(csp), true);
-    t('CSP: script hanya dari situs ini + Firebase', (csp.match(/script-src ([^;]+)/) || [])[1], "'self' 'unsafe-inline' https://www.gstatic.com");
+    t('CSP: script hanya dari situs ini + Firebase/reCAPTCHA', (csp.match(/script-src ([^;]+)/) || [])[1], "'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com");
     ['vendor/chart.umd.js', 'vendor/papaparse.min.js', 'vendor/email.min.js', 'vendor/xlsx.full.min.js', 'vendor/fonts.css',
      'vendor/fontawesome/css/all.min.css', 'vendor/fontawesome/webfonts/fa-solid-900.woff2']
         .forEach(f => t(`ada ${f}`, fs.existsSync(path.join(root, f)), true));

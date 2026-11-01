@@ -6,10 +6,11 @@
     <title>Operation Technology Dashboard</title>
 
     <!-- Content Security Policy (2.11.1). Scripts, styles and fonts come
-         only from this site, plus Firebase from Google; the app talks only
-         to Google/Firebase APIs and EmailJS. 'unsafe-inline' for scripts is
+         only from this site, plus Firebase (and reCAPTCHA for App Check,
+         2.11.2) from Google; the app talks only to Google/Firebase APIs and
+         EmailJS. 'unsafe-inline' for scripts is
          still needed by the onclick="" attributes in this page. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self' https://*.googleapis.com https://www.gstatic.com https://api.emailjs.com data: blob:; frame-src https://*.firebaseapp.com; worker-src 'self'; manifest-src 'self'; media-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://www.gstatic.com; connect-src 'self' https://*.googleapis.com https://www.gstatic.com https://www.google.com https://api.emailjs.com data: blob:; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; worker-src 'self'; manifest-src 'self'; media-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'">
     <meta name="referrer" content="strict-origin-when-cross-origin">
 
     <!-- Fonts & Icons (self-hosted, see vendor/README.md) -->
@@ -128,6 +129,7 @@
         </form>
 
         <div class="auth-card__footer">© 2026 Operation Technology</div>
+        <p class="recaptcha-note">Protected by reCAPTCHA — Google <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Privacy</a> and <a href="https://policies.google.com/terms" target="_blank" rel="noopener">Terms</a> apply.</p>
     </div>
     </section>
 </div>

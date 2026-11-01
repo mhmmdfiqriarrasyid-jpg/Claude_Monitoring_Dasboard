@@ -10707,3 +10707,11 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
     .rc-day__count small, .rc-day__faces { display: none; }
     .rc-detail__cols { grid-template-columns: 1fr; }
 }
+
+/* ===== App Check / reCAPTCHA (2.11.2) =====
+   The floating badge would sit over the phone's bottom bar; Google allows
+   hiding it when the sign-in card says reCAPTCHA is used instead. */
+.grecaptcha-badge { visibility: hidden; }
+.recaptcha-note { display: none; margin: 8px 0 0; font-size: 11px; line-height: 1.5; color: var(--text-light, #98A2B3); text-align: center; }
+.appcheck-on .recaptcha-note { display: block; }
+.recaptcha-note a { color: inherit; }
