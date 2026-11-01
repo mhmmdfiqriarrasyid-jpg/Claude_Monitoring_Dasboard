@@ -10,7 +10,7 @@
          2.11.2) from Google; the app talks only to Google/Firebase APIs and
          EmailJS. 'unsafe-inline' for scripts is
          still needed by the onclick="" attributes in this page. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://www.gstatic.com; connect-src 'self' https://*.googleapis.com https://www.gstatic.com https://www.google.com https://api.emailjs.com data: blob:; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com; worker-src 'self'; manifest-src 'self'; media-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://www.gstatic.com; connect-src 'self' https://*.googleapis.com https://www.gstatic.com https://www.google.com https://api.emailjs.com data: blob:; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com https://drive.google.com; worker-src 'self'; manifest-src 'self'; media-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'">
     <meta name="referrer" content="strict-origin-when-cross-origin">
 
     <!-- Fonts & Icons (self-hosted, see vendor/README.md) -->
@@ -233,6 +233,10 @@
                 <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M8 13h8"></path><path d="M8 17h5"></path></svg>
                 <span class="nav__text">Purchase Requests</span>
                 <span class="nav__badge" id="purchaseBadge" style="display:none">0</span>
+            </button>
+            <button type="button" class="nav__link" data-view="learning" onclick="navigateTo('learning')">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z"></path><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"></path></svg>
+                <span class="nav__text">Learning Center</span>
             </button>
         </div>
         <div class="nav-group" role="group" aria-labelledby="navGroupAdmin">
@@ -2176,6 +2180,29 @@
         </div>
     </div><!-- /viewPurchase -->
 
+    <!-- ==================== LEARNING CENTER (2.12.0) ==================== -->
+    <div id="viewLearning" class="view" style="display:none;">
+        <div class="page-head">
+            <div class="page-head__text">
+                <h1 class="page-head__title">Learning Center</h1>
+                <span class="page-head__sub">Manuals, SOPs and guides for the team — read them here, also on a phone</span>
+            </div>
+            <div class="page-head__actions">
+                <button type="button" class="btn btn-primary editonly editonly--learning" onclick="showAddLearningForm()">
+                    <svg class="f-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                    Add material</button>
+            </div>
+        </div>
+        <div class="lc-bar">
+            <label class="adm-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
+                <span class="adm-sr">Search materials</span>
+                <input type="search" id="lcSearch" placeholder="Search title or description" oninput="renderLearningView()"></label>
+            <div class="lc-cats" id="lcCats" role="group" aria-label="Categories"></div>
+            <span class="lc-count" id="lcCount"></span>
+        </div>
+        <div class="lc-grid" id="lcGrid"></div>
+    </div><!-- /viewLearning -->
+
     <!-- ==================== USERS VIEW (Owner only) ==================== -->
     <div id="viewUsers" class="view" style="display:none;">
         <div class="page-head usr-head">
@@ -3243,6 +3270,78 @@
             <button type="button" class="btn btn-secondary" onclick="closeDeviceProfile()">Close</button>
             <button type="button" class="btn btn-primary editonly editonly--warehouse" id="deviceProfileEdit"><i class="fas fa-pen"></i> Edit</button>
         </div>
+    </div>
+</div>
+
+<!-- ==================== LEARNING: add / edit a material (2.12.0) ==================== -->
+<div class="modal-overlay" id="lcModal">
+    <div class="modal-card lc-dialog" role="dialog" aria-labelledby="lcModalTitle">
+        <div class="modal-header">
+            <h3 id="lcModalTitle">Add material</h3>
+            <button type="button" class="btn-icon" onclick="closeLearningForm()" aria-label="Close" title="Close">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+            </button>
+        </div>
+        <form id="lcForm" onsubmit="saveLearningItem(event)">
+            <input type="hidden" id="lcId">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group full-width">
+                        <label class="form-label" for="lcTitle">Title</label>
+                        <input class="form-input" id="lcTitle" maxlength="200" autocomplete="off" placeholder="e.g. StarFire 7000 — calibration guide">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="lcCategory">Category</label>
+                        <select class="form-select" id="lcCategory"></select>
+                    </div>
+                    <div class="form-group">
+                        <span class="form-label">Source</span>
+                        <div class="seg lc-source" role="radiogroup" aria-label="Source">
+                            <label><input type="radio" name="lcSource" value="upload" checked onchange="syncLearningSource()"> Upload PDF</label>
+                            <label><input type="radio" name="lcSource" value="link" onchange="syncLearningSource()"> Link</label>
+                        </div>
+                    </div>
+                    <div class="form-group full-width" id="lcUploadGroup">
+                        <label class="form-label" for="lcFile">PDF file <span class="form-optional">(up to 15 MB — larger files: put them on Google Drive and use Link)</span></label>
+                        <input class="form-input" type="file" id="lcFile" accept="application/pdf,.pdf" onchange="syncLearningFileInfo()">
+                        <span class="lc-fileinfo" id="lcFileInfo"></span>
+                    </div>
+                    <div class="form-group full-width" id="lcLinkGroup" hidden>
+                        <label class="form-label" for="lcUrl">Link</label>
+                        <input class="form-input" type="url" id="lcUrl" maxlength="1000" autocomplete="off" placeholder="https://drive.google.com/file/d/…/view">
+                        <span class="lc-fileinfo">Google Drive files open inside the dashboard; other links open in a new tab.</span>
+                    </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="lcDesc">Description <span class="form-optional">(optional)</span></label>
+                        <textarea class="form-input form-textarea" id="lcDesc" rows="3" maxlength="2000" placeholder="What it covers, who it is for…"></textarea>
+                    </div>
+                </div>
+                <div class="lc-progress" id="lcProgress" hidden><div class="lc-progress__bar"><span id="lcProgressBar"></span></div><span id="lcProgressText"></span></div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeLearningForm()">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="lcSaveBtn">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ==================== LEARNING: PDF reader (2.12.0) ==================== -->
+<div class="modal-overlay" id="lcViewer">
+    <div class="modal-card lc-viewer" role="dialog" aria-labelledby="lcViewerTitle">
+        <div class="modal-header lc-viewer__head">
+            <h3 id="lcViewerTitle">—</h3>
+            <div class="lc-viewer__tools">
+                <button type="button" class="btn btn-secondary btn-sm" id="lcZoomOut" onclick="lcZoom(-1)" aria-label="Zoom out" title="Zoom out">−</button>
+                <span class="lc-zoom" id="lcZoomLabel">100%</span>
+                <button type="button" class="btn btn-secondary btn-sm" id="lcZoomIn" onclick="lcZoom(1)" aria-label="Zoom in" title="Zoom in">+</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="lcDownload" onclick="lcDownload()">Download</button>
+                <button type="button" class="btn-icon" onclick="closeLearningViewer()" aria-label="Close" title="Close">
+                    <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+                </button>
+            </div>
+        </div>
+        <div class="lc-viewer__body" id="lcViewerBody"></div>
     </div>
 </div>
 

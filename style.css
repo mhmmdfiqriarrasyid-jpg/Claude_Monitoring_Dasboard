@@ -2766,7 +2766,8 @@ body[data-ro-teamshift]   .editonly--teamshift,
 body[data-ro-teamlog]     .editonly--teamlog,
 body[data-ro-teammembers] .editonly--teammembers,
 body[data-ro-warehouse]   .editonly--warehouse,
-body[data-ro-inspection]  .editonly--inspection { display: none !important; }
+body[data-ro-inspection]  .editonly--inspection,
+body[data-ro-learning]    .editonly--learning { display: none !important; }
 
 /* CSV export/import capability: hide buttons the user isn't allowed to use */
 body[data-nocsvexport] .csv-export { display: none !important; }
@@ -10745,3 +10746,69 @@ body:has(.modal-overlay.open) .install-banner { display: none; }
 .ios-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 15px; line-height: 1.5; }
 .ios-share { vertical-align: -3px; color: var(--accent); }
 /* Installed: nothing else to change — the page already handles notches. */
+
+/* ===== Learning Center (2.12.0) ===== */
+.lc-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 0 0 18px; }
+.lc-bar .adm-search { flex: 1 1 240px; max-width: 360px; min-height: 42px; }
+.lc-cats { display: flex; flex-wrap: wrap; gap: 6px; }
+.lc-cat {
+    min-height: 36px; padding: 0 12px; border: 0; border-radius: 18px; background: var(--card); box-shadow: 0 0 0 1px var(--border);
+    font: inherit; font-size: 13px; font-weight: 600; color: var(--text-secondary); cursor: pointer;
+}
+.lc-cat span { margin-left: 4px; font-weight: 500; color: var(--text-light, #98A2B3); }
+.lc-cat[aria-pressed="true"] { background: var(--text, #101828); color: #fff; box-shadow: none; }
+.lc-cat[aria-pressed="true"] span { color: rgba(255,255,255,.7); }
+.lc-count { margin-left: auto; font-size: 13px; color: var(--text-secondary); }
+.lc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.lc-empty { grid-column: 1 / -1; padding: 40px 0; text-align: center; color: var(--text-secondary); }
+.lc-item { display: flex; flex-direction: column; border-radius: 14px; background: var(--card); box-shadow: var(--shadow); overflow: hidden; }
+.lc-item__open {
+    flex: 1 1 auto; display: flex; gap: 12px; align-items: flex-start; padding: 16px; border: 0; background: none;
+    font: inherit; text-align: left; color: inherit; cursor: pointer;
+}
+.lc-item__open:hover { background: var(--primary-lighter); }
+.lc-item__open:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.lc-item__icon {
+    flex: 0 0 auto; width: 44px; height: 54px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800; letter-spacing: .03em; color: #fff;
+}
+.lc-item__icon--pdf { background: #D92D20; }
+.lc-item__icon--link { background: var(--accent); font-size: 20px; }
+.lc-item__body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.lc-item__cat { font-size: 12px; font-weight: 600; color: var(--accent-text, var(--accent)); }
+.lc-new { margin-left: 4px; padding: 0 6px; border-radius: 8px; background: var(--warning-bg); color: var(--warning-strong, var(--warning)); font-size: 11px; }
+.lc-item__title { font-size: 15px; line-height: 1.35; color: var(--text); overflow-wrap: anywhere; }
+.lc-item__desc { font-size: 13px; line-height: 1.45; color: var(--text-secondary);
+    display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lc-item__meta { margin-top: 2px; font-size: 12px; color: var(--text-light, #98A2B3); }
+.lc-item__acts { display: flex; gap: 6px; justify-content: flex-end; padding: 8px 12px; border-top: 1px solid var(--border-light, #F2F4F7); }
+.lc-dialog { width: min(640px, calc(100vw - 32px)); }
+.lc-source { display: inline-flex; gap: 4px; padding: 3px; border-radius: 10px; background: var(--border-light, #F2F4F7); }
+.lc-source label { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.lc-source label:has(input:checked) { background: var(--card); box-shadow: 0 1px 2px rgba(16,24,40,.08); }
+.lc-fileinfo { display: block; margin-top: 6px; font-size: 12px; color: var(--text-secondary); }
+.lc-progress { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 13px; color: var(--text-secondary); }
+.lc-progress[hidden] { display: none; }
+.lc-progress__bar { flex: 1 1 auto; height: 6px; border-radius: 3px; background: var(--border-light, #F2F4F7); overflow: hidden; }
+.lc-progress__bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s ease; }
+.lc-viewer { width: min(1000px, calc(100vw - 24px)); height: calc(100vh - 32px); max-height: none; display: flex; flex-direction: column; }
+.lc-viewer__head { gap: 10px; }
+.lc-viewer__head h3 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lc-viewer__tools { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.lc-viewer__tools [hidden] { display: none; }
+.lc-zoom { min-width: 44px; text-align: center; font-size: 13px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.lc-viewer__body { flex: 1 1 auto; overflow: auto; padding: 12px; background: #525659; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.lc-page { background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.3); max-width: none; }
+.lc-loading { margin: auto; color: #fff; font-size: 14px; }
+.lc-frame { width: 100%; flex: 1 1 auto; min-height: 70vh; border: 0; background: #fff; border-radius: 4px; }
+.lc-hint { margin: 0; font-size: 12px; color: #fff; }
+.lc-hint a { color: #fff; }
+@media (max-width: 700px) {
+    .lc-viewer { width: 100vw; height: 100vh; height: 100dvh; border-radius: 0; }
+    .lc-viewer__body { padding: 8px; }
+    .lc-viewer__head { flex-wrap: wrap; row-gap: 8px; padding: 12px 14px; }
+    .lc-viewer__head h3 { flex: 1 1 100%; white-space: normal; font-size: 16px; line-height: 1.3; }
+    .lc-viewer__tools { flex: 1 1 100%; justify-content: space-between; }
+    .lc-viewer__tools .btn { padding: 0 10px; }
+    .lc-count { margin-left: 0; }
+}

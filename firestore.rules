@@ -115,6 +115,7 @@ service cloud.firestore {
         || editOn(a, role, 'teamShift') || editOn(a, role, 'teamLog') || editOn(a, role, 'teamMembers')
         || a.get('teamLog', null) == 'own'
         || editOn(a, role, 'purchase') || a.get('purchase', null) == 'own'
+        || editOn(a, role, 'learning')
         || editOn(a, role, 'teamLogApprove') || editOn(a, role, 'warehouse')
         || (sc == 'all' && (editOn(a, role, 'editUnits') || editOn(a, role, 'damage')))
         || (sc in ['all', 'tractor'] && (editOn(a, role, 'implements') || editOn(a, role, 'licenseStock')))
@@ -204,7 +205,8 @@ service cloud.firestore {
           || (kind == 'company' && canEditArea('teamMembers'))
           || (kind == 'damageType' && canEditArea('damage'))
           || (kind == 'jobType' && canEditArea('teamMembers'))
-          || (kind == 'implGroup' && canEditArea('implements'));
+          || (kind == 'implGroup' && canEditArea('implements'))
+          || (kind == 'learnCategory' && canEditArea('learning'));
     }
     // Paddocks (2.10.0): one list per company, chosen from in Daily Reports.
     // Read by every active account; kept by whoever manages team members.
@@ -511,6 +513,23 @@ service cloud.firestore {
                         && request.resource.data.get('status', '') in ['draft', 'submitted']));
       allow delete: if canEditArea('purchase')
                     || (purchaseOwn() && mineIn(resource.data) && resource.data.get('status', '') == 'draft');
+    }
+    // Learning Center (2.12.0): every active account reads; 'learning' edit
+    // adds and removes material. Uploaded PDFs are stored in pieces.
+    match /learningItems/{id} {
+      allow read: if isActive();
+      allow delete: if canEditArea('learning');
+      allow create, update: if canEditArea('learning') && idMatches(id)
+        && request.resource.data.get('title', '') is string
+        && request.resource.data.get('title', '').size() > 0
+        && request.resource.data.get('title', '').size() <= 200;
+    }
+    match /learningFiles/{id} {
+      allow read: if isActive();
+      allow delete: if canEditArea('learning');
+      allow create, update: if canEditArea('learning') && idMatches(id)
+        && request.resource.data.get('data', '') is string
+        && request.resource.data.get('data', '').size() <= 950000;
     }
     match /purchasePhotos/{id} {
       allow read:   if canViewArea('purchase') || purchaseOwn();

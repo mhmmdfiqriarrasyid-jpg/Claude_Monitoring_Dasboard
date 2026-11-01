@@ -159,6 +159,8 @@ const LICENSE_REQ_COL = 'licenseRequirements';
 const DAMAGE_COMPONENTS_COL = 'damageComponents';
 const DEVICES_COL = 'devices';
 const PURCHASE_COL = 'purchaseRequests';
+const LEARNING_COL = 'learningItems';        // 2.12.0: Learning Center catalogue
+const LEARNING_FILES_COL = 'learningFiles';  // 2.12.0: uploaded PDFs, in pieces
 const PURCHASE_PHOTOS_COL = 'purchasePhotos';
 const STOCK_ITEMS_COL = 'stockItems';
 // Operational vehicles (company motorbikes) and their fuel log. A fuel
@@ -643,6 +645,38 @@ window.cloud = {
     async getAllDevices() {
         const snap = await getDocs(collection(db, DEVICES_COL));
         return snap.docs.map(withDocId);
+    },
+    // ---- Learning Center (2.12.0) ----
+    // A material: { id, title, category, description, source: 'upload'|'link',
+    // url, file: { name, size, chunks, storage: 'firestore' } }. On the Spark
+    // plan an uploaded PDF lives in Firestore as base64 pieces of <= ~700 KB,
+    // one document each ("<itemId>__<n>"), fetched by id so no index is needed.
+    // file.storage leaves room for 'storage' (Cloud Storage) on Blaze.
+    async saveLearningItem(rec) {
+        await setDoc(doc(db, LEARNING_COL, rec.id), rec);
+    },
+    async deleteLearningItem(id) {
+        await deleteDoc(doc(db, LEARNING_COL, id));
+    },
+    subscribeLearningItems(callback, errorCallback) {
+        return onSnapshot(
+            collection(db, LEARNING_COL),
+            snap => callback(snap.docs.map(withDocId)),
+            err => {
+                console.error('[cloud] learningItems subscription error:', err);
+                if (errorCallback) errorCallback(err);
+            }
+        );
+    },
+    async saveLearningChunk(itemId, idx, data) {
+        await setDoc(doc(db, LEARNING_FILES_COL, `${itemId}__${idx}`), { id: `${itemId}__${idx}`, itemId, idx, data });
+    },
+    async getLearningChunk(itemId, idx) {
+        const snap = await getDoc(doc(db, LEARNING_FILES_COL, `${itemId}__${idx}`));
+        return snap.exists() ? (snap.data().data || '') : null;
+    },
+    async deleteLearningChunks(itemId, count) {
+        for (let i = 0; i < count; i++) await deleteDoc(doc(db, LEARNING_FILES_COL, `${itemId}__${i}`));
     },
     // ---- Purchase requests (2.9.0) ----
     // authorUid: only that account's own requests (access level 'own').

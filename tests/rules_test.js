@@ -523,6 +523,22 @@ async function check(name, p, expectOk) {
     await check('Implement Groups: tanpa edit Implements DITOLAK', setDoc(doc(as('writer'), 'masterLists', 'implGroup'), { id: 'implGroup', values: ['X'] }), false);
     await check('Implement: field group boleh disimpan', setDoc(doc(as('implEd'), 'implements', 'imp_g'), { id: 'imp_g', profileName: 'Harrow', group: 'Primary Tillage' }), true);
 
+    // ---- 2.12.0: Learning Center ----
+    await env.withSecurityRulesDisabled(async ctx => {
+        await setDoc(doc(ctx.firestore(), 'users', 'lcEd'), { uid: 'lcEd', email: 'lcEd@x.id', role: 'staff', status: 'active', access: { learning: 'edit' } });
+    });
+    const LCE = as('lcEd');
+    await check('Learning: editor menambah materi', setDoc(doc(LCE, 'learningItems', 'lc_1'), { id: 'lc_1', title: 'StarFire guide', source: 'upload' }), true);
+    await check('Learning: judul kosong DITOLAK', setDoc(doc(LCE, 'learningItems', 'lc_2'), { id: 'lc_2', title: '' }), false);
+    await check('Learning: akun aktif tanpa akses tetap bisa membaca', getDocs(collection(as('nobody'), 'learningItems')), true);
+    await check('Learning: tanpa akses edit TIDAK bisa menambah', setDoc(doc(as('writer'), 'learningItems', 'lc_3'), { id: 'lc_3', title: 'x' }), false);
+    await check('Learning: editor menyimpan potongan file', setDoc(doc(LCE, 'learningFiles', 'f_1__0'), { id: 'f_1__0', itemId: 'f_1', idx: 0, data: 'JVBERi0' }), true);
+    await check('Learning: potongan terlalu besar DITOLAK', setDoc(doc(LCE, 'learningFiles', 'f_1__1'), { id: 'f_1__1', data: 'x'.repeat(950001) }), false);
+    await check('Learning: semua akun aktif membaca potongan', getDoc(doc(as('nobody'), 'learningFiles', 'f_1__0')), true);
+    await check('Learning: tanpa akses edit TIDAK bisa menulis potongan', setDoc(doc(as('writer'), 'learningFiles', 'f_9__0'), { id: 'f_9__0', data: 'x' }), false);
+    await check('Learning: editor menghapus', deleteDoc(doc(LCE, 'learningItems', 'lc_1')), true);
+    await check('Learning Categories: editor menyimpan daftar', setDoc(doc(LCE, 'masterLists', 'learnCategory'), { id: 'learnCategory', values: ['SOP'] }), true);
+
     await env.cleanup();
     let pass = 0;
     T.forEach(x => { if (x.pass) pass++; else console.log('FAIL', x.name, '\n   ', x.err || ''); });

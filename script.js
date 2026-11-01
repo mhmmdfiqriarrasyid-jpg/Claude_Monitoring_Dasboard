@@ -84,8 +84,8 @@ const LIC_PAID = ['SF-RTK', 'G5 Advance'];
 const LIC_REQ_OPTIONS = { gps: ['', 'SF-1', 'SF-RTK'], display: ['', 'G5 Basic', 'G5 Advance'] };
 let licenseTab = 'stock';
 // Master lists (Site / Brand / Company). An empty list means "anything goes".
-let masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [] };
-const MASTER_KINDS = ['site', 'brand', 'heavyBrand', 'company', 'damageType', 'jobType', 'implGroup'];
+let masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [] };
+const MASTER_KINDS = ['site', 'brand', 'heavyBrand', 'company', 'damageType', 'jobType', 'implGroup', 'learnCategory'];
 const MASTER_DEF = {
     site:    { label: 'Site',    plural: 'Sites',     edit: ['editUnits'],              view: ['editUnits'],
                hint: 'Used by every unit (both groups).' },
@@ -104,6 +104,9 @@ const MASTER_DEF = {
     // 2.10.7: which group an implement belongs to (Primary Tillage, …).
     implGroup: { label: 'Implement Group', plural: 'Implement Groups', edit: ['implements'], view: ['implements'],
                hint: 'Groups the implements are sorted into, chosen on each implement.' },
+    // 2.12.0: Learning Center categories. Empty = the built-in five.
+    learnCategory: { label: 'Learning Category', plural: 'Learning Categories', edit: ['learning'], view: ['learning'],
+               hint: 'Categories of the Learning Center. While empty: Precision Agriculture, Heavy Equipment, Safety (K3), Dashboard How-to, General.' },
     jobType: { label: 'Job Type', plural: 'Job Types', edit: ['teamMembers'], view: ['teamMembers'],
                hint: 'Chosen for each paddock in a Daily Report. While the list is empty: Application, Tillage, Harvesting and Planting.' }
 };
@@ -149,7 +152,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.11.6';
+const APP_VERSION = 'v2.12.0';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -900,6 +903,8 @@ const MODAL_CLOSERS = {
     userNameModal:        'closeUserNameModal',
     authDeleteModal:      'closeAuthDeleteModal',
     iosInstallModal:      'closeIosInstall',
+    lcModal:              'closeLearningForm',
+    lcViewer:             'closeLearningViewer',
     teamMembersModal:     'closeTeamMembersModal',
     workLogModal:         'closeWorkLogModal',
     leaveModal:           'closeLeaveModal',
@@ -1723,6 +1728,8 @@ function navigateTo(view) {
     if (whView) whView.style.display = (view === 'warehouse') ? 'block' : 'none';
     const prView = document.getElementById('viewPurchase');
     if (prView) prView.style.display = (view === 'purchase') ? 'block' : 'none';
+    const lcView = document.getElementById('viewLearning');
+    if (lcView) lcView.style.display = (view === 'learning') ? 'block' : 'none';
     const leaderView = document.getElementById('viewLeader');
     if (leaderView) leaderView.style.display = (view === 'leader') ? 'block' : 'none';
     const insView = document.getElementById('viewInspection');
@@ -1794,6 +1801,7 @@ function navigateTo(view) {
     }
 
     if (view === 'purchase') renderPurchaseView();
+    if (view === 'learning') renderLearningView();
 
     if (view === 'inspection') renderInspectionView();
 
@@ -12749,6 +12757,10 @@ function initCloudSync() {
                 }
             );
         }
+        if (window.cloud.subscribeLearningItems) {
+            cloudLearningUnsub = window.cloud.subscribeLearningItems(applyLearningSnapshot,
+                err => console.warn('[cloud] learningItems offline:', err && err.code));
+        }
         if (window.cloud.subscribePurchaseRequests && canViewView('purchase')) {
             // 'own' may read only its own requests, so it must ask for those.
             const ownPr = purchaseOwnOnly();
@@ -13009,10 +13021,12 @@ function tearDownCloudSync() {
     // What was typed belongs to the account that typed it.
     if (typeof clearUnsent === 'function') clearUnsent();
     licenseRequirements = [];
-    masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [] };
+    masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [] };
     if (cloudDamageComponentsUnsub) { try { cloudDamageComponentsUnsub(); } catch (_) {} cloudDamageComponentsUnsub = null; }
     if (cloudDevicesUnsub) { try { cloudDevicesUnsub(); } catch (_) {} cloudDevicesUnsub = null; }
     if (cloudPurchaseUnsub) { try { cloudPurchaseUnsub(); } catch (_) {} cloudPurchaseUnsub = null; }
+    if (cloudLearningUnsub) { try { cloudLearningUnsub(); } catch (_) {} cloudLearningUnsub = null; }
+    learningItems = [];
     purchaseRequests = [];
     if (cloudStockUnsub) { try { cloudStockUnsub(); } catch (_) {} cloudStockUnsub = null; }
     warehouseDevices = [];
@@ -13945,6 +13959,8 @@ const ACCESS_AREAS = [
     // 2.9.0: 'own' files purchase requests and follows only their own;
     // 'edit' approves, records the PO and receives the goods.
     { key: 'purchase',     label: 'Purchase Request',  levels: ['none', 'own', 'view', 'edit'] },
+    // 2.12.0: everyone active reads the Learning Center; 'edit' adds material.
+    { key: 'learning',     label: 'Learning Center (add material)', levels: ['none', 'edit'] },
     // Heavy-equipment checks: the technician who checks and files, and —
     // separately, for the same reason as teamLogApprove — the supervisor who
     // approves or sends a report back.
@@ -13982,7 +13998,8 @@ const RO_FLAGS = {
     editUnits: 'roEditunits', implements: 'roImplements', damage: 'roDamage',
     licenseStock: 'roLicense', teamShift: 'roTeamshift', teamLog: 'roTeamlog',
     teamMembers: 'roTeammembers', teamLogApprove: 'roTeamapprove',
-    warehouse: 'roWarehouse', inspection: 'roInspection', purchase: 'roPurchase'
+    warehouse: 'roWarehouse', inspection: 'roInspection', purchase: 'roPurchase',
+    learning: 'roLearning'
 };
 // 'own' acts as edit for the area's buttons; which records it may touch is
 // decided per record (ownTeamOnly / canEditTeamRecord).
@@ -18275,6 +18292,357 @@ function populateWarehouseFilters() {
     if (du) du.innerHTML = unitOpts;
     const su = document.getElementById('stkUnitList');
     if (su) su.innerHTML = unitOpts;
+}
+
+// ============================================================
+// LEARNING CENTER (2.12.0) — PDFs first
+// ------------------------------------------------------------
+// Manuals, SOPs and guides. Every active account reads; 'learning' edit adds
+// and removes material. A PDF is either uploaded — on the Spark plan stored
+// in Firestore as base64 pieces (learningFiles/<fileId>__<n>), so it is only
+// readable signed in — or a link (a Google Drive file opens inside the page).
+// file.storage says where an upload lives: 'firestore' now; 'storage' is the
+// slot for Cloud Storage once the project is on Blaze (loadLearningPdfBytes).
+// PDFs are drawn with PDF.js (vendor/pdfjs), loaded on first use, because
+// phones (Android) do not show a PDF inside a page.
+// ============================================================
+let learningItems = [];
+let cloudLearningUnsub = null;
+let _lcCategory = '';
+const LEARN_DEFAULT_CATEGORIES = ['Precision Agriculture', 'Heavy Equipment', 'Safety (K3)', 'Dashboard How-to', 'General'];
+const LEARN_MAX_BYTES = 15 * 1024 * 1024;
+const LEARN_CHUNK_BYTES = 700 * 1024;          // base64 of this stays under Firestore's 1 MiB per document
+const _lcBytesCache = new Map();               // fileId -> Uint8Array, this session
+
+function learnCategories() { return masterListActive('learnCategory') ? masterLists.learnCategory.slice() : LEARN_DEFAULT_CATEGORIES.slice(); }
+function canEditLearning() { return hasAccess('learning', 'edit'); }
+function applyLearningSnapshot(docs) {
+    learningItems = (docs || []).slice().sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+    if (currentView === 'learning') renderLearningView();
+}
+function lcFmtSize(n) {
+    n = Number(n) || 0;
+    return n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+}
+// "https://drive.google.com/file/d/<id>/view?usp=…" -> its embeddable preview.
+function driveFileId(url) {
+    const m = String(url || '').match(/^https:\/\/drive\.google\.com\/(?:file\/d\/|open\?id=)([A-Za-z0-9_-]{10,})/);
+    return m ? m[1] : '';
+}
+
+function renderLearningView() {
+    const cats = learnCategories();
+    const inUse = [...new Set(learningItems.map(i => i.category).filter(Boolean))];
+    const all = [...new Set(cats.concat(inUse))];
+    if (_lcCategory && !all.includes(_lcCategory)) _lcCategory = '';
+    const catBox = document.getElementById('lcCats');
+    if (catBox) catBox.innerHTML = ['', ...all].map(c => {
+        const n = c ? learningItems.filter(i => i.category === c).length : learningItems.length;
+        return `<button type="button" class="lc-cat" aria-pressed="${c === _lcCategory}" onclick="_lcCategory = ${jsArg(c)}; renderLearningView()">${escapeHtml(c || 'All')} <span>${n}</span></button>`;
+    }).join('');
+    const q = (document.getElementById('lcSearch')?.value || '').toLowerCase().trim();
+    const rows = learningItems.filter(i => (!_lcCategory || i.category === _lcCategory)
+        && (!q || `${i.title} ${i.description || ''} ${i.category || ''}`.toLowerCase().includes(q)));
+    const cnt = document.getElementById('lcCount');
+    if (cnt) cnt.textContent = `${rows.length} material${rows.length === 1 ? '' : 's'}`;
+    const grid = document.getElementById('lcGrid');
+    if (!grid) return;
+    if (!rows.length) {
+        grid.innerHTML = `<p class="lc-empty">${learningItems.length ? 'Nothing matches.'
+            : `No material yet.${canEditLearning() ? ' Use <strong>Add material</strong> to upload the first PDF.' : ''}`}</p>`;
+        return;
+    }
+    const week = Date.now() - 7 * 86400000;
+    const canEdit = canEditLearning();
+    grid.innerHTML = rows.map(i => {
+        const up = i.source === 'upload';
+        const meta = up ? `PDF · ${lcFmtSize(i.file && i.file.size)}` : (driveFileId(i.url) ? 'Google Drive' : 'Link');
+        return `<article class="lc-item">
+            <button type="button" class="lc-item__open" onclick="openLearningItem(${jsArg(i.id)})" aria-label="Open ${escapeHtml(i.title)}">
+                <span class="lc-item__icon lc-item__icon--${up ? 'pdf' : 'link'}" aria-hidden="true">${up ? 'PDF' : '↗'}</span>
+                <span class="lc-item__body">
+                    <span class="lc-item__cat">${escapeHtml(i.category || 'General')}${(i.createdAt || 0) > week ? ' <span class="lc-new">New</span>' : ''}</span>
+                    <strong class="lc-item__title">${escapeHtml(i.title)}</strong>
+                    ${i.description ? `<span class="lc-item__desc">${escapeHtml(i.description)}</span>` : ''}
+                    <span class="lc-item__meta">${escapeHtml(meta)}${i.createdBy ? ' · ' + escapeHtml(shortActor(i.createdBy)) : ''}</span>
+                </span>
+            </button>
+            ${canEdit ? `<div class="lc-item__acts">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="editLearningItem(${jsArg(i.id)})">Edit</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="deleteLearningItem(${jsArg(i.id)})" aria-label="Delete ${escapeHtml(i.title)}">Delete</button>
+            </div>` : ''}
+        </article>`;
+    }).join('');
+}
+
+// ---- Add / edit ----
+function _lcFillCategories(keep) {
+    const sel = document.getElementById('lcCategory');
+    const list = learnCategories();
+    if (keep && !list.includes(keep)) list.push(keep);
+    sel.innerHTML = list.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+    sel.value = keep || _lcCategory || list[0] || '';
+}
+function _lcSource() { return document.querySelector('input[name="lcSource"]:checked')?.value || 'upload'; }
+function syncLearningSource() {
+    const up = _lcSource() === 'upload';
+    document.getElementById('lcUploadGroup').hidden = !up;
+    document.getElementById('lcLinkGroup').hidden = up;
+}
+function syncLearningFileInfo() {
+    const f = document.getElementById('lcFile').files[0];
+    const id = document.getElementById('lcId').value;
+    const cur = id && learningItems.find(x => x.id === id);
+    document.getElementById('lcFileInfo').textContent = f ? `${f.name} · ${lcFmtSize(f.size)}`
+        : cur && cur.source === 'upload' && cur.file ? `Current file: ${cur.file.name} · ${lcFmtSize(cur.file.size)} — choose a file only to replace it` : '';
+}
+function _lcProgress(pct, text) {
+    const box = document.getElementById('lcProgress');
+    box.hidden = pct == null;
+    if (pct == null) return;
+    document.getElementById('lcProgressBar').style.width = `${Math.round(pct)}%`;
+    document.getElementById('lcProgressText').textContent = text || '';
+}
+function showAddLearningForm() {
+    if (!requireEdit('learning')) return;
+    document.getElementById('lcForm').reset();
+    document.getElementById('lcId').value = '';
+    document.getElementById('lcModalTitle').textContent = 'Add material';
+    _lcFillCategories('');
+    syncLearningSource(); syncLearningFileInfo(); _lcProgress(null);
+    document.getElementById('lcModal').classList.add('open');
+}
+function editLearningItem(id) {
+    if (!requireEdit('learning')) return;
+    const i = learningItems.find(x => x.id === id);
+    if (!i) return;
+    document.getElementById('lcForm').reset();
+    document.getElementById('lcId').value = id;
+    document.getElementById('lcModalTitle').textContent = 'Edit material';
+    document.getElementById('lcTitle').value = i.title || '';
+    document.getElementById('lcDesc').value = i.description || '';
+    document.getElementById('lcUrl').value = i.url || '';
+    _lcFillCategories(i.category || '');
+    document.querySelector(`input[name="lcSource"][value="${i.source === 'link' ? 'link' : 'upload'}"]`).checked = true;
+    syncLearningSource(); syncLearningFileInfo(); _lcProgress(null);
+    document.getElementById('lcModal').classList.add('open');
+}
+function closeLearningForm(force) {
+    if (!force && document.getElementById('lcSaveBtn').disabled) return;   // upload running
+    document.getElementById('lcModal').classList.remove('open');
+}
+function _bytesToBase64(bytes) {
+    let s = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(s);
+}
+async function saveLearningItem(event) {
+    if (event) event.preventDefault();
+    if (!requireEdit('learning')) return;
+    const id = document.getElementById('lcId').value;
+    const existing = id ? learningItems.find(x => x.id === id) : null;
+    const title = _toolNorm(document.getElementById('lcTitle').value);
+    if (!title) { showToast('Give the material a title', 'warning'); return; }
+    const source = _lcSource();
+    const rec = {
+        ...(existing || {}),
+        id: id || 'lc_' + generateId(),
+        title,
+        category: document.getElementById('lcCategory').value || 'General',
+        description: (document.getElementById('lcDesc').value || '').trim(),
+        source,
+        updatedAt: Date.now(),
+        createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),
+        createdBy: existing ? (existing.createdBy || '') : ((currentUser && currentUser.email) || '')
+    };
+    const file = document.getElementById('lcFile').files[0];
+    let oldChunks = null;
+    if (source === 'link') {
+        const url = (document.getElementById('lcUrl').value || '').trim();
+        if (!/^https:\/\/\S+$/i.test(url)) { showToast('Paste a link that starts with https://', 'warning'); return; }
+        rec.url = url;
+        if (existing && existing.file) oldChunks = existing.file;
+        delete rec.file;
+    } else {
+        rec.url = '';
+        if (!file && !(existing && existing.file)) { showToast('Choose a PDF file', 'warning'); return; }
+        if (file) {
+            if (!/pdf$/i.test(file.type || '') && !/\.pdf$/i.test(file.name)) { showToast('Only PDF files', 'warning'); return; }
+            if (file.size > LEARN_MAX_BYTES) { showToast(`That file is ${lcFmtSize(file.size)} — the limit is 15 MB. Put it on Google Drive and use Link.`, 'warning'); return; }
+            const btn = document.getElementById('lcSaveBtn');
+            btn.disabled = true;
+            try {
+                const bytes = new Uint8Array(await file.arrayBuffer());
+                if (String.fromCharCode(...bytes.subarray(0, 5)) !== '%PDF-') { showToast('That file is not a valid PDF', 'warning'); return; }
+                const fileId = 'f_' + generateId();
+                const chunks = Math.ceil(bytes.length / LEARN_CHUNK_BYTES);
+                for (let n = 0; n < chunks; n++) {
+                    _lcProgress(n / chunks * 100, `Uploading ${n + 1} of ${chunks}…`);
+                    await window.cloud.saveLearningChunk(fileId, n, _bytesToBase64(bytes.subarray(n * LEARN_CHUNK_BYTES, (n + 1) * LEARN_CHUNK_BYTES)));
+                }
+                _lcProgress(100, 'Saving…');
+                _lcBytesCache.set(fileId, bytes);
+                if (existing && existing.file) oldChunks = existing.file;
+                rec.file = { id: fileId, name: file.name, size: bytes.length, chunks, storage: 'firestore' };
+            } catch (err) {
+                console.error('[learning] upload failed:', err);
+                showToast(err && err.code === 'permission-denied'
+                    ? 'Refused by the server — publish the latest firestore.rules (Learning Center) and check your access'
+                    : 'Upload failed — check the signal and try again', 'error');
+                _lcProgress(null);
+                return;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+    }
+    try {
+        await window.cloud.saveLearningItem(rec);
+    } catch (err) {
+        console.error('[learning] save failed:', err);
+        showToast(err && err.code === 'permission-denied' ? 'Refused by the server — publish the latest firestore.rules (Learning Center)' : 'Failed to save the material', 'error');
+        return;
+    }
+    if (oldChunks && oldChunks.id && oldChunks.storage === 'firestore')
+        window.cloud.deleteLearningChunks(oldChunks.id, oldChunks.chunks || 0).catch(e => console.warn('[learning] old file not removed:', e));
+    const i = learningItems.findIndex(x => x.id === rec.id);
+    if (i >= 0) learningItems[i] = rec; else learningItems.unshift(rec);
+    logEvent({ action: existing ? 'update' : 'create', unitName: `[Learning] ${rec.title}`, field: 'Material', before: '', after: rec.source === 'upload' ? (rec.file && rec.file.name) || 'PDF' : rec.url });
+    _lcProgress(null);
+    closeLearningForm(true);
+    renderLearningView();
+    showToast(existing ? 'Material updated' : 'Material added', 'success');
+}
+async function deleteLearningItem(id) {
+    if (!requireEdit('learning')) return;
+    const i = learningItems.find(x => x.id === id);
+    if (!i || !confirm(`Delete "${i.title}" from the Learning Center?`)) return;
+    try {
+        await window.cloud.deleteLearningItem(id);
+        if (i.file && i.file.storage === 'firestore') await window.cloud.deleteLearningChunks(i.file.id, i.file.chunks || 0);
+        learningItems = learningItems.filter(x => x.id !== id);
+        logEvent({ action: 'delete', unitName: `[Learning] ${i.title}`, field: 'Material', before: i.title, after: '' });
+        renderLearningView();
+        showToast('Material deleted', 'success');
+    } catch (err) {
+        console.error('[learning] delete failed:', err);
+        showToast('Failed to delete the material', 'error');
+    }
+}
+
+// ---- Reading ----
+let _lcDoc = null, _lcScale = 1, _lcBytes = null, _lcName = '', _lcRenderGen = 0;
+// Where an uploaded PDF's bytes come from. 'storage' is filled in when the
+// project moves to Blaze and files go to Cloud Storage.
+async function loadLearningPdfBytes(item, onProgress) {
+    const f = item.file || {};
+    if (_lcBytesCache.has(f.id)) return _lcBytesCache.get(f.id);
+    if (f.storage !== 'firestore') throw new Error('This file is stored somewhere this version cannot read yet');
+    let done = 0;
+    const parts = await Promise.all(Array.from({ length: f.chunks || 0 }, (_, n) =>
+        window.cloud.getLearningChunk(f.id, n).then(b64 => { done++; if (onProgress) onProgress(done / f.chunks); return b64; })));
+    if (parts.some(p => p == null)) throw new Error('Part of the file is missing');
+    const pieces = parts.map(b64 => { const s = atob(b64); const a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; });
+    const out = new Uint8Array(pieces.reduce((n, p) => n + p.length, 0));
+    let o = 0; pieces.forEach(p => { out.set(p, o); o += p.length; });
+    _lcBytesCache.set(f.id, out);
+    return out;
+}
+let _pdfjsLoading = null;
+function loadPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    if (!_pdfjsLoading) _pdfjsLoading = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'vendor/pdfjs/pdf.min.js';
+        s.onload = () => {
+            if (!window.pdfjsLib) { reject(new Error('PDF.js missing')); return; }
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs/pdf.worker.min.js';
+            resolve(window.pdfjsLib);
+        };
+        s.onerror = () => { _pdfjsLoading = null; reject(new Error('PDF.js failed to load')); };
+        document.head.appendChild(s);
+    });
+    return _pdfjsLoading;
+}
+function _lcSetTools(pdf) {
+    ['lcZoomOut', 'lcZoomIn', 'lcDownload'].forEach(id => { document.getElementById(id).hidden = !pdf; });
+    document.getElementById('lcZoomLabel').hidden = !pdf;
+}
+async function openLearningItem(id) {
+    const i = learningItems.find(x => x.id === id);
+    if (!i) return;
+    if (i.source === 'link') {
+        const fid = driveFileId(i.url);
+        if (!fid) { window.open(i.url, '_blank', 'noopener'); return; }
+        document.getElementById('lcViewerTitle').textContent = i.title;
+        _lcSetTools(false);
+        document.getElementById('lcViewerBody').innerHTML = `<iframe class="lc-frame" src="https://drive.google.com/file/d/${encodeURIComponent(fid)}/preview" title="${escapeHtml(i.title)}" allow="autoplay"></iframe>
+            <p class="lc-hint">Not showing? <a href="${escapeHtml(i.url)}" target="_blank" rel="noopener">Open it in Google Drive</a> — the file must be shared with your Google account or "anyone with the link".</p>`;
+        document.getElementById('lcViewer').classList.add('open');
+        return;
+    }
+    const gen = ++_lcRenderGen;
+    _lcDoc = null; _lcBytes = null; _lcName = (i.file && i.file.name) || `${i.title}.pdf`;
+    document.getElementById('lcViewerTitle').textContent = i.title;
+    _lcSetTools(false);
+    const body = document.getElementById('lcViewerBody');
+    body.innerHTML = '<p class="lc-loading" id="lcLoading">Opening…</p>';
+    document.getElementById('lcViewer').classList.add('open');
+    try {
+        const [lib, bytes] = await Promise.all([loadPdfJs(), loadLearningPdfBytes(i, p => {
+            const el = document.getElementById('lcLoading'); if (el) el.textContent = `Loading ${Math.round(p * 100)}%…`;
+        })]);
+        if (gen !== _lcRenderGen) return;
+        _lcBytes = bytes;
+        // A copy: PDF.js takes ownership of the buffer it is given.
+        _lcDoc = await lib.getDocument({ data: bytes.slice(), isEvalSupported: false, disableFontFace: false }).promise;
+        if (gen !== _lcRenderGen) return;
+        const first = await _lcDoc.getPage(1);
+        const vw = first.getViewport({ scale: 1 }).width;
+        _lcScale = Math.max(0.5, Math.min(2, (body.clientWidth - 24) / vw));
+        _lcSetTools(true);
+        await _lcRender(gen);
+    } catch (err) {
+        console.error('[learning] open failed:', err);
+        if (gen === _lcRenderGen) body.innerHTML = `<p class="lc-loading">Could not open this PDF${navigator.onLine ? '' : ' — it needs a signal the first time'}.</p>`;
+    }
+}
+async function _lcRender(gen) {
+    const body = document.getElementById('lcViewerBody');
+    document.getElementById('lcZoomLabel').textContent = `${Math.round(_lcScale * 100)}%`;
+    body.innerHTML = '';
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    for (let n = 1; n <= _lcDoc.numPages; n++) {
+        if (gen !== _lcRenderGen) return;
+        const page = await _lcDoc.getPage(n);
+        const vp = page.getViewport({ scale: _lcScale });
+        const canvas = document.createElement('canvas');
+        canvas.className = 'lc-page';
+        canvas.width = Math.floor(vp.width * dpr); canvas.height = Math.floor(vp.height * dpr);
+        canvas.style.width = `${Math.floor(vp.width)}px`; canvas.style.height = `${Math.floor(vp.height)}px`;
+        canvas.setAttribute('aria-label', `Page ${n} of ${_lcDoc.numPages}`);
+        body.appendChild(canvas);
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null }).promise;
+    }
+}
+function lcZoom(dir) {
+    if (!_lcDoc) return;
+    _lcScale = Math.max(0.5, Math.min(3, Math.round((_lcScale + dir * 0.25) * 100) / 100));
+    _lcRender(++_lcRenderGen);
+}
+function lcDownload() {
+    if (!_lcBytes) return;
+    const url = URL.createObjectURL(new Blob([_lcBytes], { type: 'application/pdf' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = _lcName; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+function closeLearningViewer() {
+    _lcRenderGen++;
+    if (_lcDoc) { try { _lcDoc.destroy(); } catch (_) {} }
+    _lcDoc = null;
+    document.getElementById('lcViewer').classList.remove('open');
+    document.getElementById('lcViewerBody').innerHTML = '';
 }
 
 // ============================================================
@@ -23735,13 +24103,14 @@ function masterUsage(kind) {
     if (kind === 'damageType') globalDamages.forEach(d => { if (!DAMAGE_TYPES.includes(d.damageType)) add(d.damageType); });
     if (kind === 'jobType') (workLogs || []).forEach(w => workLogJobs(w).forEach(j => add(j.jobType)));
     if (kind === 'implGroup') globalImplements.forEach(i => add(i.group));
+    if (kind === 'learnCategory') learningItems.forEach(i => add(i.category));
     return counts;
 }
-const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', heavyBrand: 'unit', company: 'member', damageType: 'damage record', jobType: 'report line', implGroup: 'implement' };
+const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', heavyBrand: 'unit', company: 'member', damageType: 'damage record', jobType: 'report line', implGroup: 'implement', learnCategory: 'material' };
 
 function applyMasterListsSnapshot(docs) {
     _markLoaded('masterLists');
-    const next = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [] };
+    const next = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [] };
     (docs || []).forEach(d => {
         if (MASTER_KINDS.includes(d.id) && Array.isArray(d.values)) next[d.id] = d.values.map(_toolNorm).filter(Boolean);
     });
@@ -24270,7 +24639,7 @@ function dcNotInMasterLists() {
     MASTER_KINDS.forEach(kind => {
         // Damage types only add choices; a type outside the list is not wrong.
         // Job types live on reports that are often locked once approved.
-        if (kind === 'damageType' || kind === 'jobType' || !masterListActive(kind)) return;
+        if (kind === 'damageType' || kind === 'jobType' || kind === 'learnCategory' || !masterListActive(kind)) return;
         [...masterUsage(kind).entries()].filter(([v]) => !masterMatch(kind, v)).sort((a, b) => b[1] - a[1]).forEach(([v, n]) => {
             out.push(dc('master-luar', `${MASTER_DEF[kind].label}: ${v}`,
                 `${n} ${MASTER_USED_NOUN[kind]}(s) — not in the ${MASTER_DEF[kind].label} list`,

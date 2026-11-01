@@ -154,6 +154,19 @@ bawaan browser; di iPhone ditampilkan langkah Safari → Share → Add to Home
 Screen. Ikon yang ditekan lama punya shortcut (Add daily report, Report
 damage, Decision inbox, Units) lewat `?action=…`, dijalankan sesudah login.
 
+**Learning Center (2.12.0):** menu baru untuk PDF (manual, SOP, panduan).
+Semua akun aktif bisa membaca; area akses **Learning Center (add material)**
+(`learning`: none/edit) untuk menambah/mengubah/menghapus. Materi bisa
+**Upload PDF** (maks. 15 MB) atau **Link** (Google Drive tampil di dalam
+halaman, link lain dibuka di tab baru). Di paket Spark, PDF upload disimpan
+di Firestore sebagai potongan base64 ≤ 700 KB (`learningFiles/<fileId>__<n>`,
+dibaca per id tanpa index) dan dibaca hanya oleh akun yang login. Katalog di
+`learningItems`; `file.storage` = `'firestore'` sekarang — `'storage'`
+disiapkan untuk Cloud Storage saat pindah ke Blaze (`loadLearningPdfBytes`).
+PDF digambar dengan PDF.js lokal (`vendor/pdfjs`, dimuat saat dibuka,
+`isEvalSupported: false`) supaya juga tampil di HP Android. Kategori =
+master list `learnCategory` (kosong = 5 kategori bawaan).
+
 **Satu akun hanya boleh aktif di satu perangkat.** Login terbaru menang;
 perangkat lain keluar sendiri.
 
