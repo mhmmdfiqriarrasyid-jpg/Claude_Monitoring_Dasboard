@@ -32,6 +32,20 @@ const { launch, BASE_URL } = require('./_env');
     t('kategori bawaan', await page.evaluate(() => [...document.querySelectorAll('#lcCats .lc-cat')].map(x => x.textContent.replace(/\s*\d+$/, '').trim())),
       ['All', 'Precision Agriculture', 'Heavy Equipment', 'Safety (K3)', 'Dashboard How-to', 'General']);
 
+    // form: hanya bagian sumber yang dipilih yang tampil (2.12.1)
+    t('Upload PDF: kolom Link tersembunyi', await page.evaluate(() => { showAddLearningForm();
+        return [getComputedStyle(document.getElementById('lcUploadGroup')).display !== 'none', getComputedStyle(document.getElementById('lcLinkGroup')).display]; }), [true, 'none']);
+    t('Link: kolom upload tersembunyi', await page.evaluate(() => { document.querySelector('input[name="lcSource"][value="link"]').checked = true; syncLearningSource();
+        const r = [getComputedStyle(document.getElementById('lcUploadGroup')).display, getComputedStyle(document.getElementById('lcLinkGroup')).display !== 'none'];
+        document.querySelector('input[name="lcSource"][value="upload"]').checked = true; syncLearningSource(); closeLearningForm(true); return r; }), ['none', true]);
+    t('Manage categories membuka Master lists di tab Learning Categories', await page.evaluate(() => { manageLearningCategories();
+        const r = [document.getElementById('masterListsModal').classList.contains('open'), document.querySelector('#mlTabs .team-tab.active')?.textContent.replace(/\s*\d+$/, '').trim()];
+        closeMasterLists(); return r; }), [true, 'Learning Categories']);
+    await page.evaluate(() => { masterLists.learnCategory = ['SOP Workshop', 'Training Operator']; });
+    t('kategori buatan sendiri dipakai di form', await page.evaluate(() => { showAddLearningForm(); const r = [...document.querySelectorAll('#lcCategory option')].map(o => o.value); closeLearningForm(true); return r; }),
+      ['SOP Workshop', 'Training Operator']);
+    await page.evaluate(() => { masterLists.learnCategory = []; });
+
     // upload
     await page.evaluate(() => { showAddLearningForm(); saveLearningItem({ preventDefault() {} }); });
     t('judul wajib', await page.evaluate(() => __toasts.pop()), 'Give the material a title');

@@ -152,7 +152,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.12.0';
+const APP_VERSION = 'v2.12.1';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -18386,8 +18386,16 @@ function _lcFillCategories(keep) {
 function _lcSource() { return document.querySelector('input[name="lcSource"]:checked')?.value || 'upload'; }
 function syncLearningSource() {
     const up = _lcSource() === 'upload';
-    document.getElementById('lcUploadGroup').hidden = !up;
-    document.getElementById('lcLinkGroup').hidden = up;
+    // style.display, not [hidden]: .form-group sets its own display.
+    document.getElementById('lcUploadGroup').style.display = up ? '' : 'none';
+    document.getElementById('lcLinkGroup').style.display = up ? 'none' : '';
+}
+// Categories are the master list 'learnCategory' (Master lists -> Learning
+// Categories); this opens that tab straight from the page or the form.
+function manageLearningCategories() {
+    if (!canEditMasterList('learnCategory')) { showToast('You do not have edit access to the Learning Center', 'warning'); return; }
+    if (document.getElementById('lcModal').classList.contains('open')) closeLearningForm(true);
+    openMasterLists('learnCategory');
 }
 function syncLearningFileInfo() {
     const f = document.getElementById('lcFile').files[0];

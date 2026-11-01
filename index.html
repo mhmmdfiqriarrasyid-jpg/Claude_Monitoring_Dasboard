@@ -2198,6 +2198,7 @@
                 <span class="adm-sr">Search materials</span>
                 <input type="search" id="lcSearch" placeholder="Search title or description" oninput="renderLearningView()"></label>
             <div class="lc-cats" id="lcCats" role="group" aria-label="Categories"></div>
+            <button type="button" class="btn btn-secondary btn-sm editonly editonly--learning" onclick="manageLearningCategories()">Manage categories</button>
             <span class="lc-count" id="lcCount"></span>
         </div>
         <div class="lc-grid" id="lcGrid"></div>
@@ -3291,7 +3292,8 @@
                         <input class="form-input" id="lcTitle" maxlength="200" autocomplete="off" placeholder="e.g. StarFire 7000 — calibration guide">
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="lcCategory">Category</label>
+                        <label class="form-label" for="lcCategory">Category
+                            <button type="button" class="lc-manage-link editonly editonly--learning" onclick="manageLearningCategories()">Manage</button></label>
                         <select class="form-select" id="lcCategory"></select>
                     </div>
                     <div class="form-group">
@@ -3306,7 +3308,7 @@
                         <input class="form-input" type="file" id="lcFile" accept="application/pdf,.pdf" onchange="syncLearningFileInfo()">
                         <span class="lc-fileinfo" id="lcFileInfo"></span>
                     </div>
-                    <div class="form-group full-width" id="lcLinkGroup" hidden>
+                    <div class="form-group full-width" id="lcLinkGroup" style="display:none">
                         <label class="form-label" for="lcUrl">Link</label>
                         <input class="form-input" type="url" id="lcUrl" maxlength="1000" autocomplete="off" placeholder="https://drive.google.com/file/d/…/view">
                         <span class="lc-fileinfo">Google Drive files open inside the dashboard; other links open in a new tab.</span>

@@ -10812,3 +10812,6 @@ body:has(.modal-overlay.open) .install-banner { display: none; }
     .lc-viewer__tools .btn { padding: 0 10px; }
     .lc-count { margin-left: 0; }
 }
+.lc-manage-link { margin-left: 8px; padding: 0; border: 0; background: none; font: inherit; font-size: 12px; font-weight: 600;
+    text-transform: none; letter-spacing: 0; color: var(--accent-text, var(--accent)); cursor: pointer; }
+.lc-manage-link:hover { text-decoration: underline; }
