@@ -75,19 +75,20 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-// App Check (2.11.2): every request carries a reCAPTCHA v3 token proving it
+// App Check (2.11.2): every request carries a reCAPTCHA token proving it
 // comes from this site, so the public config above cannot be reused from a
 // script elsewhere to create accounts or burn the quota. Off while the key
-// is empty. Turning it on: create a reCAPTCHA v3 key for this domain, add
-// its SECRET key under Firebase console -> App Check, put its SITE key
-// (public) here, deploy, and only then press "Enforce" in the console once
-// the metrics show nearly all requests verified.
-const APP_CHECK_SITE_KEY = '6LdyDwsuAAAAABX7mliizaCC7z99eHVXRFzfxFpx';   // public reCAPTCHA v3 site key
+// is empty. The key is a reCAPTCHA Enterprise ("Fraud Defense") key of the
+// Google Cloud project, registered under Firebase console -> App Check with
+// that same site key (2.11.4: Firebase offers only the Enterprise provider).
+// Press "Enforce" in the console only once the metrics show nearly all
+// requests verified.
+const APP_CHECK_SITE_KEY = '6LdyDwsuAAAAABX7mliizaCC7z99eHVXRFzfxFpx';   // public reCAPTCHA Enterprise site key
 if (APP_CHECK_SITE_KEY) {
     try {
-        const { initializeAppCheck, ReCaptchaV3Provider } =
+        const { initializeAppCheck, ReCaptchaEnterpriseProvider } =
             await import("https://www.gstatic.com/firebasejs/12.12.0/firebase-app-check.js");
-        initializeAppCheck(app, { provider: new ReCaptchaV3Provider(APP_CHECK_SITE_KEY), isTokenAutoRefreshEnabled: true });
+        initializeAppCheck(app, { provider: new ReCaptchaEnterpriseProvider(APP_CHECK_SITE_KEY), isTokenAutoRefreshEnabled: true });
         document.documentElement.classList.add('appcheck-on');
     } catch (err) {
         // Never block the app on it: unenforced, requests still go through.
