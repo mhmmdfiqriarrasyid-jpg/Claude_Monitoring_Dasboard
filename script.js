@@ -149,7 +149,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.10.9';
+const APP_VERSION = 'v2.11.0';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -16315,6 +16315,154 @@ function getFilteredWorkLogs() {
     });
 }
 
+
+// ============================================================
+// REPORT CALENDAR (2.11.0)
+// ------------------------------------------------------------
+// One month of daily reports at a glance: per day, how many of the people
+// expected to report did, coloured, with their initials. A day opens a list
+// of who reported (and how far their report got) and who did not — without
+// the people on approved leave or with the day off, who were never expected.
+// Follows the Company filter of the reports table; counts submitted reports
+// only, like "Reported today".
+// ============================================================
+let _rcMonth = '';      // 'YYYY-MM' on screen
+let _rcDay = '';        // 'YYYY-MM-DD' opened
+const RC_WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function _rcCompanyMatch(m) {
+    const f = document.getElementById('wlCompanyFilter')?.value || '';
+    if (!f) return true;
+    const c = companyOf(m);
+    return f === '__none__' ? !c : _toolNorm(c).toLowerCase() === _toolNorm(f).toLowerCase();
+}
+function _rcInitials(name) {
+    const w = String(name || '?').trim().split(/\s+/).filter(Boolean);
+    return ((w[0] || '?')[0] + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase();
+}
+// Who was expected on a day, who reported, and why the rest were not counted.
+function reportDayStatus(date) {
+    const members = activeMembers().filter(_rcCompanyMatch);
+    const away = membersOnLeave(date);
+    const anyShift = members.some(m => shiftFor(m.id, date));
+    const off = m => away.has(m.id) || (anyShift && (!shiftFor(m.id, date) || shiftFor(m.id, date) === 'libur'));
+    const logs = workLogs.filter(w => w.date === date && w.memberId && isSubmitted(w));
+    const byMember = new Map();
+    logs.forEach(w => { if (!byMember.has(w.memberId)) byMember.set(w.memberId, []); byMember.get(w.memberId).push(w); });
+    const reported = members.filter(m => byMember.has(m.id)).map(m => ({ m, logs: byMember.get(m.id) }));
+    const expected = members.filter(m => !off(m));
+    const missing = expected.filter(m => !byMember.has(m.id));
+    const excused = members.filter(m => off(m) && !byMember.has(m.id))
+        .map(m => ({ m, why: away.has(m.id) ? 'Leave / sick' : 'Day off' }));
+    return { reported, expected, missing, excused };
+}
+
+function rcShift(delta) {
+    const [y, mo] = (_rcMonth || toISODate().slice(0, 7)).split('-').map(Number);
+    const d = new Date(y, mo - 1 + delta, 1);
+    _rcMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    _rcDay = '';
+    renderReportCalendar();
+}
+function rcCollapsed() { try { return localStorage.getItem('rcCollapsed') === '1'; } catch (_) { return false; } }
+function rcToggle() {
+    try { localStorage.setItem('rcCollapsed', rcCollapsed() ? '0' : '1'); } catch (_) {}
+    renderReportCalendar();
+}
+function rcToday() { _rcMonth = toISODate().slice(0, 7); _rcDay = toISODate(); renderReportCalendar(); }
+function rcPick(date) { _rcDay = _rcDay === date ? '' : date; renderReportCalendar(); }
+// The table below, narrowed to the opened day.
+function rcShowInTable(date) {
+    const f = document.getElementById('wlFrom'), t = document.getElementById('wlTo');
+    if (f) f.value = date;
+    if (t) t.value = date;
+    const ap = document.getElementById('wlApprovalFilter');
+    if (ap) ap.value = '';
+    renderWorkLogTable();
+    document.getElementById('workLogTable')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderReportCalendar() {
+    const host = document.getElementById('reportCalendar');
+    if (!host) return;
+    // Someone who sees only their own reports has no team to look across.
+    if (typeof ownTeamOnly === 'function' && ownTeamOnly()) { host.hidden = true; return; }
+    host.hidden = false;
+    const today = toISODate();
+    if (!_rcMonth) _rcMonth = today.slice(0, 7);
+    const [y, mo] = _rcMonth.split('-').map(Number);
+    const first = new Date(y, mo - 1, 1);
+    const days = new Date(y, mo, 0).getDate();
+    const lead = (first.getDay() + 6) % 7;            // Monday first
+    const iso = d => `${_rcMonth}-${String(d).padStart(2, '0')}`;
+    const monthName = first.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+
+    let full = 0, partial = 0, none = 0;
+    const cells = [];
+    for (let i = 0; i < lead; i++) cells.push('<div class="rc-day rc-day--blank" aria-hidden="true"></div>');
+    for (let d = 1; d <= days; d++) {
+        const date = iso(d);
+        const future = date > today;
+        const st = future ? null : reportDayStatus(date);
+        const n = st ? st.reported.length : 0, of = st ? st.expected.length : 0;
+        const tone = future ? 'future' : !of && !n ? 'off' : n >= of ? 'full' : n ? 'part' : 'none';
+        if (tone === 'full') full++; else if (tone === 'part') partial++; else if (tone === 'none') none++;
+        const pct = of ? Math.min(100, Math.round(n / of * 100)) : (n ? 100 : 0);
+        const faces = st ? st.reported.slice(0, 4).map(r => `<span class="rc-face" title="${escapeHtml(r.m.name)}">${escapeHtml(_rcInitials(r.m.name))}</span>`).join('')
+            + (st.reported.length > 4 ? `<span class="rc-face rc-face--more">+${st.reported.length - 4}</span>` : '') : '';
+        const label = future ? `${date}: upcoming`
+            : `${date}: ${n} of ${of} reported${st.missing.length ? ` — missing ${st.missing.map(m => m.name).join(', ')}` : ''}`;
+        cells.push(`<button type="button" class="rc-day rc-day--${tone}${date === today ? ' rc-day--today' : ''}${date === _rcDay ? ' rc-day--open' : ''}"
+            ${future ? 'disabled' : `onclick="rcPick(${jsArg(date)})"`} title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}" aria-pressed="${date === _rcDay}">
+            <span class="rc-day__top"><span class="rc-day__num">${d}</span>${future ? '' : `<span class="rc-day__count">${n}<small>/${of}</small></span>`}</span>
+            ${future ? '' : `<span class="rc-day__bar"><span style="width:${pct}%"></span></span><span class="rc-day__faces">${faces}</span>`}
+        </button>`);
+    }
+
+    let detail = '';
+    if (_rcDay && _rcDay.startsWith(_rcMonth)) {
+        const st = reportDayStatus(_rcDay);
+        const dayLabel = new Date(_rcDay + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+        const person = (m, extra) => `<li class="rc-person"><span class="rc-face">${escapeHtml(_rcInitials(m.name))}</span>
+            <span class="rc-person__name">${escapeHtml(m.name)}<small>${escapeHtml(companyOf(m) || '')}</small></span>${extra || ''}</li>`;
+        detail = `<div class="rc-detail" aria-live="polite">
+            <div class="rc-detail__head"><strong>${escapeHtml(dayLabel)}</strong>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="rcShowInTable(${jsArg(_rcDay)})">Show these reports</button></div>
+            <div class="rc-detail__cols">
+                <div><h3 class="rc-detail__title rc-detail__title--ok">Reported (${st.reported.length})</h3>
+                    <ul class="rc-list">${st.reported.map(r => person(r.m, `<span class="rc-person__meta">${
+                        r.logs.map(w => `<span class="appr appr--${workLogApproval(w)}">${escapeHtml(APPROVAL_STATES[workLogApproval(w)].label)}</span>`).join(' ')}
+                        <small>${escapeHtml(formatMinutes(r.logs.reduce((a, w) => a + workLogMinutes(w), 0)))}</small></span>`)).join('')
+                        || '<li class="rc-empty">No one</li>'}</ul></div>
+                <div><h3 class="rc-detail__title rc-detail__title--bad">Not reported (${st.missing.length})</h3>
+                    <ul class="rc-list">${st.missing.map(m => person(m)).join('') || '<li class="rc-empty">Everyone expected reported</li>'}</ul>
+                    ${st.excused.length ? `<h3 class="rc-detail__title">Not expected (${st.excused.length})</h3>
+                    <ul class="rc-list">${st.excused.map(x => person(x.m, `<span class="rc-person__meta"><small>${escapeHtml(x.why)}</small></span>`)).join('')}</ul>` : ''}</div>
+            </div>
+        </div>`;
+    }
+
+    const collapsed = rcCollapsed();
+    host.innerHTML = `
+        <div class="rc-head">
+            <div><h2 class="rc-title" id="rcTitle">Report calendar</h2>
+                <span class="rc-sub">${full} day${full === 1 ? '' : 's'} complete · ${partial} partly · ${none} with no report</span></div>
+            <div class="rc-nav">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="rcShift(-1)" aria-label="Previous month">‹</button>
+                <span class="rc-month">${escapeHtml(monthName)}</span>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="rcShift(1)" aria-label="Next month"${_rcMonth >= today.slice(0, 7) ? ' disabled' : ''}>›</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="rcToday()">Today</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="rcToggle()" aria-expanded="${!collapsed}">${collapsed ? 'Show' : 'Hide'}</button>
+            </div>
+        </div>${collapsed ? '' : `
+        <div class="rc-legend" aria-hidden="true"><span class="rc-key rc-key--full"></span>All reported<span class="rc-key rc-key--part"></span>Some<span class="rc-key rc-key--none"></span>None<span class="rc-key rc-key--off"></span>No one expected</div>
+        <div class="rc-grid" role="group" aria-label="${escapeHtml(monthName)}">
+            ${RC_WEEKDAYS.map(w => `<div class="rc-wd" aria-hidden="true">${w}</div>`).join('')}
+            ${cells.join('')}
+        </div>
+        ${detail}`}`;
+}
+
 function renderWorkLogTable() {
     const rows = getFilteredWorkLogs();
     const tbody = document.getElementById('workLogBody');
@@ -16326,6 +16474,7 @@ function renderWorkLogTable() {
     const reportedToday = new Set(
         workLogs.filter(w => w.date === today && w.memberId && isSubmitted(w)).map(w => w.memberId)
     ).size;
+    renderReportCalendar();
     const activeCount = activeMembers().length;
 
     const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };

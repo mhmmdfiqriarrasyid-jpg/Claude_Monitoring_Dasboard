@@ -129,6 +129,14 @@ dan `units` (tanpa ganda) tetap diisi untuk tampilan dan ekspor lama.
 kosong, isian bebas. Tabel Implements punya kolom dan filter Group, dan
 tombol **Set group** untuk implement yang dicentang.
 
+**Kalender laporan (2.11.0):** di tab Daily reports, kalender bulanan
+menunjukkan per hari berapa anggota yang melapor dari yang diharapkan
+(hijau semua, oranye sebagian, merah tidak ada), dengan inisial yang
+melapor. Klik hari untuk melihat siapa yang melapor (dengan status
+persetujuan dan jam) dan siapa yang belum; yang cuti/sakit disetujui atau
+shift libur dihitung "Not expected". Mengikuti filter Company; laporan
+draf tidak dihitung; disembunyikan untuk akses Daily Report "own".
+
 **Satu akun hanya boleh aktif di satu perangkat.** Login terbaru menang;
 perangkat lain keluar sendiri.
 
