@@ -2,7 +2,7 @@
    Network-first for the app shell (so deploys show up on reload), cache-first
    for static assets, network-only for Firebase live endpoints. */
 
-const CACHE_NAME = 'tractor-monitor-2.11.5';
+const CACHE_NAME = 'tractor-monitor-2.11.6';
 
 // Same-origin core files — always revalidated from network first so a new
 // deploy is picked up on the next reload (falls back to cache when offline).
@@ -16,6 +16,7 @@ const CORE = [
     './icons/icon-32.png',
     './icons/icon-192.png',
     './icons/apple-touch-icon.png',
+    './icons/icon-96.png',
     './manifest.webmanifest',
     // Libraries and fonts, self-hosted since 2.11.1 (vendor/README.md).
     // vendor/xlsx.full.min.js is cached the first time an Excel is imported.

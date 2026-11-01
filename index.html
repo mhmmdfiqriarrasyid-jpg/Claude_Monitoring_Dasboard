@@ -30,6 +30,10 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
     <!-- iPhone "Add to Home Screen" name: short, so it is not cut off under the icon -->
     <meta name="apple-mobile-web-app-title" content="OT Dashboard">
+    <!-- Installed from the home screen: full screen, light status bar (2.11.6) -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="theme-color" content="#F6F7FB">
 
     <!-- Dashboard Styles -->
@@ -266,6 +270,9 @@
                 <div class="user-menu__email" id="userMenuEmail">—</div>
                 <div class="user-menu__role-label" id="userMenuRoleLabel">—</div>
             </div>
+            <button type="button" class="user-menu__item" id="installMenuItem" hidden onclick="installApp(); event.stopPropagation();">
+                <i class="fas fa-mobile-screen-button" aria-hidden="true"></i> Install app
+            </button>
             <button type="button" class="user-menu__item" onclick="handleSignOut(); event.stopPropagation();">
                 <i class="fas fa-right-from-bracket" aria-hidden="true"></i> Sign out
             </button>
@@ -3870,6 +3877,39 @@
             <button type="button" class="btn btn-secondary usr-remove" id="roleDeleteBtn" onclick="deleteRole()" hidden><i class="fas fa-trash" aria-hidden="true"></i> Delete role</button>
             <button type="button" class="btn btn-secondary" onclick="closeRoleModal()">Cancel</button>
             <button type="button" class="btn btn-primary" onclick="saveRole()"><i class="fas fa-check" aria-hidden="true"></i> Save role</button>
+        </div>
+    </div>
+</div>
+
+<!-- Install as an app (2.11.6): the offer, and the steps on an iPhone -->
+<div class="install-banner" id="installBanner" hidden role="region" aria-label="Install the app">
+    <img src="icons/icon-96.png" alt="" class="install-banner__icon" width="40" height="40">
+    <div class="install-banner__text"><strong>Install OT Dashboard</strong><span>Open it from your home screen, full screen, also with a weak signal.</span></div>
+    <button type="button" class="btn btn-primary btn-sm" onclick="installApp()">Install</button>
+    <button type="button" class="install-banner__x" onclick="dismissInstallBanner()" aria-label="Not now" title="Not now">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+    </button>
+</div>
+<div class="modal-overlay" id="iosInstallModal">
+    <div class="modal-card un-card" role="dialog" aria-labelledby="iosInstallTitle">
+        <div class="modal-header">
+            <h3 id="iosInstallTitle">Install on iPhone / iPad</h3>
+            <button type="button" class="btn-icon" onclick="closeIosInstall()" aria-label="Close" title="Close">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <ol class="ios-steps">
+                <li>Open this page in <strong>Safari</strong>.</li>
+                <li>Tap the <strong>Share</strong> button
+                    <svg class="ios-share" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Share icon"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><path d="m16 6-4-4-4 4"></path><path d="M12 2v13"></path></svg>
+                    at the bottom (or top) of the screen.</li>
+                <li>Scroll down and tap <strong>Add to Home Screen</strong>, then <strong>Add</strong>.</li>
+                <li>Open <strong>OT Dashboard</strong> from the home screen and sign in once more.</li>
+            </ol>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-primary" onclick="closeIosInstall()">Got it</button>
         </div>
     </div>
 </div>

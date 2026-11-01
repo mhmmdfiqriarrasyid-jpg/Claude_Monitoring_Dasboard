@@ -10724,3 +10724,24 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
 .ad-steps { margin: 14px 0 10px; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
 .ad-note { margin: 0; font-size: 12px; color: var(--text-secondary); }
 #authDeleteModal .form-actions a.btn { text-decoration: none; }
+
+/* ===== Install as an app (2.11.6) ===== */
+.install-banner {
+    position: fixed; z-index: 150; left: 12px; right: 12px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 160px);  /* above the + button (FAB) */
+    display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 12px;
+    border-radius: 14px; background: var(--card); box-shadow: 0 8px 24px rgba(16, 24, 40, .18);
+}
+.install-banner[hidden] { display: none; }
+.install-banner__icon { flex: 0 0 auto; border-radius: 10px; }
+.install-banner .btn { flex: 0 0 auto; white-space: nowrap; }
+body:has(.modal-overlay.open) .install-banner { display: none; }
+.install-banner__text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; font-size: 13px; line-height: 1.35; color: var(--text-secondary); }
+.install-banner__text strong { color: var(--text); font-size: 14px; }
+.install-banner__x { flex: 0 0 auto; width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center;
+    border: 0; border-radius: 10px; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.install-banner__x:hover { background: var(--surface-sunken, #F2F4F7); }
+@media (min-width: 901px) { .install-banner { display: none !important; } }
+.ios-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 15px; line-height: 1.5; }
+.ios-share { vertical-align: -3px; color: var(--accent); }
+/* Installed: nothing else to change — the page already handles notches. */

@@ -147,6 +147,13 @@ ke `*.googleapis.com` dan `api.emailjs.com`, tanpa plugin/objek.
 atau layanan luar baru = tambahkan juga ke CSP, atau browser akan
 memblokirnya (`tests/csp_test.js` memeriksa ini).
 
+**Pasang sebagai aplikasi (2.11.6):** dashboard adalah PWA. Di HP muncul
+banner "Install OT Dashboard" (bisa ditutup, muncul lagi 30 hari kemudian)
+dan menu user punya **Install app**. Chrome/Edge memakai prompt install
+bawaan browser; di iPhone ditampilkan langkah Safari → Share → Add to Home
+Screen. Ikon yang ditekan lama punya shortcut (Add daily report, Report
+damage, Decision inbox, Units) lewat `?action=…`, dijalankan sesudah login.
+
 **Satu akun hanya boleh aktif di satu perangkat.** Login terbaru menang;
 perangkat lain keluar sendiri.
 

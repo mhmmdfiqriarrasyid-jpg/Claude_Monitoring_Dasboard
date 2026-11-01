@@ -1,13 +1,20 @@
 {
+    "id": "./",
     "name": "Operation Technology Dashboard",
     "short_name": "OT Dashboard",
-    "description": "Operation Technology dashboard for fleet health, devices, implements and team operations",
-    "start_url": "./",
+    "description": "Precision agriculture fleet, team and warehouse operations — units, damage, daily reports, licences and purchase requests.",
+    "start_url": "./?source=pwa",
     "scope": "./",
     "display": "standalone",
     "orientation": "any",
-    "background_color": "#f0f4f8",
-    "theme_color": "#2b6cb0",
+    "background_color": "#F6F7FB",
+    "theme_color": "#F6F7FB",
+    "categories": [
+        "business",
+        "productivity",
+        "utilities"
+    ],
+    "lang": "en",
     "icons": [
         {
             "src": "icons/icon-192.png",
@@ -26,6 +33,60 @@
             "sizes": "512x512",
             "type": "image/png",
             "purpose": "maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "Add daily report",
+            "short_name": "Daily report",
+            "description": "File today's daily work report",
+            "url": "./?action=add-report",
+            "icons": [
+                {
+                    "src": "icons/icon-96.png",
+                    "sizes": "96x96",
+                    "type": "image/png"
+                }
+            ]
+        },
+        {
+            "name": "Report damage",
+            "short_name": "Damage",
+            "description": "Record a unit's damage",
+            "url": "./?action=report-damage",
+            "icons": [
+                {
+                    "src": "icons/icon-96.png",
+                    "sizes": "96x96",
+                    "type": "image/png"
+                }
+            ]
+        },
+        {
+            "name": "Decision inbox",
+            "short_name": "Inbox",
+            "description": "What is waiting for a decision",
+            "url": "./?action=inbox",
+            "icons": [
+                {
+                    "src": "icons/icon-96.png",
+                    "sizes": "96x96",
+                    "type": "image/png"
+                }
+            ]
+        },
+        {
+            "name": "Units",
+            "short_name": "Units",
+            "description": "The unit database",
+            "url": "./?action=units",
+            "icons": [
+                {
+                    "src": "icons/icon-96.png",
+                    "sizes": "96x96",
+                    "type": "image/png"
+                }
+            ]
         }
     ]
 }

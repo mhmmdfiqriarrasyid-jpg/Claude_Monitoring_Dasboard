@@ -149,7 +149,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.11.5';
+const APP_VERSION = 'v2.11.6';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -899,6 +899,7 @@ const MODAL_CLOSERS = {
     accessModal:          'closeAccessModal',
     userNameModal:        'closeUserNameModal',
     authDeleteModal:      'closeAuthDeleteModal',
+    iosInstallModal:      'closeIosInstall',
     teamMembersModal:     'closeTeamMembersModal',
     workLogModal:         'closeWorkLogModal',
     leaveModal:           'closeLeaveModal',
@@ -1359,6 +1360,101 @@ function reloadForUpdate() {
     if (_updateWatch) { clearInterval(_updateWatch); _updateWatch = null; }
     _swRefreshing = true;
     appReload();
+}
+
+
+// ============================================================
+// INSTALL AS AN APP (2.11.6)
+// ------------------------------------------------------------
+// The dashboard is a PWA. Chrome/Edge (Android, Windows) offer their own
+// install prompt, which is caught and fired from "Install app"; Safari on
+// iPhone has none, so the steps are shown instead. Nothing is offered once it
+// already runs installed. The launcher's long-press shortcuts arrive as
+// ?action=… and are carried out once the account is signed in.
+// ============================================================
+let _installPrompt = null;
+const INSTALL_DISMISS_KEY = 'installBannerDismissedAt';
+
+function isStandalone() {
+    return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+}
+function isIos() {
+    const ua = navigator.userAgent || '';
+    return /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+}
+function canOfferInstall() { return !isStandalone() && (!!_installPrompt || isIos()); }
+function syncInstallUi() {
+    const item = document.getElementById('installMenuItem');
+    if (item) item.hidden = !canOfferInstall();
+    const banner = document.getElementById('installBanner');
+    if (!banner) return;
+    let dismissed = 0;
+    try { dismissed = Number(localStorage.getItem(INSTALL_DISMISS_KEY)) || 0; } catch (_) {}
+    const recent = Date.now() - dismissed < 30 * 86400000;
+    const signedIn = !document.body.classList.contains('auth-blocked') && !!currentUser;
+    const phone = window.matchMedia && matchMedia('(max-width: 900px)').matches;
+    banner.hidden = !(canOfferInstall() && signedIn && phone && !recent);
+}
+function dismissInstallBanner() {
+    try { localStorage.setItem(INSTALL_DISMISS_KEY, String(Date.now())); } catch (_) {}
+    syncInstallUi();
+}
+async function installApp() {
+    if (_installPrompt) {
+        const p = _installPrompt;
+        _installPrompt = null;
+        try {
+            await p.prompt();
+            const choice = await p.userChoice;
+            if (choice && choice.outcome === 'accepted') showToast('Installing OT Dashboard…', 'success');
+        } catch (_) {}
+        syncInstallUi();
+        return;
+    }
+    if (isIos()) { document.getElementById('iosInstallModal').classList.add('open'); return; }
+    showToast('Use your browser menu → "Install app" or "Add to Home screen"', 'info');
+}
+function closeIosInstall() {
+    document.getElementById('iosInstallModal').classList.remove('open');
+    dismissInstallBanner();
+}
+window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();          // offered from our own button instead
+    _installPrompt = e;
+    syncInstallUi();
+});
+window.addEventListener('appinstalled', () => {
+    _installPrompt = null;
+    try { localStorage.setItem(INSTALL_DISMISS_KEY, String(Date.now())); } catch (_) {}
+    syncInstallUi();
+});
+
+// Launcher shortcuts (manifest "shortcuts") and links like ./?action=inbox.
+const LAUNCH_ACTIONS = {
+    'add-report':    () => { navigateTo('team'); if (currentView === 'team') { switchTeamTab('worklog'); showAddWorkLogForm(); } },
+    'report-damage': () => { navigateTo('damage'); if (currentView === 'damage') showAddDamageForm(); },
+    'inbox':         () => navigateTo('leader'),
+    'units':         () => navigateTo('editUnits')
+};
+let _launchAction = (() => {
+    try { return new URLSearchParams(location.search).get('action') || ''; } catch (_) { return ''; }
+})();
+// Once signed in: wait until the records have arrived (the report form needs
+// the member list), then carry it out once and tidy the address bar.
+function runLaunchAction() {
+    const act = _launchAction;
+    if (!act) return;
+    _launchAction = '';
+    try { history.replaceState(history.state, '', location.pathname + location.hash); } catch (_) {}
+    const fn = LAUNCH_ACTIONS[act];
+    if (!fn) return;
+    let tries = 0;
+    const go = () => {
+        const ready = (typeof _cloudReadyFired !== 'undefined' && _cloudReadyFired) || tries >= 20;
+        if (!ready) { tries++; setTimeout(go, 300); return; }
+        try { fn(); } catch (e) { console.warn('[launch] action failed:', act, e); }
+    };
+    setTimeout(go, 300);
 }
 
 function registerServiceWorker() {
@@ -12884,6 +12980,8 @@ function setupAuth() {
         if (await protectDeviceForScope(user.uid)) return;
         watchOwnUserDoc(user.uid);
         maybeInitCloudSync();
+        syncInstallUi();
+        runLaunchAction();
     });
 }
 
