@@ -152,7 +152,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.12.1';
+const APP_VERSION = 'v2.12.2';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -18304,7 +18304,9 @@ function populateWarehouseFilters() {
 // file.storage says where an upload lives: 'firestore' now; 'storage' is the
 // slot for Cloud Storage once the project is on Blaze (loadLearningPdfBytes).
 // PDFs are drawn with PDF.js (vendor/pdfjs), loaded on first use, because
-// phones (Android) do not show a PDF inside a page.
+// phones (Android) do not show a PDF inside a page. E-books (EPUB, MOBI,
+// AZW3 — 2.12.2) are shown with foliate-js (vendor/foliate), whose book
+// frames are sandboxed without scripts, so a book cannot run code here.
 // ============================================================
 let learningItems = [];
 let cloudLearningUnsub = null;
@@ -18320,6 +18322,16 @@ function applyLearningSnapshot(docs) {
     learningItems = (docs || []).slice().sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
     if (currentView === 'learning') renderLearningView();
 }
+// The kind of an uploaded file, from its first bytes (not its name).
+function detectLearnFormat(bytes, name) {
+    const head = s => String.fromCharCode(...bytes.subarray(s.start, s.end));
+    if (head({ start: 0, end: 5 }) === '%PDF-') return 'pdf';
+    if (head({ start: 0, end: 4 }) === 'PK\u0003\u0004' && /\.epub$/i.test(name || '')) return 'epub';
+    if (bytes.length > 68 && head({ start: 60, end: 68 }) === 'BOOKMOBI') return 'mobi';
+    return '';
+}
+const LEARN_FORMAT_LABEL = { pdf: 'PDF', epub: 'EPUB', mobi: 'MOBI' };
+function learnFormatOf(item) { return (item && item.file && item.file.format) || 'pdf'; }
 function lcFmtSize(n) {
     n = Number(n) || 0;
     return n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
@@ -18356,10 +18368,11 @@ function renderLearningView() {
     const canEdit = canEditLearning();
     grid.innerHTML = rows.map(i => {
         const up = i.source === 'upload';
-        const meta = up ? `PDF · ${lcFmtSize(i.file && i.file.size)}` : (driveFileId(i.url) ? 'Google Drive' : 'Link');
+        const fmt = LEARN_FORMAT_LABEL[learnFormatOf(i)] || 'PDF';
+        const meta = up ? `${fmt} · ${lcFmtSize(i.file && i.file.size)}` : (driveFileId(i.url) ? 'Google Drive' : 'Link');
         return `<article class="lc-item">
             <button type="button" class="lc-item__open" onclick="openLearningItem(${jsArg(i.id)})" aria-label="Open ${escapeHtml(i.title)}">
-                <span class="lc-item__icon lc-item__icon--${up ? 'pdf' : 'link'}" aria-hidden="true">${up ? 'PDF' : '↗'}</span>
+                <span class="lc-item__icon lc-item__icon--${up ? learnFormatOf(i) : 'link'}" aria-hidden="true">${up ? fmt : '↗'}</span>
                 <span class="lc-item__body">
                     <span class="lc-item__cat">${escapeHtml(i.category || 'General')}${(i.createdAt || 0) > week ? ' <span class="lc-new">New</span>' : ''}</span>
                     <strong class="lc-item__title">${escapeHtml(i.title)}</strong>
@@ -18473,15 +18486,16 @@ async function saveLearningItem(event) {
         delete rec.file;
     } else {
         rec.url = '';
-        if (!file && !(existing && existing.file)) { showToast('Choose a PDF file', 'warning'); return; }
+        if (!file && !(existing && existing.file)) { showToast('Choose a file', 'warning'); return; }
         if (file) {
-            if (!/pdf$/i.test(file.type || '') && !/\.pdf$/i.test(file.name)) { showToast('Only PDF files', 'warning'); return; }
+            if (!/\.(pdf|epub|mobi|azw3?)$/i.test(file.name)) { showToast('Only PDF, EPUB, MOBI or AZW3 files', 'warning'); return; }
             if (file.size > LEARN_MAX_BYTES) { showToast(`That file is ${lcFmtSize(file.size)} — the limit is 15 MB. Put it on Google Drive and use Link.`, 'warning'); return; }
             const btn = document.getElementById('lcSaveBtn');
             btn.disabled = true;
             try {
                 const bytes = new Uint8Array(await file.arrayBuffer());
-                if (String.fromCharCode(...bytes.subarray(0, 5)) !== '%PDF-') { showToast('That file is not a valid PDF', 'warning'); return; }
+                const format = detectLearnFormat(bytes, file.name);
+                if (!format) { showToast('That file is not a valid PDF, EPUB or MOBI/AZW3', 'warning'); return; }
                 const fileId = 'f_' + generateId();
                 const chunks = Math.ceil(bytes.length / LEARN_CHUNK_BYTES);
                 for (let n = 0; n < chunks; n++) {
@@ -18491,7 +18505,7 @@ async function saveLearningItem(event) {
                 _lcProgress(100, 'Saving…');
                 _lcBytesCache.set(fileId, bytes);
                 if (existing && existing.file) oldChunks = existing.file;
-                rec.file = { id: fileId, name: file.name, size: bytes.length, chunks, storage: 'firestore' };
+                rec.file = { id: fileId, name: file.name, size: bytes.length, chunks, storage: 'firestore', format };
             } catch (err) {
                 console.error('[learning] upload failed:', err);
                 showToast(err && err.code === 'permission-denied'
@@ -18572,9 +18586,14 @@ function loadPdfJs() {
     });
     return _pdfjsLoading;
 }
-function _lcSetTools(pdf) {
-    ['lcZoomOut', 'lcZoomIn', 'lcDownload'].forEach(id => { document.getElementById(id).hidden = !pdf; });
-    document.getElementById('lcZoomLabel').hidden = !pdf;
+// mode: 'pdf' (zoom), 'book' (pages + text size), or '' (Drive preview).
+function _lcSetTools(mode) {
+    ['lcZoomOut', 'lcZoomIn', 'lcDownload', 'lcZoomLabel'].forEach(id => { document.getElementById(id).hidden = !mode; });
+    ['lcPrev', 'lcNext'].forEach(id => { document.getElementById(id).hidden = mode !== 'book'; });
+    document.getElementById('lcZoomOut').title = mode === 'book' ? 'Smaller text' : 'Zoom out';
+    document.getElementById('lcZoomIn').title = mode === 'book' ? 'Larger text' : 'Zoom in';
+    document.getElementById('lcZoomOut').textContent = mode === 'book' ? 'A−' : '−';
+    document.getElementById('lcZoomIn').textContent = mode === 'book' ? 'A+' : '+';
 }
 async function openLearningItem(id) {
     const i = learningItems.find(x => x.id === id);
@@ -18583,16 +18602,19 @@ async function openLearningItem(id) {
         const fid = driveFileId(i.url);
         if (!fid) { window.open(i.url, '_blank', 'noopener'); return; }
         document.getElementById('lcViewerTitle').textContent = i.title;
-        _lcSetTools(false);
+        _lcSetTools('');
         document.getElementById('lcViewerBody').innerHTML = `<iframe class="lc-frame" src="https://drive.google.com/file/d/${encodeURIComponent(fid)}/preview" title="${escapeHtml(i.title)}" allow="autoplay"></iframe>
             <p class="lc-hint">Not showing? <a href="${escapeHtml(i.url)}" target="_blank" rel="noopener">Open it in Google Drive</a> — the file must be shared with your Google account or "anyone with the link".</p>`;
         document.getElementById('lcViewer').classList.add('open');
         return;
     }
     const gen = ++_lcRenderGen;
-    _lcDoc = null; _lcBytes = null; _lcName = (i.file && i.file.name) || `${i.title}.pdf`;
+    _lcDoc = null; _lcBytes = null; _lcBook = null; _lcName = (i.file && i.file.name) || `${i.title}.pdf`;
     document.getElementById('lcViewerTitle').textContent = i.title;
-    _lcSetTools(false);
+    document.getElementById('lcZoomLabel').textContent = '';
+    _lcFont = 100;
+    _lcSetTools('');
+    if (learnFormatOf(i) !== 'pdf') { openLearningBook(i, gen); return; }
     const body = document.getElementById('lcViewerBody');
     body.innerHTML = '<p class="lc-loading" id="lcLoading">Opening…</p>';
     document.getElementById('lcViewer').classList.add('open');
@@ -18608,7 +18630,7 @@ async function openLearningItem(id) {
         const first = await _lcDoc.getPage(1);
         const vw = first.getViewport({ scale: 1 }).width;
         _lcScale = Math.max(0.5, Math.min(2, (body.clientWidth - 24) / vw));
-        _lcSetTools(true);
+        _lcSetTools('pdf');
         await _lcRender(gen);
     } catch (err) {
         console.error('[learning] open failed:', err);
@@ -18633,14 +18655,72 @@ async function _lcRender(gen) {
         await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null }).promise;
     }
 }
+// ---- E-books: EPUB / MOBI / AZW3 with foliate-js (2.12.2) ----
+let _lcBook = null, _lcFont = 100;
+const LEARN_MIME = { pdf: 'application/pdf', epub: 'application/epub+zip', mobi: 'application/x-mobipocket-ebook' };
+function _lcBookCss() {
+    return `html { color-scheme: light; } body { font-size: ${_lcFont}% !important; line-height: 1.55; }
+        img, svg { max-width: 100%; height: auto; }`;
+}
+async function openLearningBook(item, gen) {
+    const body = document.getElementById('lcViewerBody');
+    body.innerHTML = '<p class="lc-loading" id="lcLoading">Opening…</p>';
+    document.getElementById('lcViewer').classList.add('open');
+    try {
+        const [, bytes] = await Promise.all([import('./vendor/foliate/view.js'), loadLearningPdfBytes(item, p => {
+            const el = document.getElementById('lcLoading'); if (el) el.textContent = `Loading ${Math.round(p * 100)}%…`;
+        })]);
+        if (gen !== _lcRenderGen) return;
+        _lcBytes = bytes;
+        body.innerHTML = '';
+        body.classList.add('lc-viewer__body--book');
+        const view = document.createElement('foliate-view');
+        view.className = 'lc-book';
+        body.appendChild(view);
+        await view.open(new File([bytes], (item.file && item.file.name) || 'book.epub', { type: LEARN_MIME[learnFormatOf(item)] || '' }));
+        if (gen !== _lcRenderGen) return;
+        _lcBook = view;
+        view.renderer.setAttribute('flow', 'paginated');
+        view.renderer.setAttribute('max-inline-size', '720px');
+        view.renderer.setStyles?.(_lcBookCss());
+        view.addEventListener('relocate', e => {
+            const f = e.detail && typeof e.detail.fraction === 'number' ? e.detail.fraction : null;
+            if (f != null) document.getElementById('lcZoomLabel').textContent = `${Math.round(f * 100)}%`;
+        });
+        document.getElementById('lcZoomLabel').textContent = '0%';
+        _lcSetTools('book');
+        await view.renderer.next();
+    } catch (err) {
+        console.error('[learning] e-book open failed:', err);
+        if (gen === _lcRenderGen) body.innerHTML = `<p class="lc-loading">Could not open this e-book${navigator.onLine ? ' — it may be protected (DRM) or damaged' : ' — it needs a signal the first time'}.</p>`;
+    }
+}
+function lcTurn(dir) {
+    if (!_lcBook) return;
+    if (dir < 0) _lcBook.goLeft(); else _lcBook.goRight();
+}
+document.addEventListener('keydown', e => {
+    if (!_lcBook || !document.getElementById('lcViewer').classList.contains('open')) return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); lcTurn(-1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); lcTurn(1); }
+});
 function lcZoom(dir) {
+    if (_lcBook) {
+        _lcFont = Math.max(70, Math.min(200, _lcFont + dir * 10));
+        const book = _lcBook, at = book.lastLocation && book.lastLocation.cfi;
+        book.renderer.setStyles?.(_lcBookCss());
+        // The pages are re-laid out, but the scroll is left between two of
+        // them: go back to where the reader was, on a page boundary.
+        if (at) setTimeout(() => { if (_lcBook === book) book.goTo(at).catch(() => {}); }, 250);
+        return;
+    }
     if (!_lcDoc) return;
     _lcScale = Math.max(0.5, Math.min(3, Math.round((_lcScale + dir * 0.25) * 100) / 100));
     _lcRender(++_lcRenderGen);
 }
 function lcDownload() {
     if (!_lcBytes) return;
-    const url = URL.createObjectURL(new Blob([_lcBytes], { type: 'application/pdf' }));
+    const url = URL.createObjectURL(new Blob([_lcBytes], { type: 'application/octet-stream' }));
     const a = document.createElement('a');
     a.href = url; a.download = _lcName; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
@@ -18648,7 +18728,9 @@ function lcDownload() {
 function closeLearningViewer() {
     _lcRenderGen++;
     if (_lcDoc) { try { _lcDoc.destroy(); } catch (_) {} }
-    _lcDoc = null;
+    if (_lcBook) { try { _lcBook.close?.(); } catch (_) {} }
+    _lcDoc = null; _lcBook = null;
+    document.getElementById('lcViewerBody').classList.remove('lc-viewer__body--book');
     document.getElementById('lcViewer').classList.remove('open');
     document.getElementById('lcViewerBody').innerHTML = '';
 }

@@ -50,7 +50,7 @@ const { launch, BASE_URL } = require('./_env');
     await page.evaluate(() => { showAddLearningForm(); saveLearningItem({ preventDefault() {} }); });
     t('judul wajib', await page.evaluate(() => __toasts.pop()), 'Give the material a title');
     await page.evaluate(() => { document.getElementById('lcTitle').value = 'StarFire 7000 — calibration'; saveLearningItem({ preventDefault() {} }); });
-    t('file wajib untuk upload', await page.evaluate(() => __toasts.pop()), 'Choose a PDF file');
+    t('file wajib untuk upload', await page.evaluate(() => __toasts.pop()), 'Choose a file');
     await page.setInputFiles('#lcFile', path.join(__dirname, 'fixtures', 'learning_sample.pdf'));
     await page.evaluate(() => saveLearningItem({ preventDefault() {} }));
     await page.waitForTimeout(300);
@@ -66,6 +66,25 @@ const { launch, BASE_URL } = require('./_env');
     await page.evaluate(() => lcZoom(1)); await page.waitForTimeout(300);
     t('zoom', await page.evaluate(() => /%$/.test(document.getElementById('lcZoomLabel').textContent)), true);
     await page.evaluate(() => closeLearningViewer());
+
+    // e-book: EPUB dan MOBI (2.12.2) — dikenali dari isi file, dibuka dengan foliate-js
+    for (const [file, fmt] of [['learning_sample.epub', 'epub'], ['learning_sample.mobi', 'mobi']]) {
+        await page.evaluate(f => { showAddLearningForm(); document.getElementById('lcTitle').value = 'Book ' + f; }, fmt);
+        await page.setInputFiles('#lcFile', path.join(__dirname, 'fixtures', file));
+        await page.evaluate(() => saveLearningItem({ preventDefault() {} }));
+        await page.waitForTimeout(200);
+        t(`${fmt.toUpperCase()}: format dikenali`, await page.evaluate(() => __items[__items.length - 1].file.format), fmt);
+        await page.evaluate(() => { _lcBytesCache.clear(); openLearningItem(learningItems[0].id); });
+        await page.waitForFunction(() => /^[1-9]\d*%$/.test(document.getElementById('lcZoomLabel').textContent) && !!document.querySelector('foliate-view'), null, { timeout: 15000 }).catch(() => {});
+        await page.waitForTimeout(800);   // let the first page settle, as a reader would
+        const before = await page.evaluate(() => document.getElementById('lcZoomLabel').textContent);
+        await page.evaluate(() => lcTurn(1)); await page.waitForTimeout(1500);
+        const after = await page.evaluate(() => document.getElementById('lcZoomLabel').textContent);
+        t(`${fmt.toUpperCase()}: buku terbuka dan › memajukan bacaan`, [!!before, parseInt(after) > parseInt(before)], [true, true]);
+        t(`${fmt.toUpperCase()}: tombol halaman tampil`, await page.evaluate(() => !document.getElementById('lcPrev').hidden), true);
+        await page.evaluate(() => closeLearningViewer());
+    }
+    t('script di dalam buku tidak berjalan (iframe tanpa allow-scripts)', await page.evaluate(() => !!window.__bookScriptRan), false);
 
     // link Google Drive dibuka di dalam halaman
     await page.evaluate(() => {
@@ -85,11 +104,12 @@ const { launch, BASE_URL } = require('./_env');
     // filter & cari
     t('filter kategori', await page.evaluate(() => { _lcCategory = 'Safety (K3)'; renderLearningView(); const n = document.querySelectorAll('.lc-item').length; _lcCategory = ''; renderLearningView(); return n; }), 0);
     t('cari judul', await page.evaluate(() => { document.getElementById('lcSearch').value = 'starfire'; renderLearningView(); const n = document.querySelectorAll('.lc-item').length; document.getElementById('lcSearch').value = ''; renderLearningView(); return n; }), 1);
+    t('kartu menyebut formatnya', await page.evaluate(() => [...document.querySelectorAll('.lc-item__icon')].map(x => x.textContent).sort()), ['EPUB', 'MOBI', 'PDF', '↗']);
 
     // hapus: potongan ikut terhapus
-    await page.evaluate(() => deleteLearningItem(learningItems.find(i => i.source === 'upload').id));
+    const goneFile = await page.evaluate(() => { const it = learningItems.find(i => i.source === 'upload'); deleteLearningItem(it.id); return it.file.id; });
     await page.waitForTimeout(200);
-    t('hapus: potongan file ikut terhapus', await page.evaluate(() => Object.keys(__chunks).length), 0);
+    t('hapus: potongan file itu ikut terhapus', await page.evaluate(f => Object.keys(__chunks).filter(k => k.startsWith(f + '__')).length, goneFile), 0);
 
     // akses: pembaca tanpa tombol tambah/edit
     await page.evaluate(() => { currentUserDoc = { uid: 'v', role: 'staff', status: 'active', access: {} }; applyRoleGating(); renderLearningView(); });

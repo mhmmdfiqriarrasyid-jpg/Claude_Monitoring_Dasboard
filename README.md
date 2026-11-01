@@ -166,6 +166,13 @@ disiapkan untuk Cloud Storage saat pindah ke Blaze (`loadLearningPdfBytes`).
 PDF digambar dengan PDF.js lokal (`vendor/pdfjs`, dimuat saat dibuka,
 `isEvalSupported: false`) supaya juga tampil di HP Android. Kategori =
 master list `learnCategory` (kosong = 5 kategori bawaan).
+**E-book (2.12.2):** upload juga menerima **EPUB, MOBI dan AZW3** (format
+dikenali dari isi file, `file.format`). Dibuka dengan foliate-js lokal
+(`vendor/foliate`, dimuat saat dibuka) — tombol ‹ › (dan panah keyboard),
+ukuran huruf A−/A+, persentase bacaan. Iframe buku di-sandbox **tanpa**
+`allow-scripts`, jadi script di dalam buku tidak bisa berjalan; perubahan
+lokal pada foliate ditandai "OT Dashboard" (lihat `vendor/README.md`).
+Buku ber-DRM (Kindle yang dibeli) tidak bisa dibuka.
 
 **Satu akun hanya boleh aktif di satu perangkat.** Login terbaru menang;
 perangkat lain keluar sendiri.

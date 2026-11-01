@@ -10815,3 +10815,13 @@ body:has(.modal-overlay.open) .install-banner { display: none; }
 .lc-manage-link { margin-left: 8px; padding: 0; border: 0; background: none; font: inherit; font-size: 12px; font-weight: 600;
     text-transform: none; letter-spacing: 0; color: var(--accent-text, var(--accent)); cursor: pointer; }
 .lc-manage-link:hover { text-decoration: underline; }
+
+/* E-books (2.12.2) */
+.lc-item__icon--epub { background: #7A5AF8; }
+.lc-item__icon--mobi { background: #F79009; }
+.lc-viewer__body--book { padding: 0; background: #fff; align-items: stretch; }
+.lc-book { display: block; flex: 1 1 auto; width: 100%; height: 100%; min-height: 60vh; }
+/* The reader opens without the scale-in: the book measures its pages when
+   it loads, and a card still scaled to 95% gave pages 2% too narrow that
+   drifted sideways a little more on every page turn. */
+#lcViewer .modal-card { animation: none; }

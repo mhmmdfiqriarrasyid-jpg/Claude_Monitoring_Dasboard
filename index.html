@@ -10,7 +10,7 @@
          2.11.2) from Google; the app talks only to Google/Firebase APIs and
          EmailJS. 'unsafe-inline' for scripts is
          still needed by the onclick="" attributes in this page. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https://www.gstatic.com; connect-src 'self' https://*.googleapis.com https://www.gstatic.com https://www.google.com https://api.emailjs.com data: blob:; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com https://drive.google.com; worker-src 'self'; manifest-src 'self'; media-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com; style-src 'self' 'unsafe-inline' blob:; font-src 'self' data: blob:; img-src 'self' data: blob: https://www.gstatic.com; connect-src 'self' https://*.googleapis.com https://www.gstatic.com https://www.google.com https://api.emailjs.com data: blob:; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com https://drive.google.com blob:; worker-src 'self'; manifest-src 'self'; media-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'">
     <meta name="referrer" content="strict-origin-when-cross-origin">
 
     <!-- Fonts & Icons (self-hosted, see vendor/README.md) -->
@@ -3299,13 +3299,13 @@
                     <div class="form-group">
                         <span class="form-label">Source</span>
                         <div class="seg lc-source" role="radiogroup" aria-label="Source">
-                            <label><input type="radio" name="lcSource" value="upload" checked onchange="syncLearningSource()"> Upload PDF</label>
+                            <label><input type="radio" name="lcSource" value="upload" checked onchange="syncLearningSource()"> Upload file</label>
                             <label><input type="radio" name="lcSource" value="link" onchange="syncLearningSource()"> Link</label>
                         </div>
                     </div>
                     <div class="form-group full-width" id="lcUploadGroup">
-                        <label class="form-label" for="lcFile">PDF file <span class="form-optional">(up to 15 MB — larger files: put them on Google Drive and use Link)</span></label>
-                        <input class="form-input" type="file" id="lcFile" accept="application/pdf,.pdf" onchange="syncLearningFileInfo()">
+                        <label class="form-label" for="lcFile">File <span class="form-optional">(PDF, EPUB, MOBI or AZW3 — up to 15 MB; larger files: put them on Google Drive and use Link)</span></label>
+                        <input class="form-input" type="file" id="lcFile" accept="application/pdf,.pdf,application/epub+zip,.epub,.mobi,.azw3,.azw" onchange="syncLearningFileInfo()">
                         <span class="lc-fileinfo" id="lcFileInfo"></span>
                     </div>
                     <div class="form-group full-width" id="lcLinkGroup" style="display:none">
@@ -3334,6 +3334,8 @@
         <div class="modal-header lc-viewer__head">
             <h3 id="lcViewerTitle">—</h3>
             <div class="lc-viewer__tools">
+                <button type="button" class="btn btn-secondary btn-sm" id="lcPrev" onclick="lcTurn(-1)" aria-label="Previous page" title="Previous page (←)">‹</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="lcNext" onclick="lcTurn(1)" aria-label="Next page" title="Next page (→)">›</button>
                 <button type="button" class="btn btn-secondary btn-sm" id="lcZoomOut" onclick="lcZoom(-1)" aria-label="Zoom out" title="Zoom out">−</button>
                 <span class="lc-zoom" id="lcZoomLabel">100%</span>
                 <button type="button" class="btn btn-secondary btn-sm" id="lcZoomIn" onclick="lcZoom(1)" aria-label="Zoom in" title="Zoom in">+</button>
