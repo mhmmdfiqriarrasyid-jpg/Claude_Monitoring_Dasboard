@@ -4,6 +4,9 @@ const { launch, BASE_URL } = require('./_env');
     const page = await b.newPage({ viewport: { width: 1440, height: 900 } });
     const errs = [];
     page.on('pageerror', e => errs.push(e.message.split('\n')[0]));
+    // Chart.js is self-hosted since 2.11.1; block it here so this still
+    // checks that the app keeps working when the chart library fails to load.
+    await page.route('**/vendor/chart.umd.js', r => r.abort());
     await page.goto(BASE_URL + '/index.html', { waitUntil: 'load' });
     await page.waitForTimeout(900);
     await page.addScriptTag({ content: `(() => {
@@ -19,7 +22,7 @@ const { launch, BASE_URL } = require('./_env');
       filteredData=[...globalData];
       teamMembers=[]; teamShifts=[]; workLogs=[];
 
-      t('Chart.js memang tidak ada di sandbox', typeof window.Chart, 'undefined');
+      t('Chart.js sengaja tidak dimuat', typeof window.Chart, 'undefined');
 
       let threw=null;
       try { onDataLoaded(); } catch(e) { threw = e.message; }
@@ -61,4 +64,5 @@ const { launch, BASE_URL } = require('./_env');
     console.log(`\n${res.filter(r=>r.pass).length}/${res.length} lulus`);
     console.log('PAGE ERRORS:', errs.length?errs:'none');
     await b.close();
+    process.exit(res.every(r => r.pass) ? 0 : 1);
 })();
