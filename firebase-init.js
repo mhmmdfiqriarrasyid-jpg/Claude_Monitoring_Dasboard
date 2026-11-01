@@ -82,7 +82,7 @@ const app = initializeApp(firebaseConfig);
 // its SECRET key under Firebase console -> App Check, put its SITE key
 // (public) here, deploy, and only then press "Enforce" in the console once
 // the metrics show nearly all requests verified.
-const APP_CHECK_SITE_KEY = '';
+const APP_CHECK_SITE_KEY = '6LdyDwsuAAAAABX7mliizaCC7z99eHVXRFzfxFpx';   // public reCAPTCHA v3 site key
 if (APP_CHECK_SITE_KEY) {
     try {
         const { initializeAppCheck, ReCaptchaV3Provider } =
