@@ -149,7 +149,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.11.0';
+const APP_VERSION = 'v2.11.1';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -660,7 +660,7 @@ function dashTargetFor(units) {
 }
 
 // ---- Chart.js Global Config (HD rendering on all screens) ----
-// Chart.js is loaded from a CDN, which can be blocked or simply unreachable in
+// Chart.js (vendor/chart.umd.js) can still fail to load — blocked or simply unreachable in
 // the field. Touching it unguarded here would throw at top level and abort the
 // rest of this file: every `const` below would stay uninitialised while the
 // hoisted function declarations still look alive, so the app would fail in a
@@ -24058,7 +24058,7 @@ function loadSheetJs() {
     if (window.XLSX) return Promise.resolve(window.XLSX);
     if (!_xlsxLoading) _xlsxLoading = new Promise((resolve, reject) => {
         const s = document.createElement('script');
-        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        s.src = 'vendor/xlsx.full.min.js';   // xlsx@0.18.5, self-hosted (vendor/README.md)
         s.onload = () => window.XLSX ? resolve(window.XLSX) : reject(new Error('XLSX missing'));
         s.onerror = () => { _xlsxLoading = null; reject(new Error('XLSX failed to load')); };
         document.head.appendChild(s);

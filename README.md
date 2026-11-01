@@ -137,6 +137,16 @@ persetujuan dan jam) dan siapa yang belum; yang cuti/sakit disetujui atau
 shift libur dihitung "Not expected". Mengikuti filter Company; laporan
 draf tidak dihitung; disembunyikan untuk akses Daily Report "own".
 
+**Library & CSP (2.11.1):** Chart.js, PapaParse, EmailJS, SheetJS, Font
+Awesome dan font Poppins/Open Sans disimpan di `vendor/` (salinan persis
+dari paket npm resmi, versi terkunci — lihat `vendor/README.md`), bukan
+dari CDN pihak ketiga. `index.html` memasang Content-Security-Policy:
+script hanya dari situs ini + `www.gstatic.com` (Firebase), koneksi hanya
+ke `*.googleapis.com` dan `api.emailjs.com`, tanpa plugin/objek.
+`'unsafe-inline'` masih perlu untuk atribut `onclick`. Menambah library
+atau layanan luar baru = tambahkan juga ke CSP, atau browser akan
+memblokirnya (`tests/csp_test.js` memeriksa ini).
+
 **Satu akun hanya boleh aktif di satu perangkat.** Login terbaru menang;
 perangkat lain keluar sendiri.
 

@@ -5,16 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Operation Technology Dashboard</title>
 
-    <!-- Fonts & Icons -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&family=Poppins:wght@500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Content Security Policy (2.11.1). Scripts, styles and fonts come
+         only from this site, plus Firebase from Google; the app talks only
+         to Google/Firebase APIs and EmailJS. 'unsafe-inline' for scripts is
+         still needed by the onclick="" attributes in this page. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self' https://*.googleapis.com https://www.gstatic.com https://api.emailjs.com data: blob:; frame-src https://*.firebaseapp.com; worker-src 'self'; manifest-src 'self'; media-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
 
-    <!-- Libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <!-- Fonts & Icons (self-hosted, see vendor/README.md) -->
+    <link rel="stylesheet" href="vendor/fonts.css">
+    <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
+
+    <!-- Libraries (self-hosted, pinned versions) -->
+    <script src="vendor/chart.umd.js"></script>
+    <script src="vendor/papaparse.min.js"></script>
+    <script src="vendor/email.min.js"></script>
 
     <!-- PWA -->
     <link rel="manifest" href="manifest.webmanifest">

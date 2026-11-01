@@ -2,7 +2,7 @@
    Network-first for the app shell (so deploys show up on reload), cache-first
    for static assets, network-only for Firebase live endpoints. */
 
-const CACHE_NAME = 'tractor-monitor-2.11.0';
+const CACHE_NAME = 'tractor-monitor-2.11.1';
 
 // Same-origin core files — always revalidated from network first so a new
 // deploy is picked up on the next reload (falls back to cache when offline).
@@ -16,14 +16,22 @@ const CORE = [
     './icons/icon-32.png',
     './icons/icon-192.png',
     './icons/apple-touch-icon.png',
-    './manifest.webmanifest'
-];
-
-// Optional third-party libs — best-effort precache; served cache-first.
-const CDN = [
-    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
-    'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
-    'https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js'
+    './manifest.webmanifest',
+    // Libraries and fonts, self-hosted since 2.11.1 (vendor/README.md).
+    // vendor/xlsx.full.min.js is cached the first time an Excel is imported.
+    './vendor/chart.umd.js',
+    './vendor/papaparse.min.js',
+    './vendor/email.min.js',
+    './vendor/fonts.css',
+    './vendor/fontawesome/css/all.min.css',
+    './vendor/fontawesome/webfonts/fa-solid-900.woff2',
+    './vendor/fontawesome/webfonts/fa-regular-400.woff2',
+    './vendor/fonts/poppins-latin-500-normal.woff2',
+    './vendor/fonts/poppins-latin-600-normal.woff2',
+    './vendor/fonts/open-sans-latin-400-normal.woff2',
+    './vendor/fonts/open-sans-latin-500-normal.woff2',
+    './vendor/fonts/open-sans-latin-600-normal.woff2',
+    './vendor/fonts/open-sans-latin-700-normal.woff2'
 ];
 
 // Same-origin paths served network-first (kept fresh). Everything else
@@ -57,9 +65,8 @@ self.addEventListener('install', event => {
         // skips the browser's HTTP cache (GitHub Pages sends max-age=600), so
         // a fresh index.html is never paired with the previous script.js. If
         // any core file fails, install fails and the old worker — with a
-        // complete cache — stays in charge. CDN libraries stay best-effort.
+        // complete cache — stays in charge.
         await cache.addAll(CORE.map(u => new Request(u, { cache: 'reload' })));
-        await Promise.allSettled(CDN.map(u => cache.add(u)));
     })());
     self.skipWaiting();
 });
