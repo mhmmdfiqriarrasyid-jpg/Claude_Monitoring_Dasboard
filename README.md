@@ -428,6 +428,15 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   menampilkan galeri foto. Menghapus item ikut menghapus fotonya. Rules:
   baca = lihat Warehouse, tulis = ubah Warehouse, maksimal ~400 KB per foto.
   **Perlu publish ulang `firestore.rules`.**
+- **Kategori device 2.12.3 (dijaga `tests/warehouse_test.js` dan 2 skenario
+  di `tests/rules_test.js`).** Kolom *Type* device sekarang bernama
+  **Category** dan punya master list `deviceType` (Master lists → Device
+  Categories, juga lewat tautan *Manage categories* di form). Kosong = bebas
+  ketik seperti dulu; terisi = hanya kategori di daftar yang diterima
+  (ejaan disamakan), Rename ikut mengubah semua device. Di bawah tab
+  Warehouse ada satu baris penjelasan: Devices = per buah dengan nomor seri,
+  Stock items = dihitung jumlahnya. Rules: daftar ditulis oleh editor
+  Warehouse. **Perlu publish ulang `firestore.rules`.**
 - **Riak air di halaman masuk v176.** Panel teal di halaman Sign in dan
   halaman menunggu persetujuan menampilkan riak air yang mengikuti kursor
   (atau jari di HP); klik/tap membuat riak yang lebih besar. Simulasi

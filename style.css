@@ -10825,3 +10825,9 @@ body:has(.modal-overlay.open) .install-banner { display: none; }
    it loads, and a card still scaled to 95% gave pages 2% too narrow that
    drifted sideways a little more on every page turn. */
 #lcViewer .modal-card { animation: none; }
+
+/* 2.12.3: Warehouse tab explainer + inline "Manage categories" link */
+.wh-tabhint { margin: -6px 0 14px; color: var(--text-secondary, #667085); font-size: 13px; line-height: 1.45; }
+.form-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.link-btn { background: none; border: 0; padding: 0; font: inherit; font-size: 12px; font-weight: 600; color: var(--accent); cursor: pointer; }
+.link-btn:hover { text-decoration: underline; }

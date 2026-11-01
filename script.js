@@ -84,8 +84,8 @@ const LIC_PAID = ['SF-RTK', 'G5 Advance'];
 const LIC_REQ_OPTIONS = { gps: ['', 'SF-1', 'SF-RTK'], display: ['', 'G5 Basic', 'G5 Advance'] };
 let licenseTab = 'stock';
 // Master lists (Site / Brand / Company). An empty list means "anything goes".
-let masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [] };
-const MASTER_KINDS = ['site', 'brand', 'heavyBrand', 'company', 'damageType', 'jobType', 'implGroup', 'learnCategory'];
+let masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [] };
+const MASTER_KINDS = ['site', 'brand', 'heavyBrand', 'company', 'damageType', 'jobType', 'implGroup', 'learnCategory', 'deviceType'];
 const MASTER_DEF = {
     site:    { label: 'Site',    plural: 'Sites',     edit: ['editUnits'],              view: ['editUnits'],
                hint: 'Used by every unit (both groups).' },
@@ -107,6 +107,10 @@ const MASTER_DEF = {
     // 2.12.0: Learning Center categories. Empty = the built-in five.
     learnCategory: { label: 'Learning Category', plural: 'Learning Categories', edit: ['learning'], view: ['learning'],
                hint: 'Categories of the Learning Center. While empty: Precision Agriculture, Heavy Equipment, Safety (K3), Dashboard How-to, General.' },
+    // 2.12.3: Warehouse device categories (the device's "type" field). Empty =
+    // free text with suggestions, as before.
+    deviceType: { label: 'Device Category', plural: 'Device Categories', edit: ['warehouse'], view: ['warehouse'],
+               hint: 'Categories of Warehouse devices (Basestation, Display, Handy Talky, …). While empty, any category can be typed.' },
     jobType: { label: 'Job Type', plural: 'Job Types', edit: ['teamMembers'], view: ['teamMembers'],
                hint: 'Chosen for each paddock in a Daily Report. While the list is empty: Application, Tillage, Harvesting and Planting.' }
 };
@@ -152,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.12.2';
+const APP_VERSION = 'v2.12.3';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -13021,7 +13025,7 @@ function tearDownCloudSync() {
     // What was typed belongs to the account that typed it.
     if (typeof clearUnsent === 'function') clearUnsent();
     licenseRequirements = [];
-    masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [] };
+    masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [] };
     if (cloudDamageComponentsUnsub) { try { cloudDamageComponentsUnsub(); } catch (_) {} cloudDamageComponentsUnsub = null; }
     if (cloudDevicesUnsub) { try { cloudDevicesUnsub(); } catch (_) {} cloudDevicesUnsub = null; }
     if (cloudPurchaseUnsub) { try { cloudPurchaseUnsub(); } catch (_) {} cloudPurchaseUnsub = null; }
@@ -18179,6 +18183,7 @@ function _mergeSuggestions(defaults, values) {
     return [...seen.values()].sort((a, b) => a.localeCompare(b));
 }
 function allDeviceTypes() {
+    if (masterListActive('deviceType')) return _mergeSuggestions(masterLists.deviceType, warehouseDevices.map(d => d.type));
     // Camera AI, Telematic Box and the rest are devices too, but only worth
     // suggesting once heavy equipment exists.
     const defaults = hasHeavyUnits()
@@ -18228,6 +18233,17 @@ function showWarehouseRulesBanner() {
 }
 
 // ---- View shell ----
+// 2.12.3: one line under the tabs saying what belongs where.
+const WH_TAB_HINT = {
+    devices: 'Tracked one by one by serial number — where each device is, which unit it sits on and who holds it.',
+    stock: 'Counted by quantity — consumables and spare parts without a serial number (filters, hoses, cable ties). Record what comes in and goes out; the balance is worked out for you.',
+    vehicles: 'Operational vehicles and their fuel log.'
+};
+function manageDeviceCategories() {
+    if (!canEditMasterList('deviceType')) { showToast('You do not have edit access to the Warehouse', 'warning'); return; }
+    if (document.getElementById('deviceModal')?.classList.contains('open')) closeDeviceModal();
+    openMasterLists('deviceType');
+}
 function switchWarehouseTab(tab) {
     warehouseTab = ['stock', 'vehicles'].includes(tab) ? tab : 'devices';
     renderWarehouseView();
@@ -18247,6 +18263,8 @@ function renderWarehouseView() {
     if (devPanel) devPanel.style.display = (warehouseTab === 'devices') ? '' : 'none';
     if (stkPanel) stkPanel.style.display = (warehouseTab === 'stock') ? '' : 'none';
     if (vehPanel) vehPanel.style.display = (warehouseTab === 'vehicles') ? '' : 'none';
+    const hint = document.getElementById('whTabHint');
+    if (hint) hint.textContent = WH_TAB_HINT[warehouseTab] || '';
     // The page head carries the open tab's actions only.
     document.querySelectorAll('#viewWarehouse .wh-actions').forEach(g => {
         g.style.display = g.dataset.whFor === warehouseTab ? '' : 'none';
@@ -18266,7 +18284,7 @@ function populateWarehouseFilters() {
             values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
         if (keep && sel.querySelector(`option[value="${CSS.escape(keep)}"]`)) sel.value = keep;
     };
-    fill('devTypeFilter', allDeviceTypes(), 'All types');
+    fill('devTypeFilter', allDeviceTypes(), 'All categories');
     fill('devLocationFilter', allWarehouseLocations(), 'All locations');
     fill('stkLocationFilter', allWarehouseLocations(), 'All locations');
     fill('stkItemFilter', allStockItemNames(), 'All items');
@@ -18275,7 +18293,7 @@ function populateWarehouseFilters() {
         const el = document.getElementById(id);
         if (el) el.innerHTML = values.map(v => `<option value="${escapeHtml(v)}"></option>`).join('');
     };
-    dl('deviceTypeList', allDeviceTypes());
+    dl('deviceTypeList', masterListActive('deviceType') ? masterLists.deviceType.slice() : allDeviceTypes());
     dl('warehouseLocationList', allWarehouseLocations());
     dl('devDivisionList', [...new Set(warehouseDevices.map(d => (d.division || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)));
     const past = f => [...new Set(warehouseDevices.flatMap(d => [d[f]].concat((d.allocationHistory || []).map(h => h[f])))
@@ -19730,13 +19748,19 @@ function saveDevice(event) {
             recipientTitle: existing.recipientTitle || '', allocatedAt: existing.allocatedAt || '', returnedAt });
         allocationHistory = allocationHistory.slice(-20);
     }
+    const cat = checkMasterValue('deviceType', document.getElementById('devType').value, before ? before.type : null);
+    if (!cat.ok) {
+        showToast(`Category "${cat.value}" ${masterNotInList('deviceType')}`, 'warning');
+        document.getElementById('devType')?.focus();
+        return;
+    }
     const devId = id || generateDeviceId();
     const photoIds = whPhotoCommit('device', devId);
     const rec = {
         id: devId,
         photoIds,
         sn,
-        type: (document.getElementById('devType').value || '').trim(),
+        type: cat.value,
         brand: (document.getElementById('devBrand').value || '').trim(),
         model: (document.getElementById('devModel').value || '').trim(),
         status,
@@ -24194,19 +24218,21 @@ function masterUsage(kind) {
     if (kind === 'jobType') (workLogs || []).forEach(w => workLogJobs(w).forEach(j => add(j.jobType)));
     if (kind === 'implGroup') globalImplements.forEach(i => add(i.group));
     if (kind === 'learnCategory') learningItems.forEach(i => add(i.category));
+    if (kind === 'deviceType') (warehouseDevices || []).forEach(d => add(d.type));
     return counts;
 }
-const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', heavyBrand: 'unit', company: 'member', damageType: 'damage record', jobType: 'report line', implGroup: 'implement', learnCategory: 'material' };
+const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', heavyBrand: 'unit', company: 'member', damageType: 'damage record', jobType: 'report line', implGroup: 'implement', learnCategory: 'material', deviceType: 'device' };
 
 function applyMasterListsSnapshot(docs) {
     _markLoaded('masterLists');
-    const next = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [] };
+    const next = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [] };
     (docs || []).forEach(d => {
         if (MASTER_KINDS.includes(d.id) && Array.isArray(d.values)) next[d.id] = d.values.map(_toolNorm).filter(Boolean);
     });
     masterLists = next;
     populateMasterDatalists();
     populateDamageTypeOptions();
+    populateWarehouseFilters();
     if (document.getElementById('masterListsModal')?.classList.contains('open')) renderMasterLists();
     if (currentView === 'editUnits') renderEditTable();
 }
@@ -24421,6 +24447,16 @@ function renameMasterValue(v) {
         });
         if (imps.length) { saveImplements(); if (currentView === 'implements') renderImplementsTable(); }
         n = imps.length;
+    } else if (kind === 'deviceType') {
+        if (!requireEdit('warehouse')) return;
+        const recs = warehouseDevices.filter(d => uses(d.type)).map(d => ({ ...d, type: to, updatedAt: Date.now() }));
+        recs.forEach(r => { const i = warehouseDevices.findIndex(x => x.id === r.id); if (i >= 0) warehouseDevices[i] = r; });
+        if (recs.length) {
+            if (window.cloud && window.cloud.saveDevices && !suppressCloudWrites)
+                window.cloud.saveDevices(recs).catch(err => { console.error('[warehouse] category rename failed:', err); showToast('Failed to rename the category on some devices', 'error'); });
+            if (currentView === 'warehouse') { populateWarehouseFilters(); renderWarehouseView(); }
+        }
+        n = recs.length;
     } else if (kind === 'heavyBrand') {
         if (!requireEdit('editUnits')) return;
         const changes = new Map(unitsOfGroup(globalData, 'heavy').filter(u => uses(u.brand)).map(u => [u.id, { brand: to }]));
@@ -24733,7 +24769,7 @@ function dcNotInMasterLists() {
         [...masterUsage(kind).entries()].filter(([v]) => !masterMatch(kind, v)).sort((a, b) => b[1] - a[1]).forEach(([v, n]) => {
             out.push(dc('master-luar', `${MASTER_DEF[kind].label}: ${v}`,
                 `${n} ${MASTER_USED_NOUN[kind]}(s) — not in the ${MASTER_DEF[kind].label} list`,
-                kind === 'brand' || kind === 'implGroup' ? 'implements' : kind === 'company' ? 'team' : kind === 'heavyBrand' ? 'editUnits:heavy' : 'editUnits',
+                kind === 'brand' || kind === 'implGroup' ? 'implements' : kind === 'deviceType' ? 'warehouse' : kind === 'company' ? 'team' : kind === 'heavyBrand' ? 'editUnits:heavy' : 'editUnits',
                 MASTER_MERGE_FIELD[kind] ? { merge: { field: MASTER_MERGE_FIELD[kind], values: [v] } } : {}));
         });
     });

@@ -1931,6 +1931,7 @@
                         aria-controls="whVehiclePanel" onclick="switchWarehouseTab('vehicles')">Vehicles &amp; fuel</button>
             </div>
         </div>
+        <p class="wh-tabhint" id="whTabHint">Tracked one by one by serial number — where each device is, which unit it sits on and who holds it.</p>
 
         <!-- ---------- Devices, tracked by serial number ---------- -->
         <div id="whDevicePanel" role="tabpanel" aria-label="Devices">
@@ -1976,11 +1977,11 @@
                 <div class="adm-filters edit-toolbar">
                     <label class="adm-search">
                         <svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7.5"></circle><path d="m21 21-4.5-4.5"></path></svg>
-                        <input type="search" id="devSearch" aria-label="Search devices" placeholder="Search serial number or type" autocomplete="off" oninput="renderDeviceTable()">
+                        <input type="search" id="devSearch" aria-label="Search devices" placeholder="Search serial number or category" autocomplete="off" oninput="renderDeviceTable()">
                     </label>
-                    <label class="adm-select"><span class="adm-select__label">Type</span>
-                        <select id="devTypeFilter" aria-label="Filter device type" onchange="renderDeviceTable()">
-                            <option value="">All types</option>
+                    <label class="adm-select"><span class="adm-select__label">Category</span>
+                        <select id="devTypeFilter" aria-label="Filter device category" onchange="renderDeviceTable()">
+                            <option value="">All categories</option>
                         </select>
                     </label>
                     <label class="adm-select"><span class="adm-select__label">Location</span>
@@ -3136,9 +3137,10 @@
                                placeholder="Device SN…">
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="devType">Device Type</label>
+                        <label class="form-label form-label-row" for="devType"><span>Category</span>
+                            <button type="button" class="link-btn editonly editonly--warehouse" onclick="manageDeviceCategories()">Manage categories</button></label>
                         <input class="form-input" id="devType" list="deviceTypeList" maxlength="60" autocomplete="off"
-                               placeholder="GPS / Display / Weather Station…">
+                               placeholder="Basestation / Display / Handy Talky…">
                         <datalist id="deviceTypeList"></datalist>
                     </div>
                     <div class="form-group">

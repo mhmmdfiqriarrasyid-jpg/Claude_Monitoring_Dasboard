@@ -538,6 +538,8 @@ async function check(name, p, expectOk) {
     await check('Learning: tanpa akses edit TIDAK bisa menulis potongan', setDoc(doc(as('writer'), 'learningFiles', 'f_9__0'), { id: 'f_9__0', data: 'x' }), false);
     await check('Learning: editor menghapus', deleteDoc(doc(LCE, 'learningItems', 'lc_1')), true);
     await check('Learning Categories: editor menyimpan daftar', setDoc(doc(LCE, 'masterLists', 'learnCategory'), { id: 'learnCategory', values: ['SOP'] }), true);
+    await check('Device Categories: editor warehouse menyimpan daftar', setDoc(doc(as('wh'), 'masterLists', 'deviceType'), { id: 'deviceType', values: ['Basestation'] }), true);
+    await check('Device Categories: pembaca warehouse TIDAK bisa menyimpan', setDoc(doc(as('whv'), 'masterLists', 'deviceType'), { id: 'deviceType', values: ['X'] }), false);
 
     await env.cleanup();
     let pass = 0;

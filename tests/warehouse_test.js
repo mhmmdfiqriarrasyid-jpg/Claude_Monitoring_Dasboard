@@ -313,6 +313,41 @@ const { launch, BASE_URL } = require('./_env');
         t('unit terhubung', [stk.unitId, stk.unitName], ['u_2','JD-5075E-04']);
         t('jenis transaksi tersimpan', stk.txnType, 'OUT');
 
+        // ---------- 2.12.3: kategori device (master list) + keterangan tab ----------
+        switchWarehouseTab('stock');
+        t('keterangan tab Stock', /Counted by quantity/.test(document.getElementById('whTabHint').textContent), true);
+        switchWarehouseTab('devices');
+        t('keterangan tab Devices', /serial number/.test(document.getElementById('whTabHint').textContent), true);
+        t('MASTER_KINDS memuat deviceType', MASTER_KINDS.includes('deviceType'), true);
+        masterLists.deviceType = ['Basestation', 'Display'];
+        populateWarehouseFilters();
+        t('datalist form = daftar kategori', [...document.querySelectorAll('#deviceTypeList option')].map(o => o.value), ['Basestation', 'Display']);
+        t('filter memuat kategori daftar + yang terpakai', [...document.querySelectorAll('#devTypeFilter option')].map(o => o.value).includes('Basestation'), true);
+        let nCat = saved.length;
+        showAddDeviceForm();
+        document.getElementById('devSn').value = 'CAT-0001'; document.getElementById('devType').value = 'Toaster';
+        document.getElementById('devStatus').value = 'warehouse'; onDeviceStatusChange();
+        document.getElementById('devLocation').value = 'Gudang Pusat';
+        saveDevice({ preventDefault() {} });
+        t('kategori di luar daftar ditolak', saved.length, nCat);
+        document.getElementById('devType').value = 'basestation';
+        saveDevice({ preventDefault() {} });
+        const catRec = saved.slice(nCat).find(x => x[0] === 'device');
+        t('kategori dari daftar diterima dengan ejaan daftar', catRec && catRec[1].type, 'Basestation');
+        if (catRec && !warehouseDevices.some(d => d.id === catRec[1].id)) warehouseDevices.push(catRec[1]);
+        t('masterUsage menghitung device', masterUsage('deviceType').get('Basestation') >= 1, true);
+        const savedBulk = [];
+        window.cloud.saveDevices = recs => { savedBulk.push(...recs); return Promise.resolve(); };
+        window.cloud.saveMasterList = () => Promise.resolve();
+        _mlKind = 'deviceType';
+        const _prompt = window.prompt; window.prompt = () => 'Base Station GNSS';
+        renameMasterValue('Basestation');
+        window.prompt = _prompt;
+        t('ganti nama kategori ikut mengubah device', savedBulk.map(r => r.type).filter((v, i, a) => a.indexOf(v) === i), ['Base Station GNSS']);
+        masterLists.deviceType = [];
+        populateWarehouseFilters();
+        switchWarehouseTab('stock');
+
         // ---------- akses hanya-lihat ----------
         currentUserDoc = { role:'khl', status:'active', access:{ warehouse:'view' } };
         renderWarehouseView();
