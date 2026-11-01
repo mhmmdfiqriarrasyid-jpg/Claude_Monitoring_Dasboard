@@ -500,6 +500,8 @@ window.cloud = {
             }
         );
     },
+    // For links into the Firebase console (2.11.5).
+    projectId: firebaseConfig.projectId,
     async deleteUserDoc(uid) {
         await deleteDoc(doc(db, USERS_COL, uid));
     },

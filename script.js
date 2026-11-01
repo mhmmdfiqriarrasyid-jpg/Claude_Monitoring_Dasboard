@@ -149,7 +149,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.11.4';
+const APP_VERSION = 'v2.11.5';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -898,6 +898,7 @@ const MODAL_CLOSERS = {
     damageComponentsModal:'closeDamageComponentsModal',
     accessModal:          'closeAccessModal',
     userNameModal:        'closeUserNameModal',
+    authDeleteModal:      'closeAuthDeleteModal',
     teamMembersModal:     'closeTeamMembersModal',
     workLogModal:         'closeWorkLogModal',
     leaveModal:           'closeLeaveModal',
@@ -14811,7 +14812,7 @@ async function rejectUser(uid) {
     if (!isOwner()) return;
     const user = allUsers.find(u => u.uid === uid);
     if (!user) return;
-    if (!confirm(`Reject and delete ${user.email}?\n\nTheir Firebase account remains, but they lose access to the dashboard.`)) return;
+    if (!confirm(`Reject and delete ${user.email}?\n\nThey get no access. Next you will be shown how to delete their sign-in account in Firebase too.`)) return;
     try {
         await window.cloud.deleteUserDoc(uid);
         logEvent({
@@ -14822,6 +14823,7 @@ async function rejectUser(uid) {
             after: 'rejected'
         });
         showToast(`Rejected ${user.email}`, 'success');
+        openAuthDeleteModal(user, 'rejected from');
     } catch (e) {
         showToast('Failed to reject user — ' + e.message, 'error');
     }
@@ -14910,12 +14912,43 @@ async function forceSignOutUser(uid) {
     }
 }
 
+// ---- Deleting the sign-in account (2.11.5) ----
+// Removing someone takes away their dashboard access, but their Firebase
+// Authentication account can only be deleted by the console or a server
+// (Admin SDK), never by this page. So the next step is handed over: the
+// e-mail and UID to copy, and the console page to delete them on.
+function firebaseUsersConsoleUrl() {
+    const pid = (window.cloud && window.cloud.projectId) || 'ot-monitoring-tractor';
+    return `https://console.firebase.google.com/project/${encodeURIComponent(pid)}/authentication/users`;
+}
+function openAuthDeleteModal(user, what) {
+    if (!user) return;
+    document.getElementById('authDeleteIntro').textContent =
+        `${user.displayName || user.email} was ${what || 'removed from'} the dashboard. Their sign-in account still exists in Firebase — delete it there so it cannot be used to sign up again.`;
+    document.getElementById('authDeleteEmail').textContent = user.email || '—';
+    document.getElementById('authDeleteUid').textContent = user.uid || '—';
+    document.getElementById('authDeleteOpen').href = firebaseUsersConsoleUrl();
+    document.getElementById('authDeleteModal').classList.add('open');
+}
+function closeAuthDeleteModal() { document.getElementById('authDeleteModal').classList.remove('open'); }
+async function copyAuthDeleteField(id, btn) {
+    const text = (document.getElementById(id)?.textContent || '').trim();
+    if (!text || text === '—') return;
+    let ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; } catch (_) {
+        // Older browsers / no permission: select it so Ctrl+C works.
+        const r = document.createRange(); r.selectNodeContents(document.getElementById(id));
+        const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    }
+    if (btn) { const t = btn.textContent; btn.textContent = ok ? 'Copied' : 'Selected — press Ctrl+C'; setTimeout(() => { btn.textContent = t; }, 1600); }
+}
+
 async function removeUser(uid) {
     if (!isOwner()) return;
     const user = allUsers.find(u => u.uid === uid);
     if (!user) return;
     if (user.role === 'owner') { showToast('The owner cannot be removed', 'warning'); return; }
-    if (!confirm(`Remove ${user.email} from the dashboard?\n\nTheir Firebase account remains, but they lose all access.`)) return;
+    if (!confirm(`Remove ${user.email} from the dashboard?\n\nThey lose all access at once. Next you will be shown how to delete their sign-in account in Firebase too.`)) return;
     try {
         await window.cloud.deleteUserDoc(uid);
         logEvent({
@@ -14926,6 +14959,8 @@ async function removeUser(uid) {
             after: 'removed'
         });
         showToast(`${user.email} removed`, 'success');
+        // closeAccessModal runs after this returns; open the next step after it.
+        setTimeout(() => openAuthDeleteModal(user, 'removed from'), 0);
         return true;
     } catch (e) {
         showToast('Failed to remove user — ' + e.message, 'error');

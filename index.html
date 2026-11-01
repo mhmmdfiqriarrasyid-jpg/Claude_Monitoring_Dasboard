@@ -3874,6 +3874,41 @@
     </div>
 </div>
 
+<!-- After a removal: how to delete the sign-in account too (2.11.5) -->
+<div class="modal-overlay" id="authDeleteModal">
+    <div class="modal-card un-card" role="dialog" aria-labelledby="authDeleteTitle">
+        <div class="modal-header">
+            <h3 id="authDeleteTitle">Also delete the sign-in account</h3>
+            <button type="button" class="btn-icon" onclick="closeAuthDeleteModal()" aria-label="Close" title="Close">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p class="ad-intro" id="authDeleteIntro"></p>
+            <div class="ad-field">
+                <span class="ad-label">Email</span>
+                <code class="ad-value" id="authDeleteEmail"></code>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="copyAuthDeleteField('authDeleteEmail', this)">Copy</button>
+            </div>
+            <div class="ad-field">
+                <span class="ad-label">User UID</span>
+                <code class="ad-value" id="authDeleteUid"></code>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="copyAuthDeleteField('authDeleteUid', this)">Copy</button>
+            </div>
+            <ol class="ad-steps">
+                <li>Open <strong>Firebase Authentication</strong> with the button below.</li>
+                <li>Paste the email or UID in the search box.</li>
+                <li>On that row, open the <strong>⋮</strong> menu and choose <strong>Delete account</strong>.</li>
+            </ol>
+            <p class="ad-note">A web page cannot delete someone else's sign-in account — only the Firebase console (or a server) can. Their dashboard access is already gone; this only tidies up the account list.</p>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeAuthDeleteModal()">Done</button>
+            <a class="btn btn-primary" id="authDeleteOpen" href="#" target="_blank" rel="noopener">Open Firebase Authentication</a>
+        </div>
+    </div>
+</div>
+
 <div class="modal-overlay" id="userNameModal">
     <div class="modal-card un-card" role="dialog" aria-labelledby="userNameTitle">
         <div class="modal-header">
