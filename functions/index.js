@@ -46,10 +46,12 @@ async function sendReport(trigger, by) {
     if (!mail) return { sent: false, reason: 'nothing-to-report' };
     const transport = nodemailer.createTransport({
         service: 'gmail',
-        auth: { user: GMAIL_USER.value(), pass: GMAIL_APP_PASSWORD.value() }
+        // Spaces (also the non-breaking ones a copy from Google's page brings)
+        // and a stray newline are not part of an App Password.
+        auth: { user: GMAIL_USER.value().trim(), pass: GMAIL_APP_PASSWORD.value().replace(/\s+/g, '') }
     });
     await transport.sendMail({
-        from: `"OT Dashboard" <${GMAIL_USER.value()}>`,
+        from: `"OT Dashboard" <${GMAIL_USER.value().trim()}>`,
         to: recipients.join(', '),
         subject: mail.subject,
         text: mail.text,
