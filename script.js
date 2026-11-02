@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.12.3';
+const APP_VERSION = 'v2.12.4';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -18275,6 +18275,40 @@ function renderWarehouseView() {
     else renderStockView();
 }
 
+// 2.12.4: Brand filter. Lists only the brands of the chosen category, each
+// with its device count; spellings that differ only in capitals or spaces
+// count as one. A brand the new category does not have falls back to "All".
+const DEV_NO_BRAND = '__none__';
+function _devBrandKey(v) { return String(v || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
+function deviceBrandCounts(category) {
+    const m = new Map();
+    warehouseDevices.forEach(d => {
+        if (category && d.type !== category) return;
+        const raw = String(d.brand || '').trim().replace(/\s+/g, ' ');
+        const key = raw ? raw.toLowerCase() : DEV_NO_BRAND;
+        const cur = m.get(key) || { key, label: raw || 'No brand set', n: 0, spell: new Map() };
+        cur.n++;
+        if (raw) cur.spell.set(raw, (cur.spell.get(raw) || 0) + 1);
+        m.set(key, cur);
+    });
+    return [...m.values()].map(b => {
+        if (b.spell.size) b.label = [...b.spell.entries()].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]))[0][0];
+        return b;
+    }).sort((a, b) => (a.key === DEV_NO_BRAND) - (b.key === DEV_NO_BRAND) || a.label.localeCompare(b.label));
+}
+function fillDeviceBrandFilter() {
+    const sel = document.getElementById('devBrandFilter');
+    if (!sel) return;
+    const keep = sel.value;
+    const list = deviceBrandCounts(document.getElementById('devTypeFilter')?.value || '');
+    sel.innerHTML = '<option value="">All brands</option>' +
+        list.map(b => `<option value="${escapeHtml(b.key)}">${escapeHtml(b.label)} (${b.n})</option>`).join('');
+    sel.value = keep && list.some(b => b.key === keep) ? keep : '';
+}
+function onDeviceCategoryFilter() {
+    fillDeviceBrandFilter();
+    renderDeviceTable();
+}
 function populateWarehouseFilters() {
     const fill = (id, values, allLabel) => {
         const sel = document.getElementById(id);
@@ -18285,6 +18319,7 @@ function populateWarehouseFilters() {
         if (keep && sel.querySelector(`option[value="${CSS.escape(keep)}"]`)) sel.value = keep;
     };
     fill('devTypeFilter', allDeviceTypes(), 'All categories');
+    fillDeviceBrandFilter();
     fill('devLocationFilter', allWarehouseLocations(), 'All locations');
     fill('stkLocationFilter', allWarehouseLocations(), 'All locations');
     fill('stkItemFilter', allStockItemNames(), 'All items');
@@ -19387,10 +19422,12 @@ function getFilteredDevices() {
     const status = document.getElementById('devStatusFilter')?.value || '';
     const type = document.getElementById('devTypeFilter')?.value || '';
     const loc = document.getElementById('devLocationFilter')?.value || '';
+    const brand = document.getElementById('devBrandFilter')?.value || '';
     const q = (document.getElementById('devSearch')?.value || '').toLowerCase().trim();
     return warehouseDevices.filter(d => {
         if (status && d.status !== status) return false;
         if (type && d.type !== type) return false;
+        if (brand && (_devBrandKey(d.brand) || DEV_NO_BRAND) !== brand) return false;
         if (loc && (d.location || '') !== loc) return false;
         if (q) {
             const hay = [d.sn, d.type, d.brand, d.model, d.location, d.siteName,
@@ -19484,6 +19521,7 @@ function renderDeviceTable() {
     const canEdit = hasAccess('warehouse', 'edit');
     const hasFilter = statusOn ||
                       (document.getElementById('devTypeFilter')?.value || '') ||
+                      (document.getElementById('devBrandFilter')?.value || '') ||
                       (document.getElementById('devLocationFilter')?.value || '') ||
                       (document.getElementById('devSearch')?.value || '');
 
@@ -19520,10 +19558,11 @@ function renderDeviceTable() {
 }
 
 function clearDeviceFilter() {
-    ['devStatusFilter', 'devTypeFilter', 'devLocationFilter'].forEach(id => {
+    ['devStatusFilter', 'devTypeFilter', 'devBrandFilter', 'devLocationFilter'].forEach(id => {
         const el = document.getElementById(id); if (el) el.value = '';
     });
     const s = document.getElementById('devSearch'); if (s) s.value = '';
+    fillDeviceBrandFilter();
     renderDeviceTable();
 }
 

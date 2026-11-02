@@ -1977,11 +1977,16 @@
                 <div class="adm-filters edit-toolbar">
                     <label class="adm-search">
                         <svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7.5"></circle><path d="m21 21-4.5-4.5"></path></svg>
-                        <input type="search" id="devSearch" aria-label="Search devices" placeholder="Search serial number or category" autocomplete="off" oninput="renderDeviceTable()">
+                        <input type="search" id="devSearch" aria-label="Search devices" placeholder="Search SN, category, brand" autocomplete="off" oninput="renderDeviceTable()">
                     </label>
                     <label class="adm-select"><span class="adm-select__label">Category</span>
-                        <select id="devTypeFilter" aria-label="Filter device category" onchange="renderDeviceTable()">
+                        <select id="devTypeFilter" aria-label="Filter device category" onchange="onDeviceCategoryFilter()">
                             <option value="">All categories</option>
+                        </select>
+                    </label>
+                    <label class="adm-select"><span class="adm-select__label">Brand</span>
+                        <select id="devBrandFilter" aria-label="Filter device brand" onchange="renderDeviceTable()">
+                            <option value="">All brands</option>
                         </select>
                     </label>
                     <label class="adm-select"><span class="adm-select__label">Location</span>

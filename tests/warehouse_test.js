@@ -348,6 +348,36 @@ const { launch, BASE_URL } = require('./_env');
         populateWarehouseFilters();
         switchWarehouseTab('stock');
 
+        // ---------- 2.12.4: filter Brand ikut Category ----------
+        switchWarehouseTab('devices');
+        const _devKeep = warehouseDevices;
+        warehouseDevices = [
+            { id:'h1', sn:'HT1', type:'Handy Talky', brand:'Baofeng', status:'allocated' },
+            { id:'h2', sn:'HT2', type:'Handy Talky', brand:'BAOFENG ', status:'allocated' },
+            { id:'h3', sn:'HT3', type:'Handy Talky', brand:'Motorola', status:'warehouse', location:'Gudang Pusat' },
+            { id:'h4', sn:'HT4', type:'Handy Talky', brand:'', status:'warehouse', location:'Gudang Pusat' },
+            { id:'b1', sn:'BS1', type:'Basestation', brand:'Trimble', status:'installed' }
+        ];
+        populateWarehouseFilters();
+        const brandOpts = () => [...document.querySelectorAll('#devBrandFilter option')].map(o => o.textContent);
+        t('semua brand + jumlah', brandOpts(), ['All brands', 'Baofeng (2)', 'Motorola (1)', 'Trimble (1)', 'No brand set (1)']);
+        document.getElementById('devTypeFilter').value = 'Handy Talky'; onDeviceCategoryFilter();
+        t('brand hanya dari kategori terpilih', brandOpts(), ['All brands', 'Baofeng (2)', 'Motorola (1)', 'No brand set (1)']);
+        document.getElementById('devBrandFilter').value = 'baofeng'; renderDeviceTable();
+        t('filter Baofeng (beda kapital tetap satu)', getFilteredDevices().map(d => d.id), ['h1', 'h2']);
+        document.getElementById('devBrandFilter').value = '__none__'; renderDeviceTable();
+        t('filter tanpa brand', getFilteredDevices().map(d => d.id), ['h4']);
+        document.getElementById('devBrandFilter').value = 'motorola';
+        document.getElementById('devTypeFilter').value = 'Basestation'; onDeviceCategoryFilter();
+        t('ganti kategori: brand yang tidak ada kembali ke All', document.getElementById('devBrandFilter').value, '');
+        document.getElementById('devBrandFilter').value = 'trimble'; renderDeviceTable();
+        t('kategori + brand', getFilteredDevices().map(d => d.id), ['b1']);
+        clearDeviceFilter();
+        t('Reset mengosongkan brand', [document.getElementById('devBrandFilter').value, getFilteredDevices().length], ['', 5]);
+        warehouseDevices = _devKeep;
+        populateWarehouseFilters();
+        switchWarehouseTab('stock');
+
         // ---------- akses hanya-lihat ----------
         currentUserDoc = { role:'khl', status:'active', access:{ warehouse:'view' } };
         renderWarehouseView();

@@ -437,6 +437,12 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   Warehouse ada satu baris penjelasan: Devices = per buah dengan nomor seri,
   Stock items = dihitung jumlahnya. Rules: daftar ditulis oleh editor
   Warehouse. **Perlu publish ulang `firestore.rules`.**
+- **Filter Brand device 2.12.4 (dijaga `tests/warehouse_test.js`).** Di
+  samping Category ada filter **Brand** yang isinya hanya brand dari kategori
+  terpilih, lengkap dengan jumlah device ("Baofeng (150)"); ejaan yang hanya
+  beda kapital/spasi dihitung satu, device tanpa brand muncul sebagai
+  "No brand set". Ganti kategori → brand yang tidak ada di sana kembali ke
+  All brands. Export ikut filter. Tanpa perubahan rules.
 - **Riak air di halaman masuk v176.** Panel teal di halaman Sign in dan
   halaman menunggu persetujuan menampilkan riak air yang mengikuti kursor
   (atau jari di HP); klik/tap membuat riak yang lebih besar. Simulasi
