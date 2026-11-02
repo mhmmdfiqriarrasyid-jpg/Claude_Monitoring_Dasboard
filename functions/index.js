@@ -1,8 +1,10 @@
 // Operation Technology Dashboard — Cloud Functions (2.14.0, Blaze).
 //
-//   dailyLicenseAlert  every morning 07:00 WIT: emails the licence alert
-//                      report to the recipients in settings/email, when the
-//                      daily email is on and something is expiring.
+//   dailyLicenseAlert  runs every hour; at the hour chosen in the dashboard
+//                      (settings/email.sendHour, WIT, default 07:00) it emails
+//                      the licence alert report to the recipients, when the
+//                      daily email is on and something is expiring. Once a
+//                      day at most (mailState/daily).
 //   sendLicenseAlert   the dashboard's "Email Report" button (callable).
 //
 // Mail goes out through Gmail with an App Password, kept in Secret Manager:
@@ -35,7 +37,8 @@ async function emailSettings() {
     const s = snap.exists ? snap.data() : {};
     const recipients = (Array.isArray(s.recipients) ? s.recipients : [])
         .map(r => String(r || '').trim()).filter(r => EMAIL_RE.test(r)).slice(0, 10);
-    return { recipients, dailyEnabled: !!s.dailyEnabled };
+    const h = Number(s.sendHour);
+    return { recipients, dailyEnabled: !!s.dailyEnabled, sendHour: Number.isInteger(h) && h >= 0 && h <= 23 ? h : 7 };
 }
 
 async function sendReport(trigger, by) {
@@ -65,13 +68,23 @@ async function sendReport(trigger, by) {
     return { sent: true, recipients: recipients.length, items: mail.report.total };
 }
 
+const todayWit = () => {
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
 exports.dailyLicenseAlert = onSchedule({
-    schedule: '0 7 * * *', timeZone: 'Asia/Jayapura', region: REGION,
+    schedule: '0 * * * *', timeZone: 'Asia/Jayapura', region: REGION,
     secrets: [GMAIL_USER, GMAIL_APP_PASSWORD], retryCount: 1
 }, async () => {
-    const { dailyEnabled } = await emailSettings();
-    if (!dailyEnabled) { logger.info('daily license email is off'); return; }
+    const { dailyEnabled, sendHour } = await emailSettings();
+    if (!dailyEnabled) return;
+    if (new Date().getHours() !== sendHour) return;
+    const state = db.doc('mailState/daily');
+    const today = todayWit();
+    const prev = await state.get();
+    if (prev.exists && prev.data().date === today) { logger.info('daily license alert already done today'); return; }
     const r = await sendReport('daily', '');
+    await state.set({ date: today, result: r.sent ? 'sent' : (r.reason || 'skipped'), at: admin.firestore.FieldValue.serverTimestamp() });
     logger.info('daily license alert', r);
 });
 

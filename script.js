@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.14.1';
+const APP_VERSION = 'v2.14.2';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -4998,18 +4998,28 @@ function renderStockAlerts() {
 // ---- Email Alert (2.14.0: sent by the server, Cloud Functions) ----
 // The owner keeps the recipients and the daily switch in settings/email; the
 // server (functions/index.js) builds the same report as _buildAlertList and
-// sends it through Gmail — every morning at 07:00 WIT when the daily email
-// is on, or now from the Email Report button. No email key in the browser.
+// sends it through Gmail — every day when the daily email
+// is on (at the hour chosen here, 2.14.2), or now from the Email Report
+// button. No email key in the browser.
 const EMAIL_RE = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/;
 function _parseRecipients(text) {
     return [...new Set(String(text || '').split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean))];
+}
+// 2.14.2: the daily email's hour (WIT) is chosen here; the server checks
+// every hour and sends at that one, once a day. Off = no daily email.
+const EMAIL_DEFAULT_HOUR = 7;
+function syncEmailDaily() {
+    document.getElementById('emailHourGroup').style.display = document.getElementById('emailDaily').checked ? '' : 'none';
 }
 async function openEmailSettingsModal() {
     const owner = isOwner();
     const box = document.getElementById('emailRecipients');
     const daily = document.getElementById('emailDaily');
-    box.value = ''; daily.checked = false;
-    box.disabled = daily.disabled = !owner;
+    const hour = document.getElementById('emailHour');
+    if (!hour.options.length) hour.innerHTML = Array.from({ length: 24 }, (_, h) => `<option value="${h}">${String(h).padStart(2, '0')}:00</option>`).join('');
+    box.value = ''; daily.checked = false; hour.value = String(EMAIL_DEFAULT_HOUR);
+    box.disabled = daily.disabled = hour.disabled = !owner;
+    syncEmailDaily();
     document.getElementById('emailSaveBtn').hidden = !owner;
     document.getElementById('emailOwnerNote').hidden = owner;
     document.getElementById('emailLast').textContent = 'Loading…';
@@ -5018,6 +5028,8 @@ async function openEmailSettingsModal() {
         const s = await window.cloud.getEmailSettings();
         box.value = (s.recipients || []).join('\n');
         daily.checked = !!s.dailyEnabled;
+        hour.value = String(Number.isInteger(s.sendHour) ? s.sendHour : EMAIL_DEFAULT_HOUR);
+        syncEmailDaily();
     } catch (err) {
         console.warn('[email] settings not read:', err);
     }
@@ -5038,15 +5050,16 @@ async function saveEmailSettings() {
     if (bad.length) { showToast(`Not an email address: ${bad[0]}`, 'warning'); return; }
     if (recipients.length > 10) { showToast('Up to 10 recipients', 'warning'); return; }
     const dailyEnabled = document.getElementById('emailDaily').checked;
+    const sendHour = Math.max(0, Math.min(23, parseInt(document.getElementById('emailHour').value, 10) || 0));
     if (dailyEnabled && !recipients.length) { showToast('Add at least one recipient for the daily email', 'warning'); return; }
     try {
-        await window.cloud.saveEmailSettings({ recipients, dailyEnabled, updatedAt: Date.now(), updatedBy: (currentUser && currentUser.email) || '' });
+        await window.cloud.saveEmailSettings({ recipients, dailyEnabled, sendHour, updatedAt: Date.now(), updatedBy: (currentUser && currentUser.email) || '' });
     } catch (err) {
         console.error('[email] save failed:', err);
         showToast(err && err.code === 'permission-denied' ? 'Refused by the server — publish the latest firestore.rules' : 'Failed to save the email settings', 'error');
         return;
     }
-    logEvent({ action: 'update', unitName: '[Settings] Email alerts', field: 'Recipients', before: '', after: `${recipients.join(', ')}${dailyEnabled ? ' · daily' : ''}` });
+    logEvent({ action: 'update', unitName: '[Settings] Email alerts', field: 'Recipients', before: '', after: `${recipients.join(', ')}${dailyEnabled ? ` · daily ${String(sendHour).padStart(2, '0')}:00 WIT` : ' · daily off'}` });
     closeEmailSettingsModal();
     showToast('Email settings saved', 'success');
 }

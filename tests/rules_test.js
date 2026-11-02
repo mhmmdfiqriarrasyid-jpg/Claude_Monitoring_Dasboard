@@ -546,6 +546,9 @@ async function check(name, p, expectOk) {
     await check('Email: pembaca License Stock TIDAK bisa mengubah', setDoc(doc(as('licv'), 'settings', 'email'), EM), false);
     await check('Email: tanpa akses lisensi TIDAK bisa melihat', getDoc(doc(as('nobody'), 'settings', 'email')), false);
     await check('Email: lebih dari 10 penerima DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, recipients: Array.from({ length: 11 }, (_, i) => i + '@x.id') }), false);
+    await check('Email: owner memilih jam kirim', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, sendHour: 16 }), true);
+    await check('Email: jam di luar 0–23 DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, sendHour: 24 }), false);
+    await check('Email: jam bukan angka bulat DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, sendHour: '7' }), false);
     await check('Email: kolom asing DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, gmailPassword: 'x' }), false);
     await check('Email: dokumen settings lain DITOLAK', setDoc(doc(as('owner'), 'settings', 'other'), { dailyEnabled: true }), false);
     await check('Email: mailLog tidak bisa ditulis dari browser', setDoc(doc(as('owner'), 'mailLog', 'm1'), { kind: 'x' }), false);

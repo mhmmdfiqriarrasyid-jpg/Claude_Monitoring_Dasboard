@@ -485,6 +485,10 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pembaca License Stock bisa melihat); `mailLog` ditulis server saja.
   **Perlu publish ulang `firestore.rules`** dan deploy fungsi dari Cloud
   Shell — langkahnya di `functions/README.md`.
+  2.14.2: jam kirim harian dipilih di layar itu (`sendHour`, WIT, bawaan
+  07:00) dan bisa dimatikan; fungsi berjalan tiap jam dan hanya mengirim
+  pada jam terpilih, sekali sehari (`mailState/daily`). **Perlu deploy ulang
+  fungsi + publish ulang `firestore.rules`.**
   2.14.1: pengaturannya punya menu sendiri **Admin → Notifications**
   (owner, dan pembaca License Stock hanya-lihat) dengan tombol *Send now*;
   ikon ⚙️ di License Alerts membuka layar yang sama.

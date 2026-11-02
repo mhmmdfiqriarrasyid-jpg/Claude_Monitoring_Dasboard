@@ -4255,9 +4255,13 @@
                 </div>
                 <div class="form-group">
                     <label class="notif-check">
-                        <input type="checkbox" id="emailDaily">
-                        Send every morning at 07:00 WIT when licences are expiring
+                        <input type="checkbox" id="emailDaily" onchange="syncEmailDaily()">
+                        Send automatically every day
                     </label>
+                </div>
+                <div class="form-group" id="emailHourGroup">
+                    <label class="form-label" for="emailHour">Send time <span class="form-optional">(WIT)</span></label>
+                    <select class="form-input" id="emailHour"></select>
                 </div>
                 <p class="form-hint" id="emailLast"></p>
                 <p class="form-hint" id="emailOwnerNote" hidden>Only the Super Admin can change these settings.</p>

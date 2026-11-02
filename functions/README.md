@@ -2,7 +2,7 @@
 
 | Function | Trigger | What it does |
 |---|---|---|
-| `dailyLicenseAlert` | every day 07:00 WIT | Emails the License Alert report to the recipients in `settings/email`, when *daily* is on and a licence expires within 30 days |
+| `dailyLicenseAlert` | every hour (WIT) | At the hour chosen in Admin → Notifications (`settings/email.sendHour`, default 07:00) emails the License Alert report to the recipients, when *daily* is on and a licence expires within 30 days — once a day (`mailState/daily`) |
 | `sendLicenseAlert` | callable (Email Report button) | Same report, now. Owner, or an active account that can see License Stock |
 
 The report is built by `licenseReport.js`, the same rules as the dashboard
