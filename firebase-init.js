@@ -709,11 +709,15 @@ window.cloud = {
     async saveEmailSettings(rec) {
         await setDoc(doc(db, 'settings', 'email'), rec);
     },
-    async lastMail() {
-        const snap = await getDocs(query(collection(db, 'mailLog'), orderBy('at', 'desc'), limit(1)));
-        if (snap.empty) return null;
-        const d = snap.docs[0].data();
-        return { ...d, at: d.at && d.at.toMillis ? d.at.toMillis() : null };
+    // The newest mailLog entry of each kind (one small query, no index).
+    async lastMails() {
+        const snap = await getDocs(query(collection(db, 'mailLog'), orderBy('at', 'desc'), limit(40)));
+        const out = {};
+        snap.docs.forEach(x => {
+            const d = x.data();
+            if (d.kind && !out[d.kind]) out[d.kind] = { ...d, at: d.at && d.at.toMillis ? d.at.toMillis() : null };
+        });
+        return out;
     },
     // 2.13.0 (Blaze): files in Cloud Storage under learning/<fileId>/<name>.
     // The Storage SDK is imported on first use, so the app still starts when

@@ -536,17 +536,27 @@ service cloud.firestore {
     // licence alert and whether it goes out every morning; License Stock
     // viewers can see that. mailLog is written by the server only.
     match /settings/{id} {
-      allow read: if id == 'email' && (isOwner() || canViewArea('licenseStock'));
+      allow read: if id == 'email' && (isOwner() || canViewArea('licenseStock') || canViewArea('teamLog') || canViewArea('damage'));
       allow write: if id == 'email' && isOwner()
-        && request.resource.data.keys().hasOnly(['recipients', 'dailyEnabled', 'sendHour', 'updatedAt', 'updatedBy'])
-        && (!('sendHour' in request.resource.data)
-            || (request.resource.data.sendHour is int && request.resource.data.sendHour >= 0 && request.resource.data.sendHour <= 23))
-        && request.resource.data.get('recipients', []) is list
-        && request.resource.data.get('recipients', []).size() <= 10
-        && request.resource.data.get('dailyEnabled', false) is bool;
+        && request.resource.data.keys().hasOnly(['recipients', 'dailyEnabled', 'sendHour',
+             'reminderEnabled', 'reminderHour', 'reminderRecipients', 'damageEnabled', 'damageRecipients',
+             'updatedAt', 'updatedBy'])
+        && emailList(request.resource.data.get('recipients', []))
+        && emailList(request.resource.data.get('reminderRecipients', []))
+        && emailList(request.resource.data.get('damageRecipients', []))
+        && request.resource.data.get('dailyEnabled', false) is bool
+        && request.resource.data.get('reminderEnabled', false) is bool
+        && request.resource.data.get('damageEnabled', false) is bool
+        && hourOk(request.resource.data.get('sendHour', 7))
+        && hourOk(request.resource.data.get('reminderHour', 17));
+    }
+    function emailList(v) { return v is list && v.size() <= 10; }
+    function hourOk(h) { return h is int && h >= 0 && h <= 23; }
+    match /mailState/{id} {
+      allow read, write: if false;
     }
     match /mailLog/{id} {
-      allow read: if isOwner() || canViewArea('licenseStock');
+      allow read: if isOwner() || canViewArea('licenseStock') || canViewArea('teamLog') || canViewArea('damage');
       allow write: if false;
     }
     match /purchasePhotos/{id} {

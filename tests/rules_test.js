@@ -549,6 +549,11 @@ async function check(name, p, expectOk) {
     await check('Email: owner memilih jam kirim', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, sendHour: 16 }), true);
     await check('Email: jam di luar 0–23 DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, sendHour: 24 }), false);
     await check('Email: jam bukan angka bulat DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, sendHour: '7' }), false);
+    await check('Notif: owner menyimpan pengingat Daily Report + breakdown', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, sendHour: 7, reminderEnabled: true, reminderHour: 17, reminderRecipients: ['sup@x.id'], damageEnabled: true, damageRecipients: ['mgr@x.id'] }), true);
+    await check('Notif: jam pengingat di luar 0–23 DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, reminderHour: -1 }), false);
+    await check('Notif: penerima breakdown lebih dari 10 DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, damageRecipients: Array.from({ length: 11 }, (_, i) => i + '@x.id') }), false);
+    await check('Notif: saklar bukan boolean DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, damageEnabled: 'yes' }), false);
+    await check('Notif: mailState tertutup dari browser', getDoc(doc(as('owner'), 'mailState', 'daily')), false);
     await check('Email: kolom asing DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, gmailPassword: 'x' }), false);
     await check('Email: dokumen settings lain DITOLAK', setDoc(doc(as('owner'), 'settings', 'other'), { dailyEnabled: true }), false);
     await check('Email: mailLog tidak bisa ditulis dari browser', setDoc(doc(as('owner'), 'mailLog', 'm1'), { kind: 'x' }), false);

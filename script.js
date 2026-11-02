@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.14.2';
+const APP_VERSION = 'v2.15.0';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -5005,63 +5005,98 @@ const EMAIL_RE = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/;
 function _parseRecipients(text) {
     return [...new Set(String(text || '').split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean))];
 }
-// 2.14.2: the daily email's hour (WIT) is chosen here; the server checks
-// every hour and sends at that one, once a day. Off = no daily email.
-const EMAIL_DEFAULT_HOUR = 7;
+// 2.14.2 / 2.15.0: Notification Settings — License Alert (daily, at an hour),
+// Breakdown & damage alerts (each new record) and the Daily Report reminder
+// (daily, at an hour), each with its own recipients. The server
+// (functions/index.js, notificationTick) checks every 10 minutes.
+const EMAIL_DEFAULT_HOUR = 7, REMINDER_DEFAULT_HOUR = 17;
+const NOTIF_HOURS = Array.from({ length: 24 }, (_, h) => `<option value="${h}">${String(h).padStart(2, '0')}:00</option>`).join('');
 function syncEmailDaily() {
     document.getElementById('emailHourGroup').style.display = document.getElementById('emailDaily').checked ? '' : 'none';
+    document.getElementById('reminderHourGroup').style.display = document.getElementById('reminderEnabled').checked ? '' : 'none';
+}
+// The Admin menu entry: the owner, and License Stock viewers (read only) —
+// a team-only account keeps its menu to Dashboard + Team.
+function canSeeNotifications() {
+    return isOwner() || hasAccess('licenseStock', 'view');
+}
+function _notifLastText(m, what) {
+    if (!m || !m.at) return `No ${what} sent yet`;
+    const how = m.trigger === 'manual' ? 'by ' + (m.by || 'someone') : 'automatic';
+    return `Last ${what} ${toLocalDateTime(m.at)} (${how}) — ${m.items || 0} item(s) to ${(m.recipients || []).length} recipient(s)`;
 }
 async function openEmailSettingsModal() {
     const owner = isOwner();
-    const box = document.getElementById('emailRecipients');
-    const daily = document.getElementById('emailDaily');
-    const hour = document.getElementById('emailHour');
-    if (!hour.options.length) hour.innerHTML = Array.from({ length: 24 }, (_, h) => `<option value="${h}">${String(h).padStart(2, '0')}:00</option>`).join('');
-    box.value = ''; daily.checked = false; hour.value = String(EMAIL_DEFAULT_HOUR);
-    box.disabled = daily.disabled = hour.disabled = !owner;
+    const ids = ['emailRecipients', 'emailDaily', 'emailHour', 'damageRecipients', 'damageEnabled', 'reminderRecipients', 'reminderEnabled', 'reminderHour'];
+    const el = id => document.getElementById(id);
+    ['emailHour', 'reminderHour'].forEach(id => { if (!el(id).options.length) el(id).innerHTML = NOTIF_HOURS; });
+    ['emailRecipients', 'damageRecipients', 'reminderRecipients'].forEach(id => { el(id).value = ''; });
+    ['emailDaily', 'damageEnabled', 'reminderEnabled'].forEach(id => { el(id).checked = false; });
+    el('emailHour').value = String(EMAIL_DEFAULT_HOUR);
+    el('reminderHour').value = String(REMINDER_DEFAULT_HOUR);
+    ids.forEach(id => { el(id).disabled = !owner; });
+    el('emailSaveBtn').hidden = !owner;
+    el('emailOwnerNote').hidden = owner;
+    ['emailLast', 'damageLast', 'reminderLast'].forEach(id => { el(id).textContent = ''; });
     syncEmailDaily();
-    document.getElementById('emailSaveBtn').hidden = !owner;
-    document.getElementById('emailOwnerNote').hidden = owner;
-    document.getElementById('emailLast').textContent = 'Loading…';
-    document.getElementById('emailSettingsModal').classList.add('open');
+    el('emailSettingsModal').classList.add('open');
     try {
         const s = await window.cloud.getEmailSettings();
-        box.value = (s.recipients || []).join('\n');
-        daily.checked = !!s.dailyEnabled;
-        hour.value = String(Number.isInteger(s.sendHour) ? s.sendHour : EMAIL_DEFAULT_HOUR);
+        el('emailRecipients').value = (s.recipients || []).join('\n');
+        el('emailDaily').checked = !!s.dailyEnabled;
+        el('emailHour').value = String(Number.isInteger(s.sendHour) ? s.sendHour : EMAIL_DEFAULT_HOUR);
+        el('damageRecipients').value = (s.damageRecipients || []).join('\n');
+        el('damageEnabled').checked = !!s.damageEnabled;
+        el('reminderRecipients').value = (s.reminderRecipients || []).join('\n');
+        el('reminderEnabled').checked = !!s.reminderEnabled;
+        el('reminderHour').value = String(Number.isInteger(s.reminderHour) ? s.reminderHour : REMINDER_DEFAULT_HOUR);
         syncEmailDaily();
     } catch (err) {
         console.warn('[email] settings not read:', err);
     }
     try {
-        const m = window.cloud.lastMail ? await window.cloud.lastMail() : null;
-        document.getElementById('emailLast').textContent = m && m.at
-            ? `Last sent ${toLocalDateTime(m.at)} (${m.trigger === 'daily' ? 'daily' : 'by ' + (m.by || 'someone')}) — ${m.items} item(s) to ${(m.recipients || []).length} recipient(s)`
-            : 'Nothing sent yet';
-    } catch (_) { document.getElementById('emailLast').textContent = ''; }
+        const last = window.cloud.lastMails ? await window.cloud.lastMails() : {};
+        el('emailLast').textContent = _notifLastText(last.licenseAlert, 'report');
+        el('damageLast').textContent = _notifLastText(last.damageAlert, 'alert');
+        el('reminderLast').textContent = _notifLastText(last.reportReminder, 'reminder');
+    } catch (_) { /* the history line is a nicety */ }
 }
 function closeEmailSettingsModal() {
     document.getElementById('emailSettingsModal').classList.remove('open');
 }
 async function saveEmailSettings() {
-    if (!isOwner()) { showToast('Only the Super Admin changes email settings', 'warning'); return; }
-    const recipients = _parseRecipients(document.getElementById('emailRecipients').value);
-    const bad = recipients.filter(r => !EMAIL_RE.test(r));
-    if (bad.length) { showToast(`Not an email address: ${bad[0]}`, 'warning'); return; }
-    if (recipients.length > 10) { showToast('Up to 10 recipients', 'warning'); return; }
-    const dailyEnabled = document.getElementById('emailDaily').checked;
-    const sendHour = Math.max(0, Math.min(23, parseInt(document.getElementById('emailHour').value, 10) || 0));
-    if (dailyEnabled && !recipients.length) { showToast('Add at least one recipient for the daily email', 'warning'); return; }
+    if (!isOwner()) { showToast('Only the Super Admin changes notification settings', 'warning'); return; }
+    const el = id => document.getElementById(id);
+    const lists = {};
+    for (const [key, id, label] of [['recipients', 'emailRecipients', 'License Alert'], ['damageRecipients', 'damageRecipients', 'Breakdown alerts'], ['reminderRecipients', 'reminderRecipients', 'Daily Report reminder']]) {
+        const list = _parseRecipients(el(id).value);
+        const bad = list.filter(r => !EMAIL_RE.test(r));
+        if (bad.length) { showToast(`${label}: not an email address — ${bad[0]}`, 'warning'); el(id).focus(); return; }
+        if (list.length > 10) { showToast(`${label}: up to 10 recipients`, 'warning'); el(id).focus(); return; }
+        lists[key] = list;
+    }
+    const hour = id => Math.max(0, Math.min(23, parseInt(el(id).value, 10) || 0));
+    const rec = {
+        recipients: lists.recipients, dailyEnabled: el('emailDaily').checked, sendHour: hour('emailHour'),
+        damageRecipients: lists.damageRecipients, damageEnabled: el('damageEnabled').checked,
+        reminderRecipients: lists.reminderRecipients, reminderEnabled: el('reminderEnabled').checked, reminderHour: hour('reminderHour'),
+        updatedAt: Date.now(), updatedBy: (currentUser && currentUser.email) || ''
+    };
+    if (rec.dailyEnabled && !rec.recipients.length) { showToast('License Alert: add at least one recipient for the daily email', 'warning'); return; }
+    if (rec.damageEnabled && !rec.damageRecipients.length) { showToast('Breakdown alerts: add at least one recipient', 'warning'); return; }
+    if (rec.reminderEnabled && !rec.reminderRecipients.length) { showToast('Daily Report reminder: add at least one recipient', 'warning'); return; }
     try {
-        await window.cloud.saveEmailSettings({ recipients, dailyEnabled, sendHour, updatedAt: Date.now(), updatedBy: (currentUser && currentUser.email) || '' });
+        await window.cloud.saveEmailSettings(rec);
     } catch (err) {
         console.error('[email] save failed:', err);
-        showToast(err && err.code === 'permission-denied' ? 'Refused by the server — publish the latest firestore.rules' : 'Failed to save the email settings', 'error');
+        showToast(err && err.code === 'permission-denied' ? 'Refused by the server — publish the latest firestore.rules' : 'Failed to save the notification settings', 'error');
         return;
     }
-    logEvent({ action: 'update', unitName: '[Settings] Email alerts', field: 'Recipients', before: '', after: `${recipients.join(', ')}${dailyEnabled ? ` · daily ${String(sendHour).padStart(2, '0')}:00 WIT` : ' · daily off'}` });
+    const hh = h => `${String(h).padStart(2, '0')}:00`;
+    logEvent({ action: 'update', unitName: '[Settings] Notifications', field: 'Email',
+        before: '', after: `License ${rec.dailyEnabled ? hh(rec.sendHour) : 'off'} · Breakdown ${rec.damageEnabled ? 'on' : 'off'} · Reminder ${rec.reminderEnabled ? hh(rec.reminderHour) : 'off'}` });
     closeEmailSettingsModal();
-    showToast('Email settings saved', 'success');
+    showToast('Notification settings saved', 'success');
 }
 
 // SF/G5 licences are John Deere only, so heavy units never produce an alert.
@@ -14206,7 +14241,7 @@ function applyAccessVisibility() {
     // 2.14.1: Notifications (server email settings) — the owner, and whoever
     // can see License Stock (read only).
     const navNotif = document.getElementById('navNotifications');
-    if (navNotif) navNotif.style.display = isOwner() || hasAccess('licenseStock', 'view') ? '' : 'none';
+    if (navNotif) navNotif.style.display = canSeeNotifications() ? '' : 'none';
     // The owner can change someone's access while they are signed in. Hiding
     // the menu is not enough — the stream has to stop too.
     if (!hasAccess('history', 'view')) stopHistorySubscription();
@@ -14937,7 +14972,7 @@ async function rejectUser(uid) {
     if (!isOwner()) return;
     const user = allUsers.find(u => u.uid === uid);
     if (!user) return;
-    if (!confirm(`Reject and delete ${user.email}?\n\nThey get no access. Next you will be shown how to delete their sign-in account in Firebase too.`)) return;
+    if (!confirm(`Reject and delete ${user.email}?\n\nThey get no access, and their sign-in account is deleted too.`)) return;
     try {
         await window.cloud.deleteUserDoc(uid);
         logEvent({
@@ -14948,7 +14983,7 @@ async function rejectUser(uid) {
             after: 'rejected'
         });
         showToast(`Rejected ${user.email}`, 'success');
-        openAuthDeleteModal(user, 'rejected from');
+        deleteSignInAccount(user, 'rejected');
     } catch (e) {
         showToast('Failed to reject user — ' + e.message, 'error');
     }
@@ -15056,6 +15091,23 @@ function openAuthDeleteModal(user, what) {
     document.getElementById('authDeleteModal').classList.add('open');
 }
 function closeAuthDeleteModal() { document.getElementById('authDeleteModal').classList.remove('open'); }
+// 2.15.0: with Cloud Functions the server deletes the sign-in account
+// itself; the hand-over dialog above is only the fallback when it cannot
+// (function not deployed, offline, refused).
+async function deleteSignInAccount(user, what) {
+    try {
+        if (!window.cloud || !window.cloud.callFunction) throw new Error('offline');
+        const r = await window.cloud.callFunction('deleteSignInAccount', { uid: user.uid });
+        logEvent({ action: 'delete', unitId: user.uid, unitName: `[User] ${user.displayName || user.email}`, field: 'Sign-in account',
+            before: user.email || '', after: r && r.deleted ? 'deleted' : 'already gone' });
+        showToast(`${user.email} ${what || 'removed'} — sign-in account deleted too`, 'success');
+        return true;
+    } catch (err) {
+        console.warn('[users] sign-in account not deleted by the server:', err);
+        openAuthDeleteModal(user, `${what || 'removed'} from`);
+        return false;
+    }
+}
 async function copyAuthDeleteField(id, btn) {
     const text = (document.getElementById(id)?.textContent || '').trim();
     if (!text || text === '—') return;
@@ -15073,7 +15125,7 @@ async function removeUser(uid) {
     const user = allUsers.find(u => u.uid === uid);
     if (!user) return;
     if (user.role === 'owner') { showToast('The owner cannot be removed', 'warning'); return; }
-    if (!confirm(`Remove ${user.email} from the dashboard?\n\nThey lose all access at once. Next you will be shown how to delete their sign-in account in Firebase too.`)) return;
+    if (!confirm(`Remove ${user.email} from the dashboard?\n\nThey lose all access at once, and their sign-in account is deleted too.`)) return;
     try {
         await window.cloud.deleteUserDoc(uid);
         logEvent({
@@ -15084,8 +15136,8 @@ async function removeUser(uid) {
             after: 'removed'
         });
         showToast(`${user.email} removed`, 'success');
-        // closeAccessModal runs after this returns; open the next step after it.
-        setTimeout(() => openAuthDeleteModal(user, 'removed from'), 0);
+        // closeAccessModal runs after this returns; the next step comes after it.
+        setTimeout(() => deleteSignInAccount(user, 'removed'), 0);
         return true;
     } catch (e) {
         showToast('Failed to remove user — ' + e.message, 'error');

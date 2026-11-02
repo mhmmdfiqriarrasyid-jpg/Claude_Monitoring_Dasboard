@@ -28,7 +28,8 @@ const { launch, BASE_URL } = require('./_env');
         await removeUserFromAccess('uidA'); await tick();
         const open = () => document.getElementById('authDeleteModal').classList.contains('open');
         t('remove: dokumen user dihapus', del, ['uidA']);
-        t('konfirmasi menyebut langkah berikutnya', /sign-in account in Firebase/.test(asked.pop() || ''), true);
+        t('konfirmasi menyebut akun login ikut dihapus', /sign-in account is deleted too/.test(asked.pop() || ''), true);
+        t('fungsi server belum ada: dialog langkah manual sebagai cadangan', open(), true);
         t('dialog hapus akun login terbuka, dialog Access tertutup', [open(), document.getElementById('accessModal').classList.contains('open')], [true, false]);
         t('email dan UID untuk disalin', [document.getElementById('authDeleteEmail').textContent, document.getElementById('authDeleteUid').textContent], ['a@x.id', 'uidA']);
         t('tautan ke Firebase Authentication project ini', document.getElementById('authDeleteOpen').getAttribute('href'),
@@ -38,6 +39,20 @@ const { launch, BASE_URL } = require('./_env');
         t('Done menutup dialog', open(), false);
         await rejectUser('uidP'); await tick();
         t('reject: dialog yang sama untuk pendaftar', [del.pop(), open(), document.getElementById('authDeleteEmail').textContent], ['uidP', true, 'p@x.id']);
+        closeAuthDeleteModal();
+
+        // ---- 2.15.0: server (Cloud Functions) menghapus akun login ----
+        const calls = []; const toasts = []; window.showToast = m => toasts.push(String(m));
+        window.cloud.callFunction = (n, d) => { calls.push([n, d && d.uid]); return Promise.resolve({ deleted: true }); };
+        allUsers.push({ uid: 'uidB', email: 'b@x.id', displayName: 'Budi', role: 'staff', status: 'active', access: {} });
+        openAccessModal('uidB'); await tick();
+        await removeUserFromAccess('uidB'); await tick(80);
+        t('server: fungsi deleteSignInAccount dipanggil untuk uid itu', calls, [['deleteSignInAccount', 'uidB']]);
+        t('server: tanpa dialog manual, pesan sukses', [open(), toasts.pop()], [false, 'b@x.id removed — sign-in account deleted too']);
+        window.cloud.callFunction = () => Promise.reject(Object.assign(new Error('x'), { code: 'functions/internal' }));
+        allUsers.push({ uid: 'uidC', email: 'c@x.id', role: 'viewer', status: 'pending' });
+        await rejectUser('uidC'); await tick(80);
+        t('server gagal: dialog manual tetap muncul', [open(), document.getElementById('authDeleteEmail').textContent], [true, 'c@x.id']);
         closeAuthDeleteModal();
         window.__T = T;
     } catch (e) { window.__T = [{ n: 'CRASH ' + e.message + ' ' + (e.stack || '').split('\\n')[1], pass: false }]; } })()` });

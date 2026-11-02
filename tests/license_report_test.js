@@ -55,15 +55,31 @@ const server = require('../functions/licenseReport');
         window.cloud = { isReady: true, addHistoryEvents: () => Promise.resolve(),
             getEmailSettings: () => Promise.resolve({ recipients: ['a@x.id'], dailyEnabled: true }),
             saveEmailSettings: r => { __saved = r; return Promise.resolve(); },
-            lastMail: () => Promise.resolve({ at: Date.now(), trigger: 'daily', items: 3, recipients: ['a@x.id'] }),
+            lastMails: () => Promise.resolve({ licenseAlert: { at: Date.now(), trigger: 'daily', items: 3, recipients: ['a@x.id'] } }),
             callFunction: (n, d) => { __calls.push(n); return Promise.resolve(window.__fnResult); } };
         currentUser = { uid: 'o', email: 'o@x.id' };
         currentUserDoc = { uid: 'o', role: 'owner', status: 'active', email: 'o@x.id' };
         await openEmailSettingsModal();
-        R.loaded = [document.getElementById('emailRecipients').value, document.getElementById('emailDaily').checked, /Last sent/.test(document.getElementById('emailLast').textContent)];
+        R.loaded = [document.getElementById('emailRecipients').value, document.getElementById('emailDaily').checked, /Last report/.test(document.getElementById('emailLast').textContent)];
+        R.otherLast = [document.getElementById('damageLast').textContent, document.getElementById('reminderLast').textContent];
         document.getElementById('emailRecipients').value = 'B@x.id, c@x.id\nb@x.id';
         await saveEmailSettings();
         R.saved = __saved && [__saved.recipients, __saved.dailyEnabled, __saved.sendHour];
+        R.savedDefaults = __saved && [__saved.damageEnabled, __saved.damageRecipients, __saved.reminderEnabled, __saved.reminderHour, __saved.reminderRecipients];
+        // 2.15.0: breakdown + reminder sections
+        document.getElementById('damageEnabled').checked = true; await saveEmailSettings();
+        R.dmgNeedsRec = __toasts[__toasts.length - 1];
+        document.getElementById('damageRecipients').value = 'Sup@x.id';
+        document.getElementById('reminderEnabled').checked = true; syncEmailDaily();
+        R.remHourShown = document.getElementById('reminderHourGroup').style.display;
+        document.getElementById('reminderRecipients').value = 'lead@x.id, x@';
+        __saved = null; await saveEmailSettings();
+        R.remBad = [__saved, __toasts[__toasts.length - 1]];
+        document.getElementById('reminderRecipients').value = 'lead@x.id';
+        document.getElementById('reminderHour').value = '18';
+        await saveEmailSettings();
+        R.full = __saved && [__saved.damageEnabled, __saved.damageRecipients, __saved.reminderEnabled, __saved.reminderHour, __saved.reminderRecipients];
+        document.getElementById('damageEnabled').checked = false; document.getElementById('reminderEnabled').checked = false; syncEmailDaily();
         R.hourShown = document.getElementById('emailHourGroup').style.display;
         document.getElementById('emailHour').value = '16'; document.getElementById('emailDaily').checked = false; syncEmailDaily();
         R.hourHidden = document.getElementById('emailHourGroup').style.display;
@@ -100,10 +116,16 @@ const server = require('../functions/licenseReport');
         return R;
     });
     t('pengaturan dimuat dari server', ui.loaded, ['a@x.id', true, true]);
+    t('riwayat per jenis notifikasi', ui.otherLast, ['No alert sent yet', 'No reminder sent yet']);
+    t('bawaan: breakdown & pengingat mati, jam pengingat 17', ui.savedDefaults, [false, [], false, 17, []]);
+    t('breakdown aktif tanpa penerima ditolak', ui.dmgNeedsRec, 'Breakdown alerts: add at least one recipient');
+    t('jam pengingat tampil saat aktif', ui.remHourShown, '');
+    t('alamat salah di pengingat ditolak', ui.remBad, [null, 'Daily Report reminder: not an email address — x@']);
+    t('breakdown + pengingat tersimpan', ui.full, [true, ['sup@x.id'], true, 18, ['lead@x.id']]);
     t('owner menyimpan: huruf kecil, tanpa duplikat, jam bawaan 07', ui.saved, [['b@x.id', 'c@x.id'], true, 7]);
     t('jam kirim tampil saat harian aktif, tersembunyi saat mati', [ui.hourShown, ui.hourHidden], ['', 'none']);
     t('harian dimatikan, jam tersimpan', ui.off, [false, 16]);
-    t('alamat salah ditolak', ui.bad, [null, 'Not an email address: bukan-email']);
+    t('alamat salah ditolak', ui.bad, [null, 'License Alert: not an email address — bukan-email']);
     t('Email Report memanggil fungsi server', ui.sent, [['sendLicenseAlert'], 'Alert report sent to 2 recipients']);
     t('tanpa penerima: diberi tahu', ui.noRec, 'No recipients yet — set them with the gear icon');
     t('fungsi belum di-deploy: pesan jelas', ui.notDeployed, 'The email service is not set up on the server yet');

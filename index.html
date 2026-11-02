@@ -4236,40 +4236,54 @@
 <!-- Breakdown popover (positioned via JS) -->
 <div id="breakdownPopover" class="breakdown-popover" style="display:none"></div>
 
-<!-- ===== EMAIL SETTINGS MODAL (2.14.0: sent by the server) ===== -->
+<!-- ===== NOTIFICATION SETTINGS (2.14.0 / 2.15.0: emails sent by the server) ===== -->
 <div class="modal-overlay" id="emailSettingsModal">
-    <div class="modal-card" style="max-width:480px">
+    <div class="modal-card notif-card" role="dialog" aria-labelledby="notifTitle">
         <div class="modal-header">
-            <h3><i class="fas fa-envelope-circle-check"></i> Notification Settings</h3>
+            <h3 id="notifTitle"><i class="fas fa-envelope-circle-check"></i> Notification Settings</h3>
             <button class="btn-icon" onclick="closeEmailSettingsModal()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
         </div>
-        <div class="modal-body">
-            <h4 class="notif-title">License Alert Report</h4>
-            <p style="margin-bottom:14px;font-size:13px;color:var(--text-secondary)">
-                Emailed by the server: licences expiring in the next 30 days, plus low licence stock. Sent only when there is something to report.
-            </p>
-            <div style="display:flex;flex-direction:column;gap:12px">
-                <div class="form-group">
-                    <label class="form-label" for="emailRecipients">Recipients <span class="form-optional">(one per line, up to 10)</span></label>
-                    <textarea class="form-input" id="emailRecipients" rows="3" placeholder="manager@company.com"></textarea>
-                </div>
-                <div class="form-group">
-                    <label class="notif-check">
-                        <input type="checkbox" id="emailDaily" onchange="syncEmailDaily()">
-                        Send automatically every day
-                    </label>
-                </div>
-                <div class="form-group" id="emailHourGroup">
+        <div class="modal-body notif-body">
+            <p class="form-hint" id="emailOwnerNote" hidden>Only the Super Admin can change these settings.</p>
+
+            <section class="notif-sec" aria-labelledby="notifLicTitle">
+                <h4 class="notif-title" id="notifLicTitle">License Alert Report</h4>
+                <p class="notif-desc">Licences expiring in the next 30 days, plus low licence stock. Sent only when there is something to report.</p>
+                <label class="form-label" for="emailRecipients">Recipients <span class="form-optional">(one per line, up to 10)</span></label>
+                <textarea class="form-input" id="emailRecipients" rows="2" placeholder="manager@company.com"></textarea>
+                <label class="notif-check"><input type="checkbox" id="emailDaily" onchange="syncEmailDaily()"> Send automatically every day</label>
+                <div class="notif-hour" id="emailHourGroup">
                     <label class="form-label" for="emailHour">Send time <span class="form-optional">(WIT)</span></label>
                     <select class="form-input" id="emailHour"></select>
                 </div>
                 <p class="form-hint" id="emailLast"></p>
-                <p class="form-hint" id="emailOwnerNote" hidden>Only the Super Admin can change these settings.</p>
-            </div>
+            </section>
+
+            <section class="notif-sec" aria-labelledby="notifDmgTitle">
+                <h4 class="notif-title" id="notifDmgTitle">Breakdown &amp; damage alerts</h4>
+                <p class="notif-desc">An email for every new damage record — marked <strong>Breakdown</strong> when the unit was set to Breakdown. Checked every 10 minutes.</p>
+                <label class="form-label" for="damageRecipients">Recipients</label>
+                <textarea class="form-input" id="damageRecipients" rows="2" placeholder="supervisor@company.com"></textarea>
+                <label class="notif-check"><input type="checkbox" id="damageEnabled"> Send breakdown &amp; damage alerts</label>
+                <p class="form-hint" id="damageLast"></p>
+            </section>
+
+            <section class="notif-sec" aria-labelledby="notifRemTitle">
+                <h4 class="notif-title" id="notifRemTitle">Daily Report reminder</h4>
+                <p class="notif-desc">Who has not sent the Daily Report of a shift that has ended — from the shift schedule, leaving out people on approved leave. Sent only when someone is missing.</p>
+                <label class="form-label" for="reminderRecipients">Recipients</label>
+                <textarea class="form-input" id="reminderRecipients" rows="2" placeholder="supervisor@company.com"></textarea>
+                <label class="notif-check"><input type="checkbox" id="reminderEnabled" onchange="syncEmailDaily()"> Send the reminder every day</label>
+                <div class="notif-hour" id="reminderHourGroup">
+                    <label class="form-label" for="reminderHour">Send time <span class="form-optional">(WIT)</span></label>
+                    <select class="form-input" id="reminderHour"></select>
+                </div>
+                <p class="form-hint" id="reminderLast"></p>
+            </section>
         </div>
         <div class="form-actions">
             <button class="btn btn-secondary" onclick="closeEmailSettingsModal()">Close</button>
-            <button class="btn btn-secondary" id="emailSendNowBtn" onclick="sendLicenseAlertEmail()"><i class="fas fa-paper-plane"></i> Send now</button>
+            <button class="btn btn-secondary" id="emailSendNowBtn" onclick="sendLicenseAlertEmail()" title="Send the License Alert report now"><i class="fas fa-paper-plane"></i> Send license report now</button>
             <button class="btn btn-primary" id="emailSaveBtn" onclick="saveEmailSettings()"><i class="fas fa-check"></i> Save</button>
         </div>
     </div>

@@ -485,6 +485,20 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pembaca License Stock bisa melihat); `mailLog` ditulis server saja.
   **Perlu publish ulang `firestore.rules`** dan deploy fungsi dari Cloud
   Shell — langkahnya di `functions/README.md`.
+  **2.15.0:** satu fungsi terjadwal `notificationTick` (tiap 10 menit, WIT)
+  menggantikan `dailyLicenseAlert` dan menambah **email breakdown/kerusakan**
+  (tiap catatan kerusakan baru, ditandai Breakdown bila unit di-set
+  Breakdown) serta **pengingat Daily Report** (siapa yang belum kirim laporan
+  shift yang sudah selesai — Pagi ≥15:00, Siang ≥23:00, Malam ≥07:00 esoknya;
+  tanpa anggota nonaktif / cuti disetujui; draft = belum kirim). Masing-masing
+  punya penerima dan saklar sendiri di Admin → Notifications; menu terlihat
+  oleh owner dan pembaca License Stock (hanya-lihat). **Remove user /
+  Reject** sekarang juga menghapus akun login lewat fungsi
+  `deleteSignInAccount`; dialog langkah manual hanya muncul bila server gagal.
+  Dijaga `tests/team_notices_test.js`, `tests/authdel_test.js`,
+  `tests/license_report_test.js`, skenario Notif di `tests/rules_test.js`.
+  **Perlu publish `firestore.rules` + deploy ulang fungsi** (deploy akan
+  menanyakan penghapusan `dailyLicenseAlert` — jawab y).
   2.14.2: jam kirim harian dipilih di layar itu (`sendHour`, WIT, bawaan
   07:00) dan bisa dimatikan; fungsi berjalan tiap jam dan hanya mengirim
   pada jam terpilih, sekali sehari (`mailState/daily`). **Perlu deploy ulang

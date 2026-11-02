@@ -2,10 +2,11 @@
 
 | Function | Trigger | What it does |
 |---|---|---|
-| `dailyLicenseAlert` | every hour (WIT) | At the hour chosen in Admin → Notifications (`settings/email.sendHour`, default 07:00) emails the License Alert report to the recipients, when *daily* is on and a licence expires within 30 days — once a day (`mailState/daily`) |
-| `sendLicenseAlert` | callable (Email Report button) | Same report, now. Owner, or an active account that can see License Stock |
+| `notificationTick` | every 10 minutes (WIT) | As set in Admin → Notifications (`settings/email`): the License Alert report once a day at its hour, the Daily Report reminder once a day at its hour (`mailState/daily`, `mailState/reminder`), and a Breakdown / damage email for each new damage record (`mailState/damage`) |
+| `sendLicenseAlert` | callable | "Send license report now" / Email Report. Owner, or an active account that can see License Stock |
+| `deleteSignInAccount` | callable | After the owner removes or rejects someone: deletes their Firebase sign-in account. Owner only; refused while the person still has a `users` record, never for the owner |
 
-The report is built by `licenseReport.js`, the same rules as the dashboard
+The licence report is built by `licenseReport.js`; the reminder and damage email by `teamNotices.js` (`tests/team_notices_test.js`). The licence report uses, the same rules as the dashboard
 (`tests/license_report_test.js` checks both give the same lines). Mail goes
 through Gmail with an App Password; nothing about it is in the browser.
 

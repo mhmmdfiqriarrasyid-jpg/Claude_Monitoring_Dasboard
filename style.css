@@ -10848,3 +10848,10 @@ body:has(.modal-overlay.open) .install-banner { display: none; }
 /* 2.14.1: Notification Settings */
 .notif-title { margin: 0 0 4px; font-size: 15px; font-weight: 700; }
 .notif-check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); cursor: pointer; }
+/* 2.15.0: Notification Settings — three sections */
+#emailSettingsModal .notif-card { max-width: 560px; }
+.notif-body { display: flex; flex-direction: column; gap: 14px; max-height: 70vh; overflow-y: auto; }
+.notif-sec { display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; }
+.notif-desc { margin: 0; font-size: 13px; color: var(--text-secondary); }
+.notif-hour { display: flex; flex-direction: column; gap: 4px; max-width: 200px; }
+.notif-sec .form-hint:empty { display: none; }
