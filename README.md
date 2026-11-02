@@ -142,7 +142,7 @@ Awesome dan font Poppins/Open Sans disimpan di `vendor/` (salinan persis
 dari paket npm resmi, versi terkunci — lihat `vendor/README.md`), bukan
 dari CDN pihak ketiga. `index.html` memasang Content-Security-Policy:
 script hanya dari situs ini + `www.gstatic.com` (Firebase), koneksi hanya
-ke `*.googleapis.com` dan `api.emailjs.com`, tanpa plugin/objek.
+ke `*.googleapis.com` dan `*.cloudfunctions.net` (2.14.0; EmailJS sudah dilepas), tanpa plugin/objek.
 `'unsafe-inline'` masih perlu untuk atribut `onclick`. Menambah library
 atau layanan luar baru = tambahkan juga ke CSP, atau browser akan
 memblokirnya (`tests/csp_test.js` memeriksa ini).
@@ -475,6 +475,16 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   disimpan Google (terpisah dari bucket Storage). Cek: `gcloud firestore
   backups list`. Memulihkan = restore ke database baru lalu pindahkan datanya
   (`gcloud firestore databases restore --source-backup=… --destination-database=…`).
+- **Email lisensi dari server 2.14.0 (Cloud Functions; dijaga
+  `tests/license_report_test.js` + skenario Email di `tests/rules_test.js`).**
+  EmailJS dilepas. `functions/` berisi `dailyLicenseAlert` (tiap hari 07:00
+  WIT) dan `sendLicenseAlert` (tombol Email Report), lewat Gmail App Password
+  di Secret Manager. Laporan dibuat `functions/licenseReport.js` dengan aturan
+  yang sama persis dengan dashboard (tes membandingkan keduanya). Penerima dan
+  saklar harian disimpan di `settings/email` (hanya owner yang mengubah,
+  pembaca License Stock bisa melihat); `mailLog` ditulis server saja.
+  **Perlu publish ulang `firestore.rules`** dan deploy fungsi dari Cloud
+  Shell — langkahnya di `functions/README.md`.
 - **Riak air di halaman masuk v176.** Panel teal di halaman Sign in dan
   halaman menunggu persetujuan menampilkan riak air yang mengikuti kursor
   (atau jari di HP); klik/tap membuat riak yang lebih besar. Simulasi

@@ -9,7 +9,6 @@ pack <name>@<version>`) and bump CACHE_NAME in service-worker.js.
 |---|---|
 | chart.umd.js | chart.js@4.4.1 (dist/chart.umd.js) |
 | papaparse.min.js | papaparse@5.4.1 |
-| email.min.js | @emailjs/browser@4.4.1 (dist/email.min.js) |
 | xlsx.full.min.js | xlsx@0.18.5 (dist/xlsx.full.min.js), loaded only when importing Excel |
 | fontawesome/ | @fortawesome/fontawesome-free@6.5.1 (css/all.min.css, webfonts/*.woff2) |
 | pdfjs/ | pdfjs-dist@3.11.174 (legacy/build/pdf.min.js + pdf.worker.min.js), loaded only when a PDF is opened in the Learning Center |

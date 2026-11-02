@@ -10,7 +10,7 @@
          2.11.2) from Google; the app talks only to Google/Firebase APIs and
          EmailJS. 'unsafe-inline' for scripts is
          still needed by the onclick="" attributes in this page. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com; style-src 'self' 'unsafe-inline' blob:; font-src 'self' data: blob:; img-src 'self' data: blob: https://www.gstatic.com; connect-src 'self' https://*.googleapis.com https://www.gstatic.com https://www.google.com https://api.emailjs.com data: blob:; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com https://drive.google.com blob:; worker-src 'self'; manifest-src 'self'; media-src 'self' blob: data: https://firebasestorage.googleapis.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com; style-src 'self' 'unsafe-inline' blob:; font-src 'self' data: blob:; img-src 'self' data: blob: https://www.gstatic.com; connect-src 'self' https://*.googleapis.com https://www.gstatic.com https://www.google.com https://*.cloudfunctions.net data: blob:; frame-src https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com https://drive.google.com blob:; worker-src 'self'; manifest-src 'self'; media-src 'self' blob: data: https://firebasestorage.googleapis.com; object-src 'none'; base-uri 'self'; form-action 'self'">
     <meta name="referrer" content="strict-origin-when-cross-origin">
 
     <!-- Fonts & Icons (self-hosted, see vendor/README.md) -->
@@ -20,7 +20,6 @@
     <!-- Libraries (self-hosted, pinned versions) -->
     <script src="vendor/chart.umd.js"></script>
     <script src="vendor/papaparse.min.js"></script>
-    <script src="vendor/email.min.js"></script>
 
     <!-- PWA -->
     <link rel="manifest" href="manifest.webmanifest">
@@ -4233,7 +4232,7 @@
 <!-- Breakdown popover (positioned via JS) -->
 <div id="breakdownPopover" class="breakdown-popover" style="display:none"></div>
 
-<!-- ===== EMAIL SETTINGS MODAL ===== -->
+<!-- ===== EMAIL SETTINGS MODAL (2.14.0: sent by the server) ===== -->
 <div class="modal-overlay" id="emailSettingsModal">
     <div class="modal-card" style="max-width:480px">
         <div class="modal-header">
@@ -4242,37 +4241,26 @@
         </div>
         <div class="modal-body">
             <p style="margin-bottom:14px;font-size:13px;color:var(--text-secondary)">
-                Connect with <a href="https://www.emailjs.com/" target="_blank" rel="noopener">EmailJS</a> (free, ~200 emails/month).
-                Create an account, then fill in the details below.
+                The License Alert report is emailed by the server — licences expiring in the next 30 days, plus low licence stock.
             </p>
             <div style="display:flex;flex-direction:column;gap:12px">
                 <div class="form-group">
-                    <label class="form-label" for="emailjsPublicKey">Public Key</label>
-                    <input class="form-input" id="emailjsPublicKey" placeholder="From EmailJS → Account → API Keys">
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="emailjsServiceId">Service ID</label>
-                    <input class="form-input" id="emailjsServiceId" placeholder="From EmailJS → Email Services">
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="emailjsTemplateId">Template ID</label>
-                    <input class="form-input" id="emailjsTemplateId" placeholder="From EmailJS → Email Templates">
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="emailjsRecipient">Recipient Email</label>
-                    <input class="form-input" id="emailjsRecipient" type="email" placeholder="your@email.com">
+                    <label class="form-label" for="emailRecipients">Recipients <span class="form-optional">(one per line, up to 10)</span></label>
+                    <textarea class="form-input" id="emailRecipients" rows="3" placeholder="manager@company.com"></textarea>
                 </div>
                 <div class="form-group">
                     <label class="form-label" style="display:flex;align-items:center;gap:8px">
-                        <input type="checkbox" id="emailjsAutoDaily">
-                        Send automatically once a day when the app opens (if there are alerts)
+                        <input type="checkbox" id="emailDaily">
+                        Send every morning at 07:00 WIT when licences are expiring
                     </label>
                 </div>
+                <p class="form-hint" id="emailLast"></p>
+                <p class="form-hint" id="emailOwnerNote" hidden>Only the Super Admin can change these settings.</p>
             </div>
         </div>
         <div class="form-actions">
-            <button class="btn btn-secondary" onclick="closeEmailSettingsModal()">Cancel</button>
-            <button class="btn btn-primary" onclick="saveEmailSettings()"><i class="fas fa-check"></i> Save</button>
+            <button class="btn btn-secondary" onclick="closeEmailSettingsModal()">Close</button>
+            <button class="btn btn-primary" id="emailSaveBtn" onclick="saveEmailSettings()"><i class="fas fa-check"></i> Save</button>
         </div>
     </div>
 </div>

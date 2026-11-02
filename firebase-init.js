@@ -75,6 +75,15 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
+// Cloud Functions (2.14.0): callable functions in Jakarta, loaded on first use.
+let _functionsP = null;
+function _functions() {
+    if (!_functionsP) _functionsP = import("https://www.gstatic.com/firebasejs/12.12.0/firebase-functions.js")
+        .then(mod => ({ mod, f: mod.getFunctions(app, 'asia-southeast2') }))
+        .catch(err => { _functionsP = null; throw err; });
+    return _functionsP;
+}
+
 // Cloud Storage (2.13.0, Blaze): loaded on first use only.
 let _storageP = null;
 function _storage() {
@@ -686,6 +695,25 @@ window.cloud = {
     },
     async deleteLearningChunks(itemId, count) {
         for (let i = 0; i < count; i++) await deleteDoc(doc(db, LEARNING_FILES_COL, `${itemId}__${i}`));
+    },
+    // ---- Server email (2.14.0) ----
+    async callFunction(name, data) {
+        const f = await _functions();
+        const res = await f.mod.httpsCallable(f.f, name, { timeout: 60000 })(data || {});
+        return res.data;
+    },
+    async getEmailSettings() {
+        const snap = await getDoc(doc(db, 'settings', 'email'));
+        return snap.exists() ? snap.data() : {};
+    },
+    async saveEmailSettings(rec) {
+        await setDoc(doc(db, 'settings', 'email'), rec);
+    },
+    async lastMail() {
+        const snap = await getDocs(query(collection(db, 'mailLog'), orderBy('at', 'desc'), limit(1)));
+        if (snap.empty) return null;
+        const d = snap.docs[0].data();
+        return { ...d, at: d.at && d.at.toMillis ? d.at.toMillis() : null };
     },
     // 2.13.0 (Blaze): files in Cloud Storage under learning/<fileId>/<name>.
     // The Storage SDK is imported on first use, so the app still starts when

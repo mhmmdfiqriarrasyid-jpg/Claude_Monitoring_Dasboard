@@ -43,6 +43,7 @@ async function check(name, p, expectOk) {
         await u('sup', 'staff', { inspection: 'view', inspectionApprove: 'edit', damage: 'edit' });
         await u('wh', 'staff', { warehouse: 'edit' });
         await u('whv', 'staff', { warehouse: 'view' });
+        await u('licv', 'staff', { licenseStock: 'view' });
         await setDoc(doc(db, 'workLogs', 'wl_1'), { id: 'wl_1', task: 'x', approval: 'pending', createdByUid: 'writer' });
         await setDoc(doc(db, 'workLogs', 'wl_ok'), { id: 'wl_ok', task: 'x', approval: 'approved', approvedByEmail: 'boss@x.id', createdByUid: 'writer' });
         await setDoc(doc(db, 'workLogs', 'wl_both'), { id: 'wl_both', task: 'x', approval: 'pending', createdByUid: 'both' });
@@ -538,6 +539,17 @@ async function check(name, p, expectOk) {
     await check('Learning: tanpa akses edit TIDAK bisa menulis potongan', setDoc(doc(as('writer'), 'learningFiles', 'f_9__0'), { id: 'f_9__0', data: 'x' }), false);
     await check('Learning: editor menghapus', deleteDoc(doc(LCE, 'learningItems', 'lc_1')), true);
     await check('Learning Categories: editor menyimpan daftar', setDoc(doc(LCE, 'masterLists', 'learnCategory'), { id: 'learnCategory', values: ['SOP'] }), true);
+    // ---- 2.14.0: email server (Cloud Functions) ----
+    const EM = { recipients: ['a@x.id'], dailyEnabled: true, updatedAt: 1, updatedBy: 'o@x.id' };
+    await check('Email: owner menyimpan penerima', setDoc(doc(as('owner'), 'settings', 'email'), EM), true);
+    await check('Email: pembaca License Stock bisa melihat', getDoc(doc(as('licv'), 'settings', 'email')), true);
+    await check('Email: pembaca License Stock TIDAK bisa mengubah', setDoc(doc(as('licv'), 'settings', 'email'), EM), false);
+    await check('Email: tanpa akses lisensi TIDAK bisa melihat', getDoc(doc(as('nobody'), 'settings', 'email')), false);
+    await check('Email: lebih dari 10 penerima DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, recipients: Array.from({ length: 11 }, (_, i) => i + '@x.id') }), false);
+    await check('Email: kolom asing DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, gmailPassword: 'x' }), false);
+    await check('Email: dokumen settings lain DITOLAK', setDoc(doc(as('owner'), 'settings', 'other'), { dailyEnabled: true }), false);
+    await check('Email: mailLog tidak bisa ditulis dari browser', setDoc(doc(as('owner'), 'mailLog', 'm1'), { kind: 'x' }), false);
+    await check('Email: owner membaca mailLog', getDoc(doc(as('owner'), 'mailLog', 'm1')), true);
     await check('Device Categories: editor warehouse menyimpan daftar', setDoc(doc(as('wh'), 'masterLists', 'deviceType'), { id: 'deviceType', values: ['Basestation'] }), true);
     await check('Device Categories: pembaca warehouse TIDAK bisa menyimpan', setDoc(doc(as('whv'), 'masterLists', 'deviceType'), { id: 'deviceType', values: ['X'] }), false);
 

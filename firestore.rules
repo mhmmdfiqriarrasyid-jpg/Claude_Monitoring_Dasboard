@@ -532,6 +532,21 @@ service cloud.firestore {
         && request.resource.data.get('data', '') is string
         && request.resource.data.get('data', '').size() <= 950000;
     }
+    // Server email (2.14.0, Cloud Functions): the owner sets who gets the
+    // licence alert and whether it goes out every morning; License Stock
+    // viewers can see that. mailLog is written by the server only.
+    match /settings/{id} {
+      allow read: if id == 'email' && (isOwner() || canViewArea('licenseStock'));
+      allow write: if id == 'email' && isOwner()
+        && request.resource.data.keys().hasOnly(['recipients', 'dailyEnabled', 'updatedAt', 'updatedBy'])
+        && request.resource.data.get('recipients', []) is list
+        && request.resource.data.get('recipients', []).size() <= 10
+        && request.resource.data.get('dailyEnabled', false) is bool;
+    }
+    match /mailLog/{id} {
+      allow read: if isOwner() || canViewArea('licenseStock');
+      allow write: if false;
+    }
     match /purchasePhotos/{id} {
       allow read:   if canViewArea('purchase') || purchaseOwn();
       allow delete: if canEditArea('purchase') || purchaseOwn();

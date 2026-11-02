@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.13.0';
+const APP_VERSION = 'v2.14.0';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -4437,7 +4437,6 @@ function onDataLoaded() {
     // Persist any premium licence that has expired into its fallback tier.
     scheduleExpiredLicenseDowngrades();
 
-    _tryAutoDailyEmail();
     document.dispatchEvent(new CustomEvent('ot:data'));
 }
 
@@ -4996,36 +4995,58 @@ function renderStockAlerts() {
         </div>`).join('');
 }
 
-// ---- Email Alert (EmailJS) ----
-function _getEmailSettings() {
-    try { return JSON.parse(localStorage.getItem('emailjs_settings') || '{}'); }
-    catch { return {}; }
+// ---- Email Alert (2.14.0: sent by the server, Cloud Functions) ----
+// The owner keeps the recipients and the daily switch in settings/email; the
+// server (functions/index.js) builds the same report as _buildAlertList and
+// sends it through Gmail — every morning at 07:00 WIT when the daily email
+// is on, or now from the Email Report button. No email key in the browser.
+const EMAIL_RE = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/;
+function _parseRecipients(text) {
+    return [...new Set(String(text || '').split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean))];
 }
-
-function openEmailSettingsModal() {
-    const s = _getEmailSettings();
-    document.getElementById('emailjsPublicKey').value  = s.publicKey  || '';
-    document.getElementById('emailjsServiceId').value  = s.serviceId  || '';
-    document.getElementById('emailjsTemplateId').value = s.templateId || '';
-    document.getElementById('emailjsRecipient').value  = s.recipient  || '';
-    document.getElementById('emailjsAutoDaily').checked = !!s.autoDaily;
+async function openEmailSettingsModal() {
+    const owner = isOwner();
+    const box = document.getElementById('emailRecipients');
+    const daily = document.getElementById('emailDaily');
+    box.value = ''; daily.checked = false;
+    box.disabled = daily.disabled = !owner;
+    document.getElementById('emailSaveBtn').hidden = !owner;
+    document.getElementById('emailOwnerNote').hidden = owner;
+    document.getElementById('emailLast').textContent = 'Loading…';
     document.getElementById('emailSettingsModal').classList.add('open');
+    try {
+        const s = await window.cloud.getEmailSettings();
+        box.value = (s.recipients || []).join('\n');
+        daily.checked = !!s.dailyEnabled;
+    } catch (err) {
+        console.warn('[email] settings not read:', err);
+    }
+    try {
+        const m = window.cloud.lastMail ? await window.cloud.lastMail() : null;
+        document.getElementById('emailLast').textContent = m && m.at
+            ? `Last sent ${toLocalDateTime(m.at)} (${m.trigger === 'daily' ? 'daily' : 'by ' + (m.by || 'someone')}) — ${m.items} item(s) to ${(m.recipients || []).length} recipient(s)`
+            : 'Nothing sent yet';
+    } catch (_) { document.getElementById('emailLast').textContent = ''; }
 }
 function closeEmailSettingsModal() {
     document.getElementById('emailSettingsModal').classList.remove('open');
 }
-function saveEmailSettings() {
-    const s = {
-        publicKey:  document.getElementById('emailjsPublicKey').value.trim(),
-        serviceId:  document.getElementById('emailjsServiceId').value.trim(),
-        templateId: document.getElementById('emailjsTemplateId').value.trim(),
-        recipient:  document.getElementById('emailjsRecipient').value.trim(),
-        autoDaily:  document.getElementById('emailjsAutoDaily').checked
-    };
-    if (!s.publicKey || !s.serviceId || !s.templateId || !s.recipient) {
-        showToast('Fill in all EmailJS fields', 'warning'); return;
+async function saveEmailSettings() {
+    if (!isOwner()) { showToast('Only the Super Admin changes email settings', 'warning'); return; }
+    const recipients = _parseRecipients(document.getElementById('emailRecipients').value);
+    const bad = recipients.filter(r => !EMAIL_RE.test(r));
+    if (bad.length) { showToast(`Not an email address: ${bad[0]}`, 'warning'); return; }
+    if (recipients.length > 10) { showToast('Up to 10 recipients', 'warning'); return; }
+    const dailyEnabled = document.getElementById('emailDaily').checked;
+    if (dailyEnabled && !recipients.length) { showToast('Add at least one recipient for the daily email', 'warning'); return; }
+    try {
+        await window.cloud.saveEmailSettings({ recipients, dailyEnabled, updatedAt: Date.now(), updatedBy: (currentUser && currentUser.email) || '' });
+    } catch (err) {
+        console.error('[email] save failed:', err);
+        showToast(err && err.code === 'permission-denied' ? 'Refused by the server — publish the latest firestore.rules' : 'Failed to save the email settings', 'error');
+        return;
     }
-    localStorage.setItem('emailjs_settings', JSON.stringify(s));
+    logEvent({ action: 'update', unitName: '[Settings] Email alerts', field: 'Recipients', before: '', after: `${recipients.join(', ')}${dailyEnabled ? ' · daily' : ''}` });
     closeEmailSettingsModal();
     showToast('Email settings saved', 'success');
 }
@@ -5062,62 +5083,30 @@ function _buildAlertList(units, opts) {
     return { expiredCount, soonCount, total: lines.length, lines: lines.map(l => l.text) };
 }
 
-function sendLicenseAlertEmail() {
-    const s = _getEmailSettings();
-    if (!s.publicKey || !s.serviceId || !s.templateId || !s.recipient) {
-        showToast('Set up EmailJS first — click the gear icon', 'warning');
-        openEmailSettingsModal();
-        return;
-    }
-
+async function sendLicenseAlertEmail() {
     // Expired licences are in the Units table; the email lists what is still
-    // running out.
+    // running out — the server applies the same rule.
     const report = _buildAlertList(undefined, { soonOnly: true });
-    if (report.total === 0) {
-        showToast('No license alerts to send', 'info'); return;
-    }
-
-    const today = new Date().toLocaleDateString('en-GB', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
-    const lowStock = _lowStockList();
-    const body = [
-        `License Alert Report — ${today}`,
-        `Expiring in the next 30 days: ${report.soonCount}`,
-        '',
-        'Status | Unit | Model | Serial Number | License | Site | Expiry Date | Remaining',
-        '—'.repeat(60),
-        ...report.lines,
-        ...(lowStock.length ? ['', 'LOW LICENSE STOCK', ...lowStock.map(l => `${l.type} | ${l.sisa} left`)] : [])
-    ].join('\n');
-
+    if (report.total === 0) { showToast('No license alerts to send', 'info'); return; }
+    if (!window.cloud || !window.cloud.callFunction) { showToast('Not connected — try again in a moment', 'warning'); return; }
     const btn = document.getElementById('btnEmailAlert');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending…';
-
-    emailjs.init(s.publicKey);
-    emailjs.send(s.serviceId, s.templateId, {
-        to_email: s.recipient,
-        subject: `License Alert: ${report.soonCount} expiring soon`,
-        message: body
-    }).then(() => {
-        showToast(`Alert report sent to ${s.recipient}`, 'success');
-        localStorage.setItem('emailjs_last_sent', new Date().toDateString());
-    }).catch(err => {
-        console.error('[emailjs]', err);
-        showToast('Failed to send email — check the EmailJS settings', 'error');
-    }).finally(() => {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-envelope"></i> Email Report';
-    });
-}
-
-function _tryAutoDailyEmail() {
-    const s = _getEmailSettings();
-    if (!s.autoDaily || !s.publicKey) return;
-    const lastSent = localStorage.getItem('emailjs_last_sent');
-    if (lastSent === new Date().toDateString()) return;
-    const report = _buildAlertList(undefined, { soonOnly: true });
-    if (report.total === 0) return;
-    sendLicenseAlertEmail();
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending…'; }
+    try {
+        const r = await window.cloud.callFunction('sendLicenseAlert');
+        if (r && r.sent) showToast(`Alert report sent to ${r.recipients} recipient${r.recipients === 1 ? '' : 's'}`, 'success');
+        else if (r && r.reason === 'no-recipients') {
+            showToast('No recipients yet — set them with the gear icon', 'warning');
+            if (isOwner()) openEmailSettingsModal();
+        } else showToast('No license alerts to send', 'info');
+    } catch (err) {
+        console.error('[email]', err);
+        const code = String(err && err.code || '');
+        showToast(/not-found|unavailable/.test(code) ? 'The email service is not set up on the server yet'
+            : /permission-denied/.test(code) ? 'You do not have access to License Stock'
+            : 'Failed to send the email — try again later', 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-envelope"></i> Email Report'; }
+    }
 }
 
 // ---- Component Health ----

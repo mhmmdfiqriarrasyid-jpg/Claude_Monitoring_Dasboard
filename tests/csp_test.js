@@ -17,7 +17,7 @@ const { launch, BASE_URL } = require('./_env');
     t('CSP terpasang', !!csp, true);
     t('CSP: object-src none, base-uri self', /object-src 'none'/.test(csp) && /base-uri 'self'/.test(csp), true);
     t('CSP: script hanya dari situs ini + Firebase/reCAPTCHA', (csp.match(/script-src ([^;]+)/) || [])[1], "'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com");
-    ['vendor/chart.umd.js', 'vendor/papaparse.min.js', 'vendor/email.min.js', 'vendor/xlsx.full.min.js', 'vendor/fonts.css',
+    ['vendor/chart.umd.js', 'vendor/papaparse.min.js', 'vendor/xlsx.full.min.js', 'vendor/fonts.css',
      'vendor/fontawesome/css/all.min.css', 'vendor/fontawesome/webfonts/fa-solid-900.woff2']
         .forEach(f => t(`ada ${f}`, fs.existsSync(path.join(root, f)), true));
 
@@ -32,7 +32,7 @@ const { launch, BASE_URL } = require('./_env');
         const X = await loadSheetJs().catch(e => null);
         return { chart: typeof Chart, papa: typeof Papa, emailjs: typeof emailjs, xlsx: !!(X && X.read), csp: window.__csp };
     });
-    t('library lokal termuat (Chart, Papa, EmailJS, SheetJS)', [r.chart, r.papa, r.emailjs, r.xlsx], ['function', 'object', 'object', true]);
+    t('library lokal termuat (Chart, Papa, SheetJS); EmailJS tidak lagi dimuat (2.14.0)', [r.chart, r.papa, r.emailjs, r.xlsx], ['function', 'object', 'undefined', true]);
     t('tanpa pelanggaran CSP', r.csp, []);
     await b.close();
 
