@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.12.4';
+const APP_VERSION = 'v2.12.5';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -24305,11 +24305,26 @@ function openMasterLists(kind) {
 function closeMasterLists() { document.getElementById('masterListsModal').classList.remove('open'); }
 function switchMasterList(kind) { _mlKind = kind; _pdImport = null; document.getElementById('mlNewValue').value = ''; renderMasterLists(); }
 
+const MASTER_TAB_GROUPS = [
+    { label: 'Fleet',            kinds: ['site', 'heavyBrand', 'brand', 'implGroup'] },
+    { label: 'Team & reports',   kinds: ['company', 'jobType', 'paddock'] },
+    { label: 'Damage & warehouse', kinds: ['damageType', 'deviceType'] },
+    { label: 'Learning Center',  kinds: ['learnCategory'] }
+];
 function renderMasterLists() {
     const tabs = document.getElementById('mlTabs');
-    tabs.innerHTML = masterTabs().map(k => `<button type="button" role="tab"
+    const visible = masterTabs();
+    const tab = k => `<button type="button" role="tab"
         class="team-tab${k === _mlKind ? ' active' : ''}" aria-selected="${k === _mlKind}" onclick="switchMasterList(${jsArg(k)})">
-        ${escapeHtml(k === 'paddock' ? 'Paddocks' : MASTER_DEF[k].plural)} <span class="team-tab__count">${k === 'paddock' ? paddockCount() : (masterLists[k] || []).length}</span></button>`).join('');
+        ${escapeHtml(k === 'paddock' ? 'Paddocks' : MASTER_DEF[k].plural)} <span class="team-tab__count">${k === 'paddock' ? paddockCount() : (masterLists[k] || []).length}</span></button>`;
+    // 2.12.5: grouped by the part of the app they feed, so ten tabs read as
+    // four short rows instead of one wrapped strip.
+    tabs.innerHTML = MASTER_TAB_GROUPS.map(g => {
+        const ks = g.kinds.filter(k => visible.includes(k));
+        return ks.length ? `<div class="ml-group" role="group" aria-label="${escapeHtml(g.label)}">
+            <span class="ml-group__label">${escapeHtml(g.label)}</span>
+            <div class="ml-group__tabs">${ks.map(tab).join('')}</div></div>` : '';
+    }).join('');
     // Paddocks are lists per company, with a panel of their own.
     const pd = _mlKind === 'paddock';
     document.getElementById('mlPaddocks').hidden = !pd;

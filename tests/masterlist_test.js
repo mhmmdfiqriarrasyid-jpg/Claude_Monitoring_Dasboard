@@ -48,6 +48,8 @@ const { launch, BASE_URL } = require('./_env');
         // =============== modal: isi dari data ===============
         openMasterLists('site');
         t('modal terbuka di tab Sites', document.querySelector('#mlTabs .team-tab.active').textContent.trim().replace(/\\s+/g, ' '), 'Sites 0');
+        t('tab dikelompokkan per area', [...document.querySelectorAll('#mlTabs .ml-group__label')].map(x => x.textContent), ['Fleet', 'Team & reports', 'Damage & warehouse', 'Learning Center']);
+        t('semua daftar ada di salah satu grup', MASTER_KINDS.concat(['paddock']).every(k => MASTER_TAB_GROUPS.some(g => g.kinds.includes(k))), true);
         t('tombol isi dari data menyebut jumlahnya', document.getElementById('mlFillBtn').textContent, 'Add the 4 value(s) in use');
         fillMasterFromUsage();
         t('isi dari data: ejaan mirip digabung ke yang terbanyak', saved[saved.length - 1], ['site', ['Gudang Lama', 'PT GPA', 'PT. MNM']]);

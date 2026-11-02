@@ -4344,6 +4344,14 @@ td[data-label="Approval"] { vertical-align: middle; }
 
 /* Master Lists modal. */
 .ml-tabs { flex-wrap: wrap; }
+/* 2.12.5: tabs grouped per area — a label column and a row of pills. */
+#mlTabs { display: flex; flex-direction: column; gap: 6px; padding: 10px 0 14px; }
+.ml-group { display: grid; grid-template-columns: 116px 1fr; align-items: center; gap: 10px; }
+.ml-group__label { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-light); }
+.ml-group__tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+#mlTabs .team-tab { flex: 0 0 auto; min-height: 0; padding: 4px 6px 4px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--card); font-size: 13px !important; line-height: 20px; }
+#mlTabs .team-tab:hover { background: var(--bg); }
+#mlTabs .team-tab.active { border-color: var(--primary); background: var(--primary-lighter); color: var(--accent-text); font-weight: 600; }
 .ml-list { max-height: 300px; overflow-y: auto; margin-top: 10px; }
 .ml-used { color: var(--text-light); font-size: 11.5px; margin-left: 6px; }
 .ml-outside__head { font-weight: 700; font-size: 12.5px; margin: 14px 0 6px; }
@@ -10185,8 +10193,9 @@ body[data-offline] #connectionLabel { color: var(--warning); font-weight: 600; }
     .hist-change { max-width: none; text-align: right; }
     .hist-foot { padding: 10px 16px; }
     .hist-foot .btn { flex: 1 1 100%; }
-    .ml-tabbar { padding: 0 16px; overflow-x: auto; scrollbar-width: none; }
-    #mlTabs { flex-wrap: nowrap; }
+    .ml-tabbar { padding: 0 16px; }
+    .ml-group { grid-template-columns: 1fr; gap: 4px; }
+    .ml-group__tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
     #masterListsModal .modal-body, #accessModal .modal-body { padding: 16px; }
     #masterListsModal .category-item { flex-wrap: wrap; }
     #accessGrid .access-row { padding: 8px 12px; }

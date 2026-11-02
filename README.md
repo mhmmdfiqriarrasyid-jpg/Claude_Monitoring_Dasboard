@@ -443,6 +443,13 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   beda kapital/spasi dihitung satu, device tanpa brand muncul sebagai
   "No brand set". Ganti kategori → brand yang tidak ada di sana kembali ke
   All brands. Export ikut filter. Tanpa perubahan rules.
+- **Master lists dikelompokkan 2.12.5 (dijaga `tests/masterlist_test.js`).**
+  Tab di modal Master lists dibagi per area (`MASTER_TAB_GROUPS`): *Fleet*
+  (Sites, Heavy Equipment Brands, Implement Brands, Implement Groups),
+  *Team & reports* (Companies, Job Types, Paddocks), *Damage & warehouse*
+  (Damage Types, Device Categories), *Learning Center* (Learning
+  Categories). Grup tanpa daftar yang boleh dilihat akun itu disembunyikan.
+  Daftar baru wajib dimasukkan ke salah satu grup.
 - **Riak air di halaman masuk v176.** Panel teal di halaman Sign in dan
   halaman menunggu persetujuan menampilkan riak air yang mengikuti kursor
   (atau jari di HP); klik/tap membuat riak yang lebih besar. Simulasi
