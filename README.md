@@ -485,6 +485,9 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pembaca License Stock bisa melihat); `mailLog` ditulis server saja.
   **Perlu publish ulang `firestore.rules`** dan deploy fungsi dari Cloud
   Shell — langkahnya di `functions/README.md`.
+  2.14.1: pengaturannya punya menu sendiri **Admin → Notifications**
+  (owner, dan pembaca License Stock hanya-lihat) dengan tombol *Send now*;
+  ikon ⚙️ di License Alerts membuka layar yang sama.
 - **Riak air di halaman masuk v176.** Panel teal di halaman Sign in dan
   halaman menunggu persetujuan menampilkan riak air yang mengikuti kursor
   (atau jari di HP); klik/tap membuat riak yang lebih besar. Simulasi

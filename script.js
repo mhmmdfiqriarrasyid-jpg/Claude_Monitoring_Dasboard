@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.14.0';
+const APP_VERSION = 'v2.14.1';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -14190,6 +14190,10 @@ function applyAccessVisibility() {
     if (navHistory) navHistory.style.display = hasAccess('history', 'view') ? '' : 'none';
     const navMaster = document.getElementById('navMasterLists');
     if (navMaster) navMaster.style.display = masterTabs().length ? '' : 'none';
+    // 2.14.1: Notifications (server email settings) — the owner, and whoever
+    // can see License Stock (read only).
+    const navNotif = document.getElementById('navNotifications');
+    if (navNotif) navNotif.style.display = isOwner() || hasAccess('licenseStock', 'view') ? '' : 'none';
     // The owner can change someone's access while they are signed in. Hiding
     // the menu is not enough — the stream has to stop too.
     if (!hasAccess('history', 'view')) stopHistorySubscription();

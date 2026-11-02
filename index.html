@@ -248,6 +248,10 @@
                 <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 6 1.5 1.5L7 5"></path><path d="m3 12 1.5 1.5L7 11"></path><path d="m3 18 1.5 1.5L7 17"></path><path d="M10 6h11"></path><path d="M10 12h11"></path><path d="M10 18h11"></path></svg>
                 <span class="nav__text">Master lists</span>
             </button>
+            <button type="button" class="nav__link" id="navNotifications" style="display:none" onclick="openEmailSettingsModal()" title="Email notifications sent by the server">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+                <span class="nav__text">Notifications</span>
+            </button>
             <button type="button" class="nav__link" id="navHistory" onclick="showHistory()" title="Change history">
                 <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></svg>
                 <span class="nav__text">History</span>
@@ -481,7 +485,7 @@
                         <button class="btn btn-secondary btn-sm" onclick="sendLicenseAlertEmail()" id="btnEmailAlert">
                             <i class="fas fa-envelope"></i> Email Report
                         </button>
-                        <button class="btn btn-secondary btn-sm" onclick="openEmailSettingsModal()" title="Email settings" aria-label="Email settings">
+                        <button class="btn btn-secondary btn-sm" onclick="openEmailSettingsModal()" title="Notification settings" aria-label="Notification settings">
                             <i class="fas fa-gear"></i>
                         </button>
                     </div>
@@ -4236,12 +4240,13 @@
 <div class="modal-overlay" id="emailSettingsModal">
     <div class="modal-card" style="max-width:480px">
         <div class="modal-header">
-            <h3><i class="fas fa-envelope-circle-check"></i> Email Alert Settings</h3>
+            <h3><i class="fas fa-envelope-circle-check"></i> Notification Settings</h3>
             <button class="btn-icon" onclick="closeEmailSettingsModal()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
         </div>
         <div class="modal-body">
+            <h4 class="notif-title">License Alert Report</h4>
             <p style="margin-bottom:14px;font-size:13px;color:var(--text-secondary)">
-                The License Alert report is emailed by the server — licences expiring in the next 30 days, plus low licence stock.
+                Emailed by the server: licences expiring in the next 30 days, plus low licence stock. Sent only when there is something to report.
             </p>
             <div style="display:flex;flex-direction:column;gap:12px">
                 <div class="form-group">
@@ -4249,7 +4254,7 @@
                     <textarea class="form-input" id="emailRecipients" rows="3" placeholder="manager@company.com"></textarea>
                 </div>
                 <div class="form-group">
-                    <label class="form-label" style="display:flex;align-items:center;gap:8px">
+                    <label class="notif-check">
                         <input type="checkbox" id="emailDaily">
                         Send every morning at 07:00 WIT when licences are expiring
                     </label>
@@ -4260,6 +4265,7 @@
         </div>
         <div class="form-actions">
             <button class="btn btn-secondary" onclick="closeEmailSettingsModal()">Close</button>
+            <button class="btn btn-secondary" id="emailSendNowBtn" onclick="sendLicenseAlertEmail()"><i class="fas fa-paper-plane"></i> Send now</button>
             <button class="btn btn-primary" id="emailSaveBtn" onclick="saveEmailSettings()"><i class="fas fa-check"></i> Save</button>
         </div>
     </div>

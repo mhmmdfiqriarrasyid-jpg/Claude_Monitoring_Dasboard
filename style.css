@@ -10845,3 +10845,6 @@ body:has(.modal-overlay.open) .install-banner { display: none; }
 .lc-viewer__body--video { padding: 0; background: #000; align-items: center; justify-content: center; }
 .lc-video { display: block; width: 100%; max-height: 78vh; background: #000; }
 .lc-openext { margin-top: 12px; display: inline-flex; }
+/* 2.14.1: Notification Settings */
+.notif-title { margin: 0 0 4px; font-size: 15px; font-weight: 700; }
+.notif-check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); cursor: pointer; }
