@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.12.5';
+const APP_VERSION = 'v2.13.0';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -18365,7 +18365,8 @@ let learningItems = [];
 let cloudLearningUnsub = null;
 let _lcCategory = '';
 const LEARN_DEFAULT_CATEGORIES = ['Precision Agriculture', 'Heavy Equipment', 'Safety (K3)', 'Dashboard How-to', 'General'];
-const LEARN_MAX_BYTES = 15 * 1024 * 1024;
+const LEARN_MAX_BYTES = 15 * 1024 * 1024;       // files kept in Firestore pieces (Spark fallback)
+const LEARN_CLOUD_MAX = { doc: 100 * 1024 * 1024, video: 500 * 1024 * 1024 };   // 2.13.0: Cloud Storage
 const LEARN_CHUNK_BYTES = 700 * 1024;          // base64 of this stays under Firestore's 1 MiB per document
 const _lcBytesCache = new Map();               // fileId -> Uint8Array, this session
 
@@ -18381,9 +18382,15 @@ function detectLearnFormat(bytes, name) {
     if (head({ start: 0, end: 5 }) === '%PDF-') return 'pdf';
     if (head({ start: 0, end: 4 }) === 'PK\u0003\u0004' && /\.epub$/i.test(name || '')) return 'epub';
     if (bytes.length > 68 && head({ start: 60, end: 68 }) === 'BOOKMOBI') return 'mobi';
+    // 2.13.0: MP4 / MOV ("ftyp" box) and WebM (EBML header).
+    if (bytes.length > 12 && head({ start: 4, end: 8 }) === 'ftyp' && /\.(mp4|m4v|mov)$/i.test(name || '')) return 'video';
+    if (bytes.length > 4 && bytes[0] === 0x1A && bytes[1] === 0x45 && bytes[2] === 0xDF && bytes[3] === 0xA3 && /\.webm$/i.test(name || '')) return 'video';
     return '';
 }
-const LEARN_FORMAT_LABEL = { pdf: 'PDF', epub: 'EPUB', mobi: 'MOBI' };
+function learnVideoMime(name) {
+    return /\.webm$/i.test(name) ? 'video/webm' : /\.mov$/i.test(name) ? 'video/quicktime' : 'video/mp4';
+}
+const LEARN_FORMAT_LABEL = { pdf: 'PDF', epub: 'EPUB', mobi: 'MOBI', video: 'Video' };
 function learnFormatOf(item) { return (item && item.file && item.file.format) || 'pdf'; }
 function lcFmtSize(n) {
     n = Number(n) || 0;
@@ -18541,24 +18548,50 @@ async function saveLearningItem(event) {
         rec.url = '';
         if (!file && !(existing && existing.file)) { showToast('Choose a file', 'warning'); return; }
         if (file) {
-            if (!/\.(pdf|epub|mobi|azw3?)$/i.test(file.name)) { showToast('Only PDF, EPUB, MOBI or AZW3 files', 'warning'); return; }
-            if (file.size > LEARN_MAX_BYTES) { showToast(`That file is ${lcFmtSize(file.size)} — the limit is 15 MB. Put it on Google Drive and use Link.`, 'warning'); return; }
+            if (!/\.(pdf|epub|mobi|azw3?|mp4|m4v|mov|webm)$/i.test(file.name)) { showToast('Only PDF, EPUB, MOBI, AZW3 or video (MP4, MOV, WebM) files', 'warning'); return; }
             const btn = document.getElementById('lcSaveBtn');
             btn.disabled = true;
             try {
-                const bytes = new Uint8Array(await file.arrayBuffer());
-                const format = detectLearnFormat(bytes, file.name);
-                if (!format) { showToast('That file is not a valid PDF, EPUB or MOBI/AZW3', 'warning'); return; }
+                const format = detectLearnFormat(new Uint8Array(await file.slice(0, 128).arrayBuffer()), file.name);
+                if (!format) { showToast('That file is not a valid PDF, EPUB, MOBI/AZW3 or MP4/MOV/WebM video', 'warning'); return; }
+                const limit = LEARN_CLOUD_MAX[format === 'video' ? 'video' : 'doc'];
+                if (file.size > limit) { showToast(`That file is ${lcFmtSize(file.size)} — the limit is ${lcFmtSize(limit)}. Put it on Google Drive and use Link.`, 'warning'); return; }
                 const fileId = 'f_' + generateId();
+                // 2.13.0: Cloud Storage first. Should it refuse (not set up,
+                // rules not published), a file small enough still goes into
+                // Firestore pieces as before.
+                let cloudErr = null;
+                if (window.cloud && window.cloud.uploadLearningFile) {
+                    const safe = file.name.replace(/[^\w.\-]+/g, '_').slice(-80) || 'file';
+                    const path = `learning/${fileId}/${safe}`;
+                    const contentType = format === 'video' ? learnVideoMime(file.name) : (LEARN_MIME[format] || 'application/octet-stream');
+                    try {
+                        _lcProgress(0, 'Uploading 0%…');
+                        await window.cloud.uploadLearningFile(path, file, contentType,
+                            f => _lcProgress(f * 100, `Uploading ${Math.round(f * 100)}% of ${lcFmtSize(file.size)}…`));
+                        if (existing && existing.file) oldChunks = existing.file;
+                        rec.file = { id: fileId, name: file.name, size: file.size, storage: 'cloud', path, format, contentType };
+                    } catch (err) { cloudErr = err; console.warn('[learning] Cloud Storage upload failed:', err); }
+                } else cloudErr = new Error('Cloud Storage not available');
+                if (cloudErr && (format === 'video' || file.size > LEARN_MAX_BYTES)) {
+                    showToast(/unauthorized|permission/i.test(String(cloudErr.code || cloudErr.message))
+                        ? 'Refused by Cloud Storage — publish storage.rules and check your Learning Center access'
+                        : 'Upload failed — check the signal and try again (Cloud Storage must be set up for videos and files over 15 MB)', 'error');
+                    _lcProgress(null);
+                    return;
+                }
+                if (cloudErr) {
+                const bytes = new Uint8Array(await file.arrayBuffer());
                 const chunks = Math.ceil(bytes.length / LEARN_CHUNK_BYTES);
                 for (let n = 0; n < chunks; n++) {
                     _lcProgress(n / chunks * 100, `Uploading ${n + 1} of ${chunks}…`);
                     await window.cloud.saveLearningChunk(fileId, n, _bytesToBase64(bytes.subarray(n * LEARN_CHUNK_BYTES, (n + 1) * LEARN_CHUNK_BYTES)));
                 }
-                _lcProgress(100, 'Saving…');
                 _lcBytesCache.set(fileId, bytes);
                 if (existing && existing.file) oldChunks = existing.file;
                 rec.file = { id: fileId, name: file.name, size: bytes.length, chunks, storage: 'firestore', format };
+                }
+                _lcProgress(100, 'Saving…');
             } catch (err) {
                 console.error('[learning] upload failed:', err);
                 showToast(err && err.code === 'permission-denied'
@@ -18578,8 +18611,7 @@ async function saveLearningItem(event) {
         showToast(err && err.code === 'permission-denied' ? 'Refused by the server — publish the latest firestore.rules (Learning Center)' : 'Failed to save the material', 'error');
         return;
     }
-    if (oldChunks && oldChunks.id && oldChunks.storage === 'firestore')
-        window.cloud.deleteLearningChunks(oldChunks.id, oldChunks.chunks || 0).catch(e => console.warn('[learning] old file not removed:', e));
+    if (oldChunks) _lcDropFile(oldChunks).catch(e => console.warn('[learning] old file not removed:', e));
     const i = learningItems.findIndex(x => x.id === rec.id);
     if (i >= 0) learningItems[i] = rec; else learningItems.unshift(rec);
     logEvent({ action: existing ? 'update' : 'create', unitName: `[Learning] ${rec.title}`, field: 'Material', before: '', after: rec.source === 'upload' ? (rec.file && rec.file.name) || 'PDF' : rec.url });
@@ -18588,13 +18620,19 @@ async function saveLearningItem(event) {
     renderLearningView();
     showToast(existing ? 'Material updated' : 'Material added', 'success');
 }
+// Removes a stored file, wherever it lives.
+async function _lcDropFile(f) {
+    if (!f || !f.id) return;
+    if (f.storage === 'firestore') return window.cloud.deleteLearningChunks(f.id, f.chunks || 0);
+    if (f.storage === 'cloud' && f.path && window.cloud.deleteLearningFile) return window.cloud.deleteLearningFile(f.path);
+}
 async function deleteLearningItem(id) {
     if (!requireEdit('learning')) return;
     const i = learningItems.find(x => x.id === id);
     if (!i || !confirm(`Delete "${i.title}" from the Learning Center?`)) return;
     try {
         await window.cloud.deleteLearningItem(id);
-        if (i.file && i.file.storage === 'firestore') await window.cloud.deleteLearningChunks(i.file.id, i.file.chunks || 0);
+        if (i.file) await _lcDropFile(i.file).catch(e => console.warn('[learning] file not removed:', e));
         learningItems = learningItems.filter(x => x.id !== id);
         logEvent({ action: 'delete', unitName: `[Learning] ${i.title}`, field: 'Material', before: i.title, after: '' });
         renderLearningView();
@@ -18606,12 +18644,13 @@ async function deleteLearningItem(id) {
 }
 
 // ---- Reading ----
-let _lcDoc = null, _lcScale = 1, _lcBytes = null, _lcName = '', _lcRenderGen = 0;
+let _lcDoc = null, _lcScale = 1, _lcBytes = null, _lcName = '', _lcRenderGen = 0, _lcUrl = '';
 // Where an uploaded PDF's bytes come from. 'storage' is filled in when the
 // project moves to Blaze and files go to Cloud Storage.
 async function loadLearningPdfBytes(item, onProgress) {
     const f = item.file || {};
     if (_lcBytesCache.has(f.id)) return _lcBytesCache.get(f.id);
+    if (f.storage === 'cloud') return _lcFetchCloud(f, onProgress);
     if (f.storage !== 'firestore') throw new Error('This file is stored somewhere this version cannot read yet');
     let done = 0;
     const parts = await Promise.all(Array.from({ length: f.chunks || 0 }, (_, n) =>
@@ -18622,6 +18661,39 @@ async function loadLearningPdfBytes(item, onProgress) {
     let o = 0; pieces.forEach(p => { out.set(p, o); o += p.length; });
     _lcBytesCache.set(f.id, out);
     return out;
+}
+// 2.13.0: a Cloud Storage file, read through its download URL. Reading the
+// bytes needs the bucket's CORS set for this site; without it the error says
+// so and the viewer offers the file in a new tab instead.
+async function _lcFetchCloud(f, onProgress) {
+    const url = await window.cloud.learningFileUrl(f.path);
+    _lcUrl = url;
+    let res;
+    try { res = await fetch(url); }
+    catch (err) { const e = new Error('Blocked reading the file (CORS)'); e.code = 'lc/cors'; e.url = url; throw e; }
+    if (!res.ok) { const e = new Error(`HTTP ${res.status}`); e.url = url; throw e; }
+    const total = Number(res.headers.get('content-length')) || f.size || 0;
+    let out;
+    if (res.body && res.body.getReader && total) {
+        const reader = res.body.getReader();
+        out = new Uint8Array(total);
+        let at = 0;
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (at + value.length > out.length) { const bigger = new Uint8Array(Math.max(out.length * 2, at + value.length)); bigger.set(out); out = bigger; }
+            out.set(value, at); at += value.length;
+            if (onProgress) onProgress(Math.min(1, at / total));
+        }
+        out = out.subarray(0, at);
+    } else out = new Uint8Array(await res.arrayBuffer());
+    _lcBytesCache.set(f.id, out);
+    return out;
+}
+function _lcOpenFailHtml(err, what) {
+    const url = (err && err.url) || _lcUrl;
+    return `<p class="lc-loading">Could not open this ${what}${navigator.onLine ? '' : ' — it needs a signal the first time'}.${
+        url ? `<br><a class="btn btn-secondary btn-sm lc-openext" href="${escapeHtml(url)}" target="_blank" rel="noopener">Open the file in a new tab</a>` : ''}</p>`;
 }
 let _pdfjsLoading = null;
 function loadPdfJs() {
@@ -18641,7 +18713,8 @@ function loadPdfJs() {
 }
 // mode: 'pdf' (zoom), 'book' (pages + text size), or '' (Drive preview).
 function _lcSetTools(mode) {
-    ['lcZoomOut', 'lcZoomIn', 'lcDownload', 'lcZoomLabel'].forEach(id => { document.getElementById(id).hidden = !mode; });
+    ['lcZoomOut', 'lcZoomIn', 'lcZoomLabel'].forEach(id => { document.getElementById(id).hidden = !mode || mode === 'video'; });
+    document.getElementById('lcDownload').hidden = !mode;
     ['lcPrev', 'lcNext'].forEach(id => { document.getElementById(id).hidden = mode !== 'book'; });
     document.getElementById('lcZoomOut').title = mode === 'book' ? 'Smaller text' : 'Zoom out';
     document.getElementById('lcZoomIn').title = mode === 'book' ? 'Larger text' : 'Zoom in';
@@ -18662,11 +18735,12 @@ async function openLearningItem(id) {
         return;
     }
     const gen = ++_lcRenderGen;
-    _lcDoc = null; _lcBytes = null; _lcBook = null; _lcName = (i.file && i.file.name) || `${i.title}.pdf`;
+    _lcDoc = null; _lcBytes = null; _lcBook = null; _lcUrl = ''; _lcName = (i.file && i.file.name) || `${i.title}.pdf`;
     document.getElementById('lcViewerTitle').textContent = i.title;
     document.getElementById('lcZoomLabel').textContent = '';
     _lcFont = 100;
     _lcSetTools('');
+    if (learnFormatOf(i) === 'video') { openLearningVideo(i, gen); return; }
     if (learnFormatOf(i) !== 'pdf') { openLearningBook(i, gen); return; }
     const body = document.getElementById('lcViewerBody');
     body.innerHTML = '<p class="lc-loading" id="lcLoading">Opening…</p>';
@@ -18687,7 +18761,7 @@ async function openLearningItem(id) {
         await _lcRender(gen);
     } catch (err) {
         console.error('[learning] open failed:', err);
-        if (gen === _lcRenderGen) body.innerHTML = `<p class="lc-loading">Could not open this PDF${navigator.onLine ? '' : ' — it needs a signal the first time'}.</p>`;
+        if (gen === _lcRenderGen) body.innerHTML = _lcOpenFailHtml(err, 'PDF');
     }
 }
 async function _lcRender(gen) {
@@ -18745,7 +18819,32 @@ async function openLearningBook(item, gen) {
         await view.renderer.next();
     } catch (err) {
         console.error('[learning] e-book open failed:', err);
-        if (gen === _lcRenderGen) body.innerHTML = `<p class="lc-loading">Could not open this e-book${navigator.onLine ? ' — it may be protected (DRM) or damaged' : ' — it needs a signal the first time'}.</p>`;
+        if (gen === _lcRenderGen) body.innerHTML = err && err.url ? _lcOpenFailHtml(err, 'e-book')
+            : `<p class="lc-loading">Could not open this e-book${navigator.onLine ? ' — it may be protected (DRM) or damaged' : ' — it needs a signal the first time'}.</p>`;
+    }
+}
+// ---- Video (2.13.0): streamed straight from Cloud Storage ----
+async function openLearningVideo(item, gen) {
+    const body = document.getElementById('lcViewerBody');
+    body.innerHTML = '<p class="lc-loading">Opening…</p>';
+    document.getElementById('lcViewer').classList.add('open');
+    try {
+        const url = await window.cloud.learningFileUrl(item.file.path);
+        if (gen !== _lcRenderGen) return;
+        _lcUrl = url;
+        body.innerHTML = '';
+        body.classList.add('lc-viewer__body--video');
+        const v = document.createElement('video');
+        v.className = 'lc-video';
+        v.controls = true; v.playsInline = true; v.preload = 'metadata';
+        v.setAttribute('controlsList', 'nodownload');
+        v.src = url;
+        v.addEventListener('error', () => { if (gen === _lcRenderGen) body.innerHTML = _lcOpenFailHtml({ url }, 'video — this browser may not play its format'); });
+        body.appendChild(v);
+        _lcSetTools('video');
+    } catch (err) {
+        console.error('[learning] video open failed:', err);
+        if (gen === _lcRenderGen) body.innerHTML = `<p class="lc-loading">Could not open this video${navigator.onLine ? ' — check your access' : ' — it needs a signal'}.</p>`;
     }
 }
 function lcTurn(dir) {
@@ -18772,6 +18871,7 @@ function lcZoom(dir) {
     _lcRender(++_lcRenderGen);
 }
 function lcDownload() {
+    if (!_lcBytes && _lcUrl) { window.open(_lcUrl, '_blank', 'noopener'); return; }
     if (!_lcBytes) return;
     const url = URL.createObjectURL(new Blob([_lcBytes], { type: 'application/octet-stream' }));
     const a = document.createElement('a');
@@ -18783,7 +18883,8 @@ function closeLearningViewer() {
     if (_lcDoc) { try { _lcDoc.destroy(); } catch (_) {} }
     if (_lcBook) { try { _lcBook.close?.(); } catch (_) {} }
     _lcDoc = null; _lcBook = null;
-    document.getElementById('lcViewerBody').classList.remove('lc-viewer__body--book');
+    document.getElementById('lcViewerBody').classList.remove('lc-viewer__body--book', 'lc-viewer__body--video');
+    _lcUrl = '';
     document.getElementById('lcViewer').classList.remove('open');
     document.getElementById('lcViewerBody').innerHTML = '';
 }

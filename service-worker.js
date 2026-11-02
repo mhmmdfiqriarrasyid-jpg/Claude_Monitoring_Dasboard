@@ -2,7 +2,7 @@
    Network-first for the app shell (so deploys show up on reload), cache-first
    for static assets, network-only for Firebase live endpoints. */
 
-const CACHE_NAME = 'tractor-monitor-2.12.5';
+const CACHE_NAME = 'tractor-monitor-2.13.0';
 
 // Same-origin core files — always revalidated from network first so a new
 // deploy is picked up on the next reload (falls back to cache when offline).
@@ -50,6 +50,7 @@ const NETWORK_FIRST_PATHS = ['', 'index.html', 'script.js', 'firebase-init.js', 
 // Hosts whose responses must always go to the network (real-time data, auth).
 const NETWORK_ONLY_HOSTS = [
     'firestore.googleapis.com',
+    'firebasestorage.googleapis.com',   // 2.13.0: Learning Center files and videos
     'firebaseinstallations.googleapis.com',
     'firebaseremoteconfig.googleapis.com',
     'identitytoolkit.googleapis.com',

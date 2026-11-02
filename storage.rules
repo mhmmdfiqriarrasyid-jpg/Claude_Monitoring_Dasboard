@@ -1,0 +1,56 @@
+rules_version = '2';
+
+// ============================================================
+// OT Monitoring — Cloud Storage security rules (2.13.0, Blaze)
+// ------------------------------------------------------------
+// Paste this whole file into: Firebase Console → Storage → Rules → Publish.
+// The first publish asks to let Storage read Firestore (the /users documents
+// that hold each account's access) — allow it.
+//
+// learning/<fileId>/<name> : Learning Center files and videos.
+//   read   : every active account (same as the Learning Center page)
+//   write  : accounts with Learning Center 'edit' (Super Admin always)
+//   limits : PDF / EPUB / MOBI up to 100 MB, video up to 500 MB
+// Everything else in the bucket is closed.
+// ============================================================
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function me() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+    function isActive() {
+      return request.auth != null && me().get('status', '') == 'active';
+    }
+    // Same rule as the app and firestore.rules: owner always; else the
+    // explicit 'learning' grant; the legacy 'team' role defaults to edit.
+    function canEditLearning() {
+      let d = me();
+      let a = d.get('access', {});
+      let given = a is map ? a.get('learning', null) : null;
+      return isActive()
+        && (d.get('role', '') == 'owner'
+            || given == 'edit'
+            || (given == null && d.get('role', '') == 'team'));
+    }
+    function isDoc() {
+      return request.resource.contentType in ['application/pdf', 'application/epub+zip', 'application/x-mobipocket-ebook']
+        && request.resource.size <= 100 * 1024 * 1024;
+    }
+    function isVideo() {
+      return request.resource.contentType in ['video/mp4', 'video/webm', 'video/quicktime']
+        && request.resource.size <= 500 * 1024 * 1024;
+    }
+
+    match /learning/{fileId}/{name} {
+      allow read: if isActive();
+      allow create, update: if canEditLearning() && (isDoc() || isVideo());
+      allow delete: if canEditLearning();
+    }
+
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

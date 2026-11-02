@@ -75,6 +75,15 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
+// Cloud Storage (2.13.0, Blaze): loaded on first use only.
+let _storageP = null;
+function _storage() {
+    if (!_storageP) _storageP = import("https://www.gstatic.com/firebasejs/12.12.0/firebase-storage.js")
+        .then(mod => ({ mod, s: mod.getStorage(app) }))
+        .catch(err => { _storageP = null; throw err; });
+    return _storageP;
+}
+
 // App Check (2.11.2): every request carries a reCAPTCHA token proving it
 // comes from this site, so the public config above cannot be reused from a
 // script elsewhere to create accounts or burn the quota. Off while the key
@@ -677,6 +686,28 @@ window.cloud = {
     },
     async deleteLearningChunks(itemId, count) {
         for (let i = 0; i < count; i++) await deleteDoc(doc(db, LEARNING_FILES_COL, `${itemId}__${i}`));
+    },
+    // 2.13.0 (Blaze): files in Cloud Storage under learning/<fileId>/<name>.
+    // The Storage SDK is imported on first use, so the app still starts when
+    // it cannot be loaded. onProgress(fraction); resolves when stored.
+    async uploadLearningFile(path, file, contentType, onProgress) {
+        const st = await _storage();
+        const task = st.mod.uploadBytesResumable(st.mod.ref(st.s, path), file, { contentType, cacheControl: 'private, max-age=86400' });
+        return new Promise((resolve, reject) => {
+            task.on('state_changed',
+                snap => { if (onProgress && snap.totalBytes) onProgress(snap.bytesTransferred / snap.totalBytes); },
+                reject,
+                () => resolve());
+        });
+    },
+    async learningFileUrl(path) {
+        const st = await _storage();
+        return st.mod.getDownloadURL(st.mod.ref(st.s, path));
+    },
+    async deleteLearningFile(path) {
+        const st = await _storage();
+        try { await st.mod.deleteObject(st.mod.ref(st.s, path)); }
+        catch (err) { if (!err || err.code !== 'storage/object-not-found') throw err; }
     },
     // ---- Purchase requests (2.9.0) ----
     // authorUid: only that account's own requests (access level 'own').

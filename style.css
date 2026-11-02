@@ -10840,3 +10840,8 @@ body:has(.modal-overlay.open) .install-banner { display: none; }
 .form-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .link-btn { background: none; border: 0; padding: 0; font: inherit; font-size: 12px; font-weight: 600; color: var(--accent); cursor: pointer; }
 .link-btn:hover { text-decoration: underline; }
+/* 2.13.0: video materials */
+.lc-item__icon--video { background: #E31B54; }
+.lc-viewer__body--video { padding: 0; background: #000; align-items: center; justify-content: center; }
+.lc-video { display: block; width: 100%; max-height: 78vh; background: #000; }
+.lc-openext { margin-top: 12px; display: inline-flex; }

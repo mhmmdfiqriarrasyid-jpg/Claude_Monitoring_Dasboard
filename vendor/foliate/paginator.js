@@ -1147,6 +1147,8 @@ export class Paginator extends HTMLElement {
 
         // NOTE: needs `requestAnimationFrame` in Chromium
         requestAnimationFrame(() => {
+            // OT Dashboard: the book may be closed before the frame runs
+            if (!this.#view) return
             this.#replaceBackground(this.#view.docBackground, this.columnCount)
         })
 

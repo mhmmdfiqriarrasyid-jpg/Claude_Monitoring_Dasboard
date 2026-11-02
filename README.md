@@ -450,6 +450,25 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   (Damage Types, Device Categories), *Learning Center* (Learning
   Categories). Grup tanpa daftar yang boleh dilihat akun itu disembunyikan.
   Daftar baru wajib dimasukkan ke salah satu grup.
+- **Learning Center di Cloud Storage 2.13.0 (Blaze; dijaga
+  `tests/learning_storage_test.js` dan `tests/storage_rules_test.js`).**
+  Upload baru disimpan di Cloud Storage `learning/<fileId>/<nama>` dengan
+  progres: PDF/EPUB/MOBI/AZW3 sampai **100 MB**, **video MP4/MOV/WebM sampai
+  500 MB** (diputar langsung di penampil). `file.storage = 'cloud'`, `path`,
+  `contentType`; materi lama (`'firestore'`, potongan) tetap terbaca. Kalau
+  Storage menolak, file ≤ 15 MB (bukan video) tetap disimpan sebagai potongan
+  Firestore. Ganti/hapus materi ikut menghapus file di Storage. SDK Storage
+  dimuat saat dipakai; `firebasestorage.googleapis.com` tidak di-cache service
+  worker dan diizinkan di CSP `media-src`.
+  **Setup sekali:** (1) aktifkan Storage (lokasi US-CENTRAL1/US-EAST1/US-WEST1
+  untuk kuota gratis); (2) publish `storage.rules` di Console → Storage →
+  Rules (izinkan akses baca Firestore saat diminta); (3) set CORS bucket dari
+  Cloud Shell dengan `storage-cors.json`:
+  `gsutil cors set storage-cors.json gs://ot-monitoring-tractor.firebasestorage.app`
+  — tanpa CORS, PDF/EPUB tidak bisa dibaca di penampil (video tetap jalan)
+  dan penampil menawarkan "Open the file in a new tab".
+  Tes rules Storage: `npx firebase emulators:exec --only firestore,storage
+  --project demo-ot "node tests/storage_rules_test.js"`.
 - **Riak air di halaman masuk v176.** Panel teal di halaman Sign in dan
   halaman menunggu persetujuan menampilkan riak air yang mengikuti kursor
   (atau jari di HP); klik/tap membuat riak yang lebih besar. Simulasi
