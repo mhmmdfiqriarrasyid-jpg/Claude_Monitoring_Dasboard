@@ -469,6 +469,12 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   dan penampil menawarkan "Open the file in a new tab".
   Tes rules Storage: `npx firebase emulators:exec --only firestore,storage
   --project demo-ot "node tests/storage_rules_test.js"`.
+- **Backup harian Firestore (Blaze, diaktifkan 2 Nov 2026).** Jadwal bawaan
+  Firestore, tanpa kode: `gcloud firestore backups schedules create
+  --database='(default)' --recurrence=daily --retention=7d` — 7 backup terakhir
+  disimpan Google (terpisah dari bucket Storage). Cek: `gcloud firestore
+  backups list`. Memulihkan = restore ke database baru lalu pindahkan datanya
+  (`gcloud firestore databases restore --source-backup=… --destination-database=…`).
 - **Riak air di halaman masuk v176.** Panel teal di halaman Sign in dan
   halaman menunggu persetujuan menampilkan riak air yang mengikuti kursor
   (atau jari di HP); klik/tap membuat riak yang lebih besar. Simulasi
