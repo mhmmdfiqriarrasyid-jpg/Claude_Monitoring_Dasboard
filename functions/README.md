@@ -31,6 +31,17 @@ deploy turns on the APIs it needs (Cloud Functions, Cloud Build, Artifact
 Registry, Cloud Run, Cloud Scheduler, Eventarc, Secret Manager) and asks how
 long to keep build images — answer **1** day.
 
+## Changing the App Password
+
+When the dashboard says *"Gmail refused the sign-in"* (log: `535 … Username and
+Password not accepted`), make a new App Password for the `GMAIL_USER` account,
+store it, and deploy so the functions use the new version:
+
+```bash
+npx -y firebase-tools@latest functions:secrets:set GMAIL_APP_PASSWORD --project ot-monitoring-tractor
+npx -y firebase-tools@latest deploy --only functions --project ot-monitoring-tractor
+```
+
 ## Updating later
 
 ```bash

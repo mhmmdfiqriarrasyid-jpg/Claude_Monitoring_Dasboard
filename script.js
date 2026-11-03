@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.15.1';
+const APP_VERSION = 'v2.15.2';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -5051,7 +5051,8 @@ async function sendNotificationNow(kind, btn) {
     } catch (err) {
         console.error('[notify]', err);
         const code = String(err && err.code || '');
-        showToast(/not-found|unavailable/.test(code) ? 'This needs the latest server update — deploy the functions'
+        showToast(/failed-precondition/.test(code) && /gmail-auth/.test(String(err.message)) ? 'Gmail refused the sign-in — the App Password on the server is wrong (see functions/README.md)'
+            : /not-found|unavailable/.test(code) ? 'This needs the latest server update — deploy the functions'
             : /permission-denied/.test(code) ? 'Only the Super Admin can send these'
             : 'Failed to send the email — try again later', 'error');
     } finally {
@@ -5188,7 +5189,8 @@ async function sendLicenseAlertEmail() {
     } catch (err) {
         console.error('[email]', err);
         const code = String(err && err.code || '');
-        showToast(/not-found|unavailable/.test(code) ? 'The email service is not set up on the server yet'
+        showToast(/failed-precondition/.test(code) && /gmail-auth/.test(String(err.message)) ? 'Gmail refused the sign-in — the App Password on the server is wrong (see functions/README.md)'
+            : /not-found|unavailable/.test(code) ? 'The email service is not set up on the server yet'
             : /permission-denied/.test(code) ? 'You do not have access to License Stock'
             : 'Failed to send the email — try again later', 'error');
     } finally {

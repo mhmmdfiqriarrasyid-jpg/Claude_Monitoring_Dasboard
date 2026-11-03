@@ -36,6 +36,13 @@ const REGION = 'asia-southeast2';   // Jakarta
 const OWNER_UIDS = ['vWZZ3jz1LTdzrU5c5Q1Gzco8nh72'];
 const EMAIL_RE = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/;
 
+// Gmail refusing the sign-in (wrong App Password) is the one failure the owner
+// can fix, so it gets its own code; everything else is 'internal'.
+function mailError(err) {
+    if (err && (err.code === 'EAUTH' || err.responseCode === 535))
+        return new HttpsError('failed-precondition', 'gmail-auth');
+    return new HttpsError('internal', 'The email could not be sent');
+}
 const cleanList = v => (Array.isArray(v) ? v : []).map(r => String(r || '').trim()).filter(r => EMAIL_RE.test(r)).slice(0, 10);
 const cleanHour = (v, dflt) => { const h = Number(v); return Number.isInteger(h) && h >= 0 && h <= 23 ? h : dflt; };
 
@@ -175,7 +182,7 @@ exports.sendLicenseAlert = onCall({ region: REGION, secrets: SECRETS, enforceApp
         return await sendReport('manual', req.auth.token.email || req.auth.uid);
     } catch (err) {
         logger.error('license alert failed', err);
-        throw new HttpsError('internal', 'The email could not be sent');
+        throw mailError(err);
     }
 });
 
@@ -204,7 +211,7 @@ exports.sendNotificationNow = onCall({ region: REGION, secrets: SECRETS, enforce
         }
     } catch (err) {
         logger.error('send now failed', err);
-        throw new HttpsError('internal', 'The email could not be sent');
+        throw mailError(err);
     }
     throw new HttpsError('invalid-argument', 'Unknown notification');
 });
