@@ -87,7 +87,7 @@ function _functions() {
 // Push notifications (2.18.0, Firebase Cloud Messaging). The public key of the
 // project's Web Push certificate (Firebase console → Project settings → Cloud
 // Messaging → Web Push certificates). Empty = push is not offered.
-const PUSH_VAPID_KEY = '';
+const PUSH_VAPID_KEY = 'BMYHau7f2Rn4PWCoWAUTLJTB1wWupKp11Ifuj7_gMyCi5LTg2s0J1sh2hEHpZpjcSZzq2Ov6jsNOd7ognmqNN5E';   // public Web Push key
 let _messagingP = null;
 function _messaging() {
     if (!_messagingP) _messagingP = import("https://www.gstatic.com/firebasejs/12.12.0/firebase-messaging.js")
