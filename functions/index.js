@@ -6,6 +6,8 @@
 //                          · the Daily Report reminder, once a day at its hour
 //                          · a Breakdown / damage alert for each new damage record
 //   sendLicenseAlert     the "Send now" / Email Report button (callable).
+//   sendNotificationNow  "Send test" (breakdown) / "Send now" (reminder) in
+//                        Notification Settings — owner only (callable, 2.15.1).
 //   deleteSignInAccount  removes the Firebase sign-in account of someone the
 //                        owner has just removed or rejected (callable, 2.15.0).
 //
@@ -76,7 +78,7 @@ async function sendReport(trigger, by) {
 }
 
 // ---- Daily Report reminder ----
-async function sendReminder(s, now) {
+async function sendReminder(s, now, trigger, by) {
     if (!s.reminderRecipients.length) return { sent: false, reason: 'no-recipients' };
     const { today, yesterday } = shiftDates(now);
     const dates = [yesterday, today];
@@ -90,7 +92,7 @@ async function sendReminder(s, now) {
         members: members.docs.map(d => ({ ...d.data(), id: d.id })), leaves: leaves.docs.map(d => d.data()), now });
     const m = composeReminder(list);
     if (!m) return { sent: false, reason: 'all-sent' };
-    await mail(s.reminderRecipients, m, { kind: 'reportReminder', trigger: 'daily', by: '', items: list.length });
+    await mail(s.reminderRecipients, m, { kind: 'reportReminder', trigger: trigger || 'daily', by: by || '', items: list.length });
     return { sent: true, items: list.length };
 }
 
@@ -175,6 +177,36 @@ exports.sendLicenseAlert = onCall({ region: REGION, secrets: SECRETS, enforceApp
         logger.error('license alert failed', err);
         throw new HttpsError('internal', 'The email could not be sent');
     }
+});
+
+// 2.15.1: the per-section buttons in Notification Settings.
+//   damage   — the newest damage record, as the alert would look, marked [Test]
+//   reminder — who has not sent the report of an ended shift, right now
+exports.sendNotificationNow = onCall({ region: REGION, secrets: SECRETS, enforceAppCheck: true }, async req => {
+    if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first');
+    if (!isOwnerDoc(req.auth.uid, await userDoc(req.auth.uid))) throw new HttpsError('permission-denied', 'Only the Super Admin');
+    const kind = req.data && req.data.kind;
+    const s = await emailSettings();
+    const by = req.auth.token.email || req.auth.uid;
+    try {
+        if (kind === 'damage') {
+            if (!s.damageRecipients.length) return { sent: false, reason: 'no-recipients' };
+            const snap = await db.collection('damageRecords').orderBy('createdAt', 'desc').limit(1).get();
+            if (snap.empty) return { sent: false, reason: 'no-records' };
+            const m = composeDamage({ ...snap.docs[0].data(), resolved: false });
+            m.subject = `[Test] ${m.subject}`;
+            await mail(s.damageRecipients, m, { kind: 'damageAlert', trigger: 'manual', by, items: 1, recordId: snap.docs[0].id });
+            return { sent: true, recipients: s.damageRecipients.length };
+        }
+        if (kind === 'reminder') {
+            const r = await sendReminder(s, new Date(), 'manual', by);
+            return r.sent ? { ...r, recipients: s.reminderRecipients.length } : r;
+        }
+    } catch (err) {
+        logger.error('send now failed', err);
+        throw new HttpsError('internal', 'The email could not be sent');
+    }
+    throw new HttpsError('invalid-argument', 'Unknown notification');
 });
 
 // 2.15.0: the owner removed or rejected someone — their dashboard record is

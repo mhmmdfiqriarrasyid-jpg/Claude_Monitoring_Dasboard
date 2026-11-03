@@ -4256,6 +4256,7 @@
                     <label class="form-label" for="emailHour">Send time <span class="form-optional">(WIT)</span></label>
                     <select class="form-input" id="emailHour"></select>
                 </div>
+                <div class="notif-actions"><button type="button" class="btn btn-secondary btn-sm" id="emailSendNowBtn" onclick="sendLicenseAlertEmail()"><i class="fas fa-paper-plane"></i> Send now</button></div>
                 <p class="form-hint" id="emailLast"></p>
             </section>
 
@@ -4265,6 +4266,8 @@
                 <label class="form-label" for="damageRecipients">Recipients</label>
                 <textarea class="form-input" id="damageRecipients" rows="2" placeholder="supervisor@company.com"></textarea>
                 <label class="notif-check"><input type="checkbox" id="damageEnabled"> Send breakdown &amp; damage alerts</label>
+                <div class="notif-actions"><button type="button" class="btn btn-secondary btn-sm" id="damageSendBtn" onclick="sendNotificationNow('damage', this)"><i class="fas fa-paper-plane"></i> Send test</button>
+                    <span class="notif-note">An example from the newest damage record</span></div>
                 <p class="form-hint" id="damageLast"></p>
             </section>
 
@@ -4278,12 +4281,13 @@
                     <label class="form-label" for="reminderHour">Send time <span class="form-optional">(WIT)</span></label>
                     <select class="form-input" id="reminderHour"></select>
                 </div>
+                <div class="notif-actions"><button type="button" class="btn btn-secondary btn-sm" id="reminderSendBtn" onclick="sendNotificationNow('reminder', this)"><i class="fas fa-paper-plane"></i> Send now</button>
+                    <span class="notif-note">Who is missing right now</span></div>
                 <p class="form-hint" id="reminderLast"></p>
             </section>
         </div>
         <div class="form-actions">
             <button class="btn btn-secondary" onclick="closeEmailSettingsModal()">Close</button>
-            <button class="btn btn-secondary" id="emailSendNowBtn" onclick="sendLicenseAlertEmail()" title="Send the License Alert report now"><i class="fas fa-paper-plane"></i> Send license report now</button>
             <button class="btn btn-primary" id="emailSaveBtn" onclick="saveEmailSettings()"><i class="fas fa-check"></i> Save</button>
         </div>
     </div>

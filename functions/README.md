@@ -4,6 +4,7 @@
 |---|---|---|
 | `notificationTick` | every 10 minutes (WIT) | As set in Admin → Notifications (`settings/email`): the License Alert report once a day at its hour, the Daily Report reminder once a day at its hour (`mailState/daily`, `mailState/reminder`), and a Breakdown / damage email for each new damage record (`mailState/damage`) |
 | `sendLicenseAlert` | callable | "Send license report now" / Email Report. Owner, or an active account that can see License Stock |
+| `sendNotificationNow` | callable | Notification Settings → *Send test* (breakdown: the newest damage record, marked [Test]) and *Send now* (Daily Report reminder, right now). Owner only |
 | `deleteSignInAccount` | callable | After the owner removes or rejects someone: deletes their Firebase sign-in account. Owner only; refused while the person still has a `users` record, never for the owner |
 
 The licence report is built by `licenseReport.js`; the reminder and damage email by `teamNotices.js` (`tests/team_notices_test.js`). The licence report uses, the same rules as the dashboard

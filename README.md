@@ -499,6 +499,11 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   `tests/license_report_test.js`, skenario Notif di `tests/rules_test.js`.
   **Perlu publish `firestore.rules` + deploy ulang fungsi** (deploy akan
   menanyakan penghapusan `dailyLicenseAlert` — jawab y).
+  **2.15.1:** tiap bagian punya tombol sendiri — License *Send now*,
+  Breakdown *Send test* (contoh dari catatan kerusakan terbaru, subjek
+  [Test]) dan Reminder *Send now* — lewat fungsi `sendNotificationNow`
+  (owner saja). Save tidak lagi menutup layar; tombol kirim menolak bila ada
+  perubahan yang belum disimpan. **Perlu deploy ulang fungsi.**
   2.14.2: jam kirim harian dipilih di layar itu (`sendHour`, WIT, bawaan
   07:00) dan bisa dimatikan; fungsi berjalan tiap jam dan hanya mengirim
   pada jam terpilih, sekali sehari (`mailState/daily`). **Perlu deploy ulang

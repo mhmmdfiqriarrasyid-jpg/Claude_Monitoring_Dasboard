@@ -10855,3 +10855,5 @@ body:has(.modal-overlay.open) .install-banner { display: none; }
 .notif-desc { margin: 0; font-size: 13px; color: var(--text-secondary); }
 .notif-hour { display: flex; flex-direction: column; gap: 4px; max-width: 200px; }
 .notif-sec .form-hint:empty { display: none; }
+.notif-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.notif-note { font-size: 12px; color: var(--text-secondary); }

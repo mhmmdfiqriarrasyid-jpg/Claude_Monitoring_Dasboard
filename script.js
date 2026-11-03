@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.15.0';
+const APP_VERSION = 'v2.15.1';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -5025,8 +5025,42 @@ function _notifLastText(m, what) {
     const how = m.trigger === 'manual' ? 'by ' + (m.by || 'someone') : 'automatic';
     return `Last ${what} ${toLocalDateTime(m.at)} (${how}) — ${m.items || 0} item(s) to ${(m.recipients || []).length} recipient(s)`;
 }
+// What the screen last loaded or saved — "Send" uses the saved settings on the
+// server, so unsaved changes are pointed out first.
+let _notifSaved = null;
+function _notifForm() {
+    const el = id => document.getElementById(id);
+    return JSON.stringify(['emailRecipients', 'damageRecipients', 'reminderRecipients'].map(id => _parseRecipients(el(id).value))
+        .concat([el('emailDaily').checked, el('emailHour').value, el('damageEnabled').checked, el('reminderEnabled').checked, el('reminderHour').value]));
+}
+function _notifUnsaved() { return _notifSaved !== null && _notifForm() !== _notifSaved; }
+async function sendNotificationNow(kind, btn) {
+    if (!isOwner()) { showToast('Only the Super Admin can send these', 'warning'); return; }
+    if (_notifUnsaved()) { showToast('Save the settings first — sending uses the saved recipients', 'warning'); return; }
+    if (!window.cloud || !window.cloud.callFunction) { showToast('Not connected — try again in a moment', 'warning'); return; }
+    const label = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending…'; }
+    try {
+        const r = await window.cloud.callFunction('sendNotificationNow', { kind });
+        const what = kind === 'damage' ? 'Test alert' : 'Reminder';
+        if (r && r.sent) showToast(`${what} sent to ${r.recipients} recipient${r.recipients === 1 ? '' : 's'}`, 'success');
+        else if (r && r.reason === 'no-recipients') showToast('Add recipients and save first', 'warning');
+        else if (r && r.reason === 'no-records') showToast('There is no damage record yet to use as an example', 'info');
+        else if (r && r.reason === 'all-sent') showToast('Everyone has sent their Daily Report — nothing to send', 'info');
+        else showToast('Nothing to send', 'info');
+    } catch (err) {
+        console.error('[notify]', err);
+        const code = String(err && err.code || '');
+        showToast(/not-found|unavailable/.test(code) ? 'This needs the latest server update — deploy the functions'
+            : /permission-denied/.test(code) ? 'Only the Super Admin can send these'
+            : 'Failed to send the email — try again later', 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = label; }
+    }
+}
 async function openEmailSettingsModal() {
     const owner = isOwner();
+    _notifSaved = null;
     const ids = ['emailRecipients', 'emailDaily', 'emailHour', 'damageRecipients', 'damageEnabled', 'reminderRecipients', 'reminderEnabled', 'reminderHour'];
     const el = id => document.getElementById(id);
     ['emailHour', 'reminderHour'].forEach(id => { if (!el(id).options.length) el(id).innerHTML = NOTIF_HOURS; });
@@ -5036,6 +5070,7 @@ async function openEmailSettingsModal() {
     el('reminderHour').value = String(REMINDER_DEFAULT_HOUR);
     ids.forEach(id => { el(id).disabled = !owner; });
     el('emailSaveBtn').hidden = !owner;
+    ['damageSendBtn', 'reminderSendBtn'].forEach(id => { el(id).hidden = !owner; });
     el('emailOwnerNote').hidden = owner;
     ['emailLast', 'damageLast', 'reminderLast'].forEach(id => { el(id).textContent = ''; });
     syncEmailDaily();
@@ -5051,6 +5086,7 @@ async function openEmailSettingsModal() {
         el('reminderEnabled').checked = !!s.reminderEnabled;
         el('reminderHour').value = String(Number.isInteger(s.reminderHour) ? s.reminderHour : REMINDER_DEFAULT_HOUR);
         syncEmailDaily();
+        _notifSaved = _notifForm();
     } catch (err) {
         console.warn('[email] settings not read:', err);
     }
@@ -5095,7 +5131,7 @@ async function saveEmailSettings() {
     const hh = h => `${String(h).padStart(2, '0')}:00`;
     logEvent({ action: 'update', unitName: '[Settings] Notifications', field: 'Email',
         before: '', after: `License ${rec.dailyEnabled ? hh(rec.sendHour) : 'off'} · Breakdown ${rec.damageEnabled ? 'on' : 'off'} · Reminder ${rec.reminderEnabled ? hh(rec.reminderHour) : 'off'}` });
-    closeEmailSettingsModal();
+    _notifSaved = _notifForm();
     showToast('Notification settings saved', 'success');
 }
 
@@ -5137,6 +5173,9 @@ async function sendLicenseAlertEmail() {
     const report = _buildAlertList(undefined, { soonOnly: true });
     if (report.total === 0) { showToast('No license alerts to send', 'info'); return; }
     if (!window.cloud || !window.cloud.callFunction) { showToast('Not connected — try again in a moment', 'warning'); return; }
+    if (document.getElementById('emailSettingsModal')?.classList.contains('open') && _notifUnsaved()) {
+        showToast('Save the settings first — sending uses the saved recipients', 'warning'); return;
+    }
     const btn = document.getElementById('btnEmailAlert');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending…'; }
     try {
