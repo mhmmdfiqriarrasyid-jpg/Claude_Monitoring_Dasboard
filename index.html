@@ -2890,12 +2890,14 @@
                     </div>
                     <!-- What the record does to its unit: a quiet panel under the fields -->
                     <div class="form-group full-width dmg-link-panel" id="dmgSetBreakdownGroup">
-                        <label class="dmg-check" for="dmgSetBreakdown">
+                        <!-- 2.15.4: always on — an open damage record sets Breakdown by itself.
+                             The box stays (hidden) because the save logic reads it. -->
+                        <label class="dmg-check" for="dmgSetBreakdown" style="display:none">
                             <input type="checkbox" id="dmgSetBreakdown" checked>
                             <span>Set unit/component status to <strong>Breakdown</strong></span>
                         </label>
                         <div class="dmg-link-panel__hint" id="dmgBreakdownHint">
-                            Device Precision (or any type starting with "Device") → the chosen component; other types → unit status.
+                            <strong>Breakdown is set automatically:</strong> Device Precision (or any type starting with "Device") → the chosen component; other types → unit status.
                         </div>
                         <div class="dmg-link-panel__hint" id="dmgBreakdownRule">
                             Marked done → back to Good once no other damage on that unit is still open.

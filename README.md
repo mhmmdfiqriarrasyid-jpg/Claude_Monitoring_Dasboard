@@ -499,6 +499,11 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   `tests/license_report_test.js`, skenario Notif di `tests/rules_test.js`.
   **Perlu publish `firestore.rules` + deploy ulang fungsi** (deploy akan
   menanyakan penghapusan `dailyLicenseAlert` — jawab y).
+  **2.15.4:** catatan kerusakan **baru** selalu men-set Breakdown otomatis
+  (kotak centangnya disembunyikan; komponen untuk tipe Device, status unit
+  untuk tipe lain; tidak berlaku bila "Already repaired"). Catatan lama yang
+  diedit tidak berubah tautannya; kotak hanya muncul untuk catatan terbuka
+  yang belum menahan apa pun (dijaga `tests/damagesync_test.js`).
   **2.15.3:** tipe kerusakan sendiri dari Master lists yang diawali "Device"
   (mis. "Device") berlaku seperti Device Precision — yang di-set Breakdown
   komponennya, bukan status unit (`isDeviceDamageType`, dijaga

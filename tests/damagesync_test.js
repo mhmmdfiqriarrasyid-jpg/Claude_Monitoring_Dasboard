@@ -352,6 +352,14 @@ const { launch, BASE_URL } = require('./_env');
         t('dialog Mark done menyebut efeknya pada unit', document.getElementById('dmgRepairEffect').textContent, 'After this: "EX-06" Telematic Box goes back to Good.');
         closeDamageRepair(true);
 
+        // =============== 2.15.4: Breakdown otomatis untuk catatan baru ===============
+        const bdLbl = () => document.querySelector('label[for="dmgSetBreakdown"]').style.display;
+        showAddDamageForm();
+        t('catatan baru: kotak Breakdown tersembunyi dan tercentang', [bdLbl(), document.getElementById('dmgSetBreakdown').checked], ['none', true]);
+        closeDamageModal && closeDamageModal(true);
+        editDamage(u4b.id);
+        t('edit catatan terbuka yang tidak tertaut: kotak tampil, tidak dicentang', [bdLbl(), document.getElementById('dmgSetBreakdown').checked], ['', false]);
+        closeDamageModal && closeDamageModal(true);
         window.__T = T;
     } catch (e) { window.__T = [{ n: 'EXCEPTION ' + e.message + ' ' + e.stack, pass: false }]; } })();` });
 

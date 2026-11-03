@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.15.3';
+const APP_VERSION = 'v2.15.4';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -9522,6 +9522,11 @@ function showAddDamageForm() {
     setDamagePhotoPreview();
     const bdGroup = document.getElementById('dmgSetBreakdownGroup');
     if (bdGroup) bdGroup.style.display = '';
+    // 2.15.4: a new open record always sets Breakdown (the box is hidden).
+    const bdBox = document.getElementById('dmgSetBreakdown');
+    if (bdBox) bdBox.checked = true;
+    const bdLabel = document.querySelector('label[for="dmgSetBreakdown"]');
+    if (bdLabel) bdLabel.style.display = 'none';
     const rep = document.getElementById('dmgAlreadyRepairedRow');
     if (rep) rep.style.display = '';
     onDamageAlreadyRepairedChange();
@@ -9583,7 +9588,12 @@ function editDamage(id) {
     const linkable = !rec.resolved && Object.prototype.hasOwnProperty.call(rec, 'drove');
     if (bdGroup) bdGroup.style.display = linkable ? '' : 'none';
     const bd = document.getElementById('dmgSetBreakdown');
+    // 2.15.4: Breakdown is automatic for NEW records. An existing record
+    // keeps what it holds, so fixing a typo never changes the unit; the box
+    // shows (only) for an open record that holds nothing, to link it.
     if (bd) { bd.checked = linkable && !!rec.drove; bd.disabled = false; }
+    const bdLabel = document.querySelector('label[for="dmgSetBreakdown"]');
+    if (bdLabel) bdLabel.style.display = linkable && !rec.drove ? '' : 'none';
     const rep = document.getElementById('dmgAlreadyRepairedRow');
     if (rep) rep.style.display = 'none';
     const repBox = document.getElementById('dmgAlreadyRepaired');
@@ -9656,8 +9666,7 @@ function saveDamage(event) {
         && document.getElementById('dmgSetBreakdown')?.checked) {
         const f = damageTargetField(type, comp, unit);
         if (f && f !== DAMAGE_DRIVES_NOTHING && (TRACTOR_ONLY_FIELDS.includes(f) || HEAVY_ONLY_FIELDS.includes(f))) {
-            showToast(`This unit's group ("${plainText(unit.unitGroup)}") is not recognised — set it first via Check Data, `
-                + 'or save without ticking "set Breakdown"', 'warning');
+            showToast(`This unit's group ("${plainText(unit.unitGroup)}") is not recognised — set it first via Check Data`, 'warning');
             return;
         }
     }
