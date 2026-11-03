@@ -803,6 +803,55 @@ window.cloud = {
     async deleteLearningChunks(itemId, count) {
         for (let i = 0; i < count; i++) await deleteDoc(doc(db, LEARNING_FILES_COL, `${itemId}__${i}`));
     },
+    // ---- Learning Center: who opened what (2.19.0) ----
+    // learningViews/{itemId}__{uid}: one document per person per material.
+    async recordLearningView(itemId, who) {
+        const uid = auth.currentUser && auth.currentUser.uid;
+        if (!uid || !itemId) return;
+        const ref = doc(db, 'learningViews', `${itemId}__${uid}`);
+        let prev = null;
+        try { const s = await getDoc(ref); prev = s.exists() ? s.data() : null; } catch (_) { /* first time */ }
+        const now = Date.now();
+        await setDoc(ref, { itemId, uid, name: (who && who.name) || '', email: (who && who.email) || '',
+            firstAt: prev && prev.firstAt ? prev.firstAt : now, lastAt: now, count: ((prev && prev.count) || 0) + 1 });
+    },
+    async listLearningViews(itemId) {
+        const snap = await getDocs(query(collection(db, 'learningViews'), where('itemId', '==', itemId)));
+        return snap.docs.map(d => d.data()).sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
+    },
+
+    // ---- History archive (2.19.0, owner): archives/history/YYYY-MM.json ----
+    async listHistoryArchives() {
+        const st = await _storage();
+        const res = await st.mod.listAll(st.mod.ref(st.s, 'archives/history'));
+        return res.items.map(r => ({ name: r.name, path: r.fullPath })).sort((a, b) => b.name.localeCompare(a.name));
+    },
+    async historyArchiveUrl(path) {
+        const st = await _storage();
+        return st.mod.getDownloadURL(st.mod.ref(st.s, path));
+    },
+
+    // ---- Error log (2.19.0) ----
+    async logClientError(rec) {
+        await setDoc(doc(collection(db, 'clientErrors')), rec);
+    },
+    async listClientErrors(n) {
+        const snap = await getDocs(query(collection(db, 'clientErrors'), orderBy('at', 'desc'), limit(n || 200)));
+        // The same message from the same version reads as one line, with a count.
+        const byKey = new Map();
+        snap.docs.forEach(d => {
+            const r = { ...d.data(), id: d.id };
+            const k = `${r.message}|${r.version}`;
+            const cur = byKey.get(k);
+            if (cur) cur.count++; else byKey.set(k, { ...r, count: 1 });
+        });
+        return [...byKey.values()];
+    },
+    async clearClientErrors() {
+        const snap = await getDocs(query(collection(db, 'clientErrors'), limit(500)));
+        await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+    },
+
     // ---- Push notifications on this device (2.18.0) ----
     // The device's FCM token is kept in pushTokens/{token} with the account's
     // uid; the server (notificationTick) sends to the tokens of the accounts

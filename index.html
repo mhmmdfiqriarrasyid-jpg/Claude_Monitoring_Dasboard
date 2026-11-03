@@ -252,6 +252,10 @@
                 <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
                 <span class="nav__text">Notifications</span>
             </button>
+            <button type="button" class="nav__link" id="navErrorLog" data-owner-only style="display:none" onclick="openErrorLog()" title="Errors on people's devices">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+                <span class="nav__text">Error log</span>
+            </button>
             <button type="button" class="nav__link" id="navHistory" onclick="showHistory()" title="Change history">
                 <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path></svg>
                 <span class="nav__text">History</span>
@@ -2605,6 +2609,7 @@
             </div>
             <div class="hist-foot">
                 <span class="hist-foot__count" id="historyCount" role="status"></span>
+                <button type="button" class="btn btn-secondary btn-sm" data-owner-only style="display:none" onclick="showHistoryArchives()" title="History older than 2 years, moved out of the database">Archived history</button>
                 <button type="button" class="btn btn-secondary btn-sm" id="historyMore" onclick="showMoreHistory()" hidden>Show more</button>
             </div>
         </div>
@@ -4323,6 +4328,37 @@
         <div class="form-actions">
             <button class="btn btn-secondary" onclick="closeEmailSettingsModal()">Close</button>
             <button class="btn btn-primary" id="emailSaveBtn" onclick="saveEmailSettings()"><i class="fas fa-check"></i> Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== LEARNING: WHO OPENED (2.19.0) ===== -->
+<div class="modal-overlay" id="lcViewsModal">
+    <div class="modal-card" style="max-width:520px" role="dialog" aria-labelledby="lcViewsHead">
+        <div class="modal-header">
+            <h3 id="lcViewsHead"><i class="fas fa-user-check"></i> <span id="lcViewsTitle">Seen by</span></h3>
+            <button class="btn-icon" onclick="closeLearningViews()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body" id="lcViewsList"></div>
+        <div class="form-actions"><button class="btn btn-primary" onclick="closeLearningViews()">Close</button></div>
+    </div>
+</div>
+
+<!-- ===== ERROR LOG (2.19.0, owner) ===== -->
+<div class="modal-overlay" id="errorLogModal">
+    <div class="modal-card errlog-card" role="dialog" aria-labelledby="errorLogTitle">
+        <div class="modal-header">
+            <h3 id="errorLogTitle"><i class="fas fa-triangle-exclamation"></i> Error log</h3>
+            <button class="btn-icon" onclick="closeErrorLog()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p class="notif-desc" id="errorLogDesc">Errors in the dashboard on anyone's device, newest first. Kept 30 days.</p>
+            <p class="form-hint" id="errorLogCount"></p>
+            <ul class="errlog-list" id="errorLogList"></ul>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-secondary" id="errorLogClearBtn" onclick="clearErrorLog()">Clear log</button>
+            <button class="btn btn-primary" onclick="closeErrorLog()">Close</button>
         </div>
     </div>
 </div>

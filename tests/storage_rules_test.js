@@ -73,6 +73,9 @@ const { doc, setDoc } = require('firebase/firestore');
     await check('foto laporan: akun own TIDAK bisa mengunggah ke laporan orang lain', img(st('tlOwn'), 'photos/workLogPhotos/wl_other/b'), false);
     await check('foto laporan: akun own membaca laporannya sendiri', getBytes(ref(st('tlOwn'), 'photos/workLogPhotos/wl_mine/a')), true);
     await check('foto laporan: akun own TIDAK bisa membaca laporan orang lain', getBytes(ref(st('tlOwn'), 'photos/workLogPhotos/wl_other/a')), false);
+    await check('arsip history: owner bisa membaca', getBytes(ref(st('own'), 'archives/history/2024-01.json')).catch(e => { if (/not.?found/i.test(e.code || e.message)) return; throw e; }), true);
+    await check('arsip history: bukan owner TIDAK bisa membaca', getBytes(ref(st('ed'), 'archives/history/2024-01.json')), false);
+    await check('arsip history: owner pun TIDAK bisa menulis (server saja)', uploadBytes(ref(st('own'), 'archives/history/x.json'), pdf, { contentType: 'application/json' }), false);
     await check('foto: folder koleksi lain tertutup', img(st('own'), 'photos/lainnya/x/a'), false);
 
     await env.cleanup();

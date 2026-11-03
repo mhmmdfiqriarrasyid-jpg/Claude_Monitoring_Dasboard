@@ -499,6 +499,20 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   `tests/license_report_test.js`, skenario Notif di `tests/rules_test.js`.
   **Perlu publish `firestore.rules` + deploy ulang fungsi** (deploy akan
   menanyakan penghapusan `dailyLicenseAlert` — jawab y).
+  **2.19.0 — Catatan error, jejak belajar, arsip History.**
+  *Error log*: error di kode dashboard (bukan ekstensi / skrip luar, maks. 20
+  per halaman, tanpa duplikat) dicatat ke `clientErrors`; owner membacanya di
+  **Admin → Error log** (dikelompokkan per pesan + versi, bisa dihapus).
+  *Seen by*: membuka materi Learning Center mencatat `learningViews/
+  {itemId}__{uid}`; editor Learning melihat siapa yang sudah membuka (kapan,
+  berapa kali), owner juga melihat akun aktif yang belum. *Housekeeping* di
+  `notificationTick` jam 03:00 WIT (`functions/housekeeping.js`): error log
+  > 30 hari dihapus, History > 2 tahun dipindah ke Storage
+  `archives/history/YYYY-MM.json` (digabung dengan isi file bulan itu, baru
+  lalu dihapus dari Firestore); owner membukanya lewat History → *Archived
+  history*. Dijaga `tests/errlog_learnviews_test.js`, `tests/housekeeping_e2e.js`
+  (emulator), skenario 2.19.0 di rules dan storage rules. **Perlu publish
+  `firestore.rules` + `storage.rules` dan deploy ulang fungsi.**
   **2.18.0 — Laporan bulanan & push notification.** Admin → Notifications
   punya bagian **Monthly Report** (tanggal 1 tiap bulan pada jam pilihan, atau
   *Send now*: kerusakan per tipe & unit, downtime per unit, Daily Report & jam

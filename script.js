@@ -156,7 +156,47 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.18.1';
+const APP_VERSION = 'v2.19.0';
+
+// ---- Error log (2.19.0) ----
+// Errors in this app's own code, on anyone's device, are written to
+// clientErrors so they can be read in Admin → Error log and fixed without
+// waiting for a screenshot. Extensions, third-party scripts and the same
+// error twice are left out; at most 20 per page load.
+const _errSeen = new Set();
+const _errQueue = [];
+let _errCount = 0;
+function reportClientError(kind, message, stack, source) {
+    try {
+        const msg = String(message == null ? '' : message).slice(0, 500);
+        if (!msg) return;
+        const where = `${source || ''} ${stack || ''}`;
+        if (/chrome-extension:|moz-extension:|safari-extension:|ResizeObserver loop|^Script error\.?$/.test(`${msg} ${where}`)) return;
+        if (kind === 'error' && source && !/\/(script|firebase-init|service-worker)\.js|\/vendor\//.test(source)) return;
+        const key = `${msg}|${String(stack || '').split('\n')[1] || ''}`;
+        if (_errSeen.has(key) || _errCount >= 20) return;
+        _errSeen.add(key); _errCount++;
+        const rec = {
+            message: msg, stack: String(stack || '').slice(0, 2000), kind,
+            view: typeof currentView === 'string' ? currentView : '', version: APP_VERSION,
+            url: (location.pathname + location.search).slice(0, 200), ua: (navigator.userAgent || '').slice(0, 200),
+            uid: (typeof currentUser !== 'undefined' && currentUser && currentUser.uid) || '',
+            email: (typeof currentUser !== 'undefined' && currentUser && currentUser.email) || '',
+            at: Date.now()
+        };
+        if (window.cloud && window.cloud.logClientError && rec.uid) window.cloud.logClientError(rec).catch(() => {});
+        else if (_errQueue.length < 20) _errQueue.push(rec);
+    } catch (_) { /* never let logging break the page */ }
+}
+function flushClientErrors() {
+    if (!window.cloud || !window.cloud.logClientError || typeof currentUser === 'undefined' || !currentUser) return;
+    _errQueue.splice(0).forEach(r => window.cloud.logClientError({ ...r, uid: currentUser.uid, email: currentUser.email || '' }).catch(() => {}));
+}
+window.addEventListener('error', e => reportClientError('error', e.message, e.error && e.error.stack, e.filename));
+window.addEventListener('unhandledrejection', e => {
+    const r = e.reason;
+    reportClientError('promise', (r && (r.code ? `${r.code}: ${r.message}` : r.message)) || String(r), r && r.stack, '');
+});
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -886,6 +926,8 @@ function setupEventListeners() {
 const MODAL_CLOSERS = {
     unitModal:            'closeModal',
     historyModal:         'closeHistory',
+    errorLogModal:        'closeErrorLog',
+    lcViewsModal:         'closeLearningViews',
     importReportModal:    'closeImportReport',
     phantomHistoryModal:  'closePhantomHistory',
     emailSettingsModal:   'closeEmailSettingsModal',
@@ -1465,6 +1507,57 @@ function runLaunchAction() {
         try { fn(); } catch (e) { console.warn('[launch] action failed:', act, e); }
     };
     setTimeout(go, 300);
+}
+
+// ---- Archived history (2.19.0, owner) ----
+// The server moves history older than 2 years into one JSON file per month.
+async function showHistoryArchives() {
+    if (!isOwner() || !window.cloud || !window.cloud.listHistoryArchives) return;
+    let files = [];
+    try { files = await window.cloud.listHistoryArchives(); }
+    catch (err) { showToast(err && /unauthorized|permission/.test(String(err.code)) ? 'Publish the latest storage.rules to open the archive' : 'Could not list the archive', 'warning'); return; }
+    if (!files.length) { showToast('Nothing archived yet — history older than 2 years moves here automatically', 'info'); return; }
+    const box = document.getElementById('errorLogList');
+    document.getElementById('errorLogTitle').innerHTML = '<i class="fas fa-box-archive"></i> Archived history';
+    document.getElementById('errorLogCount').textContent = `${files.length} month file(s), newest first`;
+    box.innerHTML = files.map(f => `<li class="errlog-item"><button type="button" class="link-btn" onclick="openHistoryArchive(${jsArg(f.path)})">${escapeHtml(f.name)}</button></li>`).join('');
+    document.getElementById('errorLogDesc').textContent = 'History older than 2 years, moved out of the database by the server. Each file is one month (JSON).';
+    document.getElementById('errorLogClearBtn').hidden = true;
+    document.getElementById('errorLogModal').classList.add('open');
+    document.getElementById('errorLogModal').dataset.mode = 'archive';
+}
+async function openHistoryArchive(path) {
+    try { window.open(await window.cloud.historyArchiveUrl(path), '_blank', 'noopener'); }
+    catch (err) { showToast('Could not open that archive file', 'error'); }
+}
+
+// ---- Error log viewer (2.19.0, owner) ----
+async function openErrorLog() {
+    if (!isOwner()) return;
+    document.getElementById('errorLogTitle').innerHTML = '<i class="fas fa-triangle-exclamation"></i> Error log';
+    document.getElementById('errorLogModal').dataset.mode = 'errors';
+    document.getElementById('errorLogDesc').textContent = "Errors in the dashboard on anyone's device, newest first. Kept 30 days.";
+    document.getElementById('errorLogClearBtn').hidden = false;
+    document.getElementById('errorLogModal').classList.add('open');
+    const list = document.getElementById('errorLogList');
+    list.innerHTML = '<li class="category-empty">Loading…</li>';
+    let rows = [];
+    try { rows = window.cloud && window.cloud.listClientErrors ? await window.cloud.listClientErrors(200) : []; }
+    catch (err) { list.innerHTML = `<li class="category-empty">Could not load the error log${err && err.code === 'permission-denied' ? ' — publish the latest firestore.rules' : ''}.</li>`; return; }
+    document.getElementById('errorLogCount').textContent = `${rows.length} error${rows.length === 1 ? '' : 's'} (last 30 days)`;
+    if (!rows.length) { list.innerHTML = '<li class="category-empty">No errors recorded. 🎉</li>'; return; }
+    list.innerHTML = rows.map(r => `<li class="errlog-item">
+        <div class="errlog-item__head"><strong>${escapeHtml(r.message || '')}</strong></div>
+        <div class="errlog-item__meta">${escapeHtml(toLocalDateTime(r.at || 0))} · ${escapeHtml(r.email || r.uid || 'unknown')} · ${escapeHtml(r.version || '')} · ${escapeHtml(r.view || '')}${r.count > 1 ? ` · ×${r.count}` : ''}</div>
+        ${r.stack ? `<details><summary>Details</summary><pre class="errlog-item__stack">${escapeHtml(r.stack)}\n\n${escapeHtml(r.ua || '')}</pre></details>` : ''}
+    </li>`).join('');
+}
+function closeErrorLog() { document.getElementById('errorLogModal').classList.remove('open'); }
+async function clearErrorLog() {
+    if (!isOwner() || document.getElementById('errorLogModal').dataset.mode !== 'errors' || !confirm('Delete every entry in the error log?')) return;
+    try { await window.cloud.clearClientErrors(); showToast('Error log cleared', 'success'); }
+    catch (err) { console.warn('[errors] clear failed:', err); showToast('Failed to clear the error log', 'error'); }
+    openErrorLog();
 }
 
 // ---- Push notifications on this device (2.18.0) ----
@@ -13083,6 +13176,7 @@ function setupAuth() {
         // Before anything in this session logs or renders: a shared browser may
         // still hold unsynced audit rows belonging to whoever signed in last.
         pruneForeignLocalAudit(user.uid);
+        flushClientErrors();
 
         // Look up (or create) the Firestore profile document for this user.
         let profile;
@@ -18725,6 +18819,7 @@ function renderLearningView() {
                 </span>
             </button>
             ${canEdit ? `<div class="lc-item__acts">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="openLearningViews(${jsArg(i.id)})" title="Who opened this material">Seen by</button>
                 <button type="button" class="btn btn-secondary btn-sm" onclick="editLearningItem(${jsArg(i.id)})">Edit</button>
                 <button type="button" class="btn btn-secondary btn-sm" onclick="deleteLearningItem(${jsArg(i.id)})" aria-label="Delete ${escapeHtml(i.title)}">Delete</button>
             </div>` : ''}
@@ -19008,6 +19103,11 @@ function _lcSetTools(mode) {
 async function openLearningItem(id) {
     const i = learningItems.find(x => x.id === id);
     if (!i) return;
+    // 2.19.0: who opened what, for training records.
+    if (window.cloud && window.cloud.recordLearningView) {
+        const who = { name: (currentUserDoc && currentUserDoc.displayName) || (currentUser && currentUser.displayName) || '', email: (currentUser && currentUser.email) || '' };
+        window.cloud.recordLearningView(id, who).catch(err => console.warn('[learning] view not recorded:', err && err.code));
+    }
     if (i.source === 'link') {
         const fid = driveFileId(i.url);
         if (!fid) { window.open(i.url, '_blank', 'noopener'); return; }
@@ -19066,6 +19166,31 @@ async function _lcRender(gen) {
         await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null }).promise;
     }
 }
+// ---- Who opened a material (2.19.0) ----
+// Learning editors see who opened it and when; the Super Admin also sees the
+// active accounts that have not opened it yet.
+async function openLearningViews(id) {
+    const i = learningItems.find(x => x.id === id);
+    if (!i || !canEditLearning()) return;
+    if (isOwner()) ensureUsersSubscription();
+    document.getElementById('lcViewsTitle').textContent = i.title;
+    const box = document.getElementById('lcViewsList');
+    box.innerHTML = '<p class="lc-loading">Loading…</p>';
+    document.getElementById('lcViewsModal').classList.add('open');
+    let views = [];
+    try { views = window.cloud && window.cloud.listLearningViews ? await window.cloud.listLearningViews(id) : []; }
+    catch (err) { box.innerHTML = `<p class="lc-loading">Could not load${err && err.code === 'permission-denied' ? ' — publish the latest firestore.rules' : ''}.</p>`; return; }
+    const seen = new Set(views.map(v => v.uid));
+    const notYet = isOwner() ? (allUsers || []).filter(u => u.status === 'active' && !seen.has(u.uid)) : [];
+    const row = v => `<li class="lcv-row"><span class="lcv-row__who"><strong>${escapeHtml(v.name || v.email || v.uid)}</strong>${v.name && v.email ? `<small>${escapeHtml(v.email)}</small>` : ''}</span>
+        <span class="lcv-row__when">${escapeHtml(toLocalDateTime(v.lastAt || 0))}${v.count > 1 ? ` · ${v.count}×` : ''}<small>first ${escapeHtml(toLocalDateTime(v.firstAt || 0))}</small></span></li>`;
+    box.innerHTML = `<h4 class="notif-title">Opened · ${views.length}</h4>
+        ${views.length ? `<ul class="lcv-list">${views.map(row).join('')}</ul>` : '<p class="notif-desc">Nobody has opened it yet.</p>'}
+        ${isOwner() ? `<h4 class="notif-title" style="margin-top:14px">Not opened yet · ${notYet.length}</h4>
+            ${notYet.length ? `<ul class="lcv-list">${notYet.map(u => `<li class="lcv-row"><span class="lcv-row__who"><strong>${escapeHtml(u.displayName || u.email || u.uid)}</strong>${u.displayName && u.email ? `<small>${escapeHtml(u.email)}</small>` : ''}</span></li>`).join('')}</ul>` : '<p class="notif-desc">Everyone has opened it.</p>'}` : ''}`;
+}
+function closeLearningViews() { document.getElementById('lcViewsModal').classList.remove('open'); }
+
 // ---- E-books: EPUB / MOBI / AZW3 with foliate-js (2.12.2) ----
 let _lcBook = null, _lcFont = 100;
 const LEARN_MIME = { pdf: 'application/pdf', epub: 'application/epub+zip', mobi: 'application/x-mobipocket-ebook' };

@@ -580,6 +580,20 @@ async function check(name, p, expectOk) {
     await check('Email: dokumen settings lain DITOLAK', setDoc(doc(as('owner'), 'settings', 'other'), { dailyEnabled: true }), false);
     await check('Email: mailLog tidak bisa ditulis dari browser', setDoc(doc(as('owner'), 'mailLog', 'm1'), { kind: 'x' }), false);
     await check('Email: owner membaca mailLog', getDoc(doc(as('owner'), 'mailLog', 'm1')), true);
+    // ---- 2.19.0: catatan error + jejak belajar ----
+    const ER = { message: 'x is not defined', stack: 'at y', kind: 'error', view: 'dashboard', version: 'v2.19.0', url: '/', ua: 'UA', uid: 'nobody', email: 'n@x.id', at: 1 };
+    await check('Error log: akun mana pun mencatat errornya sendiri', setDoc(doc(as('nobody'), 'clientErrors', 'e1'), ER), true);
+    await check('Error log: atas nama akun lain DITOLAK', setDoc(doc(as('nobody'), 'clientErrors', 'e2'), { ...ER, uid: 'owner' }), false);
+    await check('Error log: pesan terlalu panjang DITOLAK', setDoc(doc(as('nobody'), 'clientErrors', 'e3'), { ...ER, message: 'x'.repeat(501) }), false);
+    await check('Error log: kolom asing DITOLAK', setDoc(doc(as('nobody'), 'clientErrors', 'e4'), { ...ER, extra: 1 }), false);
+    await check('Error log: bukan owner TIDAK bisa membaca', getDoc(doc(as('nobody'), 'clientErrors', 'e1')), false);
+    await check('Error log: owner membaca dan menghapus', getDoc(doc(as('owner'), 'clientErrors', 'e1')), true);
+    const LV = { itemId: 'lc_9', uid: 'nobody', name: 'N', email: 'n@x.id', firstAt: 1, lastAt: 2, count: 1 };
+    await check('Jejak belajar: mencatat bukaan sendiri', setDoc(doc(as('nobody'), 'learningViews', 'lc_9__nobody'), LV), true);
+    await check('Jejak belajar: id harus materi__uid sendiri', setDoc(doc(as('nobody'), 'learningViews', 'lc_9__owner'), LV), false);
+    await check('Jejak belajar: atas nama akun lain DITOLAK', setDoc(doc(as('nobody'), 'learningViews', 'lc_9__owner'), { ...LV, uid: 'owner' }), false);
+    await check('Jejak belajar: editor Learning membaca', getDocs(query(collection(LCE, 'learningViews'), where('itemId', '==', 'lc_9'))), true);
+    await check('Jejak belajar: akun lain TIDAK bisa membaca jejak orang lain', getDoc(doc(as('writer'), 'learningViews', 'lc_9__nobody')), false);
     await check('Device Categories: editor warehouse menyimpan daftar', setDoc(doc(as('wh'), 'masterLists', 'deviceType'), { id: 'deviceType', values: ['Basestation'] }), true);
     await check('Device Categories: pembaca warehouse TIDAK bisa menyimpan', setDoc(doc(as('whv'), 'masterLists', 'deviceType'), { id: 'deviceType', values: ['X'] }), false);
 

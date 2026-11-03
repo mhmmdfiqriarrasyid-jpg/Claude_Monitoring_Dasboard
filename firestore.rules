@@ -572,6 +572,23 @@ service cloud.firestore {
     match /mailState/{id} {
       allow read, write: if false;
     }
+    match /learningViews/{id} {
+      allow read: if isOwner() || canEditArea('learning') || (isSignedIn() && resource.data.get('uid', '') == request.auth.uid);
+      allow create, update: if isActive() && request.resource.data.get('uid', '') == request.auth.uid
+        && id == request.resource.data.get('itemId', '') + '__' + request.auth.uid
+        && request.resource.data.keys().hasOnly(['itemId', 'uid', 'name', 'email', 'firstAt', 'lastAt', 'count'])
+        && request.resource.data.get('name', '') is string && request.resource.data.get('name', '').size() <= 120
+        && request.resource.data.get('count', 0) is int;
+    }
+    match /clientErrors/{id} {
+      allow read, delete: if isOwner();
+      allow create: if isSignedIn() && request.resource.data.get('uid', '') == request.auth.uid
+        && request.resource.data.keys().hasOnly(['message', 'stack', 'kind', 'view', 'version', 'url', 'ua', 'uid', 'email', 'at'])
+        && request.resource.data.get('message', '') is string && request.resource.data.get('message', '').size() <= 500
+        && request.resource.data.get('stack', '') is string && request.resource.data.get('stack', '').size() <= 2000
+        && request.resource.data.get('ua', '') is string && request.resource.data.get('ua', '').size() <= 200
+        && request.resource.data.get('url', '') is string && request.resource.data.get('url', '').size() <= 200;
+    }
     match /pushTokens/{token} {
       allow read, delete: if isSignedIn() && (resource.data.get('uid', '') == request.auth.uid || isOwner());
       allow create, update: if isActive() && request.resource.data.get('uid', '') == request.auth.uid

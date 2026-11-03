@@ -114,6 +114,12 @@ service firebase.storage {
       allow delete: if canEditLearning();
     }
 
+    // History older than 2 years, archived by the server (2.19.0).
+    match /archives/history/{file} {
+      allow read: if isActive() && me().get('role', '') == 'owner';
+      allow write: if false;
+    }
+
     match /{path=**} {
       allow read, write: if false;
     }

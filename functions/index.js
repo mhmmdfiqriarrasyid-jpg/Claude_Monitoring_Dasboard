@@ -8,6 +8,8 @@
 //                          · the Monthly Report on the 1st, at its hour (2.18.0)
 //                          · push notifications to phones (2.18.0): new damage,
 //                            and Daily Reports / leave / inspections to approve
+//                          · housekeeping at 03:00 (2.19.0): error log > 30 days
+//                            deleted, history > 2 years archived to Storage
 //   sendLicenseAlert     the "Send now" / Email Report button (callable).
 //   sendNotificationNow  "Send test" (breakdown) / "Send now" (reminder) in
 //                        Notification Settings — owner only (callable, 2.15.1).
@@ -160,6 +162,13 @@ async function scanApprovals(now) {
     return n;
 }
 
+// ---- Housekeeping (2.19.0), once a day at 03:00 WIT ----
+//   · error log entries older than 30 days are deleted
+//   · history older than 2 years moves to Storage, archives/history/YYYY-MM.json
+//     (merged with what that month's file already holds), then leaves Firestore
+const { housekeepingRun } = require('./housekeeping');
+const housekeeping = now => housekeepingRun(db, admin.storage().bucket(), now);
+
 // ---- Monthly report (2.18.0): the month before, on the 1st ----
 async function sendMonthly(s, now, trigger, by) {
     if (!s.monthlyRecipients.length) return { sent: false, reason: 'no-recipients' };
@@ -227,6 +236,7 @@ exports.notificationTick = onSchedule({
     if (s.dailyEnabled && hour === s.sendHour) jobs.push(oncePerDay('daily', today, () => sendReport('daily', '')));
     if (s.reminderEnabled && hour === s.reminderHour) jobs.push(oncePerDay('reminder', today, () => sendReminder(s, now)));
     if (s.monthlyEnabled && now.getDate() === 1 && hour === s.monthlyHour) jobs.push(oncePerDay('monthly', today, () => sendMonthly(s, now)));
+    if (hour === 3) jobs.push(oncePerDay('housekeeping', today, () => housekeeping(now)));
     jobs.push(scanDamage(s, now).then(n => { if (n) logger.info('damage alerts sent', { n }); }));
     if (s.pushApprovals) jobs.push(scanApprovals(now).then(n => { if (n) logger.info('approval pushes sent', { n }); }));
     const results = await Promise.allSettled(jobs);

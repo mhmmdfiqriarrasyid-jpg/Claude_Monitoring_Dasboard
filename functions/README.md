@@ -5,6 +5,7 @@
 | `notificationTick` | every 10 minutes (WIT) | As set in Admin → Notifications (`settings/email`): the License Alert report once a day at its hour, the Daily Report reminder once a day at its hour (`mailState/daily`, `mailState/reminder`), and a Breakdown / damage email for each new damage record (`mailState/damage`) |
 | *(push, 2.18.0)* | inside `notificationTick` | Push to phones (`pushTokens`): new damage → everyone who can see Damage; Daily Reports / leave / inspections waiting → their approvers. Switches `pushDamage`, `pushApprovals` |
 | *(monthly, 2.18.0)* | inside `notificationTick` | Monthly Report on the 1st at `monthlyHour` to `monthlyRecipients` (`monthlyReport.js`); *Send now* via `sendNotificationNow` kind `monthly` |
+| *(housekeeping, 2.19.0)* | inside `notificationTick`, 03:00 WIT | Error log entries > 30 days deleted; history > 2 years moved to Storage `archives/history/YYYY-MM.json` (`housekeeping.js`, `tests/housekeeping_e2e.js`) |
 | `sendLicenseAlert` | callable | "Send license report now" / Email Report. Owner, or an active account that can see License Stock |
 | `sendNotificationNow` | callable | Notification Settings → *Send test* (breakdown: the newest damage record, marked [Test]) and *Send now* (Daily Report reminder, right now). Owner only |
 | `deleteSignInAccount` | callable | After the owner removes or rejects someone: deletes their Firebase sign-in account. Owner only; refused while the person still has a `users` record, never for the owner |
