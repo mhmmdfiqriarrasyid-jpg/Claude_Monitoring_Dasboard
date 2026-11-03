@@ -280,6 +280,9 @@
             <button type="button" class="user-menu__item" id="installMenuItem" hidden onclick="installApp(); event.stopPropagation();">
                 <i class="fas fa-mobile-screen-button" aria-hidden="true"></i> Install app
             </button>
+            <button type="button" class="user-menu__item" id="pushMenuItem" hidden onclick="togglePush(); event.stopPropagation();">
+                <i class="fas fa-bell" aria-hidden="true"></i> <span id="pushMenuLabel">Turn on phone notifications</span>
+            </button>
             <button type="button" class="user-menu__item" onclick="handleSignOut(); event.stopPropagation();">
                 <i class="fas fa-right-from-bracket" aria-hidden="true"></i> Sign out
             </button>
@@ -4278,6 +4281,28 @@
                 <div class="notif-actions"><button type="button" class="btn btn-secondary btn-sm" id="damageSendBtn" onclick="sendNotificationNow('damage', this)"><i class="fas fa-paper-plane"></i> Send test</button>
                     <span class="notif-note">An example from the newest damage record</span></div>
                 <p class="form-hint" id="damageLast"></p>
+            </section>
+
+            <section class="notif-sec" aria-labelledby="notifPushTitle">
+                <h4 class="notif-title" id="notifPushTitle">Phone notifications (push)</h4>
+                <p class="notif-desc">Sent to the phones where people turned notifications on (account menu → <strong>Turn on phone notifications</strong>), only to those with access to the record. On iPhone the app must be installed to the Home Screen.</p>
+                <label class="notif-check"><input type="checkbox" id="pushDamage"> New damage &amp; Breakdown — to everyone who can see Damage</label>
+                <label class="notif-check"><input type="checkbox" id="pushApprovals"> Waiting for approval — Daily Reports, leave and inspections, to the people who approve them</label>
+            </section>
+
+            <section class="notif-sec" aria-labelledby="notifMonTitle">
+                <h4 class="notif-title" id="notifMonTitle">Monthly Report</h4>
+                <p class="notif-desc">On the 1st of each month: last month's damage, downtime per unit, Daily Reports and work hours per company, and licences expiring soon.</p>
+                <label class="form-label" for="monthlyRecipients">Recipients</label>
+                <textarea class="form-input" id="monthlyRecipients" rows="2" placeholder="manager@company.com"></textarea>
+                <label class="notif-check"><input type="checkbox" id="monthlyEnabled" onchange="syncEmailDaily()"> Send automatically on the 1st of each month</label>
+                <div class="notif-hour" id="monthlyHourGroup">
+                    <label class="form-label" for="monthlyHour">Send time <span class="form-optional">(WIT)</span></label>
+                    <select class="form-input" id="monthlyHour"></select>
+                </div>
+                <div class="notif-actions"><button type="button" class="btn btn-secondary btn-sm" id="monthlySendBtn" onclick="sendNotificationNow('monthly', this)"><i class="fas fa-paper-plane"></i> Send now</button>
+                    <span class="notif-note">Last month's report</span></div>
+                <p class="form-hint" id="monthlyLast"></p>
             </section>
 
             <section class="notif-sec" aria-labelledby="notifRemTitle">

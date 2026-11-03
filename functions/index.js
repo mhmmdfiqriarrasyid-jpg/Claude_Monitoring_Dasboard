@@ -5,6 +5,9 @@
 //                          · the License Alert report, once a day at its hour
 //                          · the Daily Report reminder, once a day at its hour
 //                          · a Breakdown / damage alert for each new damage record
+//                          · the Monthly Report on the 1st, at its hour (2.18.0)
+//                          · push notifications to phones (2.18.0): new damage,
+//                            and Daily Reports / leave / inspections to approve
 //   sendLicenseAlert     the "Send now" / Email Report button (callable).
 //   sendNotificationNow  "Send test" (breakdown) / "Send now" (reminder) in
 //                        Notification Settings — owner only (callable, 2.15.1).
@@ -25,6 +28,8 @@ const admin = require('firebase-admin');
 const nodemailer = require('nodemailer');
 const { composeEmail } = require('./licenseReport');
 const { missingReports, composeReminder, composeDamage, shiftDates } = require('./teamNotices');
+const { buildMonthly, composeMonthly } = require('./monthlyReport');
+const { recipientsFor, composePush } = require('./pushNotices');
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -57,7 +62,12 @@ async function emailSettings() {
         reminderHour: cleanHour(s.reminderHour, 17),
         reminderRecipients: cleanList(s.reminderRecipients),
         damageEnabled: !!s.damageEnabled,
-        damageRecipients: cleanList(s.damageRecipients)
+        damageRecipients: cleanList(s.damageRecipients),
+        monthlyEnabled: !!s.monthlyEnabled,
+        monthlyHour: cleanHour(s.monthlyHour, 7),
+        monthlyRecipients: cleanList(s.monthlyRecipients),
+        pushDamage: s.pushDamage !== false,
+        pushApprovals: s.pushApprovals !== false
     };
 }
 
@@ -103,6 +113,66 @@ async function sendReminder(s, now, trigger, by) {
     return { sent: true, items: list.length };
 }
 
+// ---- Push notifications (2.18.0) ----
+// Sent to every device token (pushTokens) of the accounts a notice is for.
+// Tokens the push service no longer knows are removed.
+let _pushCtx = null;   // { users, tokensByUid } for one tick
+async function pushContext() {
+    if (_pushCtx) return _pushCtx;
+    const tokens = await db.collection('pushTokens').get();
+    const tokensByUid = new Map();
+    tokens.docs.forEach(d => { const t = d.data(); if (t.uid && t.token) tokensByUid.set(t.uid, (tokensByUid.get(t.uid) || []).concat(d.id)); });
+    const users = tokensByUid.size ? (await db.collection('users').get()).docs.map(d => ({ ...d.data(), uid: d.id })) : [];
+    _pushCtx = { users, tokensByUid };
+    return _pushCtx;
+}
+async function sendPush(kind, id, rec) {
+    const ctx = await pushContext();
+    if (!ctx.tokensByUid.size) return 0;
+    const msg = composePush(kind, id, rec);
+    if (!msg) return 0;
+    const tokens = recipientsFor(kind, rec, ctx.users).flatMap(uid => ctx.tokensByUid.get(uid) || []);
+    if (!tokens.length) return 0;
+    const res = await admin.messaging().sendEachForMulticast({ tokens, data: msg, webpush: { headers: { Urgency: 'high', TTL: '86400' } } });
+    const dead = res.responses.map((r, i) => (!r.success && r.error && /registration-token-not-registered|invalid-registration-token|invalid-argument/.test(r.error.code || '') ? tokens[i] : null)).filter(Boolean);
+    await Promise.all(dead.map(t => db.doc(`pushTokens/${t}`).delete().catch(() => {})));
+    return res.successCount;
+}
+// New items waiting for a decision since the last tick: Daily Reports and
+// leave (teamLogApprove), inspections (inspectionApprove). First run only
+// takes note of what is already waiting.
+async function scanApprovals(now) {
+    const state = db.doc('mailState/approvals');
+    const prev = await state.get();
+    const seen = new Set(prev.exists ? (prev.data().ids || []) : []);
+    const cols = [['workLogs', 'workLog'], ['leaveRequests', 'leave'], ['inspections', 'inspection']];
+    const snaps = await Promise.all(cols.map(([c]) => db.collection(c).where('approval', '==', 'pending').get()));
+    const fresh = [];
+    snaps.forEach((snap, i) => snap.docs.forEach(d => { const key = `${cols[i][0]}/${d.id}`; if (!seen.has(key)) fresh.push({ key, kind: cols[i][1], id: d.id, rec: d.data() }); }));
+    if (!fresh.length && prev.exists) return 0;
+    let n = 0;
+    if (prev.exists) for (const f of fresh) {
+        if ((f.rec.submittedAt || f.rec.updatedAt || 0) < now.getTime() - DAMAGE_WINDOW_MS) continue;
+        n += await sendPush(f.kind, f.id, f.rec).catch(err => { logger.error('push failed', err); return 0; });
+    }
+    fresh.forEach(f => seen.add(f.key));
+    await state.set({ ids: [...seen].slice(-1500), at: admin.firestore.FieldValue.serverTimestamp() });
+    return n;
+}
+
+// ---- Monthly report (2.18.0): the month before, on the 1st ----
+async function sendMonthly(s, now, trigger, by) {
+    if (!s.monthlyRecipients.length) return { sent: false, reason: 'no-recipients' };
+    const [units, damages, logs, stock] = await Promise.all([
+        db.collection('units').get(), db.collection('damageRecords').get(),
+        db.collection('workLogs').get(), db.collection('licenseStock').get()]);
+    const r = buildMonthly({ units: units.docs.map(d => ({ ...d.data(), id: d.id })), damages: damages.docs.map(d => d.data()),
+        workLogs: logs.docs.map(d => d.data()), licenseStock: stock.docs.map(d => d.data()), now: now.getTime() });
+    const m = composeMonthly(r);
+    await mail(s.monthlyRecipients, m, { kind: 'monthlyReport', trigger: trigger || 'auto', by: by || '', items: r.damage.total });
+    return { sent: true, recipients: s.monthlyRecipients.length };
+}
+
 // ---- Damage / Breakdown alerts ----
 // Every tick looks at damage records changed in the last 3 days and mails
 // the ones not mailed before (their ids are kept in mailState/damage). A
@@ -117,11 +187,13 @@ async function scanDamage(s, now) {
     const fresh = snap.docs.filter(d => !seen.has(d.id));
     if (!fresh.length && prev.exists) return 0;
     let sent = 0;
-    if (prev.exists && s.damageEnabled && s.damageRecipients.length) {
+    if (prev.exists) {
         for (const d of fresh) {
             const rec = d.data();
             // New records only: an old record edited today is not news.
-            if (!rec.createdAt || rec.createdAt < now.getTime() - DAMAGE_WINDOW_MS) continue;
+            if (!rec.createdAt || rec.createdAt < now.getTime() - DAMAGE_WINDOW_MS || rec.resolved) continue;
+            if (s.pushDamage) await sendPush('damage', d.id, rec).catch(err => logger.error('push failed', err));
+            if (!s.damageEnabled || !s.damageRecipients.length) continue;
             const m = composeDamage(rec);
             if (!m) continue;
             await mail(s.damageRecipients, m, { kind: 'damageAlert', trigger: 'auto', by: '', items: 1, recordId: d.id });
@@ -147,13 +219,16 @@ exports.notificationTick = onSchedule({
     schedule: '*/10 * * * *', timeZone: 'Asia/Jayapura', region: REGION, secrets: SECRETS, retryCount: 0
 }, async () => {
     const now = new Date();
+    _pushCtx = null;
     const s = await emailSettings();
     const today = shiftDates(now).today;
     const hour = now.getHours();
     const jobs = [];
     if (s.dailyEnabled && hour === s.sendHour) jobs.push(oncePerDay('daily', today, () => sendReport('daily', '')));
     if (s.reminderEnabled && hour === s.reminderHour) jobs.push(oncePerDay('reminder', today, () => sendReminder(s, now)));
+    if (s.monthlyEnabled && now.getDate() === 1 && hour === s.monthlyHour) jobs.push(oncePerDay('monthly', today, () => sendMonthly(s, now)));
     jobs.push(scanDamage(s, now).then(n => { if (n) logger.info('damage alerts sent', { n }); }));
+    if (s.pushApprovals) jobs.push(scanApprovals(now).then(n => { if (n) logger.info('approval pushes sent', { n }); }));
     const results = await Promise.allSettled(jobs);
     results.filter(r => r.status === 'rejected').forEach(r => logger.error('notification job failed', r.reason));
 });
@@ -205,6 +280,7 @@ exports.sendNotificationNow = onCall({ region: REGION, secrets: SECRETS, enforce
             await mail(s.damageRecipients, m, { kind: 'damageAlert', trigger: 'manual', by, items: 1, recordId: snap.docs[0].id });
             return { sent: true, recipients: s.damageRecipients.length };
         }
+        if (kind === 'monthly') return await sendMonthly(s, new Date(), 'manual', by);
         if (kind === 'reminder') {
             const r = await sendReminder(s, new Date(), 'manual', by);
             return r.sent ? { ...r, recipients: s.reminderRecipients.length } : r;

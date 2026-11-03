@@ -552,7 +552,12 @@ service cloud.firestore {
       allow write: if id == 'email' && isOwner()
         && request.resource.data.keys().hasOnly(['recipients', 'dailyEnabled', 'sendHour',
              'reminderEnabled', 'reminderHour', 'reminderRecipients', 'damageEnabled', 'damageRecipients',
-             'updatedAt', 'updatedBy'])
+             'monthlyEnabled', 'monthlyHour', 'monthlyRecipients', 'pushDamage', 'pushApprovals', 'updatedAt', 'updatedBy'])
+        && request.resource.data.get('pushDamage', true) is bool
+        && request.resource.data.get('pushApprovals', true) is bool
+        && emailList(request.resource.data.get('monthlyRecipients', []))
+        && request.resource.data.get('monthlyEnabled', false) is bool
+        && hourOk(request.resource.data.get('monthlyHour', 7))
         && emailList(request.resource.data.get('recipients', []))
         && emailList(request.resource.data.get('reminderRecipients', []))
         && emailList(request.resource.data.get('damageRecipients', []))
@@ -566,6 +571,13 @@ service cloud.firestore {
     function hourOk(h) { return h is int && h >= 0 && h <= 23; }
     match /mailState/{id} {
       allow read, write: if false;
+    }
+    match /pushTokens/{token} {
+      allow read, delete: if isSignedIn() && (resource.data.get('uid', '') == request.auth.uid || isOwner());
+      allow create, update: if isActive() && request.resource.data.get('uid', '') == request.auth.uid
+        && request.resource.data.get('token', '') == token
+        && request.resource.data.keys().hasOnly(['token', 'uid', 'ua', 'createdAt'])
+        && request.resource.data.get('ua', '') is string && request.resource.data.get('ua', '').size() <= 200;
     }
     match /mailLog/{id} {
       allow read: if isOwner() || canViewArea('licenseStock') || canViewArea('teamLog') || canViewArea('damage');

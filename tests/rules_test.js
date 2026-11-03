@@ -566,6 +566,15 @@ async function check(name, p, expectOk) {
     await check('Notif: jam pengingat di luar 0–23 DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, reminderHour: -1 }), false);
     await check('Notif: penerima breakdown lebih dari 10 DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, damageRecipients: Array.from({ length: 11 }, (_, i) => i + '@x.id') }), false);
     await check('Notif: saklar bukan boolean DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, damageEnabled: 'yes' }), false);
+    await check('Notif: owner menyimpan laporan bulanan', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, monthlyEnabled: true, monthlyHour: 8, monthlyRecipients: ['boss@x.id'] }), true);
+    await check('Notif: jam laporan bulanan di luar 0–23 DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, monthlyHour: 30 }), false);
+    await check('Push: akun aktif menyimpan token perangkatnya', setDoc(doc(as('licv'), 'pushTokens', 'tok_1'), { token: 'tok_1', uid: 'licv', ua: 'x', createdAt: 1 }), true);
+    await check('Push: token atas nama akun lain DITOLAK', setDoc(doc(as('licv'), 'pushTokens', 'tok_2'), { token: 'tok_2', uid: 'owner', ua: 'x', createdAt: 1 }), false);
+    await check('Push: id dokumen harus sama dengan token', setDoc(doc(as('licv'), 'pushTokens', 'tok_3'), { token: 'lain', uid: 'licv', ua: 'x', createdAt: 1 }), false);
+    await check('Push: akun lain TIDAK bisa membaca token', getDoc(doc(as('nobody'), 'pushTokens', 'tok_1')), false);
+    await check('Push: pemilik token menghapusnya', deleteDoc(doc(as('licv'), 'pushTokens', 'tok_1')), true);
+    await check('Push: owner menyimpan saklar push', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, pushDamage: false, pushApprovals: true }), true);
+    await check('Push: saklar push bukan boolean DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, pushDamage: 'on' }), false);
     await check('Notif: mailState tertutup dari browser', getDoc(doc(as('owner'), 'mailState', 'daily')), false);
     await check('Email: kolom asing DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, gmailPassword: 'x' }), false);
     await check('Email: dokumen settings lain DITOLAK', setDoc(doc(as('owner'), 'settings', 'other'), { dailyEnabled: true }), false);

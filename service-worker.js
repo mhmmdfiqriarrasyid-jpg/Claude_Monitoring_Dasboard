@@ -2,7 +2,7 @@
    Network-first for the app shell (so deploys show up on reload), cache-first
    for static assets, network-only for Firebase live endpoints. */
 
-const CACHE_NAME = 'tractor-monitor-2.17.0';
+const CACHE_NAME = 'tractor-monitor-2.18.0';
 
 // Same-origin core files — always revalidated from network first so a new
 // deploy is picked up on the next reload (falls back to cache when offline).
@@ -141,3 +141,29 @@ async function cacheFirst(request) {
         return cached;
     }
 }
+
+// ---- Push notifications (2.18.0) ----
+// The server sends FCM data messages { title, body, url, tag }; they are
+// shown here, and a tap opens (or focuses) the dashboard at that link.
+self.addEventListener('push', event => {
+    let p = {};
+    try { p = event.data ? event.data.json() : {}; } catch (_) { p = {}; }
+    const d = p.data || p.notification || {};
+    event.waitUntil(self.registration.showNotification(d.title || 'OT Dashboard', {
+        body: d.body || '',
+        icon: './icons/icon-192.png',
+        badge: './icons/icon-96.png',
+        tag: d.tag || undefined,
+        renotify: !!d.tag,
+        data: { url: d.url || './' }
+    }));
+});
+self.addEventListener('notificationclick', event => {
+    event.notification.close();
+    const url = new URL((event.notification.data && event.notification.data.url) || './', self.registration.scope).href;
+    event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+        const open = list.find(c => c.url.startsWith(self.registration.scope));
+        if (open) return open.navigate(url).then(c => (c || open).focus()).catch(() => open.focus());
+        return self.clients.openWindow(url);
+    }));
+});

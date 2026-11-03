@@ -499,6 +499,20 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   `tests/license_report_test.js`, skenario Notif di `tests/rules_test.js`.
   **Perlu publish `firestore.rules` + deploy ulang fungsi** (deploy akan
   menanyakan penghapusan `dailyLicenseAlert` — jawab y).
+  **2.18.0 — Laporan bulanan & push notification.** Admin → Notifications
+  punya bagian **Monthly Report** (tanggal 1 tiap bulan pada jam pilihan, atau
+  *Send now*: kerusakan per tipe & unit, downtime per unit, Daily Report & jam
+  kerja per PT, lisensi yang akan habis — `functions/monthlyReport.js`, dijaga
+  `tests/monthly_report_test.js`) dan **Phone notifications (push)**: kerusakan /
+  Breakdown baru untuk yang bisa melihat Damage, dan Daily Report / izin /
+  inspeksi yang menunggu persetujuan untuk penyetujunya (bukan pembuatnya) —
+  `functions/pushNotices.js` (`tests/push_notices_test.js`). Tiap orang
+  menyalakannya per HP lewat menu akun → *Turn on phone notifications*
+  (token di `pushTokens/{token}`, rules: hanya pemiliknya); service worker
+  menampilkan notifikasi dan membuka tautannya (`tests/sw_push_test.js`,
+  `tests/push_menu_test.js`). Butuh kunci **Web Push certificate** publik di
+  `PUSH_VAPID_KEY` (`firebase-init.js`); tanpa kunci menu push disembunyikan.
+  **Perlu publish `firestore.rules` + deploy ulang fungsi.**
   **2.17.0 — Foto di Cloud Storage.** Semua foto (Warehouse, Fuel, Purchase,
   Damage before/after, Daily Report & surat izin, Inspection) diunggah ke
   `photos/<koleksi>/<record>/<file>`; dokumen fotonya di Firestore tetap

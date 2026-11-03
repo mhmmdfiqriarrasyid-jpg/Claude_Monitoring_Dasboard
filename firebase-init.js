@@ -84,6 +84,20 @@ function _functions() {
     return _functionsP;
 }
 
+// Push notifications (2.18.0, Firebase Cloud Messaging). The public key of the
+// project's Web Push certificate (Firebase console → Project settings → Cloud
+// Messaging → Web Push certificates). Empty = push is not offered.
+const PUSH_VAPID_KEY = '';
+let _messagingP = null;
+function _messaging() {
+    if (!_messagingP) _messagingP = import("https://www.gstatic.com/firebasejs/12.12.0/firebase-messaging.js")
+        .then(async mod => ({ mod, ok: await mod.isSupported().catch(() => false) }))
+        .then(x => ({ ...x, m: x.ok ? x.mod.getMessaging(app) : null }))
+        .catch(err => { _messagingP = null; throw err; });
+    return _messagingP;
+}
+const PUSH_TOKENS_COL = 'pushTokens';
+
 // Cloud Storage (2.13.0, Blaze): loaded on first use only.
 let _storageP = null;
 function _storage() {
@@ -789,6 +803,41 @@ window.cloud = {
     async deleteLearningChunks(itemId, count) {
         for (let i = 0; i < count; i++) await deleteDoc(doc(db, LEARNING_FILES_COL, `${itemId}__${i}`));
     },
+    // ---- Push notifications on this device (2.18.0) ----
+    // The device's FCM token is kept in pushTokens/{token} with the account's
+    // uid; the server (notificationTick) sends to the tokens of the accounts
+    // a notice is for. The service worker shows the notification.
+    async pushAvailable() {
+        if (!PUSH_VAPID_KEY || typeof Notification === 'undefined' || !('serviceWorker' in navigator)) return false;
+        try { return (await _messaging()).ok; } catch (_) { return false; }
+    },
+    pushPermission() { return typeof Notification === 'undefined' ? 'unsupported' : Notification.permission; },
+    async pushTokenHere() {
+        const uid = auth.currentUser && auth.currentUser.uid;
+        const t = localStorage.getItem('ot_push_token') || '';
+        if (!uid || !t) return '';
+        try { const s = await getDoc(doc(db, PUSH_TOKENS_COL, t)); return s.exists() && s.data().uid === uid ? t : ''; } catch (_) { return ''; }
+    },
+    async enablePush() {
+        const uid = auth.currentUser && auth.currentUser.uid;
+        if (!uid) throw new Error('not signed in');
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') { const e = new Error('permission ' + perm); e.code = 'push/' + perm; throw e; }
+        const { mod, m } = await _messaging();
+        const reg = await navigator.serviceWorker.ready;
+        const token = await mod.getToken(m, { vapidKey: PUSH_VAPID_KEY, serviceWorkerRegistration: reg });
+        if (!token) throw new Error('no token');
+        await setDoc(doc(db, PUSH_TOKENS_COL, token), { token, uid, ua: (navigator.userAgent || '').slice(0, 160), createdAt: Date.now() });
+        localStorage.setItem('ot_push_token', token);
+        return token;
+    },
+    async disablePush() {
+        const t = localStorage.getItem('ot_push_token') || '';
+        localStorage.removeItem('ot_push_token');
+        try { const { mod, m } = await _messaging(); if (m) await mod.deleteToken(m); } catch (_) { /* already gone */ }
+        if (t) await deleteDoc(doc(db, PUSH_TOKENS_COL, t)).catch(() => {});
+    },
+
     // ---- Server email (2.14.0) ----
     async callFunction(name, data) {
         const f = await _functions();
