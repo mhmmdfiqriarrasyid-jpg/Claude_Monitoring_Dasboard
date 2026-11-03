@@ -8,6 +8,8 @@ rules_version = '2';
 // that hold each account's access) — allow it.
 //
 // learning/<fileId>/<name> : Learning Center files and videos.
+// photos/<collection>/<record>/<file> : record photos (2.17.0), same areas as
+//   their Firestore photo documents.
 //   read   : every active account (same as the Learning Center page)
 //   write  : accounts with Learning Center 'edit' (Super Admin always)
 //   limits : PDF / EPUB / MOBI up to 100 MB, video up to 500 MB
@@ -41,6 +43,69 @@ service firebase.storage {
     function isVideo() {
       return request.resource.contentType in ['video/mp4', 'video/webm', 'video/quicktime']
         && request.resource.size <= 500 * 1024 * 1024;
+    }
+
+    // ---- Photos (2.17.0): photos/<collection>/<record>/<file> ----
+    // Same areas as the Firestore photo documents. The access level of an
+    // area, like firestore.rules: owner = edit; else the explicit grant; the
+    // legacy 'team' role defaults to edit; a unit-group limit closes the other
+    // group's areas.
+    function lvl(area) {
+      let d = me();
+      let a0 = d.get('access', {});
+      let a = a0 is map ? a0 : {};
+      let given = a.get(area, null);
+      let role = d.get('role', '');
+      let raw = role == 'owner' ? 'edit' : (given != null ? given : (role == 'team' ? 'edit' : 'none'));
+      let sc0 = a.get('unitScope', null);
+      let sc = role == 'owner' || sc0 == null ? 'all' : (sc0 in ['all', 'tractor', 'heavy'] ? sc0 : 'none');
+      return sc == 'all' || raw == 'none' ? raw
+        : (area in ['inspection', 'inspectionApprove'] && sc != 'heavy') ? 'none'
+        : (area == 'damage' && raw == 'edit') ? 'view'
+        : raw;
+    }
+    function canView(area) { return isActive() && lvl(area) in ['view', 'edit']; }
+    function canEdit(area) { return isActive() && lvl(area) == 'edit'; }
+    function isOwn(area)   { return isActive() && lvl(area) == 'own'; }
+    function isImage()     { return request.resource.contentType.matches('image/.*') && request.resource.size <= 5 * 1024 * 1024; }
+    // A Daily Report / leave record of this account (or not written yet).
+    function teamRecordMine(rec, orNew) {
+      let wl = /databases/(default)/documents/workLogs/$(rec);
+      let lv = /databases/(default)/documents/leaveRequests/$(rec);
+      return firestore.exists(wl) ? firestore.get(wl).data.get('createdByUid', '') == request.auth.uid
+           : (firestore.exists(lv) ? firestore.get(lv).data.get('createdByUid', '') == request.auth.uid : orNew);
+    }
+
+    match /photos/warehousePhotos/{rec}/{file} {
+      allow read: if canView('warehouse');
+      allow create, update: if canEdit('warehouse') && isImage();
+      allow delete: if canEdit('warehouse');
+    }
+    match /photos/fuelPhotos/{rec}/{file} {
+      allow read: if canView('warehouse');
+      allow create, update: if canEdit('warehouse') && isImage();
+      allow delete: if canEdit('warehouse');
+    }
+    match /photos/purchasePhotos/{rec}/{file} {
+      allow read: if canView('purchase') || isOwn('purchase');
+      allow create, update: if (canEdit('purchase') || isOwn('purchase')) && isImage();
+      allow delete: if canEdit('purchase') || isOwn('purchase');
+    }
+    match /photos/damagePhotos/{rec}/{file} {
+      allow read: if canView('damage');
+      allow create, update: if canEdit('damage') && isImage();
+      allow delete: if canEdit('damage');
+    }
+    match /photos/inspectionPhotos/{rec}/{file} {
+      allow read: if canView('inspection') || canView('inspectionApprove');
+      allow create, update: if (canEdit('inspection') || me().get('role', '') == 'owner') && isImage();
+      allow delete: if canEdit('inspection') || me().get('role', '') == 'owner';
+    }
+    match /photos/workLogPhotos/{rec}/{file} {
+      allow read: if canView('teamLog') || canView('teamLogApprove')
+                  || (isOwn('teamLog') && teamRecordMine(rec, false));
+      allow create, update: if (canEdit('teamLog') || (isOwn('teamLog') && teamRecordMine(rec, true))) && isImage();
+      allow delete: if canEdit('teamLog') || (isOwn('teamLog') && teamRecordMine(rec, true));
     }
 
     match /learning/{fileId}/{name} {

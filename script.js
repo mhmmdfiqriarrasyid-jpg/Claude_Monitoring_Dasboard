@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.16.0';
+const APP_VERSION = 'v2.17.0';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -1673,12 +1673,14 @@ function jsArg(v) { return escapeHtml(JSON.stringify(String(v == null ? '' : v))
 // The same for a list of strings.
 function jsArgList(list) { return escapeHtml(JSON.stringify((list || []).map(v => String(v == null ? '' : v)))); }
 
-// A stored photo is only ever a base64 image data URL. Anything else — a
-// value written straight to Firestore with a quote in it — renders nothing
-// instead of becoming markup.
+// A stored photo is a base64 image data URL, or (2.17.0) a download URL of
+// this project's Cloud Storage bucket. Anything else — a value written
+// straight to Firestore with a quote in it — renders nothing instead of
+// becoming markup.
+const STORAGE_URL_RE = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/ot-monitoring-tractor\.firebasestorage\.app\/o\/[A-Za-z0-9%._~\-]+\?alt=media(&token=[A-Za-z0-9-]+)?$/;
 function safeImageSrc(v) {
     const s = String(v == null ? '' : v);
-    return /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+\/=\s]+$/.test(s) ? s : '';
+    return /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+\/=\s]+$/.test(s) || STORAGE_URL_RE.test(s) ? s : '';
 }
 
 // For showToast, which renders text: the value as a string, nothing escaped.
@@ -3458,7 +3460,8 @@ async function exportBackup() {
             kindsWith.forEach(k => { payload[k.key] = {}; });
             await _mapLimit(photoJobs, 4, async ({ k, id }) => {
                 try {
-                    const v = await window.cloud[k.get](id);
+                    // inline: the file carries the pictures themselves, not links.
+                    const v = await window.cloud[k.get](id, { inline: true, noMigrate: true });
                     if (k.present(v)) payload[k.key][id] = v;
                 } catch (err) {
                     console.warn(`[backup] ${k.get}(${id}) gagal:`, err);

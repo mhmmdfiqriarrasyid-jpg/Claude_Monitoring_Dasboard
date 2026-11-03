@@ -499,6 +499,22 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   `tests/license_report_test.js`, skenario Notif di `tests/rules_test.js`.
   **Perlu publish `firestore.rules` + deploy ulang fungsi** (deploy akan
   menanyakan penghapusan `dailyLicenseAlert` — jawab y).
+  **2.17.0 — Foto di Cloud Storage.** Semua foto (Warehouse, Fuel, Purchase,
+  Damage before/after, Daily Report & surat izin, Inspection) diunggah ke
+  `photos/<koleksi>/<record>/<file>`; dokumen fotonya di Firestore tetap
+  berbentuk sama tetapi menyimpan `sp:<path>` alih-alih base64. Dibaca sebagai
+  download URL (`safeImageSrc` menerima URL bucket proyek ini saja, CSP
+  `img-src` mengizinkannya). Offline / Storage menolak → disimpan inline seperti
+  dulu. Foto lama dipindah otomatis saat dibuka oleh akun yang boleh
+  menulisnya; foto yang dihapus/diganti ikut dihapus dari Storage. Backup tetap
+  berisi gambar utuh (`{ inline: true }`). Lapisan ini di `firebase-init.js`
+  (`_savePhotoDoc` / `_getPhotoDoc`), diuji dengan SDK asli + emulator di
+  `tests/photo_storage_e2e.js` (12 skenario); rules foto di `storage.rules`
+  (dijaga `tests/storage_rules_test.js`, 29 skenario). **Perlu publish ulang
+  `storage.rules`.**
+- **CI (2.17.0):** `.github/workflows/tests.yml` menjalankan `npm test`
+  (Playwright) serta tes rules Firestore & Storage di emulator pada setiap
+  push dan pull request. `firebase.json` memuat port emulator (8181 / 9199).
   **2.16.0 — Daily Report atas nama yang login** (dijaga
   `tests/worklog_owner_test.js`, `tests/paddock_test.js` dan skenario 2.16.0
   di `tests/rules_test.js`). Owner menautkan member ke akun login di Team →

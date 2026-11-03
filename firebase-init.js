@@ -93,6 +93,99 @@ function _storage() {
     return _storageP;
 }
 
+// ---- Photos in Cloud Storage (2.17.0) ----
+// Photo documents (warehousePhotos, damagePhotos, workLogPhotos, …) keep their
+// shape, but each image is uploaded to Storage under photos/<collection>/<doc>/
+// and the document stores "sp:<path>" instead of the base64 picture. Reading
+// gives a download URL. When Storage cannot be reached (offline, rules not yet
+// published) the image is kept inline as before, so saving never fails over it.
+// A document read with inline images is moved to Storage on the way (by
+// whoever may write it; for others the move is simply refused).
+const PHOTO_REF = 'sp:';
+const _photoUrls = new Map();     // download URL -> "sp:" ref, so a photo read and saved back is not uploaded again
+const _isImgData = v => typeof v === 'string' && /^data:image\//.test(v);
+const _withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+async function _photoUp(col, docId, v) {
+    if (typeof v !== 'string' || !v || v.startsWith(PHOTO_REF)) return v;
+    if (_photoUrls.has(v)) return _photoUrls.get(v);
+    if (!_isImgData(v)) return v;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return v;
+    try {
+        const st = await _storage();
+        const name = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+        const path = `photos/${col}/${String(docId).replace(/[^\w-]/g, '_')}/${name}`;
+        await _withTimeout(st.mod.uploadString(st.mod.ref(st.s, path), v, 'data_url'), 45000);
+        return PHOTO_REF + path;
+    } catch (err) {
+        console.warn('[photos] kept inline — Storage upload failed:', err && (err.code || err.message));
+        return v;
+    }
+}
+async function _photoDown(v, inline) {
+    if (typeof v !== 'string' || !v.startsWith(PHOTO_REF)) return v;
+    try {
+        const st = await _storage();
+        const url = await st.mod.getDownloadURL(st.mod.ref(st.s, v.slice(PHOTO_REF.length)));
+        _photoUrls.set(url, v);
+        if (!inline) return url;
+        const blob = await (await fetch(url)).blob();
+        return await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+    } catch (err) {
+        console.warn('[photos] not loaded from Storage:', err && (err.code || err.message));
+        return '';
+    }
+}
+// The images inside a stored value: a string, a list, or a { key: image } map.
+async function _photoMap(v, fn) {
+    if (typeof v === 'string') return fn(v);
+    if (Array.isArray(v)) return Promise.all(v.map(x => fn(x)));
+    if (v && typeof v === 'object') {
+        const out = {};
+        await Promise.all(Object.keys(v).map(async k => { out[k] = await fn(v[k]); }));
+        return out;
+    }
+    return v;
+}
+const _photoRefs = v => (typeof v === 'string' ? [v] : Array.isArray(v) ? v : v && typeof v === 'object' ? Object.values(v) : [])
+    .filter(x => typeof x === 'string' && x.startsWith(PHOTO_REF));
+const _hasInline = v => (typeof v === 'string' ? [v] : Array.isArray(v) ? v : v && typeof v === 'object' ? Object.values(v) : []).some(_isImgData);
+async function _dropPhotoRefs(refs) {
+    if (!refs.length) return;
+    try {
+        const st = await _storage();
+        await Promise.all(refs.map(r => st.mod.deleteObject(st.mod.ref(st.s, r.slice(PHOTO_REF.length))).catch(() => {})));
+    } catch (_) { /* best effort */ }
+}
+// Saves { ...fields, [field]: images } at col/docId, images through Storage.
+// Images the document no longer holds are removed from Storage afterwards.
+async function _savePhotoDoc(col, docId, field, value, fields) {
+    let before = [];
+    try { const old = await getDoc(doc(db, col, docId)); if (old.exists()) before = _photoRefs(old.data()[field]); } catch (_) { /* new or unreadable */ }
+    const stored = await _photoMap(value, x => _photoUp(col, docId, x));
+    await setDoc(doc(db, col, docId), { ...fields, [field]: stored, updatedAt: Date.now() });
+    const keep = new Set(_photoRefs(stored));
+    _dropPhotoRefs(before.filter(r => !keep.has(r)));
+}
+async function _getPhotoDoc(col, docId, field, empty, opts, fieldsOf) {
+    const snap = await getDoc(doc(db, col, docId));
+    if (!snap.exists()) return empty;
+    const data = snap.data();
+    const v = data[field];
+    const ok = typeof empty === 'string' ? typeof v === 'string' : Array.isArray(empty) ? Array.isArray(v) : (v && typeof v === 'object' && !Array.isArray(v));
+    if (!ok) return empty;
+    // Moved to Storage when read, by whoever may write it (quietly refused otherwise).
+    if (_hasInline(v) && !(opts && opts.noMigrate) && !(typeof navigator !== 'undefined' && navigator.onLine === false)) {
+        _savePhotoDoc(col, docId, field, v, fieldsOf ? fieldsOf(data) : { id: data.id || docId }).catch(() => {});
+    }
+    return _photoMap(v, x => _photoDown(x, opts && opts.inline));
+}
+async function _deletePhotoDoc(col, docId, field) {
+    let refs = [];
+    try { const old = await getDoc(doc(db, col, docId)); if (old.exists()) refs = _photoRefs(old.data()[field]); } catch (_) { /* gone */ }
+    await deleteDoc(doc(db, col, docId));
+    _dropPhotoRefs(refs);
+}
+
 // App Check (2.11.2): every request carries a reCAPTCHA token proving it
 // comes from this site, so the public config above cannot be reused from a
 // script elsewhere to create accounts or burn the quota. Off while the key
@@ -760,17 +853,14 @@ window.cloud = {
             }
         );
     },
-    async getPurchasePhoto(id) {
-        const snap = await getDoc(doc(db, PURCHASE_PHOTOS_COL, id));
-        if (!snap.exists()) return '';
-        const data = snap.data();
-        return typeof data.photo === 'string' ? data.photo : '';
+    async getPurchasePhoto(id, opts) {
+        return _getPhotoDoc(PURCHASE_PHOTOS_COL, id, 'photo', '', opts, d => ({ id: d.id || id, ownerId: d.ownerId || '' }));
     },
     async savePurchasePhoto(id, ownerId, photo) {
-        await setDoc(doc(db, PURCHASE_PHOTOS_COL, id), { id, ownerId, photo, updatedAt: Date.now() });
+        await _savePhotoDoc(PURCHASE_PHOTOS_COL, id, 'photo', photo, { id, ownerId });
     },
     async deletePurchasePhoto(id) {
-        await deleteDoc(doc(db, PURCHASE_PHOTOS_COL, id));
+        await _deletePhotoDoc(PURCHASE_PHOTOS_COL, id, 'photo');
     },
 
     subscribeDevices(callback, errorCallback) {
@@ -864,29 +954,23 @@ window.cloud = {
     // Receipt photo of a fuel record, one document per record, read on demand.
     // ---- Warehouse photos (v185): one document per photo, for devices and
     // stock movements, so ten photos never meet the 1 MB document limit.
-    async getWhPhoto(id) {
-        const snap = await getDoc(doc(db, WH_PHOTOS_COL, id));
-        if (!snap.exists()) return '';
-        const data = snap.data();
-        return typeof data.photo === 'string' ? data.photo : '';
+    async getWhPhoto(id, opts) {
+        return _getPhotoDoc(WH_PHOTOS_COL, id, 'photo', '', opts, d => ({ id: d.id || id, ownerId: d.ownerId || '' }));
     },
     async saveWhPhoto(id, ownerId, photo) {
-        await setDoc(doc(db, WH_PHOTOS_COL, id), { id, ownerId, photo, updatedAt: Date.now() });
+        await _savePhotoDoc(WH_PHOTOS_COL, id, 'photo', photo, { id, ownerId });
     },
     async deleteWhPhoto(id) {
-        await deleteDoc(doc(db, WH_PHOTOS_COL, id));
+        await _deletePhotoDoc(WH_PHOTOS_COL, id, 'photo');
     },
-    async getFuelPhoto(id) {
-        const snap = await getDoc(doc(db, FUEL_PHOTOS_COL, id));
-        if (!snap.exists()) return '';
-        const data = snap.data();
-        return typeof data.photo === 'string' ? data.photo : '';
+    async getFuelPhoto(id, opts) {
+        return _getPhotoDoc(FUEL_PHOTOS_COL, id, 'photo', '', opts);
     },
     async saveFuelPhoto(id, photo) {
-        await setDoc(doc(db, FUEL_PHOTOS_COL, id), { id, photo, updatedAt: Date.now() });
+        await _savePhotoDoc(FUEL_PHOTOS_COL, id, 'photo', photo, { id });
     },
     async deleteFuelPhoto(id) {
-        await deleteDoc(doc(db, FUEL_PHOTOS_COL, id));
+        await _deletePhotoDoc(FUEL_PHOTOS_COL, id, 'photo');
     },
 
     // ---- Team members (people, including those without a login account) ----
@@ -1043,18 +1127,14 @@ window.cloud = {
     // re-downloaded every photo ever taken on every app open. Split out, they
     // are fetched one document at a time, only when someone actually opens
     // them. There is no subscription here, and there must not be one.
-    async getWorkLogPhotos(id) {
-        const snap = await getDoc(doc(db, WORK_LOG_PHOTOS_COL, id));
-        if (!snap.exists()) return [];
-        const data = snap.data();
-        return Array.isArray(data.photos) ? data.photos : [];
+    async getWorkLogPhotos(id, opts) {
+        return _getPhotoDoc(WORK_LOG_PHOTOS_COL, id, 'photos', [], opts);
     },
     async saveWorkLogPhotos(id, photos) {
-        await setDoc(doc(db, WORK_LOG_PHOTOS_COL, id),
-                     { id, photos, updatedAt: Date.now() });
+        await _savePhotoDoc(WORK_LOG_PHOTOS_COL, id, 'photos', photos, { id });
     },
     async deleteWorkLogPhotos(id) {
-        await deleteDoc(doc(db, WORK_LOG_PHOTOS_COL, id));
+        await _deletePhotoDoc(WORK_LOG_PHOTOS_COL, id, 'photos');
     },
 
     // Scanned letters attached to a leave request live in the SAME collection.
@@ -1066,41 +1146,33 @@ window.cloud = {
     // failing with the same indistinguishable permission-denied.
     //
     // Ids cannot collide: work logs are wl_..., leave requests are lv_...
-    async getTeamDocs(id)         { return this.getWorkLogPhotos(id); },
+    async getTeamDocs(id, opts)   { return this.getWorkLogPhotos(id, opts); },
     async saveTeamDocs(id, pages) { return this.saveWorkLogPhotos(id, pages); },
     async deleteTeamDocs(id)      { return this.deleteWorkLogPhotos(id); },
 
     // Damage photos, same arrangement and for the same reason: damageRecords is
     // subscribed whole with no limit(), so an inline photo was re-downloaded by
     // every device on every app open. Never subscribe this collection either.
-    async getDamagePhoto(id) {
-        const snap = await getDoc(doc(db, DAMAGE_PHOTOS_COL, id));
-        if (!snap.exists()) return '';
-        const data = snap.data();
-        return typeof data.photo === 'string' ? data.photo : '';
+    async getDamagePhoto(id, opts) {
+        return _getPhotoDoc(DAMAGE_PHOTOS_COL, id, 'photo', '', opts);
     },
     async saveDamagePhoto(id, photo) {
-        await setDoc(doc(db, DAMAGE_PHOTOS_COL, id),
-                     { id, photo, updatedAt: Date.now() });
+        await _savePhotoDoc(DAMAGE_PHOTOS_COL, id, 'photo', photo, { id });
     },
     async deleteDamagePhoto(id) {
-        await deleteDoc(doc(db, DAMAGE_PHOTOS_COL, id));
+        await _deletePhotoDoc(DAMAGE_PHOTOS_COL, id, 'photo');
     },
     // The photo taken after the repair. Same collection and the same rules as
     // the damage photo itself (now shown as "Before"), one document of its own
     // so opening one side never downloads the other.
-    async getDamageAfterPhoto(id) {
-        const snap = await getDoc(doc(db, DAMAGE_PHOTOS_COL, id + DAMAGE_AFTER_SUFFIX));
-        if (!snap.exists()) return '';
-        const data = snap.data();
-        return typeof data.photo === 'string' ? data.photo : '';
+    async getDamageAfterPhoto(id, opts) {
+        return _getPhotoDoc(DAMAGE_PHOTOS_COL, id + DAMAGE_AFTER_SUFFIX, 'photo', '', opts, () => ({ id, side: 'after' }));
     },
     async saveDamageAfterPhoto(id, photo) {
-        await setDoc(doc(db, DAMAGE_PHOTOS_COL, id + DAMAGE_AFTER_SUFFIX),
-                     { id, side: 'after', photo, updatedAt: Date.now() });
+        await _savePhotoDoc(DAMAGE_PHOTOS_COL, id + DAMAGE_AFTER_SUFFIX, 'photo', photo, { id, side: 'after' });
     },
     async deleteDamageAfterPhoto(id) {
-        await deleteDoc(doc(db, DAMAGE_PHOTOS_COL, id + DAMAGE_AFTER_SUFFIX));
+        await _deletePhotoDoc(DAMAGE_PHOTOS_COL, id + DAMAGE_AFTER_SUFFIX, 'photo');
     },
 
     // ---- Master lists: one document per list (site, brand, company) ----
@@ -1220,17 +1292,14 @@ window.cloud = {
         );
     },
     // { componentKey: dataURL } for one report. Never subscribed.
-    async getInspectionPhotos(id) {
-        const snap = await getDoc(doc(db, INSPECTION_PHOTOS_COL, id));
-        if (!snap.exists()) return {};
-        const data = snap.data();
-        return data.photos && typeof data.photos === 'object' ? data.photos : {};
+    async getInspectionPhotos(id, opts) {
+        return _getPhotoDoc(INSPECTION_PHOTOS_COL, id, 'photos', {}, opts);
     },
     async saveInspectionPhotos(id, photos) {
-        await setDoc(doc(db, INSPECTION_PHOTOS_COL, id), { id, photos, updatedAt: Date.now() });
+        await _savePhotoDoc(INSPECTION_PHOTOS_COL, id, 'photos', photos, { id });
     },
     async deleteInspectionPhotos(id) {
-        await deleteDoc(doc(db, INSPECTION_PHOTOS_COL, id));
+        await _deletePhotoDoc(INSPECTION_PHOTOS_COL, id, 'photos');
     },
 
     // A REPLACE restore: each record written as the WHOLE document. The bulk

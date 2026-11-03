@@ -30,10 +30,15 @@ const { launch, BASE_URL } = require('./_env');
     await page.waitForTimeout(1200);
     const r = await page.evaluate(async () => {
         const X = await loadSheetJs().catch(e => null);
-        return { chart: typeof Chart, papa: typeof Papa, emailjs: typeof emailjs, xlsx: !!(X && X.read), csp: window.__csp };
+        const good = 'https://firebasestorage.googleapis.com/v0/b/ot-monitoring-tractor.firebasestorage.app/o/photos%2FdamagePhotos%2Fd1%2Fabc?alt=media&token=12ab-34cd';
+        const photos = [safeImageSrc(good) === good, safeImageSrc('https://firebasestorage.googleapis.com/v0/b/other-project.appspot.com/o/x?alt=media'),
+                        safeImageSrc(good + '" onerror="alert(1)'), safeImageSrc('https://evil.example/x.jpg')];
+        return { chart: typeof Chart, papa: typeof Papa, emailjs: typeof emailjs, xlsx: !!(X && X.read), csp: window.__csp, photos };
     });
     t('library lokal termuat (Chart, Papa, SheetJS); EmailJS tidak lagi dimuat (2.14.0)', [r.chart, r.papa, r.emailjs, r.xlsx], ['function', 'object', 'undefined', true]);
     t('tanpa pelanggaran CSP', r.csp, []);
+    t('2.17.0: foto dari Storage proyek ini boleh tampil, URL lain ditolak', r.photos, [true, '', '', '']);
+    t('2.17.0: CSP img-src mengizinkan Storage', /img-src [^;]*https:\/\/firebasestorage\.googleapis\.com/.test(csp), true);
     await b.close();
 
     let pass = 0;
