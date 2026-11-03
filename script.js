@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.15.2';
+const APP_VERSION = 'v2.15.3';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -9894,15 +9894,22 @@ function sendDamageBeforePhoto(recId, photo) {
 // status instead would claim a breakdown nobody reported.
 // For a tractor the result is today's mapping, verbatim.
 const DAMAGE_DRIVES_NOTHING = '__nothing__';
+// 2.15.3: a damage type of its own from Master lists that is about devices
+// ("Device", "Device Camera", "Devices") behaves like Device Precision — it
+// puts the named component into Breakdown, not the whole unit.
+function isDeviceDamageType(t) {
+    const v = String(t || '').trim().toLowerCase();
+    return v === 'device precision' || /^devices?\b/.test(v);
+}
 function damageTargetField(damageType, component, unit) {
     if (unit && isHeavy(unit)) {
-        if (damageType !== 'Device Precision') return null;
+        if (!isDeviceDamageType(damageType)) return null;
         const h = heavyComponentField(component);
         if (h) return h;
         return componentUnitField(component) ? DAMAGE_DRIVES_NOTHING : null;
     }
     const compField = componentUnitField(component);
-    return (damageType === 'Device Precision' && compField) ? compField : null;
+    return (isDeviceDamageType(damageType) && compField) ? compField : null;
 }
 
 // ---- Damage ↔ unit status ----

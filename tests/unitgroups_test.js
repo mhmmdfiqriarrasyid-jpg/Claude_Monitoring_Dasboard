@@ -302,6 +302,8 @@ const SETUP = `(() => {
         r.targetCamHeavy = damageTargetField('Device Precision', 'Camera AI', globalData[1]);
         r.targetGpsTractor = damageTargetField('Device Precision', 'GPS', globalData[0]);
         r.targetMechHeavy = damageTargetField('Mekanis', 'Hidrolik', globalData[1]);
+        r.targetCustomDevice = [damageTargetField('Device', 'Camera AI', globalData[1]), damageTargetField('devices', 'GPS', globalData[0]),
+                                damageTargetField('Devicer', 'Camera AI', globalData[1]), damageTargetField('Electrical', 'Camera AI', globalData[1])];
         r.conflictGpsHeavy = componentGroupConflict('GPS', globalData[1]);
         r.conflictCamTractor = componentGroupConflict('Camera AI', globalData[0]);
         __w.units.length = 0;
@@ -467,6 +469,7 @@ const SETUP = `(() => {
         t('Camera AI pada alat berat menggerakkan cameraAi', R.targetCamHeavy, 'cameraAi');
         t('GPS pada traktor tetap pemetaan lama', R.targetGpsTractor, 'gps');
         t('kerusakan mekanis alat berat menggerakkan status', R.targetMechHeavy, null);
+        t('2.15.3: tipe sendiri "Device" = Device Precision (komponen), tipe lain = status', R.targetCustomDevice, ['cameraAi', 'gps', null, null]);
         t('GPS pada alat berat terdeteksi sebagai konflik', R.conflictGpsHeavy, true);
         t('Camera AI pada traktor terdeteksi sebagai konflik', R.conflictCamTractor, true);
         t('breakdown Camera AI menulis ke komponennya', R.camBreak, 'Breakdown');
