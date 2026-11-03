@@ -911,6 +911,16 @@
             <div class="fp-use__grid" id="implUseTiles"></div>
         </section>
 
+        <!-- 2.21.0: implements actually owned, per PT (renderImplementOwned) -->
+        <section class="table-card impl-own" id="implOwnSection" aria-labelledby="implOwnTitle" hidden>
+            <div class="impl-own__head">
+                <h2 class="fp-use__title" id="implOwnTitle">Actual implements per PT</h2>
+                <span class="impl-own__sub">Owned = entered on each implement · On tractor = tractors at that PT using it · Free = not on a tractor</span>
+            </div>
+            <div class="impl-own__cards" id="implOwnCards"></div>
+            <div class="impl-own__tablewrap"><table class="impl-own__table" id="implOwnTable"></table></div>
+        </section>
+
         <!-- Implement profiles -->
         <section class="table-card fp-card" aria-label="Implement profiles">
             <div class="fp-cardbar">
@@ -952,6 +962,7 @@
                             <th>Group</th>
                             <th>Code</th>
                             <th>Width</th>
+                            <th title="Actual units per PT">Units</th>
                             <th>Operation</th>
                             <th>Connecting type</th>
                             <th>Chart of account</th>
@@ -2772,6 +2783,10 @@
                     <div class="form-group">
                         <label class="form-label" for="implProfileName">Profile Name</label>
                         <input class="form-input" id="implProfileName" required>
+                    </div>
+                    <div class="form-group full-width">
+                        <span class="form-label">Actual units <span class="form-optional">(how many of this implement each PT owns — on a tractor or not)</span></span>
+                        <div class="impl-owned" id="implOwnedBox"></div>
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="implBrand">Brand</label>

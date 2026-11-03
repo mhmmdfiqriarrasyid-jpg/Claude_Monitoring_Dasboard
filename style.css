@@ -10880,3 +10880,23 @@ body:has(.modal-overlay.open) .install-banner { display: none; }
 /* 2.20.0: notification schedules */
 .notif-sched { display: flex; flex-wrap: wrap; gap: 8px; }
 .notif-sched__f { display: flex; flex-direction: column; gap: 4px; min-width: 120px; flex: 1 1 120px; max-width: 180px; }
+/* 2.21.0: actual implements per PT */
+.impl-own { padding: 16px 18px; margin-bottom: 16px; }
+.impl-own__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 12px; }
+.impl-own__sub { font-size: 12px; color: var(--text-secondary); }
+.impl-own__cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.impl-own__card { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.impl-own__site { font-size: 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.impl-own__n { font-size: 26px; font-weight: 700; line-height: 1.1; }
+.impl-own__lbl { font-size: 12px; color: var(--text-secondary); }
+.impl-own__split { font-size: 13px; margin-top: 4px; }
+.impl-own__bad { color: var(--danger); font-weight: 700; }
+.impl-own__tablewrap { overflow-x: auto; }
+.impl-own__table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.impl-own__table th, .impl-own__table td { padding: 7px 10px; border-bottom: 1px solid var(--border-light, var(--border)); text-align: left; white-space: nowrap; }
+.impl-own__table th { font-size: 11.5px; color: var(--text-secondary); font-weight: 600; background: var(--bg); }
+.impl-own__table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.impl-own__sitehead { text-align: center !important; border-left: 1px solid var(--border); }
+.impl-owned { display: flex; flex-wrap: wrap; gap: 10px; }
+.impl-owned__f { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--text-secondary); flex: 1 1 200px; max-width: 280px; }
+.impl-units-cell { white-space: nowrap; }

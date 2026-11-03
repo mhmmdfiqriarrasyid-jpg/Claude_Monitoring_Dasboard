@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.20.0';
+const APP_VERSION = 'v2.21.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -8091,7 +8091,95 @@ function openUnitsForImplement(key) {
 }
 
 // Unit snapshots change the tractor counts.
-document.addEventListener('ot:data', () => { if (currentView === 'implements') renderImplementUseTiles(); });
+document.addEventListener('ot:data', () => { if (currentView === 'implements') { renderImplementUseTiles(); renderImplementOwned(); } });
+
+// ---- Actual implements per PT (2.21.0) ----
+// Each implement profile records how many units every PT owns (owned:
+// { site: n }). Against that, the tractors at the PT that use the profile:
+// owned − on tractor = free (in the yard). A negative "free" means more
+// tractors use it than were entered — the count needs updating.
+function implSites() {
+    const set = new Map();
+    const add = v => { v = _toolNorm(v); if (v && !set.has(v.toLowerCase())) set.set(v.toLowerCase(), v); };
+    (masterListActive('site') ? masterLists.site : unitsOfGroup(globalData, 'tractor').map(u => u.site)).forEach(add);
+    globalImplements.forEach(d => Object.keys(d.owned || {}).forEach(add));
+    return [...set.values()].sort((a, b) => a.localeCompare(b));
+}
+// "PT. Global Papua Abadi" → "GPA", the way the teams write it.
+function siteShort(s) {
+    const words = _toolNorm(s).replace(/^PT\.?\s+/i, '').split(/\s+/).filter(Boolean);
+    return words.length > 1 ? words.map(w => w[0].toUpperCase()).join('') : (words[0] || s || '');
+}
+function ownedOf(d, site) {
+    const o = d && d.owned && typeof d.owned === 'object' ? d.owned : {};
+    const k = Object.keys(o).find(x => x.toLowerCase() === _toolNorm(site).toLowerCase());
+    const n = k ? Number(o[k]) : 0;
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+function implementOwnedRows() {
+    const sites = implSites();
+    const byType = new Map();
+    const row = t => {
+        const k = t.toLowerCase();
+        if (!byType.has(k)) byType.set(k, { label: t, per: Object.fromEntries(sites.map(s => [s, { owned: 0, attached: 0 }])) });
+        return byType.get(k);
+    };
+    globalImplements.forEach(d => {
+        const t = _toolNorm(d.equipmentType) || _toolNorm(d.profileName);
+        if (!t) return;
+        sites.forEach(s => { row(t).per[s].owned += ownedOf(d, s); });
+    });
+    unitsOfGroup(globalData, 'tractor').forEach(u => {
+        if (!u.implement) return;
+        const rec = findImplementRecord(u.implement);
+        const t = rec ? (_toolNorm(rec.equipmentType) || _toolNorm(rec.profileName)) : toolPartsOf(u, 'tractor', _knownImplementBrands()).type;
+        const s = sites.find(x => x.toLowerCase() === _toolNorm(u.site).toLowerCase());
+        if (!t || !s) return;
+        row(t).per[s].attached += 1;
+    });
+    const rows = [...byType.values()].filter(r => sites.some(s => r.per[s].owned || r.per[s].attached))
+        .sort((a, b) => sites.reduce((n, s) => n + b.per[s].owned, 0) - sites.reduce((n, s) => n + a.per[s].owned, 0) || a.label.localeCompare(b.label));
+    return { sites, rows };
+}
+function renderImplementOwned() {
+    const sec = document.getElementById('implOwnSection');
+    if (!sec) return;
+    const { sites, rows } = implementOwnedRows();
+    const anyOwned = globalImplements.some(d => sites.some(s => ownedOf(d, s)));
+    sec.hidden = !sites.length || (!anyOwned && !hasAccess('implements', 'edit'));
+    if (sec.hidden) return;
+    const tot = s => rows.reduce((a, r) => ({ owned: a.owned + r.per[s].owned, attached: a.attached + r.per[s].attached }), { owned: 0, attached: 0 });
+    document.getElementById('implOwnCards').innerHTML = sites.map(s => {
+        const t = tot(s), free = t.owned - t.attached;
+        return `<div class="impl-own__card"><span class="impl-own__site" title="${escapeHtml(s)}">${escapeHtml(s)}</span>
+            <span class="impl-own__n">${t.owned}</span><span class="impl-own__lbl">implements owned</span>
+            <span class="impl-own__split"><b>${t.attached}</b> on tractor · <b class="${free < 0 ? 'impl-own__bad' : ''}">${free}</b> free</span></div>`;
+    }).join('');
+    const head = `<thead><tr><th rowspan="2">Implement type</th>${sites.map(s => `<th colspan="3" class="impl-own__sitehead" title="${escapeHtml(s)}">${escapeHtml(siteShort(s))}</th>`).join('')}<th rowspan="2" class="num">Total owned</th></tr>
+        <tr>${sites.map(() => '<th class="num">Owned</th><th class="num">On tractor</th><th class="num">Free</th>').join('')}</tr></thead>`;
+    const body = rows.length ? rows.map(r => `<tr><td>${escapeHtml(r.label)}</td>${sites.map(s => {
+        const p = r.per[s], free = p.owned - p.attached;
+        return `<td class="num">${p.owned}</td><td class="num">${p.attached}</td><td class="num${free < 0 ? ' impl-own__bad' : ''}" title="${free < 0 ? 'More tractors use it than the units entered — update the count' : ''}">${free}</td>`;
+    }).join('')}<td class="num"><b>${sites.reduce((n, s) => n + r.per[s].owned, 0)}</b></td></tr>`).join('')
+        : `<tr><td colspan="${sites.length * 3 + 2}" class="fp-muted" style="text-align:center;padding:16px">No actual units entered yet — open an implement and fill in <b>Actual units</b>.</td></tr>`;
+    document.getElementById('implOwnTable').innerHTML = head + `<tbody>${body}</tbody>`;
+}
+function renderImplementOwnedInputs(imp) {
+    const box = document.getElementById('implOwnedBox');
+    if (!box) return;
+    const sites = implSites();
+    box.innerHTML = sites.length ? sites.map((s, i) => `<label class="impl-owned__f"><span>${escapeHtml(s)}</span>
+        <input class="form-input" type="number" min="0" max="9999" step="1" inputmode="numeric" id="implOwned_${i}" data-site="${escapeHtml(s)}" value="${imp ? ownedOf(imp, s) || '' : ''}" placeholder="0"></label>`).join('')
+        : '<span class="fp-muted">Add the PTs first (Master lists → Sites).</span>';
+}
+function collectImplementOwned() {
+    const out = {};
+    document.querySelectorAll('#implOwnedBox input[data-site]').forEach(el => {
+        const n = Math.max(0, Math.min(9999, parseInt(el.value, 10) || 0));
+        if (n) out[el.dataset.site] = n;
+    });
+    return out;
+}
 
 // Equipment types in the Implements list, for the Type filter.
 // 2.10.7: the Group filter lists the groups in use (and the master list).
@@ -8129,6 +8217,7 @@ function populateImplementTypeFilter() {
 function renderImplementsTable() {
     updateImplementCount();
     renderImplementUseTiles();
+    renderImplementOwned();
     populateImplementTypeFilter();
     populateImplementGroupFilter();
     // A re-render (search, filter, a cloud snapshot) draws fresh, unticked
@@ -8156,7 +8245,7 @@ function renderImplementsTable() {
     if (!tbody) return;
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--text-secondary)">${
+        tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;padding:24px;color:var(--text-secondary)">${
             query || typeVal || groupVal ? 'No implements match your search'
                   : 'No implements yet. Click <strong>Add implement</strong> to get started.'
         }</td></tr>`;
@@ -8185,6 +8274,10 @@ function renderImplementsTable() {
             <td data-label="Implement Group">${_toolNorm(d.group) ? `<span class="fp-chip impl-group-chip">${escapeHtml(_toolNorm(d.group))}</span>` : '<span class="fp-muted">—</span>'}</td>
             <td data-label="Code">${escapeHtml(d.code || '')}</td>
             <td data-label="Working Width">${escapeHtml(d.workingWidth)}</td>
+            <td data-label="Units" class="impl-units-cell">${(() => {
+                const parts = implSites().map(s => [s, ownedOf(d, s)]).filter(x => x[1]);
+                return parts.length ? parts.map(([s, n]) => `<span class="fp-chip fp-chip--neutral" title="${escapeHtml(s)}">${escapeHtml(siteShort(s))} ${n}</span>`).join(' ') : '<span class="fp-muted">—</span>';
+            })()}</td>
             <td data-label="Operation">${escapeHtml(d.operation)}</td>
             <td data-label="Connecting Type">${escapeHtml(d.connectingType)}</td>
             <td data-label="Chart of Account" style="max-width:240px;white-space:nowrap">${coaCell}</td>
@@ -8248,6 +8341,7 @@ function showAddImplementForm() {
     document.getElementById('editImplementId').value = '';
     document.getElementById('implementForm').reset();
     renderChartOfAccountsInputs(['']);
+    renderImplementOwnedInputs(null);
     populateMasterDatalists();
     document.getElementById('implementModal').classList.add('open');
 }
@@ -8264,6 +8358,7 @@ function editImplement(id) {
         if (el) el.value = imp[f.key] || '';
     });
     renderChartOfAccountsInputs(imp.chartOfAccounts || ['']);
+    renderImplementOwnedInputs(imp);
     populateMasterDatalists();
     document.getElementById('implementModal').classList.add('open');
 }
@@ -8279,6 +8374,7 @@ function saveImplement(event) {
         data[f.key] = el ? el.value.trim() : '';
     });
     data.chartOfAccounts = collectChartOfAccounts();
+    data.owned = collectImplementOwned();
     {
         const prev = id ? (globalImplements.find(d => d.id === id) || {}).brand : null;
         const r = checkMasterValue('brand', data.brand, prev);
@@ -8335,6 +8431,11 @@ function saveImplement(event) {
                     });
                 }
             });
+            const ownTxt = o => Object.entries(o || {}).map(([s, n]) => `${siteShort(s)} ${n}`).join(', ') || '—';
+            if (ownTxt(before.owned) !== ownTxt(data.owned)) {
+                logEvent({ action: 'update', unitId: id, unitName: `[Implement] ${data.profileName}`, field: 'Actual units',
+                           before: ownTxt(before.owned), after: ownTxt(data.owned) });
+            }
             const beforeCoa = JSON.stringify(before.chartOfAccounts || []);
             const afterCoa = JSON.stringify(data.chartOfAccounts);
             if (beforeCoa !== afterCoa) {
@@ -8433,11 +8534,13 @@ function _implementColAliases(field) {
 function exportImplementsCSV() {
     if (!canCsv('export')) return;
     if (globalImplements.length === 0) { showToast('No implements to export', 'warning'); return; }
-    const headers = ['No', ...IMPLEMENT_FIELDS.map(f => f.label), 'Chart of Account'];
+    const sites = implSites();
+    const headers = ['No', ...IMPLEMENT_FIELDS.map(f => f.label), 'Chart of Account', ...sites.map(s => `Units ${s}`)];
     const rows = globalImplements.map((d, i) => [
         i + 1,
         ...IMPLEMENT_FIELDS.map(f => d[f.key] || ''),
-        (Array.isArray(d.chartOfAccounts) ? d.chartOfAccounts.filter(Boolean) : []).join('; ')
+        (Array.isArray(d.chartOfAccounts) ? d.chartOfAccounts.filter(Boolean) : []).join('; '),
+        ...sites.map(s => ownedOf(d, s))
     ]);
     const csv = [headers, ...rows].map(row =>
         row.map(csvCell).join(',')).join('\n');

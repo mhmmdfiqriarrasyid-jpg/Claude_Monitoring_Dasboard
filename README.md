@@ -499,6 +499,15 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   `tests/license_report_test.js`, skenario Notif di `tests/rules_test.js`.
   **Perlu publish `firestore.rules` + deploy ulang fungsi** (deploy akan
   menanyakan penghapusan `dailyLicenseAlert` — jawab y).
+  **2.21.0 — Implement aktual per PT.** Setiap profil implement mencatat
+  jumlah unit yang dimiliki tiap PT (`owned: { site: n }`, isian *Actual
+  units* di form; PT = Master lists → Sites). Bagian baru **Actual implements
+  per PT** di halaman Implements: kartu per PT (dimiliki · terpasang di
+  traktor · free) dan tabel per jenis implement (Owned / On tractor / Free per
+  PT, Total owned); *free* negatif ditandai merah (lebih banyak traktor
+  memakainya daripada yang dicatat). Tabel profil punya kolom *Units*
+  (mis. "GPA 10 MNM 4"); Export CSV menambah kolom *Units <PT>*. Dijaga
+  `tests/impl_owned_test.js`. Tanpa perubahan rules.
   **2.20.0 — Jadwal notifikasi.** License Alert, Daily Report reminder dan
   laporan ringkasan (dulu Monthly Report, sekarang *Summary Report*) masing-
   masing bisa **Daily / Weekly (pilih hari) / Monthly (pilih tanggal 1–28)** pada
