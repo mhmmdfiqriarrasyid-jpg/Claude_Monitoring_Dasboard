@@ -29,7 +29,7 @@ const { launch, BASE_URL } = require('./_env');
         renderImplementsTable();
         const rows = implementOwnedRows();
         out.sites = rows.sites;
-        out.rows = rows.rows.map(r => [r.label, ...rows.sites.map(s => [r.per[s].owned, r.per[s].attached])]);
+        out.rows = rows.rows.map(r => [r.label, r.brand, ...rows.sites.map(s => [r.per[s].owned, r.per[s].attached])]);
         out.short = [siteShort('PT. Global Papua Abadi'), siteShort('PT. Murni Nusantara Mandiri'), siteShort('Timika')];
         out.cards = [...document.querySelectorAll('.impl-own__card')].map(c => c.querySelector('.impl-own__n').textContent + ' | ' + c.querySelector('.impl-own__split').textContent.replace(/\s+/g, ' ').trim());
         out.negative = !!document.querySelector('#implOwnTable .impl-own__bad');
@@ -48,8 +48,8 @@ const { launch, BASE_URL } = require('./_env');
     const T = [];
     const t = (n, g, w) => T.push({ n, g, w, pass: JSON.stringify(g) === JSON.stringify(w) });
     t('PT dari Master lists → Sites', R.sites, ['PT. Global Papua Abadi', 'PT. Murni Nusantara Mandiri']);
-    t('per jenis: dimiliki (gabungan profil sejenis, ejaan PT longgar) dan terpasang di traktor PT itu',
-      R.rows, [['Offset Harrow', [12, 2], [4, 0]], ['Bed Ripper', [0, 0], [0, 1]]]);
+    t('per jenis + brand: dimiliki (ejaan PT longgar) dan terpasang di traktor PT itu',
+      R.rows, [['Bed Ripper', 'ISJ', [0, 0], [0, 1]], ['Offset Harrow', 'Baldan', [2, 1], [0, 0]], ['Offset Harrow', 'Grizzly', [10, 1], [4, 0]]]);
     t('singkatan PT', R.short, ['GPA', 'MNM', 'Timika']);
     t('kartu per PT: dimiliki · terpasang · free', R.cards, ['12 | 2 on tractor · 10 free', '4 | 1 on tractor · 3 free']);
     t('lebih banyak terpasang daripada dimiliki → ditandai', R.negative, true);

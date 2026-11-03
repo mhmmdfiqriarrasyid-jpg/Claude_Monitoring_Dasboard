@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.21.0';
+const APP_VERSION = 'v2.21.1';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -8116,29 +8116,36 @@ function ownedOf(d, site) {
     const n = k ? Number(o[k]) : 0;
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
+// 2.21.1: one row per type AND brand ("Offset Harrow — Grizzly" and
+// "Offset Harrow — Baldan" are counted apart).
 function implementOwnedRows() {
     const sites = implSites();
     const byType = new Map();
-    const row = t => {
-        const k = t.toLowerCase();
-        if (!byType.has(k)) byType.set(k, { label: t, per: Object.fromEntries(sites.map(s => [s, { owned: 0, attached: 0 }])) });
+    const typeSpell = new Map();   // one spelling per type, the first seen
+    const row = (t, b) => {
+        if (!typeSpell.has(t.toLowerCase())) typeSpell.set(t.toLowerCase(), t);
+        const k = `${t.toLowerCase()}|${(b || '').toLowerCase()}`;
+        if (!byType.has(k)) byType.set(k, { label: typeSpell.get(t.toLowerCase()), brand: b || '', per: Object.fromEntries(sites.map(s => [s, { owned: 0, attached: 0 }])) });
         return byType.get(k);
     };
     globalImplements.forEach(d => {
         const t = _toolNorm(d.equipmentType) || _toolNorm(d.profileName);
         if (!t) return;
-        sites.forEach(s => { row(t).per[s].owned += ownedOf(d, s); });
+        const r = row(t, _toolNorm(d.brand));
+        sites.forEach(s => { r.per[s].owned += ownedOf(d, s); });
     });
     unitsOfGroup(globalData, 'tractor').forEach(u => {
         if (!u.implement) return;
         const rec = findImplementRecord(u.implement);
-        const t = rec ? (_toolNorm(rec.equipmentType) || _toolNorm(rec.profileName)) : toolPartsOf(u, 'tractor', _knownImplementBrands()).type;
+        const parts = rec ? null : toolPartsOf(u, 'tractor', _knownImplementBrands());
+        const t = rec ? (_toolNorm(rec.equipmentType) || _toolNorm(rec.profileName)) : parts.type;
+        const b = rec ? _toolNorm(rec.brand) : _toolNorm(parts.brand);
         const s = sites.find(x => x.toLowerCase() === _toolNorm(u.site).toLowerCase());
         if (!t || !s) return;
-        row(t).per[s].attached += 1;
+        row(t, b).per[s].attached += 1;
     });
     const rows = [...byType.values()].filter(r => sites.some(s => r.per[s].owned || r.per[s].attached))
-        .sort((a, b) => sites.reduce((n, s) => n + b.per[s].owned, 0) - sites.reduce((n, s) => n + a.per[s].owned, 0) || a.label.localeCompare(b.label));
+        .sort((a, b) => a.label.toLowerCase().localeCompare(b.label.toLowerCase()) || a.brand.localeCompare(b.brand));
     return { sites, rows };
 }
 function renderImplementOwned() {
@@ -8155,13 +8162,13 @@ function renderImplementOwned() {
             <span class="impl-own__n">${t.owned}</span><span class="impl-own__lbl">implements owned</span>
             <span class="impl-own__split"><b>${t.attached}</b> on tractor · <b class="${free < 0 ? 'impl-own__bad' : ''}">${free}</b> free</span></div>`;
     }).join('');
-    const head = `<thead><tr><th rowspan="2">Implement type</th>${sites.map(s => `<th colspan="3" class="impl-own__sitehead" title="${escapeHtml(s)}">${escapeHtml(siteShort(s))}</th>`).join('')}<th rowspan="2" class="num">Total owned</th></tr>
+    const head = `<thead><tr><th rowspan="2">Implement type</th><th rowspan="2">Brand</th>${sites.map(s => `<th colspan="3" class="impl-own__sitehead" title="${escapeHtml(s)}">${escapeHtml(siteShort(s))}</th>`).join('')}<th rowspan="2" class="num">Total owned</th></tr>
         <tr>${sites.map(() => '<th class="num">Owned</th><th class="num">On tractor</th><th class="num">Free</th>').join('')}</tr></thead>`;
-    const body = rows.length ? rows.map(r => `<tr><td>${escapeHtml(r.label)}</td>${sites.map(s => {
+    const body = rows.length ? rows.map(r => `<tr><td>${escapeHtml(r.label)}</td><td class="fp-muted">${escapeHtml(r.brand || '—')}</td>${sites.map(s => {
         const p = r.per[s], free = p.owned - p.attached;
         return `<td class="num">${p.owned}</td><td class="num">${p.attached}</td><td class="num${free < 0 ? ' impl-own__bad' : ''}" title="${free < 0 ? 'More tractors use it than the units entered — update the count' : ''}">${free}</td>`;
     }).join('')}<td class="num"><b>${sites.reduce((n, s) => n + r.per[s].owned, 0)}</b></td></tr>`).join('')
-        : `<tr><td colspan="${sites.length * 3 + 2}" class="fp-muted" style="text-align:center;padding:16px">No actual units entered yet — open an implement and fill in <b>Actual units</b>.</td></tr>`;
+        : `<tr><td colspan="${sites.length * 3 + 3}" class="fp-muted" style="text-align:center;padding:16px">No actual units entered yet — open an implement and fill in <b>Actual units</b>.</td></tr>`;
     document.getElementById('implOwnTable').innerHTML = head + `<tbody>${body}</tbody>`;
 }
 function renderImplementOwnedInputs(imp) {

@@ -503,7 +503,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   jumlah unit yang dimiliki tiap PT (`owned: { site: n }`, isian *Actual
   units* di form; PT = Master lists → Sites). Bagian baru **Actual implements
   per PT** di halaman Implements: kartu per PT (dimiliki · terpasang di
-  traktor · free) dan tabel per jenis implement (Owned / On tractor / Free per
+  traktor · free) dan tabel per jenis **dan brand** implement (2.21.1; Owned / On tractor / Free per
   PT, Total owned); *free* negatif ditandai merah (lebih banyak traktor
   memakainya daripada yang dicatat). Tabel profil punya kolom *Units*
   (mis. "GPA 10 MNM 4"); Export CSV menambah kolom *Units <PT>*. Dijaga
