@@ -32,6 +32,7 @@ const { composeEmail } = require('./licenseReport');
 const { missingReports, composeReminder, composeDamage, shiftDates } = require('./teamNotices');
 const { buildMonthly, composeMonthly } = require('./monthlyReport');
 const { recipientsFor, composePush } = require('./pushNotices');
+const { readSchedule, isDue } = require('./schedule');
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -68,6 +69,10 @@ async function emailSettings() {
         monthlyEnabled: !!s.monthlyEnabled,
         monthlyHour: cleanHour(s.monthlyHour, 7),
         monthlyRecipients: cleanList(s.monthlyRecipients),
+        // 2.20.0: each scheduled notice daily / weekly (day) / monthly (date), at an hour
+        licenseSched: readSchedule(s, 'send', { freq: 'daily', hour: 7 }),
+        reminderSched: readSchedule(s, 'reminder', { freq: 'daily', hour: 17 }),
+        summarySched: readSchedule(s, 'monthly', { freq: 'monthly', hour: 7, monthday: 1 }),
         pushDamage: s.pushDamage !== false,
         pushApprovals: s.pushApprovals !== false
     };
@@ -176,7 +181,7 @@ async function sendMonthly(s, now, trigger, by) {
         db.collection('units').get(), db.collection('damageRecords').get(),
         db.collection('workLogs').get(), db.collection('licenseStock').get()]);
     const r = buildMonthly({ units: units.docs.map(d => ({ ...d.data(), id: d.id })), damages: damages.docs.map(d => d.data()),
-        workLogs: logs.docs.map(d => d.data()), licenseStock: stock.docs.map(d => d.data()), now: now.getTime() });
+        workLogs: logs.docs.map(d => d.data()), licenseStock: stock.docs.map(d => d.data()), now: now.getTime(), freq: s.summarySched.freq });
     const m = composeMonthly(r);
     await mail(s.monthlyRecipients, m, { kind: 'monthlyReport', trigger: trigger || 'auto', by: by || '', items: r.damage.total });
     return { sent: true, recipients: s.monthlyRecipients.length };
@@ -233,9 +238,9 @@ exports.notificationTick = onSchedule({
     const today = shiftDates(now).today;
     const hour = now.getHours();
     const jobs = [];
-    if (s.dailyEnabled && hour === s.sendHour) jobs.push(oncePerDay('daily', today, () => sendReport('daily', '')));
-    if (s.reminderEnabled && hour === s.reminderHour) jobs.push(oncePerDay('reminder', today, () => sendReminder(s, now)));
-    if (s.monthlyEnabled && now.getDate() === 1 && hour === s.monthlyHour) jobs.push(oncePerDay('monthly', today, () => sendMonthly(s, now)));
+    if (s.dailyEnabled && isDue(s.licenseSched, now)) jobs.push(oncePerDay('daily', today, () => sendReport('daily', '')));
+    if (s.reminderEnabled && isDue(s.reminderSched, now)) jobs.push(oncePerDay('reminder', today, () => sendReminder(s, now)));
+    if (s.monthlyEnabled && isDue(s.summarySched, now)) jobs.push(oncePerDay('monthly', today, () => sendMonthly(s, now)));
     if (hour === 3) jobs.push(oncePerDay('housekeeping', today, () => housekeeping(now)));
     jobs.push(scanDamage(s, now).then(n => { if (n) logger.info('damage alerts sent', { n }); }));
     if (s.pushApprovals) jobs.push(scanApprovals(now).then(n => { if (n) logger.info('approval pushes sent', { n }); }));

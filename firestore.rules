@@ -552,7 +552,10 @@ service cloud.firestore {
       allow write: if id == 'email' && isOwner()
         && request.resource.data.keys().hasOnly(['recipients', 'dailyEnabled', 'sendHour',
              'reminderEnabled', 'reminderHour', 'reminderRecipients', 'damageEnabled', 'damageRecipients',
-             'monthlyEnabled', 'monthlyHour', 'monthlyRecipients', 'pushDamage', 'pushApprovals', 'updatedAt', 'updatedBy'])
+             'monthlyEnabled', 'monthlyHour', 'monthlyRecipients', 'pushDamage', 'pushApprovals',
+             'sendFreq', 'sendWeekday', 'sendMonthday', 'reminderFreq', 'reminderWeekday', 'reminderMonthday',
+             'monthlyFreq', 'monthlyWeekday', 'monthlyMonthday', 'updatedAt', 'updatedBy'])
+        && schedOk(request.resource.data, 'send') && schedOk(request.resource.data, 'reminder') && schedOk(request.resource.data, 'monthly')
         && request.resource.data.get('pushDamage', true) is bool
         && request.resource.data.get('pushApprovals', true) is bool
         && emailList(request.resource.data.get('monthlyRecipients', []))
@@ -569,6 +572,11 @@ service cloud.firestore {
     }
     function emailList(v) { return v is list && v.size() <= 10; }
     function hourOk(h) { return h is int && h >= 0 && h <= 23; }
+    function schedOk(d, p) {
+      return d.get(p + 'Freq', 'daily') in ['daily', 'weekly', 'monthly']
+        && d.get(p + 'Weekday', 1) is int && d.get(p + 'Weekday', 1) >= 0 && d.get(p + 'Weekday', 1) <= 6
+        && d.get(p + 'Monthday', 1) is int && d.get(p + 'Monthday', 1) >= 1 && d.get(p + 'Monthday', 1) <= 28;
+    }
     match /mailState/{id} {
       allow read, write: if false;
     }

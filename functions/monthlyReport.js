@@ -2,6 +2,7 @@
 // month, it returns the numbers and the email. tests/monthly_report_test.js.
 'use strict';
 const { buildAlertList } = require('./licenseReport');
+const { periodRange } = require('./schedule');
 
 const pad = n => String(n).padStart(2, '0');
 // The calendar month before `now` (local time = WIT on the server).
@@ -35,8 +36,10 @@ function downtimeMs(u, m, now) {
     return ms;
 }
 
-function buildMonthly({ units, damages, workLogs, licenseStock, now }) {
-    const m = previousMonth(now);
+// freq: 'monthly' (the month before), 'weekly' (the 7 days before today) or
+// 'daily' (yesterday) — 2.20.0.
+function buildMonthly({ units, damages, workLogs, licenseStock, now, freq }) {
+    const m = freq && freq !== 'monthly' ? periodRange(freq, now) : { ...previousMonth(now), name: 'Monthly Report' };
     units = units || []; damages = damages || []; workLogs = workLogs || [];
     const nameOf = id => { const u = units.find(x => x.id === id); return u ? (u.name || u.sn || id) : ''; };
 
@@ -56,6 +59,7 @@ function buildMonthly({ units, damages, workLogs, licenseStock, now }) {
     const lic = buildAlertList(units, licenseStock || [], { soonOnly: true, now });
     return {
         month: m.label,
+        name: m.name,
         fleet: { total: units.length, heavy: units.filter(isHeavy).length,
                  breakdownNow: units.filter(u => isBroken(u.status)).length },
         damage: { total: dmg.length, resolved: dmg.filter(d => d.resolved).length,
@@ -75,7 +79,7 @@ const h1 = n => (Math.round(n * 10) / 10).toLocaleString('en-US');
 
 function composeMonthly(r) {
     const lines = [
-        `Monthly Report — ${r.month}`, '',
+        `${r.name || 'Monthly Report'} — ${r.month}`, '',
         `FLEET: ${r.fleet.total} units (${r.fleet.heavy} heavy equipment) · ${r.fleet.breakdownNow} in Breakdown now`,
         `DAMAGE: ${r.damage.total} recorded, ${r.damage.resolved} of them repaired`,
         ...r.damage.byType.map(([t, n]) => `  ${t}: ${n}`),
@@ -92,7 +96,7 @@ function composeMonthly(r) {
     const list = (title, rows) => rows.length ? `<h3 style="margin:18px 0 6px;font-size:15px">${esc(title)}</h3>
 <table style="border-collapse:collapse;width:100%">${rows.map(([a, b]) => `<tr><td style="padding:5px 10px;border-bottom:1px solid #EAECF0;font-size:13px">${esc(a)}</td><td align="right" style="padding:5px 10px;border-bottom:1px solid #EAECF0;font-size:13px">${esc(b)}</td></tr>`).join('')}</table>` : '';
     const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#101828">
-<h2 style="margin:0 0 12px;font-size:20px">Monthly Report — ${esc(r.month)}</h2>
+<h2 style="margin:0 0 12px;font-size:20px">${esc(r.name || 'Monthly Report')} — ${esc(r.month)}</h2>
 <table style="border-collapse:separate;border-spacing:8px;width:100%"><tr>
 ${tile('Fleet', r.fleet.total, `${r.fleet.breakdownNow} in Breakdown now`)}
 ${tile('Damage recorded', r.damage.total, `${r.damage.resolved} repaired`)}
@@ -104,7 +108,7 @@ ${list('Units with the most damage', r.damage.topUnits)}
 ${list('Longest downtime (hours)', r.downtime.topUnits.map(x => [x.name, h1(x.hours)]))}
 ${list('Work hours by company', r.reports.byCompany.map(([c, h]) => [c, h1(h)]))}
 <p style="margin-top:18px;font-size:12px;color:#667085">Sent by the <a href="https://ot.techorchestrator.cloud">Operation Technology Dashboard</a>.</p></div>`;
-    return { subject: `Monthly Report — ${r.month}`, text: lines.join('\n'), html };
+    return { subject: `${r.name || 'Monthly Report'} — ${r.month}`, text: lines.join('\n'), html };
 }
 
 module.exports = { previousMonth, buildMonthly, composeMonthly, downtimeMs, workMinutes };

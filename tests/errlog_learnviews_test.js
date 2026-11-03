@@ -30,7 +30,7 @@ const { launch, BASE_URL } = require('./_env');
         reportClientError('error', 'from an extension', 'at chrome-extension://abc/x.js', 'chrome-extension://abc/x.js');
         reportClientError('error', 'third party', '', 'https://cdn.example.com/lib.js');
         reportClientError('promise', 'permission-denied: Missing or insufficient permissions.', '', '');
-        out.logged = logged.map(r => [r.kind, r.message, r.uid, r.version]);
+        out.logged = logged.map(r => [r.kind, r.message, r.uid, r.version === APP_VERSION]);
         await openErrorLog();
         out.errView = [document.querySelectorAll('#errorLogList .errlog-item').length, /×3/.test(document.getElementById('errorLogList').textContent), document.getElementById('errorLogClearBtn').hidden];
         await clearErrorLog();
@@ -69,7 +69,7 @@ const { launch, BASE_URL } = require('./_env');
     const T = [];
     const t = (n, g, w) => T.push({ n, g, w, pass: JSON.stringify(g) === JSON.stringify(w) });
     t('error app tercatat sekali; ekstensi & skrip luar diabaikan; promise ditolak ikut tercatat', R.logged,
-      [['error', 'boom in app', 'o', 'v2.19.0'], ['promise', 'permission-denied: Missing or insufficient permissions.', 'o', 'v2.19.0']]);
+      [['error', 'boom in app', 'o', true], ['promise', 'permission-denied: Missing or insufficient permissions.', 'o', true]]);
     t('owner: Error log tampil dengan hitungan', R.errView, [1, true, false]);
     t('owner: Clear log', R.cleared, true);
     t('menu Admin → Error log untuk owner', R.navOwner, '');

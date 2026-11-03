@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.19.0';
+const APP_VERSION = 'v2.20.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -5140,10 +5140,19 @@ function _parseRecipients(text) {
 // (functions/index.js, notificationTick) checks every 10 minutes.
 const EMAIL_DEFAULT_HOUR = 7, REMINDER_DEFAULT_HOUR = 17;
 const NOTIF_HOURS = Array.from({ length: 24 }, (_, h) => `<option value="${h}">${String(h).padStart(2, '0')}:00</option>`).join('');
+// 2.20.0: each scheduled notice — Daily, Weekly (a day) or Monthly (a date), at an hour.
+const NOTIF_WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const NOTIF_SCHED = [['email', 'emailDaily', 'send', 'daily'], ['reminder', 'reminderEnabled', 'reminder', 'daily'], ['monthly', 'monthlyEnabled', 'monthly', 'monthly']];
 function syncEmailDaily() {
-    document.getElementById('emailHourGroup').style.display = document.getElementById('emailDaily').checked ? '' : 'none';
-    document.getElementById('reminderHourGroup').style.display = document.getElementById('reminderEnabled').checked ? '' : 'none';
-    document.getElementById('monthlyHourGroup').style.display = document.getElementById('monthlyEnabled').checked ? '' : 'none';
+    NOTIF_SCHED.forEach(([p, box]) => {
+        const on = document.getElementById(box).checked;
+        const freq = document.getElementById(p + 'Freq').value;
+        document.getElementById(p + 'HourGroup').style.display = on ? '' : 'none';
+        document.getElementById(p + 'WeekdayGroup').style.display = freq === 'weekly' ? '' : 'none';
+        document.getElementById(p + 'MonthdayGroup').style.display = freq === 'monthly' ? '' : 'none';
+    });
+    const sf = document.getElementById('monthlyFreq').value;
+    document.getElementById('monthlySendNote').textContent = sf === 'daily' ? "Yesterday's summary" : sf === 'weekly' ? 'The last 7 days' : "Last month's report";
 }
 // The Admin menu entry: the owner, and License Stock viewers (read only) —
 // a team-only account keeps its menu to Dashboard + Team.
@@ -5162,7 +5171,8 @@ function _notifForm() {
     const el = id => document.getElementById(id);
     return JSON.stringify(['emailRecipients', 'damageRecipients', 'reminderRecipients', 'monthlyRecipients'].map(id => _parseRecipients(el(id).value))
         .concat([el('emailDaily').checked, el('emailHour').value, el('damageEnabled').checked, el('reminderEnabled').checked, el('reminderHour').value,
-                 el('monthlyEnabled').checked, el('monthlyHour').value, el('pushDamage').checked, el('pushApprovals').checked]));
+                 el('monthlyEnabled').checked, el('monthlyHour').value, el('pushDamage').checked, el('pushApprovals').checked,
+                 ...NOTIF_SCHED.flatMap(([p]) => [el(p + 'Freq').value, el(p + 'Weekday').value, el(p + 'Monthday').value])]));
 }
 function _notifUnsaved() { return _notifSaved !== null && _notifForm() !== _notifSaved; }
 async function sendNotificationNow(kind, btn) {
@@ -5173,7 +5183,7 @@ async function sendNotificationNow(kind, btn) {
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending…'; }
     try {
         const r = await window.cloud.callFunction('sendNotificationNow', { kind });
-        const what = kind === 'damage' ? 'Test alert' : kind === 'monthly' ? 'Monthly report' : 'Reminder';
+        const what = kind === 'damage' ? 'Test alert' : kind === 'monthly' ? 'Summary report' : 'Reminder';
         if (r && r.sent) showToast(`${what} sent to ${r.recipients} recipient${r.recipients === 1 ? '' : 's'}`, 'success');
         else if (r && r.reason === 'no-recipients') showToast('Add recipients and save first', 'warning');
         else if (r && r.reason === 'no-records') showToast('There is no damage record yet to use as an example', 'info');
@@ -5197,6 +5207,12 @@ async function openEmailSettingsModal() {
                  'monthlyRecipients', 'monthlyEnabled', 'monthlyHour', 'pushDamage', 'pushApprovals'];
     const el = id => document.getElementById(id);
     ['emailHour', 'reminderHour', 'monthlyHour'].forEach(id => { if (!el(id).options.length) el(id).innerHTML = NOTIF_HOURS; });
+    NOTIF_SCHED.forEach(([p, , , dfreq]) => {
+        if (!el(p + 'Weekday').options.length) el(p + 'Weekday').innerHTML = NOTIF_WEEKDAYS.map((d, i) => `<option value="${i}">${d}</option>`).join('');
+        if (!el(p + 'Monthday').options.length) el(p + 'Monthday').innerHTML = Array.from({ length: 28 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('');
+        el(p + 'Freq').value = dfreq; el(p + 'Weekday').value = '1'; el(p + 'Monthday').value = '1';
+        [p + 'Freq', p + 'Weekday', p + 'Monthday'].forEach(id => { el(id).disabled = !owner; });
+    });
     ['emailRecipients', 'damageRecipients', 'reminderRecipients', 'monthlyRecipients'].forEach(id => { el(id).value = ''; });
     ['emailDaily', 'damageEnabled', 'reminderEnabled', 'monthlyEnabled'].forEach(id => { el(id).checked = false; });
     el('monthlyHour').value = String(EMAIL_DEFAULT_HOUR);
@@ -5225,6 +5241,11 @@ async function openEmailSettingsModal() {
         el('monthlyHour').value = String(Number.isInteger(s.monthlyHour) ? s.monthlyHour : EMAIL_DEFAULT_HOUR);
         el('pushDamage').checked = s.pushDamage !== false;
         el('pushApprovals').checked = s.pushApprovals !== false;
+        NOTIF_SCHED.forEach(([p, , key, dfreq]) => {
+            el(p + 'Freq').value = ['daily', 'weekly', 'monthly'].includes(s[key + 'Freq']) ? s[key + 'Freq'] : dfreq;
+            el(p + 'Weekday').value = String(Number.isInteger(s[key + 'Weekday']) ? s[key + 'Weekday'] : 1);
+            el(p + 'Monthday').value = String(Number.isInteger(s[key + 'Monthday']) ? s[key + 'Monthday'] : 1);
+        });
         syncEmailDaily();
         _notifSaved = _notifForm();
     } catch (err) {
@@ -5235,7 +5256,7 @@ async function openEmailSettingsModal() {
         el('emailLast').textContent = _notifLastText(last.licenseAlert, 'report');
         el('damageLast').textContent = _notifLastText(last.damageAlert, 'alert');
         el('reminderLast').textContent = _notifLastText(last.reportReminder, 'reminder');
-        el('monthlyLast').textContent = _notifLastText(last.monthlyReport, 'monthly report');
+        el('monthlyLast').textContent = _notifLastText(last.monthlyReport, 'summary report');
     } catch (_) { /* the history line is a nicety */ }
 }
 function closeEmailSettingsModal() {
@@ -5246,7 +5267,7 @@ async function saveEmailSettings() {
     const el = id => document.getElementById(id);
     const lists = {};
     for (const [key, id, label] of [['recipients', 'emailRecipients', 'License Alert'], ['damageRecipients', 'damageRecipients', 'Breakdown alerts'],
-        ['reminderRecipients', 'reminderRecipients', 'Daily Report reminder'], ['monthlyRecipients', 'monthlyRecipients', 'Monthly Report']]) {
+        ['reminderRecipients', 'reminderRecipients', 'Daily Report reminder'], ['monthlyRecipients', 'monthlyRecipients', 'Summary Report']]) {
         const list = _parseRecipients(el(id).value);
         const bad = list.filter(r => !EMAIL_RE.test(r));
         if (bad.length) { showToast(`${label}: not an email address — ${bad[0]}`, 'warning'); el(id).focus(); return; }
@@ -5260,12 +5281,14 @@ async function saveEmailSettings() {
         reminderRecipients: lists.reminderRecipients, reminderEnabled: el('reminderEnabled').checked, reminderHour: hour('reminderHour'),
         monthlyRecipients: lists.monthlyRecipients, monthlyEnabled: el('monthlyEnabled').checked, monthlyHour: hour('monthlyHour'),
         pushDamage: el('pushDamage').checked, pushApprovals: el('pushApprovals').checked,
+        ...Object.fromEntries(NOTIF_SCHED.flatMap(([p, , key]) => [[key + 'Freq', el(p + 'Freq').value],
+            [key + 'Weekday', parseInt(el(p + 'Weekday').value, 10) || 0], [key + 'Monthday', parseInt(el(p + 'Monthday').value, 10) || 1]])),
         updatedAt: Date.now(), updatedBy: (currentUser && currentUser.email) || ''
     };
     if (rec.dailyEnabled && !rec.recipients.length) { showToast('License Alert: add at least one recipient for the daily email', 'warning'); return; }
     if (rec.damageEnabled && !rec.damageRecipients.length) { showToast('Breakdown alerts: add at least one recipient', 'warning'); return; }
     if (rec.reminderEnabled && !rec.reminderRecipients.length) { showToast('Daily Report reminder: add at least one recipient', 'warning'); return; }
-    if (rec.monthlyEnabled && !rec.monthlyRecipients.length) { showToast('Monthly Report: add at least one recipient', 'warning'); return; }
+    if (rec.monthlyEnabled && !rec.monthlyRecipients.length) { showToast('Summary Report: add at least one recipient', 'warning'); return; }
     try {
         await window.cloud.saveEmailSettings(rec);
     } catch (err) {
@@ -5273,9 +5296,13 @@ async function saveEmailSettings() {
         showToast(err && err.code === 'permission-denied' ? 'Refused by the server — publish the latest firestore.rules' : 'Failed to save the notification settings', 'error');
         return;
     }
-    const hh = h => `${String(h).padStart(2, '0')}:00`;
+    const when = (on, key, h) => {
+        if (!on) return 'off';
+        const f = rec[key + 'Freq'], t = `${String(h).padStart(2, '0')}:00`;
+        return f === 'weekly' ? `${NOTIF_WEEKDAYS[rec[key + 'Weekday']]} ${t}` : f === 'monthly' ? `day ${rec[key + 'Monthday']} ${t}` : `daily ${t}`;
+    };
     logEvent({ action: 'update', unitName: '[Settings] Notifications', field: 'Email',
-        before: '', after: `License ${rec.dailyEnabled ? hh(rec.sendHour) : 'off'} · Breakdown ${rec.damageEnabled ? 'on' : 'off'} · Reminder ${rec.reminderEnabled ? hh(rec.reminderHour) : 'off'} · Monthly ${rec.monthlyEnabled ? hh(rec.monthlyHour) : 'off'} · Push ${[rec.pushDamage && 'damage', rec.pushApprovals && 'approvals'].filter(Boolean).join('+') || 'off'}` });
+        before: '', after: `License ${when(rec.dailyEnabled, 'send', rec.sendHour)} · Breakdown ${rec.damageEnabled ? 'on' : 'off'} · Reminder ${when(rec.reminderEnabled, 'reminder', rec.reminderHour)} · Summary ${when(rec.monthlyEnabled, 'monthly', rec.monthlyHour)} · Push ${[rec.pushDamage && 'damage', rec.pushApprovals && 'approvals'].filter(Boolean).join('+') || 'off'}` });
     _notifSaved = _notifForm();
     showToast('Notification settings saved', 'success');
 }

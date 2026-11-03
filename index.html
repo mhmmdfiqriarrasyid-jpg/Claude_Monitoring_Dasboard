@@ -4268,10 +4268,18 @@
                 <p class="notif-desc">Licences expiring in the next 30 days, plus low licence stock. Sent only when there is something to report.</p>
                 <label class="form-label" for="emailRecipients">Recipients <span class="form-optional">(one per line, up to 10)</span></label>
                 <textarea class="form-input" id="emailRecipients" rows="2" placeholder="manager@company.com"></textarea>
-                <label class="notif-check"><input type="checkbox" id="emailDaily" onchange="syncEmailDaily()"> Send automatically every day</label>
-                <div class="notif-hour" id="emailHourGroup">
-                    <label class="form-label" for="emailHour">Send time <span class="form-optional">(WIT)</span></label>
-                    <select class="form-input" id="emailHour"></select>
+                <label class="notif-check"><input type="checkbox" id="emailDaily" onchange="syncEmailDaily()"> Send automatically</label>
+                <div class="notif-sched" id="emailHourGroup">
+                    <label class="notif-sched__f"><span class="form-label">Repeat</span>
+                        <select class="form-input" id="emailFreq" onchange="syncEmailDaily()" aria-label="How often">
+                            <option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option>
+                        </select></label>
+                    <label class="notif-sched__f" id="emailWeekdayGroup"><span class="form-label">Day</span>
+                        <select class="form-input" id="emailWeekday" aria-label="Day of the week"></select></label>
+                    <label class="notif-sched__f" id="emailMonthdayGroup"><span class="form-label">Date</span>
+                        <select class="form-input" id="emailMonthday" aria-label="Day of the month"></select></label>
+                    <label class="notif-sched__f"><span class="form-label">Time <span class="form-optional">(WIT)</span></span>
+                        <select class="form-input" id="emailHour"></select></label>
                 </div>
                 <div class="notif-actions"><button type="button" class="btn btn-secondary btn-sm" id="emailSendNowBtn" onclick="sendLicenseAlertEmail()"><i class="fas fa-paper-plane"></i> Send now</button></div>
                 <p class="form-hint" id="emailLast"></p>
@@ -4296,17 +4304,25 @@
             </section>
 
             <section class="notif-sec" aria-labelledby="notifMonTitle">
-                <h4 class="notif-title" id="notifMonTitle">Monthly Report</h4>
-                <p class="notif-desc">On the 1st of each month: last month's damage, downtime per unit, Daily Reports and work hours per company, and licences expiring soon.</p>
+                <h4 class="notif-title" id="notifMonTitle">Summary Report</h4>
+                <p class="notif-desc">Damage, downtime per unit, Daily Reports and work hours per company, and licences expiring soon — for yesterday (daily), the last 7 days (weekly) or last month (monthly).</p>
                 <label class="form-label" for="monthlyRecipients">Recipients</label>
                 <textarea class="form-input" id="monthlyRecipients" rows="2" placeholder="manager@company.com"></textarea>
-                <label class="notif-check"><input type="checkbox" id="monthlyEnabled" onchange="syncEmailDaily()"> Send automatically on the 1st of each month</label>
-                <div class="notif-hour" id="monthlyHourGroup">
-                    <label class="form-label" for="monthlyHour">Send time <span class="form-optional">(WIT)</span></label>
-                    <select class="form-input" id="monthlyHour"></select>
+                <label class="notif-check"><input type="checkbox" id="monthlyEnabled" onchange="syncEmailDaily()"> Send automatically</label>
+                <div class="notif-sched" id="monthlyHourGroup">
+                    <label class="notif-sched__f"><span class="form-label">Repeat</span>
+                        <select class="form-input" id="monthlyFreq" onchange="syncEmailDaily()" aria-label="How often">
+                            <option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option>
+                        </select></label>
+                    <label class="notif-sched__f" id="monthlyWeekdayGroup"><span class="form-label">Day</span>
+                        <select class="form-input" id="monthlyWeekday" aria-label="Day of the week"></select></label>
+                    <label class="notif-sched__f" id="monthlyMonthdayGroup"><span class="form-label">Date</span>
+                        <select class="form-input" id="monthlyMonthday" aria-label="Day of the month"></select></label>
+                    <label class="notif-sched__f"><span class="form-label">Time <span class="form-optional">(WIT)</span></span>
+                        <select class="form-input" id="monthlyHour"></select></label>
                 </div>
                 <div class="notif-actions"><button type="button" class="btn btn-secondary btn-sm" id="monthlySendBtn" onclick="sendNotificationNow('monthly', this)"><i class="fas fa-paper-plane"></i> Send now</button>
-                    <span class="notif-note">Last month's report</span></div>
+                    <span class="notif-note" id="monthlySendNote">Last month's report</span></div>
                 <p class="form-hint" id="monthlyLast"></p>
             </section>
 
@@ -4315,10 +4331,18 @@
                 <p class="notif-desc">Who has not sent the Daily Report of a shift that has ended — from the shift schedule, leaving out people on approved leave. Sent only when someone is missing.</p>
                 <label class="form-label" for="reminderRecipients">Recipients</label>
                 <textarea class="form-input" id="reminderRecipients" rows="2" placeholder="supervisor@company.com"></textarea>
-                <label class="notif-check"><input type="checkbox" id="reminderEnabled" onchange="syncEmailDaily()"> Send the reminder every day</label>
-                <div class="notif-hour" id="reminderHourGroup">
-                    <label class="form-label" for="reminderHour">Send time <span class="form-optional">(WIT)</span></label>
-                    <select class="form-input" id="reminderHour"></select>
+                <label class="notif-check"><input type="checkbox" id="reminderEnabled" onchange="syncEmailDaily()"> Send automatically</label>
+                <div class="notif-sched" id="reminderHourGroup">
+                    <label class="notif-sched__f"><span class="form-label">Repeat</span>
+                        <select class="form-input" id="reminderFreq" onchange="syncEmailDaily()" aria-label="How often">
+                            <option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option>
+                        </select></label>
+                    <label class="notif-sched__f" id="reminderWeekdayGroup"><span class="form-label">Day</span>
+                        <select class="form-input" id="reminderWeekday" aria-label="Day of the week"></select></label>
+                    <label class="notif-sched__f" id="reminderMonthdayGroup"><span class="form-label">Date</span>
+                        <select class="form-input" id="reminderMonthday" aria-label="Day of the month"></select></label>
+                    <label class="notif-sched__f"><span class="form-label">Time <span class="form-optional">(WIT)</span></span>
+                        <select class="form-input" id="reminderHour"></select></label>
                 </div>
                 <div class="notif-actions"><button type="button" class="btn btn-secondary btn-sm" id="reminderSendBtn" onclick="sendNotificationNow('reminder', this)"><i class="fas fa-paper-plane"></i> Send now</button>
                     <span class="notif-note">Who is missing right now</span></div>

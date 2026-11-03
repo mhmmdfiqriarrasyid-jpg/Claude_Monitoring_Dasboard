@@ -499,6 +499,14 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   `tests/license_report_test.js`, skenario Notif di `tests/rules_test.js`.
   **Perlu publish `firestore.rules` + deploy ulang fungsi** (deploy akan
   menanyakan penghapusan `dailyLicenseAlert` — jawab y).
+  **2.20.0 — Jadwal notifikasi.** License Alert, Daily Report reminder dan
+  laporan ringkasan (dulu Monthly Report, sekarang *Summary Report*) masing-
+  masing bisa **Daily / Weekly (pilih hari) / Monthly (pilih tanggal 1–28)** pada
+  jam pilihan (`<p>Freq`, `<p>Weekday`, `<p>Monthday`; p = send / reminder /
+  monthly). Ringkasan mengikuti periodenya: kemarin, 7 hari terakhir, atau
+  bulan lalu. `functions/schedule.js` (`readSchedule`, `isDue`, `periodRange`),
+  dijaga `tests/schedule_test.js`. **Perlu publish `firestore.rules` + deploy
+  ulang fungsi.**
   **2.19.0 — Catatan error, jejak belajar, arsip History.**
   *Error log*: error di kode dashboard (bukan ekstensi / skrip luar, maks. 20
   per halaman, tanpa duplikat) dicatat ke `clientErrors`; owner membacanya di

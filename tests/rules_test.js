@@ -575,6 +575,10 @@ async function check(name, p, expectOk) {
     await check('Push: pemilik token menghapusnya', deleteDoc(doc(as('licv'), 'pushTokens', 'tok_1')), true);
     await check('Push: owner menyimpan saklar push', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, pushDamage: false, pushApprovals: true }), true);
     await check('Push: saklar push bukan boolean DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, pushDamage: 'on' }), false);
+    await check('Jadwal: mingguan Jumat / bulanan tgl 15 tersimpan', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, sendFreq: 'weekly', sendWeekday: 5, monthlyFreq: 'monthly', monthlyMonthday: 15, reminderFreq: 'daily' }), true);
+    await check('Jadwal: frekuensi tak dikenal DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, sendFreq: 'yearly' }), false);
+    await check('Jadwal: hari di luar 0–6 DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, reminderWeekday: 7 }), false);
+    await check('Jadwal: tanggal 29–31 DITOLAK (tidak ada di semua bulan)', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, monthlyMonthday: 31 }), false);
     await check('Notif: mailState tertutup dari browser', getDoc(doc(as('owner'), 'mailState', 'daily')), false);
     await check('Email: kolom asing DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, gmailPassword: 'x' }), false);
     await check('Email: dokumen settings lain DITOLAK', setDoc(doc(as('owner'), 'settings', 'other'), { dailyEnabled: true }), false);
