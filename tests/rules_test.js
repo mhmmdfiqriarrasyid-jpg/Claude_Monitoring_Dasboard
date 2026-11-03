@@ -598,6 +598,16 @@ async function check(name, p, expectOk) {
     await check('Jejak belajar: atas nama akun lain DITOLAK', setDoc(doc(as('nobody'), 'learningViews', 'lc_9__owner'), { ...LV, uid: 'owner' }), false);
     await check('Jejak belajar: editor Learning membaca', getDocs(query(collection(LCE, 'learningViews'), where('itemId', '==', 'lc_9'))), true);
     await check('Jejak belajar: akun lain TIDAK bisa membaca jejak orang lain', getDoc(doc(as('writer'), 'learningViews', 'lc_9__nobody')), false);
+    // ---- 2.22.0: pengetahuan tebu ----
+    const AF = { id: 'af_1', term: 'Pol', text: 'kadar sukrosa', source: 'P3GI', url: 'https://example.org/pol', createdAt: 1, updatedAt: 1, by: 'x' };
+    await check('Agri: editor Learning menambah fakta', setDoc(doc(LCE, 'agriFacts', 'af_1'), AF), true);
+    await check('Agri: tanpa sumber DITOLAK', setDoc(doc(LCE, 'agriFacts', 'af_2'), { ...AF, id: 'af_2', source: '' }), false);
+    await check('Agri: tautan bukan https DITOLAK', setDoc(doc(LCE, 'agriFacts', 'af_3'), { ...AF, id: 'af_3', url: 'http://x.id' }), false);
+    await check('Agri: bukan editor Learning DITOLAK', setDoc(doc(as('writer'), 'agriFacts', 'af_4'), { ...AF, id: 'af_4' }), false);
+    await check('Agri: semua akun aktif membaca', getDoc(doc(as('nobody'), 'agriFacts', 'af_1')), true);
+    await check('Agri: editor Learning mematikan fakta bawaan', setDoc(doc(LCE, 'settings', 'agri'), { builtIns: false, updatedAt: 1 }), true);
+    await check('Agri: pengaturan dibaca semua akun aktif', getDoc(doc(as('nobody'), 'settings', 'agri')), true);
+    await check('Agri: bukan editor TIDAK bisa mengubah pengaturan', setDoc(doc(as('writer'), 'settings', 'agri'), { builtIns: true }), false);
     await check('Device Categories: editor warehouse menyimpan daftar', setDoc(doc(as('wh'), 'masterLists', 'deviceType'), { id: 'deviceType', values: ['Basestation'] }), true);
     await check('Device Categories: pembaca warehouse TIDAK bisa menyimpan', setDoc(doc(as('whv'), 'masterLists', 'deviceType'), { id: 'deviceType', values: ['X'] }), false);
 

@@ -10900,3 +10900,19 @@ body:has(.modal-overlay.open) .install-banner { display: none; }
 .impl-owned { display: flex; flex-wrap: wrap; gap: 10px; }
 .impl-owned__f { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--text-secondary); flex: 1 1 200px; max-width: 280px; }
 .impl-units-cell { white-space: nowrap; }
+/* 2.22.0: Sugarcane knowledge */
+.dash-know { display: flex; flex-direction: column; gap: 10px; }
+.dash-know__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dash-know__tools { display: flex; align-items: center; gap: 2px; }
+.dash-know__nav { width: 30px; height: 30px; font-size: 18px; line-height: 1; }
+.dash-know__body { cursor: grab; user-select: none; -webkit-user-select: none; touch-action: manipulation; border-radius: 10px; padding: 2px; transition: background .2s; }
+.dash-know.is-held .dash-know__body { background: var(--primary-lighter); cursor: grabbing; }
+.dash-know__text { margin: 0; font-size: 14px; line-height: 1.55; color: var(--text); }
+.dash-know__src { display: inline-block; margin-top: 8px; font-size: 12px; color: var(--accent-text); text-decoration: underline; }
+.dash-know__bar { height: 3px; background: var(--track, var(--border)); border-radius: 3px; overflow: hidden; }
+.dash-know__bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 1s linear; }
+.dash-know.is-held .dash-know__bar span { background: var(--warning, #F79009); }
+.agri-form { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.agri-form__row { display: flex; flex-wrap: wrap; gap: 8px; }
+.agri-form__f { display: flex; flex-direction: column; gap: 4px; flex: 1 1 200px; }
+.agri-row small { display: block; overflow-wrap: anywhere; }

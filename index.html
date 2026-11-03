@@ -446,7 +446,26 @@
                     <div id="dashAttention"></div>
                 </section>
                 <div class="dash-side">
-                    <section class="dash-card dash-health" aria-labelledby="dashHealthTitle">
+                    <!-- 2.22.0: Sugarcane knowledge — replaces the Fleet health ring (the
+                         Good tile already shows that rate). One fact at a time, a new one
+                         every few minutes; held down, it stays until released. -->
+                    <section class="dash-card dash-know" id="dashKnow" aria-labelledby="dashKnowTitle">
+                        <div class="dash-know__head">
+                            <h2 class="dash-card__title" id="dashKnowTitle">🌱 Sugarcane knowledge</h2>
+                            <div class="dash-know__tools">
+                                <button type="button" class="btn-icon dash-know__nav" onclick="agriStep(-1)" aria-label="Previous" title="Previous">‹</button>
+                                <button type="button" class="btn-icon dash-know__nav" onclick="agriStep(1)" aria-label="Next" title="Next">›</button>
+                                <button type="button" class="link-btn editonly editonly--learning" onclick="openAgriFacts()" title="Add or remove facts">Manage</button>
+                            </div>
+                        </div>
+                        <div class="dash-know__body" id="dashKnowBody" aria-live="polite" title="Hold to keep this one on screen"
+                             onpointerdown="agriHold(true)" onpointerup="agriHold(false)" onpointerleave="agriHold(false)" onpointercancel="agriHold(false)">
+                            <p class="dash-know__text" id="dashKnowText"></p>
+                            <a class="dash-know__src" id="dashKnowSrc" target="_blank" rel="noopener noreferrer"></a>
+                        </div>
+                        <div class="dash-know__bar" aria-hidden="true"><span id="dashKnowProgress"></span></div>
+                    </section>
+                    <section class="dash-card dash-health" aria-labelledby="dashHealthTitle" hidden>
                         <div class="dash-ring">
                             <svg width="92" height="92" viewBox="0 0 96 96" aria-hidden="true">
                                 <circle class="dash-ring__track" cx="48" cy="48" r="38" fill="none" stroke-width="10" style="stroke:var(--track)"></circle>
@@ -4368,6 +4387,36 @@
             <button class="btn btn-secondary" onclick="closeEmailSettingsModal()">Close</button>
             <button class="btn btn-primary" id="emailSaveBtn" onclick="saveEmailSettings()"><i class="fas fa-check"></i> Save</button>
         </div>
+    </div>
+</div>
+
+<!-- ===== SUGARCANE KNOWLEDGE: MANAGE (2.22.0) ===== -->
+<div class="modal-overlay" id="agriFactsModal">
+    <div class="modal-card" style="max-width:620px" role="dialog" aria-labelledby="agriFactsTitle">
+        <div class="modal-header">
+            <h3 id="agriFactsTitle">🌱 Sugarcane knowledge</h3>
+            <button class="btn-icon" onclick="closeAgriFacts()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p class="notif-desc">Shown on the Dashboard one at a time, a new one every 3 minutes. Every fact needs a source people can open.</p>
+            <label class="notif-check"><input type="checkbox" id="agriBuiltIns" onchange="saveAgriBuiltIns()"> Include the built-in facts (<span id="agriBuiltInCount"></span>)</label>
+            <form class="agri-form" id="agriForm" onsubmit="event.preventDefault(); saveAgriFact()">
+                <input type="hidden" id="agriEditId">
+                <label class="form-label" for="agriTerm">Term</label>
+                <input class="form-input" id="agriTerm" maxlength="80" placeholder="e.g. Ratoon cane">
+                <label class="form-label" for="agriText">Explanation</label>
+                <textarea class="form-input" id="agriText" rows="3" maxlength="500" placeholder="(also called keprasan) is sugarcane that grows back…"></textarea>
+                <div class="agri-form__row">
+                    <label class="agri-form__f"><span class="form-label">Source name</span><input class="form-input" id="agriSource" maxlength="120" placeholder="e.g. FAO, P3GI, Wikipedia"></label>
+                    <label class="agri-form__f"><span class="form-label">Source link</span><input class="form-input" id="agriUrl" maxlength="500" placeholder="https://…"></label>
+                </div>
+                <div class="notif-actions"><button type="submit" class="btn btn-primary btn-sm" id="agriSaveBtn"><i class="fas fa-plus"></i> Add fact</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="agriCancelEdit" hidden onclick="resetAgriForm()">Cancel edit</button></div>
+            </form>
+            <h4 class="notif-title" style="margin-top:14px">Your facts · <span id="agriCustomCount">0</span></h4>
+            <ul class="lcv-list" id="agriList"></ul>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" onclick="closeAgriFacts()">Close</button></div>
     </div>
 </div>
 

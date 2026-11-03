@@ -499,6 +499,15 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   `tests/license_report_test.js`, skenario Notif di `tests/rules_test.js`.
   **Perlu publish `firestore.rules` + deploy ulang fungsi** (deploy akan
   menanyakan penghapusan `dailyLicenseAlert` — jawab y).
+  **2.22.0 — Sugarcane knowledge.** Kartu *Fleet health* di Dashboard (angkanya
+  sama dengan kartu Good) diganti kartu pengetahuan tebu: satu fakta tiap
+  kali, berganti setiap 3 menit (bar progres), ‹ › untuk berpindah, dan
+  **berhenti selama ditekan/ditahan** sampai dilepas. Setiap fakta punya
+  sumber yang bisa diklik (https). 10 fakta bawaan (Wikipedia, FAO) di
+  `AGRI_BUILTIN`; editor Learning menambah fakta sendiri lewat *Manage*
+  (`agriFacts`, sumber + tautan https wajib) dan bisa mematikan fakta bawaan
+  (`settings/agri`). Dijaga `tests/agri_facts_test.js` + skenario Agri di rules.
+  **Perlu publish `firestore.rules`.**
   **2.21.0 — Implement aktual per PT.** Setiap profil implement mencatat
   jumlah unit yang dimiliki tiap PT (`owned: { site: n }`, isian *Actual
   units* di form; PT = Master lists → Sites). Bagian baru **Actual implements

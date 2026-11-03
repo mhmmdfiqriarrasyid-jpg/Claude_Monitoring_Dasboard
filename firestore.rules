@@ -547,7 +547,20 @@ service cloud.firestore {
     // Server email (2.14.0, Cloud Functions): the owner sets who gets the
     // licence alert and whether it goes out every morning; License Stock
     // viewers can see that. mailLog is written by the server only.
+    match /agriFacts/{id} {
+      allow read: if isActive();
+      allow delete: if canEditArea('learning');
+      allow create, update: if canEditArea('learning') && idMatches(id)
+        && request.resource.data.keys().hasOnly(['id', 'term', 'text', 'source', 'url', 'createdAt', 'updatedAt', 'by'])
+        && request.resource.data.get('term', '') is string && request.resource.data.get('term', '').size() > 0 && request.resource.data.get('term', '').size() <= 80
+        && request.resource.data.get('text', '') is string && request.resource.data.get('text', '').size() > 0 && request.resource.data.get('text', '').size() <= 500
+        && request.resource.data.get('source', '') is string && request.resource.data.get('source', '').size() > 0 && request.resource.data.get('source', '').size() <= 120
+        && request.resource.data.get('url', '') is string && request.resource.data.get('url', '').matches('https://.+') && request.resource.data.get('url', '').size() <= 500;
+    }
     match /settings/{id} {
+      allow read: if id == 'agri' && isActive();
+      allow write: if id == 'agri' && canEditArea('learning')
+        && request.resource.data.keys().hasOnly(['builtIns', 'updatedAt']) && request.resource.data.get('builtIns', true) is bool;
       allow read: if id == 'email' && (isOwner() || canViewArea('licenseStock') || canViewArea('teamLog') || canViewArea('damage'));
       allow write: if id == 'email' && isOwner()
         && request.resource.data.keys().hasOnly(['recipients', 'dailyEnabled', 'sendHour',

@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.21.1';
+const APP_VERSION = 'v2.22.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -928,6 +928,7 @@ const MODAL_CLOSERS = {
     historyModal:         'closeHistory',
     errorLogModal:        'closeErrorLog',
     lcViewsModal:         'closeLearningViews',
+    agriFactsModal:       'closeAgriFacts',
     importReportModal:    'closeImportReport',
     phantomHistoryModal:  'closePhantomHistory',
     emailSettingsModal:   'closeEmailSettingsModal',
@@ -4833,6 +4834,158 @@ function renderDashOverview(data) {
     renderDashAttention(data, now);
     renderDashSites(data);
     renderDashParts(data, scope);
+    loadAgriFacts(); startAgriTicker();
+}
+
+// ---- Sugarcane knowledge (2.22.0) ----
+// One fact at a time on the Dashboard, a new one every AGRI_ROTATE_MS. Held
+// down (pointer or touch), the fact stays until released. Built-in facts are
+// general and each cites where it comes from; Learning editors add their own
+// (agriFacts, with a source link) and can turn the built-in ones off.
+const AGRI_ROTATE_MS = 3 * 60 * 1000;
+const AGRI_BUILTIN = [
+    { id: 'b_cane', term: 'Tebu (sugarcane)', text: 'adalah tanaman rumput-rumputan (famili Poaceae, Saccharum spp.) yang menyimpan gula sukrosa di batangnya. Sekitar 80% gula dunia dibuat dari tebu.', source: 'Wikipedia — Sugarcane', url: 'https://en.wikipedia.org/wiki/Sugarcane' },
+    { id: 'b_ratoon', term: 'Ratoon cane', text: '(disebut juga keprasan atau rawat ratoon) adalah tebu yang tumbuh kembali dari tunas pada tunggul setelah panen, tanpa tanam ulang. Hasilnya biasanya turun dari satu keprasan ke keprasan berikutnya.', source: 'Wikipedia — Ratooning', url: 'https://en.wikipedia.org/wiki/Ratooning' },
+    { id: 'b_dolomite', term: 'Dolomit', text: 'adalah mineral karbonat CaMg(CO₃)₂. Di pertanian dipakai sebagai kapur untuk menaikkan pH tanah masam sekaligus menambah magnesium.', source: 'Wikipedia — Agricultural lime', url: 'https://en.wikipedia.org/wiki/Agricultural_lime' },
+    { id: 'b_brix', term: '°Brix', text: 'menyatakan persen padatan terlarut — terutama gula — dalam nira, diukur dengan refraktometer. Angka ini dipakai untuk menilai kemasakan tebu sebelum ditebang.', source: 'Wikipedia — Brix', url: 'https://en.wikipedia.org/wiki/Brix' },
+    { id: 'b_bagasse', term: 'Bagasse (ampas tebu)', text: 'adalah serat yang tersisa setelah batang tebu digiling untuk diambil niranya. Pabrik gula umumnya membakarnya sebagai bahan bakar ketel uap.', source: 'Wikipedia — Bagasse', url: 'https://en.wikipedia.org/wiki/Bagasse' },
+    { id: 'b_molasses', term: 'Tetes tebu (molasses)', text: 'adalah sirup kental hasil samping pembuatan gula, dimanfaatkan antara lain untuk etanol, pakan ternak, dan fermentasi.', source: 'Wikipedia — Molasses', url: 'https://en.wikipedia.org/wiki/Molasses' },
+    { id: 'b_c4', term: 'Tanaman C4', text: '— tebu mengikat CO₂ lewat jalur C4 yang efisien pada cahaya terik dan suhu tinggi, sehingga produksi biomassanya sangat tinggi.', source: 'Wikipedia — C4 carbon fixation', url: 'https://en.wikipedia.org/wiki/C4_carbon_fixation' },
+    { id: 'b_setts', term: 'Bibit bagal (setts / billets)', text: '— tebu diperbanyak secara vegetatif dengan potongan batang yang memiliki mata tunas, bukan dengan biji.', source: 'Wikipedia — Sugarcane', url: 'https://en.wikipedia.org/wiki/Sugarcane' },
+    { id: 'b_temp', term: 'Suhu pertunasan', text: '— menurut FAO, suhu optimum untuk pertunasan stek tebu sekitar 32–38 °C.', source: 'FAO — Crop information: Sugarcane', url: 'https://www.fao.org/land-water/databases-and-software/crop-information/sugarcane/en/' },
+    { id: 'b_water', term: 'Kebutuhan air tebu', text: '— menurut FAO sekitar 1.500–2.500 mm per musim tanam, terbagi merata sepanjang masa pertumbuhan.', source: 'FAO — Crop information: Sugarcane', url: 'https://www.fao.org/land-water/databases-and-software/crop-information/sugarcane/en/' }
+];
+let agriFacts = [];          // custom, from agriFacts
+let agriBuiltIns = true;     // settings/agri.builtIns
+let _agriLoaded = false;
+let _agriOrder = [], _agriPos = 0, _agriLeft = AGRI_ROTATE_MS, _agriHeld = false, _agriTimer = null, _agriLast = 0;
+function agriPool() { return (agriBuiltIns ? AGRI_BUILTIN : []).concat(agriFacts); }
+async function loadAgriFacts(force) {
+    if (_agriLoaded && !force) return;
+    _agriLoaded = true;
+    try {
+        if (window.cloud && window.cloud.listAgriFacts) {
+            const r = await window.cloud.listAgriFacts();
+            agriFacts = r.facts || []; agriBuiltIns = r.builtIns !== false;
+        }
+    } catch (err) { console.warn('[agri] facts not loaded:', err && err.code); }
+    _agriOrder = [];
+    renderAgriFact();
+}
+function _agriShuffle() {
+    const pool = agriPool();
+    _agriOrder = pool.map((_, i) => i).sort(() => Math.random() - 0.5);
+    _agriPos = 0;
+}
+function renderAgriFact() {
+    const text = document.getElementById('dashKnowText'), src = document.getElementById('dashKnowSrc');
+    if (!text || !src) return;
+    const pool = agriPool();
+    if (!pool.length) { text.textContent = 'No facts yet — add one with Manage.'; src.textContent = ''; src.removeAttribute('href'); return; }
+    if (_agriOrder.length !== pool.length) _agriShuffle();
+    const f = pool[_agriOrder[((_agriPos % pool.length) + pool.length) % pool.length]];
+    text.innerHTML = `<b>${escapeHtml(f.term || '')}</b> ${escapeHtml(f.text || '')}`;
+    const safe = /^https:\/\/[^\s"'<>]+$/.test(f.url || '') ? f.url : '';
+    src.textContent = `Source: ${f.source || (safe ? new URL(safe).hostname : '—')}`;
+    if (safe) src.href = safe; else src.removeAttribute('href');
+}
+function agriStep(dir) {
+    _agriPos += dir;
+    _agriLeft = AGRI_ROTATE_MS;
+    renderAgriFact();
+    _agriBar();
+}
+function agriHold(on) {
+    _agriHeld = !!on;
+    document.getElementById('dashKnow')?.classList.toggle('is-held', _agriHeld);
+}
+function _agriBar() {
+    const bar = document.getElementById('dashKnowProgress');
+    if (bar) bar.style.width = `${Math.round(100 * (1 - _agriLeft / AGRI_ROTATE_MS))}%`;
+}
+// One timer, counting only while the Dashboard is on screen and nothing is held.
+function startAgriTicker() {
+    if (_agriTimer) return;
+    _agriLast = Date.now();
+    _agriTimer = setInterval(() => {
+        const now = Date.now(), dt = now - _agriLast;
+        _agriLast = now;
+        if (_agriHeld || currentView !== 'dashboard' || document.hidden) return;
+        _agriLeft -= dt;
+        if (_agriLeft <= 0) { _agriPos++; _agriLeft = AGRI_ROTATE_MS; renderAgriFact(); }
+        _agriBar();
+    }, 1000);
+}
+
+// -- Manage (Learning editors) --
+function canEditAgri() { return isOwner() || hasAccess('learning', 'edit'); }
+function openAgriFacts() {
+    if (!canEditAgri()) { showToast('You do not have edit access to the Learning Center', 'warning'); return; }
+    resetAgriForm();
+    renderAgriList();
+    document.getElementById('agriBuiltIns').checked = agriBuiltIns;
+    document.getElementById('agriBuiltInCount').textContent = `${AGRI_BUILTIN.length}, each with its source`;
+    document.getElementById('agriFactsModal').classList.add('open');
+}
+function closeAgriFacts() { document.getElementById('agriFactsModal').classList.remove('open'); }
+function resetAgriForm() {
+    ['agriEditId', 'agriTerm', 'agriText', 'agriSource', 'agriUrl'].forEach(id => { document.getElementById(id).value = ''; });
+    document.getElementById('agriSaveBtn').innerHTML = '<i class="fas fa-plus"></i> Add fact';
+    document.getElementById('agriCancelEdit').hidden = true;
+}
+function renderAgriList() {
+    document.getElementById('agriCustomCount').textContent = agriFacts.length;
+    document.getElementById('agriList').innerHTML = agriFacts.length ? agriFacts.map(f => `<li class="lcv-row agri-row">
+        <span class="lcv-row__who"><strong>${escapeHtml(f.term)}</strong><small>${escapeHtml(f.text)}</small><small>Source: ${escapeHtml(f.source || '')} · ${escapeHtml(f.url || '')}</small></span>
+        <span class="row-actions"><button type="button" class="btn btn-secondary btn-sm" onclick="editAgriFact(${jsArg(f.id)})">Edit</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="deleteAgriFact(${jsArg(f.id)})" aria-label="Delete ${escapeHtml(f.term)}"><i class="fas fa-trash" style="color:var(--danger)"></i></button></span>
+    </li>`).join('') : '<li class="category-empty">No facts of your own yet.</li>';
+}
+function editAgriFact(id) {
+    const f = agriFacts.find(x => x.id === id);
+    if (!f) return;
+    document.getElementById('agriEditId').value = id;
+    document.getElementById('agriTerm').value = f.term || '';
+    document.getElementById('agriText').value = f.text || '';
+    document.getElementById('agriSource').value = f.source || '';
+    document.getElementById('agriUrl').value = f.url || '';
+    document.getElementById('agriSaveBtn').innerHTML = '<i class="fas fa-check"></i> Save changes';
+    document.getElementById('agriCancelEdit').hidden = false;
+}
+async function saveAgriFact() {
+    if (!canEditAgri()) return;
+    const v = id => (document.getElementById(id).value || '').trim();
+    const rec = { term: v('agriTerm'), text: v('agriText'), source: v('agriSource'), url: v('agriUrl') };
+    if (!rec.term || !rec.text) { showToast('Fill in the term and the explanation', 'warning'); return; }
+    if (!rec.source) { showToast('Name the source — every fact needs one', 'warning'); return; }
+    if (!/^https:\/\/[^\s"'<>]+\.[^\s"'<>]+$/.test(rec.url)) { showToast('Add the source link (starting with https://)', 'warning'); return; }
+    const id = v('agriEditId') || 'af_' + generateId();
+    const prev = agriFacts.find(x => x.id === id);
+    const full = { ...rec, id, createdAt: prev ? (prev.createdAt || Date.now()) : Date.now(), updatedAt: Date.now(), by: (currentUser && currentUser.email) || '' };
+    try { await window.cloud.saveAgriFact(full); }
+    catch (err) { showToast(err && err.code === 'permission-denied' ? 'Refused by the server — publish the latest firestore.rules' : 'Failed to save the fact', 'error'); return; }
+    agriFacts = prev ? agriFacts.map(x => (x.id === id ? full : x)) : agriFacts.concat(full);
+    logEvent({ action: prev ? 'update' : 'create', unitName: '[Sugarcane knowledge] ' + rec.term, field: 'Fact', before: prev ? prev.text : '', after: rec.text });
+    _agriOrder = [];
+    resetAgriForm(); renderAgriList(); renderAgriFact();
+    showToast(prev ? 'Fact updated' : 'Fact added', 'success');
+}
+async function deleteAgriFact(id) {
+    const f = agriFacts.find(x => x.id === id);
+    if (!f || !canEditAgri() || !confirm(`Delete "${f.term}"?`)) return;
+    try { await window.cloud.deleteAgriFact(id); }
+    catch (err) { showToast('Failed to delete the fact', 'error'); return; }
+    agriFacts = agriFacts.filter(x => x.id !== id);
+    logEvent({ action: 'delete', unitName: '[Sugarcane knowledge] ' + f.term, field: 'Fact', before: f.text, after: '' });
+    _agriOrder = [];
+    renderAgriList(); renderAgriFact();
+}
+async function saveAgriBuiltIns() {
+    const on = document.getElementById('agriBuiltIns').checked;
+    if (!on && !agriFacts.length) { document.getElementById('agriBuiltIns').checked = true; showToast('Add a fact of your own first — the card needs at least one', 'warning'); return; }
+    try { await window.cloud.saveAgriSettings({ builtIns: on }); }
+    catch (err) { document.getElementById('agriBuiltIns').checked = agriBuiltIns; showToast('Failed to save — publish the latest firestore.rules', 'error'); return; }
+    agriBuiltIns = on; _agriOrder = []; renderAgriFact();
 }
 
 // "3 days", "5 hours": how long something has been going on.
