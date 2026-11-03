@@ -89,7 +89,7 @@ const { launch, BASE_URL } = require('./_env');
 
         // ---------- form: baris paddock dengan chip unit (2.10.0) ----------
         showAddWorkLogForm();
-        t('form baru: satu baris paddock kosong', JSON.stringify(_wlJobs), JSON.stringify([{ paddock: '', jobType: '', units: [] }]));
+        t('form baru: satu baris paddock kosong', JSON.stringify(_wlJobs), JSON.stringify([{ paddock: '', jobType: '', units: [], desc: '' }]));
         t('placeholder chip muncul',
           !!document.querySelector('#wlJobs .unit-chip__empty'), true);
         t('pilihan Type Job bawaan', [...document.querySelectorAll('#wlJobType_0 option')].map(o => o.value).slice(1),
@@ -129,7 +129,7 @@ const { launch, BASE_URL } = require('./_env');
         document.getElementById('wlStart').value = '07:00';
         document.getElementById('wlEnd').value = '15:00';
         _wlJobs[0].paddock = 'Paddock C-3'; _wlJobs[0].jobType = 'Tillage';
-        document.getElementById('wlTask').value = 'Perawatan berkala';
+        (document.getElementById('wlTask').value = 'Perawatan berkala', _wlJobs.forEach(j => { j.desc = 'Perawatan berkala'; }));
         // Unit diketik tapi lupa ditekan Tambah — harus tetap ikut tersimpan.
         uIn().value = 'JD-5045D-09 — SN333';
         saveWorkLog({ preventDefault(){} });
@@ -150,7 +150,7 @@ const { launch, BASE_URL } = require('./_env');
         showAddWorkLogForm();
         document.getElementById('wlMember').value = 'm1';
         document.getElementById('wlDate').value = '2026-09-16';
-        document.getElementById('wlTask').value = 'Uji';
+        (document.getElementById('wlTask').value = 'Uji', _wlJobs.forEach(j => { j.desc = 'Uji'; }));
         _wlJobs[0].paddock = 'P-1'; _wlJobs[0].jobType = 'Tillage';
         uIn().value = 'NGACO';
         saveWorkLog({ preventDefault(){} });

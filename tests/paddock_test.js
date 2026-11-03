@@ -84,7 +84,7 @@ const { launch, BASE_URL } = require('./_env');
         document.getElementById('wlMember').dispatchEvent(new Event('change'));
         t('paddock yang ditawarkan: milik PT anggota',
           [...document.querySelectorAll('#paddockList option')].map(o => o.value), ['JAGF-1-A-001', 'JAGF-1-A-008', 'JAGF-1-B-014']);
-        document.getElementById('wlTask').value = 'Olah tanah';
+        (document.getElementById('wlTask').value = 'Olah tanah', _wlJobs.forEach(j => { j.desc = 'Olah tanah'; }));
         saveWorkLog({ preventDefault() {} });
         t('paddock wajib', toasts.pop(), 'Fill in the paddock area');
         _wlJobs[0].paddock = 'BLAF-1-A-001';
@@ -107,12 +107,17 @@ const { launch, BASE_URL } = require('./_env');
         saveWorkLog({ preventDefault() {} });
         t('baris kedua juga butuh unit', toasts.pop(), 'Add the unit worked on (paddock 2)');
         document.getElementById('wlJobUnit_1').value = 'GGTR101G';
+        saveWorkLog({ preventDefault() {} });
+        t('2.16.0: deskripsi per paddock wajib', toasts.pop(), 'Fill in the work description (paddock 2)');
+        _wlJobs[1].desc = 'Semprot';
+        document.getElementById('wlJobUnit_1').value = 'GGTR101G';
         saveWorkLog({ preventDefault() {} });   // unit yang diketik tapi belum Add ikut masuk
         const rec = logs[logs.length - 1];
         t('tersimpan: baris paddock lengkap', rec.jobs.map(j => [j.paddock, j.jobType, j.units.map(u => u.id)]),
           [['JAGF-1-A-001', 'Tillage', ['u1', 'u2']], ['JAGF-1-B-014', 'Application', ['u1']]]);
         t('field lama: paddock digabung, unit tanpa ganda', [rec.paddock, rec.units.map(u => u.id), rec.unitId], ['JAGF-1-A-001, JAGF-1-B-014', ['u1', 'u2'], 'u1']);
         t('terkirim untuk dicek', rec.approval, 'pending');
+        t('2.16.0: deskripsi per paddock tersimpan; task = gabungannya', [rec.jobs.map(j => j.desc), rec.task, rec.place], [['Olah tanah', 'Semprot'], 'JAGF-1-A-001: Olah tanah\\nJAGF-1-B-014: Semprot', 'field']);
         workLogs = [rec]; renderWorkLogTable();
         const cell = document.querySelector('#workLogBody td[data-label="Paddock"]');
         t('tabel: paddock dengan jenis pekerjaannya', [...cell.querySelectorAll('.wl-job-cell')].map(x => x.textContent.replace(/\\s+/g, ' ').trim()),

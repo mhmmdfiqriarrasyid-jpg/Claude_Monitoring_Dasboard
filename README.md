@@ -499,6 +499,19 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   `tests/license_report_test.js`, skenario Notif di `tests/rules_test.js`.
   **Perlu publish `firestore.rules` + deploy ulang fungsi** (deploy akan
   menanyakan penghapusan `dailyLicenseAlert` — jawab y).
+  **2.16.0 — Daily Report atas nama yang login** (dijaga
+  `tests/worklog_owner_test.js`, `tests/paddock_test.js` dan skenario 2.16.0
+  di `tests/rules_test.js`). Owner menautkan member ke akun login di Team →
+  Manage Members (`accountUid`, `accountEmail`; hanya owner yang boleh
+  mengubahnya). Akun berakses Daily Report *own* otomatis memakai member-nya
+  dan tidak bisa memilih orang lain (rules `memberMine`); akun tanpa tautan
+  diminta menghubungi Super Admin. Akun *edit* mulai dari member-nya tetapi
+  boleh mengganti. Setiap baris paddock punya **Work Description** sendiri
+  (wajib saat dikirim); kolom deskripsi umum hilang — `task` diisi otomatis
+  dari deskripsi per paddock, laporan lama memindahkan deskripsinya ke paddock
+  pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
+  = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
+  menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
   **2.15.4:** catatan kerusakan **baru** selalu men-set Breakdown otomatis
   (kotak centangnya disembunyikan; komponen untuk tipe Device, status unit
   untuk tipe lain; tidak berlaku bila "Already repaired"). Catatan lama yang

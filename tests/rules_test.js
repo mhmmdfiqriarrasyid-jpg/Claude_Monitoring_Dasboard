@@ -414,6 +414,10 @@ async function check(name, p, expectOk) {
         await setDoc(doc(db, 'workLogPhotos', 'own_open'), { id: 'own_open', photos: [] });
         await setDoc(doc(db, 'workLogPhotos', 'other_open'), { id: 'other_open', photos: [] });
         await setDoc(doc(db, 'roles', 'role_x'), { id: 'role_x', name: 'Field', access: { teamLog: 'own' }, csv: 'none' });
+        await setDoc(doc(db, 'users', 'tmEd'), { uid: 'tmEd', email: 'tm@x.id', role: 'staff', status: 'active', access: { teamMembers: 'edit' } });
+        await setDoc(doc(db, 'teamMembers', 'm_mine'), { id: 'm_mine', name: 'Mine', accountUid: 'mine' });
+        await setDoc(doc(db, 'teamMembers', 'm_other'), { id: 'm_other', name: 'Other', accountUid: 'mine2' });
+        await setDoc(doc(db, 'teamMembers', 'm_free'), { id: 'm_free', name: 'Free' });
     });
     const MY = as('mine'), MY2 = as('mine2');
     await check('own: membaca laporannya sendiri', getDoc(doc(MY, 'workLogs', 'own_open')), true);
@@ -431,6 +435,15 @@ async function check(name, p, expectOk) {
     await check('own: menyetujui laporan sendiri DITOLAK', setDoc(doc(MY, 'workLogs', 'own_new'), { approval: 'approved', approvedByEmail: 'mine@x.id', approvedAt: 1 }, { merge: true }), false);
     await check('own: menarik kembali kirimannya sendiri', setDoc(doc(MY, 'workLogs', 'own_new'), { approval: 'draft', updatedAt: 9 }, { merge: true }), true);
     await check('own: menghapus draf sendiri', deleteDoc(doc(MY, 'workLogs', 'own_new')), true);
+    // ---- 2.16.0: member tertaut ke akun login ----
+    await check('own: laporan atas member yang tertaut ke dirinya', setDoc(doc(MY, 'workLogs', 'own_m1'), { id: 'own_m1', task: 'y', approval: 'draft', createdByUid: 'mine', memberId: 'm_mine' }), true);
+    await check('own: laporan atas member milik akun lain DITOLAK', setDoc(doc(MY, 'workLogs', 'own_m2'), { id: 'own_m2', task: 'y', approval: 'draft', createdByUid: 'mine', memberId: 'm_other' }), false);
+    await check('own: laporan atas member yang belum tertaut', setDoc(doc(MY, 'workLogs', 'own_m3'), { id: 'own_m3', task: 'y', approval: 'draft', createdByUid: 'mine', memberId: 'm_free' }), true);
+    await check('own: mengganti member draf ke milik akun lain DITOLAK', setDoc(doc(MY, 'workLogs', 'own_m1'), { memberId: 'm_other', approval: 'draft' }, { merge: true }), false);
+    await check('member: editor tim (bukan owner) TIDAK bisa menautkan akun', setDoc(doc(as('tmEd'), 'teamMembers', 'm_free'), { accountUid: 'tmEd' }, { merge: true }), false);
+    await check('member: editor tim tetap bisa mengubah jabatan member tertaut', setDoc(doc(as('tmEd'), 'teamMembers', 'm_mine'), { jobTitle: 'Operator' }, { merge: true }), true);
+    await check('member: editor tim TIDAK bisa membuat member dengan akun', setDoc(doc(as('tmEd'), 'teamMembers', 'm_new'), { id: 'm_new', name: 'N', accountUid: 'x' }), false);
+    await check('member: owner menautkan akun', setDoc(doc(O, 'teamMembers', 'm_free'), { accountUid: 'mine2', accountEmail: 'mine2@x.id' }, { merge: true }), true);
     await check('own: izin sendiri bisa dibuat', setDoc(doc(MY2, 'leaveRequests', 'lv_new2'), { id: 'lv_new2', reason: 'y', approval: 'draft', createdByUid: 'mine2' }), true);
     await check('own (tanpa jadwal): membaca izin orang lain DITOLAK', getDoc(doc(MY2, 'leaveRequests', 'own_lv')), false);
     await check('own (dengan jadwal): membaca izin orang lain untuk jadwal', getDoc(doc(MY, 'leaveRequests', 'other_lv')), true);

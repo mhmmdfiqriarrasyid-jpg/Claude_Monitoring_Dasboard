@@ -252,8 +252,13 @@ service cloud.firestore {
     // Work logs are deliberately NOT restricted to their own author: an office
     // admin files reports on behalf of field operators who have no login. Every
     // write is still attributed in /history, so who filed what stays traceable.
+    // 2.16.0: accountUid/accountEmail link a member to a sign-in account; only
+    // the owner sets or changes that link.
     match /teamMembers/{id} { allow read: if isActive(); allow delete: if canEditArea('teamMembers');
-                              allow create, update: if canEditArea('teamMembers') && idMatches(id); }
+                              allow create: if canEditArea('teamMembers') && idMatches(id)
+                                && (isOwner() || !request.resource.data.keys().hasAny(['accountUid', 'accountEmail']));
+                              allow update: if canEditArea('teamMembers') && idMatches(id)
+                                && (isOwner() || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['accountUid', 'accountEmail'])); }
     match /shifts/{id}      { allow read: if isActive(); allow delete: if canEditArea('teamShift');
                               allow create, update: if canEditArea('teamShift') && idMatches(id)
                                 && request.resource.data.get('shift', '') in ['pagi', 'siang', 'malam', 'libur', '']; }
@@ -353,14 +358,21 @@ service cloud.firestore {
     // enforces that: an approver's write may touch the approval fields and
     // nothing else, so they cannot quietly change the hours or the description
     // on their way past. Deleting follows editing: only an open record.
+    // 2.16.0: an 'own' account files only as itself — the member must be
+    // linked to it, or not linked to anyone yet.
+    function memberMine() {
+      let p = /databases/$(database)/documents/teamMembers/$(request.resource.data.get('memberId', '-'));
+      return !exists(p) || get(p).data.get('accountUid', '') in ['', request.auth.uid];
+    }
     match /workLogs/{id} {
       allow read:   if teamLogReader() || (teamLogOwn() && mineIn(resource.data));
-      allow create: if isOwner() || ((canEditArea('teamLog') || teamLogOwn()) && newRecord(id));
+      allow create: if isOwner() || (canEditArea('teamLog') && newRecord(id))
+                    || (teamLogOwn() && newRecord(id) && memberMine());
       allow delete: if isOwner() || (canEditArea('teamLog') && isOpen(resource.data))
                     || (teamLogOwn() && mineIn(resource.data) && isOpen(resource.data));
       allow update: if isOwner()
                     || (idMatches(id) && canEditArea('teamLog') && (editorWrite() || withdrawWrite()))
-                    || (idMatches(id) && teamLogOwn() && mineIn(resource.data) && (editorWrite() || withdrawWrite()))
+                    || (idMatches(id) && teamLogOwn() && mineIn(resource.data) && memberMine() && (editorWrite() || withdrawWrite()))
                     || (canEditArea('teamLogApprove') && approverWrite());
     }
 

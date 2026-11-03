@@ -3604,6 +3604,13 @@
                         <input type="time" class="form-input" id="wlEnd">
                     </div>
                     <div class="form-group full-width">
+                        <span class="form-label" id="wlPlaceLabel">Work place</span>
+                        <div class="wl-place" role="radiogroup" aria-labelledby="wlPlaceLabel">
+                            <label class="wl-place__opt"><input type="radio" name="wlPlace" value="field" checked onchange="syncWorkLogPlace()"> <span>Field</span></label>
+                            <label class="wl-place__opt"><input type="radio" name="wlPlace" value="office" onchange="syncWorkLogPlace()"> <span>Office</span></label>
+                        </div>
+                    </div>
+                    <div class="form-group full-width" id="wlFieldGroup">
                         <span class="form-label" id="wlJobsLabel">Paddock &amp; Job <span class="form-optional">(one line per paddock)</span></span>
                         <div class="wl-jobs" id="wlJobs" aria-labelledby="wlJobsLabel"></div>
                         <button type="button" class="btn btn-secondary btn-sm wl-job-add" onclick="addWorkLogJob()">
@@ -3613,8 +3620,8 @@
                         <datalist id="wlUnitList"></datalist>
                     </div>
                     <div class="form-group full-width">
-                        <label class="form-label" for="wlPhotoInput">Field Photos
-                            <span class="form-optional">(optional · <span id="wlPhotoCount">0/4</span>)</span></label>
+                        <label class="form-label" for="wlPhotoInput"><span id="wlPhotoTitle">Field Photos</span>
+                            <span class="form-optional">(<span id="wlPhotoNeed">optional</span> · <span id="wlPhotoCount">0/4</span>)</span></label>
                         <input type="file" id="wlPhotoInput" accept="image/*" multiple style="display:none"
                                onchange="handleWorkLogPhotoChange(event)">
                         <div class="wl-photo-row">
@@ -3626,10 +3633,10 @@
                         </div>
                         <div class="wl-photos" id="wlPhotoPreviews"></div>
                     </div>
-                    <div class="form-group full-width">
+                    <div class="form-group full-width" id="wlOfficeGroup" style="display:none">
                         <label class="form-label" for="wlTask">Work Description</label>
-                        <textarea class="form-input form-textarea" id="wlTask" rows="3" required
-                                  placeholder="What was done today…"></textarea>
+                        <textarea class="form-input form-textarea" id="wlTask" rows="3"
+                                  placeholder="What was done in the office today…"></textarea>
                     </div>
                     <div class="form-group full-width">
                         <label class="form-label" for="wlIssue">Issues <span class="form-optional">(optional)</span></label>

@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.15.4';
+const APP_VERSION = 'v2.16.0';
 
 const STORAGE_KEY = 'tractorUnits';
 const IMPLEMENTS_STORAGE_KEY = 'tractorImplements';
@@ -14344,6 +14344,7 @@ function ensureUsersSubscription() {
     cloudUsersUnsub = window.cloud.subscribeUsers(users => {
         allUsers = users;
         if (currentView === 'users') renderUsersView();
+        if (document.getElementById('teamMembersModal')?.classList.contains('open')) renderTeamMembersList();
     }, err => {
         console.warn('[cloud] users subscription error:', err);
     });
@@ -16284,6 +16285,7 @@ function exportShiftCSV() {
 // ============================================================
 
 function openTeamMembersModal() {
+    if (isOwner()) ensureUsersSubscription();   // the login-account picker lists them
     renderTeamMembersList();
     document.getElementById('teamMembersModal').classList.add('open');
 }
@@ -16318,6 +16320,7 @@ function renderTeamMembersList() {
                               aria-label="Company of ${escapeHtml(m.name)}"
                               onchange="setMemberCompany(${jsArg(m.id)}, this.value)">`
                     : `<span class="member-item__job">${escapeHtml(companyOf(m) || NO_COMPANY)}</span>`}
+                ${memberAccountCell(m)}
             </span>
             ${canEdit ? `<span class="row-actions row-actions--labeled">
                 <button class="btn btn-secondary btn-sm" onclick="toggleTeamMember(${jsArg(m.id)})">
@@ -16329,6 +16332,58 @@ function renderTeamMembersList() {
                 </button>
             </span>` : ''}
         </li>`).join('');
+}
+
+// ---- 2.16.0: member ↔ sign-in account ----
+// The owner links each member to the account that person signs in with; that
+// account then files Daily Reports as that member only (an 'own' account is
+// locked to it, firestore.rules memberMine). One account per member.
+function memberOfAccount(uid) {
+    return uid ? teamMembers.find(m => m.accountUid === uid) || null : null;
+}
+function myTeamMember() { return memberOfAccount(currentUser && currentUser.uid); }
+function memberAccountCell(m) {
+    if (isOwner()) {
+        const users = (allUsers || []).filter(u => u.status === 'active');
+        const taken = new Map(teamMembers.filter(x => x.accountUid && x.id !== m.id).map(x => [x.accountUid, x.name]));
+        const opts = users.map(u => {
+            const other = taken.get(u.uid);
+            const label = `${u.displayName ? u.displayName + ' — ' : ''}${u.email || u.uid}${other ? ` (linked to ${other})` : ''}`;
+            return `<option value="${escapeHtml(u.uid)}"${u.uid === m.accountUid ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+        });
+        if (m.accountUid && !users.some(u => u.uid === m.accountUid))
+            opts.push(`<option value="${escapeHtml(m.accountUid)}" selected>${escapeHtml(m.accountEmail || m.accountUid)} (not active)</option>`);
+        return `<select class="form-select member-item__account" aria-label="Login account of ${escapeHtml(m.name)}"
+                    onchange="setMemberAccount(${jsArg(m.id)}, this.value)">
+                    <option value="">— No login account —</option>${opts.join('')}</select>`;
+    }
+    return m.accountEmail ? `<span class="member-item__job" title="Login account">🔑 ${escapeHtml(m.accountEmail)}</span>` : '';
+}
+function setMemberAccount(id, uid) {
+    if (!isOwner()) { showToast('Only the Super Admin links login accounts', 'warning'); renderTeamMembersList(); return; }
+    const m = memberById(id);
+    if (!m) return;
+    const user = uid ? (allUsers || []).find(u => u.uid === uid) : null;
+    const other = uid ? teamMembers.find(x => x.accountUid === uid && x.id !== id) : null;
+    if (other && !confirm(`${user ? user.email : 'This account'} is linked to "${other.name}".\n\nMove the link to "${m.name}"?`)) { renderTeamMembersList(); return; }
+    const recs = [{ ...m, accountUid: uid || '', accountEmail: user ? (user.email || '') : '', updatedAt: Date.now() }];
+    if (other) recs.push({ ...other, accountUid: '', accountEmail: '', updatedAt: Date.now() });
+    const snapshot = teamMembers.slice();
+    teamMembers = teamMembers.map(x => recs.find(r => r.id === x.id) || x);
+    renderTeamMembersList();
+    recs.forEach(rec => cloudWrite(
+        { action: 'update', unitName: `[Team] ${rec.name}`, field: 'Login account',
+          before: (snapshot.find(x => x.id === rec.id) || {}).accountEmail || '—', after: rec.accountEmail || '—' },
+        cloudCall('saveTeamMember', rec),
+        null,
+        err => {
+            console.error('[team] account link failed:', err);
+            teamMembers = snapshot;
+            renderTeamMembersList();
+            if (err && err.code === 'permission-denied') showTeamRulesBanner();
+            showToast('Failed to link the login account — publish the latest firestore.rules', 'error');
+        }
+    ));
 }
 
 // Change one member's company from the roster list. Company is the only field
@@ -16811,6 +16866,7 @@ function renderWorkLogTable() {
                 // field ("A, B" / "A dan B"); those are split the same way.
                 const js = workLogJobs(w).filter(j => j.paddock || j.jobType).flatMap(j => j.jobType ? [j]
                     : String(j.paddock).split(/\s*(?:,|;|\/|&|\bdan\b|\band\b)\s*/i).filter(Boolean).map(p => ({ paddock: p, jobType: '' })));
+                if (w.place === 'office') return '<span class="wl-job-type wl-office">Office</span>';
                 return js.length ? js.map(j => `<div class="wl-job-cell">${escapeHtml(j.paddock || '—')}${j.jobType
                     ? ` <span class="wl-job-type">${escapeHtml(j.jobType)}</span>` : ''}</div>`).join('')
                     : '<span style="color:var(--text-light)">—</span>';
@@ -16915,7 +16971,35 @@ function setPhotoAddState(btnId, loading, failed, what) {
         : failed ? `Existing ${what.toLowerCase()} failed to load — close and reopen to change them` : '';
 }
 
-function _wlNewJob() { return { paddock: '', jobType: '', units: [] }; }
+function _wlNewJob() { return { paddock: '', jobType: '', units: [], desc: '' }; }
+// 2.16.0: Field (paddock lines, each with its own description) or Office
+// (one description and at least one photo).
+function _wlPlace() { return document.querySelector('input[name="wlPlace"]:checked')?.value === 'office' ? 'office' : 'field'; }
+function syncWorkLogPlace() {
+    const office = _wlPlace() === 'office';
+    document.getElementById('wlFieldGroup').style.display = office ? 'none' : '';
+    document.getElementById('wlOfficeGroup').style.display = office ? '' : 'none';
+    document.getElementById('wlPhotoTitle').textContent = office ? 'Photos' : 'Field Photos';
+    document.getElementById('wlPhotoNeed').textContent = office ? 'at least 1' : 'optional';
+}
+function _wlSetPlace(place) {
+    const r = document.querySelector(`input[name="wlPlace"][value="${place === 'office' ? 'office' : 'field'}"]`);
+    if (r) r.checked = true;
+    syncWorkLogPlace();
+}
+// The member box: an 'own' account files as the member linked to it, and
+// cannot pick anyone else; others start on their own member, if linked.
+function _wlApplyMemberLock(currentId) {
+    const sel = document.getElementById('wlMember');
+    const mine = myTeamMember();
+    const lock = ownTeamOnly();
+    if (mine) {
+        ensureMemberOption('wlMember', mine.id);
+        if (lock || !currentId) sel.value = mine.id;
+    }
+    sel.disabled = lock && !!mine;
+    populatePaddockList(_wlCompany());
+}
 function _wlCompany() {
     const m = memberById(document.getElementById('wlMember')?.value || '');
     return m ? companyOf(m) : '';
@@ -16947,6 +17031,9 @@ function renderWorkLogJobs() {
                         ${opts.map(t => `<option value="${escapeHtml(t)}"${t === j.jobType ? ' selected' : ''}>${escapeHtml(t)}</option>`).join('')}
                     </select></label>
             </div>
+            <label class="form-group"><span class="form-label">Work Description</span>
+                <textarea class="form-input form-textarea" id="wlJobDesc_${i}" rows="2" maxlength="2000"
+                    placeholder="What was done on this paddock…" oninput="_wlJobs[${i}].desc = this.value">${escapeHtml(j.desc || '')}</textarea></label>
             <div class="form-group">
                 <span class="form-label">Units</span>
                 <div class="wl-unit-add">
@@ -16976,7 +17063,7 @@ function addWorkLogJob() {
 }
 function removeWorkLogJob(i) {
     const j = _wlJobs[i];
-    if (j && (j.paddock || j.units.length) && !confirm(`Remove paddock ${i + 1}${j.paddock ? ` (${j.paddock})` : ''} from the report?`)) return;
+    if (j && (j.paddock || j.units.length || (j.desc || '').trim()) && !confirm(`Remove paddock ${i + 1}${j.paddock ? ` (${j.paddock})` : ''} from the report?`)) return;
     _wlJobs.splice(i, 1);
     renderWorkLogJobs();
 }
@@ -17104,6 +17191,12 @@ function showAddWorkLogForm() {
     _wlPhotosLoading = false;
     _wlPhotosFailed = false;
     populateWorkLogFilters();
+    if (ownTeamOnly() && !myTeamMember()) {
+        showToast('Your login is not linked to a team member yet — ask the Super Admin (Team → Manage Members)', 'warning');
+        return;
+    }
+    _wlApplyMemberLock('');
+    _wlSetPlace('field');
     renderWorkLogJobs();
     renderWorkLogPhotos();
     document.getElementById('wlDate').value = toISODate();
@@ -17143,7 +17236,13 @@ function editWorkLog(id) {
     document.getElementById('wlStart').value = w.start || '';
     document.getElementById('wlEnd').value = w.end || '';
     // Copies, so cancelling the modal leaves the stored record untouched.
-    _wlJobs = workLogJobs(w).map(j => ({ paddock: j.paddock || '', jobType: j.jobType || '', units: (j.units || []).map(u => ({ ...u })) }));
+    _wlApplyMemberLock(w.memberId);
+    const office = w.place === 'office';
+    _wlJobs = office ? [] : workLogJobs(w).map(j => ({ paddock: j.paddock || '', jobType: j.jobType || '', units: (j.units || []).map(u => ({ ...u })), desc: j.desc || '' }));
+    // Older reports had one description for the whole day: it goes on the
+    // first paddock line, so nothing written is lost on the next save.
+    if (!office && _wlJobs.length && !_wlJobs.some(j => j.desc) && w.task) _wlJobs[0].desc = w.task;
+    _wlSetPlace(office ? 'office' : 'field');
     const gen = ++_wlPhotosGen;
     _wlPhotos = [];
     _wlPhotosDirty = false;
@@ -17153,7 +17252,7 @@ function editWorkLog(id) {
     _wlPhotosLoading = workLogPhotoCount(w) > 0;
     renderWorkLogJobs();
     renderWorkLogPhotos();
-    document.getElementById('wlTask').value = w.task || '';
+    document.getElementById('wlTask').value = office ? (w.task || '') : '';
     document.getElementById('wlIssue').value = w.issue || '';
     document.getElementById('workLogModal').classList.add('open');
 
@@ -17207,12 +17306,22 @@ function saveWorkLog(event, mode) {
     const member = memberById(memberId);
     if (!member) { showToast('Select a team member first', 'warning'); return; }
 
+    const mine = myTeamMember();
+    if (ownTeamOnly() && (!mine || memberId !== mine.id)) {
+        showToast('You can only file Daily Reports as yourself — your login must be linked to your team member', 'warning');
+        return;
+    }
     const date = document.getElementById('wlDate').value;
     const start = document.getElementById('wlStart').value;
     const end = document.getElementById('wlEnd').value;
-    const task = (document.getElementById('wlTask').value || '').trim();
+    const place = _wlPlace();
+    const officeTask = (document.getElementById('wlTask').value || '').trim();
     // A draft may be half-written; what is sent for checking may not.
-    if (!task && !asDraft) { showToast('Work description cannot be empty', 'warning'); return; }
+    if (place === 'office' && !asDraft) {
+        if (!officeTask) { showToast('Work description cannot be empty', 'warning'); return; }
+        const photos = _wlPhotosDirty ? _wlPhotos.length : workLogPhotoCount(id ? workLogs.find(w => w.id === id) : null);
+        if (!photos) { showToast('Add at least one photo of the office work', 'warning'); return; }
+    }
     if (!checkWorkLogHours(start, end)) return;
     // The native max= is the first line of defence, but a report filed decades
     // out skews the monthly recap badly enough to be worth a second one.
@@ -17223,7 +17332,7 @@ function saveWorkLog(event, mode) {
 
     // A unit left typed but not added is an easy mistake to make, so fold it in
     // rather than dropping it silently.
-    for (let i = 0; i < _wlJobs.length; i++) {
+    for (let i = 0; place === 'field' && i < _wlJobs.length; i++) {
         const el = document.getElementById(`wlJobUnit_${i}`);
         if (el && (el.value || '').trim()) {
             addWorkLogJobUnit(i);
@@ -17233,12 +17342,13 @@ function saveWorkLog(event, mode) {
     }
     // Paddock lines: the paddock in the list's spelling; empty lines dropped.
     const company = companyOf(member);
-    const jobs = _wlJobs.map(j => {
+    const jobs = place === 'office' ? [] : _wlJobs.map(j => {
         const hit = findPaddock(j.paddock, company);
-        return { paddock: hit ? hit.pid : _toolNorm(j.paddock), jobType: j.jobType || '', units: j.units.map(u => ({ ...u })) };
-    }).filter(j => j.paddock || j.jobType || j.units.length);
-    // What is sent for checking names a paddock, a job and a unit on every line.
-    if (!asDraft) {
+        return { paddock: hit ? hit.pid : _toolNorm(j.paddock), jobType: j.jobType || '', units: j.units.map(u => ({ ...u })), desc: (j.desc || '').trim() };
+    }).filter(j => j.paddock || j.jobType || j.units.length || j.desc);
+    // What is sent for checking names a paddock, a job, a unit and what was
+    // done on every line.
+    if (!asDraft && place === 'field') {
         if (!jobs.length) { showToast('Fill in the paddock area', 'warning'); return; }
         for (let i = 0; i < jobs.length; i++) {
             const j = jobs[i], at = jobs.length > 1 ? ` (paddock ${i + 1})` : '';
@@ -17250,8 +17360,13 @@ function saveWorkLog(event, mode) {
             }
             if (!j.jobType) { showToast(`Select the type of job${at}`, 'warning'); return; }
             if (!j.units.length) { showToast(`Add the unit worked on${at}`, 'warning'); return; }
+            if (!j.desc) { showToast(`Fill in the work description${at}`, 'warning'); return; }
         }
     }
+    // The day's description, as older views and exports read it: the office
+    // text, or each paddock's description on its own line.
+    const task = place === 'office' ? officeTask
+        : jobs.filter(j => j.desc).map(j => (j.paddock ? `${j.paddock}: ` : '') + j.desc).join('\n');
     // Every unit once, in order — the report-level list older views read.
     const units = [];
     jobs.forEach(j => j.units.forEach(u => { if (!units.some(x => x.id === u.id)) units.push({ ...u }); }));
@@ -17277,6 +17392,7 @@ function saveWorkLog(event, mode) {
         unitName: units.length ? (units[0].name || '') : '',
         sn: units.length ? (units[0].sn || '') : '',
         jobs,
+        place,
         paddock: [...new Set(jobs.map(j => j.paddock).filter(Boolean))].join(', '),
         // Only the count lives on the report; the images go to workLogPhotos.
         photoCount: _wlPhotosDirty ? _wlPhotos.length : workLogPhotoCount(existing),
@@ -17495,7 +17611,7 @@ function exportWorkLogCSV() {
     if (rows.length === 0) { showToast('No reports to export', 'warning'); return; }
     const headers = ['No', 'Date', 'Company', 'Member', 'Job Title', 'Start', 'End', 'Duration (hours)',
                      'Paddock Area', 'Job Type', 'Paddock Lines', 'Unit', 'Serial Number', 'Photo Count', 'Work Description', 'Issues',
-                     'Approval', 'Approved By', 'Revision Notes'];
+                     'Approval', 'Approved By', 'Revision Notes', 'Work Place'];
     const dataRows = rows.map((w, i) => {
         const m = w.memberId ? memberById(w.memberId) : null;
         const us = workLogUnits(w);
@@ -17513,7 +17629,8 @@ function exportWorkLogCSV() {
             workLogPhotoCount(w),
             w.task || '', w.issue || '',
             APPROVAL_STATES[workLogApproval(w)].label,
-            w.approvedBy || '', w.revisionNote || ''
+            w.approvedBy || '', w.revisionNote || '',
+            w.place === 'office' ? 'Office' : 'Field'
         ];
     });
     const csv = toCSV(headers, dataRows);

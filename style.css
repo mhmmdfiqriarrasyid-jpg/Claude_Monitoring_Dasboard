@@ -10857,3 +10857,11 @@ body:has(.modal-overlay.open) .install-banner { display: none; }
 .notif-sec .form-hint:empty { display: none; }
 .notif-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .notif-note { font-size: 12px; color: var(--text-secondary); }
+/* 2.16.0: login account linked to a team member */
+.member-item__account { width: 100%; max-width: 260px; padding: 3px 7px; font-size: 12px; margin-top: 4px; }
+/* 2.16.0: Daily Report work place */
+.wl-place { display: inline-flex; gap: 6px; padding: 4px; border: 1px solid var(--border); border-radius: 10px; }
+.wl-place__opt { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+.wl-place__opt:has(input:checked) { background: var(--primary-lighter); color: var(--accent-text); font-weight: 600; }
+.wl-place__opt input { accent-color: var(--primary); }
+.wl-office { background: var(--primary-lighter); color: var(--accent-text); }
