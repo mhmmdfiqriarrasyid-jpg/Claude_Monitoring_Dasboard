@@ -84,8 +84,8 @@ const LIC_PAID = ['SF-RTK', 'G5 Advance'];
 const LIC_REQ_OPTIONS = { gps: ['', 'SF-1', 'SF-RTK'], display: ['', 'G5 Basic', 'G5 Advance'] };
 let licenseTab = 'stock';
 // Master lists (Site / Brand / Company). An empty list means "anything goes".
-let masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [], uom: [] };
-const MASTER_KINDS = ['site', 'brand', 'heavyBrand', 'company', 'damageType', 'jobType', 'implGroup', 'learnCategory', 'deviceType', 'uom'];
+let masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [], uom: [], jobCategory: [], department: [] };
+const MASTER_KINDS = ['site', 'brand', 'heavyBrand', 'company', 'damageType', 'jobType', 'implGroup', 'learnCategory', 'deviceType', 'uom', 'jobCategory', 'department'];
 const MASTER_DEF = {
     site:    { label: 'Site',    plural: 'Sites',     edit: ['editUnits'],              view: ['editUnits'],
                hint: 'Used by every unit (both groups).' },
@@ -115,6 +115,12 @@ const MASTER_DEF = {
     // Suggestions only — any unit can still be typed. Empty = the built-in nine.
     uom: { label: 'Item Unit', plural: 'Item Units', edit: ['purchase'], view: ['purchase'],
                hint: 'Units chosen for each Purchase Request item (pcs, set, liter, …). While empty: ' + 'pcs, set, unit, box, pack, roll, m, kg, liter' + '. Any other unit can still be typed.' },
+    // 2.29.0: Projects & Jobs — what a job is, and the departments a project
+    // is shared with. Empty = the built-in choices (OT_JOB_CATEGORIES, OT_DEPARTMENTS).
+    jobCategory: { label: 'Job Category', plural: 'Job Categories', edit: ['projects'], view: ['projects'],
+               hint: 'Kinds of jobs outside the Daily Report (Calibration, Implement install, Meeting, …). While empty, the built-in list is used.' },
+    department: { label: 'Department', plural: 'Departments', edit: ['projects'], view: ['projects'],
+               hint: 'Departments a project is shared with, and who asked for a job (Workshop, Agronomy, Procurement, …).' },
     jobType: { label: 'Job Type', plural: 'Job Types', edit: ['teamMembers'], view: ['teamMembers'],
                hint: 'Chosen for each paddock in a Daily Report. While the list is empty: Application, Tillage, Harvesting and Planting.' }
 };
@@ -133,6 +139,8 @@ let cloudVehiclesUnsub = null;
 let cloudFuelUnsub = null;
 let purchaseRequests = [];           // 2.9.0: purchase requests (cloud only)
 let cloudPurchaseUnsub = null;
+let cloudProjectsUnsub = null, cloudOtJobsUnsub = null;   // 2.29.0
+let projects = [], otJobs = [];
 let warehouseDevices = [];           // serial-tracked devices
 let cloudStockUnsub = null;
 let stockLedger = [];                // IN/OUT rows for quantity-counted items
@@ -160,7 +168,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.28.2';
+const APP_VERSION = 'v2.29.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -963,6 +971,9 @@ const MODAL_CLOSERS = {
     deviceProfileModal:   'closeDeviceProfile',
     prModal:              'closePurchaseModal',
     prDetailModal:        'closePurchaseDetail',
+    pjModal:              'closeProjectModal',
+    pjDetailModal:        'closeProjectDetail',
+    otJobModal:           'closeJobModal',
     prReceiveModal:       'closePurchaseReceive',
     roleModal:            'closeRoleModal',
     vehicleModal:         'closeVehicleModal',
@@ -1865,6 +1876,8 @@ function navigateTo(view) {
     if (whView) whView.style.display = (view === 'warehouse') ? 'block' : 'none';
     const prView = document.getElementById('viewPurchase');
     if (prView) prView.style.display = (view === 'purchase') ? 'block' : 'none';
+    const pjView = document.getElementById('viewProjects');
+    if (pjView) pjView.style.display = (view === 'projects') ? 'block' : 'none';
     const lcView = document.getElementById('viewLearning');
     if (lcView) lcView.style.display = (view === 'learning') ? 'block' : 'none';
     const leaderView = document.getElementById('viewLeader');
@@ -1944,6 +1957,7 @@ function navigateTo(view) {
     }
 
     if (view === 'purchase') renderPurchaseView();
+    if (view === 'projects' && typeof renderProjectsView === 'function') renderProjectsView();
     if (view === 'learning') renderLearningView();
 
     if (view === 'inspection') renderInspectionView();
@@ -9603,6 +9617,7 @@ function showUnitProfile(id) {
                 <div class="profile-section__title">Installed Devices (${fitted.length})</div>
                 <div class="profile-list">${fittedHtml}</div>
             </div>
+            ${typeof unitJobsProfileHtml === 'function' ? unitJobsProfileHtml(u) : ''}
         </div>`;
 
     document.getElementById('unitProfileModal').classList.add('open');
@@ -13470,6 +13485,14 @@ function initCloudSync() {
                 ownPr ? myUid() : ''
             );
         }
+        if (window.cloud.subscribeProjects && canViewView('projects') && typeof applyProjectsSnapshot === 'function') {
+            cloudProjectsUnsub = window.cloud.subscribeProjects(
+                (list, queued) => { setQueued('projects', queued); applyProjectsSnapshot(list); },
+                err => console.warn('[cloud] projects offline:', err && err.code));
+            cloudOtJobsUnsub = window.cloud.subscribeOtJobs(
+                (list, queued) => { setQueued('otJobs', queued); applyOtJobsSnapshot(list); },
+                err => console.warn('[cloud] otJobs offline:', err && err.code));
+        }
         if (window.cloud.subscribeDevices) {
             cloudDevicesUnsub = window.cloud.subscribeDevices(
                 applyCloudDevicesSnapshot,
@@ -13722,10 +13745,14 @@ function tearDownCloudSync() {
     // What was typed belongs to the account that typed it.
     if (typeof clearUnsent === 'function') clearUnsent();
     licenseRequirements = [];
-    masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [], uom: [] };
+    masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [], uom: [], jobCategory: [], department: [] };
     if (cloudDamageComponentsUnsub) { try { cloudDamageComponentsUnsub(); } catch (_) {} cloudDamageComponentsUnsub = null; }
     if (cloudDevicesUnsub) { try { cloudDevicesUnsub(); } catch (_) {} cloudDevicesUnsub = null; }
     if (cloudPurchaseUnsub) { try { cloudPurchaseUnsub(); } catch (_) {} cloudPurchaseUnsub = null; }
+    if (cloudProjectsUnsub) { try { cloudProjectsUnsub(); } catch (_) {} cloudProjectsUnsub = null; }
+    if (cloudOtJobsUnsub) { try { cloudOtJobsUnsub(); } catch (_) {} cloudOtJobsUnsub = null; }
+    projects = [];
+    otJobs = [];
     if (cloudLearningUnsub) { try { cloudLearningUnsub(); } catch (_) {} cloudLearningUnsub = null; }
     learningItems = [];
     purchaseRequests = [];
@@ -14661,6 +14688,9 @@ const ACCESS_AREAS = [
     // 2.9.0: 'own' files purchase requests and follows only their own;
     // 'edit' approves, records the PO and receives the goods.
     { key: 'purchase',     label: 'Purchase Request',  levels: ['none', 'own', 'view', 'edit'] },
+    // 2.29.0: projects (with other departments) and jobs outside the Daily
+    // Report. 'own' adds its own and changes only those; 'edit' keeps all.
+    { key: 'projects',     label: 'Projects & Jobs',   levels: ['none', 'own', 'view', 'edit'] },
     // 2.12.0: everyone active reads the Learning Center; 'edit' adds material.
     { key: 'learning',     label: 'Learning Center (add material)', levels: ['none', 'edit'] },
     // Heavy-equipment checks: the technician who checks and files, and —
@@ -14685,6 +14715,7 @@ const VIEW_AREAS = {
     team:         ['teamShift', 'teamLog', 'teamMembers', 'teamLogApprove'],
     warehouse:    ['warehouse'],
     purchase:     ['purchase'],
+    projects:     ['projects'],
     inspection:   ['inspection', 'inspectionApprove'],
     leader:       ['leader']
 };
@@ -14700,7 +14731,7 @@ const RO_FLAGS = {
     editUnits: 'roEditunits', implements: 'roImplements', damage: 'roDamage',
     licenseStock: 'roLicense', teamShift: 'roTeamshift', teamLog: 'roTeamlog',
     teamMembers: 'roTeammembers', teamLogApprove: 'roTeamapprove',
-    warehouse: 'roWarehouse', inspection: 'roInspection', purchase: 'roPurchase',
+    warehouse: 'roWarehouse', inspection: 'roInspection', purchase: 'roPurchase', projects: 'roProjects',
     learning: 'roLearning'
 };
 // 'own' acts as edit for the area's buttons; which records it may touch is
@@ -20434,13 +20465,15 @@ function purchaseDecisionGroup() {
 const WH_PHOTO_MAX = 10;
 const _whPhotoCache = new Map();               // photo id → data URL
 const _whPh = { device: { items: [], removed: [] }, stock: { items: [], removed: [] },
-                prDoc: { items: [], removed: [] }, prReceipt: { items: [], removed: [] } };
-const _WH_PH_EL = { device: 'dev', stock: 'stk', prDoc: 'prDoc', prReceipt: 'prRcv' };
+                prDoc: { items: [], removed: [] }, prReceipt: { items: [], removed: [] },
+                pjUpdate: { items: [], removed: [] }, otJob: { items: [], removed: [] } };
+const _WH_PH_EL = { device: 'dev', stock: 'stk', prDoc: 'prDoc', prReceipt: 'prRcv', pjUpdate: 'pjUpd', otJob: 'otJob' };
 // Where each kind's photos live: warehousePhotos ('wh') or purchasePhotos ('pr').
-const _PH_STORE = { device: 'wh', stock: 'wh', prDoc: 'pr', prReceipt: 'pr' };
+const _PH_STORE = { device: 'wh', stock: 'wh', prDoc: 'pr', prReceipt: 'pr', pjUpdate: 'pj', otJob: 'pj' };
 const _PH_FN = {
     wh: { get: 'getWhPhoto', save: 'saveWhPhoto', del: 'deleteWhPhoto' },
-    pr: { get: 'getPurchasePhoto', save: 'savePurchasePhoto', del: 'deletePurchasePhoto' }
+    pr: { get: 'getPurchasePhoto', save: 'savePurchasePhoto', del: 'deletePurchasePhoto' },
+    pj: { get: 'getProjectPhoto', save: 'saveProjectPhoto', del: 'deleteProjectPhoto' }
 };
 function _whPhotoId(ownerId) { return `${ownerId}__p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`; }
 async function loadWhPhoto(id, store) {
@@ -25423,13 +25456,15 @@ function masterUsage(kind) {
     if (kind === 'learnCategory') learningItems.forEach(i => add(i.category));
     if (kind === 'deviceType') (warehouseDevices || []).forEach(d => add(d.type));
     if (kind === 'uom') (purchaseRequests || []).forEach(r => (r.items || []).forEach(it => add(it.uom)));
+    if (kind === 'jobCategory') (otJobs || []).forEach(j => add(j.category));
+    if (kind === 'department') { (projects || []).forEach(p => (p.departments || []).forEach(d => add(d.name))); (otJobs || []).forEach(j => add(j.requestedBy)); }
     return counts;
 }
-const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', heavyBrand: 'unit', company: 'member', damageType: 'damage record', jobType: 'report line', implGroup: 'implement', learnCategory: 'material', deviceType: 'device', uom: 'request item' };
+const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', heavyBrand: 'unit', company: 'member', damageType: 'damage record', jobType: 'report line', implGroup: 'implement', learnCategory: 'material', deviceType: 'device', uom: 'request item', jobCategory: 'job', department: 'project or job' };
 
 function applyMasterListsSnapshot(docs) {
     _markLoaded('masterLists');
-    const next = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [], uom: [] };
+    const next = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [], uom: [], jobCategory: [], department: [] };
     (docs || []).forEach(d => {
         if (MASTER_KINDS.includes(d.id) && Array.isArray(d.values)) next[d.id] = d.values.map(_toolNorm).filter(Boolean);
     });
@@ -25474,7 +25509,8 @@ const MASTER_TAB_GROUPS = [
     { label: 'Fleet',            kinds: ['site', 'heavyBrand', 'brand', 'implGroup'] },
     { label: 'Team & reports',   kinds: ['company', 'jobType', 'paddock'] },
     { label: 'Damage, warehouse & purchase', kinds: ['damageType', 'deviceType', 'uom'] },
-    { label: 'Learning Center',  kinds: ['learnCategory'] }
+    { label: 'Learning Center',  kinds: ['learnCategory'] },
+    { label: 'Projects & Jobs',  kinds: ['jobCategory', 'department'] }
 ];
 function renderMasterLists() {
     const tabs = document.getElementById('mlTabs');
@@ -25987,7 +26023,7 @@ function dcNotInMasterLists() {
     MASTER_KINDS.forEach(kind => {
         // Damage types only add choices; a type outside the list is not wrong.
         // Job types live on reports that are often locked once approved.
-        if (kind === 'damageType' || kind === 'jobType' || kind === 'learnCategory' || kind === 'uom' || !masterListActive(kind)) return;
+        if (kind === 'damageType' || kind === 'jobType' || kind === 'learnCategory' || kind === 'uom' || kind === 'jobCategory' || kind === 'department' || !masterListActive(kind)) return;
         [...masterUsage(kind).entries()].filter(([v]) => !masterMatch(kind, v)).sort((a, b) => b[1] - a[1]).forEach(([v, n]) => {
             out.push(dc('master-luar', `${MASTER_DEF[kind].label}: ${v}`,
                 `${n} ${MASTER_USED_NOUN[kind]}(s) — not in the ${MASTER_DEF[kind].label} list`,

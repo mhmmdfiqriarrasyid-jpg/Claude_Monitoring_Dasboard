@@ -233,6 +233,10 @@
                 <span class="nav__text">Purchase Requests</span>
                 <span class="nav__badge" id="purchaseBadge" style="display:none">0</span>
             </button>
+            <button type="button" class="nav__link" data-view="projects" onclick="navigateTo('projects')">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"></path><path d="M7 15h4"></path><path d="M7 11h8"></path><path d="M7 7h11"></path></svg>
+                <span class="nav__text">Projects &amp; Jobs</span>
+            </button>
             <button type="button" class="nav__link" data-view="learning" onclick="navigateTo('learning')">
                 <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z"></path><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"></path></svg>
                 <span class="nav__text">Learning Center</span>
@@ -2251,6 +2255,74 @@
             </div>
         </div>
     </div><!-- /viewPurchase -->
+
+    <!-- ==================== PROJECTS & JOBS (2.29.0) ==================== -->
+    <div id="viewProjects" class="view" style="display:none;">
+        <div class="page-head">
+            <div class="page-head__text">
+                <h1 class="page-head__title">Projects &amp; Jobs</h1>
+                <span class="page-head__sub">Projects with other departments, and the work done outside the Daily Report</span>
+            </div>
+            <div class="page-head__actions">
+                <button type="button" class="btn btn-secondary editonly editonly--projects" id="btnNewJob" onclick="showAddJobForm()"><i class="fas fa-plus" aria-hidden="true"></i> Log job</button>
+                <button type="button" class="btn btn-primary editonly editonly--projects" id="btnNewProject" onclick="showAddProjectForm()"><i class="fas fa-plus" aria-hidden="true"></i> New project</button>
+            </div>
+        </div>
+        <div class="team-tabbar fp-tabbar">
+            <div class="team-tabs" role="tablist" aria-label="Projects and jobs">
+                <button class="team-tab pj-tab active" data-tab="projects" role="tab" aria-selected="true" aria-controls="pjProjectsPanel" onclick="switchProjectsTab('projects')">Projects
+                    <span class="team-tab__count team-tab__count--alert" id="pjTabBadge" style="display:none" title="Projects that need action"></span></button>
+                <button class="team-tab pj-tab" data-tab="jobs" role="tab" aria-selected="false" aria-controls="pjJobsPanel" onclick="switchProjectsTab('jobs')">Jobs &amp; Activities</button>
+            </div>
+        </div>
+        <div id="pjProjectsPanel" role="tabpanel">
+            <div class="wh-tiles wh-tiles--static" id="pjTiles"></div>
+            <div class="adm-filters pj-filters">
+                <label class="adm-search"><i class="fas fa-search" aria-hidden="true"></i><span class="adm-sr">Search projects</span>
+                    <input type="search" id="pjSearch" placeholder="Search project, department or PIC" oninput="renderProjectsList()"></label>
+                <label class="adm-select"><span class="adm-select__label">Status</span>
+                    <select id="pjStatusFilter" onchange="renderProjectsList()"><option value="open">Open (not done)</option><option value="">All</option></select></label>
+                <label class="adm-select"><span class="adm-select__label">Type</span>
+                    <select id="pjTypeFilter" onchange="renderProjectsList()"><option value="">All types</option></select></label>
+                <label class="adm-select"><span class="adm-select__label">Company</span>
+                    <select id="pjCompanyFilter" onchange="renderProjectsList()"><option value="">All companies</option></select></label>
+                <span class="pr-count" id="pjCount"></span>
+            </div>
+            <div class="pj-grid" id="pjList"></div>
+        </div>
+        <div id="pjJobsPanel" role="tabpanel" style="display:none">
+            <div class="wh-tiles wh-tiles--static" id="jobTiles"></div>
+            <div class="table-card">
+                <div class="adm-filters pj-filters">
+                    <label class="adm-search"><i class="fas fa-search" aria-hidden="true"></i><span class="adm-sr">Search jobs</span>
+                        <input type="search" id="jobSearch" placeholder="Search job, unit or person" oninput="renderJobsList()"></label>
+                    <label class="adm-select"><span class="adm-select__label">Period</span>
+                        <select id="jobPeriod" onchange="renderJobsList()">
+                            <option value="week">This week (Sat–Fri)</option><option value="lastweek">Last week</option>
+                            <option value="month">This month</option><option value="30">Last 30 days</option><option value="">All</option></select></label>
+                    <label class="adm-select"><span class="adm-select__label">Category</span>
+                        <select id="jobCategoryFilter" onchange="renderJobsList()"><option value="">All categories</option></select></label>
+                    <label class="adm-select"><span class="adm-select__label">Status</span>
+                        <select id="jobStatusFilter" onchange="renderJobsList()"><option value="">Any status</option><option value="open">Open</option><option value="progress">In progress</option><option value="done">Done</option></select></label>
+                    <span class="pr-count" id="jobCount"></span>
+                </div>
+                <div class="table-wrapper" style="max-height:none">
+                    <table class="data-table table--cardable adm-table" id="jobTable">
+                        <thead><tr>
+                            <th scope="col">Date</th><th scope="col">Job</th><th scope="col">Units</th><th scope="col">Requested / done by</th>
+                            <th scope="col" class="num">Hours</th><th scope="col">Status</th>
+                            <th scope="col" class="col-actions"><span class="adm-sr">Actions</span></th>
+                        </tr></thead>
+                        <tbody id="jobBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <datalist id="pjUnitList"></datalist>
+        <datalist id="pjDeptList"></datalist>
+        <datalist id="pjImplList"></datalist>
+        <datalist id="pjPrList"></datalist>
+    </div><!-- /viewProjects -->
 
     <!-- ==================== LEARNING CENTER (2.12.0) ==================== -->
     <div id="viewLearning" class="view" style="display:none;">
@@ -4481,11 +4553,136 @@
     </div>
 </div>
 
+<!-- 2.29.0: Projects & Jobs dialogs -->
+<div class="modal-overlay" id="pjModal">
+    <div class="modal-card pr-dialog" role="dialog" aria-labelledby="pjModalTitle">
+        <div class="modal-header">
+            <h3 id="pjModalTitle">New project</h3>
+            <button class="btn-icon" onclick="closeProjectModal()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form id="pjForm" onsubmit="saveProject(event)">
+            <input type="hidden" id="pjId">
+            <div class="modal-body">
+                <div class="pr-section-title">Project</div>
+                <div class="form-grid">
+                    <div class="form-group full-width"><label class="form-label" for="pjName">Project name</label>
+                        <input class="form-input" id="pjName" maxlength="200" autocomplete="off" placeholder="e.g. Camera AI installation — Heavy Equipment MNM"></div>
+                    <div class="form-group"><label class="form-label" for="pjType">Type</label><select class="form-select" id="pjType"></select></div>
+                    <div class="form-group"><label class="form-label" for="pjCompany">Company</label><select class="form-select" id="pjCompany"></select></div>
+                    <div class="form-group"><label class="form-label" for="pjStart">Start</label><input class="form-input" id="pjStart" type="date"></div>
+                    <div class="form-group"><label class="form-label" for="pjEnd">Target finish</label><input class="form-input" id="pjEnd" type="date"></div>
+                    <div class="form-group"><label class="form-label" for="pjPic">OT PIC</label><input class="form-input" id="pjPic" maxlength="80" autocomplete="off"></div>
+                    <div class="form-group"><label class="form-label" for="pjStatus">Status</label><select class="form-select" id="pjStatus"></select></div>
+                    <div class="form-group full-width"><label class="form-label" for="pjDesc">Description <span class="form-optional">(optional)</span></label>
+                        <textarea class="form-input form-textarea" id="pjDesc" rows="2" maxlength="2000" placeholder="Scope, location, what it is for…"></textarea></div>
+                </div>
+                <div class="pr-section-title">Departments involved</div>
+                <div id="pjDepts"></div>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="addProjectDept()"><i class="fas fa-plus" aria-hidden="true"></i> Add department</button>
+                <div class="pr-section-title">Target <span class="form-optional">(how progress is measured)</span></div>
+                <div class="wl-place" role="radiogroup" aria-label="Target">
+                    <label class="wl-place__opt"><input type="radio" name="pjMode" value="units" checked onchange="syncProjectMode()"> <span>Units</span></label>
+                    <label class="wl-place__opt"><input type="radio" name="pjMode" value="count" onchange="syncProjectMode()"> <span>Number</span></label>
+                    <label class="wl-place__opt"><input type="radio" name="pjMode" value="milestones" onchange="syncProjectMode()"> <span>Milestones</span></label>
+                </div>
+                <div id="pjModeUnits" class="pj-mode">
+                    <p class="form-hint">One unit or many. Each unit counts as done once its work is finished (also when a linked job is done).</p>
+                    <div class="form-group"><label class="form-label" for="pjUnitWhat">Work on each unit</label>
+                        <input class="form-input" id="pjUnitWhat" maxlength="120" placeholder="e.g. Camera AI installed and tested"></div>
+                    <div class="wl-unit-add">
+                        <input class="form-input" id="pjUnitAdd" list="pjUnitList" autocomplete="off" aria-label="Unit to add" placeholder="Type unit name or SN, then Add…"
+                               onkeydown="if(event.key==='Enter'){event.preventDefault();addProjectUnit();}">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="addProjectUnit()"><i class="fas fa-plus" aria-hidden="true"></i> Add</button>
+                    </div>
+                    <div class="unit-chips" id="pjUnitChips"></div>
+                </div>
+                <div id="pjModeCount" class="pj-mode" style="display:none">
+                    <div class="form-grid">
+                        <div class="form-group"><label class="form-label" for="pjCountTarget">Target</label><input class="form-input" id="pjCountTarget" type="number" min="1" max="100000" step="1" inputmode="numeric"></div>
+                        <div class="form-group"><label class="form-label" for="pjCountWhat">Of what</label><input class="form-input" id="pjCountWhat" maxlength="80" placeholder="e.g. antennas installed"></div>
+                        <div class="form-group"><label class="form-label" for="pjCountDone">Done so far</label><input class="form-input" id="pjCountDone" type="number" min="0" max="100000" step="1" inputmode="numeric"></div>
+                    </div>
+                </div>
+                <div id="pjModeMilestones" class="pj-mode" style="display:none">
+                    <p class="form-hint">Each milestone has a weight; progress is the weight of the milestones done.</p>
+                    <div id="pjMilestones"></div>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="addProjectMilestone()"><i class="fas fa-plus" aria-hidden="true"></i> Add milestone</button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="useDefaultMilestones()">Use the standard steps</button>
+                </div>
+                <div class="form-grid">
+                    <div class="form-group"><label class="form-label" for="pjRag">Health</label>
+                        <select class="form-select" id="pjRag"><option value="">Automatic (from progress and dates)</option><option value="green">On track</option><option value="amber">Watch</option><option value="red">Action needed</option></select></div>
+                    <div class="form-group" id="pjPrGroup"><label class="form-label" for="pjPrAdd">Linked purchase requests</label>
+                        <div class="wl-unit-add"><input class="form-input" id="pjPrAdd" list="pjPrList" autocomplete="off" placeholder="PR number…" onkeydown="if(event.key==='Enter'){event.preventDefault();addProjectPr();}">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="addProjectPr()"><i class="fas fa-plus" aria-hidden="true"></i></button></div>
+                        <div class="unit-chips" id="pjPrChips"></div></div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeProjectModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-check" aria-hidden="true"></i> Save project</button>
+            </div>
+        </form>
+    </div>
+</div>
+<div class="modal-overlay" id="pjDetailModal">
+    <div class="modal-card pr-dialog" role="dialog" aria-labelledby="pjDetailTitle">
+        <div class="modal-header">
+            <h3 id="pjDetailTitle">Project</h3>
+            <button class="btn-icon" onclick="closeProjectDetail()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body" id="pjDetailBody"></div>
+        <div class="form-actions" id="pjDetailActions"></div>
+    </div>
+</div>
+<div class="modal-overlay" id="otJobModal">
+    <div class="modal-card pr-dialog" role="dialog" aria-labelledby="otJobModalTitle">
+        <div class="modal-header">
+            <h3 id="otJobModalTitle">Log job</h3>
+            <button class="btn-icon" onclick="closeJobModal()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form id="otJobForm" onsubmit="saveJob(event)">
+            <input type="hidden" id="otJobId">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group"><label class="form-label" for="otJobDate">Date</label><input class="form-input" id="otJobDate" type="date"></div>
+                    <div class="form-group"><label class="form-label" for="otJobCategory">Category</label><select class="form-select" id="otJobCategory" onchange="syncJobCategory()"></select></div>
+                    <div class="form-group full-width"><label class="form-label" for="otJobDesc">What was done</label>
+                        <textarea class="form-input form-textarea" id="otJobDesc" rows="2" maxlength="2000" placeholder="e.g. Steering calibration after wheel change"></textarea></div>
+                    <div class="form-group full-width"><span class="form-label">Units <span class="form-optional">(optional)</span></span>
+                        <div class="wl-unit-add"><input class="form-input" id="otJobUnitAdd" list="pjUnitList" autocomplete="off" aria-label="Unit" placeholder="Type unit name or SN, then Add…"
+                            onkeydown="if(event.key==='Enter'){event.preventDefault();addJobUnit();}">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="addJobUnit()"><i class="fas fa-plus" aria-hidden="true"></i> Add</button></div>
+                        <div class="unit-chips" id="otJobUnitChips"></div></div>
+                    <div class="form-group full-width" id="otJobImplGroup" style="display:none"><label class="form-label" for="otJobImpl">Implement installed</label>
+                        <input class="form-input" id="otJobImpl" list="pjImplList" autocomplete="off" maxlength="120" placeholder="e.g. Lime or Dolomite Spreader — Bonel">
+                        <span class="form-hint">When the job is Done, the units above get this implement in the Unit Database.</span></div>
+                    <div class="form-group"><label class="form-label" for="otJobRequestedBy">Requested by <span class="form-optional">(department)</span></label>
+                        <input class="form-input" id="otJobRequestedBy" list="pjDeptList" autocomplete="off" maxlength="80"></div>
+                    <div class="form-group"><label class="form-label" for="otJobDoneBy">Done by</label><input class="form-input" id="otJobDoneBy" maxlength="120" autocomplete="off"></div>
+                    <div class="form-group"><label class="form-label" for="otJobHours">Hours <span class="form-optional">(optional)</span></label><input class="form-input" id="otJobHours" type="number" min="0" max="500" step="0.5" inputmode="decimal"></div>
+                    <div class="form-group"><label class="form-label" for="otJobStatus">Status</label>
+                        <select class="form-select" id="otJobStatus"><option value="done">Done</option><option value="progress">In progress</option><option value="open">Open</option></select></div>
+                    <div class="form-group full-width"><label class="form-label" for="otJobProject">Part of project <span class="form-optional">(optional)</span></label><select class="form-select" id="otJobProject"></select></div>
+                    <div class="form-group full-width"><span class="form-label">Photos <span class="form-optional">(up to 10)</span> <span class="wh-photo-count" id="otJobPhotoCount"></span></span>
+                        <div class="wh-photos" id="otJobPhotoGrid"></div>
+                        <input type="file" id="otJobPhotoInput" accept="image/*" multiple hidden onchange="whPhotoAdd('otJob', event)"></div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeJobModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-check" aria-hidden="true"></i> Save job</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- 2.28.0: one printable sheet (Purchase Request goods checklist). Hidden on
      screen; while body has .printing-sheet only this is printed. -->
 <div id="printSheet" class="print-sheet" aria-hidden="true"></div>
 
 <script src="script.js"></script>
+<script src="projects.js"></script>
 <script type="module" src="firebase-init.js"></script>
 </body>
 </html>

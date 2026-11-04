@@ -116,6 +116,7 @@ service cloud.firestore {
         || a.get('teamLog', null) == 'own'
         || editOn(a, role, 'purchase') || a.get('purchase', null) == 'own'
         || editOn(a, role, 'learning')
+        || editOn(a, role, 'projects') || a.get('projects', null) == 'own'
         || editOn(a, role, 'teamLogApprove') || editOn(a, role, 'warehouse')
         || (sc == 'all' && (editOn(a, role, 'editUnits') || editOn(a, role, 'damage')))
         || (sc in ['all', 'tractor'] && (editOn(a, role, 'implements') || editOn(a, role, 'licenseStock')))
@@ -208,7 +209,8 @@ service cloud.firestore {
           || (kind == 'implGroup' && canEditArea('implements'))
           || (kind == 'learnCategory' && canEditArea('learning'))
           || (kind == 'deviceType' && canEditArea('warehouse'))
-          || (kind == 'uom' && canEditArea('purchase'));
+          || (kind == 'uom' && canEditArea('purchase'))
+          || (kind in ['jobCategory', 'department'] && canEditArea('projects'));
     }
     // Paddocks (2.10.0): one list per company, chosen from in Daily Reports.
     // Read by every active account; kept by whoever manages team members.
@@ -541,6 +543,45 @@ service cloud.firestore {
                         && request.resource.data.get('status', '') in ['draft', 'submitted']));
       allow delete: if canEditArea('purchase')
                     || (purchaseOwn() && mineIn(resource.data) && resource.data.get('status', '') == 'draft');
+    }
+    // ---- Projects & Jobs (2.29.0) ----
+    // Projects (with other departments, one unit or many) and the jobs done
+    // outside the Daily Report (calibration, implement installs, meetings…).
+    // 'edit' keeps all of them; 'own' adds its own and changes only those;
+    // 'view' reads. Whoever may open the area reads every project and job.
+    function projectsOwn()  { return isActive() && lvl('projects') == 'own'; }
+    function projectsRead() { return canViewArea('projects') || projectsOwn(); }
+    function projectsKeep(d) {
+      return canEditArea('projects')
+          || (projectsOwn() && mineIn(d) && request.resource.data.get('createdByUid', '') == request.auth.uid);
+    }
+    function textOk(field, max) {
+      return request.resource.data.get(field, '') is string
+          && request.resource.data.get(field, '').size() > 0
+          && request.resource.data.get(field, '').size() <= max;
+    }
+    match /projects/{id} {
+      allow read:   if projectsRead();
+      allow create: if idMatches(id) && textOk('name', 200)
+                    && request.resource.data.get('createdByUid', '') == request.auth.uid
+                    && (canEditArea('projects') || projectsOwn());
+      allow update: if idMatches(id) && textOk('name', 200) && projectsKeep(resource.data);
+      allow delete: if canEditArea('projects') || (projectsOwn() && mineIn(resource.data));
+    }
+    match /otJobs/{id} {
+      allow read:   if projectsRead();
+      allow create: if idMatches(id) && textOk('category', 80)
+                    && request.resource.data.get('createdByUid', '') == request.auth.uid
+                    && (canEditArea('projects') || projectsOwn());
+      allow update: if idMatches(id) && textOk('category', 80) && projectsKeep(resource.data);
+      allow delete: if canEditArea('projects') || (projectsOwn() && mineIn(resource.data));
+    }
+    match /projectPhotos/{id} {
+      allow read:   if projectsRead();
+      allow delete: if canEditArea('projects') || projectsOwn();
+      allow create, update: if (canEditArea('projects') || projectsOwn()) && idMatches(id)
+                    && request.resource.data.get('photo', '') is string
+                    && request.resource.data.get('photo', '').size() <= 400000;
     }
     // Learning Center (2.12.0): every active account reads; 'learning' edit
     // adds and removes material. Uploaded PDFs are stored in pieces.

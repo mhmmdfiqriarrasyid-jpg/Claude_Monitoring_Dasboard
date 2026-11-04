@@ -91,6 +91,12 @@ service firebase.storage {
       allow create, update: if (canEdit('purchase') || isOwn('purchase')) && isImage();
       allow delete: if canEdit('purchase') || isOwn('purchase');
     }
+    // 2.29.0: Projects & Jobs (project updates and job photos)
+    match /photos/projectPhotos/{rec}/{file} {
+      allow read: if canView('projects') || isOwn('projects');
+      allow create, update: if (canEdit('projects') || isOwn('projects')) && isImage();
+      allow delete: if canEdit('projects') || isOwn('projects');
+    }
     match /photos/damagePhotos/{rec}/{file} {
       allow read: if canView('damage');
       allow create, update: if canEdit('damage') && isImage();

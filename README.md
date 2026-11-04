@@ -591,6 +591,35 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.29.0 — Projects & Jobs** (menu baru di Operations, `projects.js`, dijaga
+  `tests/projects_test.js`, `tests/rules_test.js`, `tests/storage_rules_test.js`).
+  Dua jenis pekerjaan di luar Daily Report (KHL & PBT):
+  - **Project** (`projects/{id}`): nama, jenis (Precision – Agriculture /
+    Heavy Equipment / Other), PT, departemen yang terlibat + PIC-nya, PIC OT,
+    mulai & target selesai, status (Planned / In progress / On hold / Done /
+    Cancelled). Target salah satu dari: **unit** (1 atau banyak; tiap unit
+    selesai dicentang), **angka** (mis. 20 antena), atau **milestone**
+    berbobot (template: Survey, PR/PO, Goods received, Installation, Testing,
+    Handover). Progres % dihitung dari target; kesehatan otomatis: lewat
+    tenggat = *Action needed*, tertinggal >15 poin dari waktu berjalan atau on
+    hold = *Watch*, selain itu *On track* (bisa diatur manual). Update berisi
+    tanggal, apa yang dikerjakan, unit/milestone yang selesai, kendala, foto
+    (`projectPhotos`, Storage `photos/projectPhotos/`); maksimal 300 update.
+    PR terkait ditautkan dan statusnya tampil.
+  - **Job / Activity** (`otJobs/{id}`): kalibrasi, pasang/lepas implement,
+    pasang/swap device, troubleshooting, firmware, survey, meeting, koordinasi,
+    training, admin (Master lists → *Job Categories*; departemen di
+    *Departments*). Unit opsional, diminta oleh (departemen), dikerjakan oleh,
+    jam, status, foto, dan project opsional. **Pasang implement** yang Done
+    mengganti implement unit di Unit Database (sekali; nilai sebelumnya
+    dicatat) — perlu akses edit Unit Database. Job Done yang bagian dari project
+    berbasis unit otomatis mencentang unit itu (update *auto*). Daftar job
+    difilter per minggu **Sabtu–Jumat**.
+  - Akses area **Projects & Jobs**: *own* menambah & mengubah miliknya saja,
+    *view* membaca, *edit* semuanya. Profil unit menampilkan job & project-nya.
+  - Belum masuk file backup JSON (sama seperti Purchase Requests); terlindungi
+    backup harian Firestore. **Perlu publish ulang `firestore.rules` dan
+    `storage.rules`.**
   **2.28.0 — Print checklist penerimaan barang** (dijaga
   `tests/pr_actions_test.js`): di detail PR berstatus Approved / PO issued /
   Partially received / Received ada tombol **Print checklist** — satu lembar

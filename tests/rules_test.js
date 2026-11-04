@@ -622,6 +622,40 @@ async function check(name, p, expectOk) {
     await check('Agri: bukan editor TIDAK bisa mengubah pengaturan', setDoc(doc(as('writer'), 'settings', 'agri'), { builtIns: true }), false);
     await check('Device Categories: editor warehouse menyimpan daftar', setDoc(doc(as('wh'), 'masterLists', 'deviceType'), { id: 'deviceType', values: ['Basestation'] }), true);
     await check('Device Categories: pembaca warehouse TIDAK bisa menyimpan', setDoc(doc(as('whv'), 'masterLists', 'deviceType'), { id: 'deviceType', values: ['X'] }), false);
+    // 2.29.0: Projects & Jobs
+    await env.withSecurityRulesDisabled(async ctx => {
+        const db = ctx.firestore();
+        await setDoc(doc(db, 'users', 'pjE'), { uid: 'pjE', email: 'pjE@x.id', role: 'staff', status: 'active', access: { projects: 'edit' } });
+        await setDoc(doc(db, 'users', 'pjO'), { uid: 'pjO', email: 'pjO@x.id', role: 'staff', status: 'active', access: { projects: 'own' } });
+        await setDoc(doc(db, 'users', 'pjV'), { uid: 'pjV', email: 'pjV@x.id', role: 'staff', status: 'active', access: { projects: 'view' } });
+        await setDoc(doc(db, 'projects', 'p_other'), { id: 'p_other', name: 'Radio', createdByUid: 'pjE' });
+        await setDoc(doc(db, 'otJobs', 'j_other'), { id: 'j_other', category: 'Calibration', createdByUid: 'pjE' });
+    });
+    const PJE = as('pjE'), PJO = as('pjO'), PJV = as('pjV');
+    await check('Projects: editor membuat project', setDoc(doc(PJE, 'projects', 'p1'), { id: 'p1', name: 'Camera AI', createdByUid: 'pjE' }), true);
+    await check('Projects: tanpa nama DITOLAK', setDoc(doc(PJE, 'projects', 'p2'), { id: 'p2', name: '', createdByUid: 'pjE' }), false);
+    await check('Projects: pembuat palsu DITOLAK', setDoc(doc(PJE, 'projects', 'p3'), { id: 'p3', name: 'x', createdByUid: 'someone' }), false);
+    await check('Projects: own membuat miliknya', setDoc(doc(PJO, 'projects', 'p_own'), { id: 'p_own', name: 'RTK', createdByUid: 'pjO' }), true);
+    await check('Projects: own mengubah miliknya', setDoc(doc(PJO, 'projects', 'p_own'), { id: 'p_own', name: 'RTK base', createdByUid: 'pjO' }), true);
+    await check('Projects: own TIDAK bisa mengubah milik orang lain', setDoc(doc(PJO, 'projects', 'p_other'), { id: 'p_other', name: 'x', createdByUid: 'pjO' }), false);
+    await check('Projects: own TIDAK bisa menghapus milik orang lain', deleteDoc(doc(PJO, 'projects', 'p_other')), false);
+    await check('Projects: own membaca semua project', getDoc(doc(PJO, 'projects', 'p_other')), true);
+    await check('Projects: view membaca', getDoc(doc(PJV, 'projects', 'p_other')), true);
+    await check('Projects: view TIDAK bisa menulis', setDoc(doc(PJV, 'projects', 'p_v'), { id: 'p_v', name: 'x', createdByUid: 'pjV' }), false);
+    await check('Projects: tanpa akses TIDAK bisa membaca', getDoc(doc(N, 'projects', 'p_other')), false);
+    await check('Projects: editor mengubah milik orang lain', setDoc(doc(PJE, 'projects', 'p_own'), { id: 'p_own', name: 'RTK base', createdByUid: 'pjO' }), true);
+    await check('Jobs: own mencatat job', setDoc(doc(PJO, 'otJobs', 'j1'), { id: 'j1', category: 'Calibration', createdByUid: 'pjO' }), true);
+    await check('Jobs: tanpa kategori DITOLAK', setDoc(doc(PJO, 'otJobs', 'j2'), { id: 'j2', category: '', createdByUid: 'pjO' }), false);
+    await check('Jobs: own TIDAK bisa mengubah job orang lain', setDoc(doc(PJO, 'otJobs', 'j_other'), { id: 'j_other', category: 'Meeting', createdByUid: 'pjO' }), false);
+    await check('Jobs: editor menghapus job', deleteDoc(doc(PJE, 'otJobs', 'j_other')), true);
+    await check('Foto project: own menyimpan', setDoc(doc(PJO, 'projectPhotos', 'ph1'), { id: 'ph1', ownerId: 'p_own', photo: 'sp:photos/projectPhotos/p_own/a' }), true);
+    await check('Foto project: view TIDAK bisa menyimpan', setDoc(doc(PJV, 'projectPhotos', 'ph2'), { id: 'ph2', photo: 'x' }), false);
+    await check('Job Categories: editor projects menyimpan daftar', setDoc(doc(PJE, 'masterLists', 'jobCategory'), { id: 'jobCategory', values: ['Calibration'] }), true);
+    await check('Departments: own TIDAK bisa menyimpan daftar', setDoc(doc(PJO, 'masterLists', 'department'), { id: 'department', values: ['Workshop'] }), false);
+    await check('Riwayat: akun own projects boleh mencatat history', setDoc(doc(PJO, 'history', 'h_pj'), { id: 'h_pj', timestamp: Date.now(), action: 'create', unitId: '', unitName: '[Project] RTK', field: 'Project', before: '', after: 'x',
+        actorUid: 'pjO', actorEmail: 'pjO@x.id', actorName: 'O', actorRole: 'staff' }), true);
+    await check('Riwayat: akun view projects TIDAK boleh mencatat history', setDoc(doc(PJV, 'history', 'h_pv'), { id: 'h_pv', timestamp: Date.now(), action: 'create', unitId: '', unitName: 'x', field: '', before: '', after: '',
+        actorUid: 'pjV', actorEmail: 'pjV@x.id', actorName: 'V', actorRole: 'staff' }), false);
     // 2.27.0: satuan barang Purchase Request
     await env.withSecurityRulesDisabled(async ctx => {
         const db = ctx.firestore();

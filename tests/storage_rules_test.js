@@ -73,6 +73,16 @@ const { doc, setDoc } = require('firebase/firestore');
     await check('foto laporan: akun own TIDAK bisa mengunggah ke laporan orang lain', img(st('tlOwn'), 'photos/workLogPhotos/wl_other/b'), false);
     await check('foto laporan: akun own membaca laporannya sendiri', getBytes(ref(st('tlOwn'), 'photos/workLogPhotos/wl_mine/a')), true);
     await check('foto laporan: akun own TIDAK bisa membaca laporan orang lain', getBytes(ref(st('tlOwn'), 'photos/workLogPhotos/wl_other/a')), false);
+    // 2.29.0: Projects & Jobs
+    await env.withSecurityRulesDisabled(async c => {
+        const db = c.firestore();
+        await setDoc(doc(db, 'users', 'pjO'), { uid: 'pjO', role: 'staff', status: 'active', access: { projects: 'own' } });
+        await setDoc(doc(db, 'users', 'pjV'), { uid: 'pjV', role: 'staff', status: 'active', access: { projects: 'view' } });
+    });
+    await check('foto project: akun own mengunggah', img(st('pjO'), 'photos/projectPhotos/p1/a'), true);
+    await check('foto project: akun view TIDAK bisa mengunggah', img(st('pjV'), 'photos/projectPhotos/p1/b'), false);
+    await check('foto project: akun view membaca', getBytes(ref(st('pjV'), 'photos/projectPhotos/p1/a')), true);
+    await check('foto project: tanpa akses TIDAK bisa membaca', getBytes(ref(st('rd'), 'photos/projectPhotos/p1/a')), false);
     // 2.26.1: foto yang dokumennya tidak pernah tersimpan dicari lewat daftar folder.
     await check('foto laporan: owner melihat daftar folder laporan', listAll(ref(st('own'), 'photos/workLogPhotos/wl_other')), true);
     await check('foto laporan: editor tim melihat daftar folder laporan', listAll(ref(st('tlE'), 'photos/workLogPhotos/wl_other')), true);

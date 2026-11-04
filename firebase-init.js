@@ -311,6 +311,9 @@ const PURCHASE_COL = 'purchaseRequests';
 const LEARNING_COL = 'learningItems';        // 2.12.0: Learning Center catalogue
 const LEARNING_FILES_COL = 'learningFiles';  // 2.12.0: uploaded PDFs, in pieces
 const PURCHASE_PHOTOS_COL = 'purchasePhotos';
+const PROJECTS_COL = 'projects';             // 2.29.0: Projects & Jobs
+const OT_JOBS_COL = 'otJobs';
+const PROJECT_PHOTOS_COL = 'projectPhotos';
 const STOCK_ITEMS_COL = 'stockItems';
 // Operational vehicles (company motorbikes) and their fuel log. A fuel
 // record's receipt photo lives in fuelPhotos/{recordId}, never subscribed.
@@ -987,6 +990,32 @@ window.cloud = {
                 if (errorCallback) errorCallback(err);
             }
         );
+    },
+    // ---- Projects & Jobs (2.29.0) ----
+    async saveProject(rec) { await setDoc(doc(db, PROJECTS_COL, rec.id), rec); },
+    async deleteProject(id) { await deleteDoc(doc(db, PROJECTS_COL, id)); },
+    subscribeProjects(callback, errorCallback) {
+        return _onSnapshotWithPending(collection(db, PROJECTS_COL), callback, err => {
+            console.error('[cloud] projects subscription error:', err);
+            if (errorCallback) errorCallback(err);
+        });
+    },
+    async saveOtJob(rec) { await setDoc(doc(db, OT_JOBS_COL, rec.id), rec); },
+    async deleteOtJob(id) { await deleteDoc(doc(db, OT_JOBS_COL, id)); },
+    subscribeOtJobs(callback, errorCallback) {
+        return _onSnapshotWithPending(collection(db, OT_JOBS_COL), callback, err => {
+            console.error('[cloud] otJobs subscription error:', err);
+            if (errorCallback) errorCallback(err);
+        });
+    },
+    async getProjectPhoto(id, opts) {
+        return _getPhotoDoc(PROJECT_PHOTOS_COL, id, 'photo', '', opts, d => ({ id: d.id || id, ownerId: d.ownerId || '' }));
+    },
+    async saveProjectPhoto(id, ownerId, photo) {
+        await _savePhotoDoc(PROJECT_PHOTOS_COL, id, 'photo', photo, { id, ownerId });
+    },
+    async deleteProjectPhoto(id) {
+        await _deletePhotoDoc(PROJECT_PHOTOS_COL, id, 'photo');
     },
     async getPurchasePhoto(id, opts) {
         return _getPhotoDoc(PURCHASE_PHOTOS_COL, id, 'photo', '', opts, d => ({ id: d.id || id, ownerId: d.ownerId || '' }));
