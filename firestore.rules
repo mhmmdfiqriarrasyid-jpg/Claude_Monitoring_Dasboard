@@ -560,7 +560,8 @@ service cloud.firestore {
     match /settings/{id} {
       allow read: if id == 'agri' && isActive();
       allow write: if id == 'agri' && canEditArea('learning')
-        && request.resource.data.keys().hasOnly(['builtIns', 'updatedAt']) && request.resource.data.get('builtIns', true) is bool;
+        && request.resource.data.keys().hasOnly(['builtIns', 'hidden', 'updatedAt']) && request.resource.data.get('builtIns', true) is bool
+        && request.resource.data.get('hidden', []) is list && request.resource.data.get('hidden', []).size() <= 1000;
       allow read: if id == 'email' && (isOwner() || canViewArea('licenseStock') || canViewArea('teamLog') || canViewArea('damage'));
       allow write: if id == 'email' && isOwner()
         && request.resource.data.keys().hasOnly(['recipients', 'dailyEnabled', 'sendHour',

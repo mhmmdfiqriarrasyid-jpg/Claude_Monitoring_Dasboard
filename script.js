@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.22.0';
+const APP_VERSION = 'v2.23.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -4843,38 +4843,45 @@ function renderDashOverview(data) {
 // general and each cites where it comes from; Learning editors add their own
 // (agriFacts, with a source link) and can turn the built-in ones off.
 const AGRI_ROTATE_MS = 3 * 60 * 1000;
-const AGRI_BUILTIN = [
-    { id: 'b_cane', term: 'Tebu (sugarcane)', text: 'adalah tanaman rumput-rumputan (famili Poaceae, Saccharum spp.) yang menyimpan gula sukrosa di batangnya. Sekitar 80% gula dunia dibuat dari tebu.', source: 'Wikipedia — Sugarcane', url: 'https://en.wikipedia.org/wiki/Sugarcane' },
-    { id: 'b_ratoon', term: 'Ratoon cane', text: '(disebut juga keprasan atau rawat ratoon) adalah tebu yang tumbuh kembali dari tunas pada tunggul setelah panen, tanpa tanam ulang. Hasilnya biasanya turun dari satu keprasan ke keprasan berikutnya.', source: 'Wikipedia — Ratooning', url: 'https://en.wikipedia.org/wiki/Ratooning' },
-    { id: 'b_dolomite', term: 'Dolomit', text: 'adalah mineral karbonat CaMg(CO₃)₂. Di pertanian dipakai sebagai kapur untuk menaikkan pH tanah masam sekaligus menambah magnesium.', source: 'Wikipedia — Agricultural lime', url: 'https://en.wikipedia.org/wiki/Agricultural_lime' },
-    { id: 'b_brix', term: '°Brix', text: 'menyatakan persen padatan terlarut — terutama gula — dalam nira, diukur dengan refraktometer. Angka ini dipakai untuk menilai kemasakan tebu sebelum ditebang.', source: 'Wikipedia — Brix', url: 'https://en.wikipedia.org/wiki/Brix' },
-    { id: 'b_bagasse', term: 'Bagasse (ampas tebu)', text: 'adalah serat yang tersisa setelah batang tebu digiling untuk diambil niranya. Pabrik gula umumnya membakarnya sebagai bahan bakar ketel uap.', source: 'Wikipedia — Bagasse', url: 'https://en.wikipedia.org/wiki/Bagasse' },
-    { id: 'b_molasses', term: 'Tetes tebu (molasses)', text: 'adalah sirup kental hasil samping pembuatan gula, dimanfaatkan antara lain untuk etanol, pakan ternak, dan fermentasi.', source: 'Wikipedia — Molasses', url: 'https://en.wikipedia.org/wiki/Molasses' },
-    { id: 'b_c4', term: 'Tanaman C4', text: '— tebu mengikat CO₂ lewat jalur C4 yang efisien pada cahaya terik dan suhu tinggi, sehingga produksi biomassanya sangat tinggi.', source: 'Wikipedia — C4 carbon fixation', url: 'https://en.wikipedia.org/wiki/C4_carbon_fixation' },
-    { id: 'b_setts', term: 'Bibit bagal (setts / billets)', text: '— tebu diperbanyak secara vegetatif dengan potongan batang yang memiliki mata tunas, bukan dengan biji.', source: 'Wikipedia — Sugarcane', url: 'https://en.wikipedia.org/wiki/Sugarcane' },
-    { id: 'b_temp', term: 'Suhu pertunasan', text: '— menurut FAO, suhu optimum untuk pertunasan stek tebu sekitar 32–38 °C.', source: 'FAO — Crop information: Sugarcane', url: 'https://www.fao.org/land-water/databases-and-software/crop-information/sugarcane/en/' },
-    { id: 'b_water', term: 'Kebutuhan air tebu', text: '— menurut FAO sekitar 1.500–2.500 mm per musim tanam, terbagi merata sepanjang masa pertumbuhan.', source: 'FAO — Crop information: Sugarcane', url: 'https://www.fao.org/land-water/databases-and-software/crop-information/sugarcane/en/' }
-];
+// 2.23.0: the daily facts live in data/agri-facts.json — one is added each
+// day by a scheduled task (rules in CLAUDE.md), never from Wikipedia.
+let agriAuto = [];           // from data/agri-facts.json
+let agriHidden = [];         // settings/agri.hidden: daily facts taken off the card
 let agriFacts = [];          // custom, from agriFacts
 let agriBuiltIns = true;     // settings/agri.builtIns
 let _agriLoaded = false;
 let _agriOrder = [], _agriPos = 0, _agriLeft = AGRI_ROTATE_MS, _agriHeld = false, _agriTimer = null, _agriLast = 0;
-function agriPool() { return (agriBuiltIns ? AGRI_BUILTIN : []).concat(agriFacts); }
+function agriPool() {
+    const hidden = new Set(agriHidden);
+    return (agriBuiltIns ? agriAuto.filter(f => !hidden.has(f.id)) : []).concat(agriFacts);
+}
+const _agriOkUrl = u => /^https:\/\/[^\s"'<>]+$/.test(u || '');
 async function loadAgriFacts(force) {
     if (_agriLoaded && !force) return;
     _agriLoaded = true;
     try {
+        const res = await fetch('data/agri-facts.json', { cache: 'no-cache' });
+        const json = res.ok ? await res.json() : {};
+        agriAuto = (Array.isArray(json.facts) ? json.facts : [])
+            .filter(f => f && f.id && f.term && f.text && f.source && _agriOkUrl(f.url));
+    } catch (err) { console.warn('[agri] daily facts not loaded:', err && err.message); }
+    try {
         if (window.cloud && window.cloud.listAgriFacts) {
             const r = await window.cloud.listAgriFacts();
             agriFacts = r.facts || []; agriBuiltIns = r.builtIns !== false;
+            agriHidden = Array.isArray(r.hidden) ? r.hidden : [];
         }
     } catch (err) { console.warn('[agri] facts not loaded:', err && err.code); }
     _agriOrder = [];
     renderAgriFact();
 }
+// Today's new fact first, then the rest in a random order.
 function _agriShuffle() {
     const pool = agriPool();
-    _agriOrder = pool.map((_, i) => i).sort(() => Math.random() - 0.5);
+    const today = toISODate();
+    const fresh = pool.map((f, i) => (f.addedAt === today ? i : -1)).filter(i => i >= 0);
+    const rest = pool.map((_, i) => i).filter(i => !fresh.includes(i)).sort(() => Math.random() - 0.5);
+    _agriOrder = fresh.concat(rest);
     _agriPos = 0;
 }
 function renderAgriFact() {
@@ -4884,8 +4891,9 @@ function renderAgriFact() {
     if (!pool.length) { text.textContent = 'No facts yet — add one with Manage.'; src.textContent = ''; src.removeAttribute('href'); return; }
     if (_agriOrder.length !== pool.length) _agriShuffle();
     const f = pool[_agriOrder[((_agriPos % pool.length) + pool.length) % pool.length]];
-    text.innerHTML = `<b>${escapeHtml(f.term || '')}</b> ${escapeHtml(f.text || '')}`;
-    const safe = /^https:\/\/[^\s"'<>]+$/.test(f.url || '') ? f.url : '';
+    const isNew = f.addedAt && f.addedAt === toISODate();
+    text.innerHTML = `${isNew ? '<span class="dash-know__new">New today</span> ' : ''}<b>${escapeHtml(f.term || '')}</b> ${escapeHtml(f.text || '')}`;
+    const safe = _agriOkUrl(f.url) ? f.url : '';
     src.textContent = `Source: ${f.source || (safe ? new URL(safe).hostname : '—')}`;
     if (safe) src.href = safe; else src.removeAttribute('href');
 }
@@ -4924,7 +4932,7 @@ function openAgriFacts() {
     resetAgriForm();
     renderAgriList();
     document.getElementById('agriBuiltIns').checked = agriBuiltIns;
-    document.getElementById('agriBuiltInCount').textContent = `${AGRI_BUILTIN.length}, each with its source`;
+    document.getElementById('agriBuiltInCount').textContent = `${agriAuto.length}, one more each day`;
     document.getElementById('agriFactsModal').classList.add('open');
 }
 function closeAgriFacts() { document.getElementById('agriFactsModal').classList.remove('open'); }
@@ -4933,7 +4941,28 @@ function resetAgriForm() {
     document.getElementById('agriSaveBtn').innerHTML = '<i class="fas fa-plus"></i> Add fact';
     document.getElementById('agriCancelEdit').hidden = true;
 }
+function renderAgriAutoList() {
+    const hidden = new Set(agriHidden);
+    const box = document.getElementById('agriAutoList');
+    if (!box) return;
+    const list = agriAuto.slice().sort((a, b) => String(b.addedAt || '').localeCompare(String(a.addedAt || '')));
+    document.getElementById('agriAutoCount').textContent = list.length;
+    box.innerHTML = list.length ? list.map(f => `<li class="lcv-row agri-row${hidden.has(f.id) ? ' is-hidden' : ''}">
+        <span class="lcv-row__who"><strong>${escapeHtml(f.term)}</strong><small>${escapeHtml(f.text)}</small>
+            <small>${escapeHtml(f.addedAt || '')} · Source: <a href="${escapeHtml(f.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(f.source)}</a></small></span>
+        <span class="row-actions"><button type="button" class="btn btn-secondary btn-sm" onclick="toggleAgriHidden(${jsArg(f.id)})">${hidden.has(f.id) ? 'Show' : 'Hide'}</button></span>
+    </li>`).join('') : '<li class="category-empty">No daily facts yet.</li>';
+}
+async function toggleAgriHidden(id) {
+    if (!canEditAgri()) return;
+    const next = agriHidden.includes(id) ? agriHidden.filter(x => x !== id) : agriHidden.concat(id);
+    try { await window.cloud.saveAgriSettings({ builtIns: agriBuiltIns, hidden: next }); }
+    catch (err) { showToast('Failed to save — publish the latest firestore.rules', 'error'); return; }
+    agriHidden = next; _agriOrder = [];
+    renderAgriAutoList(); renderAgriFact();
+}
 function renderAgriList() {
+    renderAgriAutoList();
     document.getElementById('agriCustomCount').textContent = agriFacts.length;
     document.getElementById('agriList').innerHTML = agriFacts.length ? agriFacts.map(f => `<li class="lcv-row agri-row">
         <span class="lcv-row__who"><strong>${escapeHtml(f.term)}</strong><small>${escapeHtml(f.text)}</small><small>Source: ${escapeHtml(f.source || '')} · ${escapeHtml(f.url || '')}</small></span>
@@ -4983,7 +5012,7 @@ async function deleteAgriFact(id) {
 async function saveAgriBuiltIns() {
     const on = document.getElementById('agriBuiltIns').checked;
     if (!on && !agriFacts.length) { document.getElementById('agriBuiltIns').checked = true; showToast('Add a fact of your own first — the card needs at least one', 'warning'); return; }
-    try { await window.cloud.saveAgriSettings({ builtIns: on }); }
+    try { await window.cloud.saveAgriSettings({ builtIns: on, hidden: agriHidden }); }
     catch (err) { document.getElementById('agriBuiltIns').checked = agriBuiltIns; showToast('Failed to save — publish the latest firestore.rules', 'error'); return; }
     agriBuiltIns = on; _agriOrder = []; renderAgriFact();
 }

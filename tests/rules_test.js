@@ -606,6 +606,8 @@ async function check(name, p, expectOk) {
     await check('Agri: bukan editor Learning DITOLAK', setDoc(doc(as('writer'), 'agriFacts', 'af_4'), { ...AF, id: 'af_4' }), false);
     await check('Agri: semua akun aktif membaca', getDoc(doc(as('nobody'), 'agriFacts', 'af_1')), true);
     await check('Agri: editor Learning mematikan fakta bawaan', setDoc(doc(LCE, 'settings', 'agri'), { builtIns: false, updatedAt: 1 }), true);
+    await check('Agri: editor Learning menyembunyikan materi harian', setDoc(doc(LCE, 'settings', 'agri'), { builtIns: true, hidden: ['fao-water-need'], updatedAt: 1 }), true);
+    await check('Agri: hidden bukan daftar DITOLAK', setDoc(doc(LCE, 'settings', 'agri'), { builtIns: true, hidden: 'x', updatedAt: 1 }), false);
     await check('Agri: pengaturan dibaca semua akun aktif', getDoc(doc(as('nobody'), 'settings', 'agri')), true);
     await check('Agri: bukan editor TIDAK bisa mengubah pengaturan', setDoc(doc(as('writer'), 'settings', 'agri'), { builtIns: true }), false);
     await check('Device Categories: editor warehouse menyimpan daftar', setDoc(doc(as('wh'), 'masterLists', 'deviceType'), { id: 'deviceType', values: ['Basestation'] }), true);

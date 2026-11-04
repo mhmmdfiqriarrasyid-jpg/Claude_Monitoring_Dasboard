@@ -499,6 +499,15 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   `tests/license_report_test.js`, skenario Notif di `tests/rules_test.js`.
   **Perlu publish `firestore.rules` + deploy ulang fungsi** (deploy akan
   menanyakan penghapusan `dailyLicenseAlert` — jawab y).
+  **2.23.0 — Materi tebu harian.** Fakta bawaan pindah ke `data/agri-facts.json`
+  (tanpa Wikipedia: FAO, Universitas Brawijaya, INSTIPER, NC State, NSW
+  DPIRD, SASRI, LSU AgCenter, US EPA). Setiap pagi ±05:00 WIT sebuah tugas
+  terjadwal Claude menambah **satu** materi bersumber (aturan di
+  `CLAUDE.md` → *Daily sugarcane fact*), dijaga `tests/agri_bank_test.js`
+  (lengkap, https, tanpa Wikipedia, satu per hari, tidak dobel). Materi hari
+  itu tampil paling depan dengan tanda *New today*; di *Manage* tiap materi
+  harian bisa di-*Hide* (`settings/agri.hidden`). File data di-network-first
+  oleh service worker. **Perlu publish `firestore.rules`.**
   **2.22.0 — Sugarcane knowledge.** Kartu *Fleet health* di Dashboard (angkanya
   sama dengan kartu Good) diganti kartu pengetahuan tebu: satu fakta tiap
   kali, berganti setiap 3 menit (bar progres), ‹ › untuk berpindah, dan

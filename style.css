@@ -10916,3 +10916,5 @@ body:has(.modal-overlay.open) .install-banner { display: none; }
 .agri-form__row { display: flex; flex-wrap: wrap; gap: 8px; }
 .agri-form__f { display: flex; flex-direction: column; gap: 4px; flex: 1 1 200px; }
 .agri-row small { display: block; overflow-wrap: anywhere; }
+.dash-know__new { display: inline-block; padding: 1px 8px; margin-right: 4px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; vertical-align: 1px; }
+.agri-row.is-hidden { opacity: .5; }

@@ -806,12 +806,15 @@ window.cloud = {
     // ---- Sugarcane knowledge (2.22.0) ----
     async listAgriFacts() {
         const [facts, cfg] = await Promise.all([getDocs(collection(db, 'agriFacts')), getDoc(doc(db, 'settings', 'agri')).catch(() => null)]);
+        const c = cfg && cfg.exists() ? cfg.data() : {};
         return { facts: facts.docs.map(d => ({ ...d.data(), id: d.id })).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
-                 builtIns: !(cfg && cfg.exists() && cfg.data().builtIns === false) };
+                 builtIns: c.builtIns !== false, hidden: Array.isArray(c.hidden) ? c.hidden : [] };
     },
     async saveAgriFact(rec) { await setDoc(doc(db, 'agriFacts', rec.id), rec); },
     async deleteAgriFact(id) { await deleteDoc(doc(db, 'agriFacts', id)); },
-    async saveAgriSettings(rec) { await setDoc(doc(db, 'settings', 'agri'), { builtIns: !!rec.builtIns, updatedAt: Date.now() }); },
+    async saveAgriSettings(rec) {
+        await setDoc(doc(db, 'settings', 'agri'), { builtIns: !!rec.builtIns, hidden: (rec.hidden || []).slice(0, 1000), updatedAt: Date.now() });
+    },
 
     // ---- Learning Center: who opened what (2.19.0) ----
     // learningViews/{itemId}__{uid}: one document per person per material.
