@@ -160,7 +160,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.28.0';
+const APP_VERSION = 'v2.28.1';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -20248,11 +20248,12 @@ function purchaseChecklistHtml(r) {
     const receipts = (r.receipts || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
     const meta = (label, v) => `<tr><th>${label}</th><td>${escapeHtml(v || '—')}</td></tr>`;
     const due = items.reduce((n, it) => n + Math.max(0, (Number(it.qty) || 0) - (Number(it.receivedQty) || 0)), 0);
-    const who = (currentUser && currentUser.email) ? shortActor(currentUser.email) : '';
+    const who = (currentUserDoc && currentUserDoc.displayName) || ((currentUser && currentUser.email) ? shortActor(currentUser.email) : '');
     return `
     <header class="ps-head">
-        <div><div class="ps-kicker">Operation Technology</div><h1>Goods receiving checklist</h1></div>
-        <div class="ps-printed">Printed ${escapeHtml(formatUserTime(Date.now()))}${who ? ' · ' + escapeHtml(who) : ''}</div>
+        <img class="ps-logo" src="./icons/icon-192.png" alt="Operation Technology logo">
+        <div class="ps-title"><div class="ps-kicker">Operation Technology</div><h1>Goods receiving checklist</h1></div>
+        <div class="ps-printed">Printed ${escapeHtml(formatUserTime(Date.now()))}${who ? `<br>by ${escapeHtml(who)}` : ''}</div>
     </header>
     <table class="ps-meta"><tbody>
         ${meta('PR No.', r.prNo)}${meta('Title', r.title)}${meta('Company', r.company)}
@@ -20271,7 +20272,7 @@ function purchaseChecklistHtml(r) {
                 <td class="ps-fill">${left ? '' : 'Complete'}</td><td class="ps-ok">${left ? '<span class="ps-box"></span>' : '✓'}</td><td class="ps-note"></td></tr>`;
         }).join('')}</tbody>
     </table>
-    <h2>Received so far <span class="ps-sub">${receipts.length ? `${receipts.length} delivery(ies)` : 'nothing yet'}</span></h2>
+    <h2>Received so far <span class="ps-sub">${receipts.length ? `${receipts.length} ${receipts.length === 1 ? 'delivery' : 'deliveries'}` : 'nothing yet'}</span></h2>
     ${receipts.length ? `<table class="ps-items ps-hist"><thead><tr><th>Date</th><th>By</th><th>Items</th><th>Note</th></tr></thead><tbody>${receipts.map(x => `<tr>
         <td>${escapeHtml(x.date || '')}</td><td>${escapeHtml(x.by ? shortActor(x.by) : '')}</td>
         <td>${(x.items || []).map(ri => { const it = items.find(i => i.id === ri.itemId); return `${escapeHtml(it ? it.spec : 'item')} × ${Number(ri.qty) || 0}`; }).join('<br>')}</td>
