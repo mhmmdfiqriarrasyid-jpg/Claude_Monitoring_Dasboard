@@ -452,18 +452,19 @@
                     <section class="dash-card dash-know" id="dashKnow" aria-labelledby="dashKnowTitle">
                         <div class="dash-know__head">
                             <h2 class="dash-card__title" id="dashKnowTitle">🌱 Sugarcane knowledge</h2>
-                            <div class="dash-know__tools">
-                                <button type="button" class="btn-icon dash-know__nav" onclick="agriStep(-1)" aria-label="Previous" title="Previous">‹</button>
-                                <button type="button" class="btn-icon dash-know__nav" onclick="agriStep(1)" aria-label="Next" title="Next">›</button>
-                                <button type="button" class="link-btn editonly editonly--learning" onclick="openAgriFacts()" title="Add or remove facts">Manage</button>
-                            </div>
+                            <button type="button" class="dash-know__manage editonly editonly--learning" onclick="openAgriFacts()" title="Add or remove facts"><i class="fas fa-pen" aria-hidden="true"></i> Manage</button>
                         </div>
                         <div class="dash-know__body" id="dashKnowBody" aria-live="polite" title="Hold to keep this one on screen"
                              onpointerdown="agriHold(true)" onpointerup="agriHold(false)" onpointerleave="agriHold(false)" onpointercancel="agriHold(false)">
                             <p class="dash-know__text" id="dashKnowText"></p>
                             <a class="dash-know__src" id="dashKnowSrc" target="_blank" rel="noopener noreferrer"></a>
                         </div>
-                        <div class="dash-know__bar" aria-hidden="true"><span id="dashKnowProgress"></span></div>
+                        <div class="dash-know__foot">
+                            <button type="button" class="dash-know__nav" onclick="agriStep(-1)" aria-label="Previous fact" title="Previous"><i class="fas fa-chevron-left" aria-hidden="true"></i></button>
+                            <div class="dash-know__bar" aria-hidden="true"><span id="dashKnowProgress"></span></div>
+                            <span class="dash-know__count" id="dashKnowCount"></span>
+                            <button type="button" class="dash-know__nav" onclick="agriStep(1)" aria-label="Next fact" title="Next"><i class="fas fa-chevron-right" aria-hidden="true"></i></button>
+                        </div>
                     </section>
                     <section class="dash-card dash-health" aria-labelledby="dashHealthTitle" hidden>
                         <div class="dash-ring">

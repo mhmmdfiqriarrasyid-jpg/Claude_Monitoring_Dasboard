@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.23.0';
+const APP_VERSION = 'v2.23.1';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -4888,9 +4888,12 @@ function renderAgriFact() {
     const text = document.getElementById('dashKnowText'), src = document.getElementById('dashKnowSrc');
     if (!text || !src) return;
     const pool = agriPool();
-    if (!pool.length) { text.textContent = 'No facts yet — add one with Manage.'; src.textContent = ''; src.removeAttribute('href'); return; }
+    const count = document.getElementById('dashKnowCount');
+    if (!pool.length) { text.textContent = 'No facts yet — add one with Manage.'; src.textContent = ''; src.removeAttribute('href'); if (count) count.textContent = ''; return; }
     if (_agriOrder.length !== pool.length) _agriShuffle();
-    const f = pool[_agriOrder[((_agriPos % pool.length) + pool.length) % pool.length]];
+    const idx = ((_agriPos % pool.length) + pool.length) % pool.length;
+    const f = pool[_agriOrder[idx]];
+    if (count) count.textContent = `${idx + 1} / ${pool.length}`;
     const isNew = f.addedAt && f.addedAt === toISODate();
     text.innerHTML = `${isNew ? '<span class="dash-know__new">New today</span> ' : ''}<b>${escapeHtml(f.term || '')}</b> ${escapeHtml(f.text || '')}`;
     const safe = _agriOkUrl(f.url) ? f.url : '';
