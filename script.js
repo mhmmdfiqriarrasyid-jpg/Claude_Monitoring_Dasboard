@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.23.3';
+const APP_VERSION = 'v2.24.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -5054,13 +5054,9 @@ function dashSpan(ms) {
 const DASH_ATTENTION_ROWS = 8;
 const DASH_ICON_STOP = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 9-6 6"></path><path d="m9 9 6 6"></path><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon></svg>';
 const DASH_ICON_KEY = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="m21 2-9.6 9.6"></path><path d="m15.5 7.5 3 3L22 7l-3-3"></path></svg>';
-let _dashAttnAll = false, _dashAttnData = [];
-function toggleDashAttention() {
-    _dashAttnAll = !_dashAttnAll;
-    renderDashAttention(_dashAttnData, Date.now());
-}
+// 2.24.0: every row is listed; the table scrolls inside the card (its height
+// follows the side column on wide screens), no more "Show all".
 function renderDashAttention(data, now) {
-    _dashAttnData = data;
     const host = document.getElementById('dashAttention');
     if (!host) return;
     const inbox = document.getElementById('dashAttnInbox');
@@ -5108,10 +5104,10 @@ function renderDashAttention(data, now) {
             effectiveDashGroup() === 'heavy' ? '' : ' and no license is due in the next 30 days'}.</p>`;
         return;
     }
-    const shown = _dashAttnAll ? rows : rows.slice(0, DASH_ATTENTION_ROWS);
+    const shown = rows;
     const site = r => escapeHtml(r.u.site || '—');
     host.innerHTML = `
-        <div class="dash-table-wrap">
+        <div class="dash-table-wrap dash-attn__scroll" tabindex="0" aria-label="Units that need attention (scrolls)">
         <table class="dash-table dash-attn__table">
             <thead><tr><th scope="col">Unit</th><th scope="col">Issue</th><th scope="col">Site</th>
                 <th scope="col">Status</th><th scope="col" class="dash-num">Since</th></tr></thead>
@@ -5128,8 +5124,7 @@ function renderDashAttention(data, now) {
             </tbody>
         </table>
         </div>
-        ${rows.length > DASH_ATTENTION_ROWS ? `<p class="dash-card__foot">${_dashAttnAll ? `Showing all ${rows.length}` : `Showing ${shown.length} of ${rows.length}`}
-            <button type="button" class="dash-link dash-attn__more" onclick="toggleDashAttention()">${_dashAttnAll ? 'Show fewer' : `Show all ${rows.length}`}</button></p>` : ''}`;
+        ${rows.length > DASH_ATTENTION_ROWS ? `<p class="dash-card__foot">${rows.length} items<span class="dash-attn__hint"><i class="fas fa-arrows-up-down" aria-hidden="true"></i> Scroll to see all</span></p>` : ''}`;
 }
 
 // Sites: good units out of all units per site, largest site first.

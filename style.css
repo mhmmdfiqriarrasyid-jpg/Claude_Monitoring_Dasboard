@@ -10932,3 +10932,24 @@ body:has(.modal-overlay.open) .install-banner { display: none; }
 .agri-row small { display: block; overflow-wrap: anywhere; }
 .dash-know__new { display: inline-block; padding: 1px 8px; margin-right: 4px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; vertical-align: 1px; }
 .agri-row.is-hidden { opacity: .5; }
+
+/* 2.24.0: Needs attention scrolls inside its card. On wide screens the two
+   columns form a grid and the card takes the side column's height (its own
+   rows cannot stretch the grid row); narrower,
+   the list gets a fixed max height. The header row stays in view. */
+@media screen {
+    #viewDashboard .dash-attn { display: flex; flex-direction: column; }
+    #viewDashboard .dash-attn__scroll { overflow: auto; max-height: 460px; overscroll-behavior: contain; }
+    #viewDashboard .dash-attn__scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    #viewDashboard .dash-attn__scroll thead th { position: sticky; top: 0; z-index: 1; }
+    #viewDashboard .dash-attn #dashAttention { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+    #viewDashboard .dash-attn .dash-card__foot { margin: 0; padding: 10px 20px; border-top: 1px solid var(--border); }
+    #viewDashboard .dash-attn__hint { display: inline-flex; align-items: center; gap: 6px; color: var(--text-light); font-size: 12px; }
+}
+@media screen and (min-width: 1180px) {
+    #viewDashboard .dash-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); align-items: stretch; }
+    /* contain: size — the card's own rows no longer set the row height. */
+    #viewDashboard .dash-attn { contain: size; min-height: 420px; }
+    #viewDashboard .dash-attn > .dash-card__head { flex: none; }
+    #viewDashboard .dash-attn__scroll { flex: 1; max-height: none; min-height: 0; }
+}
