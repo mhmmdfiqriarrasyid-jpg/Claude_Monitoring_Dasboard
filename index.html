@@ -4399,7 +4399,7 @@
             <button class="btn-icon" onclick="closeAgriFacts()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
         </div>
         <div class="modal-body">
-            <p class="notif-desc">Shown on the Dashboard one at a time, a new one every 3 minutes. A new daily fact is added every morning, with its source (never Wikipedia). Every fact needs a source people can open.</p>
+            <p class="notif-desc">Shown on the Dashboard one at a time, a new one every 60 seconds. A new daily fact is added every morning, with its source (never Wikipedia). Every fact needs a source people can open.</p>
             <label class="notif-check"><input type="checkbox" id="agriBuiltIns" onchange="saveAgriBuiltIns()"> Include the daily facts (<span id="agriBuiltInCount"></span>)</label>
             <form class="agri-form" id="agriForm" onsubmit="event.preventDefault(); saveAgriFact()">
                 <input type="hidden" id="agriEditId">

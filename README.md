@@ -510,7 +510,7 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   oleh service worker. **Perlu publish `firestore.rules`.**
   **2.22.0 — Sugarcane knowledge.** Kartu *Fleet health* di Dashboard (angkanya
   sama dengan kartu Good) diganti kartu pengetahuan tebu: satu fakta tiap
-  kali, berganti setiap 3 menit (bar progres), ‹ › untuk berpindah, dan
+  kali, berganti setiap 60 detik (titik penanda), ‹ › untuk berpindah, dan
   **berhenti selama ditekan/ditahan** sampai dilepas. Setiap fakta punya
   sumber yang bisa diklik (https). 10 fakta bawaan (Wikipedia, FAO) di
   `AGRI_BUILTIN`; editor Learning menambah fakta sendiri lewat *Manage*
