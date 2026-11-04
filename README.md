@@ -591,6 +591,15 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.26.1 — foto laporan yang hilang ("Photos not found")**: sejak 2.17.0
+  foto diunggah ke Storage dulu, baru dokumennya ditulis — sehingga laporan
+  (sudah *pending*) sering sampai duluan dan rules menolak foto akun non-owner.
+  `firestore.rules` kini mengizinkan **pengirim** laporan/izin yang masih
+  *pending* menulis fotonya (`recordSentByMe`); disetujui tetap terkunci.
+  Laporan yang terlanjur kosong: saat fotonya dibuka, gambar dicari di
+  Storage (`photos/workLogPhotos/<id>/`, `listAll`) lalu dokumen fotonya
+  ditulis kembali (dijaga `tests/rules_test.js`, `tests/storage_rules_test.js`,
+  `tests/photo_storage_e2e.js`). **Perlu publish ulang `firestore.rules`.**
   **2.26.0 — Implements dua tab** (dijaga `tests/impl_tabs_test.js`):
   *Profiles* (traktor per implement + daftar profil) dan *Actual per PT*.
   Di Actual, **Fill in counts** mengubah kolom Owned jadi isian untuk semua

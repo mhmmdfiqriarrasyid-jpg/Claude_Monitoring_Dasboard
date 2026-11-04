@@ -57,6 +57,14 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8811';
     out.newOne = w2.photos[1].startsWith('sp:') && w2.photos[1] !== w1.photos[0];
     await new Promise(r => setTimeout(r, 500));
     out.removedGone = !(await st.mod.getMetadata(st.mod.ref(st.s, w1.photos[0].slice(3))).catch(() => null));
+    // 2.26.1: a report whose photo document never landed — images only in Storage
+    for (const n of ['k1', 'k2', 'k3']) await st.mod.uploadString(st.mod.ref(st.s, `photos/workLogPhotos/wl_lost/${n}`), img1, 'data_url');
+    out.lostPlain = (await C.getWorkLogPhotos('wl_lost')).length;
+    const rec = await C.getWorkLogPhotos('wl_lost', { recover: true, expect: 2 });
+    out.recovered = [rec.length, rec.every(u => /^http:\/\/127\.0\.0\.1:9198\//.test(u))];
+    await new Promise(r => setTimeout(r, 800));
+    const lost = await raw('workLogPhotos', 'wl_lost');
+    out.writtenBack = lost && lost.photos;
     // inspection map
     await C.saveInspectionPhotos('in1', { gps: img1, cam: '' });
     const i1 = await raw('inspectionPhotos', 'in1');
@@ -80,7 +88,7 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8811';
     return out;
   });
   const want = { stored: 'sp:photos/damagePhotos/d1/', objExists: true, url: true, inline: 'data:image/jpeg;base64,', kept: true, newOne: true,
-    removedGone: true, map: [true, ''], legacyServed: true, migrated: [true, 'dev1'], deleted: [true, true], after: ['after', true] };
+    removedGone: true, lostPlain: 0, recovered: [2, true], writtenBack: ['sp:photos/workLogPhotos/wl_lost/k2', 'sp:photos/workLogPhotos/wl_lost/k3'], map: [true, ''], legacyServed: true, migrated: [true, 'dev1'], deleted: [true, true], after: ['after', true] };
   let fail = 0;
   Object.keys(want).forEach(k => { const ok = JSON.stringify(R[k]) === JSON.stringify(want[k]); if (!ok) fail++;
     console.log(`${ok ? 'PASS' : 'FAIL'}  ${k}${ok ? '' : ' dapat=' + JSON.stringify(R[k])}`); });

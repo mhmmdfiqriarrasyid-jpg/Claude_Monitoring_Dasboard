@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.26.0';
+const APP_VERSION = 'v2.26.1';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -15926,7 +15926,10 @@ async function loadWorkLogPhotos(id) {
     if (rec && Array.isArray(rec.photos) && rec.photos.length) return rec.photos.slice();
     if (_wlPhotoCache.has(id)) return _wlPhotoCache.get(id).slice();
     if (!window.cloud || !window.cloud.getWorkLogPhotos) return [];
-    const photos = await window.cloud.getWorkLogPhotos(id);
+    // 2.26.1: a report that counts photos but has no photo document gets them
+    // back from Storage (see _recoverPhotos in firebase-init.js).
+    const expect = workLogPhotoCount(rec);
+    const photos = await window.cloud.getWorkLogPhotos(id, expect ? { recover: true, expect } : undefined);
     _wlPhotoCache.set(id, photos);
     return photos.slice();
 }
@@ -18477,7 +18480,8 @@ async function loadLeaveDocs(id) {
     if (_leaveDocCache.has(id)) return _leaveDocCache.get(id);
     const fn = window.cloud && (window.cloud.getTeamDocs || window.cloud.getWorkLogPhotos);
     if (!fn) return [];
-    const pages = await fn.call(window.cloud, id);
+    const expect = leaveDocCount(leaveRequests.find(r => r.id === id));
+    const pages = await fn.call(window.cloud, id, expect ? { recover: true, expect } : undefined);
     const list = Array.isArray(pages) ? pages : [];
     _leaveDocCache.set(id, list);
     return list;

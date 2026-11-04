@@ -430,11 +430,25 @@ service cloud.firestore {
               ? mineIn(get(/databases/$(database)/documents/leaveRequests/$(id)).data)
               : orNew);
     }
+    // 2.26.1: the photos may still follow a report its sender has just sent.
+    // Since 2.17.0 the images are uploaded to Storage before their document is
+    // written, so the report (now pending) often reaches the server first —
+    // and the photos were then refused, leaving a report that says "3 photos"
+    // with none behind it. Only the sender, only while it is pending; once it
+    // is approved or sent back the photos are locked or open as before.
+    function sentByMe(d) { return apprOf(d) == 'pending' && d.get('submittedByUid', '') == request.auth.uid; }
+    function recordSentByMe(id) {
+      return exists(/databases/$(database)/documents/workLogs/$(id))
+          ? sentByMe(get(/databases/$(database)/documents/workLogs/$(id)).data)
+          : (exists(/databases/$(database)/documents/leaveRequests/$(id))
+              ? sentByMe(get(/databases/$(database)/documents/leaveRequests/$(id)).data)
+              : false);
+    }
     match /workLogPhotos/{id} {
       allow read:  if canViewArea('teamLog') || canViewArea('teamLogApprove')
                     || (teamLogOwn() && recordMine(id, false));
-      allow write: if isOwner() || (canEditArea('teamLog') && recordOpen(id))
-                    || (teamLogOwn() && recordOpen(id) && recordMine(id, true));
+      allow write: if isOwner() || (canEditArea('teamLog') && (recordOpen(id) || recordSentByMe(id)))
+                    || (teamLogOwn() && (recordOpen(id) || recordSentByMe(id)) && recordMine(id, true));
     }
 
     // Damage photos, one document per record. Split out for the same reason as

@@ -121,6 +121,14 @@ async function check(name, p, expectOk) {
     await reseed('wl_ph2', { approval: 'draft' });
     await check('foto: laporan draf boleh', setDoc(doc(W, 'workLogPhotos', 'wl_ph2'), { id: 'wl_ph2', photos: [] }), true);
     await check('surat: pengajuan yang MENUNGGU DITOLAK', setDoc(doc(W, 'workLogPhotos', 'lv_1'), { id: 'lv_1', photos: [] }), false);
+    // 2.26.1: foto boleh menyusul laporan yang baru dikirim — hanya oleh pengirimnya.
+    await reseed('wl_sent', { approval: 'pending', submittedByUid: 'writer' });
+    await check('foto menyusul: pengirim laporan pending boleh', setDoc(doc(W, 'workLogPhotos', 'wl_sent'), { id: 'wl_sent', photos: ['data:image/png;base64,AA'] }), true);
+    await check('foto menyusul: editor lain DITOLAK', setDoc(doc(BOTH, 'workLogPhotos', 'wl_sent'), { id: 'wl_sent', photos: [] }), false);
+    await reseed('wl_sentok', { approval: 'approved', submittedByUid: 'writer', approvedByEmail: 'boss@x.id' });
+    await check('foto menyusul: laporan disetujui tetap terkunci', setDoc(doc(W, 'workLogPhotos', 'wl_sentok'), { id: 'wl_sentok', photos: [] }), false);
+    await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'leaveRequests', 'lv_sent'), { id: 'lv_sent', approval: 'pending', createdByUid: 'writer', submittedByUid: 'writer' }));
+    await check('surat menyusul: pengirim pengajuan pending boleh', setDoc(doc(W, 'workLogPhotos', 'lv_sent'), { id: 'lv_sent', photos: ['data:image/png;base64,AA'] }), true);
 
     // ---- persetujuan: izin / sakit ----
     await check('izin: editor menyetujui lewat console DITOLAK', setDoc(doc(W, 'leaveRequests', 'lv_1'), { approval: 'approved', approvedByEmail: 'boss@x.id' }, { merge: true }), false);
@@ -452,6 +460,8 @@ async function check(name, p, expectOk) {
     await check('own: foto laporan orang lain DITOLAK', getDoc(doc(MY, 'workLogPhotos', 'other_open')), false);
     await check('own: menulis foto laporan orang lain DITOLAK', setDoc(doc(MY, 'workLogPhotos', 'other_open'), { id: 'other_open', photos: ['x'] }), false);
     await check('own: menulis foto laporan baru (belum ada laporan)', setDoc(doc(MY, 'workLogPhotos', 'own_fresh'), { id: 'own_fresh', photos: ['x'] }), true);
+    await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'workLogs', 'own_sent'), { id: 'own_sent', task: 'x', approval: 'pending', createdByUid: 'mine', submittedByUid: 'mine' }));
+    await check('own: foto menyusul laporannya yang baru dikirim', setDoc(doc(MY, 'workLogPhotos', 'own_sent'), { id: 'own_sent', photos: ['x'] }), true);
     await check('own: boleh menulis riwayat (laporannya sendiri)', setDoc(doc(MY, 'history', 'h_own'),
         { id: 'h_own', timestamp: Date.now(), action: 'create', unitId: '', unitName: '[Team] x', field: '', before: '', after: '', actorUid: 'mine', actorEmail: 'mine@x.id', actorName: 'm', actorRole: 'staff', unitGroup: 'shared' }), true);
     await check('peran: owner membaca dan membuat peran', getDocs(collection(O, 'roles')), true);

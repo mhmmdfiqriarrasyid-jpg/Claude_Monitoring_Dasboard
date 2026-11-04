@@ -193,6 +193,30 @@ async function _getPhotoDoc(col, docId, field, empty, opts, fieldsOf) {
     }
     return _photoMap(v, x => _photoDown(x, opts && opts.inline));
 }
+// 2.26.1: a report whose photo document never landed (refused by the rules
+// before 2.26.1, see firestore.rules → recordSentByMe) still has its images in
+// Storage under photos/<col>/<doc>/. They are found there, the newest `expect`
+// of them, and written back into the document — quietly refused for whoever
+// may not write it.
+async function _recoverPhotos(col, docId, field, opts) {
+    try {
+        const st = await _storage();
+        if (!st.mod.listAll) return [];
+        const res = await _withTimeout(st.mod.listAll(st.mod.ref(st.s, `photos/${col}/${String(docId).replace(/[^\w-]/g, '_')}`)), 20000);
+        let items = (res.items || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+        const expect = Math.floor(Number(opts && opts.expect) || 0);
+        if (expect > 0 && items.length > expect) items = items.slice(-expect);
+        if (!items.length) return [];
+        const refs = items.map(i => PHOTO_REF + i.fullPath);
+        setDoc(doc(db, col, docId), { id: docId, [field]: refs, updatedAt: Date.now() })
+            .catch(err => console.warn('[photos] recovered, not written back:', err && (err.code || err.message)));
+        console.info(`[photos] ${refs.length} photo(s) of ${col}/${docId} recovered from Storage`);
+        return Promise.all(refs.map(r => _photoDown(r, opts && opts.inline)));
+    } catch (err) {
+        console.warn('[photos] nothing recovered from Storage:', err && (err.code || err.message));
+        return [];
+    }
+}
 async function _deletePhotoDoc(col, docId, field) {
     let refs = [];
     try { const old = await getDoc(doc(db, col, docId)); if (old.exists()) refs = _photoRefs(old.data()[field]); } catch (_) { /* gone */ }
@@ -1239,7 +1263,9 @@ window.cloud = {
     // are fetched one document at a time, only when someone actually opens
     // them. There is no subscription here, and there must not be one.
     async getWorkLogPhotos(id, opts) {
-        return _getPhotoDoc(WORK_LOG_PHOTOS_COL, id, 'photos', [], opts);
+        const got = await _getPhotoDoc(WORK_LOG_PHOTOS_COL, id, 'photos', [], opts);
+        if (got.length || !(opts && opts.recover)) return got;
+        return _recoverPhotos(WORK_LOG_PHOTOS_COL, id, 'photos', opts);
     },
     async saveWorkLogPhotos(id, photos) {
         await _savePhotoDoc(WORK_LOG_PHOTOS_COL, id, 'photos', photos, { id });

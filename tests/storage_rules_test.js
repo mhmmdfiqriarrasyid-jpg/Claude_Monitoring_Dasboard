@@ -4,7 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { initializeTestEnvironment, assertSucceeds, assertFails } = require('@firebase/rules-unit-testing');
-const { ref, uploadBytes, getBytes, deleteObject } = require('firebase/storage');
+const { ref, uploadBytes, getBytes, deleteObject, listAll } = require('firebase/storage');
 const { doc, setDoc } = require('firebase/firestore');
 
 (async () => {
@@ -73,6 +73,10 @@ const { doc, setDoc } = require('firebase/firestore');
     await check('foto laporan: akun own TIDAK bisa mengunggah ke laporan orang lain', img(st('tlOwn'), 'photos/workLogPhotos/wl_other/b'), false);
     await check('foto laporan: akun own membaca laporannya sendiri', getBytes(ref(st('tlOwn'), 'photos/workLogPhotos/wl_mine/a')), true);
     await check('foto laporan: akun own TIDAK bisa membaca laporan orang lain', getBytes(ref(st('tlOwn'), 'photos/workLogPhotos/wl_other/a')), false);
+    // 2.26.1: foto yang dokumennya tidak pernah tersimpan dicari lewat daftar folder.
+    await check('foto laporan: owner melihat daftar folder laporan', listAll(ref(st('own'), 'photos/workLogPhotos/wl_other')), true);
+    await check('foto laporan: editor tim melihat daftar folder laporan', listAll(ref(st('tlE'), 'photos/workLogPhotos/wl_other')), true);
+    await check('foto laporan: tanpa akses TIDAK bisa melihat daftar', listAll(ref(st('rd'), 'photos/workLogPhotos/wl_other')), false);
     await check('arsip history: owner bisa membaca', getBytes(ref(st('own'), 'archives/history/2024-01.json')).catch(e => { if (/not.?found/i.test(e.code || e.message)) return; throw e; }), true);
     await check('arsip history: bukan owner TIDAK bisa membaca', getBytes(ref(st('ed'), 'archives/history/2024-01.json')), false);
     await check('arsip history: owner pun TIDAK bisa menulis (server saja)', uploadBytes(ref(st('own'), 'archives/history/x.json'), pdf, { contentType: 'application/json' }), false);
