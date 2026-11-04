@@ -160,7 +160,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.28.1';
+const APP_VERSION = 'v2.28.2';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -20248,6 +20248,9 @@ function purchaseChecklistHtml(r) {
     const receipts = (r.receipts || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
     const meta = (label, v) => `<tr><th>${label}</th><td>${escapeHtml(v || '—')}</td></tr>`;
     const due = items.reduce((n, it) => n + Math.max(0, (Number(it.qty) || 0) - (Number(it.receivedQty) || 0)), 0);
+    const unitsAll = items.reduce((n, it) => n + (Number(it.qty) || 0), 0);
+    const unitsGot = items.reduce((n, it) => n + Math.min(Number(it.qty) || 0, Number(it.receivedQty) || 0), 0);
+    const itemsDone = items.filter(it => (Number(it.receivedQty) || 0) >= (Number(it.qty) || 0)).length;
     const who = (currentUserDoc && currentUserDoc.displayName) || ((currentUser && currentUser.email) ? shortActor(currentUser.email) : '');
     return `
     <header class="ps-head">
@@ -20258,7 +20261,11 @@ function purchaseChecklistHtml(r) {
     <table class="ps-meta"><tbody>
         ${meta('PR No.', r.prNo)}${meta('Title', r.title)}${meta('Company', r.company)}
         ${meta('PR date', r.prDate)}${meta('PO', [r.poNo, r.poDate].filter(Boolean).join(' · '))}
-        ${meta('Requested by', r.createdBy)}${meta('Status', prStatusDef(r.status).label)}
+        ${meta('Requested by', r.createdBy)}
+        <tr><th>Status</th><td><span class="ps-status ps-status--${escapeHtml(r.status || '')}">${escapeHtml(prStatusDef(r.status).label)}</span></td></tr>
+        ${meta('Progress', `${itemsDone} of ${items.length} item${items.length === 1 ? '' : 's'} complete · ${unitsGot} of ${unitsAll} received (${unitsAll ? Math.floor(100 * unitsGot / unitsAll) : 0}%)`)}
+        ${meta('Last delivery', receipts.length ? `${receipts[receipts.length - 1].date || '—'} (delivery ${receipts.length})` : 'none yet')}
+        ${meta('This check', PR_CLOSED.includes(r.status) ? 'all goods received — for the record' : `delivery ${receipts.length + 1}`)}
     </tbody></table>
     <h2>Items <span class="ps-sub">${due ? `${due} still to receive` : 'all received'}</span></h2>
     <table class="ps-items">

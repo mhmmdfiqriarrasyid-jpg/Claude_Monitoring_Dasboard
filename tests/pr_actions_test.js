@@ -56,13 +56,16 @@ const { launch, BASE_URL } = require('./_env');
         const rows = [...document.querySelectorAll('#printSheet .ps-items:not(.ps-hist) tbody tr')].map(tr => [...tr.cells].slice(3, 6).map(c => c.textContent.trim()));
         return { printed: window.__printed, during: window.__during, rows, hist: document.querySelectorAll('#printSheet .ps-hist tbody tr').length,
                  escaped: !document.querySelector('#printSheet .ps-items b:not(:only-child)') && /Repeater <b>x<\/b>/.test(document.getElementById('printSheet').textContent),
-                 signs: document.querySelectorAll('#printSheet .ps-sign__box').length };
+                 signs: document.querySelectorAll('#printSheet .ps-sign__box').length,
+                 meta: Object.fromEntries([...document.querySelectorAll('#printSheet .ps-meta tr')].map(tr => [tr.cells[0].textContent, tr.cells[1].textContent.trim()])) };
     });
     await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
     t('Print checklist: dicetak sekali, hanya lembar ini', [P.printed, P.during], [1, true]);
     t('jumlah dipesan / sudah / sisa per item', P.rows, [['3', '1', '2'], ['1', '1', '0']]);
     t('riwayat penerimaan + 3 kolom tanda tangan', [P.hist, P.signs], [1, 3]);
     t('spesifikasi di-escape', P.escaped, true);
+    t('status + progres + pengiriman', [P.meta.Status, P.meta.Progress, P.meta['Last delivery'], P.meta['This check']],
+      ['Partially received', '1 of 2 items complete · 2 of 4 received (50%)', '2026-11-04 (delivery 1)', 'delivery 2']);
     t('setelah cetak kembali normal', await page.evaluate(() => document.body.classList.contains('printing-sheet')), false);
     t('tombol tidak ada untuk Submitted', await page.evaluate(() => { purchaseRequests.push({ id: 'pr_f', status: 'submitted', items: [] }); showPurchaseDetail('pr_f');
         return [...document.querySelectorAll('#prDetailActions button')].some(b => /Print checklist/.test(b.textContent)); }), false);
