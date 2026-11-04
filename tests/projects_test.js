@@ -198,6 +198,9 @@ const { launch, BASE_URL } = require('./_env');
         countProjectJobUnits('pd'); await tick();
         const d2 = projects.find(x => x.id === 'pd');
         t('setelah dihitung: 3 unit, 3/54, tombol hilang', [d2.target.units.length, d2.target.done, /Count units from jobs/.test(document.getElementById('pjDetailBody').textContent)], [3, 3, false]);
+        const pdNow = projects.find(x => x.id === 'pd');
+        pdNow.target.done = 4; showProjectDetail('pd');
+        t('detail: asal angka (unit vs manual)', document.querySelector('#pjDetailBody .pj-count-src').textContent.trim(), '3 from units · 1 entered by hand (no unit)');
         closeProjectDetail();
         projects = projects.filter(x => x.id !== 'pd');
 

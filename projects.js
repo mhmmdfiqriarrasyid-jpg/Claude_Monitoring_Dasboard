@@ -478,6 +478,12 @@ function showProjectDetail(id, keepForm) {
             <span><b>${escapeHtml(m.label)}</b> <span class="adm-sub">${Number(m.weight) || 0}%${m.done && m.doneAt ? ' · done ' + escapeHtml(m.doneAt) : ''}</span></span></label>`).join('')}</div>`;
     } else {
         targetHtml = `<p>${pr.done} of ${pr.total} ${escapeHtml(t.what || '')}</p>`;
+        // 2.29.3: where the number comes from — units ticked, and the rest typed by hand.
+        if (t.mode === 'count') {
+            const byUnit = (t.units || []).filter(u => u.done).length;
+            const byHand = pr.done - byUnit;
+            if (byUnit || byHand) targetHtml += `<p class="adm-sub pj-count-src">${byUnit} from units${byHand > 0 ? ` · <b>${byHand} entered by hand</b> (no unit)` : ''}${byHand < 0 ? ` · ${-byHand} unit(s) ticked but taken off by hand` : ''}</p>`;
+        }
     }
     // 2.29.1: units involved in a Number or Milestones project (optional).
     if (t.mode !== 'units' && (t.units || []).length) {
