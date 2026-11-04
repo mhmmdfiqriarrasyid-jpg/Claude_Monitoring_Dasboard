@@ -591,6 +591,12 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.27.0 — satuan barang Purchase Request** (dijaga `tests/pr_uom_test.js`):
+  Master lists → **Item Units** (`masterLists/uom`, grup *Damage, warehouse &
+  purchase*, diatur editor Purchase). Kolom Unit di Purchase details memakai
+  daftar ini sebagai pilihan (kosong = pcs, set, unit, box, pack, roll, m, kg,
+  liter) dan tetap bisa diketik bebas. Satuan pertama yang ditambahkan ikut
+  menyimpan sembilan bawaan. **Perlu publish ulang `firestore.rules`.**
   **2.26.1 — foto laporan yang hilang ("Photos not found")**: sejak 2.17.0
   foto diunggah ke Storage dulu, baru dokumennya ditulis — sehingga laporan
   (sudah *pending*) sering sampai duluan dan rules menolak foto akun non-owner.

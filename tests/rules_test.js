@@ -622,6 +622,15 @@ async function check(name, p, expectOk) {
     await check('Agri: bukan editor TIDAK bisa mengubah pengaturan', setDoc(doc(as('writer'), 'settings', 'agri'), { builtIns: true }), false);
     await check('Device Categories: editor warehouse menyimpan daftar', setDoc(doc(as('wh'), 'masterLists', 'deviceType'), { id: 'deviceType', values: ['Basestation'] }), true);
     await check('Device Categories: pembaca warehouse TIDAK bisa menyimpan', setDoc(doc(as('whv'), 'masterLists', 'deviceType'), { id: 'deviceType', values: ['X'] }), false);
+    // 2.27.0: satuan barang Purchase Request
+    await env.withSecurityRulesDisabled(async ctx => {
+        const db = ctx.firestore();
+        await setDoc(doc(db, 'users', 'prE'), { uid: 'prE', email: 'prE@x.id', role: 'staff', status: 'active', access: { purchase: 'edit' } });
+        await setDoc(doc(db, 'users', 'prOwn'), { uid: 'prOwn', email: 'prOwn@x.id', role: 'staff', status: 'active', access: { purchase: 'own' } });
+    });
+    await check('Item Units: editor purchase menyimpan daftar', setDoc(doc(as('prE'), 'masterLists', 'uom'), { id: 'uom', values: ['pcs', 'drum'] }), true);
+    await check('Item Units: akun purchase own TIDAK bisa menyimpan', setDoc(doc(as('prOwn'), 'masterLists', 'uom'), { id: 'uom', values: ['x'] }), false);
+    await check('Item Units: editor warehouse TIDAK bisa menyimpan', setDoc(doc(as('wh'), 'masterLists', 'uom'), { id: 'uom', values: ['x'] }), false);
 
     await env.cleanup();
     let pass = 0;

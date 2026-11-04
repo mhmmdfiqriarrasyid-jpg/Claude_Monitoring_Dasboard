@@ -84,8 +84,8 @@ const LIC_PAID = ['SF-RTK', 'G5 Advance'];
 const LIC_REQ_OPTIONS = { gps: ['', 'SF-1', 'SF-RTK'], display: ['', 'G5 Basic', 'G5 Advance'] };
 let licenseTab = 'stock';
 // Master lists (Site / Brand / Company). An empty list means "anything goes".
-let masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [] };
-const MASTER_KINDS = ['site', 'brand', 'heavyBrand', 'company', 'damageType', 'jobType', 'implGroup', 'learnCategory', 'deviceType'];
+let masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [], uom: [] };
+const MASTER_KINDS = ['site', 'brand', 'heavyBrand', 'company', 'damageType', 'jobType', 'implGroup', 'learnCategory', 'deviceType', 'uom'];
 const MASTER_DEF = {
     site:    { label: 'Site',    plural: 'Sites',     edit: ['editUnits'],              view: ['editUnits'],
                hint: 'Used by every unit (both groups).' },
@@ -111,6 +111,10 @@ const MASTER_DEF = {
     // free text with suggestions, as before.
     deviceType: { label: 'Device Category', plural: 'Device Categories', edit: ['warehouse'], view: ['warehouse'],
                hint: 'Categories of Warehouse devices (Basestation, Display, Handy Talky, …). While empty, any category can be typed.' },
+    // 2.27.0: units of measure on Purchase Request items (pcs, set, liter, …).
+    // Suggestions only — any unit can still be typed. Empty = the built-in nine.
+    uom: { label: 'Item Unit', plural: 'Item Units', edit: ['purchase'], view: ['purchase'],
+               hint: 'Units chosen for each Purchase Request item (pcs, set, liter, …). While empty: ' + 'pcs, set, unit, box, pack, roll, m, kg, liter' + '. Any other unit can still be typed.' },
     jobType: { label: 'Job Type', plural: 'Job Types', edit: ['teamMembers'], view: ['teamMembers'],
                hint: 'Chosen for each paddock in a Daily Report. While the list is empty: Application, Tillage, Harvesting and Planting.' }
 };
@@ -156,7 +160,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.26.1';
+const APP_VERSION = 'v2.27.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -13718,7 +13722,7 @@ function tearDownCloudSync() {
     // What was typed belongs to the account that typed it.
     if (typeof clearUnsent === 'function') clearUnsent();
     licenseRequirements = [];
-    masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [] };
+    masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [], uom: [] };
     if (cloudDamageComponentsUnsub) { try { cloudDamageComponentsUnsub(); } catch (_) {} cloudDamageComponentsUnsub = null; }
     if (cloudDevicesUnsub) { try { cloudDevicesUnsub(); } catch (_) {} cloudDevicesUnsub = null; }
     if (cloudPurchaseUnsub) { try { cloudPurchaseUnsub(); } catch (_) {} cloudPurchaseUnsub = null; }
@@ -19903,6 +19907,8 @@ const PR_STATUSES = [
 const PR_CLOSED = ['received', 'rejected', 'cancelled'];
 const PR_STALL_DAYS = 7;           // a step waiting this long shows in the inbox
 const PR_UOMS = ['pcs', 'set', 'unit', 'box', 'pack', 'roll', 'm', 'kg', 'liter'];
+// 2.27.0: Master lists → Item Units, when filled; the built-in nine otherwise.
+function prUomChoices() { return masterListActive('uom') ? masterLists.uom.slice() : PR_UOMS.slice(); }
 let _prItems = [];                 // the form's item rows
 
 function prStatusDef(k) { return PR_STATUSES.find(s => s.key === k) || PR_STATUSES[0]; }
@@ -20040,7 +20046,7 @@ function renderPurchaseItems() {
             <input class="form-input" aria-label="Item ${i + 1} unit" list="prUomList" value="${escapeHtml(it.uom || '')}" maxlength="20" oninput="_prItems[${i}].uom = this.value">
             <input class="form-input" aria-label="Item ${i + 1} estimated price per unit" type="number" min="0" step="1" value="${escapeHtml(String(it.price || ''))}" placeholder="optional" oninput="_prItems[${i}].price = this.value; updatePurchaseTotal()">
             <button type="button" class="btn btn-secondary btn-icon" aria-label="Remove item ${i + 1}" onclick="removePurchaseItemRow(${i})" ${(Number(it.receivedQty) || 0) > 0 ? 'disabled title="Already partly received"' : ''}><i class="fas fa-xmark" aria-hidden="true"></i></button>
-        </div>`).join('') + `<datalist id="prUomList">${PR_UOMS.map(u => `<option value="${u}"></option>`).join('')}</datalist>`;
+        </div>`).join('') + `<datalist id="prUomList">${prUomChoices().map(u => `<option value="${escapeHtml(u)}"></option>`).join('')}</datalist>`;
     updatePurchaseTotal();
 }
 function updatePurchaseTotal() {
@@ -25350,13 +25356,14 @@ function masterUsage(kind) {
     if (kind === 'implGroup') globalImplements.forEach(i => add(i.group));
     if (kind === 'learnCategory') learningItems.forEach(i => add(i.category));
     if (kind === 'deviceType') (warehouseDevices || []).forEach(d => add(d.type));
+    if (kind === 'uom') (purchaseRequests || []).forEach(r => (r.items || []).forEach(it => add(it.uom)));
     return counts;
 }
-const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', heavyBrand: 'unit', company: 'member', damageType: 'damage record', jobType: 'report line', implGroup: 'implement', learnCategory: 'material', deviceType: 'device' };
+const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', heavyBrand: 'unit', company: 'member', damageType: 'damage record', jobType: 'report line', implGroup: 'implement', learnCategory: 'material', deviceType: 'device', uom: 'request item' };
 
 function applyMasterListsSnapshot(docs) {
     _markLoaded('masterLists');
-    const next = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [] };
+    const next = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [], uom: [] };
     (docs || []).forEach(d => {
         if (MASTER_KINDS.includes(d.id) && Array.isArray(d.values)) next[d.id] = d.values.map(_toolNorm).filter(Boolean);
     });
@@ -25400,7 +25407,7 @@ function switchMasterList(kind) { _mlKind = kind; _pdImport = null; document.get
 const MASTER_TAB_GROUPS = [
     { label: 'Fleet',            kinds: ['site', 'heavyBrand', 'brand', 'implGroup'] },
     { label: 'Team & reports',   kinds: ['company', 'jobType', 'paddock'] },
-    { label: 'Damage & warehouse', kinds: ['damageType', 'deviceType'] },
+    { label: 'Damage, warehouse & purchase', kinds: ['damageType', 'deviceType', 'uom'] },
     { label: 'Learning Center',  kinds: ['learnCategory'] }
 ];
 function renderMasterLists() {
@@ -25498,7 +25505,10 @@ function addMasterValue(value) {
         showToast(`"${v}" is already a built-in damage type`, 'info'); return;
     }
     if ((masterLists[kind] || []).length >= 500) { showToast('A list can hold at most 500 entries', 'warning'); return; }
-    _saveMasterList(kind, (masterLists[kind] || []).concat([v]), `Added "${v}"`);
+    // Item Units: the first one added keeps the built-in nine beside it, so
+    // adding "drum" does not take "pcs" away (they can still be removed).
+    const base = kind === 'uom' && !masterListActive('uom') ? PR_UOMS.slice() : (masterLists[kind] || []);
+    _saveMasterList(kind, base.concat([v]), `Added "${v}"`);
     if (value == null) input.value = '';
     showToast(`"${v}" added to the ${MASTER_DEF[kind].label} list`, 'success');
 }
@@ -25911,7 +25921,7 @@ function dcNotInMasterLists() {
     MASTER_KINDS.forEach(kind => {
         // Damage types only add choices; a type outside the list is not wrong.
         // Job types live on reports that are often locked once approved.
-        if (kind === 'damageType' || kind === 'jobType' || kind === 'learnCategory' || !masterListActive(kind)) return;
+        if (kind === 'damageType' || kind === 'jobType' || kind === 'learnCategory' || kind === 'uom' || !masterListActive(kind)) return;
         [...masterUsage(kind).entries()].filter(([v]) => !masterMatch(kind, v)).sort((a, b) => b[1] - a[1]).forEach(([v, n]) => {
             out.push(dc('master-luar', `${MASTER_DEF[kind].label}: ${v}`,
                 `${n} ${MASTER_USED_NOUN[kind]}(s) — not in the ${MASTER_DEF[kind].label} list`,
