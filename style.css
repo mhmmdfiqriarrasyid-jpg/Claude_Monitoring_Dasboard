@@ -3221,6 +3221,19 @@ body[data-unit-scope] #damageGroupFilter { display: none !important; }
     flex-wrap: wrap;
 }
 .wl-photo-hint { font-size: 11.5px; color: var(--text-light); }
+/* 2.25.0: photos per paddock line — thumbnails and an Add tile */
+.wl-job__photos { margin-bottom: 0; }
+.wl-job__photos .wl-photos { margin-top: 2px; }
+.wl-photo-add {
+    width: 84px; height: 84px;
+    display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    border: 1.5px dashed var(--border-strong, var(--border)); border-radius: 6px;
+    background: var(--card); color: var(--text-secondary);
+    font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.wl-photo-add i { font-size: 18px; }
+.wl-photo-add:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-text); background: var(--primary-lighter); }
+.wl-photo-add:disabled { opacity: .5; cursor: default; }
 .wl-photos {
     display: flex;
     flex-wrap: wrap;

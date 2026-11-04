@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.24.0';
+const APP_VERSION = 'v2.25.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -991,7 +991,7 @@ function _formStateKey(formId) {
     // A check report's results, and a daily report's units, are buttons and
     // chips, not inputs.
     if (formId === 'inspectionForm' && typeof _insResults !== 'undefined') key += JSON.stringify(_insResults || {});
-    if (formId === 'workLogForm' && typeof _wlJobs !== 'undefined') key += JSON.stringify(_wlJobs || []);
+    if (formId === 'workLogForm' && typeof _wlJobs !== 'undefined') key += JSON.stringify(_wlJobs || [], (k, v) => k === 'pics' ? (v || []).length : v);
     return key;
 }
 function watchFormEdits() {
@@ -15769,6 +15769,11 @@ function generateWorkLogId() {
 // far tighter budget than the single damage photo: 4 × 200KB leaves headroom
 // under the 1MB document limit even with a long description alongside.
 const WORKLOG_PHOTO_MAX = 4;
+// 2.25.0: on a Field report each paddock line has its own photos. They all go
+// to the one workLogPhotos document as a single list — the lines' photos in
+// line order, then the report's own (Office, or older reports) — and each
+// line stores only how many of them are its own (jobs[i].photoCount).
+const WORKLOG_JOB_PHOTO_MAX = 8;
 const WORKLOG_PHOTO_OPTS = { maxDim: 1024, maxBytes: 200 * 1024, quality: 0.7 };
 
 // Above this, a shift that wraps past midnight is more likely a typo than a
@@ -15807,6 +15812,19 @@ async function loadWorkLogPhotos(id) {
     const photos = await window.cloud.getWorkLogPhotos(id);
     _wlPhotoCache.set(id, photos);
     return photos.slice();
+}
+
+// The stored list cut back into each paddock line's photos and the report's
+// own. Counts that do not add up (never expected) leave every photo general.
+function workLogPhotoSplit(rec, photos) {
+    const list = Array.isArray(photos) ? photos : [];
+    const jobs = rec && rec.place !== 'office' ? workLogJobs(rec) : [];
+    const counts = jobs.map(j => Math.max(0, Math.floor(Number(j.photoCount) || 0)));
+    const sum = counts.reduce((a, b) => a + b, 0);
+    if (!sum || sum > list.length) return { jobs: jobs.map(() => []), general: list.slice() };
+    let k = 0;
+    const out = counts.map(c => { const part = list.slice(k, k + c); k += c; return part; });
+    return { jobs: out, general: list.slice(k) };
 }
 
 // ---- Multiple units per report ----
@@ -17454,7 +17472,11 @@ function setPhotoAddState(btnId, loading, failed, what) {
         : failed ? `Existing ${what.toLowerCase()} failed to load — close and reopen to change them` : '';
 }
 
-function _wlNewJob() { return { paddock: '', jobType: '', units: [], desc: '' }; }
+// pics: this line's photos in the form; had: how many it has stored (known
+// before they load); slot: its place in the stored report, so photos that
+// arrive late still find their line after another line was added or removed.
+function _wlNewJob() { return { paddock: '', jobType: '', units: [], desc: '', pics: [], had: 0 }; }
+let _wlGeneralHad = 0;   // the report's own stored photos (not on a line)
 // 2.16.0: Field (paddock lines, each with its own description) or Office
 // (one description and at least one photo).
 function _wlPlace() { return document.querySelector('input[name="wlPlace"]:checked')?.value === 'office' ? 'office' : 'field'; }
@@ -17462,8 +17484,18 @@ function syncWorkLogPlace() {
     const office = _wlPlace() === 'office';
     document.getElementById('wlFieldGroup').style.display = office ? 'none' : '';
     document.getElementById('wlOfficeGroup').style.display = office ? '' : 'none';
-    document.getElementById('wlPhotoTitle').textContent = office ? 'Photos' : 'Field Photos';
+    document.getElementById('wlPhotoTitle').textContent = office ? 'Photos' : 'Other photos';
     document.getElementById('wlPhotoNeed').textContent = office ? 'at least 1' : 'optional';
+    _wlSyncGeneralPhotos();
+}
+// Field photos sit on each paddock line; the report-wide box shows on a Field
+// report only for photos it already holds (older reports), to view or delete.
+function _wlSyncGeneralPhotos() {
+    const office = _wlPlace() === 'office';
+    const group = document.getElementById('wlPhotoGroup');
+    if (group) group.style.display = office || _wlPhotos.length || (_wlPhotosLoading && _wlGeneralHad) || _wlPhotosFailed && _wlGeneralHad ? '' : 'none';
+    const row = document.getElementById('wlPhotoAddRow');
+    if (row) row.style.display = office ? '' : 'none';
 }
 function _wlSetPlace(place) {
     const r = document.querySelector(`input[name="wlPlace"][value="${place === 'office' ? 'office' : 'field'}"]`);
@@ -17531,8 +17563,77 @@ function renderWorkLogJobs() {
                             onclick="removeWorkLogJobUnit(${i}, ${k})">&times;</button></span>`).join('')
                     : '<span class="unit-chip__empty">No units selected</span>'}</div>
             </div>
+            ${_wlJobPhotosHtml(j, i)}
         </div>`;
     }).join('');
+}
+function _wlJobPhotosHtml(j, i) {
+    const pics = j.pics || [];
+    const waiting = (_wlPhotosLoading || _wlPhotosFailed) && j.had > 0;
+    const shown = waiting ? j.had : pics.length;
+    const blocked = _wlPhotosLoading || _wlPhotosFailed;
+    let body;
+    if (_wlPhotosLoading && j.had > 0) body = '<span class="wl-photo__loading"><i class="fas fa-spinner fa-spin"></i> Loading photos…</span>';
+    else if (_wlPhotosFailed && j.had > 0) body = '<span class="wl-photo__loading"><i class="fas fa-triangle-exclamation"></i> Photos failed to load and are still saved. Close and reopen to change them.</span>';
+    else body = pics.map((src, k) => `
+                <div class="wl-photo">
+                    <img src="${escapeHtml(safeImageSrc(src))}" alt="Paddock ${i + 1} photo ${k + 1}" onclick="openPhotoLightbox(_wlJobs[${i}].pics, ${k})">
+                    <button type="button" class="wl-photo__x" aria-label="Delete photo ${k + 1} of paddock ${i + 1}"
+                            title="Delete photo" onclick="removeWorkLogJobPhoto(${i}, ${k})">&times;</button>
+                </div>`).join('') + (pics.length < WORKLOG_JOB_PHOTO_MAX ? `
+                <button type="button" class="wl-photo-add" onclick="addWorkLogJobPhotos(${i})"${blocked ? ' disabled' : ''}
+                        aria-label="Add photos to paddock ${i + 1}"><i class="fas fa-camera" aria-hidden="true"></i><span>Add</span></button>` : '');
+    return `<div class="form-group wl-job__photos">
+                <span class="form-label">Photos <span class="form-optional">(optional · ${shown}/${WORKLOG_JOB_PHOTO_MAX})</span></span>
+                <div class="wl-photos">${body}</div>
+            </div>`;
+}
+let _wlPhotoJob = -1;
+function addWorkLogJobPhotos(i) {
+    if (!_wlJobs[i] || _wlPhotosLoading || _wlPhotosFailed) return;
+    _wlPhotoJob = i;
+    document.getElementById('wlJobPhotoInput')?.click();
+}
+async function handleWorkLogJobPhotoChange(event) {
+    const files = [...(event.target.files || [])];
+    event.target.value = '';
+    const j = _wlJobs[_wlPhotoJob];
+    if (!files.length || !j) return;
+    if (!j.pics) j.pics = [];
+    if (await _wlCompressInto(files, j.pics, WORKLOG_JOB_PHOTO_MAX, `Maximum ${WORKLOG_JOB_PHOTO_MAX} photos per paddock`)) renderWorkLogJobs();
+}
+function removeWorkLogJobPhoto(i, k) {
+    const j = _wlJobs[i];
+    if (!j || !j.pics) return;
+    j.pics.splice(k, 1);
+    _wlPhotosDirty = true;
+    renderWorkLogJobs();
+}
+// Compresses picked files into list (up to max). False when the form was
+// closed or reopened meanwhile, so the caller does not redraw a stale form.
+async function _wlCompressInto(files, list, max, tooMany) {
+    if (_wlPhotosLoading || _wlPhotosFailed) return false;
+    const gen = _wlPhotosGen;
+    for (const file of files) {
+        if (list.length >= max) { showToast(tooMany, 'warning'); break; }
+        if (!file.type.startsWith('image/')) {
+            showToast(`"${file.name}" is not an image — skipped`, 'warning');
+            continue;
+        }
+        try {
+            const data = await compressImageToDataURL(file, WORKLOG_PHOTO_OPTS);
+            if (gen !== _wlPhotosGen) return false;
+            list.push(data);
+            _wlPhotosDirty = true;
+        } catch (err) {
+            showToast(err.message || `Failed to process "${file.name}"`, 'error');
+        }
+    }
+    return gen === _wlPhotosGen;
+}
+// Every photo the form holds: the lines' in order, then the report's own.
+function _wlAllPhotos(jobs) {
+    return [...(jobs || _wlJobs).flatMap(j => j.pics || []), ..._wlPhotos];
 }
 // A paddock typed in another case ("jagf-1-a-001") becomes the list's spelling.
 function tidyWorkLogPaddock(i, input) {
@@ -17546,7 +17647,15 @@ function addWorkLogJob() {
 }
 function removeWorkLogJob(i) {
     const j = _wlJobs[i];
-    if (j && (j.paddock || j.units.length || (j.desc || '').trim()) && !confirm(`Remove paddock ${i + 1}${j.paddock ? ` (${j.paddock})` : ''} from the report?`)) return;
+    // Its stored photos are not on screen yet: removing the line now would
+    // leave them in the report under no line.
+    if (j && j.had > 0 && (_wlPhotosLoading || _wlPhotosFailed)) {
+        showToast('Wait for the photos to finish loading before removing this paddock', 'warning');
+        return;
+    }
+    const pics = (j && j.pics) ? j.pics.length : 0;
+    if (j && (j.paddock || j.units.length || (j.desc || '').trim() || pics) && !confirm(`Remove paddock ${i + 1}${j.paddock ? ` (${j.paddock})` : ''}${pics ? ` and its ${pics} photo(s)` : ''} from the report?`)) return;
+    if (pics) _wlPhotosDirty = true;
     _wlJobs.splice(i, 1);
     renderWorkLogJobs();
 }
@@ -17578,6 +17687,7 @@ function renderWorkLogPhotos() {
     if (count) count.textContent = `${_wlPhotos.length}/${WORKLOG_PHOTO_MAX}`;
     setPhotoAddState('wlPhotoAddBtn', _wlPhotosLoading, _wlPhotosFailed, 'Photos');
     if (!wrap) return;
+    _wlSyncGeneralPhotos();
     if (_wlPhotosLoading && !_wlPhotos.length) {
         wrap.innerHTML = '<span class="wl-photo__loading"><i class="fas fa-spinner fa-spin"></i> Loading photos…</span>';
         return;
@@ -17587,6 +17697,7 @@ function renderWorkLogPhotos() {
             + 'Existing photos failed to load and are still saved. Close and reopen to change them.</span>';
         return;
     }
+    _wlSyncGeneralPhotos();
     wrap.innerHTML = _wlPhotos.map((src, i) => `
         <div class="wl-photo">
             <img src="${escapeHtml(safeImageSrc(src))}" alt="Photo ${i + 1}" onclick="openPhotoLightbox(_wlPhotos, ${i})">
@@ -17599,36 +17710,7 @@ async function handleWorkLogPhotoChange(event) {
     const files = [...(event.target.files || [])];
     event.target.value = '';
     if (!files.length) return;
-    if (_wlPhotosLoading || _wlPhotosFailed) return;
-    const gen = _wlPhotosGen;
-
-    for (const file of files) {
-        if (_wlPhotos.length >= WORKLOG_PHOTO_MAX) {
-            showToast(`Maximum ${WORKLOG_PHOTO_MAX} photos per report`, 'warning');
-            break;
-        }
-        if (!file.type.startsWith('image/')) {
-            showToast(`"${file.name}" is not an image — skipped`, 'warning');
-            continue;
-        }
-        try {
-            const data = await compressImageToDataURL(file, WORKLOG_PHOTO_OPTS);
-            // Closed, or reopened on another report, while compressing.
-            if (gen !== _wlPhotosGen) return;
-            // Firestore rejects a document over 1MB outright, so stop before
-            // the write fails rather than after.
-            const total = _wlPhotos.reduce((n, p) => n + p.length, 0) + data.length;
-            if (total > WORKLOG_PHOTOS_TOTAL_BYTES) {
-                showToast('Total photo size is at the limit — delete one first', 'warning');
-                break;
-            }
-            _wlPhotos.push(data);
-            _wlPhotosDirty = true;
-        } catch (err) {
-            showToast(err.message || `Failed to process "${file.name}"`, 'error');
-        }
-    }
-    renderWorkLogPhotos();
+    if (await _wlCompressInto(files, _wlPhotos, WORKLOG_PHOTO_MAX, `Maximum ${WORKLOG_PHOTO_MAX} photos per report`)) renderWorkLogPhotos();
 }
 
 function removeWorkLogPhoto(index) {
@@ -17647,7 +17729,15 @@ async function openWorkLogPhotos(id, btn) {
     try {
         const photos = await loadWorkLogPhotos(id);
         if (!photos.length) { showToast('Photos not found', 'warning'); return; }
-        openPhotoLightbox(photos);
+        // Each photo captioned with its paddock line (2.25.0).
+        const rec = workLogs.find(w => w.id === id);
+        const split = workLogPhotoSplit(rec, photos);
+        const jobs = rec && rec.place !== 'office' ? workLogJobs(rec) : [];
+        const captions = [];
+        split.jobs.forEach((part, i) => part.forEach((_, k) => captions.push(
+            `${jobs[i].paddock || 'Paddock ' + (i + 1)}${jobs[i].jobType ? ' · ' + jobs[i].jobType : ''} — photo ${k + 1} of ${part.length}`)));
+        split.general.forEach((_, k) => captions.push(split.general.length > 1 ? `Photo ${k + 1} of ${split.general.length}` : ''));
+        openPhotoLightbox([...split.jobs.flat(), ...split.general], 0, { captions });
     } catch (err) {
         console.error('[team] work log photos load failed:', err);
         showToast(navigator.onLine
@@ -17668,6 +17758,7 @@ function showAddWorkLogForm() {
     document.getElementById('editWorkLogId').value = '';
     document.getElementById('workLogForm').reset();
     _wlJobs = [_wlNewJob()];
+    _wlGeneralHad = 0;
     _wlPhotosGen++;
     _wlPhotos = [];
     _wlPhotosDirty = false;
@@ -17721,7 +17812,14 @@ function editWorkLog(id) {
     // Copies, so cancelling the modal leaves the stored record untouched.
     _wlApplyMemberLock(w.memberId);
     const office = w.place === 'office';
-    _wlJobs = office ? [] : workLogJobs(w).map(j => ({ paddock: j.paddock || '', jobType: j.jobType || '', units: (j.units || []).map(u => ({ ...u })), desc: j.desc || '' }));
+    _wlJobs = office ? [] : workLogJobs(w).map((j, slot) => ({ paddock: j.paddock || '', jobType: j.jobType || '', units: (j.units || []).map(u => ({ ...u })), desc: j.desc || '',
+        pics: [], had: Math.max(0, Math.floor(Number(j.photoCount) || 0)), slot }));
+    {
+        const lineHad = _wlJobs.reduce((n, j) => n + j.had, 0);
+        // Counts that do not add up are all read as the report's own (workLogPhotoSplit).
+        if (lineHad > workLogPhotoCount(w)) _wlJobs.forEach(j => { j.had = 0; });
+        _wlGeneralHad = workLogPhotoCount(w) - _wlJobs.reduce((n, j) => n + j.had, 0);
+    }
     // Older reports had one description for the whole day: it goes on the
     // first paddock line, so nothing written is lost on the next save.
     if (!office && _wlJobs.length && !_wlJobs.some(j => j.desc) && w.task) _wlJobs[0].desc = w.task;
@@ -17748,14 +17846,19 @@ function editWorkLog(id) {
             // The modal may have been closed or reopened on another report
             // while the fetch was in flight — only fill what still applies.
             if (gen !== _wlPhotosGen) return;
-            _wlPhotos = photos.slice();   // a copy: the session cache must not see edits
+            // Copies: the session cache must not see edits.
+            const split = workLogPhotoSplit(w, photos);
+            _wlJobs.forEach(j => { j.pics = j.slot != null && split.jobs[j.slot] ? split.jobs[j.slot].slice() : (j.pics || []); });
+            _wlPhotos = split.general.slice();
             _wlPhotosLoading = false;
+            renderWorkLogJobs();
             renderWorkLogPhotos();
         }).catch(err => {
             console.error('[team] work log photos load failed:', err);
             if (gen !== _wlPhotosGen) return;
             _wlPhotosLoading = false;
             _wlPhotosFailed = true;
+            renderWorkLogJobs();
             renderWorkLogPhotos();
             showToast(navigator.onLine
                 ? 'Existing photos failed to load — they are still saved'
@@ -17768,8 +17871,9 @@ function closeWorkLogModal(force) {
     // Photos are compressed on the device and exist nowhere else until the
     // report is saved, so closing after shooting four of them in the field is
     // the most expensive discard in the app. saveWorkLog passes force.
-    if (!force && _wlPhotosDirty && _wlPhotos.length) {
-        if (!confirm(`${_wlPhotos.length} photo(s) not saved yet and will be lost. Close anyway?`)) return;
+    const unsaved = _wlAllPhotos().length;
+    if (!force && _wlPhotosDirty && unsaved) {
+        if (!confirm(`${unsaved} photo(s) not saved yet and will be lost. Close anyway?`)) return;
     } else if (!force && !okToDiscardTyping('workLogForm')) {
         return;
     }
@@ -17798,6 +17902,13 @@ function saveWorkLog(event, mode) {
     const start = document.getElementById('wlStart').value;
     const end = document.getElementById('wlEnd').value;
     const place = _wlPlace();
+    // An Office report has no paddock lines, so their photos go with them.
+    if (place === 'office' && _wlJobs.some(j => (j.pics || []).length || j.had)) {
+        if (_wlPhotosLoading || _wlPhotosFailed) { showToast('Wait for the photos to finish loading before saving as Office', 'warning'); return; }
+        if (!confirm('The paddock photos are removed when the report is saved as Office. Continue?')) return;
+        _wlJobs.forEach(j => { j.pics = []; j.had = 0; });
+        _wlPhotosDirty = true;
+    }
     const officeTask = (document.getElementById('wlTask').value || '').trim();
     // A draft may be half-written; what is sent for checking may not.
     if (place === 'office' && !asDraft) {
@@ -17825,10 +17936,23 @@ function saveWorkLog(event, mode) {
     }
     // Paddock lines: the paddock in the list's spelling; empty lines dropped.
     const company = companyOf(member);
-    const jobs = place === 'office' ? [] : _wlJobs.map(j => {
+    const lines = place === 'office' ? [] : _wlJobs.map(j => {
         const hit = findPaddock(j.paddock, company);
-        return { paddock: hit ? hit.pid : _toolNorm(j.paddock), jobType: j.jobType || '', units: j.units.map(u => ({ ...u })), desc: (j.desc || '').trim() };
-    }).filter(j => j.paddock || j.jobType || j.units.length || j.desc);
+        const pics = j.pics || [];
+        return { pics, rec: { paddock: hit ? hit.pid : _toolNorm(j.paddock), jobType: j.jobType || '', units: j.units.map(u => ({ ...u })), desc: (j.desc || '').trim(),
+            photoCount: _wlPhotosDirty ? pics.length : (j.had || 0) } };
+    }).filter(l => l.rec.paddock || l.rec.jobType || l.rec.units.length || l.rec.desc || l.rec.photoCount);
+    const jobs = lines.map(l => l.rec);
+    const allPhotos = _wlPhotosDirty ? [...lines.flatMap(l => l.pics), ..._wlPhotos] : null;
+    // Without a signal the photos are kept inside the document (no upload),
+    // and Firestore refuses a document over 1MB — so say it now.
+    if (allPhotos && typeof navigator !== 'undefined' && navigator.onLine === false) {
+        const bytes = allPhotos.filter(p => typeof p === 'string' && p.startsWith('data:')).reduce((n, p) => n + p.length, 0);
+        if (bytes > WORKLOG_PHOTOS_TOTAL_BYTES) {
+            showToast('Too many new photos to send without a signal — save again when online, or remove some', 'warning');
+            return;
+        }
+    }
     // What is sent for checking names a paddock, a job, a unit and what was
     // done on every line.
     if (!asDraft && place === 'field') {
@@ -17878,7 +18002,7 @@ function saveWorkLog(event, mode) {
         place,
         paddock: [...new Set(jobs.map(j => j.paddock).filter(Boolean))].join(', '),
         // Only the count lives on the report; the images go to workLogPhotos.
-        photoCount: _wlPhotosDirty ? _wlPhotos.length : workLogPhotoCount(existing),
+        photoCount: allPhotos ? allPhotos.length : workLogPhotoCount(existing),
         task,
         issue: (document.getElementById('wlIssue').value || '').trim(),
         createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),
@@ -17909,7 +18033,7 @@ function saveWorkLog(event, mode) {
     // the server in order — so the photos have to land before the report
     // that locks them.
     if (_wlPhotosDirty) {
-        const photos = _wlPhotos.slice();
+        const photos = allPhotos.slice();
         _wlPhotoCache.set(rec.id, photos);
         // Offline, the service worker can still be serving a firebase-init.js
         // from before this collection existed. Say so rather than throwing

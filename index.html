@@ -3661,13 +3661,15 @@
                         </button>
                         <datalist id="paddockList"></datalist>
                         <datalist id="wlUnitList"></datalist>
+                        <input type="file" id="wlJobPhotoInput" accept="image/*" multiple hidden
+                               onchange="handleWorkLogJobPhotoChange(event)">
                     </div>
-                    <div class="form-group full-width">
+                    <div class="form-group full-width" id="wlPhotoGroup">
                         <label class="form-label" for="wlPhotoInput"><span id="wlPhotoTitle">Field Photos</span>
                             <span class="form-optional">(<span id="wlPhotoNeed">optional</span> · <span id="wlPhotoCount">0/4</span>)</span></label>
                         <input type="file" id="wlPhotoInput" accept="image/*" multiple style="display:none"
                                onchange="handleWorkLogPhotoChange(event)">
-                        <div class="wl-photo-row">
+                        <div class="wl-photo-row" id="wlPhotoAddRow">
                             <button type="button" class="btn btn-secondary btn-sm" id="wlPhotoAddBtn"
                                     onclick="document.getElementById('wlPhotoInput').click()">
                                 <i class="fas fa-camera"></i> Add Photo

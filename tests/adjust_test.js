@@ -89,7 +89,7 @@ const { launch, BASE_URL } = require('./_env');
 
         // ---------- form: baris paddock dengan chip unit (2.10.0) ----------
         showAddWorkLogForm();
-        t('form baru: satu baris paddock kosong', JSON.stringify(_wlJobs), JSON.stringify([{ paddock: '', jobType: '', units: [], desc: '' }]));
+        t('form baru: satu baris paddock kosong', JSON.stringify(_wlJobs), JSON.stringify([{ paddock: '', jobType: '', units: [], desc: '', pics: [], had: 0 }]));
         t('placeholder chip muncul',
           !!document.querySelector('#wlJobs .unit-chip__empty'), true);
         t('pilihan Type Job bawaan', [...document.querySelectorAll('#wlJobType_0 option')].map(o => o.value).slice(1),

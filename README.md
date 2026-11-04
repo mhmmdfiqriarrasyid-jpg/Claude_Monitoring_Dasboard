@@ -591,6 +591,14 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.25.0 — foto per paddock** (dijaga `tests/worklog_job_photos_test.js`):
+  di laporan Field setiap baris paddock punya foto sendiri, maksimal 8. Semua
+  foto tetap satu daftar di `workLogPhotos/{id}` — foto paddock 1, paddock 2,
+  …, lalu foto umum (Office, maks 4, atau foto laporan lama yang tampil
+  sebagai *Other photos*) — dan tiap baris menyimpan `jobs[i].photoCount`.
+  Lightbox di tabel memberi keterangan paddock + jenis pekerjaan per foto.
+  Tanpa sinyal, foto baru di atas ±800KB ditolak saat simpan (dokumen 1MB).
+  Rules tidak berubah.
   **2.15.4:** catatan kerusakan **baru** selalu men-set Breakdown otomatis
   (kotak centangnya disembunyikan; komponen untuk tipe Device, status unit
   untuk tipe lain; tidak berlaku bila "Already repaired"). Catatan lama yang
