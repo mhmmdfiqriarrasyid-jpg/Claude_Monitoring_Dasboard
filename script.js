@@ -160,7 +160,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.27.0';
+const APP_VERSION = 'v2.27.1';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -20222,7 +20222,8 @@ function showPurchaseDetail(id) {
     // What can happen next, for who may do it.
     const acts = [];
     const btn = (label, fn, primary) => `<button type="button" class="btn ${primary ? 'btn-primary' : 'btn-secondary'}" onclick="${fn}">${label}</button>`;
-    const idArg = escapeHtml(jsArg(r.id));
+    // jsArg is already attribute-safe; escaping it again broke every button here (2.27.1).
+    const idArg = jsArg(r.id);
     if (canEditPurchaseRecord(r)) acts.push(btn('<i class="fas fa-pen" aria-hidden="true"></i> Edit', `editPurchase(${idArg})`));
     if (r.status === 'draft' && canEditPurchaseRecord(r)) acts.push(btn('Submit', `setPurchaseStatus(${idArg}, 'submitted')`, true));
     if (canManagePurchase()) {
