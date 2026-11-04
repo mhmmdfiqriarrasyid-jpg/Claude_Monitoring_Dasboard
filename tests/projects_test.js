@@ -181,6 +181,26 @@ const { launch, BASE_URL } = require('./_env');
         closeProjectDetail();
         projects = projects.filter(x => x.id !== c0.id);
 
+        // ---- 2.29.2: job dengan unit di project angka TANPA daftar unit ----
+        projects.push({ id: 'pd', name: 'Dept Sensor', status: 'active', start: '2026-09-01', end: '2026-12-31', createdByUid: 'o', updates: [],
+            target: { mode: 'count', count: 54, done: 0, what: 'Installed Complete Depth Sensor' } });
+        globalData.push({ id: 'b1', name: 'BD018G', site: 'PT. GPA', status: 'Good' }, { id: 'b2', name: 'BD100T', site: 'PT. GPA', status: 'Good' }, { id: 'b3', name: 'BD121T', site: 'PT. GPA', status: 'Good' });
+        showAddJobForm('pd');
+        document.getElementById('otJobCategory').value = 'Calibration';
+        ['BD018G', 'BD100T'].forEach(n => { document.getElementById('otJobUnitAdd').value = n; addJobUnit(); });
+        saveJob(); await tick();
+        const d1 = projects.find(x => x.id === 'pd');
+        t('job Done: unitnya masuk ke project, angka +2', [d1.target.units.map(u => u.name), d1.target.done], [['BD018G', 'BD100T'], 2]);
+        // job lama (dicatat sebelum perbaikan) belum terhitung
+        otJobs.push({ id: 'oldjob', projectId: 'pd', status: 'done', date: '2026-09-24', category: 'Calibration', units: [{ id: 'b2', name: 'BD100T' }, { id: 'b3', name: 'BD121T' }], createdByUid: 'o' });
+        showProjectDetail('pd');
+        t('detail: tombol hitung unit dari job (+1)', /Count units from jobs \(\+1\)/.test(document.getElementById('pjDetailBody').textContent), true);
+        countProjectJobUnits('pd'); await tick();
+        const d2 = projects.find(x => x.id === 'pd');
+        t('setelah dihitung: 3 unit, 3/54, tombol hilang', [d2.target.units.length, d2.target.done, /Count units from jobs/.test(document.getElementById('pjDetailBody').textContent)], [3, 3, false]);
+        closeProjectDetail();
+        projects = projects.filter(x => x.id !== 'pd');
+
         // ---- hapus ----
         deleteProject(projects[0].id);
         t('project dihapus', projects.length, 0);

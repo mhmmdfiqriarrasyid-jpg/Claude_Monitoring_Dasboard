@@ -533,6 +533,8 @@ function showProjectDetail(id, keepForm) {
         <div class="pr-section-title">Target — ${escapeHtml(t.mode === 'units' ? (t.what || 'work on each unit') : t.mode === 'milestones' ? 'milestones' : (t.what || 'number'))}</div>
         ${targetHtml}
         ${prs.length ? `<div class="pr-section-title">Purchase requests</div><div class="pj-links">${prs.map(r => `<button type="button" class="pj-link" onclick="closeProjectDetail(); navigateTo('purchase'); showPurchaseDetail(${jsArg(r.id)})">${escapeHtml(r.prNo || r.title)} ${prStatusChip(r.status)}</button>`).join('')}</div>` : ''}
+        ${canEdit && _pjUncountedJobUnits(p) ? `<div class="pj-notice">${_pjUncountedJobUnits(p)} unit(s) from finished jobs are not counted yet.
+            <button type="button" class="btn btn-primary btn-sm" onclick="countProjectJobUnits(${jsArg(p.id)})">Count units from jobs (+${_pjUncountedJobUnits(p)})</button></div>` : ''}
         ${jobs.length ? `<div class="pr-section-title">Jobs (${jobs.length})</div><div class="pj-links">${jobs.slice(0, 20).map(j => `<div class="pj-jobline"><b>${escapeHtml(j.date || '')}</b> ${escapeHtml(j.category)} — ${escapeHtml((j.description || '').slice(0, 90))}${(j.units || []).length ? ` <span class="adm-sub" style="display:inline">(${escapeHtml(j.units.map(u => u.name).join(', '))})</span>` : ''}</div>`).join('')}</div>` : ''}
         ${addForm}
         <div class="pr-section-title">Updates (${ups.length})</div>
@@ -760,6 +762,50 @@ function addJobUnit() {
     renderJobUnits();
     input.focus();
 }
+// The units of finished jobs counted in their project. A Units target counts
+// only its own units; a Number or Milestones target takes the job's units in
+// (2.29.2), and on a Number target each new unit adds 1 to Done so far.
+// Returns null when nothing changes.
+function _pjCountJobUnits(p, jobs) {
+    const t = JSON.parse(JSON.stringify(p.target || {}));
+    if (!Array.isArray(t.units)) t.units = [];
+    const hit = [];
+    jobs.forEach(j => (j.units || []).forEach(u => {
+        let tu = t.units.find(x => x.id === u.id);
+        if (!tu) {
+            if (t.mode === 'units') return;
+            tu = { id: u.id, name: u.name || '', sn: u.sn || '', done: false, doneAt: '' };
+            t.units.push(tu);
+        }
+        if (tu.done) return;
+        tu.done = true; tu.doneAt = j.date || toISODate();
+        hit.push(tu.name || tu.sn);
+    }));
+    if (!hit.length) return null;
+    if (t.mode === 'count') t.done = Math.min(Number(t.count) || 0, (Number(t.done) || 0) + hit.length);
+    const before = projectProgress(p).pct;
+    const next = { ...p, target: t };
+    const after = projectProgress(next).pct;
+    return { next, hit, after, progress: `Finished: ${hit.join(', ')} · progress ${before}% → ${after}%` };
+}
+// Jobs finished before their units were counted (logged on 2.29.0 or 2.29.1).
+function _pjUncountedJobUnits(p) {
+    const t = p.target || {};
+    if (t.mode === 'units') return 0;
+    const seen = new Set((t.units || []).filter(u => u.done).map(u => u.id));
+    const add = new Set();
+    otJobs.filter(j => j.projectId === p.id && j.status === 'done').forEach(j => (j.units || []).forEach(u => { if (!seen.has(u.id)) add.add(u.id); }));
+    return add.size;
+}
+function countProjectJobUnits(id) {
+    const p = projects.find(x => x.id === id);
+    if (!p || !canEditProjectRecord(p)) return;
+    const r = _pjCountJobUnits(p, otJobs.filter(j => j.projectId === p.id && j.status === 'done'));
+    if (!r) { showToast('Every job unit is already counted', 'info'); return; }
+    _pjPush(_pjWithUpdate(r.next, { id: _pjId('u'), date: toISODate(), at: Date.now(), by: _pjMe(), byUid: myUid(), auto: true,
+        text: `Counted the units of finished jobs`, progress: r.progress, photoIds: [] }), `Project progress ${r.after}%`, p, 'Progress');
+    showProjectDetail(id);
+}
 function saveJob(event) {
     if (event) event.preventDefault();
     const id = document.getElementById('otJobId').value;
@@ -819,19 +865,10 @@ function saveJob(event) {
     _jobPush(rec, existing ? 'Job saved' : 'Job logged', existing);
     // Part of a project measured by units: those units count as done.
     const p = rec.projectId && projects.find(x => x.id === rec.projectId);
-    if (p && status === 'done' && canEditProjectRecord(p) && p.target && (p.target.units || []).length) {
-        const t = JSON.parse(JSON.stringify(p.target));
-        const hit = [];
-        rec.units.forEach(u => { const tu = (t.units || []).find(x => x.id === u.id); if (tu && !tu.done) { tu.done = true; tu.doneAt = date; hit.push(tu.name || tu.sn); } });
-        if (hit.length && t.mode === 'count') t.done = Math.min(Number(t.count) || 0, (Number(t.done) || 0) + hit.length);
-        if (hit.length) {
-            const before = projectProgress(p).pct;
-            let next = { ...p, target: t };
-            const after = projectProgress(next).pct;
-            next = _pjWithUpdate(next, { id: _pjId('u'), date, at: Date.now(), by: rec.doneBy || _pjMe(), byUid: myUid(), auto: true,
-                text: `${category}: ${description}`, progress: `Finished: ${hit.join(', ')} · progress ${before}% → ${after}%`, photoIds: [] });
-            _pjPush(next, `Project progress ${after}%`, p, 'Progress');
-        }
+    if (p && status === 'done' && canEditProjectRecord(p) && p.target) {
+        const r = _pjCountJobUnits(p, [rec]);
+        if (r) _pjPush(_pjWithUpdate(r.next, { id: _pjId('u'), date, at: Date.now(), by: rec.doneBy || _pjMe(), byUid: myUid(), auto: true,
+            text: `${category}: ${description}`, progress: r.progress, photoIds: [] }), `Project progress ${r.after}%`, p, 'Progress');
     }
     closeJobModal();
 }

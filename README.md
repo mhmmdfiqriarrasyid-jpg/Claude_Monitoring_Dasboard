@@ -591,6 +591,9 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.29.2:** job **Done** yang ditautkan ke project bertarget angka/milestone
+  memasukkan unitnya ke daftar unit project (target angka: +1 per unit baru);
+  job lama yang belum terhitung muncul dengan tombol **Count units from jobs**.
   **2.29.1:** project dengan target **angka** atau **milestone** bisa diberi
   **unit terkait** (opsional, lebih dari satu, alat berat maupun traktor) —
   `target.units` dipakai untuk semua mode. Di update, unit yang dicentang
