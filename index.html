@@ -924,21 +924,24 @@
             </div>
         </div>
 
+        <!-- 2.26.0: two tabs, like Inspection — the profiles, and the units
+             each PT actually owns (switchImplementTab). -->
+        <div class="team-tabbar fp-tabbar">
+            <div class="team-tabs" role="tablist" aria-label="Implement sections">
+                <button class="team-tab impl-tab active" data-tab="profiles" role="tab" aria-selected="true"
+                        aria-controls="implProfilesPanel" onclick="switchImplementTab('profiles')">Profiles</button>
+                <button class="team-tab impl-tab" data-tab="actual" role="tab" aria-selected="false"
+                        aria-controls="implActualPanel" onclick="switchImplementTab('actual')">Actual per PT
+                    <span class="team-tab__count team-tab__count--alert" id="implActualBad" style="display:none" title="Implement types where more tractors use it than the units entered"></span></button>
+            </div>
+        </div>
+
+        <div id="implProfilesPanel" role="tabpanel">
         <!-- Tractors per implement type, from the Unit Database
              (renderImplementUseTiles). A tile opens those units. -->
         <section class="fp-use" id="implUseSection" aria-labelledby="implUseTitle" hidden>
             <h2 class="fp-use__title" id="implUseTitle">Tractors per implement</h2>
             <div class="fp-use__grid" id="implUseTiles"></div>
-        </section>
-
-        <!-- 2.21.0: implements actually owned, per PT (renderImplementOwned) -->
-        <section class="table-card impl-own" id="implOwnSection" aria-labelledby="implOwnTitle" hidden>
-            <div class="impl-own__head">
-                <h2 class="fp-use__title" id="implOwnTitle">Actual implements per PT</h2>
-                <span class="impl-own__sub">Owned = entered on each implement · On tractor = tractors at that PT using it · Free = not on a tractor</span>
-            </div>
-            <div class="impl-own__cards" id="implOwnCards"></div>
-            <div class="impl-own__tablewrap"><table class="impl-own__table" id="implOwnTable"></table></div>
         </section>
 
         <!-- Implement profiles -->
@@ -993,6 +996,28 @@
                 </table>
             </div>
         </section>
+        </div><!-- /implProfilesPanel -->
+
+        <!-- 2.21.0: implements actually owned, per PT (renderImplementOwned).
+             2.26.0: its own tab; the Owned counts are typed straight in. -->
+        <div id="implActualPanel" role="tabpanel" style="display:none">
+        <section class="table-card impl-own" id="implOwnSection" aria-labelledby="implOwnTitle">
+            <div class="impl-own__head">
+                <div class="impl-own__headtext">
+                    <h2 class="fp-use__title" id="implOwnTitle">Actual implements per PT</h2>
+                    <span class="impl-own__sub">Owned = how many units the PT has · On tractor = tractors at that PT using it · Free = Owned − On tractor (in the yard)</span>
+                </div>
+                <div class="impl-own__actions editonly editonly--implements">
+                    <button type="button" class="btn btn-secondary btn-sm" id="implOwnEditBtn" onclick="startImplementOwnedEdit()"><i class="fas fa-pen" aria-hidden="true"></i> Fill in counts</button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="implOwnCancelBtn" style="display:none" onclick="cancelImplementOwnedEdit()">Cancel</button>
+                    <button type="button" class="btn btn-success btn-sm" id="implOwnSaveBtn" style="display:none" onclick="saveImplementOwnedEdit()"><i class="fas fa-check" aria-hidden="true"></i> Save counts</button>
+                </div>
+            </div>
+            <p class="impl-own__help" id="implOwnHelp" hidden></p>
+            <div class="impl-own__cards" id="implOwnCards"></div>
+            <div class="impl-own__tablewrap"><table class="impl-own__table" id="implOwnTable"></table></div>
+        </section>
+        </div><!-- /implActualPanel -->
 
     </div><!-- /viewImplements -->
 

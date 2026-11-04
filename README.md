@@ -591,6 +591,14 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.26.0 — Implements dua tab** (dijaga `tests/impl_tabs_test.js`):
+  *Profiles* (traktor per implement + daftar profil) dan *Actual per PT*.
+  Di Actual, **Fill in counts** mengubah kolom Owned jadi isian untuk semua
+  profil (tipe + brand); Free dan total ikut berubah saat mengetik, **Save
+  counts** menyimpan ke `owned` profil pertama tipe + brand itu (profil kembar
+  dikosongkan untuk PT itu). Tipe yang dipakai traktor tanpa profil ditandai
+  *no profile*. Tab mengingat pilihan terakhir; angka merah di tab = jumlah
+  tipe dengan Free negatif.
   **2.25.0 — foto per paddock** (dijaga `tests/worklog_job_photos_test.js`):
   di laporan Field setiap baris paddock punya foto sendiri, maksimal 8. Semua
   foto tetap satu daftar di `workLogPhotos/{id}` — foto paddock 1, paddock 2,

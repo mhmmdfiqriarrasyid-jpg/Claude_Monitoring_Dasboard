@@ -10897,6 +10897,12 @@ body:has(.modal-overlay.open) .install-banner { display: none; }
 .impl-own { padding: 16px 18px; margin-bottom: 16px; }
 .impl-own__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 12px; }
 .impl-own__sub { font-size: 12px; color: var(--text-secondary); }
+.impl-own__head { justify-content: space-between; }
+.impl-own__headtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.impl-own__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.impl-own__help { margin: -4px 0 12px; padding: 8px 12px; border-radius: 8px; background: var(--info-bg); color: var(--text-body); font-size: 12.5px; }
+.impl-own__in { width: 72px; padding: 4px 8px; text-align: right; font-size: 13px; }
+.impl-own__noprof td { color: var(--text-light); }
 .impl-own__cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-bottom: 14px; }
 .impl-own__card { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
 .impl-own__site { font-size: 12px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.25.0';
+const APP_VERSION = 'v2.26.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -1907,6 +1907,12 @@ function navigateTo(view) {
     if (view === 'implements') {
         if (fromCache) loadImplements();
         renderImplementsTable();
+        if (changed) {
+            let t = 'profiles';
+            try { t = sessionStorage.getItem('ot.implTab') || 'profiles'; } catch (_) {}
+            _implOwnEdit = false;
+            switchImplementTab(t);
+        }
     }
 
     if (view === 'damage' && currentView !== 'damage') damageUnitFilter = '';
@@ -8291,7 +8297,7 @@ function openUnitsForImplement(key) {
 }
 
 // Unit snapshots change the tractor counts.
-document.addEventListener('ot:data', () => { if (currentView === 'implements') { renderImplementUseTiles(); renderImplementOwned(); } });
+document.addEventListener('ot:data', () => { if (currentView === 'implements') { renderImplementUseTiles(); if (!_implOwnEdit) renderImplementOwned(); } });
 
 // ---- Actual implements per PT (2.21.0) ----
 // Each implement profile records how many units every PT owns (owned:
@@ -8318,20 +8324,22 @@ function ownedOf(d, site) {
 }
 // 2.21.1: one row per type AND brand ("Offset Harrow — Grizzly" and
 // "Offset Harrow — Baldan" are counted apart).
-function implementOwnedRows() {
+function implementOwnedRows(opts) {
+    const all = !!(opts && opts.all);   // 2.26.0: every profile's type + brand, for filling in
     const sites = implSites();
     const byType = new Map();
     const typeSpell = new Map();   // one spelling per type, the first seen
     const row = (t, b) => {
         if (!typeSpell.has(t.toLowerCase())) typeSpell.set(t.toLowerCase(), t);
         const k = `${t.toLowerCase()}|${(b || '').toLowerCase()}`;
-        if (!byType.has(k)) byType.set(k, { label: typeSpell.get(t.toLowerCase()), brand: b || '', per: Object.fromEntries(sites.map(s => [s, { owned: 0, attached: 0 }])) });
+        if (!byType.has(k)) byType.set(k, { key: k, label: typeSpell.get(t.toLowerCase()), brand: b || '', ids: [], per: Object.fromEntries(sites.map(s => [s, { owned: 0, attached: 0 }])) });
         return byType.get(k);
     };
     globalImplements.forEach(d => {
         const t = _toolNorm(d.equipmentType) || _toolNorm(d.profileName);
         if (!t) return;
         const r = row(t, _toolNorm(d.brand));
+        r.ids.push(d.id);
         sites.forEach(s => { r.per[s].owned += ownedOf(d, s); });
     });
     unitsOfGroup(globalData, 'tractor').forEach(u => {
@@ -8344,17 +8352,121 @@ function implementOwnedRows() {
         if (!t || !s) return;
         row(t, b).per[s].attached += 1;
     });
-    const rows = [...byType.values()].filter(r => sites.some(s => r.per[s].owned || r.per[s].attached))
+    const rows = [...byType.values()].filter(r => (all && r.ids.length) || sites.some(s => r.per[s].owned || r.per[s].attached))
         .sort((a, b) => a.label.toLowerCase().localeCompare(b.label.toLowerCase()) || a.brand.localeCompare(b.brand));
     return { sites, rows };
+}
+// 2.26.0: the Implements page has two tabs, Profiles and Actual per PT.
+let implementTab = 'profiles';
+let _implOwnEdit = false;
+function switchImplementTab(tab) {
+    if (_implOwnEdit && tab !== 'actual' && !confirm('Leave without saving the counts?')) return;
+    if (tab !== 'actual') _implOwnEdit = false;
+    implementTab = tab === 'actual' ? 'actual' : 'profiles';
+    try { sessionStorage.setItem('ot.implTab', implementTab); } catch (_) {}
+    document.querySelectorAll('#viewImplements .impl-tab').forEach(btn => {
+        const on = btn.dataset.tab === implementTab;
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
+    show('implProfilesPanel', implementTab === 'profiles');
+    show('implActualPanel', implementTab === 'actual');
+    renderImplementOwned();
+}
+function startImplementOwnedEdit() {
+    if (!requireEdit('implements')) return;
+    _implOwnEdit = true;
+    renderImplementOwned();
+    document.querySelector('#implOwnTable input')?.focus();
+}
+function cancelImplementOwnedEdit() {
+    _implOwnEdit = false;
+    renderImplementOwned();
+}
+// Free follows what is typed, before anything is saved.
+function _implOwnLive(input) {
+    const tr = input.closest('tr');
+    const n = Math.max(0, Math.min(9999, parseInt(input.value, 10) || 0));
+    const cell = tr && tr.querySelector(`td[data-free="${CSS.escape(input.dataset.site)}"]`);
+    if (cell) {
+        const free = n - Number(cell.dataset.attached || 0);
+        cell.textContent = free;
+        cell.classList.toggle('impl-own__bad', free < 0);
+    }
+    const tot = tr && tr.querySelector('td[data-total]');
+    if (tot) tot.innerHTML = `<b>${[...tr.querySelectorAll('input[data-site]')].reduce((a, el) => a + Math.max(0, parseInt(el.value, 10) || 0), 0)}</b>`;
+}
+// One count per type + brand per PT. It is kept on the row's first profile;
+// any other profile of the same type + brand has that PT's count cleared, so
+// the row adds up to what was typed.
+function saveImplementOwnedEdit() {
+    if (!requireEdit('implements')) return;
+    const { rows } = implementOwnedRows({ all: true });
+    const byKey = new Map(rows.map(r => [r.key, r]));
+    const changed = new Map();   // id -> { before, owned }
+    const ownedOfId = id => {
+        if (!changed.has(id)) {
+            const d = globalImplements.find(x => x.id === id);
+            changed.set(id, { d, before: { ...(d.owned || {}) }, owned: { ...(d.owned || {}) } });
+        }
+        return changed.get(id).owned;
+    };
+    const setSite = (o, site, n) => {
+        Object.keys(o).forEach(k => { if (k.toLowerCase() === site.toLowerCase()) delete o[k]; });
+        if (n) o[site] = n;
+    };
+    document.querySelectorAll('#implOwnTable input[data-site]').forEach(el => {
+        const r = byKey.get(el.dataset.row);
+        if (!r || !r.ids.length) return;
+        const site = el.dataset.site;
+        const n = Math.max(0, Math.min(9999, parseInt(el.value, 10) || 0));
+        if (n === r.per[site].owned) return;
+        r.ids.forEach((id, i) => setSite(ownedOfId(id), site, i === 0 ? n : 0));
+    });
+    const ownTxt = o => Object.entries(o || {}).map(([s, n]) => `${siteShort(s)} ${n}`).join(', ') || '—';
+    let n = 0;
+    changed.forEach(({ d, before, owned }) => {
+        if (ownTxt(before) === ownTxt(owned)) return;
+        const idx = globalImplements.indexOf(d);
+        if (idx < 0) return;
+        globalImplements[idx] = { ...d, owned, updatedAt: Date.now() };
+        cloudPushImplement(globalImplements[idx]);
+        logEvent({ action: 'update', unitId: d.id, unitName: `[Implement] ${d.profileName}`, field: 'Actual units',
+                   before: ownTxt(before), after: ownTxt(owned) });
+        n++;
+    });
+    if (n) saveImplements();
+    _implOwnEdit = false;
+    renderImplementOwned();
+    showToast(n ? `Counts saved (${n} implement profile${n === 1 ? '' : 's'})` : 'No count changed', n ? 'success' : 'info');
 }
 function renderImplementOwned() {
     const sec = document.getElementById('implOwnSection');
     if (!sec) return;
-    const { sites, rows } = implementOwnedRows();
-    const anyOwned = globalImplements.some(d => sites.some(s => ownedOf(d, s)));
-    sec.hidden = !sites.length || (!anyOwned && !hasAccess('implements', 'edit'));
-    if (sec.hidden) return;
+    const canEdit = hasAccess('implements', 'edit');
+    if (!canEdit) _implOwnEdit = false;
+    const edit = _implOwnEdit;
+    const { sites, rows } = implementOwnedRows({ all: edit });
+    const bad = rows.filter(r => sites.some(s => r.per[s].owned - r.per[s].attached < 0)).length;
+    const pill = document.getElementById('implActualBad');
+    if (pill) { pill.style.display = bad ? '' : 'none'; pill.textContent = bad; }
+    // style.display, not hidden: .btn sets its own display.
+    const btn = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
+    btn('implOwnEditBtn', canEdit && !edit && sites.length);
+    btn('implOwnCancelBtn', edit);
+    btn('implOwnSaveBtn', edit);
+    const help = document.getElementById('implOwnHelp');
+    if (help) {
+        help.hidden = !edit;
+        help.innerHTML = edit ? 'Type how many units of each implement every PT owns, then <b>Save counts</b>. '
+            + 'Every implement profile is listed; a type that tractors use but has no profile yet needs one first (<b>Profiles → Add implement</b>).' : '';
+    }
+    if (!sites.length) {
+        document.getElementById('implOwnCards').innerHTML = '';
+        document.getElementById('implOwnTable').innerHTML = '<tbody><tr><td class="fp-muted" style="text-align:center;padding:16px">Add the PTs first (Master lists → Sites).</td></tr></tbody>';
+        return;
+    }
     const tot = s => rows.reduce((a, r) => ({ owned: a.owned + r.per[s].owned, attached: a.attached + r.per[s].attached }), { owned: 0, attached: 0 });
     document.getElementById('implOwnCards').innerHTML = sites.map(s => {
         const t = tot(s), free = t.owned - t.attached;
@@ -8364,11 +8476,16 @@ function renderImplementOwned() {
     }).join('');
     const head = `<thead><tr><th rowspan="2">Implement type</th><th rowspan="2">Brand</th>${sites.map(s => `<th colspan="3" class="impl-own__sitehead" title="${escapeHtml(s)}">${escapeHtml(siteShort(s))}</th>`).join('')}<th rowspan="2" class="num">Total owned</th></tr>
         <tr>${sites.map(() => '<th class="num">Owned</th><th class="num">On tractor</th><th class="num">Free</th>').join('')}</tr></thead>`;
-    const body = rows.length ? rows.map(r => `<tr><td>${escapeHtml(r.label)}</td><td class="fp-muted">${escapeHtml(r.brand || '—')}</td>${sites.map(s => {
+    const body = rows.length ? rows.map(r => `<tr${edit && !r.ids.length ? ' class="impl-own__noprof"' : ''}><td>${escapeHtml(r.label)}${edit && !r.ids.length ? ' <span class="fp-muted" title="Add an implement profile for this type and brand to enter its count">· no profile</span>' : ''}</td><td class="fp-muted">${escapeHtml(r.brand || '—')}</td>${sites.map(s => {
         const p = r.per[s], free = p.owned - p.attached;
-        return `<td class="num">${p.owned}</td><td class="num">${p.attached}</td><td class="num${free < 0 ? ' impl-own__bad' : ''}" title="${free < 0 ? 'More tractors use it than the units entered — update the count' : ''}">${free}</td>`;
-    }).join('')}<td class="num"><b>${sites.reduce((n, s) => n + r.per[s].owned, 0)}</b></td></tr>`).join('')
-        : `<tr><td colspan="${sites.length * 3 + 3}" class="fp-muted" style="text-align:center;padding:16px">No actual units entered yet — open an implement and fill in <b>Actual units</b>.</td></tr>`;
+        const owned = edit && r.ids.length
+            ? `<input class="form-input impl-own__in" type="number" min="0" max="9999" step="1" inputmode="numeric" data-row="${escapeHtml(r.key)}" data-site="${escapeHtml(s)}"
+                   value="${p.owned || ''}" placeholder="0" aria-label="${escapeHtml(r.label)} ${escapeHtml(r.brand)} owned at ${escapeHtml(s)}" oninput="_implOwnLive(this)">`
+            : p.owned;
+        return `<td class="num">${owned}</td><td class="num">${p.attached}</td><td class="num${free < 0 ? ' impl-own__bad' : ''}" data-free="${escapeHtml(s)}" data-attached="${p.attached}" title="${free < 0 ? 'More tractors use it than the units entered — update the count' : ''}">${free}</td>`;
+    }).join('')}<td class="num" data-total><b>${sites.reduce((n, s) => n + r.per[s].owned, 0)}</b></td></tr>`).join('')
+        : `<tr><td colspan="${sites.length * 3 + 3}" class="fp-muted" style="text-align:center;padding:16px">${canEdit
+            ? 'No actual units entered yet — press <b>Fill in counts</b>.' : 'No actual units entered yet.'}</td></tr>`;
     document.getElementById('implOwnTable').innerHTML = head + `<tbody>${body}</tbody>`;
 }
 function renderImplementOwnedInputs(imp) {
@@ -8424,7 +8541,7 @@ function populateImplementTypeFilter() {
 function renderImplementsTable() {
     updateImplementCount();
     renderImplementUseTiles();
-    renderImplementOwned();
+    if (!_implOwnEdit) renderImplementOwned();   // typed counts survive a redraw
     populateImplementTypeFilter();
     populateImplementGroupFilter();
     // A re-render (search, filter, a cloud snapshot) draws fresh, unticked
