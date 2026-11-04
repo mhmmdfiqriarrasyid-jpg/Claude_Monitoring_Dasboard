@@ -591,6 +591,13 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.28.0 — Print checklist penerimaan barang** (dijaga
+  `tests/pr_actions_test.js`): di detail PR berstatus Approved / PO issued /
+  Partially received / Received ada tombol **Print checklist** — satu lembar
+  A4 berisi data PR + PO, tiap item (dipesan, sudah diterima, sisa, kotak
+  *Received now* dan *OK*, catatan kondisi), riwayat penerimaan sebelumnya, dan
+  tiga kolom tanda tangan. Dicetak dari `#printSheet` saja
+  (`body.printing-sheet`); setiap cetak tercatat di History.
   **2.27.0 — satuan barang Purchase Request** (dijaga `tests/pr_uom_test.js`):
   Master lists → **Item Units** (`masterLists/uom`, grup *Damage, warehouse &
   purchase*, diatur editor Purchase). Kolom Unit di Purchase details memakai

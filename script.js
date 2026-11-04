@@ -160,7 +160,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.27.1';
+const APP_VERSION = 'v2.28.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -20232,9 +20232,66 @@ function showPurchaseDetail(id) {
         if (r.status === 'po' || r.status === 'partial') acts.push(btn('<i class="fas fa-box-open" aria-hidden="true"></i> Receive goods', `showPurchaseReceive(${idArg})`, true));
         if (!PR_CLOSED.includes(r.status)) acts.push(btn('Cancel request', `setPurchaseStatus(${idArg}, 'cancelled')`));
     }
+    // 2.28.0: a paper checklist for whoever checks the goods as they arrive.
+    if (['approved', 'po', 'partial', 'received'].includes(r.status))
+        acts.push(btn('<i class="fas fa-print" aria-hidden="true"></i> Print checklist', `printPurchaseChecklist(${idArg})`));
     acts.push(btn('Close', 'closePurchaseDetail()'));
     document.getElementById('prDetailActions').innerHTML = acts.join('');
     document.getElementById('prDetailModal').classList.add('open');
+}
+// ---- Goods receiving checklist (2.28.0) ----
+// Printed from the detail: every item with what was ordered, what came
+// already and what is still due, boxes to fill in by hand, the receipts so
+// far, and signature lines. Rendered into #printSheet and printed alone.
+function purchaseChecklistHtml(r) {
+    const items = r.items || [];
+    const receipts = (r.receipts || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const meta = (label, v) => `<tr><th>${label}</th><td>${escapeHtml(v || '—')}</td></tr>`;
+    const due = items.reduce((n, it) => n + Math.max(0, (Number(it.qty) || 0) - (Number(it.receivedQty) || 0)), 0);
+    const who = (currentUser && currentUser.email) ? shortActor(currentUser.email) : '';
+    return `
+    <header class="ps-head">
+        <div><div class="ps-kicker">Operation Technology</div><h1>Goods receiving checklist</h1></div>
+        <div class="ps-printed">Printed ${escapeHtml(formatUserTime(Date.now()))}${who ? ' · ' + escapeHtml(who) : ''}</div>
+    </header>
+    <table class="ps-meta"><tbody>
+        ${meta('PR No.', r.prNo)}${meta('Title', r.title)}${meta('Company', r.company)}
+        ${meta('PR date', r.prDate)}${meta('PO', [r.poNo, r.poDate].filter(Boolean).join(' · '))}
+        ${meta('Requested by', r.createdBy)}${meta('Status', prStatusDef(r.status).label)}
+    </tbody></table>
+    <h2>Items <span class="ps-sub">${due ? `${due} still to receive` : 'all received'}</span></h2>
+    <table class="ps-items">
+        <colgroup><col class="ps-c-no"><col><col class="ps-c-unit"><col class="ps-c-n"><col class="ps-c-n"><col class="ps-c-n"><col class="ps-c-fill"><col class="ps-c-ok"><col class="ps-c-note"></colgroup>
+        <thead><tr><th>#</th><th>Specification</th><th>Unit</th><th class="num">Ordered</th><th class="num">Before</th><th class="num">Due</th>
+            <th>Received now</th><th class="ps-ok">OK</th><th>Condition / notes</th></tr></thead>
+        <tbody>${items.map((it, i) => {
+            const q = Number(it.qty) || 0, got = Number(it.receivedQty) || 0, left = Math.max(0, q - got);
+            return `<tr class="${left ? '' : 'ps-done'}"><td>${i + 1}</td><td>${escapeHtml(it.spec || '')}</td><td>${escapeHtml(it.uom || '')}</td>
+                <td class="num">${q}</td><td class="num">${got}</td><td class="num"><b>${left}</b></td>
+                <td class="ps-fill">${left ? '' : 'Complete'}</td><td class="ps-ok">${left ? '<span class="ps-box"></span>' : '✓'}</td><td class="ps-note"></td></tr>`;
+        }).join('')}</tbody>
+    </table>
+    <h2>Received so far <span class="ps-sub">${receipts.length ? `${receipts.length} delivery(ies)` : 'nothing yet'}</span></h2>
+    ${receipts.length ? `<table class="ps-items ps-hist"><thead><tr><th>Date</th><th>By</th><th>Items</th><th>Note</th></tr></thead><tbody>${receipts.map(x => `<tr>
+        <td>${escapeHtml(x.date || '')}</td><td>${escapeHtml(x.by ? shortActor(x.by) : '')}</td>
+        <td>${(x.items || []).map(ri => { const it = items.find(i => i.id === ri.itemId); return `${escapeHtml(it ? it.spec : 'item')} × ${Number(ri.qty) || 0}`; }).join('<br>')}</td>
+        <td>${escapeHtml(x.note || '')}</td></tr>`).join('')}</tbody></table>` : '<p class="ps-sub">No goods received yet.</p>'}
+    <p class="ps-foot">Fill in <b>Received now</b> for what arrived, tick <b>OK</b> when it is in good condition, then record it in the dashboard: Purchase Requests → ${escapeHtml(r.prNo || r.title || 'this request')} → Receive goods.</p>
+    <div class="ps-sign">
+        ${['Checked by', 'Received by', 'Acknowledged by'].map(l => `<div class="ps-sign__box"><div class="ps-sign__label">${l}</div><div class="ps-sign__line"></div><div class="ps-sign__sub">Name / signature / date</div></div>`).join('')}
+    </div>
+`;
+}
+function printPurchaseChecklist(id) {
+    const r = purchaseRequests.find(x => x.id === id);
+    const sheet = document.getElementById('printSheet');
+    if (!r || !sheet) return;
+    sheet.innerHTML = purchaseChecklistHtml(r);
+    document.body.classList.add('printing-sheet');
+    const done = () => { document.body.classList.remove('printing-sheet'); window.removeEventListener('afterprint', done); };
+    window.addEventListener('afterprint', done);
+    logEvent({ action: 'print', unitId: r.id, unitName: `[Purchase] ${r.prNo || r.title}`, field: 'Receiving checklist', after: prStatusDef(r.status).label });
+    setTimeout(() => { try { window.print(); } finally { setTimeout(done, 1000); } }, 50);
 }
 function closePurchaseDetail() { document.getElementById('prDetailModal').classList.remove('open'); }
 

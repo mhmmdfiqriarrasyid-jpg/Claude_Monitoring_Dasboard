@@ -42,6 +42,30 @@ const { launch, BASE_URL } = require('./_env');
     await page.evaluate(() => showPurchaseDetail('pr_d'));
     await page.click('#prDetailActions button:has-text("Edit")');
     t('Edit diklik membuka form', await page.evaluate(() => document.getElementById('prModal').classList.contains('open')), true);
+    // 2.28.0: Print checklist
+    await page.evaluate(() => {
+        window.__printed = 0; window.print = () => { window.__printed++; window.__during = document.body.classList.contains('printing-sheet'); };
+        purchaseRequests.push({ id: 'pr_e', prNo: 'PR/e', title: 'Radio', company: 'PT. GPA', status: 'partial', poNo: 'PO-9', createdBy: 'admin.tech', createdByUid: 'z',
+            items: [{ id: 'a', spec: 'Repeater <b>x</b>', qty: 3, uom: 'pcs', receivedQty: 1 }, { id: 'b', spec: 'ISR', qty: 1, uom: 'pcs', receivedQty: 1 }],
+            receipts: [{ date: '2026-11-04', by: 'admin.tech@x.id', items: [{ itemId: 'a', qty: 1 }, { itemId: 'b', qty: 1 }], note: 'Delivery 1' }] });
+        showPurchaseDetail('pr_e');
+    });
+    await page.click('#prDetailActions button:has-text("Print checklist")');
+    await page.waitForTimeout(200);
+    const P = await page.evaluate(() => {
+        const rows = [...document.querySelectorAll('#printSheet .ps-items:not(.ps-hist) tbody tr')].map(tr => [...tr.cells].slice(3, 6).map(c => c.textContent.trim()));
+        return { printed: window.__printed, during: window.__during, rows, hist: document.querySelectorAll('#printSheet .ps-hist tbody tr').length,
+                 escaped: !document.querySelector('#printSheet .ps-items b:not(:only-child)') && /Repeater <b>x<\/b>/.test(document.getElementById('printSheet').textContent),
+                 signs: document.querySelectorAll('#printSheet .ps-sign__box').length };
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+    t('Print checklist: dicetak sekali, hanya lembar ini', [P.printed, P.during], [1, true]);
+    t('jumlah dipesan / sudah / sisa per item', P.rows, [['3', '1', '2'], ['1', '1', '0']]);
+    t('riwayat penerimaan + 3 kolom tanda tangan', [P.hist, P.signs], [1, 3]);
+    t('spesifikasi di-escape', P.escaped, true);
+    t('setelah cetak kembali normal', await page.evaluate(() => document.body.classList.contains('printing-sheet')), false);
+    t('tombol tidak ada untuk Submitted', await page.evaluate(() => { purchaseRequests.push({ id: 'pr_f', status: 'submitted', items: [] }); showPurchaseDetail('pr_f');
+        return [...document.querySelectorAll('#prDetailActions button')].some(b => /Print checklist/.test(b.textContent)); }), false);
     t('tidak ada error halaman', errors, []);
     let pass = 0;
     for (const x of T) {

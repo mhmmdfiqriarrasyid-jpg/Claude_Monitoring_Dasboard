@@ -10972,3 +10972,38 @@ body:has(.modal-overlay.open) .install-banner { display: none; }
     #viewDashboard .dash-attn > .dash-card__head { flex: none; }
     #viewDashboard .dash-attn__scroll { flex: 1; max-height: none; min-height: 0; }
 }
+
+/* 2.28.0: the printable sheet (Purchase Request goods checklist) */
+.print-sheet { display: none; }
+@media print {
+    body.printing-sheet > *:not(#printSheet) { display: none !important; }
+    body.printing-sheet { background: #fff !important; }
+    body.printing-sheet #printSheet { display: block !important; color: #000; font: 11pt/1.4 "Open Sans", Arial, sans-serif; }
+    @page { margin: 12mm; }
+    .print-sheet h1 { font-size: 17pt; margin: 0; }
+    .print-sheet h2 { font-size: 12pt; margin: 14px 0 6px; }
+    .ps-head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 10px; }
+    .ps-kicker { font-size: 9pt; text-transform: uppercase; letter-spacing: .06em; color: #444; }
+    .ps-printed, .ps-sub, .ps-foot { font-size: 9pt; color: #444; font-weight: 400; }
+    .ps-meta { border-collapse: collapse; font-size: 10pt; }
+    .ps-meta th { text-align: left; padding: 2px 14px 2px 0; font-weight: 600; white-space: nowrap; vertical-align: top; }
+    .ps-meta td { padding: 2px 0; }
+    .ps-items { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
+    .ps-items th, .ps-items td { border: 1px solid #000; padding: 5px 6px; text-align: left; vertical-align: top; }
+    .ps-items thead th { background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .ps-items tr { break-inside: avoid; }
+    .ps-items .num { text-align: right; white-space: nowrap; }
+    .ps-items:not(.ps-hist) { table-layout: fixed; }
+    .ps-c-no { width: 7mm; } .ps-c-unit { width: 12mm; } .ps-c-n { width: 15mm; } .ps-c-fill { width: 20mm; } .ps-c-ok { width: 9mm; } .ps-c-note { width: 38mm; }
+    .ps-items td { overflow-wrap: anywhere; }
+    .ps-ok { text-align: center !important; }
+    .ps-hist td:nth-child(-n+2) { white-space: nowrap; }
+    .ps-box { display: inline-block; width: 4mm; height: 4mm; border: 1px solid #000; }
+    .ps-done td { color: #555; }
+    .ps-sign { display: flex; gap: 12mm; margin-top: 10mm; break-inside: avoid; }
+    .ps-sign__box { flex: 1; }
+    .ps-sign__label { font-weight: 600; font-size: 10pt; }
+    .ps-sign__line { border-bottom: 1px solid #000; height: 16mm; }
+    .ps-sign__sub { font-size: 8.5pt; color: #444; margin-top: 2px; }
+    .ps-foot { margin-top: 6mm; }
+}
