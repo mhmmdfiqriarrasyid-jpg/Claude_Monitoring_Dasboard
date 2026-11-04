@@ -331,6 +331,8 @@ function syncProjectMode() {
     document.getElementById('pjModeUnits').style.display = m === 'units' ? '' : 'none';
     document.getElementById('pjModeCount').style.display = m === 'count' ? '' : 'none';
     document.getElementById('pjModeMilestones').style.display = m === 'milestones' ? '' : 'none';
+    document.getElementById('pjUnitsLabel').innerHTML = m === 'units' ? 'Units' : 'Units involved <span class="form-optional">(optional, one or more)</span>';
+    document.getElementById('pjUnitsHint').style.display = m === 'units' ? 'none' : '';
     if (m === 'milestones' && !_pjMilestones.length) useDefaultMilestones();
 }
 function renderProjectFormLists() {
@@ -401,6 +403,7 @@ function saveProject(event) {
         target.units = _pjUnits.map(u => ({ id: u.id, name: u.name || '', sn: u.sn || '', done: !!u.done, doneAt: u.doneAt || '' }));
         target.what = (document.getElementById('pjUnitWhat').value || '').trim();
     } else if (mode === 'count') {
+        target.units = _pjUnits.map(u => ({ id: u.id, name: u.name || '', sn: u.sn || '', done: !!u.done, doneAt: u.doneAt || '' }));
         const count = Math.floor(Number(document.getElementById('pjCountTarget').value) || 0);
         if (count < 1) { showToast('Set the target number', 'warning'); return; }
         target.count = count;
@@ -410,6 +413,7 @@ function saveProject(event) {
         const ms = _pjMilestones.map(m => ({ id: m.id || _pjId('m'), label: (m.label || '').trim(), weight: Math.max(0, Number(m.weight) || 0), done: !!m.done, doneAt: m.doneAt || '' })).filter(m => m.label);
         if (!ms.length || !ms.some(m => m.weight > 0)) { showToast('Add milestones with a weight', 'warning'); return; }
         target.milestones = ms;
+        target.units = _pjUnits.map(u => ({ id: u.id, name: u.name || '', sn: u.sn || '', done: !!u.done, doneAt: u.doneAt || '' }));
     }
     const status = document.getElementById('pjStatus').value || 'active';
     const rec = {
@@ -475,6 +479,14 @@ function showProjectDetail(id, keepForm) {
     } else {
         targetHtml = `<p>${pr.done} of ${pr.total} ${escapeHtml(t.what || '')}</p>`;
     }
+    // 2.29.1: units involved in a Number or Milestones project (optional).
+    if (t.mode !== 'units' && (t.units || []).length) {
+        const ud = t.units.filter(u => u.done).length;
+        targetHtml += `<div class="pj-subtitle">Units involved — ${ud} of ${t.units.length} done</div>
+        <div class="pj-targets">${t.units.map((u, i) => `<label class="pj-target${u.done ? ' is-done' : ''}">
+            <input type="checkbox" ${u.done ? 'checked' : ''} ${canEdit ? '' : 'disabled'} onchange="toggleProjectTarget(${jsArg(p.id)}, 'unit', ${i}, this.checked)">
+            <span><b>${escapeHtml(u.name || u.sn || '(unit)')}</b>${u.done && u.doneAt ? `<span class="adm-sub">done ${escapeHtml(u.doneAt)}</span>` : ''}</span></label>`).join('')}</div>`;
+    }
     const jobs = otJobs.filter(j => j.projectId === p.id);
     const prs = (p.prIds || []).map(pid => (purchaseRequests || []).find(r => r.id === pid)).filter(Boolean);
     const ups = (p.updates || []).slice().reverse();
@@ -492,6 +504,8 @@ function showProjectDetail(id, keepForm) {
                     <textarea class="form-input form-textarea" id="pjUpdText" rows="2" maxlength="2000" placeholder="e.g. Installed on 3 dump trucks, tested with the workshop">${escapeHtml(typed ? typed.text : '')}</textarea></div>
                 ${pending.length ? `<div class="form-group full-width"><span class="form-label">${t.mode === 'units' ? 'Units finished in this update' : 'Milestones finished in this update'}</span>
                     <div class="pj-checks">${pending.map(([i, label]) => `<label class="notif-check"><input type="checkbox" data-pj-done="${i}" ${typed && typed.done.includes(i) ? 'checked' : ''}> ${escapeHtml(label || '')}</label>`).join('')}</div></div>` : ''}
+                ${t.mode !== 'units' && (t.units || []).some(u => !u.done) ? `<div class="form-group full-width"><span class="form-label">Units finished in this update <span class="form-optional">(optional${t.mode === 'count' ? ' — each adds 1 to Done so far' : ''})</span></span>
+                    <div class="pj-checks">${t.units.map((u, i) => u.done ? '' : `<label class="notif-check"><input type="checkbox" data-pj-unit="${i}" ${typed && typed.units.includes(i) ? 'checked' : ''}${t.mode === 'count' ? ' onchange="_pjCountFromUnits(this)"' : ''}> ${escapeHtml(u.name || u.sn || '')}</label>`).join('')}</div></div>` : ''}
                 <div class="form-group full-width"><label class="form-label" for="pjUpdBlocker">Blocker / support needed <span class="form-optional">(optional)</span></label>
                     <input class="form-input" id="pjUpdBlocker" maxlength="300" value="${escapeHtml(typed ? typed.blocker : '')}" placeholder="e.g. Waiting for steering kit from vendor"></div>
                 <div class="form-group full-width"><span class="form-label">Photos <span class="form-optional">(up to 10)</span> <span class="wh-photo-count" id="pjUpdPhotoCount"></span></span>
@@ -544,7 +558,15 @@ function _pjUpdateDraft() {
     const v = id => document.getElementById(id)?.value || '';
     return { date: v('pjUpdDate'), text: v('pjUpdText'), blocker: v('pjUpdBlocker'),
              count: document.getElementById('pjUpdCount') ? v('pjUpdCount') : null,
-             done: [...document.querySelectorAll('#pjDetailBody input[data-pj-done]:checked')].map(el => Number(el.dataset.pjDone)) };
+             done: [...document.querySelectorAll('#pjDetailBody input[data-pj-done]:checked')].map(el => Number(el.dataset.pjDone)),
+             units: [...document.querySelectorAll('#pjDetailBody input[data-pj-unit]:checked')].map(el => Number(el.dataset.pjUnit)) };
+}
+// Number target: ticking a unit adds 1 to "Done so far" (unticking takes it back).
+function _pjCountFromUnits(box) {
+    const el = document.getElementById('pjUpdCount');
+    if (!el) return;
+    const max = Number(el.max) || Infinity;
+    el.value = Math.max(0, Math.min(max, (Number(el.value) || 0) + (box.checked ? 1 : -1)));
 }
 function _pjWithUpdate(p, upd) {
     const updates = (p.updates || []).concat([upd]).slice(-PJ_UPDATES_MAX);
@@ -560,6 +582,7 @@ function saveProjectUpdate(id) {
     const notes = [];
     if (t.mode === 'units') d.done.forEach(i => { if (t.units[i] && !t.units[i].done) { t.units[i].done = true; t.units[i].doneAt = date; notes.push(t.units[i].name || t.units[i].sn); } });
     if (t.mode === 'milestones') d.done.forEach(i => { if (t.milestones[i] && !t.milestones[i].done) { t.milestones[i].done = true; t.milestones[i].doneAt = date; notes.push(t.milestones[i].label); } });
+    if (t.mode !== 'units') (d.units || []).forEach(i => { const u = (t.units || [])[i]; if (u && !u.done) { u.done = true; u.doneAt = date; notes.push(u.name || u.sn); } });
     if (t.mode === 'count' && d.count !== null && d.count !== '') {
         const c = Math.max(0, Math.min(Number(t.count) || 0, Math.floor(Number(d.count) || 0)));
         if (c !== (Number(t.done) || 0)) notes.push(`${c}/${t.count} ${t.what || 'done'}`);
@@ -584,7 +607,10 @@ function toggleProjectTarget(id, kind, i, on) {
     const t = JSON.parse(JSON.stringify(p.target || {}));
     const item = kind === 'unit' ? (t.units || [])[i] : (t.milestones || [])[i];
     if (!item) return;
+    const was = !!item.done;
     item.done = !!on; item.doneAt = on ? toISODate() : '';
+    // A unit of a Number project counts in "Done so far" too.
+    if (kind === 'unit' && t.mode === 'count' && was !== !!on) t.done = Math.max(0, Math.min(Number(t.count) || 0, (Number(t.done) || 0) + (on ? 1 : -1)));
     const before = projectProgress(p).pct;
     let next = { ...p, target: t };
     const after = projectProgress(next).pct;
@@ -684,7 +710,7 @@ function showAddJobForm(projectId) {
     document.getElementById('otJobProject').value = projectId || '';
     _jobUnits = [];
     const p = projectId && projects.find(x => x.id === projectId);
-    if (p && p.target && p.target.mode === 'units') document.getElementById('otJobDesc').value = p.target.what || '';
+    if (p && p.target && p.target.what) document.getElementById('otJobDesc').value = p.target.what;
     syncJobCategory();
     renderJobUnits();
     whPhotoReset('otJob', []);
@@ -793,10 +819,11 @@ function saveJob(event) {
     _jobPush(rec, existing ? 'Job saved' : 'Job logged', existing);
     // Part of a project measured by units: those units count as done.
     const p = rec.projectId && projects.find(x => x.id === rec.projectId);
-    if (p && status === 'done' && canEditProjectRecord(p) && p.target && p.target.mode === 'units') {
+    if (p && status === 'done' && canEditProjectRecord(p) && p.target && (p.target.units || []).length) {
         const t = JSON.parse(JSON.stringify(p.target));
         const hit = [];
         rec.units.forEach(u => { const tu = (t.units || []).find(x => x.id === u.id); if (tu && !tu.done) { tu.done = true; tu.doneAt = date; hit.push(tu.name || tu.sn); } });
+        if (hit.length && t.mode === 'count') t.done = Math.min(Number(t.count) || 0, (Number(t.done) || 0) + hit.length);
         if (hit.length) {
             const before = projectProgress(p).pct;
             let next = { ...p, target: t };
@@ -823,7 +850,7 @@ function deleteJob(id) {
 function unitJobsProfileHtml(u) {
     if (!canViewView('projects')) return '';
     const jobs = otJobs.filter(j => (j.units || []).some(x => x.id === u.id));
-    const pjs = projects.filter(p => p.target && p.target.mode === 'units' && (p.target.units || []).some(x => x.id === u.id));
+    const pjs = projects.filter(p => p.target && (p.target.units || []).some(x => x.id === u.id));
     const items = jobs.slice(0, 8).map(j => `<div class="profile-item">
             <span class="profile-item__date">${escapeHtml(j.date || '')}</span>
             <span class="badge badge-cat" style="font-size:10px">${escapeHtml(j.category || '')}</span>

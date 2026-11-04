@@ -142,6 +142,45 @@ const { launch, BASE_URL } = require('./_env');
         t('tanpa akses: menu tersembunyi', document.querySelector('.nav__link[data-view="projects"]').style.display, 'none');
         asOwner();
 
+        // ---- 2.29.1: target angka + unit opsional (lebih dari 1) ----
+        showAddProjectForm();
+        document.getElementById('pjName').value = 'Depth Sensor - Cartrack (Phase 1)';
+        document.getElementById('pjEnd').value = '2026-12-31';
+        document.querySelector('input[name="pjMode"][value="count"]').checked = true; syncProjectMode();
+        t('mode angka: kolom unit tetap ada, opsional', [document.getElementById('pjUnitsHint').style.display, /optional/.test(document.getElementById('pjUnitsLabel').textContent)], ['', true]);
+        document.getElementById('pjCountTarget').value = '54';
+        document.getElementById('pjCountWhat').value = 'Installed Complete Depth Sensor';
+        saveProject(); await tick();
+        const c0 = savedP[savedP.length - 1];
+        t('angka tanpa unit boleh', [c0.target.mode, c0.target.count, c0.target.units], ['count', 54, []]);
+        editProject(c0.id);
+        document.getElementById('pjUnitAdd').value = 'EXC-07'; addProjectUnit();
+        document.getElementById('pjUnitAdd').value = 'GGTR136G'; addProjectUnit();
+        saveProject(); await tick();
+        const c1 = projects.find(x => x.id === c0.id);
+        t('unit alat berat + traktor ditambahkan', c1.target.units.map(u => u.id), ['h1', 't1']);
+        t('detail: daftar unit terkait', /Units involved — 0 of 2 done/.test(document.getElementById('pjDetailBody').textContent), true);
+        const box = document.querySelector('#pjDetailBody input[data-pj-unit="0"]');
+        box.checked = true; _pjCountFromUnits(box);
+        t('centang unit menambah Done so far', document.getElementById('pjUpdCount').value, '1');
+        document.getElementById('pjUpdText').value = 'Depth sensor terpasang di EXC-07';
+        saveProjectUpdate(c0.id); await tick();
+        const c2 = projects.find(x => x.id === c0.id);
+        t('update: unit selesai + angka 1/54', [c2.target.units[0].done, c2.target.done, projectProgress(c2).pct], [true, 1, 2]);
+        closeProjectDetail();
+        showAddJobForm(c0.id);
+        t('form job: deskripsi dari target', document.getElementById('otJobDesc').value, 'Installed Complete Depth Sensor');
+        document.getElementById('otJobCategory').value = 'Device install'; syncJobCategory();
+        document.getElementById('otJobUnitAdd').value = 'GGTR136G';
+        saveJob(); await tick();
+        const c3 = projects.find(x => x.id === c0.id);
+        t('job selesai di unit terkait: unit dicentang, angka +1', [c3.target.units[1].done, c3.target.done], [true, 2]);
+        toggleProjectTarget(c0.id, 'unit', 1, false); await tick();
+        t('hilangkan centang: angka kembali -1', projects.find(x => x.id === c0.id).target.done, 1);
+        t('profil unit traktor: project angka tampil', /Depth Sensor/.test(unitJobsProfileHtml(globalData.find(u => u.id === 't1'))), true);
+        closeProjectDetail();
+        projects = projects.filter(x => x.id !== c0.id);
+
         // ---- hapus ----
         deleteProject(projects[0].id);
         t('project dihapus', projects.length, 0);

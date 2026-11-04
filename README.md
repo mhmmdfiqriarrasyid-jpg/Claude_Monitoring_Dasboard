@@ -591,6 +591,11 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.29.1:** project dengan target **angka** atau **milestone** bisa diberi
+  **unit terkait** (opsional, lebih dari satu, alat berat maupun traktor) —
+  `target.units` dipakai untuk semua mode. Di update, unit yang dicentang
+  selesai; pada target angka tiap unit menambah 1 ke *Done so far* (juga saat
+  job Done di unit itu, dan berkurang lagi bila centangnya dilepas).
   **2.29.0 — Projects & Jobs** (menu baru di Operations, `projects.js`, dijaga
   `tests/projects_test.js`, `tests/rules_test.js`, `tests/storage_rules_test.js`).
   Dua jenis pekerjaan di luar Daily Report (KHL & PBT):

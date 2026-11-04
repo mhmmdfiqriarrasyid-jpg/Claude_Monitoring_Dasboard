@@ -11069,6 +11069,8 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 .pj-targets { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; }
 .pj-target { display: flex; align-items: flex-start; gap: 8px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
 .pj-target.is-done { background: var(--success-bg); border-color: var(--success-border, var(--border)); }
+.pj-subtitle { margin: 12px 0 6px; font-size: 12.5px; font-weight: 700; color: var(--text-secondary); }
+.pj-units-block { margin-top: 10px; }
 .pj-checks { display: flex; flex-wrap: wrap; gap: 4px 14px; }
 .pj-upd { padding: 12px; border: 1px dashed var(--border-strong, var(--border)); border-radius: 10px; background: var(--surface-sunken); }
 .pj-updates { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }

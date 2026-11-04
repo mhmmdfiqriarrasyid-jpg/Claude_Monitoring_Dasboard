@@ -4589,12 +4589,6 @@
                     <p class="form-hint">One unit or many. Each unit counts as done once its work is finished (also when a linked job is done).</p>
                     <div class="form-group"><label class="form-label" for="pjUnitWhat">Work on each unit</label>
                         <input class="form-input" id="pjUnitWhat" maxlength="120" placeholder="e.g. Camera AI installed and tested"></div>
-                    <div class="wl-unit-add">
-                        <input class="form-input" id="pjUnitAdd" list="pjUnitList" autocomplete="off" aria-label="Unit to add" placeholder="Type unit name or SN, then Add…"
-                               onkeydown="if(event.key==='Enter'){event.preventDefault();addProjectUnit();}">
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="addProjectUnit()"><i class="fas fa-plus" aria-hidden="true"></i> Add</button>
-                    </div>
-                    <div class="unit-chips" id="pjUnitChips"></div>
                 </div>
                 <div id="pjModeCount" class="pj-mode" style="display:none">
                     <div class="form-grid">
@@ -4608,6 +4602,18 @@
                     <div id="pjMilestones"></div>
                     <button type="button" class="btn btn-secondary btn-sm" onclick="addProjectMilestone()"><i class="fas fa-plus" aria-hidden="true"></i> Add milestone</button>
                     <button type="button" class="btn btn-secondary btn-sm" onclick="useDefaultMilestones()">Use the standard steps</button>
+                </div>
+                <!-- 2.29.1: the units, for every target — the target itself for
+                     "Units", optional (more than one) for "Number" and "Milestones". -->
+                <div class="form-group pj-units-block">
+                    <span class="form-label" id="pjUnitsLabel">Units</span>
+                    <p class="form-hint" id="pjUnitsHint" style="display:none">Optional — the Agriculture or Heavy Equipment units this project is installed on. Ticking one in an update also adds 1 to “Done so far”.</p>
+                    <div class="wl-unit-add">
+                        <input class="form-input" id="pjUnitAdd" list="pjUnitList" autocomplete="off" aria-label="Unit to add" placeholder="Type unit name or SN, then Add…"
+                               onkeydown="if(event.key==='Enter'){event.preventDefault();addProjectUnit();}">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="addProjectUnit()"><i class="fas fa-plus" aria-hidden="true"></i> Add</button>
+                    </div>
+                    <div class="unit-chips" id="pjUnitChips"></div>
                 </div>
                 <div class="form-grid">
                     <div class="form-group"><label class="form-label" for="pjRag">Health</label>
