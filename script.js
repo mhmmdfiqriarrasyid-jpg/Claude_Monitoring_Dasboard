@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.23.1';
+const APP_VERSION = 'v2.23.2';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -4889,11 +4889,12 @@ function renderAgriFact() {
     if (!text || !src) return;
     const pool = agriPool();
     const count = document.getElementById('dashKnowCount');
-    if (!pool.length) { text.textContent = 'No facts yet — add one with Manage.'; src.textContent = ''; src.removeAttribute('href'); if (count) count.textContent = ''; return; }
+    if (!pool.length) { text.textContent = 'No facts yet — add one with Manage.'; src.textContent = ''; src.removeAttribute('href'); if (count) count.textContent = ''; _agriDots(0, 0); return; }
     if (_agriOrder.length !== pool.length) _agriShuffle();
     const idx = ((_agriPos % pool.length) + pool.length) % pool.length;
     const f = pool[_agriOrder[idx]];
     if (count) count.textContent = `${idx + 1} / ${pool.length}`;
+    _agriDots(idx, pool.length);
     const isNew = f.addedAt && f.addedAt === toISODate();
     text.innerHTML = `${isNew ? '<span class="dash-know__new">New today</span> ' : ''}<b>${escapeHtml(f.term || '')}</b> ${escapeHtml(f.text || '')}`;
     const safe = _agriOkUrl(f.url) ? f.url : '';
@@ -4909,6 +4910,25 @@ function agriStep(dir) {
 function agriHold(on) {
     _agriHeld = !!on;
     document.getElementById('dashKnow')?.classList.toggle('is-held', _agriHeld);
+}
+// 2.23.2: dots under the fact — at most AGRI_DOTS, sliding with the current
+// one; the current dot is a pill that fills over AGRI_ROTATE_MS. A tap on a
+// dot jumps to that fact.
+const AGRI_DOTS = 7;
+function _agriDots(idx, n) {
+    const box = document.getElementById('dashKnowDots');
+    if (!box) return;
+    const k = Math.min(n, AGRI_DOTS);
+    const start = Math.max(0, Math.min(idx - Math.floor(k / 2), n - k));
+    let html = '';
+    for (let i = start; i < start + k; i++) {
+        const edge = n > k && ((i === start && start > 0) || (i === start + k - 1 && start + k < n));
+        html += i === idx
+            ? `<button type="button" class="dash-know__dot is-on" aria-current="true" aria-label="Fact ${i + 1} of ${n}"><span id="dashKnowProgress"></span></button>`
+            : `<button type="button" class="dash-know__dot${edge ? ' is-small' : ''}" onclick="agriStep(${i - idx})" aria-label="Fact ${i + 1} of ${n}"></button>`;
+    }
+    box.innerHTML = html;
+    _agriBar();
 }
 function _agriBar() {
     const bar = document.getElementById('dashKnowProgress');

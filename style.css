@@ -10918,9 +10918,13 @@ body:has(.modal-overlay.open) .install-banner { display: none; }
 .dash-know__foot { display: flex; align-items: center; gap: 10px; }
 .dash-know__nav { flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: transparent; color: var(--text); font-size: 11px; cursor: pointer; }
 .dash-know__nav:hover { background: var(--primary-lighter); color: var(--accent-text); }
-.dash-know__bar { flex: 1; height: 4px; background: var(--track, var(--border)); border-radius: 4px; overflow: hidden; }
-.dash-know__bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 1s linear; }
-.dash-know.is-held .dash-know__bar span { background: var(--warning, #F79009); }
+.dash-know__dots { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; }
+.dash-know__dot { flex: none; width: 8px; height: 8px; padding: 0; border: 0; border-radius: 999px; background: var(--border-strong, var(--border)); cursor: pointer; overflow: hidden; transition: width .25s, background .2s; }
+.dash-know__dot:hover { background: var(--accent); }
+.dash-know__dot.is-small { width: 5px; height: 5px; }
+.dash-know__dot.is-on { width: 26px; background: var(--track, var(--border)); cursor: default; }
+.dash-know__dot.is-on span { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 999px; transition: width 1s linear; }
+.dash-know.is-held .dash-know__dot.is-on span { background: var(--warning, #F79009); }
 .dash-know__count { flex: none; min-width: 36px; text-align: center; font-size: 12px; color: var(--text-light); font-variant-numeric: tabular-nums; }
 .agri-form { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 .agri-form__row { display: flex; flex-wrap: wrap; gap: 8px; }
