@@ -156,7 +156,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.23.2';
+const APP_VERSION = 'v2.23.3';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -4842,7 +4842,7 @@ function renderDashOverview(data) {
 // down (pointer or touch), the fact stays until released. Built-in facts are
 // general and each cites where it comes from; Learning editors add their own
 // (agriFacts, with a source link) and can turn the built-in ones off.
-const AGRI_ROTATE_MS = 3 * 60 * 1000;
+const AGRI_ROTATE_MS = 60 * 1000;   // 2.23.3: one minute per fact
 // 2.23.0: the daily facts live in data/agri-facts.json — one is added each
 // day by a scheduled task (rules in CLAUDE.md), never from Wikipedia.
 let agriAuto = [];           // from data/agri-facts.json
