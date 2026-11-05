@@ -168,7 +168,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.29.3';
+const APP_VERSION = 'v2.29.4';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -972,6 +972,7 @@ const MODAL_CLOSERS = {
     prModal:              'closePurchaseModal',
     prDetailModal:        'closePurchaseDetail',
     pjModal:              'closeProjectModal',
+    wlDetailModal:        'closeWorkLogDetail',
     pjDetailModal:        'closeProjectDetail',
     otJobModal:           'closeJobModal',
     prReceiveModal:       'closePurchaseReceive',
@@ -16279,6 +16280,14 @@ function applyCloudWorkLogsSnapshot(list) {
     }
     scheduleDecisionRefresh();
     migrateWorkLogPhotosIfNeeded();
+    // An open report view follows its report (approved elsewhere, edited, deleted).
+    const view = document.getElementById('wlDetailModal');
+    if (view && view.classList.contains('open') && typeof showWorkLogDetail === 'function') {
+        const id = view.dataset.id;
+        const now = workLogs.find(x => x.id === id);
+        if (!now) closeWorkLogDetail();
+        else if ((now.updatedAt || 0) !== Number(view.dataset.seen || 0)) showWorkLogDetail(id);
+    }
 }
 
 // One-shot migration: move photos that still sit inside a work log out to
@@ -17504,7 +17513,7 @@ function renderWorkLogTable() {
         const issueShort = issue.length > 40 ? issue.slice(0, 40) + '…' : issue;
         const jam = (w.start || w.end) ? `${escapeHtml(w.start || '?')}–${escapeHtml(w.end || '?')}` : '—';
         return `
-        <tr>
+        <tr class="wl-row" onclick="if (!event.target.closest('button, a, input, select')) showWorkLogDetail(${jsArg(w.id)})" title="Click to view the full report">
             <td>${i + 1}</td>
             <td data-label="Date" style="white-space:nowrap">${escapeHtml(w.date || '')}${queuedTag('workLogs', w.id)}</td>
             <td data-label="Member"><strong>${escapeHtml(memberNameOf(w))}</strong></td>
@@ -17538,12 +17547,102 @@ function renderWorkLogTable() {
                         aria-label="View ${photoCount} photo(s)"
                         onclick="openWorkLogPhotos(${jsArg(w.id)}, this)"><i class="fas fa-image"></i> ${photoCount}</button>`
                 : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
-            <td class="col-actions">
+            <td class="col-actions"><div class="wl-actions">
+                <button class="btn btn-secondary wl-view-btn" title="View" aria-label="View report of ${escapeHtml(memberNameOf(w))}, ${escapeHtml(w.date || '')}" onclick="showWorkLogDetail(${jsArg(w.id)})"><i class="fas fa-eye"></i></button>
                 ${canEdit ? rowActionsFor(w, 'Report', 'editWorkLog', 'deleteWorkLog', 'withdrawWorkLog') : ''}
-            </td>
+            </div></td>
         </tr>`;
     }).join('');
 }
+
+// ---- Viewing a report (2.29.4) ----
+// Everything a report holds, read-only: hours, each paddock line with its
+// units, description and photos, the issue, and where it stands — with the
+// checker's buttons, so a report can be read and approved without Edit.
+let _wlDetailGen = 0;
+function showWorkLogDetail(id) {
+    const w = workLogs.find(x => x.id === id);
+    if (!w) return;
+    const gen = ++_wlDetailGen;
+    const modal = document.getElementById('wlDetailModal');
+    modal.dataset.id = id;
+    modal.dataset.seen = String(w.updatedAt || 0);
+    const st = workLogApproval(w);
+    const office = w.place === 'office';
+    const jobs = office ? [] : workLogJobs(w);
+    const nPhotos = workLogPhotoCount(w);
+    document.getElementById('wlDetailTitle').textContent = `${memberNameOf(w)} — ${w.date || ''}`;
+    const row = (label, html) => `<div class="profile-row"><span class="profile-row__label">${label}</span><span>${html || '<span class="adm-muted">—</span>'}</span></div>`;
+    const photoSlot = key => nPhotos ? `<div class="wl-detail__photos" data-wl-photos="${key}"><span class="wl-photo__loading"><i class="fas fa-spinner fa-spin"></i> Loading photos…</span></div>` : '';
+    const meta = st === 'approved' ? `Approved by ${escapeHtml(w.approvedBy || '-')}${w.approvedAt ? ' · ' + escapeHtml(formatUserTime(w.approvedAt)) : ''}`
+        : st === 'revision' ? `Sent back${w.reviewedBy ? ' by ' + escapeHtml(w.reviewedBy) : ''}` : st === 'draft' ? 'Not submitted yet' : 'Waiting for approval';
+    document.getElementById('wlDetailBody').innerHTML = `
+        <div class="wl-detail__head"><span class="appr appr--${st}">${escapeHtml(APPROVAL_STATES[st].label)}</span>
+            <span class="adm-sub" style="display:inline">${meta}</span></div>
+        ${st === 'revision' && w.revisionNote ? `<div class="wl-detail__note"><b>Revision note:</b> ${escapeHtml(w.revisionNote)}</div>` : ''}
+        <div class="profile-section">
+            ${row('Member', `<b>${escapeHtml(memberNameOf(w))}</b>`)}
+            ${row('Company', escapeHtml(companyOfRecord(w) || ''))}
+            ${row('Date', escapeHtml(w.date || ''))}
+            ${row('Work hours', (w.start || w.end) ? `${escapeHtml(w.start || '?')}–${escapeHtml(w.end || '?')} <span class="adm-sub" style="display:inline">(${escapeHtml(formatMinutes(workLogMinutes(w)))})</span>` : '')}
+            ${row('Work place', office ? 'Office' : 'Field')}
+            ${w.issue ? row('Issues', `<span class="wl-detail__issue">${escapeHtml(w.issue)}</span>`) : ''}
+            ${row('Filed by', escapeHtml(w.createdByEmail ? shortActor(w.createdByEmail) : ''))}
+            ${w.submittedAt ? row('Submitted', escapeHtml(formatUserTime(w.submittedAt))) : ''}
+        </div>
+        ${office ? `<div class="pr-section-title">Office work</div>
+            <div class="wl-detail__job"><div class="wl-detail__desc">${escapeHtml(w.task || '')}</div>${photoSlot('general')}</div>`
+        : `<div class="pr-section-title">Paddock &amp; job (${jobs.length})</div>
+            ${jobs.map((j, i) => `<div class="wl-detail__job">
+                <div class="wl-detail__jobhead"><b>${escapeHtml(j.paddock || 'Paddock ' + (i + 1))}</b>
+                    ${j.jobType ? `<span class="wl-job-type">${escapeHtml(j.jobType)}</span>` : ''}</div>
+                ${(j.units || []).length ? `<div class="wl-detail__units">${j.units.map(u => `<span class="badge badge-cat">${escapeHtml(workLogUnitName(u) || '')}</span>`).join(' ')}</div>` : ''}
+                <div class="wl-detail__desc">${escapeHtml(j.desc || (i === 0 && !jobs.some(x => x.desc) ? (w.task || '') : '') || '—')}</div>
+                ${nPhotos ? `<div class="wl-detail__photos" data-wl-photos="job${i}"></div>` : ''}
+            </div>`).join('') || '<p class="adm-muted">No paddock lines.</p>'}
+            ${nPhotos ? `<div class="wl-detail__other" hidden><div class="pr-section-title">Other photos</div>${photoSlot('general')}</div>` : ''}`}`;
+    const acts = [];
+    const idArg = jsArg(w.id);
+    if (canApproveThisLog(w) && (st === 'pending' || st === 'approved')) {
+        if (st === 'pending') acts.push(`<button type="button" class="btn btn-primary" onclick="approveWorkLog(${idArg}); _wlDetailRefresh(${idArg})"><i class="fas fa-check"></i> Approve</button>`);
+        acts.push(`<button type="button" class="btn btn-secondary" onclick="reviseWorkLog(${idArg}); _wlDetailRefresh(${idArg})"><i class="fas fa-rotate-left"></i> ${st === 'approved' ? 'Reopen' : 'Send back'}</button>`);
+    }
+    if (canEditTeamRecord(w)) acts.push(`<button type="button" class="btn btn-secondary" onclick="closeWorkLogDetail(); editWorkLog(${idArg})"><i class="fas fa-pen"></i> Edit</button>`);
+    acts.push('<button type="button" class="btn btn-primary" onclick="closeWorkLogDetail()">Close</button>');
+    document.getElementById('wlDetailActions').innerHTML = acts.join('');
+    modal.classList.add('open');
+    if (!nPhotos) return;
+    loadWorkLogPhotos(id).then(photos => {
+        if (gen !== _wlDetailGen || !modal.classList.contains('open')) return;
+        const split = workLogPhotoSplit(w, photos);
+        const all = [...split.jobs.flat(), ...split.general];
+        const caps = [];
+        split.jobs.forEach((part, i) => part.forEach((_, k) => caps.push(`${(jobs[i] && jobs[i].paddock) || 'Paddock ' + (i + 1)}${jobs[i] && jobs[i].jobType ? ' · ' + jobs[i].jobType : ''} — photo ${k + 1} of ${part.length}`)));
+        split.general.forEach((_, k) => caps.push(`Photo ${k + 1} of ${split.general.length}`));
+        let at = 0;
+        const thumbs = list => list.map(src => { const i = at++; return src
+            ? `<button type="button" class="wl-detail__thumb" onclick="openPhotoLightbox(window._wlDetailPhotos, ${i}, { captions: window._wlDetailCaps })"><img src="${escapeHtml(safeImageSrc(src))}" alt="${escapeHtml(caps[i] || 'Photo')}"></button>`
+            : '<span class="wl-detail__thumb wl-detail__thumb--missing">Not found</span>'; }).join('');
+        window._wlDetailPhotos = all; window._wlDetailCaps = caps;
+        split.jobs.forEach((part, i) => { const el = modal.querySelector(`[data-wl-photos="job${i}"]`); if (el) el.innerHTML = thumbs(part); });
+        const genEl = modal.querySelector('[data-wl-photos="general"]');
+        if (genEl) genEl.innerHTML = split.general.length ? thumbs(split.general) : '';
+        const other = modal.querySelector('.wl-detail__other');
+        if (other) other.hidden = !split.general.length;
+        if (!all.length) modal.querySelectorAll('[data-wl-photos]').forEach(el => { el.innerHTML = '<span class="adm-muted">Photos not found.</span>'; });
+    }).catch(() => {
+        if (gen !== _wlDetailGen) return;
+        modal.querySelectorAll('[data-wl-photos]').forEach(el => { el.innerHTML = `<span class="adm-muted">${navigator.onLine ? 'Photos could not be loaded.' : 'Photos need a signal to load.'}</span>`; });
+    });
+}
+function _wlDetailRefresh(id) {
+    setTimeout(() => {
+        const modal = document.getElementById('wlDetailModal');
+        if (!modal.classList.contains('open')) return;
+        if (workLogs.some(x => x.id === id)) showWorkLogDetail(id); else closeWorkLogDetail();
+    }, 60);
+}
+function closeWorkLogDetail() { _wlDetailGen++; document.getElementById('wlDetailModal').classList.remove('open'); }
 
 // The Persetujuan cell, shared by reports and leave. The checker approves only
 // what was actually sent, and may send back what is waiting or reopen what

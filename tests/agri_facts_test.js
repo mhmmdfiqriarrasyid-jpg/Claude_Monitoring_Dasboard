@@ -26,7 +26,7 @@ const { launch, BASE_URL } = require('./_env');
         out.first = [!!txt(), /^Source: /.test(document.getElementById('dashKnowSrc').textContent), /^https:\/\//.test(document.getElementById('dashKnowSrc').href)];
         out.everyBuiltInSourced = [agriAuto.length >= 10, agriAuto.every(f => f.term && f.text && f.source && /^https:\/\/[^\s]+$/.test(f.url) && !/wikipedia\.org/i.test(f.url))];
         // 2.23.0: materi hari ini tampil paling depan dengan tanda New today; Hide
-        agriAuto = agriAuto.concat({ id: 'today', term: 'Hari ini', text: 'materi baru', source: 'X', url: 'https://example.org/x', addedAt: toISODate() });
+        agriAuto = agriAuto.filter(f => f.addedAt !== toISODate()).concat({ id: 'today', term: 'Hari ini', text: 'materi baru', source: 'X', url: 'https://example.org/x', addedAt: toISODate() });
         _agriOrder = []; renderAgriFact();
         out.newToday = [/^New today/.test(txt()), /Hari ini/.test(txt())];
         window.cloud.saveAgriSettings = r => { cfg.push(r); return Promise.resolve(); };

@@ -591,6 +591,13 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.29.4 — Daily Report bisa dilihat tanpa Edit** (dijaga
+  `tests/worklog_view_test.js`): klik baris tabel atau tombol 👁 membuka jendela
+  baca-saja — status persetujuan, member, PT, jam kerja, tempat kerja, issue,
+  tiap paddock (jenis pekerjaan, unit, deskripsi, fotonya sendiri; foto dibuka
+  dengan keterangan paddock), lalu tombol Approve / Send back / Reopen untuk
+  pemeriksa dan Edit untuk yang boleh mengubah. Jendela mengikuti snapshot
+  laporan (disetujui di perangkat lain, diedit, dihapus).
   **2.29.2:** job **Done** yang ditautkan ke project bertarget angka/milestone
   memasukkan unitnya ke daftar unit project (target angka: +1 per unit baru);
   job lama yang belum terhitung muncul dengan tombol **Count units from jobs**.

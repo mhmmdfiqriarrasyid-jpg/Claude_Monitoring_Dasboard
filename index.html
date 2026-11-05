@@ -4553,6 +4553,17 @@
     </div>
 </div>
 
+<!-- 2.29.4: a Daily Report, read-only (showWorkLogDetail) -->
+<div class="modal-overlay" id="wlDetailModal">
+    <div class="modal-card pr-dialog" role="dialog" aria-labelledby="wlDetailTitle">
+        <div class="modal-header">
+            <h3 id="wlDetailTitle">Daily report</h3>
+            <button class="btn-icon" onclick="closeWorkLogDetail()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body" id="wlDetailBody"></div>
+        <div class="form-actions" id="wlDetailActions"></div>
+    </div>
+</div>
 <!-- 2.29.0: Projects & Jobs dialogs -->
 <div class="modal-overlay" id="pjModal">
     <div class="modal-card pr-dialog" role="dialog" aria-labelledby="pjModalTitle">
