@@ -11125,6 +11125,7 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 .pj-files { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 .pj-file { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); font-size: 13px; }
 .pj-file .fa-file-pdf, .pj-filechip .fa-file-pdf { color: var(--danger); }
+.pj-file .fa-file-video, .pj-filechip .fa-file-video { color: var(--info-strong, var(--accent)); }
 .pj-file.is-up { opacity: .75; } .pj-file.is-bad { border-color: var(--danger); }
 .pj-file__name { flex: 1; min-width: 0; padding: 0; border: 0; background: none; font: inherit; color: var(--accent-text); text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pj-file__name:hover { text-decoration: underline; }

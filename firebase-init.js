@@ -1088,9 +1088,10 @@ window.cloud = {
         catch (err) { if (!err || err.code !== 'storage/object-not-found') throw err; }
     },
     // 2.29.8: PDF attachments of jobs, under projectFiles/<record>/<file>.
-    async uploadProjectFile(path, file, onProgress) {
+    // 2.29.9: also videos (mp4 / mov / webm); contentType is the file's own.
+    async uploadProjectFile(path, file, onProgress, contentType) {
         const st = await _storage();
-        const task = st.mod.uploadBytesResumable(st.mod.ref(st.s, path), file, { contentType: 'application/pdf', cacheControl: 'private, max-age=86400' });
+        const task = st.mod.uploadBytesResumable(st.mod.ref(st.s, path), file, { contentType: contentType || 'application/pdf', cacheControl: 'private, max-age=86400' });
         return new Promise((resolve, reject) => {
             task.on('state_changed',
                 snap => { if (onProgress && snap.totalBytes) onProgress(snap.bytesTransferred / snap.totalBytes); },

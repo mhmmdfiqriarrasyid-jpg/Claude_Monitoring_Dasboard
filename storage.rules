@@ -97,12 +97,13 @@ service firebase.storage {
       allow create, update: if (canEdit('projects') || isOwn('projects')) && isImage();
       allow delete: if canEdit('projects') || isOwn('projects');
     }
-    // 2.29.8: PDF attachments of jobs (Projects & Jobs)
+    // 2.29.8: attachments of jobs (Projects & Jobs) — PDFs, and videos since 2.29.9
     match /projectFiles/{rec}/{file} {
       allow read: if canView('projects') || isOwn('projects');
+      // 2.29.9: PDFs up to 25 MB, videos (mp4 / webm / mov) up to 200 MB
       allow create, update: if (canEdit('projects') || isOwn('projects'))
-                    && request.resource.contentType == 'application/pdf'
-                    && request.resource.size <= 25 * 1024 * 1024;
+                    && ((request.resource.contentType == 'application/pdf' && request.resource.size <= 25 * 1024 * 1024)
+                     || (request.resource.contentType in ['video/mp4', 'video/webm', 'video/quicktime'] && request.resource.size <= 200 * 1024 * 1024));
       allow delete: if canEdit('projects') || isOwn('projects');
     }
     match /photos/damagePhotos/{rec}/{file} {

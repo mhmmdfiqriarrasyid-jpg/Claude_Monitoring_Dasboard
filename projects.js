@@ -632,14 +632,26 @@ function toggleProjectTarget(id, kind, i, on) {
 let _jobUnits = [];
 // 2.29.8: PDF attachments. Uploaded as soon as they are picked (with progress);
 // a file picked and then dropped — or the form cancelled — is deleted again.
-const JOB_FILES_MAX = 5, JOB_FILE_BYTES = 25 * 1024 * 1024;
+const JOB_FILES_MAX = 5, JOB_FILE_BYTES = 25 * 1024 * 1024, JOB_VIDEO_BYTES = 200 * 1024 * 1024;
+// 2.29.9: what a picked file is — a PDF, a video (mp4 / mov / webm), or neither.
+function _jobFileType(file) {
+    const n = (file.name || '').toLowerCase();
+    if (file.type === 'application/pdf' || /\.pdf$/.test(n)) return 'application/pdf';
+    if (['video/mp4', 'video/webm', 'video/quicktime'].includes(file.type)) return file.type;
+    if (/\.mp4$|\.m4v$/.test(n)) return 'video/mp4';
+    if (/\.mov$/.test(n)) return 'video/quicktime';
+    if (/\.webm$/.test(n)) return 'video/webm';
+    return '';
+}
+const _isVideoFile = f => /^video\//.test(f.type || '');
+const _fileIcon = f => _isVideoFile(f) ? 'fa-file-video' : 'fa-file-pdf';
 let _jobFiles = [], _jobFilesRemoved = [], _jobDraftId = '', _jobSaved = false;
 function _fmtSize(n) { return n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`; }
 function renderJobFiles() {
     const box = document.getElementById('otJobFiles');
     if (!box) return;
     box.innerHTML = _jobFiles.map((f, i) => `<span class="pj-file${f.uploading ? ' is-up' : ''}${f.failed ? ' is-bad' : ''}">
-        <i class="fas fa-file-pdf" aria-hidden="true"></i>
+        <i class="fas ${_fileIcon(f)}" aria-hidden="true"></i>
         ${f.uploading || f.failed ? `<span>${escapeHtml(f.name)}</span>` : `<button type="button" class="pj-file__name" onclick="openProjectFile(${jsArg(f.path)})">${escapeHtml(f.name)}</button>`}
         <span class="adm-sub" style="display:inline">${f.failed ? 'upload failed' : f.uploading ? `${Math.round((f.progress || 0) * 100)}%` : _fmtSize(f.size || 0)}</span>
         <button type="button" class="pj-file__x" aria-label="Remove ${escapeHtml(f.name)}" title="Remove" onclick="removeJobFile(${i})">&times;</button></span>`).join('');
@@ -651,20 +663,22 @@ async function addJobFiles(event) {
     const files = input ? [...(input.files || [])] : [];
     if (input) input.value = '';
     for (const file of files) {
-        if (_jobFiles.length >= JOB_FILES_MAX) { showToast(`Up to ${JOB_FILES_MAX} PDFs per job`, 'warning'); break; }
-        if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) { showToast(`"${file.name}" is not a PDF — skipped`, 'warning'); continue; }
-        if (file.size > JOB_FILE_BYTES) { showToast(`"${file.name}" is larger than 25 MB — skipped`, 'warning'); continue; }
+        if (_jobFiles.length >= JOB_FILES_MAX) { showToast(`Up to ${JOB_FILES_MAX} attachments per job`, 'warning'); break; }
+        const type = _jobFileType(file);
+        if (!type) { showToast(`"${file.name}" is not a PDF or a video (MP4, MOV, WebM) — skipped`, 'warning'); continue; }
+        const max = type === 'application/pdf' ? JOB_FILE_BYTES : JOB_VIDEO_BYTES;
+        if (file.size > max) { showToast(`"${file.name}" is larger than ${type === 'application/pdf' ? '25' : '200'} MB — skipped`, 'warning'); continue; }
         if (!window.cloud || !window.cloud.uploadProjectFile) { showToast('Reload the page — an old version is still active', 'warning'); return; }
         const safe = file.name.replace(/[^\w.\-]+/g, '_').slice(-80);
-        const f = { name: file.name.slice(0, 120), size: file.size, path: `projectFiles/${_jobDraftId}/${Date.now().toString(36)}_${safe}`, isNew: true, uploading: true, progress: 0 };
+        const f = { name: file.name.slice(0, 120), size: file.size, type, path: `projectFiles/${_jobDraftId}/${Date.now().toString(36)}_${safe}`, isNew: true, uploading: true, progress: 0 };
         _jobFiles.push(f);
         renderJobFiles();
-        window.cloud.uploadProjectFile(f.path, file, p => { f.progress = p; renderJobFiles(); })
+        window.cloud.uploadProjectFile(f.path, file, p => { f.progress = p; renderJobFiles(); }, type)
             .then(() => { f.uploading = false; renderJobFiles(); })
             .catch(err => {
                 console.error('[jobs] PDF upload failed:', err);
                 f.uploading = false; f.failed = true; renderJobFiles();
-                showToast(err && /unauthorized|permission/i.test(err.code || '') ? 'PDF attachments need the new storage.rules — publish them first' : `"${f.name}" could not be uploaded`, 'error');
+                showToast(err && /unauthorized|permission/i.test(err.code || '') ? 'Attachments need the new storage.rules — publish them first' : `"${f.name}" could not be uploaded`, 'error');
             });
     }
 }
@@ -689,7 +703,7 @@ async function openProjectFile(path) {
     }
 }
 function jobFilesHtml(j) {
-    return (j.files || []).map(f => `<button type="button" class="pj-filechip" title="Open ${escapeHtml(f.name)}" onclick="event.stopPropagation(); openProjectFile(${jsArg(f.path)})"><i class="fas fa-file-pdf" aria-hidden="true"></i> ${escapeHtml(f.name)}</button>`).join('');
+    return (j.files || []).map(f => `<button type="button" class="pj-filechip" title="Open ${escapeHtml(f.name)}" onclick="event.stopPropagation(); openProjectFile(${jsArg(f.path)})"><i class="fas ${_fileIcon(f)}" aria-hidden="true"></i> ${escapeHtml(f.name)}</button>`).join('');
 }
 function getFilteredJobs() {
     const q = (document.getElementById('jobSearch')?.value || '').trim().toLowerCase();
@@ -893,7 +907,7 @@ function saveJob(event) {
     if ((document.getElementById('otJobUnitAdd').value || '').trim()) { addJobUnit(); if ((document.getElementById('otJobUnitAdd').value || '').trim()) return; }
     const date = document.getElementById('otJobDate').value || toISODate();
     if (date > toISODate()) { showToast('The date cannot be in the future', 'warning'); return; }
-    if (_jobFiles.some(f => f.uploading)) { showToast('Wait until the PDF finishes uploading', 'warning'); return; }
+    if (_jobFiles.some(f => f.uploading)) { showToast('Wait until the attachments finish uploading', 'warning'); return; }
     const category = document.getElementById('otJobCategory').value;
     const description = (document.getElementById('otJobDesc').value || '').trim();
     if (!category) { showToast('Pick a category', 'warning'); return; }
@@ -916,7 +930,7 @@ function saveJob(event) {
         hours: Math.max(0, Math.round((Number(document.getElementById('otJobHours').value) || 0) * 10) / 10) || 0,
         projectId: document.getElementById('otJobProject').value || '',
         photoIds: whPhotoCommit('otJob', recId),
-        files: _jobFiles.filter(f => !f.failed).map(f => ({ name: f.name, path: f.path, size: f.size || 0 })),
+        files: _jobFiles.filter(f => !f.failed).map(f => ({ name: f.name, path: f.path, size: f.size || 0, type: f.type || 'application/pdf' })),
         createdByUid: existing ? (existing.createdByUid || '') : myUid(),
         createdBy: existing ? (existing.createdBy || '') : _pjMe(),
         createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),

@@ -128,20 +128,23 @@ const { launch, BASE_URL } = require('./_env');
         editJob(j0.id);
         await addJobFiles({ target: { files: [pdf('Berita Acara.pdf'), new File(['x'], 'foto.png', { type: 'image/png' })], value: '' } }); await tick();
         t('PDF diunggah ke projectFiles/<job>/, PNG ditolak', [up.length, up[0].startsWith('projectFiles/' + j0.id + '/'), toasts.some(x => /not a PDF/.test(x))], [1, true, true]);
+        await addJobFiles({ target: { files: [new File(['v'], 'kalibrasi.MOV', { type: '' })], value: '' } }); await tick();
+        t('video MOV diterima (tipe dari nama file)', [up.length, _jobFiles[1].type, /fa-file-video/.test(document.getElementById('otJobFiles').innerHTML)], [2, 'video/quicktime', true]);
+        removeJobFile(1);
         t('daftar lampiran tampil dengan nama', /Berita Acara\.pdf/.test(document.getElementById('otJobFiles').textContent), true);
         saveJob(); await tick();
         t('job menyimpan lampiran', savedJ[savedJ.length - 1].files.map(f => f.name), ['Berita Acara.pdf']);
         // dibuka lagi, hapus lampiran, simpan → file dihapus dari Storage
         editJob(j0.id);
         removeJobFile(0);
-        t('hapus lampiran lama belum dihapus sebelum simpan', del.length, 0);
+        t('hapus lampiran lama belum dihapus sebelum simpan', del.length, 1);
         saveJob(); await tick();
-        t('setelah simpan: file dihapus dari Storage', [del.length, savedJ[savedJ.length - 1].files.length], [1, 0]);
+        t('setelah simpan: file dihapus dari Storage', [del.length, savedJ[savedJ.length - 1].files.length], [2, 0]);
         // unggah lalu batal: file baru dihapus lagi
         editJob(j0.id);
         await addJobFiles({ target: { files: [pdf('draft.pdf')], value: '' } }); await tick();
         closeJobModal();
-        t('batal: PDF yang baru diunggah dihapus lagi', del.length, 2);
+        t('batal: PDF yang baru diunggah dihapus lagi', del.length, 3);
 
         // ---- tabel job & filter periode ----
         switchProjectsTab('jobs');
