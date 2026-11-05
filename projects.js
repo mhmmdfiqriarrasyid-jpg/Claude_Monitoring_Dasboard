@@ -541,7 +541,7 @@ function showProjectDetail(id, keepForm) {
         ${prs.length ? `<div class="pr-section-title">Purchase requests</div><div class="pj-links">${prs.map(r => `<button type="button" class="pj-link" onclick="closeProjectDetail(); navigateTo('purchase'); showPurchaseDetail(${jsArg(r.id)})">${escapeHtml(r.prNo || r.title)} ${prStatusChip(r.status)}</button>`).join('')}</div>` : ''}
         ${canEdit && _pjUncountedJobUnits(p) ? `<div class="pj-notice">${_pjUncountedJobUnits(p)} unit(s) from finished jobs are not counted yet.
             <button type="button" class="btn btn-primary btn-sm" onclick="countProjectJobUnits(${jsArg(p.id)})">Count units from jobs (+${_pjUncountedJobUnits(p)})</button></div>` : ''}
-        ${jobs.length ? `<div class="pr-section-title">Jobs (${jobs.length})</div><div class="pj-links">${jobs.slice(0, 20).map(j => `<div class="pj-jobline"><b>${escapeHtml(j.date || '')}</b> ${escapeHtml(j.category)} — ${escapeHtml((j.description || '').slice(0, 90))}${(j.units || []).length ? ` <span class="adm-sub" style="display:inline">(${escapeHtml(j.units.map(u => u.name).join(', '))})</span>` : ''}</div>`).join('')}</div>` : ''}
+        ${jobs.length ? `<div class="pr-section-title">Jobs (${jobs.length})</div><div class="pj-links">${jobs.slice(0, 20).map(j => `<div class="pj-jobline"><b>${escapeHtml(j.date || '')}</b> ${escapeHtml(j.category)} — ${escapeHtml((j.description || '').slice(0, 90))}${(j.units || []).length ? ` <span class="adm-sub" style="display:inline">(${escapeHtml(j.units.map(u => u.name).join(', '))})</span>` : ''}${j.issue ? `<div class="pj-job-issue">⚠ ${escapeHtml(j.issue)}</div>` : ''}</div>`).join('')}</div>` : ''}
         ${addForm}
         <div class="pr-section-title">Updates (${ups.length})</div>
         ${ups.length ? `<ol class="pj-updates">${ups.map(u => `<li>
@@ -640,9 +640,9 @@ function getFilteredJobs() {
         if (from && (j.date || '') < from) return false;
         if (to && (j.date || '') > to) return false;
         if (cat && j.category !== cat) return false;
-        if (st && j.status !== st) return false;
+        if (st === 'issue' ? !(j.issue || '').trim() : (st && j.status !== st)) return false;
         if (q) {
-            const hay = [j.category, j.description, j.requestedBy, j.doneBy, j.company, j.implement, ...(j.units || []).map(u => u.name + ' ' + (u.sn || ''))].join(' ').toLowerCase();
+            const hay = [j.category, j.description, j.issue, j.requestedBy, j.doneBy, j.company, j.implement, ...(j.units || []).map(u => u.name + ' ' + (u.sn || ''))].join(' ').toLowerCase();
             if (!hay.includes(q)) return false;
         }
         return true;
@@ -668,6 +668,7 @@ function renderJobsList() {
     if (tiles) tiles.innerHTML = tile(rows.length, 'Jobs', perLabel, 'teal')
         + top.map(([c, n], i) => tile(n, c, perLabel, ['info', 'good', 'warn'][i])).join('')
         + tile(otJobs.filter(j => j.status !== 'done').length, 'Not finished', 'Open or in progress, any date', 'bad')
+        + tile(otJobs.filter(j => (j.issue || '').trim()).length, 'Field issues', 'Jobs with an open issue / backlog', 'warn')
         + (hours ? tile(Math.round(hours * 10) / 10, 'Hours', perLabel, 'neutral') : '');
     const cnt = document.getElementById('jobCount');
     if (cnt) cnt.textContent = `${rows.length} job${rows.length === 1 ? '' : 's'}`;
@@ -685,6 +686,7 @@ function renderJobsList() {
             <td data-label="Date" class="adm-nowrap">${escapeHtml(j.date || '')}</td>
             <td data-label="Job"><span class="adm-stack"><span class="pj-cat">${escapeHtml(j.category || '')}</span>
                 <span>${escapeHtml(j.description || '')}</span>
+                ${j.issue ? `<span class="pj-job-issue"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i> ${escapeHtml(j.issue)}</span>` : ''}
                 ${j.implement ? `<span class="adm-sub">Implement: ${escapeHtml(j.implement)}${j.appliedImplement ? ' · set on the unit' : ''}</span>` : ''}
                 ${p ? `<button type="button" class="adm-link" onclick="showProjectDetail(${jsArg(p.id)})">Project: ${escapeHtml(p.name)}</button>` : ''}</span></td>
             <td data-label="Units">${(j.units || []).length ? j.units.map(u => `<button type="button" class="badge badge-cat pj-unitlink" onclick="showUnitProfile(${jsArg(u.id)})">${escapeHtml(u.name || u.sn || '')}</button>`).join(' ') : '<span class="adm-muted">—</span>'}${j.company ? `<span class="adm-sub">${escapeHtml(j.company)}</span>` : ''}</td>
@@ -735,6 +737,7 @@ function editJob(id) {
     document.getElementById('otJobDate').value = j.date || '';
     document.getElementById('otJobCategory').value = j.category || '';
     document.getElementById('otJobDesc').value = j.description || '';
+    document.getElementById('otJobIssue').value = j.issue || '';
     document.getElementById('otJobImpl').value = j.implement || '';
     document.getElementById('otJobRequestedBy').value = j.requestedBy || '';
     document.getElementById('otJobDoneBy').value = j.doneBy || '';
@@ -834,6 +837,7 @@ function saveJob(event) {
     const rec = {
         ...(existing || {}),
         id: recId, date, category, description, status,
+        issue: (document.getElementById('otJobIssue').value || '').trim(),
         units: _jobUnits.map(u => ({ id: u.id, name: u.name || '', sn: u.sn || '' })),
         implement,
         company: (first && first.site) || (existing && existing.company) || '',
@@ -897,7 +901,7 @@ function unitJobsProfileHtml(u) {
     const items = jobs.slice(0, 8).map(j => `<div class="profile-item">
             <span class="profile-item__date">${escapeHtml(j.date || '')}</span>
             <span class="badge badge-cat" style="font-size:10px">${escapeHtml(j.category || '')}</span>
-            <span class="profile-item__text" title="${escapeHtml(j.description || '')}">${escapeHtml((j.description || '').slice(0, 50))}</span>
+            <span class="profile-item__text" title="${escapeHtml(j.description || '')}">${escapeHtml((j.description || '').slice(0, 50))}${j.issue ? ` <span class="pj-job-issue">⚠ ${escapeHtml(j.issue.slice(0, 40))}</span>` : ''}</span>
         </div>`).join('');
     const pjItems = pjs.map(p => { const tu = p.target.units.find(x => x.id === u.id);
         return `<div class="profile-item"><span class="badge badge-cat" style="font-size:10px">Project</span>

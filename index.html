@@ -2303,7 +2303,7 @@
                     <label class="adm-select"><span class="adm-select__label">Category</span>
                         <select id="jobCategoryFilter" onchange="renderJobsList()"><option value="">All categories</option></select></label>
                     <label class="adm-select"><span class="adm-select__label">Status</span>
-                        <select id="jobStatusFilter" onchange="renderJobsList()"><option value="">Any status</option><option value="open">Open</option><option value="progress">In progress</option><option value="done">Done</option></select></label>
+                        <select id="jobStatusFilter" onchange="renderJobsList()"><option value="">Any status</option><option value="open">Open</option><option value="progress">In progress</option><option value="done">Done</option><option value="issue">With field issues</option></select></label>
                     <span class="pr-count" id="jobCount"></span>
                 </div>
                 <div class="table-wrapper" style="max-height:none">
@@ -4674,6 +4674,9 @@
                     <div class="form-group full-width" id="otJobImplGroup" style="display:none"><label class="form-label" for="otJobImpl">Implement installed</label>
                         <input class="form-input" id="otJobImpl" list="pjImplList" autocomplete="off" maxlength="120" placeholder="e.g. Lime or Dolomite Spreader — Bonel">
                         <span class="form-hint">When the job is Done, the units above get this implement in the Unit Database.</span></div>
+                    <div class="form-group full-width"><label class="form-label" for="otJobIssue">Field issues / backlog <span class="form-optional">(optional)</span></label>
+                        <textarea class="form-input form-textarea" id="otJobIssue" rows="2" maxlength="1000" placeholder="e.g. Hydraulic hose leaking, waiting for spare part · Calibration to redo after rain"></textarea>
+                        <span class="form-hint">What blocked the work or is still left to do. Clear it once it is solved.</span></div>
                     <div class="form-group"><label class="form-label" for="otJobRequestedBy">Requested by <span class="form-optional">(department)</span></label>
                         <input class="form-input" id="otJobRequestedBy" list="pjDeptList" autocomplete="off" maxlength="80"></div>
                     <div class="form-group"><label class="form-label" for="otJobDoneBy">Done by</label><input class="form-input" id="otJobDoneBy" maxlength="120" autocomplete="off"></div>

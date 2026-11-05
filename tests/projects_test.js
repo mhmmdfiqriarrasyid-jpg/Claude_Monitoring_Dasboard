@@ -109,6 +109,16 @@ const { launch, BASE_URL } = require('./_env');
         t('simpan ulang tidak menimpa lagi', globalData.find(u => u.id === 't1').implement, 'Manual change');
         void before;
 
+        // ---- 2.29.6: kendala / backlog lapangan ----
+        editJob(j0.id);
+        document.getElementById('otJobIssue').value = 'Selang hidrolik bocor, tunggu sparepart';
+        saveJob(); await tick();
+        t('job menyimpan kendala lapangan', savedJ[savedJ.length - 1].issue, 'Selang hidrolik bocor, tunggu sparepart');
+        switchProjectsTab('jobs');
+        document.getElementById('jobStatusFilter').value = 'issue'; renderJobsList();
+        t('filter "With field issues"', [document.querySelectorAll('#jobBody tr').length, /Selang hidrolik/.test(document.getElementById('jobBody').textContent)], [1, true]);
+        document.getElementById('jobStatusFilter').value = '';
+
         // ---- tabel job & filter periode ----
         switchProjectsTab('jobs');
         t('tabel job: 2 job minggu ini', document.querySelectorAll('#jobBody tr').length, 2);

@@ -591,6 +591,9 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.29.6:** job punya kolom **Field issues / backlog** (`issue`, opsional) —
+  tampil merah di tabel, detail project dan profil unit; tile *Field issues* dan
+  filter status *With field issues*.
   **2.29.5 — antrean foto (photo outbox)** (dijaga `tests/photo_storage_e2e.js`):
   foto yang gagal naik ke Storage dulu disimpan inline di dokumennya; beberapa
   foto inline membuat dokumen > 1 MB, ditolak Firestore, dan foto hilang

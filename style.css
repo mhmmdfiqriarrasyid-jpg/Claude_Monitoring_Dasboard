@@ -11084,6 +11084,7 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 .pj-jobline { font-size: 13px; }
 .pj-jstatus { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: var(--success-bg); color: var(--success); }
 .pj-jstatus--open { background: var(--warning-bg); color: var(--warning-strong, var(--warning)); } .pj-jstatus--progress { background: var(--info-bg); color: var(--info-strong); }
+.pj-job-issue { display: block; color: var(--danger); font-size: 12.5px; font-weight: 600; }
 .pj-unitlink { border: 0; cursor: pointer; font: inherit; font-size: 10.5px; }
 @media print { #viewProjects .page-head__actions, #viewProjects .pj-filters { display: none !important; } }
 
