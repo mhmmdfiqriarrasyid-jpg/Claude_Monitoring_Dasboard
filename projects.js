@@ -717,7 +717,8 @@ function getFilteredJobs() {
         if (cat && j.category !== cat) return false;
         if (st === 'issue' ? !(j.issue || '').trim() : (st && j.status !== st)) return false;
         if (q) {
-            const hay = [j.category, j.description, j.issue, j.requestedBy, j.doneBy, j.company, j.implement, ...(j.units || []).map(u => u.name + ' ' + (u.sn || ''))].join(' ').toLowerCase();
+            const tk = typeof ticketOfJob === 'function' ? ticketOfJob(j) : null;
+            const hay = [tk && tk.no, tk && tk.title, j.category, j.description, j.issue, j.requestedBy, j.doneBy, j.company, j.implement, ...(j.units || []).map(u => u.name + ' ' + (u.sn || ''))].join(' ').toLowerCase();
             if (!hay.includes(q)) return false;
         }
         return true;
@@ -764,7 +765,9 @@ function renderJobsList() {
                 ${j.issue ? `<span class="pj-job-issue"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i> ${escapeHtml(j.issue)}</span>` : ''}
                 ${(j.files || []).length ? `<span class="pj-filechips">${jobFilesHtml(j)}</span>` : ''}
                 ${j.implement ? `<span class="adm-sub">Implement: ${escapeHtml(j.implement)}${j.appliedImplement ? ' · set on the unit' : ''}</span>` : ''}
-                ${p ? `<button type="button" class="adm-link" onclick="showProjectDetail(${jsArg(p.id)})">Project: ${escapeHtml(p.name)}</button>` : ''}</span></td>
+                ${p ? `<button type="button" class="adm-link" onclick="showProjectDetail(${jsArg(p.id)})">Project: ${escapeHtml(p.name)}</button>` : ''}
+                ${_jobTicketChip(j)}
+                ${j.issue && !_jobTicketChip(j) && typeof canHandleTickets === 'function' && canHandleTickets() ? `<button type="button" class="adm-link pj-ticketlink" onclick="ticketFromJob(${jsArg(j.id)})"><i class="fas fa-ticket" aria-hidden="true"></i> Raise a ticket for this issue</button>` : ''}</span></td>
             <td data-label="Units">${(j.units || []).length ? j.units.map(u => `<button type="button" class="badge badge-cat pj-unitlink" onclick="showUnitProfile(${jsArg(u.id)})">${escapeHtml(u.name || u.sn || '')}</button>`).join(' ') : '<span class="adm-muted">—</span>'}${j.company ? `<span class="adm-sub">${escapeHtml(j.company)}</span>` : ''}</td>
             <td data-label="Requested / done by"><span class="adm-stack"><span>${escapeHtml(j.requestedBy || '—')}</span><span class="adm-sub">by ${escapeHtml(j.doneBy || '—')}</span></span></td>
             <td data-label="Hours" class="num">${j.hours ? escapeHtml(String(j.hours)) : '<span class="adm-muted">—</span>'}</td>
@@ -782,7 +785,22 @@ function _jobFillSelects(rec, projectId) {
     const open = projects.filter(p => !PJ_CLOSED.includes(p.status) || p.id === (rec && rec.projectId) || p.id === projectId);
     document.getElementById('otJobProject').innerHTML = '<option value="">— Not part of a project —</option>'
         + open.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('');
-    _pjFillDatalists();
+    // 2.30.1: the ticket this job works on (OT team with Tickets: edit).
+    const tg = document.getElementById('otJobTicket');
+    const canLink = typeof canHandleTickets === 'function' && canHandleTickets();
+    document.getElementById('otJobTicketGroup').style.display = canLink ? '' : 'none';
+    if (tg) {
+        const cur = (rec && rec.ticketId) || (rec && typeof ticketOfJob === 'function' && (ticketOfJob(rec) || {}).id) || '';
+        tg.innerHTML = '<option value="">— Not from a ticket —</option>' + (canLink ? ticketChoicesForJob(cur).map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(ticketOptionLabel(t))}</option>`).join('') : '');
+        tg.value = cur;
+        tg.dataset.prev = cur;
+    }
+}
+function _jobTicketChip(j) {
+    const t = typeof ticketOfJob === 'function' ? ticketOfJob(j) : null;
+    if (!t) return '';
+    const st = (typeof TK_STATUSES !== 'undefined' && TK_STATUSES[t.status]) || { label: t.status, tone: 'neutral' };
+    return `<button type="button" class="adm-link pj-ticketlink" onclick="showTicketDetail(${jsArg(t.id)})"><i class="fas fa-ticket" aria-hidden="true"></i> Ticket ${escapeHtml(t.no)} · ${escapeHtml(st.label)}</button>`;
 }
 function showAddJobForm(projectId) {
     if (!canAddProjects()) { showToast('You cannot log jobs', 'warning'); return; }
@@ -930,6 +948,8 @@ function saveJob(event) {
         doneBy: (document.getElementById('otJobDoneBy').value || '').trim(),
         hours: Math.max(0, Math.round((Number(document.getElementById('otJobHours').value) || 0) * 10) / 10) || 0,
         projectId: document.getElementById('otJobProject').value || '',
+        ticketId: document.getElementById('otJobTicketGroup').style.display === 'none'
+            ? ((existing && existing.ticketId) || '') : (document.getElementById('otJobTicket').value || ''),
         photoIds: whPhotoCommit('otJob', recId),
         files: _jobFiles.filter(f => !f.failed).map(f => ({ name: f.name, path: f.path, size: f.size || 0, type: f.type || 'application/pdf' })),
         createdByUid: existing ? (existing.createdByUid || '') : myUid(),
@@ -961,8 +981,12 @@ function saveJob(event) {
     _jobPush(rec, existing ? 'Job saved' : 'Job logged', existing);
     _jobFilesRemoved.forEach(path => window.cloud && window.cloud.deleteProjectFile && window.cloud.deleteProjectFile(path).catch(() => {}));
     _jobSaved = true;
-    // 2.30.0: logged from a ticket — link the two.
-    if (!existing && typeof linkJobToTicket === 'function') { rec.ticketId = rec.ticketId || (typeof _jobTicketLink !== 'undefined' ? _jobTicketLink : ''); linkJobToTicket(rec); }
+    // 2.30.1: linked to a ticket — the ticket lists the job, and a finished job offers to resolve it.
+    if (typeof linkJobToTicket === 'function') {
+        const prevTicket = document.getElementById('otJobTicket').dataset.prev || '';
+        if (rec.ticketId !== prevTicket) linkJobToTicket(rec, prevTicket);
+        if (rec.ticketId && status === 'done' && (!existing || existing.status !== 'done' || rec.ticketId !== prevTicket)) ticketAfterJobDone(rec);
+    }
     // Part of a project measured by units: those units count as done.
     const p = rec.projectId && projects.find(x => x.id === rec.projectId);
     if (p && status === 'done' && canEditProjectRecord(p) && p.target) {

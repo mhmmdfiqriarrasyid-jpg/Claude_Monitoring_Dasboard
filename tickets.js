@@ -227,7 +227,7 @@ function editTicket(id) {
     whPhotoReset('ticket', t.photoIds || []);
     document.getElementById('tkModal').classList.add('open');
 }
-function closeTicketModal() { document.getElementById('tkModal').classList.remove('open'); }
+function closeTicketModal() { _tkFromJob = ''; document.getElementById('tkModal').classList.remove('open'); }
 function renderTicketUnits() {
     document.getElementById('tkUnitChips').innerHTML = _tkUnits.length ? _tkUnits.map((u, k) => `<span class="unit-chip">${escapeHtml(u.name || u.sn || '(unit)')}
         <button type="button" class="unit-chip__x" aria-label="Remove ${escapeHtml(u.name || '')}" onclick="_tkUnits.splice(${k}, 1); renderTicketUnits()">&times;</button></span>`).join('')
@@ -276,13 +276,16 @@ function saveTicket(event) {
         reportedByEmail: existing ? (existing.reportedByEmail || '') : ((currentUser && currentUser.email) || ''),
         reportedAt: existing ? existing.reportedAt : now,
         assigneeUid: existing ? (existing.assigneeUid || '') : '', assigneeName: existing ? (existing.assigneeName || '') : '',
-        jobIds: existing ? (existing.jobIds || []) : [],
+        jobIds: existing ? (existing.jobIds || []) : (_tkFromJob ? [_tkFromJob] : []),
         events: existing ? (existing.events || []) : [],
         updatedAt: now, lastActorUid: myUid()
     };
     if (!existing) rec = _tkEvent(rec, 'created', { text: `${TK_PRIORITY[priority].label} priority` });
     else if (existing.priority !== priority) rec = _tkEvent(rec, 'priority', { from: existing.priority, to: priority });
     _tkPush(rec, existing ? 'Ticket saved' : `Ticket ${rec.no} sent — the OT team is notified`, existing);
+    // Raised from a job's field issue: the job points at the new ticket.
+    const fromJob = !existing && _tkFromJob && typeof otJobs !== 'undefined' ? otJobs.find(x => x.id === _tkFromJob) : null;
+    if (fromJob && !fromJob.ticketId && canEditProjectRecord(fromJob)) _jobPush({ ...fromJob, ticketId: rec.id, updatedAt: Date.now() }, '', fromJob);
     closeTicketModal();
     if (existing) showTicketDetail(rec.id);
 }
@@ -303,7 +306,7 @@ function showTicketDetail(id, keepTyping) {
     const handle = canHandleTickets(), mine = ticketMine(t), now = Date.now(), late = ticketOverdue(t, now);
     document.getElementById('tkDetailTitle').textContent = `${t.no} — ${t.title}`;
     const row = (label, html) => `<div class="profile-row"><span class="profile-row__label">${label}</span><span>${html || '<span class="adm-muted">—</span>'}</span></div>`;
-    const jobs = (t.jobIds || []).map(j => otJobs.find(x => x.id === j)).filter(Boolean);
+    const jobs = ticketJobs(t);
     const evs = (t.events || []).slice().reverse();
     const staff = handle ? ticketAssignees() : [];
     document.getElementById('tkDetailBody').innerHTML = `
@@ -319,7 +322,8 @@ function showTicketDetail(id, keepTyping) {
         ${t.description ? `<div class="pr-section-title">Details</div><div class="wl-detail__desc">${escapeHtml(t.description)}</div>` : ''}
         ${(t.photoIds || []).length ? `<div class="pr-section-title">Photos</div>${whPhotoChip(t.photoIds, t.no, 'tk')}` : ''}
         ${t.resolution ? `<div class="pr-section-title">Resolution</div><div class="tk-resolution">${escapeHtml(t.resolution)}</div>` : ''}
-        ${jobs.length ? `<div class="pr-section-title">Jobs</div><div class="pj-links">${jobs.map(j => `<div class="pj-jobline"><b>${escapeHtml(j.date || '')}</b> ${escapeHtml(j.category)} — ${escapeHtml((j.description || '').slice(0, 90))} <span class="adm-sub" style="display:inline">(${escapeHtml(JOB_STATUSES[j.status] || '')})</span></div>`).join('')}</div>` : ''}
+        ${jobs.length ? `<div class="pr-section-title">Jobs &amp; activities</div><div class="pj-links">${jobs.map(j => `<div class="pj-jobline"><b>${escapeHtml(j.date || '')}</b> ${escapeHtml(j.category)} — ${escapeHtml((j.description || '').slice(0, 90))} <span class="pj-jstatus pj-jstatus--${escapeHtml(j.status || 'done')}">${escapeHtml(JOB_STATUSES[j.status] || 'Done')}</span>${j.issue ? `<div class="pj-job-issue"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i> ${escapeHtml(j.issue.slice(0, 140))}</div>` : ''}</div>`).join('')}
+            <button type="button" class="adm-link" onclick="openTicketJobs(${jsArg(t.id)})">Open in Jobs &amp; Activities</button></div>` : ''}
         ${handle && !TK_DONE.includes(t.status) ? `<div class="pr-section-title">Assign</div>
             <div class="tk-assign"><select class="form-select" id="tkAssignee" aria-label="PIC"><option value="">— Choose PIC —</option>${staff.map(s => `<option value="${escapeHtml(s.uid)}"${s.uid === t.assigneeUid ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join('')}</select>
             <button type="button" class="btn btn-secondary btn-sm" onclick="assignTicket(${jsArg(t.id)})">Assign</button></div>` : ''}
@@ -397,7 +401,8 @@ function setTicketStatus(id, status) {
     _tkPush(next, `${TK_STATUSES[status].label}`, t);
     showTicketDetail(id);
 }
-// From a ticket to a Job in Projects & Jobs, linked both ways.
+// ---- Tickets <-> Jobs & Activities (2.30.1) ----
+// A job keeps its ticket in job.ticketId; the ticket lists its jobs in jobIds.
 let _jobTicketLink = '';
 function jobFromTicket(id) {
     const t = tickets.find(x => x.id === id);
@@ -405,21 +410,83 @@ function jobFromTicket(id) {
     closeTicketDetail();
     showAddJobForm();
     _jobTicketLink = t.id;
+    const sel = document.getElementById('otJobTicket');
+    if (sel) { if (![...sel.options].some(o => o.value === t.id)) sel.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(t.id)}">${escapeHtml(ticketOptionLabel(t))}</option>`); sel.value = t.id; }
     document.getElementById('otJobDesc').value = `${t.title}${t.location ? ' — ' + t.location : ''}`;
     _jobUnits = (t.units || []).map(u => ({ ...u }));
     renderJobUnits();
     document.getElementById('otJobIssue').value = '';
+    document.getElementById('otJobStatus').value = 'progress';
 }
-// Called by saveJob (projects.js) after a job is saved.
-function linkJobToTicket(job) {
-    if (!_jobTicketLink) return;
-    const t = tickets.find(x => x.id === _jobTicketLink);
+function ticketOptionLabel(t) { return `${t.no} · ${(t.title || '').slice(0, 60)}${TK_DONE.includes(t.status) ? ' (' + TK_STATUSES[t.status].label.toLowerCase() + ')' : ''}`; }
+// Tickets a job can be part of: those still open, plus the one it already has.
+function ticketChoicesForJob(currentId) {
+    return tickets.filter(t => !TK_DONE.includes(t.status) || t.id === currentId)
+        .sort((a, b) => (b.reportedAt || 0) - (a.reportedAt || 0));
+}
+// The ticket of a job: its own ticketId, or (jobs logged on 2.30.0) the ticket that lists it.
+function ticketOfJob(j) {
+    if (!j || typeof tickets === 'undefined') return null;
+    return (j.ticketId && tickets.find(t => t.id === j.ticketId)) || tickets.find(t => (t.jobIds || []).includes(j.id)) || null;
+}
+function ticketJobs(t) {
+    if (typeof otJobs === 'undefined') return [];
+    return otJobs.filter(j => j.ticketId === t.id || (!j.ticketId && (t.jobIds || []).includes(j.id)));
+}
+// Called by saveJob (projects.js) after a job is saved: link it to its ticket
+// (and off the one it had before).
+function linkJobToTicket(job, prevTicketId) {
     _jobTicketLink = '';
-    if (!t || !canHandleTickets()) return;
+    if (!canHandleTickets()) return;
+    const tid = job.ticketId || '';
+    if (prevTicketId && prevTicketId !== tid) {
+        const old = tickets.find(x => x.id === prevTicketId);
+        if (old && (old.jobIds || []).includes(job.id)) {
+            const next = _tkEvent({ ...old, jobIds: old.jobIds.filter(x => x !== job.id) }, 'comment', { text: `Job taken off this ticket: ${job.category}: ${job.description}` });
+            _tkPush(next, '', old);
+        }
+    }
+    if (!tid || tid === prevTicketId) return;
+    const t = tickets.find(x => x.id === tid);
+    if (!t) return;
     let next = { ...t, jobIds: [...new Set((t.jobIds || []).concat([job.id]))] };
     if (t.status === 'open' || t.status === 'assigned') { next.status = 'progress'; next.startedAt = t.startedAt || Date.now(); }
-    next = _tkEvent(next, 'job', { text: `${job.category}: ${job.description}` });
+    next = _tkEvent(next, 'job', { text: `${job.category}: ${job.description}${job.status === 'done' ? '' : ' (' + (JOB_STATUSES[job.status] || '').toLowerCase() + ')'}` });
     _tkPush(next, '', t);
+}
+// A linked job set to Done: offer to resolve the ticket with the job as the fix.
+function ticketAfterJobDone(job) {
+    if (!job.ticketId || job.status !== 'done' || !canHandleTickets()) return;
+    const t = tickets.find(x => x.id === job.ticketId);
+    if (!t || TK_DONE.includes(t.status)) return;
+    const others = ticketJobs(t).filter(j => j.id !== job.id && j.status !== 'done').length;
+    if (!confirm(`The job is done. Resolve ticket ${t.no} too?${others ? `\n\n${others} other job(s) on this ticket are not finished yet.` : ''}\n\nThe reporter is asked to confirm the fix.`)) return;
+    const now = Date.now();
+    const resolution = `${job.category}: ${job.description}`.slice(0, 2000);
+    let next = { ...t, status: 'resolved', resolvedAt: now, resolution, startedAt: t.startedAt || now };
+    next = _tkEvent(next, 'resolved', { text: resolution });
+    _tkPush(next, `${t.no} resolved`, t);
+}
+// A field issue on a job becomes a ticket of its own.
+let _tkFromJob = '';
+function ticketFromJob(jobId) {
+    const j = otJobs.find(x => x.id === jobId);
+    if (!j) return;
+    showAddTicketForm({ title: (j.issue || j.description || '').split('\n')[0].replace(/^\s*\d+[.)]\s*/, '').slice(0, 160) });
+    _tkFromJob = j.id;
+    _tkUnits = (j.units || []).map(u => ({ ...u }));
+    renderTicketUnits();
+    document.getElementById('tkDesc').value = `${j.issue || ''}\n\nFrom job ${j.date}: ${j.category} — ${j.description}`.trim();
+}
+function openTicketJobs(id) {
+    const t = tickets.find(x => x.id === id);
+    if (!t) return;
+    closeTicketDetail();
+    navigateTo('projects');
+    switchProjectsTab('jobs');
+    const per = document.getElementById('jobPeriod'); if (per) per.value = '';
+    const q = document.getElementById('jobSearch'); if (q) q.value = t.no;
+    renderJobsList();
 }
 function damageFromTicket(id) {
     const t = tickets.find(x => x.id === id);

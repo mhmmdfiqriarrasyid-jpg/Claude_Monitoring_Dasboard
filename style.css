@@ -11165,3 +11165,7 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 .tk-resolution { padding: 8px 12px; border-radius: 8px; background: var(--success-bg); font-size: 13.5px; white-space: pre-wrap; }
 .tk-ev--resolved, .tk-ev--closed { border-left-color: var(--success) !important; } .tk-ev--reopen { border-left-color: var(--danger) !important; } .tk-ev--comment { border-left-color: var(--border-strong, var(--border)) !important; }
 @media (max-width: 700px) { .tk-row { grid-template-columns: 1fr; gap: 6px; } .tk-row__state { flex-direction: row; align-items: center; } }
+/* 2.30.1 — tickets <-> jobs */
+.pj-ticketlink { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; text-align: left; }
+.pj-jobline .pj-jstatus { margin-left: 4px; }
+.pj-jobline .pj-job-issue { display: block; margin-top: 2px; }
