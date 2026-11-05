@@ -119,8 +119,9 @@ const PHOTO_REF = 'sp:';
 const _photoUrls = new Map();     // download URL -> "sp:" ref, so a photo read and saved back is not uploaded again
 const _isImgData = v => typeof v === 'string' && /^data:image\//.test(v);
 const _withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+const PHOTO_PENDING = 'pending:';   // 2.29.5: still on the sender's device (photo outbox)
 async function _photoUp(col, docId, v) {
-    if (typeof v !== 'string' || !v || v.startsWith(PHOTO_REF)) return v;
+    if (typeof v !== 'string' || !v || v.startsWith(PHOTO_REF) || v.startsWith(PHOTO_PENDING)) return v;
     if (_photoUrls.has(v)) return _photoUrls.get(v);
     if (!_isImgData(v)) return v;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return v;
@@ -128,7 +129,7 @@ async function _photoUp(col, docId, v) {
         const st = await _storage();
         const name = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
         const path = `photos/${col}/${String(docId).replace(/[^\w-]/g, '_')}/${name}`;
-        await _withTimeout(st.mod.uploadString(st.mod.ref(st.s, path), v, 'data_url'), 45000);
+        await _withTimeout(st.mod.uploadString(st.mod.ref(st.s, path), v, 'data_url'), 120000);
         return PHOTO_REF + path;
     } catch (err) {
         console.warn('[photos] kept inline — Storage upload failed:', err && (err.code || err.message));
@@ -136,6 +137,7 @@ async function _photoUp(col, docId, v) {
     }
 }
 async function _photoDown(v, inline) {
+    if (typeof v === 'string' && v.startsWith(PHOTO_PENDING)) return '';
     if (typeof v !== 'string' || !v.startsWith(PHOTO_REF)) return v;
     try {
         const st = await _storage();
@@ -170,12 +172,123 @@ async function _dropPhotoRefs(refs) {
         await Promise.all(refs.map(r => st.mod.deleteObject(st.mod.ref(st.s, r.slice(PHOTO_REF.length))).catch(() => {})));
     } catch (_) { /* best effort */ }
 }
+// The same as _photoMap, at most `limit` at a time: eight photos racing up a
+// weak field signal together all time out; two at a time get through.
+async function _photoMapLimited(v, fn, limit) {
+    if (typeof v === 'string') return fn(v);
+    const keys = Array.isArray(v) ? v.map((_, i) => i) : (v && typeof v === 'object' ? Object.keys(v) : null);
+    if (!keys) return v;
+    const out = Array.isArray(v) ? new Array(v.length) : {};
+    let next = 0;
+    const worker = async () => { while (next < keys.length) { const k = keys[next++]; out[k] = await fn(v[k]); } };
+    await Promise.all(Array.from({ length: Math.min(limit || 2, keys.length) }, worker));
+    return out;
+}
+
+// ---- Photo outbox (2.29.5) ----
+// A photo that could not reach Storage used to be written into its document
+// inline. Several of those push a document past Firestore's 1 MB limit, the
+// write is refused, and the photos are gone — a report then counts 8 photos
+// and holds 1. Now such a photo stays on this device, in IndexedDB, and the
+// document gets a "pending:<token>" in its place (so a paddock's photos keep
+// their positions). The outbox is retried when the app opens, when the signal
+// comes back and every minute; each upload then replaces its token.
+const _OUTBOX_DB = 'ot-photo-outbox';
+const _OUTBOX_DAYS = 30;
+function _outboxDb() {
+    return new Promise((res, rej) => {
+        if (typeof indexedDB === 'undefined') { rej(new Error('no indexedDB')); return; }
+        const r = indexedDB.open(_OUTBOX_DB, 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('jobs', { keyPath: 'key' });
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+    });
+}
+async function _outbox(mode, fn) {
+    const db = await _outboxDb();
+    return new Promise((res, rej) => {
+        const tx = db.transaction('jobs', mode);
+        const req = fn(tx.objectStore('jobs'));
+        tx.oncomplete = () => { db.close(); res(req && req.result); };
+        tx.onerror = () => { db.close(); rej(tx.error); };
+    });
+}
+const _outboxPut = job => _outbox('readwrite', st => st.put(job));
+const _outboxDel = key => _outbox('readwrite', st => st.delete(key));
+const _outboxAll = () => _outbox('readonly', st => st.getAll());
+const _photoToken = () => PHOTO_PENDING + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+const _mapValue = (v, fn) => typeof v === 'string' ? fn(v) : Array.isArray(v) ? v.map(fn)
+    : (v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fn(x)])) : v);
+let _outboxBusy = false, _outboxTimer = null;
+async function _flushPhotoOutbox() {
+    if (_outboxBusy) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    _outboxBusy = true;
+    let left = 0;
+    try {
+        for (const job of (await _outboxAll()) || []) {
+            if (job.uid && auth.currentUser && job.uid !== auth.currentUser.uid) { left++; continue; }   // another account's, on a shared phone
+            if (Date.now() - (job.at || 0) > _OUTBOX_DAYS * 86400000) { await _outboxDel(job.key); continue; }
+            const refs = {};
+            for (const [tok, data] of Object.entries(job.pend || {})) {
+                const up = await _photoUp(job.col, job.docId, data);
+                if (typeof up === 'string' && up.startsWith(PHOTO_REF)) refs[tok] = up;
+            }
+            if (Object.keys(refs).length) {
+                const used = new Set();
+                try {
+                    const snap = await getDoc(doc(db, job.col, job.docId));
+                    if (snap.exists()) {
+                        const next = _mapValue(snap.data()[job.field], x => (refs[x] ? (used.add(x), refs[x]) : x));
+                        if (used.size) await updateDoc(doc(db, job.col, job.docId), { [job.field]: next, updatedAt: Date.now() });
+                    }
+                } catch (err) {
+                    // Locked by now (approved) or not ours: try again later, until the job expires.
+                    console.warn('[photos] outbox: document not updated:', err && (err.code || err.message));
+                    _dropPhotoRefs(Object.values(refs));
+                    left++;
+                    continue;
+                }
+                // A token no longer in the document (photo deleted, record gone): its upload is an orphan.
+                _dropPhotoRefs(Object.entries(refs).filter(([t]) => !used.has(t)).map(([, r]) => r));
+                Object.keys(refs).forEach(t => { delete job.pend[t]; });
+            }
+            if (Object.keys(job.pend || {}).length) { await _outboxPut(job); left++; }
+            else await _outboxDel(job.key);
+        }
+    } catch (err) {
+        console.warn('[photos] outbox not flushed:', err && (err.message || err));
+    } finally {
+        _outboxBusy = false;
+    }
+    if (left && !_outboxTimer) _outboxTimer = setTimeout(() => { _outboxTimer = null; _flushPhotoOutbox(); }, 60000);
+    return left;
+}
+if (typeof window !== 'undefined') window.addEventListener('online', () => setTimeout(_flushPhotoOutbox, 3000));
+
 // Saves { ...fields, [field]: images } at col/docId, images through Storage.
 // Images the document no longer holds are removed from Storage afterwards.
-async function _savePhotoDoc(col, docId, field, value, fields) {
+// opts.keepInline: a photo that cannot be uploaded stays inline (the read-time
+// migration of an old document — never a reason to lose what it holds).
+async function _savePhotoDoc(col, docId, field, value, fields, opts) {
     let before = [];
     try { const old = await getDoc(doc(db, col, docId)); if (old.exists()) before = _photoRefs(old.data()[field]); } catch (_) { /* new or unreadable */ }
-    const stored = await _photoMap(value, x => _photoUp(col, docId, x));
+    const pend = {};
+    let stored = await _photoMapLimited(value, async x => {
+        const up = await _photoUp(col, docId, x);
+        if (_isImgData(up) && !(opts && opts.keepInline)) { const tok = _photoToken(); pend[tok] = up; return tok; }
+        return up;
+    }, 2);
+    if (Object.keys(pend).length) {
+        try {
+            await _outboxPut({ key: `${col}/${docId}/${field}`, col, docId, field, pend, uid: auth.currentUser ? auth.currentUser.uid : '', at: Date.now() });
+            if (!_outboxTimer) _outboxTimer = setTimeout(() => { _outboxTimer = null; _flushPhotoOutbox(); }, 30000);
+        } catch (err) {
+            // No outbox on this device: keep them inline, as before.
+            console.warn('[photos] outbox unavailable, kept inline:', err && err.message);
+            stored = _mapValue(stored, x => (pend[x] || x));
+        }
+    }
     await setDoc(doc(db, col, docId), { ...fields, [field]: stored, updatedAt: Date.now() });
     const keep = new Set(_photoRefs(stored));
     _dropPhotoRefs(before.filter(r => !keep.has(r)));
@@ -189,7 +302,7 @@ async function _getPhotoDoc(col, docId, field, empty, opts, fieldsOf) {
     if (!ok) return empty;
     // Moved to Storage when read, by whoever may write it (quietly refused otherwise).
     if (_hasInline(v) && !(opts && opts.noMigrate) && !(typeof navigator !== 'undefined' && navigator.onLine === false)) {
-        _savePhotoDoc(col, docId, field, v, fieldsOf ? fieldsOf(data) : { id: data.id || docId }).catch(() => {});
+        _savePhotoDoc(col, docId, field, v, fieldsOf ? fieldsOf(data) : { id: data.id || docId }, { keepInline: true }).catch(() => {});
     }
     return _photoMap(v, x => _photoDown(x, opts && opts.inline));
 }
@@ -279,6 +392,8 @@ if (!db) {
 console.log(`[cloud] offline cache: ${cacheMode}`);
 
 const auth = getAuth(app);
+// 2.29.5: photos left on this device go up once someone is signed in.
+onAuthStateChanged(auth, u => { if (u) setTimeout(() => _flushPhotoOutbox(), 5000); });
 
 // Owner allowlist — any account that signs up with one of these emails is
 // auto-promoted to role=owner with status=active. Other emails start as
@@ -1291,6 +1406,9 @@ window.cloud = {
     // re-downloaded every photo ever taken on every app open. Split out, they
     // are fetched one document at a time, only when someone actually opens
     // them. There is no subscription here, and there must not be one.
+    // 2.29.5: photos waiting on this device, and a manual retry.
+    async pendingPhotoUploads() { try { return ((await _outboxAll()) || []).reduce((n, j) => n + Object.keys(j.pend || {}).length, 0); } catch (_) { return 0; } },
+    flushPhotoOutbox() { return _flushPhotoOutbox(); },
     async getWorkLogPhotos(id, opts) {
         const got = await _getPhotoDoc(WORK_LOG_PHOTOS_COL, id, 'photos', [], opts);
         if (got.length || !(opts && opts.recover)) return got;

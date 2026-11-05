@@ -168,7 +168,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.29.4';
+const APP_VERSION = 'v2.29.5';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -17630,6 +17630,14 @@ function showWorkLogDetail(id) {
         const other = modal.querySelector('.wl-detail__other');
         if (other) other.hidden = !split.general.length;
         if (!all.length) modal.querySelectorAll('[data-wl-photos]').forEach(el => { el.innerHTML = '<span class="adm-muted">Photos not found.</span>'; });
+        // 2.29.5: fewer photos here than the report counts — say where the rest are.
+        const got = all.filter(Boolean).length;
+        if (got < nPhotos) {
+            const warn = document.createElement('div');
+            warn.className = 'wl-detail__note';
+            warn.textContent = `${got} of ${nPhotos} photos have arrived. The rest did not reach the server from the sender's phone: since 2.29.5 they wait on that phone and upload by themselves when it opens the dashboard with a signal. Reports sent before that cannot get them back — ask the sender to add them again if needed.`;
+            document.getElementById('wlDetailBody').prepend(warn);
+        }
     }).catch(() => {
         if (gen !== _wlDetailGen) return;
         modal.querySelectorAll('[data-wl-photos]').forEach(el => { el.innerHTML = `<span class="adm-muted">${navigator.onLine ? 'Photos could not be loaded.' : 'Photos need a signal to load.'}</span>`; });
@@ -18200,7 +18208,8 @@ function saveWorkLog(event, mode) {
     const allPhotos = _wlPhotosDirty ? [...lines.flatMap(l => l.pics), ..._wlPhotos] : null;
     // Without a signal the photos are kept inside the document (no upload),
     // and Firestore refuses a document over 1MB — so say it now.
-    if (allPhotos && typeof navigator !== 'undefined' && navigator.onLine === false) {
+    // 2.29.5: with the photo outbox (IndexedDB) they wait on the phone instead.
+    if (allPhotos && typeof navigator !== 'undefined' && navigator.onLine === false && typeof indexedDB === 'undefined') {
         const bytes = allPhotos.filter(p => typeof p === 'string' && p.startsWith('data:')).reduce((n, p) => n + p.length, 0);
         if (bytes > WORKLOG_PHOTOS_TOTAL_BYTES) {
             showToast('Too many new photos to send without a signal — save again when online, or remove some', 'warning');

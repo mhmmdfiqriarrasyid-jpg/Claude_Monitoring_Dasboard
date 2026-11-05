@@ -65,6 +65,16 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8811';
     await new Promise(r => setTimeout(r, 800));
     const lost = await raw('workLogPhotos', 'wl_lost');
     out.writtenBack = lost && lost.photos;
+    // 2.29.5: photo outbox — no signal: photos wait on the device as pending
+    // tokens (positions kept); signal back: they upload and replace the tokens.
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false });
+    await C.saveWorkLogPhotos('wl_out', [img1, img2, img1]);
+    const o1 = await raw('workLogPhotos', 'wl_out');
+    out.outboxPending = [o1.photos.length, o1.photos.every(x => x.startsWith('pending:')), await C.pendingPhotoUploads()];
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => true });
+    const left = await C.flushPhotoOutbox();
+    const o2 = await raw('workLogPhotos', 'wl_out');
+    out.outboxFlushed = [left, o2.photos.length, o2.photos.every(x => x.startsWith('sp:')), await C.pendingPhotoUploads()];
     // inspection map
     await C.saveInspectionPhotos('in1', { gps: img1, cam: '' });
     const i1 = await raw('inspectionPhotos', 'in1');
@@ -88,7 +98,7 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8811';
     return out;
   });
   const want = { stored: 'sp:photos/damagePhotos/d1/', objExists: true, url: true, inline: 'data:image/jpeg;base64,', kept: true, newOne: true,
-    removedGone: true, lostPlain: 0, recovered: [2, true], writtenBack: ['sp:photos/workLogPhotos/wl_lost/k2', 'sp:photos/workLogPhotos/wl_lost/k3'], map: [true, ''], legacyServed: true, migrated: [true, 'dev1'], deleted: [true, true], after: ['after', true] };
+    removedGone: true, lostPlain: 0, recovered: [2, true], writtenBack: ['sp:photos/workLogPhotos/wl_lost/k2', 'sp:photos/workLogPhotos/wl_lost/k3'], outboxPending: [3, true, 3], outboxFlushed: [0, 3, true, 0], map: [true, ''], legacyServed: true, migrated: [true, 'dev1'], deleted: [true, true], after: ['after', true] };
   let fail = 0;
   Object.keys(want).forEach(k => { const ok = JSON.stringify(R[k]) === JSON.stringify(want[k]); if (!ok) fail++;
     console.log(`${ok ? 'PASS' : 'FAIL'}  ${k}${ok ? '' : ' dapat=' + JSON.stringify(R[k])}`); });

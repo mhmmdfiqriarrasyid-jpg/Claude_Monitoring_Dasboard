@@ -591,6 +591,16 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.29.5 — antrean foto (photo outbox)** (dijaga `tests/photo_storage_e2e.js`):
+  foto yang gagal naik ke Storage dulu disimpan inline di dokumennya; beberapa
+  foto inline membuat dokumen > 1 MB, ditolak Firestore, dan foto hilang
+  (laporan menghitung 8, isinya 1). Kini foto itu menunggu di perangkat
+  pengirim (IndexedDB `ot-photo-outbox`) dan dokumen memegang `pending:<token>`
+  di tempatnya (urutan per paddock tetap); dikirim ulang saat login, saat
+  sinyal kembali, dan tiap menit, lalu token diganti `sp:` (updateDoc) —
+  maksimal 30 hari. Unggahan 2 sekaligus, batas waktu 120 detik. Migrasi foto
+  inline lama tetap menyimpannya inline bila gagal. Jendela View memberi tahu
+  bila foto yang tiba lebih sedikit dari yang dihitung laporan.
   **2.29.4 — Daily Report bisa dilihat tanpa Edit** (dijaga
   `tests/worklog_view_test.js`): klik baris tabel atau tombol 👁 membuka jendela
   baca-saja — status persetujuan, member, PT, jam kerja, tempat kerja, issue,
