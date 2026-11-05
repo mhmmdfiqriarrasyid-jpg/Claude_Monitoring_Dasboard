@@ -591,6 +591,10 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.30.1 — Ticket ↔ Jobs & Activities**: job menyimpan `ticketId` dan
+  menampilkan label ticket di tabel Jobs; form Job punya *Part of ticket*;
+  job tertaut yang diset Done menawarkan Resolve ticket; field issue di job
+  bisa dijadikan ticket (*Raise a ticket*). Tanpa perubahan rules.
   **2.30.0 — Tickets** (menu baru di Operations, `tickets.js`, dijaga
   `tests/tickets_test.js`, `tests/ticket_notices_test.js`, `tests/rules_test.js`,
   `tests/storage_rules_test.js`). **Semua akun aktif** melaporkan masalah di
