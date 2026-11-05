@@ -32,6 +32,10 @@ function recipientsFor(kind, rec, users) {
         const owner = OWNER_UIDS.includes(u.uid) || (u.status === 'active' && u.role === 'owner');
         if (!owner && u.status !== 'active') return false;
         if (kind === 'damage') return owner || (canView(u, 'damage') && groupOk(u, rec.unitGroup));
+        // 2.30.0: tickets — not to whoever caused the notice.
+        if (kind === 'ticketNew') return rec.reportedByUid !== u.uid && (owner || lvlOf(u, 'tickets') === 'edit');
+        if (kind === 'ticketAssign') return rec.assigneeUid === u.uid && rec.lastActorUid !== u.uid;
+        if (kind === 'ticketStatus') return rec.reportedByUid === u.uid;
         // Nobody is asked to approve their own work.
         if (rec.createdByUid === u.uid || rec.submittedByUid === u.uid) return false;
         if (kind === 'workLog' || kind === 'leave') return owner || lvlOf(u, 'teamLogApprove') === 'edit';
@@ -47,6 +51,12 @@ function composePush(kind, id, r) {
         return { title: `${r.drove ? 'Breakdown' : 'Damage reported'}: ${r.unitName || r.sn || 'unit'}`,
                  body: cut(`${what}${r.description ? ' — ' + r.description : ''}`, 160), url: './?action=damage', tag: `dmg-${id}` };
     }
+    const TK = { high: 'High', medium: 'Medium', low: 'Low' };
+    const ST = { open: 'reopened', assigned: 'assigned', progress: 'in progress', resolved: 'resolved — please confirm', closed: 'closed' };
+    const tkUrl = `./?action=tickets&ticket=${encodeURIComponent(id)}`;
+    if (kind === 'ticketNew') return { title: `New ticket · ${TK[r.priority] || 'Medium'}: ${cut(r.title, 60)}`, body: cut(`${r.category || ''}${(r.units || []).length ? ' · ' + r.units.map(u => u.name).join(', ') : ''}${r.location ? ' · ' + r.location : ''} — ${r.reportedBy || ''}`, 160), url: tkUrl, tag: `tk-${id}` };
+    if (kind === 'ticketAssign') return { title: `Ticket for you: ${cut(r.title, 70)}`, body: cut(`${r.no || ''} · ${TK[r.priority] || ''} priority${r.location ? ' · ' + r.location : ''}`, 160), url: tkUrl, tag: `tk-${id}` };
+    if (kind === 'ticketStatus') return { title: `Your ticket is ${ST[r.status] || r.status}`, body: cut(`${r.no || ''} · ${r.title}${r.status === 'resolved' && r.resolution ? ' — ' + r.resolution : ''}`, 160), url: tkUrl, tag: `tk-${id}` };
     if (kind === 'workLog') return { title: 'Daily Report to check', body: cut(`${r.memberName || 'Someone'} · ${r.date || ''}`, 160), url: './?action=inbox', tag: `wl-${id}` };
     if (kind === 'leave') return { title: 'Leave request to check', body: cut(`${r.memberName || 'Someone'} · ${r.dateFrom || ''}${r.dateTo && r.dateTo !== r.dateFrom ? ' – ' + r.dateTo : ''}`, 160), url: './?action=inbox', tag: `lv-${id}` };
     if (kind === 'inspection') return { title: 'Inspection to check', body: cut(`${r.unitName || 'Unit'} · ${r.date || ''}`, 160), url: './?action=inbox', tag: `ins-${id}` };

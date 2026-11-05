@@ -832,6 +832,7 @@ function closeJobModal() {
     // Cancelled: PDFs uploaded in this form go again; ones removed stay (not saved).
     if (!_jobSaved) _jobFiles.filter(f => f.isNew && !f.failed && !f.uploading).forEach(f => window.cloud && window.cloud.deleteProjectFile && window.cloud.deleteProjectFile(f.path).catch(() => {}));
     _jobFiles = []; _jobFilesRemoved = [];
+    if (!_jobSaved && typeof _jobTicketLink !== 'undefined') _jobTicketLink = '';
     document.getElementById('otJobModal').classList.remove('open');
 }
 function syncJobCategory() {
@@ -960,6 +961,8 @@ function saveJob(event) {
     _jobPush(rec, existing ? 'Job saved' : 'Job logged', existing);
     _jobFilesRemoved.forEach(path => window.cloud && window.cloud.deleteProjectFile && window.cloud.deleteProjectFile(path).catch(() => {}));
     _jobSaved = true;
+    // 2.30.0: logged from a ticket — link the two.
+    if (!existing && typeof linkJobToTicket === 'function') { rec.ticketId = rec.ticketId || (typeof _jobTicketLink !== 'undefined' ? _jobTicketLink : ''); linkJobToTicket(rec); }
     // Part of a project measured by units: those units count as done.
     const p = rec.projectId && projects.find(x => x.id === rec.projectId);
     if (p && status === 'done' && canEditProjectRecord(p) && p.target) {

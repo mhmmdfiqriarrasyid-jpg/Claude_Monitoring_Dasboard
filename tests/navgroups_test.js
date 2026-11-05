@@ -45,7 +45,7 @@ const { launch, BASE_URL } = require('./_env');
         t('owner: semua grup', shownGroups(), ['(top)', 'Fleet', 'Operations', 'Admin']);
         t('atas: Dashboard dan Decision inbox', links('(top)'), ['Dashboard', 'Decision inbox']);
         t('Fleet: satu tautan per halaman', links('Fleet'), ['Units', 'Implements', 'Damage', 'Inspection', 'Licenses']);
-        t('Operations: Team, Warehouse, Purchase Requests, Projects & Jobs dan Learning Center', links('Operations'), ['Team', 'Warehouse', 'Purchase Requests', 'Projects & Jobs', 'Learning Center']);
+        t('Operations: Team, Warehouse, Purchase Requests, Projects & Jobs dan Learning Center', links('Operations'), ['Team', 'Warehouse', 'Purchase Requests', 'Tickets', 'Projects & Jobs', 'Learning Center']);
         t('Admin: Users, Master lists, Notifications, Error log dan History', links('Admin'), ['Users', 'Master lists', 'Notifications', 'Error log', 'History']);
         t('tidak ada lagi tautan per kelompok', document.querySelectorAll('.sidebar [data-group]').length, 0);
         t('badge tetap di tautannya', ['decisionBadge', 'inspectionBadge', 'teamBadge'].map(id => document.getElementById(id).closest('.nav__link').dataset.view), ['leader', 'inspection', 'team']);
@@ -86,7 +86,7 @@ const { launch, BASE_URL } = require('./_env');
         // =============== per akun ===============
         as({ role: 'khl', access: { inspection: 'edit' } });
         // Learning Center (2.12.0) is open to every active account, so Operations always shows.
-        t('teknisi alat berat: Fleet hanya Inspection', [shownGroups(), links('Fleet'), links('Operations')], [['(top)', 'Fleet', 'Operations'], ['Inspection'], ['Learning Center']]);
+        t('teknisi alat berat: Fleet hanya Inspection', [shownGroups(), links('Fleet'), links('Operations')], [['(top)', 'Fleet', 'Operations'], ['Inspection'], ['Tickets', 'Learning Center']]);
         t('dan dashboard-nya alat berat', effectiveDashGroup(), 'heavy');
         t('bar bawah: hanya Home dan More', bar(), ['Home', 'More']);
         t('tanpa akses Decision inbox: lonceng tersembunyi', bell().hidden, true);
@@ -94,7 +94,7 @@ const { launch, BASE_URL } = require('./_env');
         t('staf pertanian: Implements dan Licenses, tanpa Inspection', links('Fleet'), ['Implements', 'Licenses']);
         t('dan dashboard-nya pertanian', effectiveDashGroup(), 'tractor');
         as({ role: 'khl', access: { teamLog: 'edit' } });
-        t('akun Tim saja: Dashboard + Team, tanpa Fleet/Admin', [shownGroups(), links('(top)'), links('Operations')], [['(top)', 'Operations'], ['Dashboard'], ['Team', 'Learning Center']]);
+        t('akun Tim saja: Dashboard + Team, tanpa Fleet/Admin', [shownGroups(), links('(top)'), links('Operations')], [['(top)', 'Operations'], ['Dashboard'], ['Team', 'Tickets', 'Learning Center']]);
         as({ role: 'staff', access: { history: 'view' } });
         t('History tetap terlihat walau bukan owner', links('Admin'), ['History']);
         as({ role: 'staff', access: { editUnits: 'view', damage: 'view', leader: 'view' } });

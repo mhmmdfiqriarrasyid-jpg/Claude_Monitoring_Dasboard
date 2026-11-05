@@ -88,6 +88,9 @@ const { doc, setDoc } = require('firebase/firestore');
     await check('lampiran job: video MOV diterima', put(st('pjO'), 'projectFiles/j1/v.mov', 'video/quicktime'), true);
     await check('lampiran job: akun view TIDAK bisa mengunggah', put(st('pjV'), 'projectFiles/j1/b.pdf', 'application/pdf'), false);
     await check('lampiran job: akun view membaca', getBytes(ref(st('pjV'), 'projectFiles/j1/ba.pdf')), true);
+    // 2.30.0: foto ticket — semua akun aktif boleh melampirkan
+    await check('foto ticket: akun tanpa akses mengunggah', img(st('rd'), 'photos/ticketPhotos/tk_new__p1/a'), true);
+    await check('foto ticket: akun belum aktif DITOLAK', img(st('off'), 'photos/ticketPhotos/tk_new__p2/a'), false);
     // 2.26.1: foto yang dokumennya tidak pernah tersimpan dicari lewat daftar folder.
     await check('foto laporan: owner melihat daftar folder laporan', listAll(ref(st('own'), 'photos/workLogPhotos/wl_other')), true);
     await check('foto laporan: editor tim melihat daftar folder laporan', listAll(ref(st('tlE'), 'photos/workLogPhotos/wl_other')), true);

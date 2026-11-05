@@ -656,6 +656,39 @@ async function check(name, p, expectOk) {
         actorUid: 'pjO', actorEmail: 'pjO@x.id', actorName: 'O', actorRole: 'staff' }), true);
     await check('Riwayat: akun view projects TIDAK boleh mencatat history', setDoc(doc(PJV, 'history', 'h_pv'), { id: 'h_pv', timestamp: Date.now(), action: 'create', unitId: '', unitName: 'x', field: '', before: '', after: '',
         actorUid: 'pjV', actorEmail: 'pjV@x.id', actorName: 'V', actorRole: 'staff' }), false);
+    // 2.30.0: Tickets
+    await env.withSecurityRulesDisabled(async ctx => {
+        const db = ctx.firestore();
+        await setDoc(doc(db, 'users', 'tkE'), { uid: 'tkE', email: 'tkE@x.id', role: 'staff', status: 'active', access: { tickets: 'edit' } });
+        await setDoc(doc(db, 'users', 'tkV'), { uid: 'tkV', email: 'tkV@x.id', role: 'staff', status: 'active', access: { tickets: 'view' } });
+        await setDoc(doc(db, 'users', 'khl1'), { uid: 'khl1', email: 'khl1@x.id', role: 'khl', status: 'active', access: {} });
+        await setDoc(doc(db, 'tickets', 'tk_res'), { id: 'tk_res', title: 'GPS', category: 'GPS', priority: 'high', status: 'resolved', reportedByUid: 'khl1', events: [], resolution: 'fixed' });
+        await setDoc(doc(db, 'tickets', 'tk_other'), { id: 'tk_other', title: 'HT', category: 'Radio', priority: 'low', status: 'open', reportedByUid: 'someone', events: [] });
+    });
+    const TKE = as('tkE'), TKV = as('tkV'), TK1 = as('khl1');
+    const tkNew = o => Object.assign({ id: 'tk_n', title: 'Display mati', category: 'Display', priority: 'medium', status: 'open', reportedByUid: 'khl1', events: [] }, o);
+    await check('Tickets: akun tanpa akses (KHL) membuat ticket miliknya', setDoc(doc(TK1, 'tickets', 'tk_n'), tkNew()), true);
+    await check('Tickets: membuat atas nama orang lain DITOLAK', setDoc(doc(TK1, 'tickets', 'tk_x'), tkNew({ id: 'tk_x', reportedByUid: 'tkE' })), false);
+    await check('Tickets: membuat langsung resolved DITOLAK', setDoc(doc(TK1, 'tickets', 'tk_y'), tkNew({ id: 'tk_y', status: 'resolved' })), false);
+    await check('Tickets: prioritas tidak dikenal DITOLAK', setDoc(doc(TK1, 'tickets', 'tk_z'), tkNew({ id: 'tk_z', priority: 'urgent' })), false);
+    await check('Tickets: pelapor membaca miliknya', getDoc(doc(TK1, 'tickets', 'tk_n')), true);
+    await check('Tickets: pelapor TIDAK membaca milik orang lain', getDoc(doc(TK1, 'tickets', 'tk_other')), false);
+    await check('Tickets: pelapor query miliknya', getDocs(query(collection(TK1, 'tickets'), where('reportedByUid', '==', 'khl1'))), true);
+    await check('Tickets: pelapor menambah catatan', updateDoc(doc(TK1, 'tickets', 'tk_n'), { events: [{ type: 'comment' }], updatedAt: 2 }), true);
+    await check('Tickets: pelapor TIDAK bisa mengubah prioritas', updateDoc(doc(TK1, 'tickets', 'tk_n'), { priority: 'high' }), false);
+    await check('Tickets: pelapor TIDAK bisa me-resolve sendiri', updateDoc(doc(TK1, 'tickets', 'tk_n'), { status: 'resolved' }), false);
+    await check('Tickets: pelapor menutup ticket yang resolved', updateDoc(doc(TK1, 'tickets', 'tk_res'), { status: 'closed', closedAt: 3, updatedAt: 3 }), true);
+    await check('Tickets: view membaca semua', getDoc(doc(TKV, 'tickets', 'tk_other')), true);
+    await check('Tickets: view TIDAK bisa mengubah', updateDoc(doc(TKV, 'tickets', 'tk_other'), { status: 'assigned' }), false);
+    await check('Tickets: tim OT menugaskan & mengerjakan', updateDoc(doc(TKE, 'tickets', 'tk_other'), { status: 'progress', assigneeUid: 'tkE' }), true);
+    await check('Tickets: pelapor TIDAK bisa menghapus', deleteDoc(doc(TK1, 'tickets', 'tk_n')), false);
+    await check('Ticket staff: tim OT menulis kartunya sendiri', setDoc(doc(TKE, 'ticketStaff', 'tkE'), { uid: 'tkE', name: 'E', email: 'tkE@x.id', updatedAt: 1 }), true);
+    await check('Ticket staff: kartu orang lain DITOLAK', setDoc(doc(TKE, 'ticketStaff', 'tkV'), { uid: 'tkV', name: 'V' }), false);
+    await check('Ticket staff: pelapor TIDAK bisa membaca', getDoc(doc(TK1, 'ticketStaff', 'tkE')), false);
+    await check('Foto ticket: pelapor menyimpan untuk ticket miliknya', setDoc(doc(TK1, 'ticketPhotos', 'tk_n__p1'), { id: 'tk_n__p1', ownerId: 'tk_n', photo: 'sp:x' }), true);
+    await check('Foto ticket: pelapor TIDAK untuk ticket orang lain', setDoc(doc(TK1, 'ticketPhotos', 'tk_other__p1'), { id: 'tk_other__p1', ownerId: 'tk_other', photo: 'sp:x' }), false);
+    await check('Foto ticket: pelapor membaca foto ticket miliknya', getDoc(doc(TK1, 'ticketPhotos', 'tk_n__p1')), true);
+    await check('Ticket Categories: tim OT menyimpan daftar', setDoc(doc(TKE, 'masterLists', 'ticketCategory'), { id: 'ticketCategory', values: ['GPS'] }), true);
     // 2.27.0: satuan barang Purchase Request
     await env.withSecurityRulesDisabled(async ctx => {
         const db = ctx.firestore();

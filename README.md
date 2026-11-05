@@ -591,6 +591,22 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.30.0 — Tickets** (menu baru di Operations, `tickets.js`, dijaga
+  `tests/tickets_test.js`, `tests/ticket_notices_test.js`, `tests/rules_test.js`,
+  `tests/storage_rules_test.js`). **Semua akun aktif** melaporkan masalah di
+  lapangan (judul, kategori, prioritas, unit, lokasi/paddock, detail, foto) dan
+  hanya melihat ticket miliknya; area akses baru **Tickets**: *view* membaca
+  semua, *edit* (tim OT) menugaskan PIC, mengerjakan dan me-resolve. Status
+  Open → Assigned → In progress → Resolved → Closed; pelapor mengonfirmasi
+  (Closed) atau membuka lagi. Batas waktu per prioritas: High 4 jam, Medium 1
+  hari, Low 3 hari — yang lewat ditandai merah dan masuk Decision inbox.
+  Timeline catatan per ticket; **Log job** dari ticket (tertaut, ticket jadi In
+  progress) dan **Report damage** (form kerusakan terisi). PIC dipilih dari
+  `ticketStaff` (tiap akun OT menulis kartunya sendiri). Push (Cloud Functions,
+  tiap 10 menit, `mailState/tickets`): ticket baru → tim OT, ditugaskan → PIC,
+  status berubah → pelapor; saklar *Tickets* di Notifications. Master list
+  *Ticket Categories*. **Perlu publish `firestore.rules` + `storage.rules`, dan
+  deploy Cloud Functions.**
   **2.29.9:** lampiran job juga menerima **video** (MP4, MOV, WebM; maks
   200 MB/video, tetap maks 5 lampiran). **Perlu publish ulang `storage.rules`.**
   **2.29.8:** job bisa diberi **lampiran PDF** (maks 5, 25 MB/file) di Cloud

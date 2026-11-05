@@ -233,6 +233,11 @@
                 <span class="nav__text">Purchase Requests</span>
                 <span class="nav__badge" id="purchaseBadge" style="display:none">0</span>
             </button>
+            <button type="button" class="nav__link" data-view="tickets" onclick="navigateTo('tickets')">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"></path><path d="M13 5v2"></path><path d="M13 17v2"></path><path d="M13 11v2"></path></svg>
+                <span class="nav__text">Tickets</span>
+                <span class="nav__badge" id="ticketBadge" style="display:none">0</span>
+            </button>
             <button type="button" class="nav__link" data-view="projects" onclick="navigateTo('projects')">
                 <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"></path><path d="M7 15h4"></path><path d="M7 11h8"></path><path d="M7 7h11"></path></svg>
                 <span class="nav__text">Projects &amp; Jobs</span>
@@ -2255,6 +2260,35 @@
             </div>
         </div>
     </div><!-- /viewPurchase -->
+
+    <!-- ==================== TICKETS (2.30.0) ==================== -->
+    <div id="viewTickets" class="view" style="display:none;">
+        <div class="page-head">
+            <div class="page-head__text">
+                <h1 class="page-head__title">Tickets</h1>
+                <span class="page-head__sub" id="tkSub">Problems in the field, reported by anyone and handled by the OT team</span>
+            </div>
+            <div class="page-head__actions">
+                <button type="button" class="btn btn-primary" onclick="showAddTicketForm()"><i class="fas fa-plus" aria-hidden="true"></i> Report a problem</button>
+            </div>
+        </div>
+        <div class="wh-tiles wh-tiles--static" id="tkTiles"></div>
+        <div class="table-card">
+            <div class="adm-filters pj-filters">
+                <label class="adm-search"><i class="fas fa-search" aria-hidden="true"></i><span class="adm-sr">Search tickets</span>
+                    <input type="search" id="tkSearch" placeholder="Search ticket, unit, paddock or person" oninput="renderTicketsList()"></label>
+                <label class="adm-select"><span class="adm-select__label">Status</span>
+                    <select id="tkStatusFilter" onchange="renderTicketsList()"><option value="active">Active (not closed)</option><option value="">All</option>
+                        <option value="open">Open</option><option value="assigned">Assigned</option><option value="progress">In progress</option><option value="resolved">Resolved</option><option value="closed">Closed</option><option value="overdue">Overdue</option></select></label>
+                <label class="adm-select"><span class="adm-select__label">Priority</span>
+                    <select id="tkPriorityFilter" onchange="renderTicketsList()"><option value="">Any</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
+                <label class="adm-select"><span class="adm-select__label">Show</span>
+                    <select id="tkMineFilter" onchange="renderTicketsList()"><option value="">Everyone's</option><option value="mine">Assigned to me</option><option value="reported">Reported by me</option></select></label>
+                <span class="pr-count" id="tkCount"></span>
+            </div>
+            <div class="tk-list" id="tkList"></div>
+        </div>
+    </div><!-- /viewTickets -->
 
     <!-- ==================== PROJECTS & JOBS (2.29.0) ==================== -->
     <div id="viewProjects" class="view" style="display:none;">
@@ -4435,6 +4469,7 @@
                 <p class="notif-desc">Sent to the phones where people turned notifications on (account menu → <strong>Turn on phone notifications</strong>), only to those with access to the record. On iPhone the app must be installed to the Home Screen.</p>
                 <label class="notif-check"><input type="checkbox" id="pushDamage"> New damage &amp; Breakdown — to everyone who can see Damage</label>
                 <label class="notif-check"><input type="checkbox" id="pushApprovals"> Waiting for approval — Daily Reports, leave and inspections, to the people who approve them</label>
+                <label class="notif-check"><input type="checkbox" id="pushTickets"> Tickets — a new ticket to the OT team, an assigned ticket to its PIC, a status change to whoever reported it</label>
             </section>
 
             <section class="notif-sec" aria-labelledby="notifMonTitle">
@@ -4564,6 +4599,58 @@
         <div class="form-actions" id="wlDetailActions"></div>
     </div>
 </div>
+<!-- 2.30.0: Tickets dialogs -->
+<div class="modal-overlay" id="tkModal">
+    <div class="modal-card pr-dialog" role="dialog" aria-labelledby="tkModalTitle">
+        <div class="modal-header">
+            <h3 id="tkModalTitle">Report a problem</h3>
+            <button class="btn-icon" onclick="closeTicketModal()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form id="tkForm" onsubmit="saveTicket(event)">
+            <input type="hidden" id="tkId">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group full-width"><label class="form-label" for="tkTitle">What is the problem?</label>
+                        <input class="form-input" id="tkTitle" maxlength="160" autocomplete="off" placeholder="e.g. GPS loses RTK signal at the north end of JAGF-1"></div>
+                    <div class="form-group"><label class="form-label" for="tkCategory">Category</label><select class="form-select" id="tkCategory"></select></div>
+                    <div class="form-group"><span class="form-label">Priority</span>
+                        <div class="tk-prio" role="radiogroup" aria-label="Priority">
+                            <label class="tk-prio__opt tk-prio__opt--high"><input type="radio" name="tkPriority" value="high"> <span>High<small>stops work · 4 h</small></span></label>
+                            <label class="tk-prio__opt tk-prio__opt--medium"><input type="radio" name="tkPriority" value="medium" checked> <span>Medium<small>slows work · 1 day</small></span></label>
+                            <label class="tk-prio__opt tk-prio__opt--low"><input type="radio" name="tkPriority" value="low"> <span>Low<small>can wait · 3 days</small></span></label>
+                        </div></div>
+                    <div class="form-group full-width"><span class="form-label">Units <span class="form-optional">(optional)</span></span>
+                        <div class="wl-unit-add"><input class="form-input" id="tkUnitAdd" list="tkUnitList" autocomplete="off" aria-label="Unit" placeholder="Type unit name or SN, then Add…"
+                            onkeydown="if(event.key==='Enter'){event.preventDefault();addTicketUnit();}">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="addTicketUnit()"><i class="fas fa-plus" aria-hidden="true"></i> Add</button></div>
+                        <div class="unit-chips" id="tkUnitChips"></div><datalist id="tkUnitList"></datalist></div>
+                    <div class="form-group full-width"><label class="form-label" for="tkLocation">Where <span class="form-optional">(paddock, site or place)</span></label>
+                        <input class="form-input" id="tkLocation" list="paddockList" maxlength="120" autocomplete="off" placeholder="e.g. JAGF-1-A-001 · Workshop GPA"></div>
+                    <div class="form-group full-width"><label class="form-label" for="tkDesc">Details</label>
+                        <textarea class="form-input form-textarea" id="tkDesc" rows="3" maxlength="3000" placeholder="What happens, since when, what was already tried…"></textarea></div>
+                    <div class="form-group full-width"><span class="form-label">Photos <span class="form-optional">(up to 10)</span> <span class="wh-photo-count" id="tkPhotoCount"></span></span>
+                        <div class="wh-photos" id="tkPhotoGrid"></div>
+                        <input type="file" id="tkPhotoInput" accept="image/*" multiple hidden onchange="whPhotoAdd('ticket', event)"></div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeTicketModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane" aria-hidden="true"></i> <span id="tkSubmitLabel">Send ticket</span></button>
+            </div>
+        </form>
+    </div>
+</div>
+<div class="modal-overlay" id="tkDetailModal">
+    <div class="modal-card pr-dialog" role="dialog" aria-labelledby="tkDetailTitle">
+        <div class="modal-header">
+            <h3 id="tkDetailTitle">Ticket</h3>
+            <button class="btn-icon" onclick="closeTicketDetail()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body" id="tkDetailBody"></div>
+        <div class="form-actions" id="tkDetailActions"></div>
+    </div>
+</div>
+
 <!-- 2.29.0: Projects & Jobs dialogs -->
 <div class="modal-overlay" id="pjModal">
     <div class="modal-card pr-dialog" role="dialog" aria-labelledby="pjModalTitle">
@@ -4707,6 +4794,7 @@
 
 <script src="script.js"></script>
 <script src="projects.js"></script>
+<script src="tickets.js"></script>
 <script type="module" src="firebase-init.js"></script>
 </body>
 </html>

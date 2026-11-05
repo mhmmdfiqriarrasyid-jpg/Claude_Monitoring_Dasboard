@@ -74,7 +74,8 @@ async function emailSettings() {
         reminderSched: readSchedule(s, 'reminder', { freq: 'daily', hour: 17 }),
         summarySched: readSchedule(s, 'monthly', { freq: 'monthly', hour: 7, monthday: 1 }),
         pushDamage: s.pushDamage !== false,
-        pushApprovals: s.pushApprovals !== false
+        pushApprovals: s.pushApprovals !== false,
+        pushTickets: s.pushTickets !== false
     };
 }
 
@@ -167,6 +168,19 @@ async function scanApprovals(now) {
     return n;
 }
 
+// ---- Tickets (2.30.0): new, assigned, status changed — since the last tick ----
+const { ticketPushes } = require('./ticketNotices');
+async function scanTickets(now) {
+    const state = db.doc('mailState/tickets');
+    const prev = await state.get();
+    const snap = await db.collection('tickets').where('updatedAt', '>=', now.getTime() - 7 * 86400000).get();
+    const { out, next } = ticketPushes(prev.exists ? (prev.data().seen || {}) : null, snap.docs.map(d => ({ ...d.data(), id: d.id })), now.getTime());
+    let n = 0;
+    for (const p of out) n += await sendPush(p.kind, p.id, p.rec).catch(err => { logger.error('ticket push failed', err); return 0; });
+    await state.set({ seen: next, at: admin.firestore.FieldValue.serverTimestamp() });
+    return n;
+}
+
 // ---- Housekeeping (2.19.0), once a day at 03:00 WIT ----
 //   · error log entries older than 30 days are deleted
 //   · history older than 2 years moves to Storage, archives/history/YYYY-MM.json
@@ -244,6 +258,7 @@ exports.notificationTick = onSchedule({
     if (hour === 3) jobs.push(oncePerDay('housekeeping', today, () => housekeeping(now)));
     jobs.push(scanDamage(s, now).then(n => { if (n) logger.info('damage alerts sent', { n }); }));
     if (s.pushApprovals) jobs.push(scanApprovals(now).then(n => { if (n) logger.info('approval pushes sent', { n }); }));
+    if (s.pushTickets) jobs.push(scanTickets(now).then(n => { if (n) logger.info('ticket pushes sent', { n }); }));
     const results = await Promise.allSettled(jobs);
     results.filter(r => r.status === 'rejected').forEach(r => logger.error('notification job failed', r.reason));
 });

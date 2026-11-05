@@ -84,8 +84,8 @@ const LIC_PAID = ['SF-RTK', 'G5 Advance'];
 const LIC_REQ_OPTIONS = { gps: ['', 'SF-1', 'SF-RTK'], display: ['', 'G5 Basic', 'G5 Advance'] };
 let licenseTab = 'stock';
 // Master lists (Site / Brand / Company). An empty list means "anything goes".
-let masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [], uom: [], jobCategory: [], department: [] };
-const MASTER_KINDS = ['site', 'brand', 'heavyBrand', 'company', 'damageType', 'jobType', 'implGroup', 'learnCategory', 'deviceType', 'uom', 'jobCategory', 'department'];
+let masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [], uom: [], jobCategory: [], department: [], ticketCategory: [] };
+const MASTER_KINDS = ['site', 'brand', 'heavyBrand', 'company', 'damageType', 'jobType', 'implGroup', 'learnCategory', 'deviceType', 'uom', 'jobCategory', 'department', 'ticketCategory'];
 const MASTER_DEF = {
     site:    { label: 'Site',    plural: 'Sites',     edit: ['editUnits'],              view: ['editUnits'],
                hint: 'Used by every unit (both groups).' },
@@ -117,6 +117,8 @@ const MASTER_DEF = {
                hint: 'Units chosen for each Purchase Request item (pcs, set, liter, …). While empty: ' + 'pcs, set, unit, box, pack, roll, m, kg, liter' + '. Any other unit can still be typed.' },
     // 2.29.0: Projects & Jobs — what a job is, and the departments a project
     // is shared with. Empty = the built-in choices (OT_JOB_CATEGORIES, OT_DEPARTMENTS).
+    ticketCategory: { label: 'Ticket Category', plural: 'Ticket Categories', edit: ['tickets'], view: ['tickets'],
+               hint: 'What a ticket is about (GPS / RTK signal, Display, Radio / HT, …). While empty, the built-in list is used.' },
     jobCategory: { label: 'Job Category', plural: 'Job Categories', edit: ['projects'], view: ['projects'],
                hint: 'Kinds of jobs outside the Daily Report (Calibration, Implement install, Meeting, …). While empty, the built-in list is used.' },
     department: { label: 'Department', plural: 'Departments', edit: ['projects'], view: ['projects'],
@@ -141,6 +143,7 @@ let purchaseRequests = [];           // 2.9.0: purchase requests (cloud only)
 let cloudPurchaseUnsub = null;
 let cloudProjectsUnsub = null, cloudOtJobsUnsub = null;   // 2.29.0
 let projects = [], otJobs = [];
+let cloudTicketsUnsub = null, cloudTicketStaffUnsub = null, tickets = [], ticketStaff = [];   // 2.30.0
 let warehouseDevices = [];           // serial-tracked devices
 let cloudStockUnsub = null;
 let stockLedger = [];                // IN/OUT rows for quantity-counted items
@@ -168,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.29.9';
+const APP_VERSION = 'v2.30.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -973,6 +976,8 @@ const MODAL_CLOSERS = {
     prDetailModal:        'closePurchaseDetail',
     pjModal:              'closeProjectModal',
     wlDetailModal:        'closeWorkLogDetail',
+    tkModal:              'closeTicketModal',
+    tkDetailModal:        'closeTicketDetail',
     pjDetailModal:        'closeProjectDetail',
     otJobModal:           'closeJobModal',
     prReceiveModal:       'closePurchaseReceive',
@@ -1503,8 +1508,12 @@ const LAUNCH_ACTIONS = {
     'report-damage': () => { navigateTo('damage'); if (currentView === 'damage') showAddDamageForm(); },
     'inbox':         () => navigateTo('leader'),
     'damage':        () => navigateTo('damage'),
-    'units':         () => navigateTo('editUnits')
+    'units':         () => navigateTo('editUnits'),
+    // 2.30.0: a ticket push opens Tickets (and the ticket, once it has arrived).
+    'tickets':       () => { navigateTo('tickets'); const id = _launchTicket; _launchTicket = '';
+        if (id) { let n = 0; const open = () => { if (tickets.some(t => t.id === id)) showTicketDetail(id); else if (n++ < 20) setTimeout(open, 300); }; open(); } }
 };
+let _launchTicket = (() => { try { return new URLSearchParams(location.search).get('ticket') || ''; } catch (_) { return ''; } })();
 let _launchAction = (() => {
     try { return new URLSearchParams(location.search).get('action') || ''; } catch (_) { return ''; }
 })();
@@ -1877,6 +1886,8 @@ function navigateTo(view) {
     if (whView) whView.style.display = (view === 'warehouse') ? 'block' : 'none';
     const prView = document.getElementById('viewPurchase');
     if (prView) prView.style.display = (view === 'purchase') ? 'block' : 'none';
+    const tkView = document.getElementById('viewTickets');
+    if (tkView) tkView.style.display = (view === 'tickets') ? 'block' : 'none';
     const pjView = document.getElementById('viewProjects');
     if (pjView) pjView.style.display = (view === 'projects') ? 'block' : 'none';
     const lcView = document.getElementById('viewLearning');
@@ -1959,6 +1970,7 @@ function navigateTo(view) {
 
     if (view === 'purchase') renderPurchaseView();
     if (view === 'projects' && typeof renderProjectsView === 'function') renderProjectsView();
+    if (view === 'tickets' && typeof renderTicketsView === 'function') renderTicketsView();
     if (view === 'learning') renderLearningView();
 
     if (view === 'inspection') renderInspectionView();
@@ -5396,7 +5408,7 @@ function _notifForm() {
     const el = id => document.getElementById(id);
     return JSON.stringify(['emailRecipients', 'damageRecipients', 'reminderRecipients', 'monthlyRecipients'].map(id => _parseRecipients(el(id).value))
         .concat([el('emailDaily').checked, el('emailHour').value, el('damageEnabled').checked, el('reminderEnabled').checked, el('reminderHour').value,
-                 el('monthlyEnabled').checked, el('monthlyHour').value, el('pushDamage').checked, el('pushApprovals').checked,
+                 el('monthlyEnabled').checked, el('monthlyHour').value, el('pushDamage').checked, el('pushApprovals').checked, el('pushTickets').checked,
                  ...NOTIF_SCHED.flatMap(([p]) => [el(p + 'Freq').value, el(p + 'Weekday').value, el(p + 'Monthday').value])]));
 }
 function _notifUnsaved() { return _notifSaved !== null && _notifForm() !== _notifSaved; }
@@ -5429,7 +5441,7 @@ async function openEmailSettingsModal() {
     const owner = isOwner();
     _notifSaved = null;
     const ids = ['emailRecipients', 'emailDaily', 'emailHour', 'damageRecipients', 'damageEnabled', 'reminderRecipients', 'reminderEnabled', 'reminderHour',
-                 'monthlyRecipients', 'monthlyEnabled', 'monthlyHour', 'pushDamage', 'pushApprovals'];
+                 'monthlyRecipients', 'monthlyEnabled', 'monthlyHour', 'pushDamage', 'pushApprovals', 'pushTickets'];
     const el = id => document.getElementById(id);
     ['emailHour', 'reminderHour', 'monthlyHour'].forEach(id => { if (!el(id).options.length) el(id).innerHTML = NOTIF_HOURS; });
     NOTIF_SCHED.forEach(([p, , , dfreq]) => {
@@ -5441,7 +5453,7 @@ async function openEmailSettingsModal() {
     ['emailRecipients', 'damageRecipients', 'reminderRecipients', 'monthlyRecipients'].forEach(id => { el(id).value = ''; });
     ['emailDaily', 'damageEnabled', 'reminderEnabled', 'monthlyEnabled'].forEach(id => { el(id).checked = false; });
     el('monthlyHour').value = String(EMAIL_DEFAULT_HOUR);
-    el('pushDamage').checked = true; el('pushApprovals').checked = true;
+    el('pushDamage').checked = true; el('pushApprovals').checked = true; el('pushTickets').checked = true;
     el('emailHour').value = String(EMAIL_DEFAULT_HOUR);
     el('reminderHour').value = String(REMINDER_DEFAULT_HOUR);
     ids.forEach(id => { el(id).disabled = !owner; });
@@ -5466,6 +5478,7 @@ async function openEmailSettingsModal() {
         el('monthlyHour').value = String(Number.isInteger(s.monthlyHour) ? s.monthlyHour : EMAIL_DEFAULT_HOUR);
         el('pushDamage').checked = s.pushDamage !== false;
         el('pushApprovals').checked = s.pushApprovals !== false;
+        el('pushTickets').checked = s.pushTickets !== false;
         NOTIF_SCHED.forEach(([p, , key, dfreq]) => {
             el(p + 'Freq').value = ['daily', 'weekly', 'monthly'].includes(s[key + 'Freq']) ? s[key + 'Freq'] : dfreq;
             el(p + 'Weekday').value = String(Number.isInteger(s[key + 'Weekday']) ? s[key + 'Weekday'] : 1);
@@ -5505,7 +5518,7 @@ async function saveEmailSettings() {
         damageRecipients: lists.damageRecipients, damageEnabled: el('damageEnabled').checked,
         reminderRecipients: lists.reminderRecipients, reminderEnabled: el('reminderEnabled').checked, reminderHour: hour('reminderHour'),
         monthlyRecipients: lists.monthlyRecipients, monthlyEnabled: el('monthlyEnabled').checked, monthlyHour: hour('monthlyHour'),
-        pushDamage: el('pushDamage').checked, pushApprovals: el('pushApprovals').checked,
+        pushDamage: el('pushDamage').checked, pushApprovals: el('pushApprovals').checked, pushTickets: el('pushTickets').checked,
         ...Object.fromEntries(NOTIF_SCHED.flatMap(([p, , key]) => [[key + 'Freq', el(p + 'Freq').value],
             [key + 'Weekday', parseInt(el(p + 'Weekday').value, 10) || 0], [key + 'Monthday', parseInt(el(p + 'Monthday').value, 10) || 1]])),
         updatedAt: Date.now(), updatedBy: (currentUser && currentUser.email) || ''
@@ -5527,7 +5540,7 @@ async function saveEmailSettings() {
         return f === 'weekly' ? `${NOTIF_WEEKDAYS[rec[key + 'Weekday']]} ${t}` : f === 'monthly' ? `day ${rec[key + 'Monthday']} ${t}` : `daily ${t}`;
     };
     logEvent({ action: 'update', unitName: '[Settings] Notifications', field: 'Email',
-        before: '', after: `License ${when(rec.dailyEnabled, 'send', rec.sendHour)} · Breakdown ${rec.damageEnabled ? 'on' : 'off'} · Reminder ${when(rec.reminderEnabled, 'reminder', rec.reminderHour)} · Summary ${when(rec.monthlyEnabled, 'monthly', rec.monthlyHour)} · Push ${[rec.pushDamage && 'damage', rec.pushApprovals && 'approvals'].filter(Boolean).join('+') || 'off'}` });
+        before: '', after: `License ${when(rec.dailyEnabled, 'send', rec.sendHour)} · Breakdown ${rec.damageEnabled ? 'on' : 'off'} · Reminder ${when(rec.reminderEnabled, 'reminder', rec.reminderHour)} · Summary ${when(rec.monthlyEnabled, 'monthly', rec.monthlyHour)} · Push ${[rec.pushDamage && 'damage', rec.pushApprovals && 'approvals', rec.pushTickets && 'tickets'].filter(Boolean).join('+') || 'off'}` });
     _notifSaved = _notifForm();
     showToast('Notification settings saved', 'success');
 }
@@ -13486,6 +13499,15 @@ function initCloudSync() {
                 ownPr ? myUid() : ''
             );
         }
+        if (window.cloud.subscribeTickets && typeof applyTicketsSnapshot === 'function') {
+            // Every active account: all tickets with 'view', its own otherwise.
+            const allT = hasAccess('tickets', 'view');
+            cloudTicketsUnsub = window.cloud.subscribeTickets(
+                (list, queued) => { setQueued('tickets', queued); applyTicketsSnapshot(list); },
+                err => console.warn('[cloud] tickets offline:', err && err.code), allT ? '' : myUid());
+            if (allT && window.cloud.subscribeTicketStaff) cloudTicketStaffUnsub = window.cloud.subscribeTicketStaff(applyTicketStaffSnapshot, () => {});
+            if (hasAccess('tickets', 'edit') && window.cloud.saveTicketStaff) registerTicketStaff();
+        }
         if (window.cloud.subscribeProjects && canViewView('projects') && typeof applyProjectsSnapshot === 'function') {
             cloudProjectsUnsub = window.cloud.subscribeProjects(
                 (list, queued) => { setQueued('projects', queued); applyProjectsSnapshot(list); },
@@ -13746,11 +13768,14 @@ function tearDownCloudSync() {
     // What was typed belongs to the account that typed it.
     if (typeof clearUnsent === 'function') clearUnsent();
     licenseRequirements = [];
-    masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [], uom: [], jobCategory: [], department: [] };
+    masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [], uom: [], jobCategory: [], department: [], ticketCategory: [] };
     if (cloudDamageComponentsUnsub) { try { cloudDamageComponentsUnsub(); } catch (_) {} cloudDamageComponentsUnsub = null; }
     if (cloudDevicesUnsub) { try { cloudDevicesUnsub(); } catch (_) {} cloudDevicesUnsub = null; }
     if (cloudPurchaseUnsub) { try { cloudPurchaseUnsub(); } catch (_) {} cloudPurchaseUnsub = null; }
     if (cloudProjectsUnsub) { try { cloudProjectsUnsub(); } catch (_) {} cloudProjectsUnsub = null; }
+    if (cloudTicketsUnsub) { try { cloudTicketsUnsub(); } catch (_) {} cloudTicketsUnsub = null; }
+    if (cloudTicketStaffUnsub) { try { cloudTicketStaffUnsub(); } catch (_) {} cloudTicketStaffUnsub = null; }
+    tickets = []; ticketStaff = [];
     if (cloudOtJobsUnsub) { try { cloudOtJobsUnsub(); } catch (_) {} cloudOtJobsUnsub = null; }
     projects = [];
     otJobs = [];
@@ -14692,6 +14717,9 @@ const ACCESS_AREAS = [
     // 2.29.0: projects (with other departments) and jobs outside the Daily
     // Report. 'own' adds its own and changes only those; 'edit' keeps all.
     { key: 'projects',     label: 'Projects & Jobs',   levels: ['none', 'own', 'view', 'edit'] },
+    // 2.30.0: every active account files tickets and follows its own; 'view'
+    // reads all of them, 'edit' (the OT team) assigns, works and resolves them.
+    { key: 'tickets',      label: 'Tickets (handle all)', levels: ['none', 'view', 'edit'] },
     // 2.12.0: everyone active reads the Learning Center; 'edit' adds material.
     { key: 'learning',     label: 'Learning Center (add material)', levels: ['none', 'edit'] },
     // Heavy-equipment checks: the technician who checks and files, and —
@@ -14732,7 +14760,7 @@ const RO_FLAGS = {
     editUnits: 'roEditunits', implements: 'roImplements', damage: 'roDamage',
     licenseStock: 'roLicense', teamShift: 'roTeamshift', teamLog: 'roTeamlog',
     teamMembers: 'roTeammembers', teamLogApprove: 'roTeamapprove',
-    warehouse: 'roWarehouse', inspection: 'roInspection', purchase: 'roPurchase', projects: 'roProjects',
+    warehouse: 'roWarehouse', inspection: 'roInspection', purchase: 'roPurchase', projects: 'roProjects', tickets: 'roTickets',
     learning: 'roLearning'
 };
 // 'own' acts as edit for the area's buttons; which records it may touch is
@@ -14927,6 +14955,7 @@ function applyAccessVisibility() {
         }
     });
     updateDecisionBadge();
+    if (typeof updateTicketBadge === 'function') updateTicketBadge();
     const navHistory = document.getElementById('navHistory');
     if (navHistory) navHistory.style.display = hasAccess('history', 'view') ? '' : 'none';
     const navMaster = document.getElementById('navMasterLists');
@@ -20574,14 +20603,15 @@ const WH_PHOTO_MAX = 10;
 const _whPhotoCache = new Map();               // photo id → data URL
 const _whPh = { device: { items: [], removed: [] }, stock: { items: [], removed: [] },
                 prDoc: { items: [], removed: [] }, prReceipt: { items: [], removed: [] },
-                pjUpdate: { items: [], removed: [] }, otJob: { items: [], removed: [] } };
-const _WH_PH_EL = { device: 'dev', stock: 'stk', prDoc: 'prDoc', prReceipt: 'prRcv', pjUpdate: 'pjUpd', otJob: 'otJob' };
+                pjUpdate: { items: [], removed: [] }, otJob: { items: [], removed: [] }, ticket: { items: [], removed: [] }, ticketUpd: { items: [], removed: [] } };
+const _WH_PH_EL = { device: 'dev', stock: 'stk', prDoc: 'prDoc', prReceipt: 'prRcv', pjUpdate: 'pjUpd', otJob: 'otJob', ticket: 'tk', ticketUpd: 'tkUpd' };
 // Where each kind's photos live: warehousePhotos ('wh') or purchasePhotos ('pr').
-const _PH_STORE = { device: 'wh', stock: 'wh', prDoc: 'pr', prReceipt: 'pr', pjUpdate: 'pj', otJob: 'pj' };
+const _PH_STORE = { device: 'wh', stock: 'wh', prDoc: 'pr', prReceipt: 'pr', pjUpdate: 'pj', otJob: 'pj', ticket: 'tk', ticketUpd: 'tk' };
 const _PH_FN = {
     wh: { get: 'getWhPhoto', save: 'saveWhPhoto', del: 'deleteWhPhoto' },
     pr: { get: 'getPurchasePhoto', save: 'savePurchasePhoto', del: 'deletePurchasePhoto' },
-    pj: { get: 'getProjectPhoto', save: 'saveProjectPhoto', del: 'deleteProjectPhoto' }
+    pj: { get: 'getProjectPhoto', save: 'saveProjectPhoto', del: 'deleteProjectPhoto' },
+    tk: { get: 'getTicketPhoto', save: 'saveTicketPhoto', del: 'deleteTicketPhoto' }
 };
 function _whPhotoId(ownerId) { return `${ownerId}__p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`; }
 async function loadWhPhoto(id, store) {
@@ -22530,6 +22560,8 @@ function decisionGroups() {
 
     // ---- Purchase requests waiting on someone ----
     { const g = purchaseDecisionGroup(); if (g) add(g); }
+    // ---- Tickets: new ones and those past their due time (2.30.0) ----
+    { const g = typeof ticketDecisionGroup === 'function' ? ticketDecisionGroup() : null; if (g) add(g); }
 
     // ---- Pendaftar menunggu disetujui ----
     if (isOwner()) {
@@ -22625,6 +22657,12 @@ function goDecision(target) {
         return;
     }
     switch (target) {
+        case 'tickets': {
+            navigateTo('tickets');
+            const f = document.getElementById('tkStatusFilter');
+            if (f && currentView === 'tickets') { f.value = 'active'; renderTicketsView(); }
+            break;
+        }
         case 'purchase': {
             navigateTo('purchase');
             const f = document.getElementById('prStatusFilter');
@@ -25565,14 +25603,15 @@ function masterUsage(kind) {
     if (kind === 'deviceType') (warehouseDevices || []).forEach(d => add(d.type));
     if (kind === 'uom') (purchaseRequests || []).forEach(r => (r.items || []).forEach(it => add(it.uom)));
     if (kind === 'jobCategory') (otJobs || []).forEach(j => add(j.category));
+    if (kind === 'ticketCategory') (tickets || []).forEach(t => add(t.category));
     if (kind === 'department') { (projects || []).forEach(p => (p.departments || []).forEach(d => add(d.name))); (otJobs || []).forEach(j => add(j.requestedBy)); }
     return counts;
 }
-const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', heavyBrand: 'unit', company: 'member', damageType: 'damage record', jobType: 'report line', implGroup: 'implement', learnCategory: 'material', deviceType: 'device', uom: 'request item', jobCategory: 'job', department: 'project or job' };
+const MASTER_USED_NOUN = { site: 'unit', brand: 'implement', heavyBrand: 'unit', company: 'member', damageType: 'damage record', jobType: 'report line', implGroup: 'implement', learnCategory: 'material', deviceType: 'device', uom: 'request item', jobCategory: 'job', department: 'project or job', ticketCategory: 'ticket' };
 
 function applyMasterListsSnapshot(docs) {
     _markLoaded('masterLists');
-    const next = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [], uom: [], jobCategory: [], department: [] };
+    const next = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [], uom: [], jobCategory: [], department: [], ticketCategory: [] };
     (docs || []).forEach(d => {
         if (MASTER_KINDS.includes(d.id) && Array.isArray(d.values)) next[d.id] = d.values.map(_toolNorm).filter(Boolean);
     });
@@ -25618,7 +25657,7 @@ const MASTER_TAB_GROUPS = [
     { label: 'Team & reports',   kinds: ['company', 'jobType', 'paddock'] },
     { label: 'Damage, warehouse & purchase', kinds: ['damageType', 'deviceType', 'uom'] },
     { label: 'Learning Center',  kinds: ['learnCategory'] },
-    { label: 'Projects & Jobs',  kinds: ['jobCategory', 'department'] }
+    { label: 'Projects, jobs & tickets', kinds: ['jobCategory', 'department', 'ticketCategory'] }
 ];
 function renderMasterLists() {
     const tabs = document.getElementById('mlTabs');
@@ -26131,7 +26170,7 @@ function dcNotInMasterLists() {
     MASTER_KINDS.forEach(kind => {
         // Damage types only add choices; a type outside the list is not wrong.
         // Job types live on reports that are often locked once approved.
-        if (kind === 'damageType' || kind === 'jobType' || kind === 'learnCategory' || kind === 'uom' || kind === 'jobCategory' || kind === 'department' || !masterListActive(kind)) return;
+        if (kind === 'damageType' || kind === 'jobType' || kind === 'learnCategory' || kind === 'uom' || kind === 'jobCategory' || kind === 'department' || kind === 'ticketCategory' || !masterListActive(kind)) return;
         [...masterUsage(kind).entries()].filter(([v]) => !masterMatch(kind, v)).sort((a, b) => b[1] - a[1]).forEach(([v, n]) => {
             out.push(dc('master-luar', `${MASTER_DEF[kind].label}: ${v}`,
                 `${n} ${MASTER_USED_NOUN[kind]}(s) — not in the ${MASTER_DEF[kind].label} list`,

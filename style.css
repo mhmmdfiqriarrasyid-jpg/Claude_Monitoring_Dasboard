@@ -11135,3 +11135,33 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 .pj-filechips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .pj-filechip { display: inline-flex; align-items: center; gap: 4px; max-width: 220px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--card); font: inherit; font-size: 11.5px; color: var(--text-body); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pj-filechip:hover { border-color: var(--accent); color: var(--accent-text); }
+
+/* ============================================================
+   TICKETS (2.30.0)
+   ============================================================ */
+.tk-list { display: flex; flex-direction: column; }
+.tk-row { display: grid; grid-template-columns: minmax(0, 1fr) 180px 170px; gap: 12px; align-items: center; width: 100%; padding: 12px 16px; border: 0; border-top: 1px solid var(--border); background: var(--card); font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.tk-row:first-child { border-top: 0; } .tk-row:hover { background: var(--primary-lighter); }
+.tk-row.is-late { background: color-mix(in srgb, var(--danger-bg) 55%, var(--card)); }
+.tk-row__main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.tk-row__top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tk-row__title { font-weight: 600; font-size: 14.5px; overflow-wrap: anywhere; }
+.tk-row__meta, .tk-cat, .tk-no { font-size: 12px; color: var(--text-secondary); }
+.tk-no { font-family: var(--font-mono); }
+.tk-row__who { display: flex; flex-direction: column; font-size: 13px; min-width: 0; }
+.tk-row__state { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.tk-due { font-size: 12px; color: var(--text-secondary); } .tk-due.is-late { color: var(--danger); font-weight: 700; }
+.tk-pchip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.tk-pchip--high { background: var(--danger-bg); color: var(--danger); } .tk-pchip--medium { background: var(--warning-bg); color: var(--warning-strong, var(--warning)); } .tk-pchip--low { background: var(--surface-sunken); color: var(--text-secondary); }
+.tk-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.tk-prio { display: flex; gap: 6px; flex-wrap: wrap; }
+.tk-prio__opt { flex: 1 1 90px; display: flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 13px; }
+.tk-prio__opt small { display: block; font-size: 11px; color: var(--text-light); }
+.tk-prio__opt:has(input:checked) { border-color: var(--accent); background: var(--primary-lighter); }
+.tk-prio__opt--high:has(input:checked) { border-color: var(--danger); background: var(--danger-bg); }
+.tk-assign, .tk-comment { display: flex; gap: 8px; align-items: flex-start; }
+.tk-assign .form-select, .tk-comment .form-input { flex: 1; min-width: 0; }
+.tk-comment { margin-bottom: 10px; }
+.tk-resolution { padding: 8px 12px; border-radius: 8px; background: var(--success-bg); font-size: 13.5px; white-space: pre-wrap; }
+.tk-ev--resolved, .tk-ev--closed { border-left-color: var(--success) !important; } .tk-ev--reopen { border-left-color: var(--danger) !important; } .tk-ev--comment { border-left-color: var(--border-strong, var(--border)) !important; }
+@media (max-width: 700px) { .tk-row { grid-template-columns: 1fr; gap: 6px; } .tk-row__state { flex-direction: row; align-items: center; } }

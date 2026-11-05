@@ -429,6 +429,7 @@ const PURCHASE_PHOTOS_COL = 'purchasePhotos';
 const PROJECTS_COL = 'projects';             // 2.29.0: Projects & Jobs
 const OT_JOBS_COL = 'otJobs';
 const PROJECT_PHOTOS_COL = 'projectPhotos';
+const TICKETS_COL = 'tickets', TICKET_PHOTOS_COL = 'ticketPhotos', TICKET_STAFF_COL = 'ticketStaff';   // 2.30.0
 const STOCK_ITEMS_COL = 'stockItems';
 // Operational vehicles (company motorbikes) and their fuel log. A fuel
 // record's receipt photo lives in fuelPhotos/{recordId}, never subscribed.
@@ -1086,6 +1087,24 @@ window.cloud = {
         const st = await _storage();
         try { await st.mod.deleteObject(st.mod.ref(st.s, path)); }
         catch (err) { if (!err || err.code !== 'storage/object-not-found') throw err; }
+    },
+    // ---- Tickets (2.30.0) ----
+    // reporterUid: only that account's own tickets (no 'view' on the area).
+    async saveTicket(rec) { await setDoc(doc(db, TICKETS_COL, rec.id), rec); },
+    async deleteTicket(id) { await deleteDoc(doc(db, TICKETS_COL, id)); },
+    subscribeTickets(callback, errorCallback, reporterUid) {
+        return _onSnapshotWithPending(
+            reporterUid ? query(collection(db, TICKETS_COL), where('reportedByUid', '==', reporterUid)) : collection(db, TICKETS_COL),
+            callback, err => { console.error('[cloud] tickets subscription error:', err); if (errorCallback) errorCallback(err); });
+    },
+    async getTicketPhoto(id, opts) {
+        return _getPhotoDoc(TICKET_PHOTOS_COL, id, 'photo', '', opts, d => ({ id: d.id || id, ownerId: d.ownerId || '' }));
+    },
+    async saveTicketPhoto(id, ownerId, photo) { await _savePhotoDoc(TICKET_PHOTOS_COL, id, 'photo', photo, { id, ownerId }); },
+    async deleteTicketPhoto(id) { await _deletePhotoDoc(TICKET_PHOTOS_COL, id, 'photo'); },
+    async saveTicketStaff(card) { await setDoc(doc(db, TICKET_STAFF_COL, card.uid), card); },
+    subscribeTicketStaff(callback, errorCallback) {
+        return onSnapshot(collection(db, TICKET_STAFF_COL), snap => callback(snap.docs.map(withDocId)), err => { if (errorCallback) errorCallback(err); });
     },
     // 2.29.8: PDF attachments of jobs, under projectFiles/<record>/<file>.
     // 2.29.9: also videos (mp4 / mov / webm); contentType is the file's own.

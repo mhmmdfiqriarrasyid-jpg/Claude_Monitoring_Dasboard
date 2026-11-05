@@ -117,6 +117,7 @@ service cloud.firestore {
         || editOn(a, role, 'purchase') || a.get('purchase', null) == 'own'
         || editOn(a, role, 'learning')
         || editOn(a, role, 'projects') || a.get('projects', null) == 'own'
+        || editOn(a, role, 'tickets')
         || editOn(a, role, 'teamLogApprove') || editOn(a, role, 'warehouse')
         || (sc == 'all' && (editOn(a, role, 'editUnits') || editOn(a, role, 'damage')))
         || (sc in ['all', 'tractor'] && (editOn(a, role, 'implements') || editOn(a, role, 'licenseStock')))
@@ -210,7 +211,8 @@ service cloud.firestore {
           || (kind == 'learnCategory' && canEditArea('learning'))
           || (kind == 'deviceType' && canEditArea('warehouse'))
           || (kind == 'uom' && canEditArea('purchase'))
-          || (kind in ['jobCategory', 'department'] && canEditArea('projects'));
+          || (kind in ['jobCategory', 'department'] && canEditArea('projects'))
+          || (kind == 'ticketCategory' && canEditArea('tickets'));
     }
     // Paddocks (2.10.0): one list per company, chosen from in Daily Reports.
     // Read by every active account; kept by whoever manages team members.
@@ -583,6 +585,50 @@ service cloud.firestore {
                     && request.resource.data.get('photo', '') is string
                     && request.resource.data.get('photo', '').size() <= 400000;
     }
+    // ---- Tickets (2.30.0) ----
+    // Every active account files tickets and follows its own (queries must ask
+    // where('reportedByUid', '==', <its uid>)). 'view' reads all of them;
+    // 'edit' (the OT team) assigns, works and resolves them. The reporter may
+    // only add to the timeline, and close or reopen once it is resolved.
+    function ticketMine(d) { return d.get('reportedByUid', '') == request.auth.uid; }
+    function ticketOk() {
+      return textOk('title', 160) && textOk('category', 80)
+          && request.resource.data.get('priority', '') in ['high', 'medium', 'low']
+          && request.resource.data.get('status', '') in ['open', 'assigned', 'progress', 'resolved', 'closed']
+          && request.resource.data.get('events', []) is list && request.resource.data.get('events', []).size() <= 300;
+    }
+    match /tickets/{id} {
+      allow read:   if canViewArea('tickets') || (isActive() && ticketMine(resource.data));
+      allow create: if isActive() && idMatches(id) && ticketOk()
+                    && request.resource.data.get('reportedByUid', '') == request.auth.uid
+                    && request.resource.data.get('status', '') == 'open';
+      allow update: if idMatches(id) && ticketOk() && (canEditArea('tickets')
+                    || (isActive() && ticketMine(resource.data)
+                        && request.resource.data.get('reportedByUid', '') == request.auth.uid
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['events', 'status', 'closedAt', 'updatedAt', 'lastActorUid', 'photoIds'])
+                        && (request.resource.data.get('status', '') == resource.data.get('status', '')
+                            || (resource.data.get('status', '') == 'resolved' && request.resource.data.get('status', '') in ['closed', 'open']))));
+      allow delete: if canEditArea('tickets');
+    }
+    // Photos of a ticket: its reporter and whoever may see tickets.
+    function ticketOfPhoto(ownerId) { return /databases/$(database)/documents/tickets/$(ownerId); }
+    match /ticketPhotos/{id} {
+      allow read:   if canViewArea('tickets')
+                    || (isActive() && exists(ticketOfPhoto(resource.data.get('ownerId', '-'))) && ticketMine(get(ticketOfPhoto(resource.data.get('ownerId', '-'))).data));
+      allow create, update: if isActive() && idMatches(id)
+                    && request.resource.data.get('photo', '') is string && request.resource.data.get('photo', '').size() <= 400000
+                    && (canEditArea('tickets') || !exists(ticketOfPhoto(request.resource.data.get('ownerId', '-')))
+                        || ticketMine(get(ticketOfPhoto(request.resource.data.get('ownerId', '-'))).data));
+      allow delete: if canEditArea('tickets');
+    }
+    // Who can be given a ticket: each OT account writes its own card here.
+    match /ticketStaff/{uid} {
+      allow read:   if canViewArea('tickets');
+      allow write:  if canEditArea('tickets') && uid == request.auth.uid
+                    && request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'updatedAt'])
+                    && request.resource.data.get('uid', '') == uid;
+      allow delete: if isOwner() || uid == request.auth.uid;
+    }
     // Learning Center (2.12.0): every active account reads; 'learning' edit
     // adds and removes material. Uploaded PDFs are stored in pieces.
     match /learningItems/{id} {
@@ -622,12 +668,13 @@ service cloud.firestore {
       allow write: if id == 'email' && isOwner()
         && request.resource.data.keys().hasOnly(['recipients', 'dailyEnabled', 'sendHour',
              'reminderEnabled', 'reminderHour', 'reminderRecipients', 'damageEnabled', 'damageRecipients',
-             'monthlyEnabled', 'monthlyHour', 'monthlyRecipients', 'pushDamage', 'pushApprovals',
+             'monthlyEnabled', 'monthlyHour', 'monthlyRecipients', 'pushDamage', 'pushApprovals', 'pushTickets',
              'sendFreq', 'sendWeekday', 'sendMonthday', 'reminderFreq', 'reminderWeekday', 'reminderMonthday',
              'monthlyFreq', 'monthlyWeekday', 'monthlyMonthday', 'updatedAt', 'updatedBy'])
         && schedOk(request.resource.data, 'send') && schedOk(request.resource.data, 'reminder') && schedOk(request.resource.data, 'monthly')
         && request.resource.data.get('pushDamage', true) is bool
         && request.resource.data.get('pushApprovals', true) is bool
+        && request.resource.data.get('pushTickets', true) is bool
         && emailList(request.resource.data.get('monthlyRecipients', []))
         && request.resource.data.get('monthlyEnabled', false) is bool
         && hourOk(request.resource.data.get('monthlyHour', 7))
