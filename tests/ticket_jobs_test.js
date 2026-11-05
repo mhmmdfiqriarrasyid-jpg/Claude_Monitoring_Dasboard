@@ -85,6 +85,17 @@ const { launch, BASE_URL } = require('./_env');
         t('tanpa Tickets edit: pilihan ticket disembunyikan', document.getElementById('otJobTicketGroup').style.display, 'none');
         saveJob(); await tick();
         t('simpan tanpa akses: ticketId tidak hilang', otJobs.find(x => x.id === j.id).ticketId, 'tk1');
+        // ---- 2.30.2: daftar PIC untuk owner + petunjuk akun yang belum punya akses ----
+        currentUser = { uid: 'o', email: 'o@x.id' }; currentUserDoc = { uid: 'o', role: 'owner', status: 'active', displayName: 'Rasyid' }; applyRoleGating();
+        allUsers = [{ uid: 'o', role: 'owner', status: 'active', displayName: 'Rasyid' },
+                    { uid: 'a', role: 'staff', status: 'active', displayName: 'Budi', access: { tickets: 'edit' } },
+                    { uid: 'b', role: 'staff', status: 'active', displayName: 'Citra', access: { tickets: 'view' } },
+                    { uid: 'c', role: 'khl', status: 'pending', displayName: 'Dedi' }];
+        ticketStaff = [];
+        showTicketDetail('tk2');
+        t('PIC: owner + akun Tickets edit', [...document.querySelectorAll('#tkAssignee option')].map(o => o.textContent).slice(1), ['Budi', 'Rasyid']);
+        t('petunjuk: 1 akun aktif belum punya akses', /1 active account not yet/.test(document.querySelector('.tk-staff-hint').textContent), true);
+        closeTicketDetail();
         return T;
     });
     let pass = 0;

@@ -71,10 +71,20 @@ function registerTicketStaff() {
 function ticketAssignees() {
     const map = new Map();
     (ticketStaff || []).forEach(s => map.set(s.uid, s.name || s.email || s.uid));
-    if (typeof allUsers !== 'undefined' && isOwner()) (allUsers || []).filter(u => u.status === 'active' && (u.role === 'owner' || (u.access && u.access.tickets === 'edit')))
+    // Owner: every active account with Tickets edit, through its own access or its role (2.30.2).
+    if (typeof allUsers !== 'undefined' && isOwner()) (allUsers || []).filter(u => u.status === 'active' && hasAccess('tickets', 'edit', u))
         .forEach(u => { if (!map.has(u.uid)) map.set(u.uid, u.displayName || u.email || u.uid); });
     if (canHandleTickets() && !map.has(myUid())) map.set(myUid(), _tkMe() || 'Me');
     return [...map.entries()].map(([uid, name]) => ({ uid, name })).sort((a, b) => a.name.localeCompare(b.name));
+}
+// Why someone is missing from the PIC list: only accounts with Tickets edit can take a ticket.
+function _tkStaffHint(staff) {
+    if (!isOwner()) return staff.length <= 1 ? '<p class="form-hint tk-staff-hint">Only OT accounts with <b>Tickets (handle all): edit</b> are listed. Ask the owner to give it to the team.</p>' : '';
+    const ids = new Set(staff.map(s => s.uid));
+    const missing = (allUsers || []).filter(u => u.status === 'active' && !ids.has(u.uid));
+    if (!missing.length) return '';
+    return `<p class="form-hint tk-staff-hint">Only accounts with <b>Tickets (handle all): edit</b> are listed — ${missing.length} active account${missing.length === 1 ? '' : 's'} not yet.
+        <button type="button" class="adm-link" onclick="closeTicketDetail(); navigateTo('users')">Give access in Users</button></p>`;
 }
 function updateTicketBadge() {
     const b = document.getElementById('ticketBadge');
@@ -308,6 +318,7 @@ function showTicketDetail(id, keepTyping) {
     const row = (label, html) => `<div class="profile-row"><span class="profile-row__label">${label}</span><span>${html || '<span class="adm-muted">—</span>'}</span></div>`;
     const jobs = ticketJobs(t);
     const evs = (t.events || []).slice().reverse();
+    if (handle && isOwner() && typeof ensureUsersSubscription === 'function') ensureUsersSubscription();
     const staff = handle ? ticketAssignees() : [];
     document.getElementById('tkDetailBody').innerHTML = `
         <div class="tk-head">${tkPrioChip(t.priority)} ${tkStatusChip(t.status)} <span class="tk-due${late ? ' is-late' : ''}">${escapeHtml(ticketDueText(t, now))}</span></div>
@@ -326,7 +337,8 @@ function showTicketDetail(id, keepTyping) {
             <button type="button" class="adm-link" onclick="openTicketJobs(${jsArg(t.id)})">Open in Jobs &amp; Activities</button></div>` : ''}
         ${handle && !TK_DONE.includes(t.status) ? `<div class="pr-section-title">Assign</div>
             <div class="tk-assign"><select class="form-select" id="tkAssignee" aria-label="PIC"><option value="">— Choose PIC —</option>${staff.map(s => `<option value="${escapeHtml(s.uid)}"${s.uid === t.assigneeUid ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join('')}</select>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="assignTicket(${jsArg(t.id)})">Assign</button></div>` : ''}
+            <button type="button" class="btn btn-secondary btn-sm" onclick="assignTicket(${jsArg(t.id)})">Assign</button></div>
+            ${_tkStaffHint(staff)}` : ''}
         <div class="pr-section-title">Timeline</div>
         ${(mine || handle) && t.status !== 'closed' ? `<div class="tk-comment"><textarea class="form-input form-textarea" id="tkComment" rows="2" maxlength="2000" placeholder="Add a note or an update…">${escapeHtml(typed)}</textarea>
             <button type="button" class="btn btn-secondary btn-sm" onclick="commentTicket(${jsArg(t.id)})"><i class="fas fa-comment" aria-hidden="true"></i> Add note</button></div>` : ''}
