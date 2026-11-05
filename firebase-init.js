@@ -1087,6 +1087,25 @@ window.cloud = {
         try { await st.mod.deleteObject(st.mod.ref(st.s, path)); }
         catch (err) { if (!err || err.code !== 'storage/object-not-found') throw err; }
     },
+    // 2.29.8: PDF attachments of jobs, under projectFiles/<record>/<file>.
+    async uploadProjectFile(path, file, onProgress) {
+        const st = await _storage();
+        const task = st.mod.uploadBytesResumable(st.mod.ref(st.s, path), file, { contentType: 'application/pdf', cacheControl: 'private, max-age=86400' });
+        return new Promise((resolve, reject) => {
+            task.on('state_changed',
+                snap => { if (onProgress && snap.totalBytes) onProgress(snap.bytesTransferred / snap.totalBytes); },
+                reject, () => resolve());
+        });
+    },
+    async projectFileUrl(path) {
+        const st = await _storage();
+        return st.mod.getDownloadURL(st.mod.ref(st.s, path));
+    },
+    async deleteProjectFile(path) {
+        const st = await _storage();
+        try { await st.mod.deleteObject(st.mod.ref(st.s, path)); }
+        catch (err) { if (!err || err.code !== 'storage/object-not-found') throw err; }
+    },
     // ---- Purchase requests (2.9.0) ----
     // authorUid: only that account's own requests (access level 'own').
     async savePurchaseRequest(rec) {

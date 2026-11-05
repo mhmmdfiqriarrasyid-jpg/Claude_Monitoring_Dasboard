@@ -591,6 +591,11 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.29.8:** job bisa diberi **lampiran PDF** (maks 5, 25 MB/file) di Cloud
+  Storage `projectFiles/<job>/<file>` — diunggah saat dipilih (dengan progres),
+  dihapus lagi bila form dibatalkan atau lampiran dibuang lalu disimpan; dibuka
+  di tab baru dari tabel Jobs dan detail project. **Perlu publish ulang
+  `storage.rules`.**
   **2.29.6:** job punya kolom **Field issues / backlog** (`issue`, opsional) —
   tampil merah di tabel, detail project dan profil unit; tile *Field issues* dan
   filter status *With field issues*.

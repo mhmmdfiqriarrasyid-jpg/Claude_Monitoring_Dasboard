@@ -97,6 +97,14 @@ service firebase.storage {
       allow create, update: if (canEdit('projects') || isOwn('projects')) && isImage();
       allow delete: if canEdit('projects') || isOwn('projects');
     }
+    // 2.29.8: PDF attachments of jobs (Projects & Jobs)
+    match /projectFiles/{rec}/{file} {
+      allow read: if canView('projects') || isOwn('projects');
+      allow create, update: if (canEdit('projects') || isOwn('projects'))
+                    && request.resource.contentType == 'application/pdf'
+                    && request.resource.size <= 25 * 1024 * 1024;
+      allow delete: if canEdit('projects') || isOwn('projects');
+    }
     match /photos/damagePhotos/{rec}/{file} {
       allow read: if canView('damage');
       allow create, update: if canEdit('damage') && isImage();

@@ -4687,6 +4687,10 @@
                     <div class="form-group full-width"><span class="form-label">Photos <span class="form-optional">(up to 10)</span> <span class="wh-photo-count" id="otJobPhotoCount"></span></span>
                         <div class="wh-photos" id="otJobPhotoGrid"></div>
                         <input type="file" id="otJobPhotoInput" accept="image/*" multiple hidden onchange="whPhotoAdd('otJob', event)"></div>
+                    <div class="form-group full-width"><span class="form-label">Attachments <span class="form-optional">(PDF — up to 5, max 25 MB each)</span></span>
+                        <div class="pj-files" id="otJobFiles"></div>
+                        <input type="file" id="otJobFileInput" accept="application/pdf,.pdf" multiple hidden onchange="addJobFiles(event)">
+                        <button type="button" class="btn btn-secondary btn-sm" id="otJobFileBtn" onclick="document.getElementById('otJobFileInput').click()"><i class="fas fa-paperclip" aria-hidden="true"></i> Add PDF</button></div>
                 </div>
             </div>
             <div class="form-actions">

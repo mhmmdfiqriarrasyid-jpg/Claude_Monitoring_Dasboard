@@ -83,6 +83,10 @@ const { doc, setDoc } = require('firebase/firestore');
     await check('foto project: akun view TIDAK bisa mengunggah', img(st('pjV'), 'photos/projectPhotos/p1/b'), false);
     await check('foto project: akun view membaca', getBytes(ref(st('pjV'), 'photos/projectPhotos/p1/a')), true);
     await check('foto project: tanpa akses TIDAK bisa membaca', getBytes(ref(st('rd'), 'photos/projectPhotos/p1/a')), false);
+    await check('lampiran PDF job: akun own mengunggah', put(st('pjO'), 'projectFiles/j1/ba.pdf', 'application/pdf'), true);
+    await check('lampiran job: bukan PDF DITOLAK', put(st('pjO'), 'projectFiles/j1/x.html', 'text/html'), false);
+    await check('lampiran job: akun view TIDAK bisa mengunggah', put(st('pjV'), 'projectFiles/j1/b.pdf', 'application/pdf'), false);
+    await check('lampiran job: akun view membaca', getBytes(ref(st('pjV'), 'projectFiles/j1/ba.pdf')), true);
     // 2.26.1: foto yang dokumennya tidak pernah tersimpan dicari lewat daftar folder.
     await check('foto laporan: owner melihat daftar folder laporan', listAll(ref(st('own'), 'photos/workLogPhotos/wl_other')), true);
     await check('foto laporan: editor tim melihat daftar folder laporan', listAll(ref(st('tlE'), 'photos/workLogPhotos/wl_other')), true);

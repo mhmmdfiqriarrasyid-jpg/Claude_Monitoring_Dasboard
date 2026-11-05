@@ -11120,3 +11120,17 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 }
 .pj-row .btn-icon:focus-visible, .pr-items .btn-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pj-row .btn-icon:disabled, .pr-items .btn-icon:disabled { opacity: .45; cursor: not-allowed; }
+
+/* 2.29.8: PDF attachments of jobs */
+.pj-files { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.pj-file { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); font-size: 13px; }
+.pj-file .fa-file-pdf, .pj-filechip .fa-file-pdf { color: var(--danger); }
+.pj-file.is-up { opacity: .75; } .pj-file.is-bad { border-color: var(--danger); }
+.pj-file__name { flex: 1; min-width: 0; padding: 0; border: 0; background: none; font: inherit; color: var(--accent-text); text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pj-file__name:hover { text-decoration: underline; }
+.pj-file > span:first-of-type { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pj-file__x { margin-left: auto; width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text-light); cursor: pointer; font-size: 16px; line-height: 1; }
+.pj-file__x:hover { color: var(--danger); background: var(--danger-bg); border-color: var(--danger); }
+.pj-filechips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.pj-filechip { display: inline-flex; align-items: center; gap: 4px; max-width: 220px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--card); font: inherit; font-size: 11.5px; color: var(--text-body); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pj-filechip:hover { border-color: var(--accent); color: var(--accent-text); }

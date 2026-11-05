@@ -541,7 +541,7 @@ function showProjectDetail(id, keepForm) {
         ${prs.length ? `<div class="pr-section-title">Purchase requests</div><div class="pj-links">${prs.map(r => `<button type="button" class="pj-link" onclick="closeProjectDetail(); navigateTo('purchase'); showPurchaseDetail(${jsArg(r.id)})">${escapeHtml(r.prNo || r.title)} ${prStatusChip(r.status)}</button>`).join('')}</div>` : ''}
         ${canEdit && _pjUncountedJobUnits(p) ? `<div class="pj-notice">${_pjUncountedJobUnits(p)} unit(s) from finished jobs are not counted yet.
             <button type="button" class="btn btn-primary btn-sm" onclick="countProjectJobUnits(${jsArg(p.id)})">Count units from jobs (+${_pjUncountedJobUnits(p)})</button></div>` : ''}
-        ${jobs.length ? `<div class="pr-section-title">Jobs (${jobs.length})</div><div class="pj-links">${jobs.slice(0, 20).map(j => `<div class="pj-jobline"><b>${escapeHtml(j.date || '')}</b> ${escapeHtml(j.category)} — ${escapeHtml((j.description || '').slice(0, 90))}${(j.units || []).length ? ` <span class="adm-sub" style="display:inline">(${escapeHtml(j.units.map(u => u.name).join(', '))})</span>` : ''}${j.issue ? `<div class="pj-job-issue">⚠ ${escapeHtml(j.issue)}</div>` : ''}</div>`).join('')}</div>` : ''}
+        ${jobs.length ? `<div class="pr-section-title">Jobs (${jobs.length})</div><div class="pj-links">${jobs.slice(0, 20).map(j => `<div class="pj-jobline"><b>${escapeHtml(j.date || '')}</b> ${escapeHtml(j.category)} — ${escapeHtml((j.description || '').slice(0, 90))}${(j.units || []).length ? ` <span class="adm-sub" style="display:inline">(${escapeHtml(j.units.map(u => u.name).join(', '))})</span>` : ''}${j.issue ? `<div class="pj-job-issue">⚠ ${escapeHtml(j.issue)}</div>` : ''}${(j.files || []).length ? `<div class="pj-filechips">${jobFilesHtml(j)}</div>` : ''}</div>`).join('')}</div>` : ''}
         ${addForm}
         <div class="pr-section-title">Updates (${ups.length})</div>
         ${ups.length ? `<ol class="pj-updates">${ups.map(u => `<li>
@@ -630,6 +630,67 @@ function toggleProjectTarget(id, kind, i, on) {
 
 // ---- Jobs & Activities ----
 let _jobUnits = [];
+// 2.29.8: PDF attachments. Uploaded as soon as they are picked (with progress);
+// a file picked and then dropped — or the form cancelled — is deleted again.
+const JOB_FILES_MAX = 5, JOB_FILE_BYTES = 25 * 1024 * 1024;
+let _jobFiles = [], _jobFilesRemoved = [], _jobDraftId = '', _jobSaved = false;
+function _fmtSize(n) { return n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`; }
+function renderJobFiles() {
+    const box = document.getElementById('otJobFiles');
+    if (!box) return;
+    box.innerHTML = _jobFiles.map((f, i) => `<span class="pj-file${f.uploading ? ' is-up' : ''}${f.failed ? ' is-bad' : ''}">
+        <i class="fas fa-file-pdf" aria-hidden="true"></i>
+        ${f.uploading || f.failed ? `<span>${escapeHtml(f.name)}</span>` : `<button type="button" class="pj-file__name" onclick="openProjectFile(${jsArg(f.path)})">${escapeHtml(f.name)}</button>`}
+        <span class="adm-sub" style="display:inline">${f.failed ? 'upload failed' : f.uploading ? `${Math.round((f.progress || 0) * 100)}%` : _fmtSize(f.size || 0)}</span>
+        <button type="button" class="pj-file__x" aria-label="Remove ${escapeHtml(f.name)}" title="Remove" onclick="removeJobFile(${i})">&times;</button></span>`).join('');
+    const btn = document.getElementById('otJobFileBtn');
+    if (btn) btn.style.display = _jobFiles.length >= JOB_FILES_MAX ? 'none' : '';
+}
+async function addJobFiles(event) {
+    const input = event && event.target;
+    const files = input ? [...(input.files || [])] : [];
+    if (input) input.value = '';
+    for (const file of files) {
+        if (_jobFiles.length >= JOB_FILES_MAX) { showToast(`Up to ${JOB_FILES_MAX} PDFs per job`, 'warning'); break; }
+        if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) { showToast(`"${file.name}" is not a PDF — skipped`, 'warning'); continue; }
+        if (file.size > JOB_FILE_BYTES) { showToast(`"${file.name}" is larger than 25 MB — skipped`, 'warning'); continue; }
+        if (!window.cloud || !window.cloud.uploadProjectFile) { showToast('Reload the page — an old version is still active', 'warning'); return; }
+        const safe = file.name.replace(/[^\w.\-]+/g, '_').slice(-80);
+        const f = { name: file.name.slice(0, 120), size: file.size, path: `projectFiles/${_jobDraftId}/${Date.now().toString(36)}_${safe}`, isNew: true, uploading: true, progress: 0 };
+        _jobFiles.push(f);
+        renderJobFiles();
+        window.cloud.uploadProjectFile(f.path, file, p => { f.progress = p; renderJobFiles(); })
+            .then(() => { f.uploading = false; renderJobFiles(); })
+            .catch(err => {
+                console.error('[jobs] PDF upload failed:', err);
+                f.uploading = false; f.failed = true; renderJobFiles();
+                showToast(err && /unauthorized|permission/i.test(err.code || '') ? 'PDF attachments need the new storage.rules — publish them first' : `"${f.name}" could not be uploaded`, 'error');
+            });
+    }
+}
+function removeJobFile(i) {
+    const f = _jobFiles[i];
+    if (!f) return;
+    if (f.uploading) { showToast('Wait until it finishes uploading', 'info'); return; }
+    _jobFiles.splice(i, 1);
+    if (f.isNew) { if (!f.failed && window.cloud && window.cloud.deleteProjectFile) window.cloud.deleteProjectFile(f.path).catch(() => {}); }
+    else _jobFilesRemoved.push(f.path);
+    renderJobFiles();
+}
+async function openProjectFile(path) {
+    // The tab opens on the click itself — a phone blocks one opened after a wait.
+    const w = window.open('', '_blank');
+    try {
+        const url = await window.cloud.projectFileUrl(path);
+        if (w) { w.opener = null; w.location.href = url; } else window.location.href = url;
+    } catch (err) {
+        if (w) w.close();
+        showToast(navigator.onLine ? 'The PDF could not be opened' : 'The PDF needs a signal to open', 'error');
+    }
+}
+function jobFilesHtml(j) {
+    return (j.files || []).map(f => `<button type="button" class="pj-filechip" title="Open ${escapeHtml(f.name)}" onclick="event.stopPropagation(); openProjectFile(${jsArg(f.path)})"><i class="fas fa-file-pdf" aria-hidden="true"></i> ${escapeHtml(f.name)}</button>`).join('');
+}
 function getFilteredJobs() {
     const q = (document.getElementById('jobSearch')?.value || '').trim().toLowerCase();
     const per = document.getElementById('jobPeriod')?.value ?? 'week';
@@ -687,6 +748,7 @@ function renderJobsList() {
             <td data-label="Job"><span class="adm-stack"><span class="pj-cat">${escapeHtml(j.category || '')}</span>
                 <span>${escapeHtml(j.description || '')}</span>
                 ${j.issue ? `<span class="pj-job-issue"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i> ${escapeHtml(j.issue)}</span>` : ''}
+                ${(j.files || []).length ? `<span class="pj-filechips">${jobFilesHtml(j)}</span>` : ''}
                 ${j.implement ? `<span class="adm-sub">Implement: ${escapeHtml(j.implement)}${j.appliedImplement ? ' · set on the unit' : ''}</span>` : ''}
                 ${p ? `<button type="button" class="adm-link" onclick="showProjectDetail(${jsArg(p.id)})">Project: ${escapeHtml(p.name)}</button>` : ''}</span></td>
             <td data-label="Units">${(j.units || []).length ? j.units.map(u => `<button type="button" class="badge badge-cat pj-unitlink" onclick="showUnitProfile(${jsArg(u.id)})">${escapeHtml(u.name || u.sn || '')}</button>`).join(' ') : '<span class="adm-muted">—</span>'}${j.company ? `<span class="adm-sub">${escapeHtml(j.company)}</span>` : ''}</td>
@@ -719,6 +781,7 @@ function showAddJobForm(projectId) {
     document.getElementById('otJobStatus').value = 'done';
     document.getElementById('otJobProject').value = projectId || '';
     _jobUnits = [];
+    _jobDraftId = _pjId('job'); _jobFiles = []; _jobFilesRemoved = []; _jobSaved = false; renderJobFiles();
     const p = projectId && projects.find(x => x.id === projectId);
     if (p && p.target && p.target.what) document.getElementById('otJobDesc').value = p.target.what;
     syncJobCategory();
@@ -745,12 +808,18 @@ function editJob(id) {
     document.getElementById('otJobStatus').value = j.status || 'done';
     document.getElementById('otJobProject').value = j.projectId || '';
     _jobUnits = (j.units || []).map(u => ({ ...u }));
+    _jobDraftId = j.id; _jobFiles = (j.files || []).map(f => ({ ...f })); _jobFilesRemoved = []; _jobSaved = false; renderJobFiles();
     syncJobCategory();
     renderJobUnits();
     whPhotoReset('otJob', j.photoIds || []);
     document.getElementById('otJobModal').classList.add('open');
 }
-function closeJobModal() { document.getElementById('otJobModal').classList.remove('open'); }
+function closeJobModal() {
+    // Cancelled: PDFs uploaded in this form go again; ones removed stay (not saved).
+    if (!_jobSaved) _jobFiles.filter(f => f.isNew && !f.failed && !f.uploading).forEach(f => window.cloud && window.cloud.deleteProjectFile && window.cloud.deleteProjectFile(f.path).catch(() => {}));
+    _jobFiles = []; _jobFilesRemoved = [];
+    document.getElementById('otJobModal').classList.remove('open');
+}
 function syncJobCategory() {
     const cat = document.getElementById('otJobCategory').value;
     document.getElementById('otJobImplGroup').style.display = isImplementJob(cat) ? '' : 'none';
@@ -824,6 +893,7 @@ function saveJob(event) {
     if ((document.getElementById('otJobUnitAdd').value || '').trim()) { addJobUnit(); if ((document.getElementById('otJobUnitAdd').value || '').trim()) return; }
     const date = document.getElementById('otJobDate').value || toISODate();
     if (date > toISODate()) { showToast('The date cannot be in the future', 'warning'); return; }
+    if (_jobFiles.some(f => f.uploading)) { showToast('Wait until the PDF finishes uploading', 'warning'); return; }
     const category = document.getElementById('otJobCategory').value;
     const description = (document.getElementById('otJobDesc').value || '').trim();
     if (!category) { showToast('Pick a category', 'warning'); return; }
@@ -833,7 +903,7 @@ function saveJob(event) {
     if (isImplementJob(category) && status === 'done' && !implement) { showToast('Fill in the implement that was installed', 'warning'); return; }
     if (isImplementJob(category) && status === 'done' && !_jobUnits.length) { showToast('Add the unit the implement was fitted to', 'warning'); return; }
     const first = _jobUnits.length ? globalData.find(u => u.id === _jobUnits[0].id) : null;
-    const recId = existing ? existing.id : _pjId('job');
+    const recId = existing ? existing.id : (_jobDraftId || _pjId('job'));
     const rec = {
         ...(existing || {}),
         id: recId, date, category, description, status,
@@ -846,6 +916,7 @@ function saveJob(event) {
         hours: Math.max(0, Math.round((Number(document.getElementById('otJobHours').value) || 0) * 10) / 10) || 0,
         projectId: document.getElementById('otJobProject').value || '',
         photoIds: whPhotoCommit('otJob', recId),
+        files: _jobFiles.filter(f => !f.failed).map(f => ({ name: f.name, path: f.path, size: f.size || 0 })),
         createdByUid: existing ? (existing.createdByUid || '') : myUid(),
         createdBy: existing ? (existing.createdBy || '') : _pjMe(),
         createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),
@@ -873,6 +944,8 @@ function saveJob(event) {
         }
     }
     _jobPush(rec, existing ? 'Job saved' : 'Job logged', existing);
+    _jobFilesRemoved.forEach(path => window.cloud && window.cloud.deleteProjectFile && window.cloud.deleteProjectFile(path).catch(() => {}));
+    _jobSaved = true;
     // Part of a project measured by units: those units count as done.
     const p = rec.projectId && projects.find(x => x.id === rec.projectId);
     if (p && status === 'done' && canEditProjectRecord(p) && p.target) {
@@ -887,6 +960,7 @@ function deleteJob(id) {
     if (!j || !canEditProjectRecord(j)) return;
     if (!confirm(`Delete this job (${j.category}, ${j.date})?${j.appliedImplement ? '\n\nThe implement set on the unit stays as it is.' : ''}`)) return;
     deleteWhPhotos(j.photoIds || [], 'pj');
+    (j.files || []).forEach(f => window.cloud && window.cloud.deleteProjectFile && window.cloud.deleteProjectFile(f.path).catch(() => {}));
     otJobs = otJobs.filter(x => x.id !== id);
     cloudWrite({ action: 'delete', unitName: `[Job] ${j.category}`, field: j.date, before: j.description || '', after: '' },
         cloudCall('deleteOtJob', id), 'Job deleted', () => showToast('Failed to delete the job', 'error'));
