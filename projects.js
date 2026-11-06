@@ -90,7 +90,28 @@ function projectRag(p, today) {
     return 'green';
 }
 function pjRagChip(rag) { return `<span class="pj-rag pj-rag--${rag}"><span class="pj-rag__dot" aria-hidden="true"></span>${escapeHtml(PJ_RAG[rag] || rag)}</span>`; }
+// The day the work reached 100% (2.30.3): the last unit or milestone done, else
+// the last progress update — not the day it was typed in, so work logged
+// after the fact is not counted late.
+function projectFinishedOn(p) {
+    if (!p || (projectProgress(p).pct < 100 && p.status !== 'done')) return '';
+    const t = p.target || {};
+    const items = (t.mode === 'milestones' ? (t.milestones || []) : (t.units || [])).filter(x => x.done && x.doneAt).map(x => x.doneAt);
+    if (t.mode !== 'count' && items.length) return items.sort().pop();
+    const ups = (p.updates || []).filter(u => u.date);
+    const prog = ups.filter(u => u.progress);
+    const last = (prog.length ? prog : ups).map(u => u.date).sort().pop();
+    if (last) return last;
+    return p.doneAt ? _isoOf(new Date(p.doneAt)) : '';
+}
 function pjDueText(p, today) {
+    if (p.status === 'cancelled') return p.end ? `Finish ${p.end}` : 'Cancelled';
+    const fin = projectFinishedOn(p);
+    if (fin) {
+        if (!p.end) return `Finished ${fin}`;
+        const late = Math.round((_pjDay(fin) - _pjDay(p.end)) / 86400000);
+        return late > 0 ? `Finished ${fin} · ${late} day${late === 1 ? '' : 's'} late (due ${p.end})` : `Finished ${fin} · on time (due ${p.end})`;
+    }
     if (!p.end) return 'No finish date';
     const d = Math.round((_pjDay(p.end) - _pjDay(today || toISODate())) / 86400000);
     if (PJ_CLOSED.includes(p.status)) return `Finish ${p.end}`;

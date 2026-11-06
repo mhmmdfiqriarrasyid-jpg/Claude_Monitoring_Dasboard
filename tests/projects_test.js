@@ -244,6 +244,13 @@ const { launch, BASE_URL } = require('./_env');
         // ---- hapus ----
         deleteProject(projects[0].id);
         t('project dihapus', projects.length, 0);
+        // ---- 2.30.3: selesai 100% dihitung dari tanggal kerja, bukan tanggal input ----
+        const fp = { id: 'f1', name: 'Depth Sensor', status: 'progress', start: '2026-09-01', end: '2026-10-06', target: { mode: 'count', count: 52, done: 52, what: 'sensors' },
+            updates: [{ date: '2026-09-10', text: 'a', progress: 'x' }, { date: '2026-09-22', text: 'Complete', progress: 'y' }] };
+        t('100% sebelum due: on time, bukan late', [pjDueText(fp, '2026-11-06'), projectRag(fp, '2026-11-06')], ['Finished 2026-09-22 · on time (due 2026-10-06)', 'green']);
+        const fu = { id: 'f2', status: 'progress', end: '2026-10-06', target: { mode: 'units', units: [{ id: 'a', done: true, doneAt: '2026-10-01' }, { id: 'b', done: true, doneAt: '2026-10-09' }] }, updates: [] };
+        t('mode unit: tanggal unit terakhir, telat 3 hari', pjDueText(fu, '2026-11-06'), 'Finished 2026-10-09 · 3 days late (due 2026-10-06)');
+        t('belum 100%: tetap late', pjDueText({ ...fp, target: { mode: 'count', count: 52, done: 40 } }, '2026-11-06'), '31 days late (due 2026-10-06)');
         return T;
     });
     let pass = 0;
