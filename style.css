@@ -11169,3 +11169,28 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 .pj-ticketlink { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; text-align: left; }
 .pj-jobline .pj-jstatus { margin-left: 4px; }
 .pj-jobline .pj-job-issue { display: block; margin-top: 2px; }
+
+/* 2.30.4 — phone tidy: ticket title, detail buttons, job cards, project dates */
+#tkDetailTitle { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tk-title__no { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--text-secondary); }
+.tk-title__text { font-size: 17px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.pj-timeline__lbl { flex-wrap: wrap; gap: 2px 12px; }
+.pj-timeline__lbl > span:last-child { text-align: right; margin-left: auto; }
+@media (max-width: 700px) {
+    .tk-title__text { font-size: 16px; }
+    /* Many actions: a two-column grid, the main action across the top, nothing cut off. */
+    .form-actions { flex-wrap: wrap; }
+    :is(#tkDetailActions, #pjDetailActions) { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    :is(#tkDetailActions, #pjDetailActions) > .btn { width: 100%; min-width: 0; min-height: 44px; padding: 8px 10px; justify-content: center; white-space: normal; line-height: 1.2; }
+    :is(#tkDetailActions, #pjDetailActions) > .btn-primary:not([onclick^="close"]) { grid-column: 1 / -1; order: -1; }
+    :is(#tkDetailActions, #pjDetailActions) > .btn[onclick^="close"] { grid-column: 1 / -1; order: 99; }
+    .tk-comment { flex-direction: column; align-items: stretch; }
+    .tk-comment .btn { align-self: flex-end; }
+    /* Jobs: the job itself reads left to right across the whole card. */
+    #jobTable td[data-label="Job"] { flex-direction: column; align-items: stretch; gap: 4px; padding-bottom: 8px; border-bottom: 1px solid var(--border-light); margin-bottom: 4px; }
+    #jobTable td[data-label="Job"]::before { content: none; }
+    #jobTable td[data-label="Job"] > .adm-stack { align-items: flex-start; text-align: left; }
+    #jobTable td[data-label="Date"] { order: -1; }
+    .pj-filechip { max-width: 100%; }
+    .pj-jobline { overflow-wrap: anywhere; }
+}

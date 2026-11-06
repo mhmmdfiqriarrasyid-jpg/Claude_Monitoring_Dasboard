@@ -314,7 +314,9 @@ function showTicketDetail(id, keepTyping) {
     modal.dataset.id = id;
     modal.dataset.seen = String(t.updatedAt || 0);
     const handle = canHandleTickets(), mine = ticketMine(t), now = Date.now(), late = ticketOverdue(t, now);
-    document.getElementById('tkDetailTitle').textContent = `${t.no} — ${t.title}`;
+    const titleEl = document.getElementById('tkDetailTitle');
+    titleEl.innerHTML = `<span class="tk-title__no">${escapeHtml(t.no)}</span><span class="tk-title__text">${escapeHtml(t.title)}</span>`;
+    titleEl.title = `${t.no} — ${t.title}`;
     const row = (label, html) => `<div class="profile-row"><span class="profile-row__label">${label}</span><span>${html || '<span class="adm-muted">—</span>'}</span></div>`;
     const jobs = ticketJobs(t);
     const evs = (t.events || []).slice().reverse();
