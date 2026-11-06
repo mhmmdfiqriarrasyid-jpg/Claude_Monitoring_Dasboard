@@ -591,6 +591,12 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.32.0 — Foto & video di Weekly Report**: halaman galeri otomatis —
+  *From the field* (foto paddock Daily Report, paddock & hari berbeda dulu),
+  *Tickets in pictures*, *Projects and jobs in pictures* (foto update project,
+  foto job, video job sebagai gambar diam + tanda play); versi manajer satu
+  galeri *From the field*. Maks 6 per halaman, × untuk mengeluarkan foto,
+  centang per sumber, *Videos inside the PowerPoint* (≤ 60 MB per video).
   **2.31.0 — Weekly Report** (menu baru di Operations, `weeklyreport.js`,
   area akses *Weekly Report: view*). Minggu Sabtu–Jumat, dua versi dari angka
   yang sama: *Team* (Weekly Operation Report: Daily Report, field tickets, jobs,

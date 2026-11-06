@@ -267,7 +267,8 @@ function wrSaveSnapshot(D) {
 // ---- The pages (one model, drawn as HTML and as PowerPoint) ----
 // A page: { kind: 'cover' | 'content', section, title, cols: [[block…], [block…]], widths }
 // Blocks: hero, stats, table, bars, list, panel, numbered, projects, note.
-function buildWeeklyPages(D, aud, notes) {
+function buildWeeklyPages(D, aud, notes, media) {
+    media = media || { daily: [], tickets: [], work: [] };
     const w = D.week, P = [];
     const page = (section, title, cols, widths) => P.push({ kind: 'content', section, title, cols, widths: widths || cols.map(() => 1) });
     const mgmt = aud === 'mgmt';
@@ -307,6 +308,8 @@ function buildWeeklyPages(D, aud, notes) {
                 [[{ type: 'table', head: [{ t: 'Unit' }, { t: 'Days', a: 'right' }, { t: 'Hours', a: 'right' }], rows: t.topUnits.map(u => [{ text: u[0], bold: true }, u[1], _wrH(u[2])]) }],
                  [{ type: 'list', title: 'Issues raised', items: t.issues.map(i => ({ text: i.text, sub: `${i.date} · ${i.who}`, tone: 'bad' })), empty: 'No issue written in the reports' }]], [1, 1.25]);
         }
+        if (media.daily.length) { const g = _wrGallery(media.daily), pads = new Set(g.items.map(i => i.cap.split(' · ')[0]));
+            page('Daily Report', `From the field: ${_wrPlural(g.items.length, 'photo')} from ${_wrPlural(pads.size, 'paddock')}`, [[g]]); }
         // Field tickets
         page('Field tickets', tk.open ? `${_wrPlural(tk.open, 'ticket')} still open${tk.overdue ? `, ${tk.overdue} past the due time` : ''}; ${tk.resolved} resolved this week` : `No open tickets; ${tk.resolved} resolved this week`,
             [[{ type: 'stats', small: true, per: 3, items: [{ value: tk.newIn, label: `raised (last week ${tk.newPrev})` }, { value: tk.resolved, label: `resolved · ${tk.resolved ? Math.round(100 * tk.slaMet / tk.resolved) + '% on time' : 'none'}` },
@@ -315,12 +318,16 @@ function buildWeeklyPages(D, aud, notes) {
              [{ type: 'table', head: [{ t: 'Ticket' }, { t: 'Problem' }, { t: 'Prio' }, { t: 'PIC' }, { t: 'Days', a: 'right' }],
                 rows: tk.openList.slice(0, 8).map(x => [{ text: x.no, bold: true }, x.title + (x.units ? ` (${x.units})` : ''), { text: (TK_PRIORITY[x.priority] || {}).label || '', tone: x.priority === 'high' ? 'bad' : x.priority === 'medium' ? 'warn' : 'muted', bold: true },
                     x.pic || { text: 'no PIC', tone: 'warn' }, { text: String(x.age), tone: x.late ? 'bad' : '', bold: x.late }]), more: Math.max(0, tk.openList.length - 8), empty: 'No open tickets' }]], [1, 2]);
+        if (media.tickets.length) { const g = _wrGallery(media.tickets), n = new Set(g.items.map(i => i.cap.split(' · ')[0])).size;
+            page('Field tickets', `Tickets in pictures: ${_wrPlural(n, 'ticket')} from the field`, [[g]]); }
         // Jobs
         if (jb.on) page('Jobs & activities', jb.total ? `${_wrPlural(jb.total, 'job')} outside the Daily Report${jb.byCategory[0] ? `, mostly ${jb.byCategory[0][0].toLowerCase()}` : ''}; ${jb.backlog.length} field issues waiting` : 'No jobs logged outside the Daily Report this week',
             [[{ type: 'table', head: [{ t: 'Day' }, { t: 'Category' }, { t: 'What was done' }, { t: 'Units' }, { t: 'Status' }],
                 rows: jb.list.slice(0, 8).map(j => [_wrDate(j.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' }), { text: j.category, tone: 'good', bold: true }, j.what + (j.ticket ? ` · ${j.ticket}` : ''), { text: j.units || '—', tone: 'muted' },
                     { text: JOB_STATUSES[j.status] || j.status, tone: j.status === 'done' ? 'good' : 'warn' }]), more: Math.max(0, jb.list.length - 8), empty: 'No jobs this week' },
               ...(jb.backlog.length ? [{ type: 'list', title: 'Field issues / backlog', items: jb.backlog.slice(0, 3).map(b => ({ text: b.issue.split('\n')[0], sub: `${b.category} · ${b.units || '—'}${b.ticket ? ' · ' + b.ticket : ''}`, tone: 'warn' })) }] : [])]]);
+        if (media.work.length) { const g = _wrGallery(media.work), v = g.items.filter(i => i.kind === 'video').length;
+            page('Jobs & activities', `Projects and jobs in pictures${v ? ` — ${_wrPlural(v, 'video')} included` : ''}`, [[g]]); }
         // Fleet and support
         const blocks = [['Damage & repairs', [['New faults', dm.newIn], ['Fixed', dm.fixedIn], ['Open now', dm.open], [`Open > ${WR_STALE_DAYS} days`, dm.stale]]],
             ['Precision health', [['Tractors all Good', _wrFmtPct(pr.pct)], ['Heavy devices Good', _wrFmtPct(pr.heavyPct)], ['In breakdown now', pr.breakdownNow]]]];
@@ -380,6 +387,11 @@ function buildWeeklyPages(D, aud, notes) {
               { type: 'table', head: [{ t: 'Open ticket' }, { t: 'Prio' }, { t: 'PIC' }, { t: 'Days', a: 'right' }], rows: tk.openList.slice(0, 5).map(x => [`${x.no} · ${x.title}`, (TK_PRIORITY[x.priority] || {}).label || '', x.pic || '—', { text: String(x.age), tone: x.late ? 'bad' : '' }]), empty: 'No open tickets' }],
              [{ type: 'bars', title: 'Jobs by category', items: jb.byCategory.slice(0, 6) }, { type: 'kv', title: 'Jobs', items: [['Logged', jb.total], ['Done', jb.done], ['Field issues waiting', jb.backlog.length]] }]], [1.5, 1]);
     }
+    if (mgmt) {
+        const mix = [], a = media.work.slice(), b = media.tickets.slice();
+        while (a.length || b.length) { if (a.length) mix.push(a.shift()); if (b.length) mix.push(b.shift()); }
+        if (mix.length) { const g = _wrGallery(mix); page('From the field', `From the field: ${_wrPlural(g.items.length, 'picture')} of this week's work and tickets`, [[g]]); }
+    }
     // Both: projects and next week.
     if (D.projects.length) {
         const need = D.projects.filter(p => p.rag === 'red' || p.rag === 'amber');
@@ -417,6 +429,7 @@ function _wrBlockHtml(b) {
     case 'kv': return `<div class="wr-kv"><div class="wr-kv__t">${_wrE(b.title)}</div>${b.items.map(i => `<div class="wr-kv__r"><span>${_wrE(i[0])}</span><b>${_wrE(_wrNum(i[1]))}</b></div>`).join('')}</div>`;
     case 'panel': return `<div class="wr-panel"><div class="wr-panel__t">${_wrE(b.title)}</div><ul>${b.items.map(i => `<li>${_wrE(i)}</li>`).join('')}</ul></div>`;
     case 'note': return `<div class="wr-note">${_wrE(b.text)}</div>`;
+    case 'gallery': return _wrGalleryHtml(b);
     case 'numbered': return `<ol class="wr-num">${b.items.map((s, i) => `<li><span>${String(i + 1).padStart(2, '0')}</span>${_wrE(s)}</li>`).join('')}</ol>`;
     case 'projects': return `<div class="wr-pj">${b.items.map(p => { const tone = p.rag === 'red' ? 'bad' : p.rag === 'amber' ? 'warn' : 'good'; return `<div class="wr-pj__row">
         <div class="wr-pj__name"><i class="wr-dot wr-bg-${tone}"></i><div><b>${_wrE(p.name)}</b><div class="wr-sub">${_wrE([p.type, p.pt, p.pic].filter(Boolean).join(' · '))}</div></div></div>
@@ -451,7 +464,14 @@ function renderWeeklyReportView() {
     if (notes && document.activeElement !== notes) notes.value = _wrNotes;
     const D = buildWeeklyReport(_wrWeek, { preparedBy: (currentUserDoc && currentUserDoc.displayName) || (currentUser && currentUser.email ? shortActor(currentUser.email) : '') });
     wrSaveSnapshot(D);
-    _wrPages = buildWeeklyPages(D, _wrAud, _wrNotes);
+    const refs = wrMediaRefs(D);
+    const media = { daily: _wrShow.daily ? refs.daily : [], tickets: _wrShow.tickets ? refs.tickets : [], work: _wrShow.work ? refs.work : [] };
+    // Load what a gallery can show, plus a few spares for pictures taken out or failed.
+    [media.daily, media.tickets, media.work].forEach(list => wrLoadMedia(list.filter(r => !_wrHidden.has(r.key)).slice(0, WR_GALLERY_MAX + 3)));
+    _wrPages = buildWeeklyPages(D, _wrAud, _wrNotes, media);
+    const hid = document.getElementById('wrHiddenBtn');
+    if (hid) { hid.hidden = !_wrHidden.size; hid.textContent = `Show ${_wrHidden.size} left-out picture${_wrHidden.size === 1 ? '' : 's'} again`; }
+    ['daily', 'tickets', 'work'].forEach(k => { const el = document.getElementById('wrShow_' + k); if (el) el.checked = _wrShow[k]; });
     window._wrLast = D;
     document.getElementById('wrPages').innerHTML = weeklyPagesHtml(_wrPages, D, _wrAud);
     const c = document.getElementById('wrCount');
@@ -465,13 +485,20 @@ function _wrFileName(ext) {
     const D = window._wrLast;
     return `${_wrAud === 'mgmt' ? 'Precision_Health_Update' : 'Weekly_Operation_Report'}_W${D ? D.week.no : ''}_${D ? D.week.from : ''}.${ext}`;
 }
-function printWeeklyReport() {
+async function _wrWaitMedia() {
+    for (let i = 0; i < 60 && wrMediaPending(); i++) await new Promise(r => setTimeout(r, 500));
+    clearTimeout(_wrMediaT);
+    renderWeeklyReportView();
+}
+async function printWeeklyReport() {
+    if (wrMediaPending()) { showToast('Loading the pictures first…', 'info'); await _wrWaitMedia(); }
     if (!_wrPages.length) renderWeeklyReportView();
     const old = document.title;
     document.title = _wrFileName('pdf').replace(/\.pdf$/, '');
     let box = document.getElementById('wrPrint');
     if (!box) { box = document.createElement('div'); box.id = 'wrPrint'; document.body.appendChild(box); }
     box.innerHTML = document.getElementById('wrPages').innerHTML;
+    await Promise.all([...box.querySelectorAll('img')].map(im => im.decode ? im.decode().catch(() => {}) : null));
     document.body.classList.add('wr-printing');
     const done = () => { document.body.classList.remove('wr-printing'); document.title = old; window.removeEventListener('afterprint', done); };
     window.addEventListener('afterprint', done);
@@ -526,17 +553,63 @@ function _wrBlockH(b, wdt) {
     case 'panel': return 0.5 + b.items.length * 0.28;
     case 'note': return 0.35;
     case 'numbered': return b.items.length * 0.72;
+    case 'gallery': return 3.75;
     case 'projects': return b.items.length * 0.72 + (b.more ? 0.25 : 0);
     }
     return 0.5;
 }
+// Where each picture of a gallery sits on a slide (inches).
+function _wrGalleryGeom(n, x, y, wdt, hgt) {
+    const cols = n <= 3 ? Math.max(1, n) : 3, rows = n <= 3 ? 1 : 2, gap = 0.25, cap = 0.48;
+    const w = (wdt - gap * (cols - 1)) / cols, rowH = (hgt - gap * (rows - 1)) / rows;
+    const ph = Math.min(rowH - cap, w * 0.75);
+    return Array.from({ length: n }, (_, i) => ({ x: x + (i % cols) * (w + gap), y: y + Math.floor(i / cols) * (ph + cap + gap), w, h: ph, cap }));
+}
+// A picture cut to the box's shape (centre crop), as a JPEG data URL.
+async function _wrCrop(src, aspect, fmt) {
+    if (!src) return '';
+    try {
+        const blob = await (await fetch(src)).blob();
+        const bmp = await createImageBitmap(blob);
+        let sw = bmp.width, sh = bmp.height;
+        if (sw / sh > aspect) sw = Math.round(sh * aspect); else sh = Math.round(sw / aspect);
+        const outW = Math.min(1200, sw), outH = Math.round(outW / aspect);
+        const c = document.createElement('canvas'); c.width = outW; c.height = outH;
+        c.getContext('2d').drawImage(bmp, (bmp.width - sw) / 2, (bmp.height - sh) / 2, sw, sh, 0, 0, outW, outH);
+        return fmt === 'png' ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.82);
+    } catch (_) { return ''; }
+}
+async function _wrVideoData(url, size) {
+    if (!url || (size && size > WR_VIDEO_EMBED_MAX)) return '';
+    try {
+        const blob = await (await fetch(url)).blob();
+        if (blob.size > WR_VIDEO_EMBED_MAX) return '';
+        return await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result)); fr.onerror = rej; fr.readAsDataURL(blob); });
+    } catch (_) { return ''; }
+}
 async function downloadWeeklyPptx() {
+    if (wrMediaPending()) { showToast('Loading the pictures first…', 'info'); await _wrWaitMedia(); }
     if (!_wrPages.length) renderWeeklyReportView();
     const D = window._wrLast;
     let PptxGenJS;
     try { PptxGenJS = await loadPptxGen(); } catch (e) { showToast(navigator.onLine ? 'PowerPoint could not be prepared' : 'PowerPoint needs a signal the first time', 'error'); return; }
     showToast('Preparing the PowerPoint…', 'info');
     const logo = await _wrLogoData();
+    // Pictures: cut to their boxes first (and the videos read, when asked for).
+    const prep = new Map();
+    let videos = 0, videosLeft = 0;
+    for (const pg of _wrPages) for (const col of (pg.cols || [])) for (const b of col) if (b.type === 'gallery') {
+        const geom = _wrGalleryGeom(b.items.length, 0.5, 1.35, 9.0, 3.75);
+        for (let i = 0; i < b.items.length; i++) {
+            const it = b.items[i], g = geom[i], asp = g.w / g.h;
+            if (it.kind === 'video') {
+                const cover = await _wrCrop(it.poster, asp, 'png');
+                let data = '';
+                if (_wrEmbedVideo) { data = await _wrVideoData(it.src, it.size); if (data) videos++; else videosLeft++; }
+                prep.set(it.key, { img: cover, video: data });
+            } else prep.set(it.key, { img: await _wrCrop(it.src, asp) });
+        }
+    }
     const C = WR_COL, pres = new PptxGenJS();
     pres.layout = 'LAYOUT_16x9';
     pres.title = `${_wrAud === 'mgmt' ? 'Precision Health Weekly Update' : 'Weekly Operation Report'} — Week ${D.week.no}`;
@@ -614,6 +687,28 @@ async function downloadWeeklyPptx() {
             tx(s, b.items.map((t, k) => ({ text: t, options: { bullet: true, breakLine: k < b.items.length - 1 } })), { x: x + 0.2, y: yy + 0.42, w: wdt - 0.4, h: h - 0.5, fontSize: 10.5 });
             break; }
         case 'note': tx(s, b.text, { x, y: yy, w: wdt, h: 0.3, fontSize: 9.5, color: C.slate }); break;
+        case 'gallery':
+            _wrGalleryGeom(b.items.length, x, yy, wdt, 3.75).forEach((g, i) => {
+                const it = b.items[i], pr = prep.get(it.key) || {};
+                if (it.kind === 'video' && pr.video) {
+                    const data = pr.video.replace(/^data:/, ''), extn = ((it.name || '').split('.').pop() || 'mp4').toLowerCase();
+                    const media = { type: 'video', data, extn: extn === 'mov' ? 'mov' : extn, x: g.x, y: g.y, w: g.w, h: g.h };
+                    if (pr.img) media.cover = pr.img;
+                    s.addMedia(media);
+                } else if (pr.img) s.addImage({ data: pr.img, x: g.x, y: g.y, w: g.w, h: g.h });
+                else {
+                    s.addShape(pres.ShapeType.rect, { x: g.x, y: g.y, w: g.w, h: g.h, fill: { color: C.tint }, line: { color: C.tint, width: 0 } });
+                    tx(s, it.kind === 'video' ? 'Video — open it in the dashboard' : 'Photo in the dashboard', { x: g.x, y: g.y, w: g.w, h: g.h, fontSize: 10, color: C.slate, align: 'center', valign: 'middle' });
+                }
+                if (it.kind === 'video' && !pr.video) {
+                    const d = Math.min(g.w, g.h) * 0.28;
+                    s.addShape(pres.ShapeType.ellipse, { x: g.x + (g.w - d) / 2, y: g.y + (g.h - d) / 2, w: d, h: d, fill: { color: '000000', transparency: 45 }, line: { color: 'FFFFFF', width: 1.5 } });
+                    s.addShape(pres.ShapeType.triangle, { x: g.x + (g.w - d * 0.38) / 2 + d * 0.05, y: g.y + (g.h - d * 0.42) / 2, w: d * 0.38, h: d * 0.42, rotate: 90, fill: { color: 'FFFFFF' }, line: { color: 'FFFFFF', width: 0 } });
+                }
+                tx(s, it.cap, { x: g.x, y: g.y + g.h + 0.05, w: g.w, h: 0.22, fontSize: 9.5, bold: true, fit: 'shrink' });
+                tx(s, it.sub, { x: g.x, y: g.y + g.h + 0.26, w: g.w, h: 0.2, fontSize: 8.5, color: C.slate, fit: 'shrink' });
+            });
+            break;
         case 'numbered':
             b.items.forEach((it, i) => { const cy = yy + i * 0.72;
                 tx(s, String(i + 1).padStart(2, '0'), { x, y: cy, w: 0.8, h: 0.6, fontFace: head, fontSize: 28, bold: true, color: C.cane });
@@ -665,6 +760,129 @@ async function downloadWeeklyPptx() {
     });
     try {
         await pres.writeFile({ fileName: _wrFileName('pptx') });
-        showToast('PowerPoint downloaded', 'success');
+        showToast(videosLeft ? `PowerPoint downloaded — ${videosLeft} video(s) too large or not reachable, shown as a still` : 'PowerPoint downloaded', videosLeft ? 'warning' : 'success');
     } catch (e) { showToast('PowerPoint could not be saved', 'error'); }
+}
+
+// ---- Photos and videos (2.32.0) ----
+// The week's pictures, picked automatically: Daily Report paddock photos (one
+// per paddock line, different paddocks and days first), ticket photos, project
+// update photos, job photos and job videos. A picture can be taken out of the
+// report (× on screen). Videos show a still with a play mark; the PowerPoint
+// can carry the video itself.
+const WR_GALLERY_MAX = 6;
+const WR_VIDEO_EMBED_MAX = 60 * 1024 * 1024;   // per video, for the PowerPoint
+const _wrMedia = new Map();     // key → { state: 'loading'|'ok'|'fail', src, poster }
+const _wrHidden = new Set();
+let _wrShow = { daily: true, tickets: true, work: true }, _wrEmbedVideo = false, _wrMediaT = null;
+
+function wrMediaRefs(D) {
+    const w = D.week, out = { daily: [], tickets: [], work: [] };
+    const dayName = iso => _wrDate(iso).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' });
+    // Daily Report: each paddock line with photos; spread over paddocks and days.
+    if (D.team.on && typeof loadWorkLogPhotos === 'function') {
+        const cand = [];
+        workLogs.filter(l => _wrIn(l.date, w) && isSubmitted(l) && workLogPhotoCount(l) > 0).forEach(l => {
+            const jobs = l.place === 'office' ? [] : workLogJobs(l);
+            const counted = jobs.some(j => Number(j.photoCount) > 0);
+            const who = (l.memberName || '').split(' ')[0];
+            if (counted) jobs.forEach((j, k) => { if (Number(j.photoCount) > 0) cand.push({ key: `wl:${l.id}:${k}`, kind: 'photo', paddock: j.paddock || '', date: l.date,
+                cap: [j.paddock, j.jobType].filter(Boolean).join(' · ') || 'Daily Report', sub: `${who} · ${dayName(l.date)}${Number(j.photoCount) > 1 ? ` · ${j.photoCount} photos` : ''}`,
+                load: async () => { const ph = await loadWorkLogPhotos(l.id); return workLogPhotoSplit(l, ph).jobs[k][0] || ''; } }); });
+            else cand.push({ key: `wl:${l.id}:g`, kind: 'photo', paddock: (jobs[0] || {}).paddock || l.place || '', date: l.date,
+                cap: l.place === 'office' ? `Office · ${(l.task || '').slice(0, 40)}` : ([(jobs[0] || {}).paddock, (jobs[0] || {}).jobType].filter(Boolean).join(' · ') || 'Daily Report'),
+                sub: `${who} · ${dayName(l.date)}`, load: async () => (await loadWorkLogPhotos(l.id))[0] || '' });
+        });
+        // Spread out: each pick prefers a paddock and a day not shown yet.
+        const seenP = new Set(), seenD = new Set(), left = cand.sort((a, b) => a.date.localeCompare(b.date) || a.key.localeCompare(b.key));
+        while (left.length && out.daily.length < 18) {
+            let best = 0, score = -1;
+            left.forEach((c, i) => { const sc = (seenP.has(c.paddock) ? 0 : 2) + (seenD.has(c.date) ? 0 : 1); if (sc > score) { score = sc; best = i; } });
+            const c = left.splice(best, 1)[0];
+            seenP.add(c.paddock); seenD.add(c.date); out.daily.push(c);
+        }
+    }
+    // Tickets raised or handled this week, with their photos.
+    (typeof tickets !== 'undefined' ? tickets : []).filter(t => (t.photoIds || []).length && (_wrInMs(t.reportedAt, w) || (t.events || []).some(e => _wrInMs(e.at, w))))
+        .sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.priority] ?? 1) - ({ high: 0, medium: 1, low: 2 }[b.priority] ?? 1))
+        .forEach(t => t.photoIds.slice(0, 2).forEach((id, k) => out.tickets.push({ key: `tk:${id}`, kind: 'photo', cap: `${t.no} · ${t.title}`,
+            sub: `${(TK_PRIORITY[t.priority] || {}).label || ''} · ${(TK_STATUSES[t.status] || {}).label || t.status}${t.photoIds.length > 1 ? ` · photo ${k + 1} of ${t.photoIds.length}` : ''}`,
+            load: () => loadWhPhoto(id, 'tk') })));
+    // Projects (updates this week) and jobs (this week): photos and videos.
+    if (canViewView('projects')) {
+        (typeof projects !== 'undefined' ? projects : []).forEach(p => (p.updates || []).filter(u => _wrIn(u.date, w) && (u.photoIds || []).length).forEach(u =>
+            u.photoIds.slice(0, 2).forEach(id => out.work.push({ key: `pj:${id}`, kind: 'photo', cap: p.name || 'Project', sub: `${dayName(u.date)} · ${(u.text || '').slice(0, 60)}`, load: () => loadWhPhoto(id, 'pj') }))));
+        (typeof otJobs !== 'undefined' ? otJobs : []).filter(j => _wrIn(j.date, w)).forEach(j => {
+            const sub = `${dayName(j.date)}${(j.units || []).length ? ' · ' + j.units.map(u => u.name).join(', ') : ''}`;
+            (j.files || []).filter(f => /^video\//.test(f.type || '')).slice(0, 2).forEach(f => out.work.push({ key: `vid:${f.path}`, kind: 'video', cap: `${j.category} · ${j.description || ''}`.slice(0, 80), sub: `${sub} · video`,
+                name: f.name, size: f.size || 0, type: f.type, load: async () => window.cloud && window.cloud.projectFileUrl ? window.cloud.projectFileUrl(f.path) : '' }));
+            (j.photoIds || []).slice(0, 2).forEach(id => out.work.push({ key: `pj:${id}`, kind: 'photo', cap: `${j.category} · ${j.description || ''}`.slice(0, 80), sub, load: () => loadWhPhoto(id, 'pj') }));
+        });
+        out.work.sort((a, b) => (a.kind === 'video' ? 0 : 1) - (b.kind === 'video' ? 0 : 1));
+    }
+    return out;
+}
+// What a gallery shows now: not taken out, not failed; at most six.
+function _wrVisible(refs) { return refs.filter(r => !_wrHidden.has(r.key) && (_wrMedia.get(r.key) || {}).state !== 'fail').slice(0, WR_GALLERY_MAX); }
+function wrLoadMedia(refs) {
+    const todo = refs.filter(r => !_wrMedia.has(r.key));
+    if (!todo.length) return Promise.resolve();
+    todo.forEach(r => _wrMedia.set(r.key, { state: 'loading' }));
+    let i = 0;
+    const one = async () => {
+        while (i < todo.length) {
+            const r = todo[i++];
+            try {
+                const src = await r.load();
+                const m = { state: src ? 'ok' : 'fail', src: src || '' };
+                if (src && r.kind === 'video') m.poster = await _wrVideoPoster(src);
+                _wrMedia.set(r.key, m);
+            } catch (_) { _wrMedia.set(r.key, { state: 'fail' }); }
+            clearTimeout(_wrMediaT);
+            _wrMediaT = setTimeout(() => { if (currentView === 'weeklyReport') renderWeeklyReportView(); }, 250);
+        }
+    };
+    return Promise.all([one(), one(), one()]);
+}
+function wrMediaPending() { return [..._wrMedia.values()].some(m => m.state === 'loading'); }
+// A still from the video, a second in (or its first frame).
+function _wrVideoPoster(url) {
+    return new Promise(resolve => {
+        const v = document.createElement('video');
+        let done = false;
+        const end = s => { if (done) return; done = true; try { v.removeAttribute('src'); v.load(); } catch (_) {} resolve(s || ''); };
+        v.crossOrigin = 'anonymous'; v.muted = true; v.preload = 'auto'; v.playsInline = true;
+        v.onloadedmetadata = () => { try { v.currentTime = Math.min(1, (v.duration || 2) / 2); } catch (_) { end(''); } };
+        v.onseeked = () => {
+            try {
+                const c = document.createElement('canvas'), k = Math.min(1, 960 / (v.videoWidth || 960));
+                c.width = Math.round((v.videoWidth || 640) * k); c.height = Math.round((v.videoHeight || 360) * k);
+                c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+                end(c.toDataURL('image/jpeg', 0.8));
+            } catch (_) { end(''); }
+        };
+        v.onerror = () => end('');
+        setTimeout(() => end(''), 15000);
+        v.src = url;
+    });
+}
+function hideWeeklyMedia(key) { _wrHidden.add(key); renderWeeklyReportView(); }
+function resetWeeklyMedia() { _wrHidden.clear(); renderWeeklyReportView(); }
+function setWeeklyMediaShow(part, on) { _wrShow[part] = !!on; renderWeeklyReportView(); }
+function setWeeklyEmbedVideo(on) { _wrEmbedVideo = !!on; }
+
+// One gallery block from a list of references.
+function _wrGallery(refs) {
+    return { type: 'gallery', items: _wrVisible(refs).map(r => { const m = _wrMedia.get(r.key) || { state: 'loading' };
+        return { key: r.key, kind: r.kind, cap: r.cap, sub: r.sub, state: m.state, src: m.src || '', poster: m.poster || '', name: r.name || '', size: r.size || 0, type: r.type || '' }; }) };
+}
+function _wrGalleryHtml(b) {
+    if (!b.items.length) return '<div class="wr-empty">No pictures this week</div>';
+    return `<div class="wr-gal wr-gal--${Math.min(b.items.length, WR_GALLERY_MAX)}">${b.items.map(it => {
+        const img = it.kind === 'video' ? it.poster : it.src;
+        const pic = it.state === 'loading' ? '<div class="wr-gal__ph">Loading…</div>'
+            : img ? `<img src="${_wrE(img)}" alt="" loading="eager">` : `<div class="wr-gal__ph"><i class="fas fa-film" aria-hidden="true"></i></div>`;
+        return `<figure class="wr-gal__item"><div class="wr-gal__pic">${pic}${it.kind === 'video' ? '<span class="wr-gal__play" aria-hidden="true"></span>' : ''}
+            <button type="button" class="wr-gal__x wr-noprint" title="Leave this out of the report" aria-label="Leave this picture out" onclick="hideWeeklyMedia(${jsArg(it.key)})">&times;</button></div>
+            <figcaption><b>${_wrE(it.cap)}</b><span>${_wrE(it.sub)}</span></figcaption></figure>`; }).join('')}</div>`;
 }

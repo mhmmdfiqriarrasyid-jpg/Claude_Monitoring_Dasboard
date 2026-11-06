@@ -2285,6 +2285,14 @@
             </div>
             <label class="wr-controls__notes"><span class="form-label">Next week — your own points <span class="form-optional">(one per line, optional)</span></span>
                 <textarea class="form-input form-textarea" id="wrNotes" rows="2" maxlength="600" placeholder="e.g. Stage-2 radio goods arrive Tuesday" oninput="setWeeklyReportNotes(this.value)"></textarea></label>
+            <div class="wr-controls__media">
+                <span class="form-label">Pictures</span>
+                <label class="notif-check"><input type="checkbox" id="wrShow_daily" checked onchange="setWeeklyMediaShow('daily', this.checked)"> Daily Report</label>
+                <label class="notif-check"><input type="checkbox" id="wrShow_tickets" checked onchange="setWeeklyMediaShow('tickets', this.checked)"> Tickets</label>
+                <label class="notif-check"><input type="checkbox" id="wrShow_work" checked onchange="setWeeklyMediaShow('work', this.checked)"> Projects &amp; jobs</label>
+                <label class="notif-check" title="The PowerPoint carries the videos themselves (up to 60 MB each); without it they show as a still"><input type="checkbox" id="wrEmbedVideo" onchange="setWeeklyEmbedVideo(this.checked)"> Videos inside the PowerPoint</label>
+                <button type="button" class="adm-link" id="wrHiddenBtn" hidden onclick="resetWeeklyMedia()"></button>
+            </div>
             <span class="adm-count" id="wrCount"></span>
         </div>
         <div class="wr-pages" id="wrPages"></div>

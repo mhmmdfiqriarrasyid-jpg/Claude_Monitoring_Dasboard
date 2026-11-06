@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.31.0';
+const APP_VERSION = 'v2.32.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
