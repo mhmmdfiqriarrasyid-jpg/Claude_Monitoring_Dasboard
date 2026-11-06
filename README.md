@@ -591,6 +591,15 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.31.0 — Weekly Report** (menu baru di Operations, `weeklyreport.js`,
+  area akses *Weekly Report: view*). Minggu Sabtu–Jumat, dua versi dari angka
+  yang sama: *Team* (Weekly Operation Report: Daily Report, field tickets, jobs,
+  fleet & support, projects, next week) dan *Manager / head* (Precision Health
+  Weekly Update: precision health vs target 95%, scorecard, licenses, faults
+  > 14 hari, tickets & jobs, projects). *Save as PDF* (satu lembar 16:9 per
+  halaman) dan *Download PowerPoint* (`vendor/pptxgen.bundle.js`, dimuat saat
+  dibutuhkan). Angka precision disimpan per minggu di perangkat untuk
+  perbandingan minggu lalu. Tanpa perubahan rules.
   **2.30.1 — Ticket ↔ Jobs & Activities**: job menyimpan `ticketId` dan
   menampilkan label ticket di tabel Jobs; form Job punya *Part of ticket*;
   job tertaut yang diset Done menawarkan Resolve ticket; field issue di job

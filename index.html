@@ -242,6 +242,10 @@
                 <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"></path><path d="M7 15h4"></path><path d="M7 11h8"></path><path d="M7 7h11"></path></svg>
                 <span class="nav__text">Projects &amp; Jobs</span>
             </button>
+            <button type="button" class="nav__link" data-view="weeklyReport" onclick="navigateTo('weeklyReport')">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 9h18"></path><path d="M8 14v3"></path><path d="M12 12v5"></path><path d="M16 15v2"></path></svg>
+                <span class="nav__text">Weekly Report</span>
+            </button>
             <button type="button" class="nav__link" data-view="learning" onclick="navigateTo('learning')">
                 <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z"></path><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"></path></svg>
                 <span class="nav__text">Learning Center</span>
@@ -2262,6 +2266,30 @@
     </div><!-- /viewPurchase -->
 
     <!-- ==================== TICKETS (2.30.0) ==================== -->
+    <div id="viewWeeklyReport" class="view" style="display:none;">
+        <div class="page-head">
+            <div class="page-head__text">
+                <h1 class="page-head__title">Weekly Report</h1>
+                <span class="page-head__sub">Saturday to Friday, from the Daily Report, tickets, jobs, units and projects</span>
+            </div>
+            <div class="page-head__actions">
+                <button type="button" class="btn btn-secondary" onclick="printWeeklyReport()"><i class="fas fa-file-pdf" aria-hidden="true"></i> Save as PDF</button>
+                <button type="button" class="btn btn-primary" onclick="downloadWeeklyPptx()"><i class="fas fa-file-powerpoint" aria-hidden="true"></i> Download PowerPoint</button>
+            </div>
+        </div>
+        <div class="wr-controls">
+            <label class="adm-select wr-controls__week"><span class="adm-select__label">Week</span><select id="wrWeek" onchange="setWeeklyReportWeek(this.value)"></select></label>
+            <div class="wr-auds" role="tablist" aria-label="Version">
+                <button type="button" class="wr-aud" data-aud="team" role="tab" onclick="setWeeklyReportAudience('team')"><b>Team</b><span>Weekly Operation Report</span></button>
+                <button type="button" class="wr-aud" data-aud="mgmt" role="tab" onclick="setWeeklyReportAudience('mgmt')"><b>Manager / head</b><span>Precision Health Weekly Update</span></button>
+            </div>
+            <label class="wr-controls__notes"><span class="form-label">Next week — your own points <span class="form-optional">(one per line, optional)</span></span>
+                <textarea class="form-input form-textarea" id="wrNotes" rows="2" maxlength="600" placeholder="e.g. Stage-2 radio goods arrive Tuesday" oninput="setWeeklyReportNotes(this.value)"></textarea></label>
+            <span class="adm-count" id="wrCount"></span>
+        </div>
+        <div class="wr-pages" id="wrPages"></div>
+    </div>
+
     <div id="viewTickets" class="view" style="display:none;">
         <div class="page-head">
             <div class="page-head__text">
@@ -4796,6 +4824,7 @@
 <script src="script.js"></script>
 <script src="projects.js"></script>
 <script src="tickets.js"></script>
+<script src="weeklyreport.js"></script>
 <script type="module" src="firebase-init.js"></script>
 </body>
 </html>

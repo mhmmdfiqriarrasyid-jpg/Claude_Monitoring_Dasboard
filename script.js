@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.30.4';
+const APP_VERSION = 'v2.31.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -1886,6 +1886,8 @@ function navigateTo(view) {
     if (whView) whView.style.display = (view === 'warehouse') ? 'block' : 'none';
     const prView = document.getElementById('viewPurchase');
     if (prView) prView.style.display = (view === 'purchase') ? 'block' : 'none';
+    const wrView = document.getElementById('viewWeeklyReport');
+    if (wrView) wrView.style.display = (view === 'weeklyReport') ? 'block' : 'none';
     const tkView = document.getElementById('viewTickets');
     if (tkView) tkView.style.display = (view === 'tickets') ? 'block' : 'none';
     const pjView = document.getElementById('viewProjects');
@@ -1971,6 +1973,7 @@ function navigateTo(view) {
     if (view === 'purchase') renderPurchaseView();
     if (view === 'projects' && typeof renderProjectsView === 'function') renderProjectsView();
     if (view === 'tickets' && typeof renderTicketsView === 'function') renderTicketsView();
+    if (view === 'weeklyReport' && typeof renderWeeklyReportView === 'function') renderWeeklyReportView();
     if (view === 'learning') renderLearningView();
 
     if (view === 'inspection') renderInspectionView();
@@ -14729,6 +14732,9 @@ const ACCESS_AREAS = [
     { key: 'inspectionApprove', label: 'Inspection Approval', levels: ['none', 'edit'] },
     // Read-only by nature: it shows what other areas already allow, nothing more.
     { key: 'leader',       label: 'Decision Inbox', levels: ['none', 'view'] },
+    // 2.31.0: the weekly report (team and manager versions). It shows only
+    // what the account can already read in the other areas.
+    { key: 'weeklyReport', label: 'Weekly Report', levels: ['none', 'view'] },
     { key: 'history',      label: 'History',        levels: ['none', 'view'] }
 ];
 
@@ -14746,14 +14752,15 @@ const VIEW_AREAS = {
     purchase:     ['purchase'],
     projects:     ['projects'],
     inspection:   ['inspection', 'inspectionApprove'],
-    leader:       ['leader']
+    leader:       ['leader'],
+    weeklyReport: ['weeklyReport']
 };
 const GATED_VIEWS = Object.keys(VIEW_AREAS);
 // Every area that holds data (i.e. everything except the read-only audit log).
 // 'leader' is view-only and 'history' is the audit log: neither is a place
 // where data is edited, so neither counts towards "can this person edit".
 const DATA_AREAS = ACCESS_AREAS
-    .filter(a => a.key !== 'history' && a.key !== 'leader')
+    .filter(a => a.key !== 'history' && a.key !== 'leader' && a.key !== 'weeklyReport')
     .map(a => a.key);
 // area key → <body> dataset flag used by the editonly--* CSS rules.
 const RO_FLAGS = {
