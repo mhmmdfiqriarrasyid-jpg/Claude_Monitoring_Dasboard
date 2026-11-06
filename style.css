@@ -11328,3 +11328,6 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 .wr-gal--4 .wr-gal__pic, .wr-gal--5 .wr-gal__pic, .wr-gal--6 .wr-gal__pic { aspect-ratio: auto; height: 13.5cqw; }
 .wr-gal--1 .wr-gal__pic, .wr-gal--2 .wr-gal__pic, .wr-gal--3 .wr-gal__pic { aspect-ratio: auto; height: 30cqw; }
 .wr-gal--3 .wr-gal__pic { height: 22cqw; }
+/* 2.32.1 — receipt correction */
+#prReceiveDeleteBtn { margin-right: auto; }
+.pr-receipt__edit { align-self: flex-start; font-size: 12.5px; display: inline-flex; gap: 5px; align-items: center; }

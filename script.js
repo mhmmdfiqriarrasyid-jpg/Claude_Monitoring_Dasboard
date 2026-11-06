@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.32.0';
+const APP_VERSION = 'v2.32.1';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -20391,6 +20391,7 @@ function showPurchaseDetail(id) {
                 <div class="adm-sub">${(x.items || []).map(ri => { const it = items.find(i => i.id === ri.itemId); return `${escapeHtml(it ? it.spec : 'item')} × ${ri.qty}`; }).join(' · ')}</div>
                 ${x.note ? `<div class="adm-sub">${escapeHtml(x.note)}</div>` : ''}
                 ${whPhotoChip(x.photoIds, 'receipt ' + (x.date || ''), 'pr')}
+                ${canManagePurchase() && r.status !== 'cancelled' ? `<button type="button" class="adm-link pr-receipt__edit" onclick="showPurchaseReceive(${jsArg(r.id)}, ${jsArg(x.id)})"><i class="fas fa-pen" aria-hidden="true"></i> Edit receipt</button>` : ''}
             </div>`).join('')}</div>` : ''}
         ${hist.length ? `<div class="pr-section-title">History</div>
             <ol class="pr-timeline">${hist.map(h => `<li>${prStatusChip(h.status)} <span class="adm-sub">${escapeHtml(formatUserTime(h.at))}${h.by ? ' · ' + escapeHtml(shortActor(h.by)) : ''}${h.note ? ' · ' + escapeHtml(h.note) : ''}</span></li>`).join('')}</ol>` : ''}`;
@@ -20508,26 +20509,52 @@ function recordPurchasePO(id) {
 }
 
 // ---- Receiving: quantities, photos, and the same goods into Warehouse ----
-function showPurchaseReceive(id) {
+// 2.32.1: a receipt already saved can be opened again (receiptId) to correct
+// its quantities, date, note and photos, or be deleted; the items' received
+// totals, the request's status and the Warehouse stock-in rows follow.
+function _prReceiptStockRows(rc) {
+    const ids = new Set((rc && rc.stockIds) || []);
+    return (typeof stockLedger !== 'undefined' ? stockLedger : []).filter(s => ids.has(s.id));
+}
+function showPurchaseReceive(id, receiptId) {
     const r = purchaseRequests.find(x => x.id === id);
     if (!r || !canManagePurchase()) return;
+    const rc = receiptId ? (r.receipts || []).find(x => x.id === receiptId) : null;
+    if (receiptId && !rc) return;
     closePurchaseDetail();
     document.getElementById('prReceiveForm').reset();
     document.getElementById('prReceiveId').value = r.id;
-    document.getElementById('prReceiveDate').value = toISODate();
-    document.getElementById('prReceiveTitle').textContent = `Receive goods — ${r.prNo || r.title}`;
+    document.getElementById('prReceiveReceiptId').value = rc ? rc.id : '';
+    document.getElementById('prReceiveDate').value = rc ? (rc.date || toISODate()) : toISODate();
+    document.getElementById('prReceiveTitle').textContent = `${rc ? 'Edit receipt' : 'Receive goods'} — ${r.prNo || r.title}`;
+    document.getElementById('prReceiveQtyTitle').textContent = rc ? `Quantity in this receipt (${rc.date || ''})` : 'Quantity received now';
+    document.getElementById('prReceiveSubmitLabel').textContent = rc ? 'Save changes' : 'Record receipt';
+    document.getElementById('prReceiveDeleteBtn').hidden = !rc;
     const toStock = document.getElementById('prReceiveToStock');
     toStock.checked = hasAccess('warehouse', 'edit');
     toStock.disabled = !hasAccess('warehouse', 'edit');
+    // Editing: the stock rows of this receipt follow it, nothing to choose.
+    document.getElementById('prReceiveToStockRow').hidden = !!rc;
+    const hint = document.getElementById('prReceiveEditHint');
+    const rows = _prReceiptStockRows(rc);
+    hint.hidden = !rc;
+    if (rc) hint.textContent = (rc.stockIds || []).length
+        ? (hasAccess('warehouse', 'edit') ? `The ${rc.stockIds.length} Warehouse stock-in row(s) of this receipt are corrected too.` : 'This receipt is in Warehouse stock — its stock rows need Warehouse edit access to follow; ask someone who has it.')
+        : 'This receipt was not recorded in Warehouse stock.';
     if (typeof populateWarehouseFilters === 'function') populateWarehouseFilters();
+    if (rc && rows[0]) document.getElementById('prReceiveLocation').value = rows[0].location || '';
+    document.getElementById('prReceiveNote').value = rc ? (rc.note || '') : '';
     document.getElementById('prReceiveItems').innerHTML = (r.items || []).map((it, i) => {
-        const left = Math.max(0, (Number(it.qty) || 0) - (Number(it.receivedQty) || 0));
+        const mine = rc ? ((rc.items || []).find(x => x.itemId === it.id) || {}).qty || 0 : 0;
+        const others = (Number(it.receivedQty) || 0) - mine;
+        const left = Math.max(0, (Number(it.qty) || 0) - others);
+        const val = rc ? mine : left;
         return `<div class="pr-recv">
-            <span class="pr-recv__spec">${escapeHtml(it.spec || '')}<span class="adm-sub">Ordered ${Number(it.qty) || 0} ${escapeHtml(it.uom || '')} · received ${Number(it.receivedQty) || 0}</span></span>
-            <input class="form-input" type="number" min="0" max="${left}" step="1" value="${left}" data-item="${escapeHtml(it.id)}" aria-label="Received now: ${escapeHtml(it.spec || 'item ' + (i + 1))}" ${left ? '' : 'disabled'}>
+            <span class="pr-recv__spec">${escapeHtml(it.spec || '')}<span class="adm-sub">Ordered ${Number(it.qty) || 0} ${escapeHtml(it.uom || '')} · received ${rc ? `${others} in other receipts` : Number(it.receivedQty) || 0}</span></span>
+            <input class="form-input" type="number" min="0" max="${left}" step="1" value="${val}" data-item="${escapeHtml(it.id)}" data-was="${mine}" aria-label="${rc ? 'In this receipt' : 'Received now'}: ${escapeHtml(it.spec || 'item ' + (i + 1))}" ${left ? '' : 'disabled'}>
         </div>`;
     }).join('');
-    whPhotoReset('prReceipt', []);
+    whPhotoReset('prReceipt', rc ? (rc.photoIds || []) : []);
     document.getElementById('prReceiveModal').classList.add('open');
 }
 function closePurchaseReceive() { document.getElementById('prReceiveModal').classList.remove('open'); }
@@ -20539,6 +20566,8 @@ function savePurchaseReceipt(event) {
     if (!r || !canManagePurchase()) return;
     const date = document.getElementById('prReceiveDate').value || toISODate();
     if (date > toISODate()) { showToast('The receipt date cannot be in the future', 'warning'); return; }
+    const receiptEditId = document.getElementById('prReceiveReceiptId').value;
+    if (receiptEditId) { _savePurchaseReceiptEdit(r, receiptEditId, date); return; }
     const got = [];
     for (const inp of document.querySelectorAll('#prReceiveItems input[data-item]')) {
         const it = (r.items || []).find(x => x.id === inp.dataset.item);
@@ -20559,7 +20588,7 @@ function savePurchaseReceipt(event) {
         got.forEach(({ it, q }) => {
             const rec = { id: generateStockId(), date, txnType: 'IN', itemName: it.spec, qty: q, location,
                 unitId: '', unitName: '', note: `${r.prNo ? 'PR ' + r.prNo : 'Purchase request'}${r.poNo ? ' · PO ' + r.poNo : ''}`,
-                photoIds: [], purchaseId: r.id, createdAt: Date.now(), updatedAt: Date.now() };
+                photoIds: [], purchaseId: r.id, purchaseItemId: it.id, createdAt: Date.now(), updatedAt: Date.now() };
             stockIds.push(rec.id);
             cloudWrite({ action: 'create', unitName: `[Inventory] ${rec.itemName}`, field: 'Stock in', before: '', after: `IN ${q} (purchase)` },
                 cloudCall('saveStockItem', rec), null,
@@ -20576,6 +20605,79 @@ function savePurchaseReceipt(event) {
         by: (currentUser && currentUser.email) || '', at: Date.now() };
     const next = _prWithStatus({ ...r, items, receipts: [...(r.receipts || []), receipt] }, all ? 'received' : 'partial');
     _prPush(next, all ? 'All goods received' : 'Partial receipt recorded', r);
+    closePurchaseReceive();
+    showPurchaseDetail(r.id);
+}
+
+// The request after a receipt changed: items' received totals and the status.
+function _prAfterReceipts(r, receipts) {
+    const items = (r.items || []).map(it => ({ ...it, receivedQty: receipts.reduce((n, rc) => n + (((rc.items || []).find(x => x.itemId === it.id) || {}).qty || 0), 0) }));
+    const got = items.reduce((n, it) => n + (Number(it.receivedQty) || 0), 0);
+    const all = items.length && items.every(it => (Number(it.receivedQty) || 0) >= (Number(it.qty) || 0));
+    const status = all ? 'received' : got ? 'partial' : (r.poNo || r.poDate ? 'po' : 'approved');
+    return _prWithStatus({ ...r, items, receipts }, status, status !== r.status ? 'receipt corrected' : '');
+}
+// Stock-in rows of a receipt follow its new quantities (changed, removed or added).
+function _prSyncReceiptStock(r, rc, got, date, location) {
+    if (!(rc.stockIds || []).length || !hasAccess('warehouse', 'edit')) return rc.stockIds || [];
+    const rows = _prReceiptStockRows(rc);
+    const keep = [];
+    (r.items || []).forEach(it => {
+        const q = (got.find(g => g.it.id === it.id) || {}).q || 0;
+        const row = rows.find(s => s.purchaseItemId === it.id && !keep.includes(s.id)) || rows.find(s => !s.purchaseItemId && s.itemName === it.spec && !keep.includes(s.id));
+        if (row && q > 0) {
+            keep.push(row.id);
+            if (row.qty !== q || row.date !== date || (location != null && row.location !== location)) {
+                const rec = { ...row, qty: q, date, location: location != null ? location : row.location, updatedAt: Date.now() };
+                cloudWrite({ action: 'update', unitName: `[Inventory] ${rec.itemName}`, field: 'Stock in', before: `IN ${row.qty} (${row.date})`, after: `IN ${q} (${date}) — receipt corrected` },
+                    cloudCall('saveStockItem', rec), null, err => { console.error('[purchase] stock fix failed:', err); showToast('Receipt saved, but the Warehouse stock was not corrected', 'warning'); });
+            }
+        } else if (row && !q) {
+            cloudWrite({ action: 'delete', unitName: `[Inventory] ${row.itemName}`, field: 'Stock transaction', before: `IN ${row.qty}`, after: '' },
+                cloudCall('deleteStockItem', row.id), null, err => { console.error('[purchase] stock delete failed:', err); showToast('Receipt saved, but a Warehouse stock row was not removed', 'warning'); });
+        } else if (!row && q > 0) {
+            const rec = { id: generateStockId(), date, txnType: 'IN', itemName: it.spec, qty: q, location: location || '',
+                unitId: '', unitName: '', note: `${r.prNo ? 'PR ' + r.prNo : 'Purchase request'}${r.poNo ? ' · PO ' + r.poNo : ''}`,
+                photoIds: [], purchaseId: r.id, purchaseItemId: it.id, createdAt: Date.now(), updatedAt: Date.now() };
+            keep.push(rec.id);
+            cloudWrite({ action: 'create', unitName: `[Inventory] ${rec.itemName}`, field: 'Stock in', before: '', after: `IN ${q} (purchase, receipt corrected)` },
+                cloudCall('saveStockItem', rec), null, err => { console.error('[purchase] stock in failed:', err); showToast('Receipt saved, but the Warehouse stock was not recorded', 'warning'); });
+        }
+    });
+    return keep;
+}
+function _savePurchaseReceiptEdit(r, receiptId, date) {
+    const rc = (r.receipts || []).find(x => x.id === receiptId);
+    if (!rc) return;
+    const got = [];
+    for (const inp of document.querySelectorAll('#prReceiveItems input[data-item]')) {
+        const it = (r.items || []).find(x => x.id === inp.dataset.item);
+        if (!it) continue;
+        const q = parseInt(inp.value, 10) || 0;
+        const max = Number(inp.max) || 0;
+        if (q < 0 || q > max) { showToast(`"${it.spec}": at most ${max} in this receipt (ordered ${Number(it.qty) || 0})`, 'warning'); return; }
+        if (q > 0) got.push({ it, q });
+    }
+    if (!got.length) { deletePurchaseReceipt(); return; }
+    const location = (document.getElementById('prReceiveLocation').value || '').trim();
+    const stockIds = _prSyncReceiptStock(r, rc, got, date, location);
+    const fixed = { ...rc, date, items: got.map(g => ({ itemId: g.it.id, qty: g.q })), note: (document.getElementById('prReceiveNote').value || '').trim(),
+        photoIds: whPhotoCommit('prReceipt', `${r.id}__${rc.id}`), stockIds, editedBy: (currentUser && currentUser.email) || '', editedAt: Date.now() };
+    const next = _prAfterReceipts(r, (r.receipts || []).map(x => x.id === rc.id ? fixed : x));
+    _prPush(next, 'Receipt corrected', r);
+    closePurchaseReceive();
+    showPurchaseDetail(r.id);
+}
+function deletePurchaseReceipt() {
+    const r = purchaseRequests.find(x => x.id === document.getElementById('prReceiveId').value);
+    const rc = r && (r.receipts || []).find(x => x.id === document.getElementById('prReceiveReceiptId').value);
+    if (!rc || !canManagePurchase()) return;
+    const stock = (rc.stockIds || []).length;
+    if (!confirm(`Delete the receipt of ${rc.date}? Its quantities go back to "still due"${stock ? ` and its ${stock} Warehouse stock-in row(s) are removed` : ''}.`)) return;
+    _prSyncReceiptStock(r, rc, [], rc.date, null);
+    deleteWhPhotos(rc.photoIds || [], 'pr');
+    const next = _prAfterReceipts(r, (r.receipts || []).filter(x => x.id !== rc.id));
+    _prPush(next, 'Receipt deleted', r);
     closePurchaseReceive();
     showPurchaseDetail(r.id);
 }
