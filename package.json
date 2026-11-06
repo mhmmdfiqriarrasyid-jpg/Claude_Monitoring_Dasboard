@@ -1,0 +1,13 @@
+{
+  "name": "ot-monitoring-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Operation Technology Dashboard — monitoring armada traktor, alat berat dan perangkat presisi",
+  "scripts": {
+    "test": "node tests/run.js",
+    "serve": "python3 -m http.server 8765"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}

@@ -1,0 +1,51 @@
+# Runs the whole test suite on every push and pull request, so a change that
+# breaks something is caught on GitHub before anyone opens the dashboard.
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    name: App tests (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run all suites
+        run: npm test
+        env:
+          PORT: 8797
+
+  rules:
+    name: Security rules (emulators)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install emulator tools
+        run: npm i --no-save --no-audit --no-fund --legacy-peer-deps firebase-tools@13 @firebase/rules-unit-testing@3 firebase@10
+      - name: Firestore rules
+        run: npx firebase emulators:exec --only firestore --project demo-ot "node tests/rules_test.js"
+      - name: Storage rules
+        run: npx firebase emulators:exec --only firestore,storage --project demo-ot "node tests/storage_rules_test.js"
