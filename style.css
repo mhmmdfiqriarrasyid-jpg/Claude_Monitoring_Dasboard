@@ -11331,3 +11331,13 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 /* 2.32.1 — receipt correction */
 #prReceiveDeleteBtn { margin-right: auto; }
 .pr-receipt__edit { align-self: flex-start; font-size: 12.5px; display: inline-flex; gap: 5px; align-items: center; }
+/* 2.32.3 — Daily Report card on a phone: View, Edit and Delete as one row of
+   equal buttons, each with its label (they overlapped: the View button sat
+   outside the actions grid and squeezed it). */
+@media (max-width: 700px) {
+    #workLogTable td.col-actions .wl-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; width: 100%; }
+    #workLogTable td.col-actions .wl-actions .row-actions { display: contents; }
+    #workLogTable td.col-actions .wl-actions .row-lock { display: flex; align-items: center; justify-content: center; min-height: 52px; color: var(--text-light); }
+    #workLogTable td.col-actions .wl-view-btn { width: auto; height: auto; min-height: 52px; flex-direction: column; gap: 2px; padding: 6px 4px; font-size: 12px; }
+    #workLogTable td.col-actions .wl-view-btn::after { content: attr(title); display: block; }
+}
