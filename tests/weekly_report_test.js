@@ -26,7 +26,7 @@ const path = require('path');
         t('kerusakan: 3 baru, 1 selesai, 4 terbuka, 1 > 14 hari', [D.damage.newIn, D.damage.fixedIn, D.damage.open, D.damage.stale, D.damage.faults[0].unit], [3, 1, 4, 1, 'GGTR103G']);
         t('lisensi: 3 habis ≤ 30 hari, stok SF-RTK 1', [D.licenses.soon, D.licenses.stock.find(s => s[0] === 'SF-RTK')[1]], [3, 1]);
         t('project merah di urutan pertama', [D.projects[0].name, D.projects[0].rag], ['RTK radio repeater stage 2', 'red']);
-        t('next week otomatis', D.nextWeek[0].startsWith('Close 2 urgent or overdue tickets'), true);
+        t('next week otomatis (ticket mendesak dulu; jumlahnya ikut waktu karena SLA)', /^Close \d+ urgent or overdue tickets?: TK-261102-0800AB/.test(D.nextWeek[0]), true);
         const team = buildWeeklyPages(D, 'team', 'Barang radio datang Selasa');
         const mgmt = buildWeeklyPages(D, 'mgmt', '');
         t('tanpa galeri (media kosong): versi tim', team.map(p => p.section || 'Cover'), ['Cover', 'Summary', 'Daily Report', 'Daily Report', 'Daily Report', 'Field tickets', 'Jobs & activities', 'Fleet & support', 'Projects', 'Next week']);
