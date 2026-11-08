@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.32.3';
+const APP_VERSION = 'v2.33.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -5121,6 +5121,19 @@ function renderDashAttention(data, now) {
             issue: u.breakdownReason || openDamage(u) || '—', status: u.status || 'Breakdown',
             since: ms == null ? '—' : dashSpan(ms) });
     });
+    // 2.33.0: a precision device fault keeps the unit running — it is listed
+    // here (after the breakdowns) for as long as its record is open.
+    const today0 = toISODate();
+    const devSeen = new Set();
+    open.filter(r => isDeviceDamageType(r.damageType)).sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))).forEach(r => {
+        const u = liveUnitFor(r);
+        if (!u || !isGood(u.status) || devSeen.has(u.id) || !data.includes(u)) return;
+        devSeen.add(u.id);
+        const days = Math.max(0, daysFromTo(r.date, today0));
+        rows.push({ u, kind: 'device', order: 1, rank: -days,
+            issue: `${r.component || r.damageType}: ${r.description || '-'}`, status: 'Device',
+            since: `${days} day${days === 1 ? '' : 's'}` });
+    });
     // Same selection as renderLicenseAlerts: licences running out in the next
     // 30 days. Expired ones stay in the Units table only.
     data.filter(u => !isHeavy(u)).forEach(u => ['gps', 'display'].forEach(kind => {
@@ -5133,7 +5146,7 @@ function renderDashAttention(data, now) {
         const type = kind === 'gps' ? u.gpsLicense : u.licenseDisplay;
         const days = Math.abs(s.daysLeft);
         const n = `${days} day${days === 1 ? '' : 's'}`;
-        rows.push({ u, kind: 'license', order: 1, rank: s.daysLeft,
+        rows.push({ u, kind: 'license', order: 2, rank: s.daysLeft,
             issue: `${what} license${type ? ' ' + type : ''} expires`,
             status: 'License', since: s.daysLeft === 0 ? 'today' : `in ${n}` });
     }));
@@ -5157,8 +5170,8 @@ function renderDashAttention(data, now) {
                         onclick="showUnitProfile(${jsArg(r.u.id)})">${escapeHtml(r.u.name || r.u.sn || 'Unnamed')}</button></td>
                     <td class="dash-attn__issue">${escapeHtml(r.issue)}<span class="dash-attn__site-inline"> · ${site(r)}</span></td>
                     <td class="dash-attn__site">${site(r)}</td>
-                    <td class="dash-attn__status"><span class="dash-chip dash-chip--${r.kind === 'down' ? 'bad' : 'info'}">${
-                        r.kind === 'down' ? DASH_ICON_STOP : DASH_ICON_KEY}${escapeHtml(r.status)}</span></td>
+                    <td class="dash-attn__status"><span class="dash-chip dash-chip--${r.kind === 'down' ? 'bad' : r.kind === 'device' ? 'warn' : 'info'}">${
+                        r.kind === 'down' ? DASH_ICON_STOP : r.kind === 'device' ? '' : DASH_ICON_KEY}${escapeHtml(r.status)}</span></td>
                     <td class="dash-attn__since dash-num">${escapeHtml(r.since)}</td>
                 </tr>`).join('')}
             </tbody>
@@ -9903,6 +9916,7 @@ function renderDamageKpis(rows) {
 }
 
 function renderDamageTable() {
+    renderPrecisionFixBanner();
     populateDamageTypeOptions();
     closeDamageMenu();
     updateDamageCount();
@@ -10544,15 +10558,76 @@ function isDeviceDamageType(t) {
     const v = String(t || '').trim().toLowerCase();
     return v === 'device precision' || /^devices?\b/.test(v);
 }
+// 2.33.0: a precision device that fails (Device Precision, or a device type
+// of its own) never stops the unit: it puts its own component into Breakdown
+// when the unit has one for it (GPS, Display, Steering, JDLink / Camera AI,
+// Telematic Box, Switch Limiter, Rotary Lamp), and otherwise (Processor,
+// antenna, a part with no field) changes nothing on the unit — the open record
+// shows in Needs attention as a device fault. Only the other damage types
+// (Mechanical, Software, …) put the unit's status into Breakdown.
 function damageTargetField(damageType, component, unit) {
-    if (unit && isHeavy(unit)) {
-        if (!isDeviceDamageType(damageType)) return null;
-        const h = heavyComponentField(component);
-        if (h) return h;
-        return componentUnitField(component) ? DAMAGE_DRIVES_NOTHING : null;
-    }
+    if (!isDeviceDamageType(damageType)) return null;
+    if (unit && isHeavy(unit)) return heavyComponentField(component) || DAMAGE_DRIVES_NOTHING;
     const compField = componentUnitField(component);
-    return (isDeviceDamageType(damageType) && compField) ? compField : null;
+    return compField && COMPONENT_KEYS.includes(compField) ? compField : DAMAGE_DRIVES_NOTHING;
+}
+
+// ---- 2.33.0: units still in Breakdown only because of a precision device ----
+// Recorded before 2.33.0, a device fault on a part with no field of its own
+// put the whole unit into Breakdown. Found here, and set right on request:
+// the device record moves to its component (or to nothing), and the unit runs
+// again unless another open record (a mechanical one) still holds it.
+function _precisionHoldsStatus(rec, unit, closing) {
+    if (!rec || (rec.resolved && !closing) || !unit || !isDeviceDamageType(rec.damageType) || !isBrokenValue(unit.status)) return false;
+    if (Object.prototype.hasOwnProperty.call(rec, 'drove')) return rec.drove === 'status';
+    return unit.breakdownDamageId === rec.id || clean(unit.breakdownReason) === clean(damageBreakdownReason(rec));
+}
+function precisionBreakdownUnits() {
+    const out = new Map();
+    (globalDamages || []).forEach(d => {
+        const u = liveUnitFor(d);
+        if (_precisionHoldsStatus(d, u)) { if (!out.has(u.id)) out.set(u.id, { unit: u, recs: [] }); out.get(u.id).recs.push(d); }
+    });
+    return [...out.values()];
+}
+function fixPrecisionBreakdowns() {
+    if (!requireEdit('damage')) return;
+    const list = precisionBreakdownUnits();
+    if (!list.length) return;
+    if (!confirm(`${list.length} unit(s) are in Breakdown only because a precision device failed:\n\n${list.slice(0, 12).map(x => `• ${x.unit.name || x.unit.sn} — ${x.recs[0].component || x.recs[0].damageType}`).join('\n')}${list.length > 12 ? '\n…' : ''}\n\nSet them running again? The device damage stays open, on its component where the unit has one.`)) return;
+    let running = 0;
+    list.forEach(({ unit, recs }) => {
+        const ids = new Set(recs.map(r => r.id));
+        recs.forEach(r => { r.drove = ''; });
+        // Another open record (mechanical, …) still holding the status keeps it.
+        const others = openDamageHolders(unit, 'status', ids);
+        if (others.length) {
+            if (!unit.breakdownDamageId || ids.has(unit.breakdownDamageId)) _applyDamageLink(unit.id, { breakdownReason: damageBreakdownReason(others[0]), breakdownDamageId: others[0].id });
+        } else if (_applyDamageLink(unit.id, { status: 'Good', breakdownDamageId: null })) running++;
+        recs.forEach(r => {
+            const live = globalData.find(u => u.id === unit.id);
+            const plan = planDamageHold(r, live);
+            if (plan.fields) _applyDamageLink(unit.id, plan.fields);
+            r.drove = plan.fields || plan.outcome === 'joined' ? plan.field : '';
+            r.updatedAt = Date.now();
+            cloudPushDamage(r);
+        });
+    });
+    saveDamages();
+    showToast(`${running} unit(s) running again — the device faults stay open`, 'success');
+    renderDamageTable();
+    if (typeof updateDashboard === 'function' && currentView === 'dashboard') updateDashboard();
+}
+function renderPrecisionFixBanner() {
+    const host = document.getElementById('dmgPrecisionFix');
+    if (!host) return;
+    const list = hasAccess('damage', 'edit') ? precisionBreakdownUnits() : [];
+    host.hidden = !list.length;
+    if (!list.length) { host.innerHTML = ''; return; }
+    host.innerHTML = `<i class="fas fa-circle-info" aria-hidden="true"></i>
+        <span><b>${list.length} unit${list.length === 1 ? ' is' : 's are'} in Breakdown only because a precision device failed</b>
+        (${escapeHtml(list.slice(0, 4).map(x => x.unit.name || x.unit.sn).join(', '))}${list.length > 4 ? '…' : ''}). A device fault no longer stops the unit.</span>
+        <button type="button" class="btn btn-primary btn-sm" onclick="fixPrecisionBreakdowns()">Set them running</button>`;
 }
 
 // ---- Damage ↔ unit status ----
@@ -10813,6 +10888,8 @@ function _releaseOnClose(rec, unit, excludeIds) {
     if (Object.prototype.hasOwnProperty.call(rec, 'drove')) {
         return rec.drove ? releaseDamageOnUnit(rec, unit, rec.drove, excludeIds) : nothing;
     }
+    // A pre-2.33.0 device record that put the whole unit down gives the status back.
+    if (_precisionHoldsStatus(rec, unit, true)) return releaseDamageOnUnit(rec, unit, 'status', excludeIds);
     const t = damageTargetField(rec.damageType, rec.component, unit);
     if (t === DAMAGE_DRIVES_NOTHING || isGood(t ? unit[t] : unit.status)) return nothing;
     const skip = new Set(excludeIds || []);
@@ -13320,12 +13397,12 @@ function renderDamageComponentOptions() {
 
 // The hint under "Set status Breakdown" names the components of the chosen
 // unit's group. Tractor (or no unit): today's wording.
-const DAMAGE_HINT_TRACTOR = 'Device Precision → the related component (GPS/Display/Steering/JDLink); other types → unit status.';
+const DAMAGE_HINT_TRACTOR = 'Device Precision → only the related component (GPS/Display/Steering/JDLink) goes Breakdown; the unit keeps running. Other types (Mechanical, Software…) → unit status Breakdown.';
 function renderDamageHint(unit) {
     const el = document.getElementById('dmgBreakdownHint');
     if (!el) return;
     el.textContent = (unit && isHeavy(unit))
-        ? 'Device Precision → the related component (Camera AI/Telematic Box/Switch Limiter/Rotary Lamp); other types → unit status.'
+        ? 'Device Precision → only the related component (Camera AI/Telematic Box/Switch Limiter/Rotary Lamp) goes Breakdown; the unit keeps running. Other types (Mechanical…) → unit status Breakdown.'
         : DAMAGE_HINT_TRACTOR;
 }
 

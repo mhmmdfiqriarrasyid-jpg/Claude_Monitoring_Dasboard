@@ -11341,3 +11341,10 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
     #workLogTable td.col-actions .wl-view-btn { width: auto; height: auto; min-height: 52px; flex-direction: column; gap: 2px; padding: 6px 4px; font-size: 12px; }
     #workLogTable td.col-actions .wl-view-btn::after { content: attr(title); display: block; }
 }
+/* 2.33.0 — precision device faults */
+#viewDashboard .dash-chip--warn { background: var(--warning-bg, #FFFAEB); color: var(--warning, #B54708); }
+.dmg-precision-fix { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 14px; padding: 12px 14px; border-radius: 12px;
+    background: var(--info-bg, #EFF8FF); color: var(--text); border: 1px solid var(--border); font-size: 13.5px; }
+.dmg-precision-fix > i { color: var(--info, #175CD3); }
+.dmg-precision-fix > span { flex: 1 1 260px; }
+.dmg-precision-fix[hidden] { display: none; }

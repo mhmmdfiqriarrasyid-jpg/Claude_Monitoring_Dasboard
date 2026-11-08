@@ -591,6 +591,12 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.33.0 — Kerusakan alat precision tidak membuat unit Breakdown**: tipe
+  *Device Precision* hanya membuat komponennya Breakdown (GPS/Display/Steering/
+  JDLink, Camera AI/Telematic Box/Switch Limiter/Rotary Lamp); bagian tanpa
+  kolom (Processor, antena …) tidak mengubah unit dan tampil di Needs attention
+  sebagai *Device*. Mekanis/Software tetap membuat status Breakdown. Data lama:
+  banner di halaman Damage *Set them running*. Tanpa perubahan rules.
   **2.32.1 — Koreksi penerimaan barang (PR)**: tiap penerimaan di detail PR
   punya *Edit receipt* — jumlah, tanggal, catatan, foto bisa dikoreksi, atau
   *Delete this receipt*. Jumlah diterima per item, status (po / partial /
