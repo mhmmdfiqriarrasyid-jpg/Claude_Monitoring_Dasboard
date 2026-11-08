@@ -591,6 +591,9 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.33.1 — Banner Warehouse menyebut yang ditolak** (bukan selalu "devices
+  dan stockItems"), hilang sendiri saat bacaan berhasil lagi, dan tercatat di
+  Error log.
   **2.33.0 — Kerusakan alat precision tidak membuat unit Breakdown**: tipe
   *Device Precision* hanya membuat komponennya Breakdown (GPS/Display/Steering/
   JDLink, Camera AI/Telematic Box/Switch Limiter/Rotary Lamp); bagian tanpa

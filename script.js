@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.33.0';
+const APP_VERSION = 'v2.33.1';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -13601,7 +13601,7 @@ function initCloudSync() {
                 applyCloudDevicesSnapshot,
                 err => {
                     console.warn('[cloud] devices offline:', err && err.code);
-                    if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+                    if (err && err.code === 'permission-denied') showWarehouseRulesBanner('reading devices');
                 }
             );
         }
@@ -13610,7 +13610,7 @@ function initCloudSync() {
                 applyCloudStockSnapshot,
                 err => {
                     console.warn('[cloud] stockItems offline:', err && err.code);
-                    if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+                    if (err && err.code === 'permission-denied') showWarehouseRulesBanner('reading stockItems');
                 }
             );
         }
@@ -13619,7 +13619,7 @@ function initCloudSync() {
                 applyCloudVehiclesSnapshot,
                 err => {
                     console.warn('[cloud] vehicles offline:', err && err.code);
-                    if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+                    if (err && err.code === 'permission-denied') showWarehouseRulesBanner('reading vehicles');
                 }
             );
         }
@@ -13628,7 +13628,7 @@ function initCloudSync() {
                 applyCloudFuelSnapshot,
                 err => {
                     console.warn('[cloud] fuelLogs offline:', err && err.code);
-                    if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+                    if (err && err.code === 'permission-denied') showWarehouseRulesBanner('reading fuelLogs');
                 }
             );
         }
@@ -19419,6 +19419,7 @@ function allStockItemNames() {
 
 // ---- Cloud snapshots ----
 function applyCloudDevicesSnapshot(list) {
+    clearWarehouseRefused('reading devices');
     _markLoaded('devices');
     warehouseDevices = (list || []).slice().sort((a, b) =>
         (a.type || '').localeCompare(b.type || '') || (a.sn || '').localeCompare(b.sn || ''));
@@ -19427,6 +19428,7 @@ function applyCloudDevicesSnapshot(list) {
 }
 
 function applyCloudStockSnapshot(list) {
+    clearWarehouseRefused('reading stockItems');
     _markLoaded('stockItems');
     stockLedger = (list || []).slice().sort((a, b) =>
         String(b.date || '').localeCompare(String(a.date || '')) ||
@@ -19435,18 +19437,31 @@ function applyCloudStockSnapshot(list) {
     scheduleDecisionRefresh();
 }
 
-function showWarehouseRulesBanner() {
-    const slot = document.querySelector('.warehouse-rules-slot');
-    if (!slot || slot.querySelector('.category-rules-banner')) return;
-    const banner = document.createElement('div');
-    banner.className = 'category-rules-banner';
-    banner.innerHTML = `
-        <strong><i class="fas fa-triangle-exclamation"></i> Firestore rules are blocking Inventory data.</strong>
-        <p>Your project's rules do not yet allow access to the <code>devices</code> and
-        <code>stockItems</code> collections. Republish the <code>firestore.rules</code> file from this repo in
-        <em>Firebase Console → Firestore → Rules</em>, then reload the page.</p>`;
-    slot.appendChild(banner);
+// 2.33.1: says WHAT was refused (it used to blame the devices and stockItems
+// rules for any refusal in the area — a fuel photo, a vehicle), and goes away
+// when the same read later succeeds.
+const _whRefused = new Set();
+function showWarehouseRulesBanner(what) {
+    _whRefused.add(what || 'a Warehouse read or write');
+    console.warn('[warehouse] refused by Firestore rules:', what);
+    // Into the Error log too, so the owner can see who was refused and when.
+    reportClientError('rules', `Warehouse: Firestore refused ${what || 'a read or write'} (permission-denied)`, '', 'warehouse');
+    _renderWarehouseRefused();
 }
+function _renderWarehouseRefused() {
+    const slot = document.querySelector('.warehouse-rules-slot');
+    if (!slot) return;
+    let banner = slot.querySelector('.category-rules-banner');
+    if (!_whRefused.size) { if (banner) banner.remove(); return; }
+    if (!banner) { banner = document.createElement('div'); banner.className = 'category-rules-banner'; slot.appendChild(banner); }
+    const list = [..._whRefused];
+    banner.innerHTML = `
+        <strong><i class="fas fa-triangle-exclamation"></i> Firestore refused: ${escapeHtml(list.join(' · '))}.</strong>
+        <p>${list.some(x => x.startsWith('reading '))
+            ? 'The published Firestore rules do not let this account read that data. Check the account is <em>active</em>, then republish <code>firestore.rules</code> from this repo in <em>Firebase Console → Firestore → Rules</em> and reload.'
+            : 'This account may not change that (it needs <em>Warehouse: edit</em>), or the published rules are older than this app — republish <code>firestore.rules</code> in <em>Firebase Console → Firestore → Rules</em>.'}</p>`;
+}
+function clearWarehouseRefused(what) { if (_whRefused.delete(what)) _renderWarehouseRefused(); }
 
 // ---- View shell ----
 // 2.12.3: one line under the tabs saying what belongs where.
@@ -21355,7 +21370,7 @@ function saveDevice(event) {
         existing ? 'Device updated' : 'Device added',
         err => {
             console.error('[warehouse] device save failed:', err);
-            if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+            if (err && err.code === 'permission-denied') showWarehouseRulesBanner('saving a device');
             showToast('Failed to save device', 'error');
         }
     );
@@ -21485,6 +21500,7 @@ function vehicleLabel(v) {
 
 // ---- Cloud snapshots ----
 function applyCloudVehiclesSnapshot(list) {
+    clearWarehouseRefused('reading vehicles');
     _markLoaded('vehicles');
     vehicles = (list || []).slice().sort((a, b) =>
         ((a.status === 'retired') - (b.status === 'retired')) || (a.plate || '').localeCompare(b.plate || ''));
@@ -21492,6 +21508,7 @@ function applyCloudVehiclesSnapshot(list) {
     scheduleDecisionRefresh();
 }
 function applyCloudFuelSnapshot(list) {
+    clearWarehouseRefused('reading fuelLogs');
     _markLoaded('fuelLogs');
     // A record changed elsewhere may carry a new receipt photo.
     const seenAt = new Map(fuelLogs.map(r => [r.id, r.updatedAt]));
@@ -21819,7 +21836,7 @@ function saveVehicle(event) {
         err => {
             console.error('[vehicles] save failed:', err);
             if (!existing) _refusedCreates.add('veh:' + rec.id);
-            if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+            if (err && err.code === 'permission-denied') showWarehouseRulesBanner('saving a vehicle');
             showToast('Failed to save the vehicle', 'error');
             const i = vehicles.findIndex(x => x.id === rec.id);
             if (i !== -1 && vehicles[i] === rec) { if (existing) vehicles[i] = existing; else vehicles.splice(i, 1); }
@@ -22061,7 +22078,7 @@ function _sendFuelPhoto(recId, photo, recordP) {
     const call = photo ? cloudCall('saveFuelPhoto', recId, photo) : cloudCall('deleteFuelPhoto', recId);
     Promise.resolve(call).catch(err => {
         console.error('[fuel] photo save failed:', err);
-        if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+        if (err && err.code === 'permission-denied') showWarehouseRulesBanner('saving a fuel receipt photo');
         Promise.resolve(recordP).then(
             () => showToast(photo ? 'Record saved, but the receipt photo failed to send' : 'Record saved, but removing the photo failed', 'error'),
             () => {});
@@ -22145,7 +22162,7 @@ function saveFuelLog(event) {
             // Deleted here before the server refused it: that delete must not
             // bring back a record the server never had.
             if (!existing) _refusedCreates.add('fuel:' + rec.id);
-            if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+            if (err && err.code === 'permission-denied') showWarehouseRulesBanner('saving a fuel record');
             // Shown at once, so taken back at once — unless a snapshot has
             // already replaced it with what the server holds.
             const i = fuelLogs.findIndex(r => r.id === rec.id);
@@ -22445,7 +22462,7 @@ function saveStockItem(event) {
         existing ? 'Transaction updated' : 'Transaction recorded',
         err => {
             console.error('[warehouse] stock save failed:', err);
-            if (err && err.code === 'permission-denied') showWarehouseRulesBanner();
+            if (err && err.code === 'permission-denied') showWarehouseRulesBanner('saving a stock transaction');
             showToast('Failed to save transaction', 'error');
         }
     );
