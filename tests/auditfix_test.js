@@ -86,7 +86,7 @@ const { launch, BASE_URL } = require('./_env');
         const fillDamage = (setBd) => {
             showAddDamageForm();
             document.getElementById('dmgUnit').value = damageUnitLabel(globalData[0]);
-            document.getElementById('dmgType').value = 'Software';
+            document.getElementById('dmgType').value = 'Mekanis';
             renderDamageComponentOptions();
             document.getElementById('dmgDescription').value = 'uji';
             document.getElementById('dmgSetBreakdown').checked = setBd;

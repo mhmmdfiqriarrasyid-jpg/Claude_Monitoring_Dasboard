@@ -79,6 +79,10 @@ const { launch, BASE_URL } = require('./_env');
         t('alat berat: switch limiter (huruf kecil) → komponennya, unit tetap Good', [U('04').status, U('04').switchLimiter, s1.drove], ['Good', 'Breakdown', 'switchLimiter']);
         const x1 = add('05', 'Device Precision', 'Antenna', 'Antena patah');
         t('alat berat: bagian device tanpa kolom → unit tetap Good', [U('05').status, x1.drove], ['Good', '']);
+        globalData.push({ id: 'T9', name: 'TR-09', sn: 'SNT9', model: '6110B', status: 'Good', display: 'Good', gps: 'Good', steering: 'Good', jdlink: 'Good', site: 'PT. GPA' });
+        const sw = add('T9', 'Software', 'Display', 'Display perlu update');
+        t('2.35.0: Software seperti Device Precision — hanya komponennya', [U('T9').status, U('T9').display, sw.drove], ['Good', 'Breakdown', 'display']);
+        resolveDamage(sw.id, { confirmed: true, quiet: true });
         const m1 = add('06', 'Mekanis', 'Transmission', 'Transmisi rusak');
         t('Mechanical tetap membuat unit Breakdown', [U('06').status, m1.drove], ['Breakdown', 'status']);
         // Needs attention lists the device faults (unit running).

@@ -98,6 +98,10 @@ const { doc, setDoc } = require('firebase/firestore');
     await check('arsip history: owner bisa membaca', getBytes(ref(st('own'), 'archives/history/2024-01.json')).catch(e => { if (/not.?found/i.test(e.code || e.message)) return; throw e; }), true);
     await check('arsip history: bukan owner TIDAK bisa membaca', getBytes(ref(st('ed'), 'archives/history/2024-01.json')), false);
     await check('arsip history: owner pun TIDAK bisa menulis (server saja)', uploadBytes(ref(st('own'), 'archives/history/x.json'), pdf, { contentType: 'application/json' }), false);
+    // 2.35.0: daily backups (server writes), thumbnails next to their photo
+    await check('backup: owner bisa membaca', getBytes(ref(st('own'), 'backups/2026-11-10/units.json.gz')).catch(e => { if (/not.?found/i.test(e.code || e.message)) return; throw e; }), true);
+    await check('backup: bukan owner TIDAK bisa membaca', getBytes(ref(st('ed'), 'backups/2026-11-10/units.json.gz')), false);
+    await check('backup: owner pun TIDAK bisa menulis (server saja)', uploadBytes(ref(st('own'), 'backups/2026-11-10/units.json.gz'), pdf, { contentType: 'application/gzip' }), false);
     await check('foto: folder koleksi lain tertutup', img(st('own'), 'photos/lainnya/x/a'), false);
 
     await env.cleanup();

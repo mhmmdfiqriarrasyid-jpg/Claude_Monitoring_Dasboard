@@ -777,6 +777,9 @@
                         <button class="btn btn-secondary editonly editonly--editunits" data-owner-only style="display:none" onclick="showAutoBackups()" title="Three automatic restore points from this device — unit data only">
                             <i class="fas fa-clock-rotate-left" aria-hidden="true"></i> Auto Backups
                         </button>
+                        <button class="btn btn-secondary" data-owner-only style="display:none" onclick="showServerBackups()" title="The whole database, backed up by the server every night at 02:00 and kept 30 days">
+                            <i class="fas fa-cloud-arrow-up" aria-hidden="true"></i> Server Backups
+                        </button>
                     </div>
                 </div>
                 <button class="btn btn-success editonly editonly--editunits" onclick="showAddForm()">
@@ -2908,6 +2911,25 @@
 <!-- writeAutoBackup() has been storing three rollback points on every save
      since the beginning, and nothing ever read them: the quota was being spent
      on a safety net nobody could reach. This is the reach. -->
+<div class="modal-overlay" id="serverBackupModal">
+    <div class="modal-card sb-dialog" role="dialog" aria-labelledby="serverBackupTitle">
+        <div class="modal-header">
+            <h3 id="serverBackupTitle">Server Backups</h3>
+            <button class="btn-icon" onclick="closeServerBackups()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="modal-body">
+            <p class="sb-lead">Every night at 02:00 WIT the server saves the whole database to Cloud Storage. Kept <strong>30 days</strong>, and the 1st of each month for a year.
+                <strong>Restore</strong> only adds the records that are missing now — nothing that exists is changed. Photos live in Storage and are not part of these files.</p>
+            <div class="sb-status" id="sbStatus"></div>
+            <div class="sb-body" id="sbBody"></div>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn btn-secondary" id="sbNowBtn" onclick="serverBackupNow()"><i class="fas fa-cloud-arrow-up" aria-hidden="true"></i> Back up now</button>
+            <button type="button" class="btn btn-primary" onclick="closeServerBackups()">Close</button>
+        </div>
+    </div>
+</div>
+
 <div class="modal-overlay" id="autoBackupModal">
     <div class="modal-card">
         <div class="modal-header">

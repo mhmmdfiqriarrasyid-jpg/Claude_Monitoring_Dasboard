@@ -36,6 +36,9 @@ function recipientsFor(kind, rec, users) {
         if (kind === 'ticketNew') return rec.reportedByUid !== u.uid && (owner || lvlOf(u, 'tickets') === 'edit');
         if (kind === 'ticketAssign') return rec.assigneeUid === u.uid && rec.lastActorUid !== u.uid;
         if (kind === 'ticketStatus') return rec.reportedByUid === u.uid;
+        // 2.35.0: SLA — due soon to the PIC (the OT team when nobody holds it); overdue to the PIC and the OT team.
+        if (kind === 'ticketDueSoon') return rec.assigneeUid ? rec.assigneeUid === u.uid : (owner || lvlOf(u, 'tickets') === 'edit');
+        if (kind === 'ticketOverdue') return rec.assigneeUid === u.uid || owner || lvlOf(u, 'tickets') === 'edit';
         // Nobody is asked to approve their own work.
         if (rec.createdByUid === u.uid || rec.submittedByUid === u.uid) return false;
         if (kind === 'workLog' || kind === 'leave') return owner || lvlOf(u, 'teamLogApprove') === 'edit';
@@ -57,6 +60,9 @@ function composePush(kind, id, r) {
     if (kind === 'ticketNew') return { title: `New ticket · ${TK[r.priority] || 'Medium'}: ${cut(r.title, 60)}`, body: cut(`${r.category || ''}${(r.units || []).length ? ' · ' + r.units.map(u => u.name).join(', ') : ''}${r.location ? ' · ' + r.location : ''} — ${r.reportedBy || ''}`, 160), url: tkUrl, tag: `tk-${id}` };
     if (kind === 'ticketAssign') return { title: `Ticket for you: ${cut(r.title, 70)}`, body: cut(`${r.no || ''} · ${TK[r.priority] || ''} priority${r.location ? ' · ' + r.location : ''}`, 160), url: tkUrl, tag: `tk-${id}` };
     if (kind === 'ticketStatus') return { title: `Your ticket is ${ST[r.status] || r.status}`, body: cut(`${r.no || ''} · ${r.title}${r.status === 'resolved' && r.resolution ? ' — ' + r.resolution : ''}`, 160), url: tkUrl, tag: `tk-${id}` };
+    const span = ms => { const h = Math.max(0, ms || 0) / 3600000; return h >= 48 ? `${Math.floor(h / 24)} days` : h >= 1 ? `${Math.floor(h)} h` : `${Math.max(1, Math.round(h * 60))} min`; };
+    if (kind === 'ticketDueSoon') return { title: `Ticket due in ${span(r.leftMs)}: ${cut(r.title, 60)}`, body: cut(`${r.no || ''} · ${TK[r.priority] || 'Medium'} priority · ${r.assigneeName ? 'PIC ' + r.assigneeName : 'no PIC yet'}`, 160), url: tkUrl, tag: `tk-sla-${id}` };
+    if (kind === 'ticketOverdue') return { title: `Ticket overdue by ${span(r.lateMs)}: ${cut(r.title, 55)}`, body: cut(`${r.no || ''} · ${TK[r.priority] || 'Medium'} priority · ${r.assigneeName ? 'PIC ' + r.assigneeName : 'no PIC yet'}${(r.units || []).length ? ' · ' + r.units.map(u => u.name).join(', ') : ''}`, 160), url: tkUrl, tag: `tk-sla-${id}` };
     if (kind === 'workLog') return { title: 'Daily Report to check', body: cut(`${r.memberName || 'Someone'} · ${r.date || ''}`, 160), url: './?action=inbox', tag: `wl-${id}` };
     if (kind === 'leave') return { title: 'Leave request to check', body: cut(`${r.memberName || 'Someone'} · ${r.dateFrom || ''}${r.dateTo && r.dateTo !== r.dateFrom ? ' – ' + r.dateTo : ''}`, 160), url: './?action=inbox', tag: `lv-${id}` };
     if (kind === 'inspection') return { title: 'Inspection to check', body: cut(`${r.unitName || 'Unit'} · ${r.date || ''}`, 160), url: './?action=inbox', tag: `ins-${id}` };

@@ -130,11 +130,56 @@ async function _photoUp(col, docId, v) {
         const name = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
         const path = `photos/${col}/${String(docId).replace(/[^\w-]/g, '_')}/${name}`;
         await _withTimeout(st.mod.uploadString(st.mod.ref(st.s, path), v, 'data_url'), 120000);
+        _uploadThumb(st, path, v);   // 2.35.0: best effort, never waited for
         return PHOTO_REF + path;
     } catch (err) {
         console.warn('[photos] kept inline — Storage upload failed:', err && (err.code || err.message));
         return v;
     }
+}
+// ---- Thumbnails (2.35.0) ----
+// A small copy of each photo sits next to it as <file>_t (same folder, same
+// storage.rules). Made here at upload; the server makes the ones still missing
+// every night (functions/thumbs.js). Lists and galleries show the small copy
+// and open the full photo only when it is tapped.
+const THUMB_SUFFIX = '_t', THUMB_MAX = 360;
+function _thumbData(dataUrl) {
+    return new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => {
+            try {
+                const k = Math.min(1, THUMB_MAX / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+                const c = document.createElement('canvas');
+                c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+                c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+                resolve(c.toDataURL('image/jpeg', 0.7));
+            } catch (_) { resolve(''); }
+        };
+        img.onerror = () => resolve('');
+        img.src = dataUrl;
+    });
+}
+async function _uploadThumb(st, path, dataUrl) {
+    try {
+        if (typeof document === 'undefined') return;
+        const t = await _thumbData(dataUrl);
+        if (t) await _withTimeout(st.mod.uploadString(st.mod.ref(st.s, path + THUMB_SUFFIX), t, 'data_url'), 60000);
+    } catch (err) { console.warn('[photos] thumbnail not uploaded:', err && (err.code || err.message)); }
+}
+const _thumbUrls = new Map();     // "sp:" ref -> Promise of its thumbnail URL ('' = none yet)
+function _thumbUrlOf(url) {
+    const ref = _photoUrls.get(url);
+    if (!ref) return Promise.resolve('');
+    if (!_thumbUrls.has(ref)) _thumbUrls.set(ref, (async () => {
+        try {
+            const st = await _storage();
+            return await st.mod.getDownloadURL(st.mod.ref(st.s, ref.slice(PHOTO_REF.length) + THUMB_SUFFIX));
+        } catch (err) {
+            // Not made yet: asked again next session, not on every redraw.
+            return '';
+        }
+    })());
+    return _thumbUrls.get(ref);
 }
 async function _photoDown(v, inline) {
     if (typeof v === 'string' && v.startsWith(PHOTO_PENDING)) return '';
@@ -169,7 +214,8 @@ async function _dropPhotoRefs(refs) {
     if (!refs.length) return;
     try {
         const st = await _storage();
-        await Promise.all(refs.map(r => st.mod.deleteObject(st.mod.ref(st.s, r.slice(PHOTO_REF.length))).catch(() => {})));
+        await Promise.all(refs.flatMap(r => [r.slice(PHOTO_REF.length), r.slice(PHOTO_REF.length) + THUMB_SUFFIX])
+            .map(path => st.mod.deleteObject(st.mod.ref(st.s, path)).catch(() => {})));
     } catch (_) { /* best effort */ }
 }
 // The same as _photoMap, at most `limit` at a time: eight photos racing up a
@@ -316,7 +362,7 @@ async function _recoverPhotos(col, docId, field, opts) {
         const st = await _storage();
         if (!st.mod.listAll) return [];
         const res = await _withTimeout(st.mod.listAll(st.mod.ref(st.s, `photos/${col}/${String(docId).replace(/[^\w-]/g, '_')}`)), 20000);
-        let items = (res.items || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+        let items = (res.items || []).filter(i => !i.name.endsWith(THUMB_SUFFIX)).sort((a, b) => a.name.localeCompare(b.name));
         const expect = Math.floor(Number(opts && opts.expect) || 0);
         if (expect > 0 && items.length > expect) items = items.slice(-expect);
         if (!items.length) return [];
@@ -1044,10 +1090,17 @@ window.cloud = {
     },
 
     // ---- Server email (2.14.0) ----
-    async callFunction(name, data) {
+    async callFunction(name, data, timeoutMs) {
         const f = await _functions();
-        const res = await f.mod.httpsCallable(f.f, name, { timeout: 60000 })(data || {});
+        const res = await f.mod.httpsCallable(f.f, name, { timeout: timeoutMs || 60000 })(data || {});
         return res.data;
+    },
+    // 2.35.0: the small copy of a photo this session has a URL for ('' = none).
+    photoThumbUrl(url) { return _thumbUrlOf(url); },
+    // 2.35.0: one collection of a server backup, to download (owner only — storage.rules).
+    async serverBackupUrl(date, name) {
+        const st = await _storage();
+        return st.mod.getDownloadURL(st.mod.ref(st.s, `backups/${date}/${name}.json.gz`));
     },
     async getEmailSettings() {
         const snap = await getDoc(doc(db, 'settings', 'email'));

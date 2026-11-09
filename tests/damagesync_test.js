@@ -92,7 +92,7 @@ const { launch, BASE_URL } = require('./_env');
 
         // =============== damage kedua: bergabung, alasan tetap ===============
         toasts.length = 0;
-        const a2 = add('01', 'Software', '', 'Error ECU');
+        const a2 = add('01', 'Mekanis', '', 'Error ECU');
         t('damage kedua pada unit Breakdown: ikut menahan, alasan pertama tetap',
           [a2.drove, U('01').breakdownReason, U('01').breakdownDamageId], ['status', 'Mekanis / Hidrolik: Selang bocor', a1.id]);
         t('pesan: tetap Breakdown sampai damage ini selesai', toasts.some(m => /already Breakdown — it stays Breakdown until this damage is done too/.test(m)), true);
@@ -102,7 +102,7 @@ const { launch, BASE_URL } = require('./_env');
         resolveDamage(a1.id, { confirmed: true });
         t('selesai yang pertama: tetap Breakdown, alasan pindah ke damage berikutnya',
           [U('01').status, U('01').breakdownDamageId, U('01').breakdownReason, toasts.pop()],
-          ['Breakdown', a2.id, 'Software: Error ECU', 'Damage marked as done — unit status not restored because other damage is still open']);
+          ['Breakdown', a2.id, 'Mekanis: Error ECU', 'Damage marked as done — unit status not restored because other damage is still open']);
         const dh0 = (U('01').downtimeHistory || []).length;
         partials.length = 0;
         resolveDamage(a2.id, { confirmed: true });
@@ -163,7 +163,7 @@ const { launch, BASE_URL } = require('./_env');
         asked = []; confirmAnswer = true;
         deleteDamage(r1.id);
         t('hapus catatan yang menahan: ditanya dengan efeknya, unit Good', [/goes back to Good/.test(asked[0] || ''), U('05').status], [true, 'Good']);
-        const b1 = add('05', 'Mekanis', '', 'X1'), b2 = add('05', 'Software', '', 'X2');
+        const b1 = add('05', 'Mekanis', '', 'X1'), b2 = add('05', 'Mekanis', '', 'X2');
         partials.length = 0; asked = [];
         selectedDamageIds.clear(); selectedDamageIds.add(b1.id); selectedDamageIds.add(b2.id);
         deleteSelectedDamages();
@@ -289,19 +289,19 @@ const { launch, BASE_URL } = require('./_env');
         // alasan dari catatan sebelum v162 (tanpa breakdownDamageId) pindah ke catatan yang masih terbuka
         globalDamages.push({ id: 'p9', date: daysAgo(4), unitId: '09', unitName: 'EX-09', sn: 'SN09', damageType: 'Mekanis', component: '', description: 'pompa', resolved: false, resolvedAt: '', drove: 'status', createdAt: 2, updatedAt: 2 });
         brokeBefore('09', 'Mekanis: pompa');
-        const j9 = add('09', 'Software', '', 'ECU');
+        const j9 = add('09', 'Mekanis', '', 'ECU');
         resolveDamage('p9', { confirmed: true, quiet: true });
         t('alasan dari catatan sebelum v162 pindah ke catatan yang masih terbuka',
-          [U('09').status, U('09').breakdownReason, U('09').breakdownDamageId], ['Breakdown', 'Software: ECU', j9.id]);
+          [U('09').status, U('09').breakdownReason, U('09').breakdownDamageId], ['Breakdown', 'Mekanis: ECU', j9.id]);
         resolveDamage(j9.id, { confirmed: true, quiet: true });
         // catatan lama (tanpa drove) selesai saat catatan lain masih menahan: tidak ditanya
         globalDamages.push({ id: 'L10', date: daysAgo(4), unitId: '10', unitName: 'EX-10', sn: 'SN10', damageType: 'Mekanis', component: '', description: 'legacy', resolved: false, resolvedAt: '', createdAt: 3, updatedAt: 3 });
         brokeBefore('10', 'Mekanis: legacy');
-        add('10', 'Software', '', 'ikut');
+        add('10', 'Mekanis', '', 'ikut');
         asked = [];
         resolveDamage('L10', { confirmed: true, quiet: true });
         t('catatan lama selesai, catatan lain masih menahan: tidak ditanya, alasan pindah',
-          [asked.length, U('10').status, U('10').breakdownReason], [0, 'Breakdown', 'Software: ikut']);
+          [asked.length, U('10').status, U('10').breakdownReason], [0, 'Breakdown', 'Mekanis: ikut']);
         // catatan lama dipindah ke unit lain lewat Edit: ditanya seperti Mark done
         globalDamages.push({ id: 'L11', date: daysAgo(4), unitId: '11', unitName: 'EX-11', sn: 'SN11', damageType: 'Mekanis', component: '', description: 'pindah', resolved: false, resolvedAt: '', createdAt: 4, updatedAt: 4 });
         brokeBefore('11', 'Mekanis: pindah');

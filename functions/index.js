@@ -10,6 +10,12 @@
 //                            and Daily Reports / leave / inspections to approve
 //                          · housekeeping at 03:00 (2.19.0): error log > 30 days
 //                            deleted, history > 2 years archived to Storage
+//   dailyMaintenance     02:00 WIT every day (2.35.0): the whole database
+//                        backed up to Storage (backups/<date>/, kept 30 days
+//                        and the 1st of each month for a year), then the
+//                        photo thumbnails still missing are made.
+//   serverBackups        the owner's Server backups window: list, details,
+//                        back up now, restore the missing records (callable).
 //   sendLicenseAlert     the "Send now" / Email Report button (callable).
 //   sendNotificationNow  "Send test" (breakdown) / "Send now" (reminder) in
 //                        Notification Settings — owner only (callable, 2.15.1).
@@ -169,7 +175,7 @@ async function scanApprovals(now) {
 }
 
 // ---- Tickets (2.30.0): new, assigned, status changed — since the last tick ----
-const { ticketPushes } = require('./ticketNotices');
+const { ticketPushes, ticketSlaPushes } = require('./ticketNotices');
 async function scanTickets(now) {
     const state = db.doc('mailState/tickets');
     const prev = await state.get();
@@ -181,12 +187,43 @@ async function scanTickets(now) {
     return n;
 }
 
+// ---- Ticket SLA (2.35.0): due soon, overdue, and overdue again every 24 h ----
+async function scanTicketSla(now) {
+    const state = db.doc('mailState/ticketSla');
+    const prev = await state.get();
+    const snap = await db.collection('tickets').where('status', 'in', ['open', 'assigned', 'progress']).get();
+    const { out, next } = ticketSlaPushes(prev.exists ? (prev.data().seen || {}) : null, snap.docs.map(d => ({ ...d.data(), id: d.id })), now.getTime());
+    let n = 0;
+    for (const p of out) n += await sendPush(p.kind, p.id, p.rec).catch(err => { logger.error('ticket SLA push failed', err); return 0; });
+    await state.set({ seen: next, at: admin.firestore.FieldValue.serverTimestamp() });
+    return n;
+}
+
 // ---- Housekeeping (2.19.0), once a day at 03:00 WIT ----
 //   · error log entries older than 30 days are deleted
 //   · history older than 2 years moves to Storage, archives/history/YYYY-MM.json
 //     (merged with what that month's file already holds), then leaves Firestore
 const { housekeepingRun } = require('./housekeeping');
 const housekeeping = now => housekeepingRun(db, admin.storage().bucket(), now);
+
+// ---- Daily backup + thumbnails (2.35.0), 02:00 WIT ----
+const { backupRun, backupList, backupManifest, restoreMissing } = require('./backup');
+const { thumbsBackfill } = require('./thumbs');
+exports.dailyMaintenance = onSchedule({
+    schedule: '0 2 * * *', timeZone: 'Asia/Jayapura', region: REGION, retryCount: 1, timeoutSeconds: 540, memory: '1GiB'
+}, async () => {
+    const now = new Date(), started = Date.now();
+    const bucket = admin.storage().bucket();
+    try {
+        logger.info('backup', await backupRun(db, bucket, now));
+    } catch (err) {
+        logger.error('backup failed', err);
+        await db.doc('mailState/backup').set({ result: 'failed', failedAt: now.getTime(), error: String(err && err.message || err).slice(0, 300) }, { merge: true }).catch(() => {});
+    }
+    try {
+        logger.info('thumbnails', await thumbsBackfill(bucket, require('sharp'), { limit: 800, deadline: started + 420000 }));
+    } catch (err) { logger.error('thumbnails failed', err); }
+});
 
 // ---- Monthly report (2.18.0): the month before, on the 1st ----
 async function sendMonthly(s, now, trigger, by) {
@@ -259,6 +296,7 @@ exports.notificationTick = onSchedule({
     jobs.push(scanDamage(s, now).then(n => { if (n) logger.info('damage alerts sent', { n }); }));
     if (s.pushApprovals) jobs.push(scanApprovals(now).then(n => { if (n) logger.info('approval pushes sent', { n }); }));
     if (s.pushTickets) jobs.push(scanTickets(now).then(n => { if (n) logger.info('ticket pushes sent', { n }); }));
+    if (s.pushTickets) jobs.push(scanTicketSla(now).then(n => { if (n) logger.info('ticket SLA pushes sent', { n }); }));
     const results = await Promise.allSettled(jobs);
     results.filter(r => r.status === 'rejected').forEach(r => logger.error('notification job failed', r.reason));
 });
@@ -320,6 +358,37 @@ exports.sendNotificationNow = onCall({ region: REGION, secrets: SECRETS, enforce
         throw mailError(err);
     }
     throw new HttpsError('invalid-argument', 'Unknown notification');
+});
+
+// 2.35.0: Server backups — owner only. action: 'list' | 'detail' | 'now' | 'restore'.
+exports.serverBackups = onCall({ region: REGION, enforceAppCheck: true, timeoutSeconds: 540, memory: '1GiB' }, async req => {
+    if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first');
+    if (!isOwnerDoc(req.auth.uid, await userDoc(req.auth.uid))) throw new HttpsError('permission-denied', 'Only the Super Admin');
+    const d = req.data || {}, bucket = admin.storage().bucket();
+    const by = req.auth.token.email || req.auth.uid;
+    try {
+        if (d.action === 'list') return await backupList(db, bucket);
+        if (d.action === 'detail') return { manifest: await backupManifest(bucket, String(d.date || '')) };
+        if (d.action === 'now') {
+            const r = await backupRun(db, bucket, new Date(), { trigger: 'manual' });
+            await db.collection('mailLog').add({ kind: 'backup', trigger: 'manual', by, items: r.docs, at: admin.firestore.FieldValue.serverTimestamp() });
+            return r;
+        }
+        if (d.action === 'restore') {
+            const r = await restoreMissing(db, bucket, String(d.date || ''), String(d.collection || ''), admin.firestore.Timestamp);
+            await db.collection('mailLog').add({ kind: 'backupRestore', by, date: d.date, collection: d.collection, items: r.added, at: admin.firestore.FieldValue.serverTimestamp() });
+            logger.info('backup restore', { by, date: d.date, collection: d.collection, ...r });
+            return r;
+        }
+    } catch (err) {
+        if (err instanceof HttpsError) throw err;
+        const code = String(err && err.message || '');
+        if (code === 'not-restorable') throw new HttpsError('failed-precondition', 'not-restorable');
+        if (code === 'not-found' || code === 'bad-date' || code === 'bad-request') throw new HttpsError('not-found', code);
+        logger.error('server backups failed', err);
+        throw new HttpsError('internal', 'The backup could not be read or written');
+    }
+    throw new HttpsError('invalid-argument', 'Unknown action');
 });
 
 // 2.15.0: the owner removed or rejected someone — their dashboard record is

@@ -6,6 +6,9 @@
 | *(push, 2.18.0)* | inside `notificationTick` | Push to phones (`pushTokens`): new damage → everyone who can see Damage; Daily Reports / leave / inspections waiting → their approvers. Switches `pushDamage`, `pushApprovals` |
 | *(monthly, 2.18.0)* | inside `notificationTick` | Monthly Report on the 1st at `monthlyHour` to `monthlyRecipients` (`monthlyReport.js`); *Send now* via `sendNotificationNow` kind `monthly` |
 | *(housekeeping, 2.19.0)* | inside `notificationTick`, 03:00 WIT | Error log entries > 30 days deleted; history > 2 years moved to Storage `archives/history/YYYY-MM.json` (`housekeeping.js`, `tests/housekeeping_e2e.js`) |
+| `dailyMaintenance` *(2.35.0)* | every day 02:00 WIT | Backs up every Firestore collection to Storage `backups/<date>/<collection>.json.gz` with a manifest (kept 30 days, and the 1st of each month for a year; `backup.js`), then makes the photo thumbnails still missing and removes orphaned ones (`thumbs.js`, `sharp`). `tests/backup_e2e.js` |
+| `serverBackups` *(2.35.0)* | callable | The owner's *Server Backups* window: `list`, `detail`, `now`, `restore` (adds only the records a collection is missing; never `users`). Owner only |
+| *(ticket SLA, 2.35.0)* | inside `notificationTick` | Push when a ticket enters the last quarter of its time (PIC) and when it is overdue (PIC + OT team), repeated every 24 h for two weeks (`mailState/ticketSla`). Switch `pushTickets` |
 | `sendLicenseAlert` | callable | "Send license report now" / Email Report. Owner, or an active account that can see License Stock |
 | `sendNotificationNow` | callable | Notification Settings → *Send test* (breakdown: the newest damage record, marked [Test]) and *Send now* (Daily Report reminder, right now). Owner only |
 | `deleteSignInAccount` | callable | After the owner removes or rejects someone: deletes their Firebase sign-in account. Owner only; refused while the person still has a `users` record, never for the owner |

@@ -591,6 +591,20 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.35.0 — Backup harian, eskalasi SLA ticket, thumbnail foto, Software =
+  device.** (1) Fungsi `dailyMaintenance` (02:00 WIT) menulis seluruh koleksi
+  Firestore ke Storage `backups/<tanggal>/<koleksi>.json.gz` + manifest; simpan
+  30 hari dan tanggal 1 tiap bulan selama setahun (`functions/backup.js`,
+  `tests/backup_e2e.js`). Owner: Unit Database → **Server Backups** (daftar,
+  *Back up now*, unduh, *Restore missing* — hanya menambah yang hilang, tidak
+  menimpa; akun & akses tidak bisa direstore). (2) Push SLA ticket: *due soon*
+  (seperempat waktu terakhir) ke PIC, *overdue* ke PIC + tim OT, diulang tiap
+  24 jam sampai 2 minggu (`ticketSlaPushes`). (3) Tiap foto punya salinan kecil
+  `<file>_t` di folder yang sama — dibuat aplikasi saat upload, yang belum ada
+  dibuat server tiap malam (`functions/thumbs.js`, `sharp`); daftar & galeri
+  memakai yang kecil, foto penuh saat dibuka. (4) Tipe kerusakan *Software*
+  diperlakukan seperti *Device Precision*. **Perlu publish `storage.rules` dan
+  deploy Cloud Functions.**
   **2.34.0 — Komponen *Not installed***: tiap komponen (GPS, Display, Steering,
   JDLink, Camera AI, Telematic Box, Switch Limiter, Rotary Lamp) bisa diisi *Not
   installed* di form unit. Tidak dihitung masalah, tidak masuk persen kesehatan

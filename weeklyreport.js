@@ -500,6 +500,8 @@ async function printWeeklyReport() {
     let box = document.getElementById('wrPrint');
     if (!box) { box = document.createElement('div'); box.id = 'wrPrint'; document.body.appendChild(box); }
     box.innerHTML = document.getElementById('wrPages').innerHTML;
+    // On paper the full photos, not the small copies the screen shows.
+    box.querySelectorAll('img[data-full]').forEach(im => { im.removeAttribute('onload'); im.src = im.dataset.full; });
     await Promise.all([...box.querySelectorAll('img')].map(im => im.decode ? im.decode().catch(() => {}) : null));
     document.body.classList.add('wr-printing');
     const done = () => { document.body.classList.remove('wr-printing'); document.title = old; window.removeEventListener('afterprint', done); };
@@ -883,7 +885,7 @@ function _wrGalleryHtml(b) {
     return `<div class="wr-gal wr-gal--${Math.min(b.items.length, WR_GALLERY_MAX)}">${b.items.map(it => {
         const img = it.kind === 'video' ? it.poster : it.src;
         const pic = it.state === 'loading' ? '<div class="wr-gal__ph">Loading…</div>'
-            : img ? `<img src="${_wrE(img)}" alt="" loading="eager">` : `<div class="wr-gal__ph"><i class="fas fa-film" aria-hidden="true"></i></div>`;
+            : img ? (it.kind === 'video' ? `<img src="${_wrE(img)}" alt="">` : `<img ${thumbAttrs(img, true)} alt="">`) : `<div class="wr-gal__ph"><i class="fas fa-film" aria-hidden="true"></i></div>`;
         return `<figure class="wr-gal__item"><div class="wr-gal__pic">${pic}${it.kind === 'video' ? '<span class="wr-gal__play" aria-hidden="true"></span>' : ''}
             <button type="button" class="wr-gal__x wr-noprint" title="Leave this out of the report" aria-label="Leave this picture out" onclick="hideWeeklyMedia(${jsArg(it.key)})">&times;</button></div>
             <figcaption><b>${_wrE(it.cap)}</b><span>${_wrE(it.sub)}</span></figcaption></figure>`; }).join('')}</div>`;

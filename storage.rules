@@ -146,6 +146,12 @@ service firebase.storage {
       allow write: if false;
     }
 
+    // Daily backups written by the server (2.35.0): the owner may download them.
+    match /backups/{date}/{file} {
+      allow read: if isActive() && me().get('role', '') == 'owner';
+      allow write: if false;
+    }
+
     match /{path=**} {
       allow read, write: if false;
     }

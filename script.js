@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.34.0';
+const APP_VERSION = 'v2.35.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -989,6 +989,7 @@ const MODAL_CLOSERS = {
     // inline cell back, or the grid shows a status that was never saved.
     restoreReportModal:   'closeRestoreReport',
     autoBackupModal:      'closeAutoBackups',
+    serverBackupModal:    'closeServerBackups',
     breakdownReasonModal: 'cancelBreakdownReason'
 };
 
@@ -1841,6 +1842,24 @@ const STORAGE_URL_RE = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/ot-m
 function safeImageSrc(v) {
     const s = String(v == null ? '' : v);
     return /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+\/=\s]+$/.test(s) || STORAGE_URL_RE.test(s) ? s : '';
+}
+
+// 2.35.0: the attributes of an <img> that shows a photo small. A photo in
+// Storage starts as a 1-pixel placeholder and takes its thumbnail (<file>_t)
+// as soon as the placeholder has loaded — the full photo if there is none yet.
+// The full photo itself is fetched only when someone opens it.
+const _THUMB_BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+function thumbAttrs(v, anySrc) {
+    const s = anySrc ? String(v == null ? '' : v) : safeImageSrc(v);
+    if (!s || !STORAGE_URL_RE.test(s)) return `src="${escapeHtml(s)}"`;
+    return `src="${_THUMB_BLANK}" data-full="${escapeHtml(s)}" onload="thumbLoad(this)"`;
+}
+function thumbLoad(img) {
+    img.onload = null; img.removeAttribute('onload');
+    const full = img.dataset.full || '';
+    const set = u => { img.onerror = () => { img.onerror = null; img.src = full; }; img.src = u || full; };
+    if (!window.cloud || typeof window.cloud.photoThumbUrl !== 'function') { set(''); return; }
+    Promise.resolve(window.cloud.photoThumbUrl(full)).then(set, () => set(''));
 }
 
 // For showToast, which renders text: the value as a string, nothing escaped.
@@ -6364,6 +6383,121 @@ function showAutoBackups() {
     document.getElementById('autoBackupModal').classList.add('open');
 }
 
+// ---- Server backups (2.35.0, owner) ----
+// Made every night by the dailyMaintenance function (functions/backup.js):
+// one file per collection under backups/<date>/ in Cloud Storage. Listed,
+// started by hand and restored through the serverBackups callable. A restore
+// adds the records a collection is missing; it never overwrites.
+const SB_LABELS = { units: 'Units', implements: 'Implements', damageRecords: 'Damage records', workLogs: 'Daily Reports', workLogPhotos: 'Daily Report photo lists',
+    tickets: 'Tickets', otJobs: 'Jobs & activities', projects: 'Projects', purchaseRequests: 'Purchase requests', stockItems: 'Stock items', devices: 'Inventory devices',
+    inspections: 'Inspection reports', teamMembers: 'Team members', shifts: 'Shift schedule', leaveRequests: 'Leave / sick', users: 'Accounts & access', history: 'Audit history' };
+let _sbOpen = '';
+const _sbSize = n => n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round((n || 0) / 1024))} KB`;
+function _sbCall(data, ms) { return window.cloud.callFunction('serverBackups', data, ms || 120000); }
+function _sbError(err) {
+    const code = String((err && err.code) || '');
+    return /not-found/.test(code) && !/functions\/not-found/.test(code) ? 'That backup is no longer there'
+        : /unavailable|deadline|internal|functions\/not-found/.test(code) ? 'The server backup function is not deployed yet, or did not answer — deploy the Cloud Functions (functions/README.md)'
+        : /permission-denied|unauthenticated/.test(code) ? 'Only the owner can use server backups'
+        : 'The server did not answer — try again';
+}
+async function showServerBackups() {
+    if (!isOwner()) { showToast('Only the owner can open server backups', 'warning'); return; }
+    document.getElementById('serverBackupModal').classList.add('open');
+    _sbOpen = '';
+    const status = document.getElementById('sbStatus'), body = document.getElementById('sbBody');
+    status.innerHTML = '<span class="adm-muted"><i class="fas fa-spinner fa-spin" aria-hidden="true"></i> Reading the backups…</span>';
+    body.innerHTML = '';
+    if (!window.cloud || !window.cloud.callFunction) { status.textContent = 'Server backups need the cloud connection.'; return; }
+    try {
+        renderServerBackups(await _sbCall({ action: 'list' }));
+    } catch (err) {
+        console.warn('[backup] list failed:', err);
+        status.innerHTML = `<span class="sb-bad"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i> ${escapeHtml(_sbError(err))}</span>`;
+    }
+}
+function renderServerBackups(r) {
+    const status = document.getElementById('sbStatus'), body = document.getElementById('sbBody');
+    const last = r && r.last, dates = (r && r.dates) || [];
+    const today = toISODate(), yesterday = addDaysISO(today, -1);
+    if (!last || !last.date) status.innerHTML = '<span class="sb-warn"><i class="fas fa-circle-info" aria-hidden="true"></i> No backup has been made yet. The first one runs tonight at 02:00 — or press <b>Back up now</b>.</span>';
+    else {
+        const fresh = last.date >= yesterday && last.result !== 'failed';
+        status.innerHTML = `<span class="${fresh ? 'sb-ok' : 'sb-bad'}"><i class="fas fa-${fresh ? 'circle-check' : 'triangle-exclamation'}" aria-hidden="true"></i>
+            Last backup <b>${escapeHtml(last.date)}</b>${last.at ? ' at ' + escapeHtml(new Date(last.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })) : ''}
+            · ${Number(last.docs || 0).toLocaleString('en-US')} records in ${Number(last.collections) || 0} collections · ${_sbSize(last.bytes)}${
+            last.result === 'failed' ? ' — <b>the last run failed</b>' : fresh ? '' : ' — <b>older than a day: check the Cloud Functions</b>'}</span>`;
+    }
+    body.innerHTML = dates.length ? `<ul class="sb-list">${dates.map(d => `<li class="sb-day" data-date="${escapeHtml(d)}">
+            <button type="button" class="sb-day__head" onclick="toggleServerBackup(${jsArg(d)})" aria-expanded="false"><i class="fas fa-chevron-right" aria-hidden="true"></i>
+                <b>${escapeHtml(d)}</b><span class="adm-sub" style="display:inline">${d === today ? 'today' : d === yesterday ? 'yesterday' : d.endsWith('-01') ? 'monthly copy' : ''}</span></button>
+            <div class="sb-day__body" hidden></div></li>`).join('')}</ul>` : '';
+}
+async function toggleServerBackup(date) {
+    const li = document.querySelector(`.sb-day[data-date="${date}"]`);
+    if (!li) return;
+    const box = li.querySelector('.sb-day__body'), head = li.querySelector('.sb-day__head');
+    const open = box.hidden;
+    box.hidden = !open; head.setAttribute('aria-expanded', String(open)); li.classList.toggle('is-open', open);
+    if (!open || box.dataset.loaded) return;
+    box.innerHTML = '<span class="adm-muted"><i class="fas fa-spinner fa-spin" aria-hidden="true"></i> Reading…</span>';
+    try {
+        const { manifest } = await _sbCall({ action: 'detail', date });
+        if (!manifest) { box.innerHTML = '<span class="adm-muted">This backup has no contents list.</span>'; return; }
+        box.dataset.loaded = '1';
+        box.innerHTML = `<table class="sb-table"><thead><tr><th>Collection</th><th class="num">Records</th><th class="num">Size</th><th></th></tr></thead><tbody>${
+            manifest.collections.map(c => `<tr><td><b>${escapeHtml(SB_LABELS[c.name] || c.name)}</b>${SB_LABELS[c.name] ? `<span class="adm-sub">${escapeHtml(c.name)}</span>` : ''}</td>
+                <td class="num">${Number(c.docs).toLocaleString('en-US')}</td><td class="num">${_sbSize(c.bytes)}</td>
+                <td class="sb-acts"><button type="button" class="btn btn-secondary btn-sm" title="Download this collection (JSON, gzip)" aria-label="Download ${escapeHtml(c.name)}" onclick="downloadServerBackup(${jsArg(date)}, ${jsArg(c.name)})"><i class="fas fa-download" aria-hidden="true"></i></button>
+                ${c.name === 'users' ? '<span class="adm-sub" title="Accounts and access are managed on the Users page">not restorable</span>'
+                    : `<button type="button" class="btn btn-secondary btn-sm" onclick="restoreServerBackup(${jsArg(date)}, ${jsArg(c.name)}, this)"><i class="fas fa-rotate-left" aria-hidden="true"></i> Restore missing</button>`}</td></tr>`).join('')}</tbody></table>`;
+    } catch (err) {
+        console.warn('[backup] detail failed:', err);
+        box.innerHTML = `<span class="sb-bad">${escapeHtml(_sbError(err))}</span>`;
+    }
+}
+async function serverBackupNow() {
+    if (!isOwner()) return;
+    const btn = document.getElementById('sbNowBtn');
+    btn.disabled = true;
+    showToast('Backing up the database — this can take a minute…', 'info');
+    try {
+        const r = await _sbCall({ action: 'now' }, 540000);
+        logEvent({ action: 'backup', unitName: '[Server backup]', field: r.date, before: '', after: `${r.docs} records in ${r.collections} collections` });
+        showToast(`Backup made: ${Number(r.docs).toLocaleString('en-US')} records`, 'success');
+        renderServerBackups(await _sbCall({ action: 'list' }));
+    } catch (err) {
+        console.warn('[backup] now failed:', err);
+        showToast(_sbError(err), 'error');
+    } finally { btn.disabled = false; }
+}
+async function restoreServerBackup(date, name, btn) {
+    if (!isOwner()) return;
+    const label = SB_LABELS[name] || name;
+    if (!confirm(`Restore the missing ${label} from the backup of ${date}?\n\nOnly records that do not exist now are added. Records that exist — also ones changed since — stay exactly as they are.`)) return;
+    if (btn) btn.disabled = true;
+    try {
+        const r = await _sbCall({ action: 'restore', date, collection: name }, 540000);
+        logEvent({ action: 'restore', unitName: `[Server backup] ${label}`, field: date, before: '', after: `${r.added} missing record(s) added, ${r.kept} already there` });
+        showToast(r.added ? `${r.added} ${label} record(s) restored — ${r.kept} were already there` : `Nothing missing: all ${r.kept} ${label} records are there`, r.added ? 'success' : 'info');
+    } catch (err) {
+        console.warn('[backup] restore failed:', err);
+        showToast(/failed-precondition/.test(String(err && err.code)) ? 'This collection cannot be restored from a file' : _sbError(err), 'error');
+    } finally { if (btn) btn.disabled = false; }
+}
+async function downloadServerBackup(date, name) {
+    try {
+        const url = await window.cloud.serverBackupUrl(date, name);
+        const a = document.createElement('a');
+        a.href = url; a.download = `${name}_${date}.json.gz`; a.target = '_blank'; a.rel = 'noopener';
+        document.body.appendChild(a); a.click(); a.remove();
+    } catch (err) {
+        console.warn('[backup] download failed:', err);
+        showToast(/unauthorized/.test(String(err && err.code)) ? 'Downloading needs the new storage.rules — publish them first' : 'The file could not be opened', 'error');
+    }
+}
+function closeServerBackups() { document.getElementById('serverBackupModal').classList.remove('open'); }
+
 function closeAutoBackups() {
     document.getElementById('autoBackupModal').classList.remove('open');
 }
@@ -10565,9 +10699,11 @@ const DAMAGE_DRIVES_NOTHING = '__nothing__';
 // 2.15.3: a damage type of its own from Master lists that is about devices
 // ("Device", "Device Camera", "Devices") behaves like Device Precision — it
 // puts the named component into Breakdown, not the whole unit.
+// 2.35.0: Software is a precision fault too (a display or receiver that
+// needs an update does not stop the machine).
 function isDeviceDamageType(t) {
     const v = String(t || '').trim().toLowerCase();
-    return v === 'device precision' || /^devices?\b/.test(v);
+    return v === 'device precision' || v === 'software' || /^devices?\b/.test(v);
 }
 // 2.33.0: a precision device that fails (Device Precision, or a device type
 // of its own) never stops the unit: it puts its own component into Breakdown
@@ -10575,7 +10711,7 @@ function isDeviceDamageType(t) {
 // Telematic Box, Switch Limiter, Rotary Lamp), and otherwise (Processor,
 // antenna, a part with no field) changes nothing on the unit — the open record
 // shows in Needs attention as a device fault. Only the other damage types
-// (Mechanical, Software, …) put the unit's status into Breakdown.
+// (Mechanical, …) put the unit's status into Breakdown.
 function damageTargetField(damageType, component, unit) {
     if (!isDeviceDamageType(damageType)) return null;
     const f = unit && isHeavy(unit) ? heavyComponentField(component) : componentUnitField(component);
@@ -13409,12 +13545,12 @@ function renderDamageComponentOptions() {
 
 // The hint under "Set status Breakdown" names the components of the chosen
 // unit's group. Tractor (or no unit): today's wording.
-const DAMAGE_HINT_TRACTOR = 'Device Precision → only the related component (GPS/Display/Steering/JDLink) goes Breakdown; the unit keeps running. Other types (Mechanical, Software…) → unit status Breakdown.';
+const DAMAGE_HINT_TRACTOR = 'Device Precision / Software → only the related component (GPS/Display/Steering/JDLink) goes Breakdown; the unit keeps running. Other types (Mechanical…) → unit status Breakdown.';
 function renderDamageHint(unit) {
     const el = document.getElementById('dmgBreakdownHint');
     if (!el) return;
     el.textContent = (unit && isHeavy(unit))
-        ? 'Device Precision → only the related component (Camera AI/Telematic Box/Switch Limiter/Rotary Lamp) goes Breakdown; the unit keeps running. Other types (Mechanical…) → unit status Breakdown.'
+        ? 'Device Precision / Software → only the related component (Camera AI/Telematic Box/Switch Limiter/Rotary Lamp) goes Breakdown; the unit keeps running. Other types (Mechanical…) → unit status Breakdown.'
         : DAMAGE_HINT_TRACTOR;
 }
 
@@ -17746,7 +17882,7 @@ function showWorkLogDetail(id) {
         split.general.forEach((_, k) => caps.push(`Photo ${k + 1} of ${split.general.length}`));
         let at = 0;
         const thumbs = list => list.map(src => { const i = at++; return src
-            ? `<button type="button" class="wl-detail__thumb" onclick="openPhotoLightbox(window._wlDetailPhotos, ${i}, { captions: window._wlDetailCaps })"><img src="${escapeHtml(safeImageSrc(src))}" alt="${escapeHtml(caps[i] || 'Photo')}"></button>`
+            ? `<button type="button" class="wl-detail__thumb" onclick="openPhotoLightbox(window._wlDetailPhotos, ${i}, { captions: window._wlDetailCaps })"><img ${thumbAttrs(src)} alt="${escapeHtml(caps[i] || 'Photo')}"></button>`
             : '<span class="wl-detail__thumb wl-detail__thumb--missing">Not found</span>'; }).join('');
         window._wlDetailPhotos = all; window._wlDetailCaps = caps;
         split.jobs.forEach((part, i) => { const el = modal.querySelector(`[data-wl-photos="job${i}"]`); if (el) el.innerHTML = thumbs(part); });
@@ -17964,7 +18100,7 @@ function _wlJobPhotosHtml(j, i) {
     else if (_wlPhotosFailed && j.had > 0) body = '<span class="wl-photo__loading"><i class="fas fa-triangle-exclamation"></i> Photos failed to load and are still saved. Close and reopen to change them.</span>';
     else body = pics.map((src, k) => `
                 <div class="wl-photo">
-                    <img src="${escapeHtml(safeImageSrc(src))}" alt="Paddock ${i + 1} photo ${k + 1}" onclick="openPhotoLightbox(_wlJobs[${i}].pics, ${k})">
+                    <img ${thumbAttrs(src)} alt="Paddock ${i + 1} photo ${k + 1}" onclick="openPhotoLightbox(_wlJobs[${i}].pics, ${k})">
                     <button type="button" class="wl-photo__x" aria-label="Delete photo ${k + 1} of paddock ${i + 1}"
                             title="Delete photo" onclick="removeWorkLogJobPhoto(${i}, ${k})">&times;</button>
                 </div>`).join('') + (pics.length < WORKLOG_JOB_PHOTO_MAX ? `
@@ -18087,7 +18223,7 @@ function renderWorkLogPhotos() {
     _wlSyncGeneralPhotos();
     wrap.innerHTML = _wlPhotos.map((src, i) => `
         <div class="wl-photo">
-            <img src="${escapeHtml(safeImageSrc(src))}" alt="Photo ${i + 1}" onclick="openPhotoLightbox(_wlPhotos, ${i})">
+            <img ${thumbAttrs(src)} alt="Photo ${i + 1}" onclick="openPhotoLightbox(_wlPhotos, ${i})">
             <button type="button" class="wl-photo__x" aria-label="Delete photo ${i + 1}"
                     title="Delete photo" onclick="removeWorkLogPhoto(${i})">&times;</button>
         </div>`).join('');
@@ -20850,7 +20986,7 @@ function whPhotoRender(kind) {
     const st = _whPh[kind];
     grid.innerHTML = st.items.map((it, i) => `
         <div class="wh-photo">
-            ${it.src ? `<img src="${escapeHtml(it.src)}" alt="Photo ${i + 1}" onclick="whPhotoView('${kind}', ${i})">`
+            ${it.src ? `<img ${/^data:/.test(it.src) ? `src="${escapeHtml(it.src)}"` : thumbAttrs(it.src)} alt="Photo ${i + 1}" onclick="whPhotoView('${kind}', ${i})">`
                      : `<span class="wh-photo__wait">${it.missing ? 'Not found' : 'Loading…'}</span>`}
             <button type="button" class="wh-photo__del" aria-label="Remove photo ${i + 1}" onclick="whPhotoRemove('${kind}', ${i})"><i class="fas fa-xmark" aria-hidden="true"></i></button>
         </div>`).join('') + (st.items.length < WH_PHOTO_MAX ? `
