@@ -4796,6 +4796,35 @@
         </form>
     </div>
 </div>
+<div class="modal-overlay" id="pjMatModal">
+    <div class="modal-card" role="dialog" aria-labelledby="pjMatTitle" style="max-width:520px">
+        <div class="modal-header">
+            <h3 id="pjMatTitle">Add item</h3>
+            <button class="btn-icon" onclick="closeProjectMaterialForm()" aria-label="Close" title="Close"><i class="fas fa-xmark"></i></button>
+        </div>
+        <form id="pjMatForm" onsubmit="saveProjectMaterial(event)">
+            <input type="hidden" id="pjMatProject"><input type="hidden" id="pjMatId">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group full-width"><label class="form-label" for="pjMatName">Item</label>
+                        <input class="form-input" id="pjMatName" maxlength="200" autocomplete="off" placeholder="e.g. Dipole Array Antenna 16 Bay"></div>
+                    <div class="form-group"><label class="form-label" for="pjMatQty">Needed</label>
+                        <input class="form-input" id="pjMatQty" type="number" min="0" max="1000000" step="any" inputmode="decimal"></div>
+                    <div class="form-group"><label class="form-label" for="pjMatUom">Unit</label><select class="form-select" id="pjMatUom"></select></div>
+                    <div class="form-group"><label class="form-label" for="pjMatHave">Have now <span class="form-optional">(arrived)</span></label>
+                        <input class="form-input" id="pjMatHave" type="number" min="0" max="1000000" step="any" inputmode="decimal">
+                        <p class="form-hint" id="pjMatHaveHint" hidden>Counted from the purchase request — record the receipt there.</p></div>
+                    <div class="form-group full-width"><label class="form-label" for="pjMatNote">Note <span class="form-optional">(optional)</span></label>
+                        <input class="form-input" id="pjMatNote" maxlength="200" autocomplete="off" placeholder="e.g. waiting for vendor, ETA 20 Nov"></div>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeProjectMaterialForm()">Cancel</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-check" aria-hidden="true"></i> Save item</button>
+            </div>
+        </form>
+    </div>
+</div>
 <div class="modal-overlay" id="pjDetailModal">
     <div class="modal-card pr-dialog" role="dialog" aria-labelledby="pjDetailTitle">
         <div class="modal-header">

@@ -276,6 +276,7 @@ function renderProjectsList() {
             ${(p.departments || []).length ? `<span class="pj-depts">${p.departments.map(d => `<span class="pj-dept">${escapeHtml(d.name)}</span>`).join('')}</span>` : ''}
             <span class="pj-card__progress">${pjProgressBar(p, rag)}</span>
             <span class="pj-card__due">${escapeHtml(pjDueText(p))}</span>
+            ${(p.materials || []).length ? (() => { const m = projectMaterialsSummary(p); return `<span class="pj-card__mat${m.ready === m.total ? ' is-ready' : ''}"><i class="fas fa-box-open" aria-hidden="true"></i> Goods ${m.ready}/${m.total} ready</span>`; })() : ''}
             ${last ? `<span class="pj-card__last"><b>${escapeHtml(last.date || '')}</b> ${escapeHtml((last.text || '').slice(0, 110))}</span>` : ''}
         </button>`;
     }).join('');
@@ -461,6 +462,117 @@ function saveProject(event) {
     closeProjectModal();
     showProjectDetail(rec.id);
 }
+// ---- Materials / goods a project needs (2.36.0) ----
+// project.materials: [{ id, name, qty, uom, have, note, prId, prItemId }].
+// Kept from the project's detail, not its form: a line is added, changed or
+// removed on its own. A line taken from a linked purchase request follows that
+// request — what has been received there is what the project has.
+function _pjMatHave(m) {
+    if (m.prId && m.prItemId) {
+        const r = (typeof purchaseRequests !== 'undefined' ? purchaseRequests : []).find(x => x.id === m.prId);
+        const it = r && (r.items || []).find(x => x.id === m.prItemId);
+        if (it) return Math.max(0, Number(it.receivedQty) || 0);
+    }
+    return Math.max(0, Number(m.have) || 0);
+}
+function _pjMatState(m) {
+    const need = Math.max(0, Number(m.qty) || 0), have = _pjMatHave(m);
+    return have >= need && need > 0 ? 'ready' : have > 0 ? 'partial' : 'none';
+}
+function projectMaterialsSummary(p) {
+    const list = (p && p.materials) || [];
+    return { total: list.length, ready: list.filter(m => _pjMatState(m) === 'ready').length, partial: list.filter(m => _pjMatState(m) === 'partial').length };
+}
+const _PJ_MAT_LABEL = { ready: 'Complete', partial: 'Partly', none: 'Not yet' };
+function projectMaterialsHtml(p, canEdit) {
+    const list = p.materials || [];
+    if (!list.length && !canEdit) return '';
+    const sum = projectMaterialsSummary(p);
+    const idArg = jsArg(p.id);
+    const prs = (p.prIds || []).map(pid => (purchaseRequests || []).find(r => r.id === pid)).filter(Boolean);
+    const num = n => (Math.round(n * 100) / 100).toLocaleString('en-US');
+    return `<div class="pr-section-title pj-mat__title"><span>Materials / goods${list.length ? ` — ${sum.ready} of ${sum.total} complete` : ''}</span>
+            ${canEdit ? `<span class="pj-mat__acts"><button type="button" class="btn btn-secondary btn-sm" onclick="showProjectMaterialForm(${idArg})"><i class="fas fa-plus" aria-hidden="true"></i> Add item</button>
+                ${prs.map(r => `<button type="button" class="btn btn-secondary btn-sm" title="Add the items of this purchase request; what is received there counts here" onclick="addProjectMaterialsFromPr(${idArg}, ${jsArg(r.id)})"><i class="fas fa-file-import" aria-hidden="true"></i> From ${escapeHtml(r.prNo || 'PR')}</button>`).join('')}</span>` : ''}</div>
+        ${list.length ? `<div class="pj-mat"><table class="pj-mat__table"><thead><tr><th>Item</th><th class="num">Need</th><th class="num">Have</th><th class="num">Short</th><th>Status</th>${canEdit ? '<th></th>' : ''}</tr></thead><tbody>
+            ${list.map(m => { const need = Math.max(0, Number(m.qty) || 0), have = _pjMatHave(m), st = _pjMatState(m), short = Math.max(0, need - have);
+                const pr = m.prId ? (purchaseRequests || []).find(r => r.id === m.prId) : null;
+                return `<tr class="pj-mat__row pj-mat__row--${st}">
+                    <td data-label="Item"><b>${escapeHtml(m.name || '')}</b>${m.note ? `<span class="adm-sub">${escapeHtml(m.note)}</span>` : ''}${m.prId ? `<span class="adm-sub"><i class="fas fa-link" aria-hidden="true"></i> ${escapeHtml(pr ? (pr.prNo || 'purchase request') : 'purchase request')}</span>` : ''}</td>
+                    <td data-label="Need" class="num">${num(need)} <span class="adm-muted">${escapeHtml(m.uom || '')}</span></td>
+                    <td data-label="Have" class="num">${num(have)}</td>
+                    <td data-label="Short" class="num">${short ? `<b class="pj-mat__short">${num(short)}</b>` : '<span class="adm-muted">—</span>'}</td>
+                    <td data-label="Status"><span class="pj-mat__chip pj-mat__chip--${st}">${_PJ_MAT_LABEL[st]}</span></td>
+                    ${canEdit ? `<td class="pj-mat__btns"><button type="button" class="btn-icon" title="Edit" aria-label="Edit ${escapeHtml(m.name || 'item')}" onclick="showProjectMaterialForm(${idArg}, ${jsArg(m.id)})"><i class="fas fa-pen" aria-hidden="true"></i></button>
+                        <button type="button" class="btn-icon" title="Remove" aria-label="Remove ${escapeHtml(m.name || 'item')}" onclick="removeProjectMaterial(${idArg}, ${jsArg(m.id)})"><i class="fas fa-trash" aria-hidden="true"></i></button></td>` : ''}</tr>`; }).join('')}
+            </tbody></table></div>` : '<p class="adm-muted pj-mat__empty">No goods listed yet. Add what the project needs — antennas, cable, radios — and how many have arrived.</p>'}`;
+}
+function _pjSaveMaterials(p, materials, msg) {
+    _pjPush({ ...p, materials, updatedAt: Date.now() }, msg, p, 'Materials');
+    showProjectDetail(p.id, true);
+}
+function showProjectMaterialForm(projectId, matId) {
+    const p = projects.find(x => x.id === projectId);
+    if (!p || !canEditProjectRecord(p)) return;
+    const m = matId ? (p.materials || []).find(x => x.id === matId) : null;
+    document.getElementById('pjMatForm').reset();
+    document.getElementById('pjMatProject').value = p.id;
+    document.getElementById('pjMatId').value = m ? m.id : '';
+    document.getElementById('pjMatTitle').textContent = m ? 'Edit item' : 'Add item';
+    const uoms = prUomChoices();
+    if (m && m.uom && !uoms.includes(m.uom)) uoms.push(m.uom);
+    document.getElementById('pjMatUom').innerHTML = uoms.map(u => `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
+    const linked = !!(m && m.prId && m.prItemId);
+    if (m) {
+        document.getElementById('pjMatName').value = m.name || '';
+        document.getElementById('pjMatQty').value = m.qty || '';
+        document.getElementById('pjMatUom').value = m.uom || uoms[0] || '';
+        document.getElementById('pjMatHave').value = _pjMatHave(m);
+        document.getElementById('pjMatNote').value = m.note || '';
+    } else document.getElementById('pjMatHave').value = 0;
+    // From a purchase request: what has arrived is counted there.
+    document.getElementById('pjMatHave').disabled = linked;
+    document.getElementById('pjMatHaveHint').hidden = !linked;
+    document.getElementById('pjMatModal').classList.add('open');
+    document.getElementById('pjMatName').focus();
+}
+function closeProjectMaterialForm() { document.getElementById('pjMatModal').classList.remove('open'); }
+function saveProjectMaterial(event) {
+    if (event) event.preventDefault();
+    const p = projects.find(x => x.id === document.getElementById('pjMatProject').value);
+    if (!p || !canEditProjectRecord(p)) return;
+    const id = document.getElementById('pjMatId').value;
+    const old = id ? (p.materials || []).find(x => x.id === id) : null;
+    const name = (document.getElementById('pjMatName').value || '').trim();
+    const qty = Math.round((Number(document.getElementById('pjMatQty').value) || 0) * 100) / 100;
+    if (!name) { showToast('Fill in the item name', 'warning'); document.getElementById('pjMatName').focus(); return; }
+    if (!(qty > 0)) { showToast('Fill in how many are needed', 'warning'); document.getElementById('pjMatQty').focus(); return; }
+    const have = Math.max(0, Math.round((Number(document.getElementById('pjMatHave').value) || 0) * 100) / 100);
+    const rec = { ...(old || {}), id: old ? old.id : _pjId('mt'), name: name.slice(0, 200), qty, uom: document.getElementById('pjMatUom').value || '',
+        have: old && old.prId && old.prItemId ? (Number(old.have) || 0) : have, note: (document.getElementById('pjMatNote').value || '').trim().slice(0, 200) };
+    if ((p.materials || []).length >= 200 && !old) { showToast('A project holds up to 200 items', 'warning'); return; }
+    const list = old ? p.materials.map(x => x.id === old.id ? rec : x) : (p.materials || []).concat([rec]);
+    closeProjectMaterialForm();
+    _pjSaveMaterials(p, list, old ? 'Item saved' : 'Item added');
+}
+function removeProjectMaterial(projectId, matId) {
+    const p = projects.find(x => x.id === projectId);
+    const m = p && (p.materials || []).find(x => x.id === matId);
+    if (!m || !canEditProjectRecord(p)) return;
+    if (!confirm(`Remove "${m.name}" from the goods of this project?`)) return;
+    _pjSaveMaterials(p, p.materials.filter(x => x.id !== matId), 'Item removed');
+}
+function addProjectMaterialsFromPr(projectId, prId) {
+    const p = projects.find(x => x.id === projectId);
+    const r = (purchaseRequests || []).find(x => x.id === prId);
+    if (!p || !r || !canEditProjectRecord(p)) return;
+    const have = new Set((p.materials || []).filter(m => m.prId === prId).map(m => m.prItemId));
+    const fresh = (r.items || []).filter(it => it.id && (it.spec || '').trim() && !have.has(it.id)).map(it => ({ id: _pjId('mt'), name: String(it.spec).trim().slice(0, 200),
+        qty: Math.max(0, Number(it.qty) || 0), uom: it.uom || '', have: Math.max(0, Number(it.receivedQty) || 0), note: '', prId, prItemId: it.id }));
+    if (!fresh.length) { showToast(`Every item of ${r.prNo || 'this request'} is already listed`, 'info'); return; }
+    _pjSaveMaterials(p, (p.materials || []).concat(fresh).slice(0, 200), `${fresh.length} item(s) added from ${r.prNo || 'the purchase request'}`);
+}
+
 function deleteProject(id) {
     const p = projects.find(x => x.id === id);
     if (!p || !canEditProjectRecord(p)) return;
@@ -559,6 +671,7 @@ function showProjectDetail(id, keepForm) {
         </div>
         <div class="pr-section-title">Target — ${escapeHtml(t.mode === 'units' ? (t.what || 'work on each unit') : t.mode === 'milestones' ? 'milestones' : (t.what || 'number'))}</div>
         ${targetHtml}
+        ${projectMaterialsHtml(p, canEdit)}
         ${prs.length ? `<div class="pr-section-title">Purchase requests</div><div class="pj-links">${prs.map(r => `<button type="button" class="pj-link" onclick="closeProjectDetail(); navigateTo('purchase'); showPurchaseDetail(${jsArg(r.id)})">${escapeHtml(r.prNo || r.title)} ${prStatusChip(r.status)}</button>`).join('')}</div>` : ''}
         ${canEdit && _pjUncountedJobUnits(p) ? `<div class="pj-notice">${_pjUncountedJobUnits(p)} unit(s) from finished jobs are not counted yet.
             <button type="button" class="btn btn-primary btn-sm" onclick="countProjectJobUnits(${jsArg(p.id)})">Count units from jobs (+${_pjUncountedJobUnits(p)})</button></div>` : ''}

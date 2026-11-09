@@ -591,6 +591,12 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.36.0 — Materials / goods di project**: detail project punya daftar barang
+  (`project.materials`: nama, butuh, satuan, sudah ada, catatan) — *Add item*,
+  edit, hapus, dan *From <PR>* untuk mengambil item Purchase Request yang
+  terhubung (jumlah "Have" mengikuti penerimaan di PR). Status per barang
+  Complete / Partly / Not yet, kekurangan (*Short*), ringkasan di kartu project.
+  Tanpa perubahan rules.
   **2.35.0 — Backup harian, eskalasi SLA ticket, thumbnail foto, Software =
   device.** (1) Fungsi `dailyMaintenance` (02:00 WIT) menulis seluruh koleksi
   Firestore ke Storage `backups/<tanggal>/<koleksi>.json.gz` + manifest; simpan
