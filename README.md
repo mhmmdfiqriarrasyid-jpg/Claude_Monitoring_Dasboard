@@ -591,6 +591,11 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.36.1 — Barang per milestone**: di project bermode Milestones, tiap
+  milestone punya daftar barangnya sendiri (`material.milestoneId`, tombol
+  *+ Item*, hitungan lengkap n/n); barang tanpa milestone ada di *Other goods*
+  (item dari PR masuk ke sana, bisa dipindah lewat Edit → *For milestone*).
+  Menandai milestone selesai saat barangnya belum lengkap meminta konfirmasi.
   **2.36.0 — Materials / goods di project**: detail project punya daftar barang
   (`project.materials`: nama, butuh, satuan, sudah ada, catatan) — *Add item*,
   edit, hapus, dan *From <PR>* untuk mengambil item Purchase Request yang

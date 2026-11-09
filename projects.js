@@ -484,17 +484,10 @@ function projectMaterialsSummary(p) {
     return { total: list.length, ready: list.filter(m => _pjMatState(m) === 'ready').length, partial: list.filter(m => _pjMatState(m) === 'partial').length };
 }
 const _PJ_MAT_LABEL = { ready: 'Complete', partial: 'Partly', none: 'Not yet' };
-function projectMaterialsHtml(p, canEdit) {
-    const list = p.materials || [];
-    if (!list.length && !canEdit) return '';
-    const sum = projectMaterialsSummary(p);
+function _pjMatTable(p, list, canEdit) {
     const idArg = jsArg(p.id);
-    const prs = (p.prIds || []).map(pid => (purchaseRequests || []).find(r => r.id === pid)).filter(Boolean);
     const num = n => (Math.round(n * 100) / 100).toLocaleString('en-US');
-    return `<div class="pr-section-title pj-mat__title"><span>Materials / goods${list.length ? ` — ${sum.ready} of ${sum.total} complete` : ''}</span>
-            ${canEdit ? `<span class="pj-mat__acts"><button type="button" class="btn btn-secondary btn-sm" onclick="showProjectMaterialForm(${idArg})"><i class="fas fa-plus" aria-hidden="true"></i> Add item</button>
-                ${prs.map(r => `<button type="button" class="btn btn-secondary btn-sm" title="Add the items of this purchase request; what is received there counts here" onclick="addProjectMaterialsFromPr(${idArg}, ${jsArg(r.id)})"><i class="fas fa-file-import" aria-hidden="true"></i> From ${escapeHtml(r.prNo || 'PR')}</button>`).join('')}</span>` : ''}</div>
-        ${list.length ? `<div class="pj-mat"><table class="pj-mat__table"><thead><tr><th>Item</th><th class="num">Need</th><th class="num">Have</th><th class="num">Short</th><th>Status</th>${canEdit ? '<th></th>' : ''}</tr></thead><tbody>
+    return `<div class="pj-mat"><table class="pj-mat__table"><thead><tr><th>Item</th><th class="num">Need</th><th class="num">Have</th><th class="num">Short</th><th>Status</th>${canEdit ? '<th></th>' : ''}</tr></thead><tbody>
             ${list.map(m => { const need = Math.max(0, Number(m.qty) || 0), have = _pjMatHave(m), st = _pjMatState(m), short = Math.max(0, need - have);
                 const pr = m.prId ? (purchaseRequests || []).find(r => r.id === m.prId) : null;
                 return `<tr class="pj-mat__row pj-mat__row--${st}">
@@ -505,20 +498,44 @@ function projectMaterialsHtml(p, canEdit) {
                     <td data-label="Status"><span class="pj-mat__chip pj-mat__chip--${st}">${_PJ_MAT_LABEL[st]}</span></td>
                     ${canEdit ? `<td class="pj-mat__btns"><button type="button" class="btn-icon" title="Edit" aria-label="Edit ${escapeHtml(m.name || 'item')}" onclick="showProjectMaterialForm(${idArg}, ${jsArg(m.id)})"><i class="fas fa-pen" aria-hidden="true"></i></button>
                         <button type="button" class="btn-icon" title="Remove" aria-label="Remove ${escapeHtml(m.name || 'item')}" onclick="removeProjectMaterial(${idArg}, ${jsArg(m.id)})"><i class="fas fa-trash" aria-hidden="true"></i></button></td>` : ''}</tr>`; }).join('')}
-            </tbody></table></div>` : '<p class="adm-muted pj-mat__empty">No goods listed yet. Add what the project needs — antennas, cable, radios — and how many have arrived.</p>'}`;
+            </tbody></table></div>`;
+}
+// The goods not tied to a milestone (all of them when the project is not
+// measured by milestones), and the buttons to add more.
+function projectMaterialsHtml(p, canEdit) {
+    const byMs = ((p.target || {}).mode === 'milestones');
+    const list = byMs ? _pjMatsOf(p, '') : (p.materials || []);
+    if (!list.length && !canEdit) return '';
+    const sum = projectMaterialsSummary(p);
+    const idArg = jsArg(p.id);
+    const prs = (p.prIds || []).map(pid => (purchaseRequests || []).find(r => r.id === pid)).filter(Boolean);
+    const title = byMs ? `Other goods${sum.total ? ` — all goods: ${sum.ready} of ${sum.total} complete` : ''}` : `Materials / goods${sum.total ? ` — ${sum.ready} of ${sum.total} complete` : ''}`;
+    return `<div class="pr-section-title pj-mat__title"><span>${title}</span>
+            ${canEdit ? `<span class="pj-mat__acts"><button type="button" class="btn btn-secondary btn-sm" onclick="showProjectMaterialForm(${idArg})"><i class="fas fa-plus" aria-hidden="true"></i> Add item</button>
+                ${prs.map(r => `<button type="button" class="btn btn-secondary btn-sm" title="Add the items of this purchase request; what is received there counts here" onclick="addProjectMaterialsFromPr(${idArg}, ${jsArg(r.id)})"><i class="fas fa-file-import" aria-hidden="true"></i> From ${escapeHtml(r.prNo || 'PR')}</button>`).join('')}</span>` : ''}</div>
+        ${list.length ? _pjMatTable(p, list, canEdit)
+            : `<p class="adm-muted pj-mat__empty">${byMs ? 'Goods that belong to no single milestone go here. Use <b>+ Item</b> on a milestone for what that step needs; items taken from a purchase request land here — open one to move it to its milestone.'
+                : 'No goods listed yet. Add what the project needs — antennas, cable, radios — and how many have arrived.'}</p>`}`;
 }
 function _pjSaveMaterials(p, materials, msg) {
     _pjPush({ ...p, materials, updatedAt: Date.now() }, msg, p, 'Materials');
     showProjectDetail(p.id, true);
 }
-function showProjectMaterialForm(projectId, matId) {
+function showProjectMaterialForm(projectId, matId, milestoneId) {
     const p = projects.find(x => x.id === projectId);
     if (!p || !canEditProjectRecord(p)) return;
     const m = matId ? (p.materials || []).find(x => x.id === matId) : null;
+    // Which milestone the item is for (only in a project measured by milestones).
     document.getElementById('pjMatForm').reset();
+    const ms = (p.target || {}).mode === 'milestones' ? ((p.target || {}).milestones || []) : [];
+    const msSel = document.getElementById('pjMatMilestone');
+    document.getElementById('pjMatMilestoneGroup').style.display = ms.length ? '' : 'none';
+    msSel.innerHTML = '<option value="">— No single milestone (other goods) —</option>' + ms.map(x => `<option value="${escapeHtml(x.id)}">${escapeHtml(x.label)}</option>`).join('');
+    const msPick = m ? (m.milestoneId || '') : (milestoneId || '');
     document.getElementById('pjMatProject').value = p.id;
     document.getElementById('pjMatId').value = m ? m.id : '';
     document.getElementById('pjMatTitle').textContent = m ? 'Edit item' : 'Add item';
+    msSel.value = ms.some(x => x.id === msPick) ? msPick : '';
     const uoms = prUomChoices();
     if (m && m.uom && !uoms.includes(m.uom)) uoms.push(m.uom);
     document.getElementById('pjMatUom').innerHTML = uoms.map(u => `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
@@ -549,7 +566,8 @@ function saveProjectMaterial(event) {
     if (!(qty > 0)) { showToast('Fill in how many are needed', 'warning'); document.getElementById('pjMatQty').focus(); return; }
     const have = Math.max(0, Math.round((Number(document.getElementById('pjMatHave').value) || 0) * 100) / 100);
     const rec = { ...(old || {}), id: old ? old.id : _pjId('mt'), name: name.slice(0, 200), qty, uom: document.getElementById('pjMatUom').value || '',
-        have: old && old.prId && old.prItemId ? (Number(old.have) || 0) : have, note: (document.getElementById('pjMatNote').value || '').trim().slice(0, 200) };
+        have: old && old.prId && old.prItemId ? (Number(old.have) || 0) : have, note: (document.getElementById('pjMatNote').value || '').trim().slice(0, 200),
+        milestoneId: document.getElementById('pjMatMilestoneGroup').style.display === 'none' ? ((old && old.milestoneId) || '') : (document.getElementById('pjMatMilestone').value || '') };
     if ((p.materials || []).length >= 200 && !old) { showToast('A project holds up to 200 items', 'warning'); return; }
     const list = old ? p.materials.map(x => x.id === old.id ? rec : x) : (p.materials || []).concat([rec]);
     closeProjectMaterialForm();
@@ -606,9 +624,14 @@ function showProjectDetail(id, keepForm) {
             <input type="checkbox" ${u.done ? 'checked' : ''} ${canEdit ? '' : 'disabled'} onchange="toggleProjectTarget(${jsArg(p.id)}, 'unit', ${i}, this.checked)">
             <span><b>${escapeHtml(u.name || u.sn || '(unit)')}</b>${u.done && u.doneAt ? `<span class="adm-sub">done ${escapeHtml(u.doneAt)}</span>` : ''}</span></label>`).join('')}</div>`;
     } else if (t.mode === 'milestones') {
-        targetHtml = `<div class="pj-targets">${(t.milestones || []).map((m, i) => `<label class="pj-target${m.done ? ' is-done' : ''}">
-            <input type="checkbox" ${m.done ? 'checked' : ''} ${canEdit ? '' : 'disabled'} onchange="toggleProjectTarget(${jsArg(p.id)}, 'milestone', ${i}, this.checked)">
-            <span><b>${escapeHtml(m.label)}</b> <span class="adm-sub">${Number(m.weight) || 0}%${m.done && m.doneAt ? ' · done ' + escapeHtml(m.doneAt) : ''}</span></span></label>`).join('')}</div>`;
+        // 2.36.1: each milestone carries the goods it needs.
+        targetHtml = `<div class="pj-ms">${(t.milestones || []).map((m, i) => { const items = m.id ? _pjMatsOf(p, m.id) : [], ready = items.filter(x => _pjMatState(x) === 'ready').length;
+            return `<div class="pj-ms__item${m.done ? ' is-done' : ''}">
+            <div class="pj-ms__head"><label class="pj-ms__check"><input type="checkbox" ${m.done ? 'checked' : ''} ${canEdit ? '' : 'disabled'} onchange="toggleProjectTarget(${jsArg(p.id)}, 'milestone', ${i}, this.checked)">
+                <span><b>${escapeHtml(m.label)}</b> <span class="adm-sub">${Number(m.weight) || 0}%${m.done && m.doneAt ? ' · done ' + escapeHtml(m.doneAt) : ''}</span></span></label>
+                ${items.length ? `<span class="pj-ms__goods${ready === items.length ? ' is-ready' : ''}"><i class="fas fa-box-open" aria-hidden="true"></i> ${ready}/${items.length}</span>` : ''}
+                ${canEdit ? `<button type="button" class="btn btn-secondary btn-sm" onclick="showProjectMaterialForm(${jsArg(p.id)}, '', ${jsArg(m.id)})"><i class="fas fa-plus" aria-hidden="true"></i> Item</button>` : ''}</div>
+            ${items.length ? _pjMatTable(p, items, canEdit) : ''}</div>`; }).join('')}</div>`;
     } else {
         targetHtml = `<p>${pr.done} of ${pr.total} ${escapeHtml(t.what || '')}</p>`;
         // 2.29.3: where the number comes from — units ticked, and the rest typed by hand.
@@ -743,12 +766,22 @@ function saveProjectUpdate(id) {
     showProjectDetail(id);
 }
 // Ticking a unit or milestone in the detail: one change, logged as an update.
+// Goods of one milestone ('' = not tied to a milestone, or its milestone is gone).
+function _pjMatsOf(p, milestoneId) {
+    const ids = new Set((((p.target || {}).milestones) || []).map(m => m.id));
+    return (p.materials || []).filter(x => milestoneId ? x.milestoneId === milestoneId : (!x.milestoneId || !ids.has(x.milestoneId)));
+}
 function toggleProjectTarget(id, kind, i, on) {
     const p = projects.find(x => x.id === id);
     if (!p || !canEditProjectRecord(p)) return;
     const t = JSON.parse(JSON.stringify(p.target || {}));
     const item = kind === 'unit' ? (t.units || [])[i] : (t.milestones || [])[i];
     if (!item) return;
+    // 2.36.1: a milestone whose goods have not all arrived — ask before closing it.
+    if (kind === 'milestone' && on && item.id) {
+        const short = _pjMatsOf(p, item.id).filter(x => _pjMatState(x) !== 'ready');
+        if (short.length && !confirm(`"${item.label}" still waits for ${short.length} item(s):\n\n${short.slice(0, 8).map(x => `• ${x.name} — have ${_pjMatHave(x)} of ${x.qty} ${x.uom || ''}`).join('\n')}\n\nMark it done anyway?`)) { showProjectDetail(id, true); return; }
+    }
     const was = !!item.done;
     item.done = !!on; item.doneAt = on ? toISODate() : '';
     // A unit of a Number project counts in "Done so far" too.

@@ -257,7 +257,7 @@ const { launch, BASE_URL } = require('./_env');
         projects.push(mp);
         purchaseRequests = [{ id: 'prm', prNo: 'PR/L/GPA1', status: 'partial', items: [{ id: 'i1', spec: 'Hytera HR1068', qty: 2, uom: 'Unit', receivedQty: 2 }, { id: 'i2', spec: 'Dipole Array Antenna', qty: 2, uom: 'Unit', receivedQty: 0 }] }];
         showProjectDetail('mp1');
-        t('detail: bagian Materials kosong + tombol Add item & From PR', [/No goods listed yet/.test(document.getElementById('pjDetailBody').textContent), [...document.querySelectorAll('.pj-mat__acts button')].map(b => b.textContent.trim())], [true, ['Add item', 'From PR/L/GPA1']]);
+        t('detail: bagian Materials kosong + tombol Add item & From PR', [/Goods that belong to no single milestone/.test(document.getElementById('pjDetailBody').textContent), [...document.querySelectorAll('.pj-mat__acts button')].map(b => b.textContent.trim())], [true, ['Add item', 'From PR/L/GPA1']]);
         showProjectMaterialForm('mp1');
         saveProjectMaterial();
         t('nama wajib', toasts[toasts.length - 1], 'Fill in the item name');
@@ -286,8 +286,34 @@ const { launch, BASE_URL } = require('./_env');
         closeProjectMaterialForm();
         removeProjectMaterial('mp1', mp1.materials[0].id); await tick();
         t('hapus barang', projects.find(x => x.id === 'mp1').materials.length, 2);
+        // ---- 2.36.1: goods per milestone ----
+        showProjectDetail('mp1');
+        t('tiap milestone punya tombol + Item', document.querySelectorAll('.pj-ms__item .pj-ms__head button').length, 1);
+        showProjectMaterialForm('mp1', '', 'a');
+        t('form: milestone terpilih', [document.getElementById('pjMatMilestoneGroup').style.display, document.getElementById('pjMatMilestone').value, [...document.getElementById('pjMatMilestone').options].map(o => o.textContent)],
+            ['', 'a', ['— No single milestone (other goods) —', 'Instalasi Antenna']]);
+        document.getElementById('pjMatName').value = 'Mounting Antenna';
+        document.getElementById('pjMatQty').value = '2';
+        document.getElementById('pjMatHave').value = '1';
+        saveProjectMaterial(); await tick();
+        mp1 = projects.find(x => x.id === 'mp1');
+        t('barang tersimpan untuk milestone itu', mp1.materials.filter(m => m.milestoneId === 'a').map(m => m.name), ['Mounting Antenna']);
+        t('tampil di bawah milestone, bukan di Other goods', [[...document.querySelectorAll('.pj-ms__item .pj-mat__row td[data-label="Item"] b')].map(x => x.textContent), document.querySelector('.pj-ms__goods').textContent.trim(),
+            [...document.querySelectorAll('.pj-ms ~ .pj-mat .pj-mat__row b, .pj-mat__title ~ .pj-mat .pj-mat__row b')].map(x => x.textContent).includes('Mounting Antenna')], [['Mounting Antenna'], '0/1', false]);
+        // Move an item taken from the PR to the milestone.
+        showProjectMaterialForm('mp1', mp1.materials.find(m => m.name === 'Dipole Array Antenna').id);
+        document.getElementById('pjMatMilestone').value = 'a';
+        saveProjectMaterial(); await tick();
+        t('barang dari PR dipindah ke milestone', [...document.querySelectorAll('.pj-ms__item .pj-mat__row td[data-label="Item"] b')].map(x => x.textContent), ['Dipole Array Antenna', 'Mounting Antenna']);
+        // Marking the milestone done while goods are short asks first.
+        let askedMs = ''; window.confirm = m => { askedMs = m; return false; };
+        toggleProjectTarget('mp1', 'milestone', 0, true); await tick();
+        t('barang belum lengkap: ditanya dulu, dibatalkan', [/still waits for 1 item/.test(askedMs), /Mounting Antenna — have 1 of 2/.test(askedMs), projects.find(x => x.id === 'mp1').target.milestones[0].done], [true, true, false]);
+        window.confirm = () => true;
+        toggleProjectTarget('mp1', 'milestone', 0, true); await tick();
+        t('tetap ditandai selesai bila dijawab ya', projects.find(x => x.id === 'mp1').target.milestones[0].done, true);
         switchProjectsTab('projects'); document.getElementById('pjStatusFilter') && (document.getElementById('pjStatusFilter').value = ''); renderProjectsList();
-        t('kartu project: Goods 2/2 ready', [...document.querySelectorAll('.pj-card__mat')].map(x => x.textContent.trim()), ['Goods 2/2 ready']);
+        t('kartu project: ringkasan semua barang', [...document.querySelectorAll('.pj-card__mat')].map(x => x.textContent.trim()), ['Goods 2/3 ready']);
         closeProjectDetail();
         return T;
     });
