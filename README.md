@@ -591,6 +591,11 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.34.0 — Komponen *Not installed***: tiap komponen (GPS, Display, Steering,
+  JDLink, Camera AI, Telematic Box, Switch Limiter, Rotary Lamp) bisa diisi *Not
+  installed* di form unit. Tidak dihitung masalah, tidak masuk persen kesehatan
+  komponen (hanya unit yang terpasang), tidak dikaitkan ke Damage, tidak wajib
+  di inspeksi; tampil abu-abu. Tanpa perubahan rules.
   **2.33.1 — Banner Warehouse menyebut yang ditolak** (bukan selalu "devices
   dan stockItems"), hilang sendiri saat bacaan berhasil lagi, dan tercatat di
   Error log.

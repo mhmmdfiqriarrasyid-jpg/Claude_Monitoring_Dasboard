@@ -11348,3 +11348,7 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 .dmg-precision-fix > i { color: var(--info, #175CD3); }
 .dmg-precision-fix > span { flex: 1 1 260px; }
 .dmg-precision-fix[hidden] { display: none; }
+/* 2.34.0 — component not installed */
+.cell-na { color: var(--text-light); }
+.profile-comp.na { color: var(--text-secondary); }
+.profile-comp.na i { color: var(--text-light); }

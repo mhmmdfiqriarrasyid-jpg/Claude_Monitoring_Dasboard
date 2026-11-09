@@ -169,16 +169,18 @@ function buildWeeklyReport(from, opts) {
 
     // Precision health: a tractor counts when every precision component is Good.
     const tractors = units.filter(u => !isHeavy(u)), heavy = units.filter(u => isHeavy(u));
-    const allGood = (u, keys) => keys.every(k => isGood(u[k]));
+    const allGood = (u, keys) => keys.every(k => compOk(u[k]));
+    // Per component: only the units that have it fitted.
+    const compPct = (list, k) => { const fit = list.filter(u => !isNotInstalled(u[k])); return _wrPct(fit.filter(u => isGood(u[k])).length, fit.length); };
     const sites = [...new Set(tractors.map(u => u.site || '—'))].sort();
     D.precision = {
         tractors: tractors.length, heavy: heavy.length,
         pct: _wrPct(tractors.filter(u => allGood(u, COMPONENT_KEYS)).length, tractors.length),
         heavyPct: _wrPct(heavy.filter(u => allGood(u, HEAVY_COMPONENT_KEYS)).length, heavy.length),
-        components: COMPONENT_KEYS.map(k => [COMPONENT_LABELS[k] || k, _wrPct(tractors.filter(u => isGood(u[k])).length, tractors.length)]),
-        heavyComponents: HEAVY_COMPONENT_KEYS.map(k => [((UNIT_GROUPS.heavy && UNIT_GROUPS.heavy.components || []).find(c => c.key === k) || {}).label || k, _wrPct(heavy.filter(u => isGood(u[k])).length, heavy.length)]),
+        components: COMPONENT_KEYS.map(k => [COMPONENT_LABELS[k] || k, compPct(tractors, k)]),
+        heavyComponents: HEAVY_COMPONENT_KEYS.map(k => [((UNIT_GROUPS.heavy && UNIT_GROUPS.heavy.components || []).find(c => c.key === k) || {}).label || k, compPct(heavy, k)]),
         bySite: sites.map(s => { const us = tractors.filter(u => (u.site || '—') === s); return { site: s, pt: _wrPt(s), units: us.length, pct: _wrPct(us.filter(u => allGood(u, COMPONENT_KEYS)).length, us.length),
-            components: COMPONENT_KEYS.map(k => _wrPct(us.filter(u => isGood(u[k])).length, us.length)) }; }),
+            components: COMPONENT_KEYS.map(k => compPct(us, k)) }; }),
         breakdownNow: units.filter(u => isBrokenValue(u.status)).length
     };
     D.precision.target = WR_TARGET;

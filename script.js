@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.33.1';
+const APP_VERSION = 'v2.34.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -1651,6 +1651,14 @@ function registerServiceWorker() {
 // ---- Utilities ----
 function clean(v) { return (v || '').toString().trim(); }
 function isGood(v) { return clean(v).toLowerCase() === 'good'; }
+// 2.34.0: a component the unit does not have (e.g. no Camera AI fitted). Not a
+// fault: left out of issues, health percentages and damage links.
+const NOT_INSTALLED = 'Not installed';
+function isNotInstalled(v) { return clean(v).toLowerCase() === 'not installed'; }
+function compOk(v) { return isGood(v) || isNotInstalled(v); }
+function compCellClass(v) { return isGood(v) ? 'cell-good' : isNotInstalled(v) ? 'cell-na' : 'cell-bad'; }
+// What a component select shows for a stored value.
+function healthSelectValue(v) { return isGood(v) ? 'Good' : isNotInstalled(v) ? NOT_INSTALLED : 'Breakdown'; }
 function pct(part, total) { return total > 0 ? Math.round((part / total) * 1000) / 10 : 0; }
 
 // ---- CSV output ----
@@ -4550,7 +4558,7 @@ function processData(rows, ctx) {
 function detectIssues(d) {
     const issues = [];
     if (!isGood(d.status)) issues.push('Unit');
-    groupDef(unitGroupOf(d)).components.forEach(c => { if (!isGood(d[c.key])) issues.push(c.label); });
+    groupDef(unitGroupOf(d)).components.forEach(c => { if (!compOk(d[c.key])) issues.push(c.label); });
     return issues;
 }
 
@@ -5221,7 +5229,7 @@ function renderDashParts(data, scope) {
     host.innerHTML = groups.map(g => {
         const members = data.filter(u => unitGroupOf(u) === g);
         return groupDef(g).components.map(c => {
-            const n = members.filter(u => !isGood(u[c.key])).length;
+            const n = members.filter(u => !compOk(u[c.key])).length;
             const token = '--color-' + c.key.replace(/[A-Z]/g, m => '-' + m.toLowerCase());
             return `<span class="dash-part${n ? '' : ' dash-part--none'}" style="--part:var(${token})">${
                 DASH_PART_ICONS[c.key] || ''}<span class="dash-part__name">${escapeHtml(c.label)}</span><span class="dash-part__n">${n}</span></span>`;
@@ -5638,9 +5646,11 @@ function renderComponentHealth(data) {
 
     grid.innerHTML = groups.map(g => {
         const members = data.filter(u => unitGroupOf(u) === g);
-        const total = members.length;
         const rings = groupDef(g).components.map(c => {
-            const goodCount = members.filter(d => isGood(d[c.key])).length;
+            // Units without this component fitted are left out of its rate.
+            const fitted = members.filter(d => !isNotInstalled(d[c.key]));
+            const total = fitted.length, na = members.length - total;
+            const goodCount = fitted.filter(d => isGood(d[c.key])).length;
             const rate = pct(goodCount, total);
             const color = COMPONENT_COLORS[c.key];
             const circumference = 2 * Math.PI * 28;
@@ -5656,7 +5666,7 @@ function renderComponentHealth(data) {
                 </svg>
                 <div class="component-stat__ring-text" style="color:${color}">${rate}%</div>
             </div>
-            <div class="component-stat__detail">${goodCount} / ${total} Good</div>
+            <div class="component-stat__detail">${goodCount} / ${total} Good${na ? ` · ${na} not installed` : ''}</div>
         </div>`;
         }).join('');
         return (captions ? `<div class="component-grid__group">${escapeHtml(groupDef(g).label)}</div>` : '') + rings;
@@ -5711,7 +5721,7 @@ function _detailRowHeavy(d, i) {
             <td style="font-family:monospace;font-size:12px">${escapeHtml(d.sn)}</td>
             <td>${_dash(d.machineType)}</td><td>${_dash(d.assetCode)}</td><td>${_dash(d.workTool)}</td>
             <td>${_statusCell(d)}</td>
-            ${UNIT_GROUPS.heavy.components.map(c => `<td class="${isGood(d[c.key]) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d[c.key] || '') || '—'}</td>`).join('')}
+            ${UNIT_GROUPS.heavy.components.map(c => `<td class="${compCellClass(d[c.key])}">${escapeHtml(d[c.key] || '') || '—'}</td>`).join('')}
             <td>${escapeHtml(d.site)}</td><td>${_dash(d.yearReceived)}</td><td>${_catCell(d)}</td>
         </tr>`;
 }
@@ -5764,10 +5774,10 @@ function renderTable(data) {
                 ? `<span class="badge badge-breakdown bd-clickable" data-reason="${escapeHtml(d.breakdownReason)}" onclick="showBreakdownPopover(event, this.dataset.reason)"><i class="fas fa-xmark"></i> ${escapeHtml(d.status)}</span>`
                 : `<span class="badge ${isGood(d.status) ? 'badge-good' : 'badge-breakdown'}"><i class="fas fa-${isGood(d.status) ? 'check' : 'xmark'}"></i> ${escapeHtml(d.status)}</span>`
             }</td>
-            <td class="${isGood(d.display) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.display)}</td>
-            <td class="${isGood(d.gps) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.gps)}</td>
-            <td class="${isGood(d.steering) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.steering)}</td>
-            <td class="${isGood(d.jdlink) ? 'cell-good' : 'cell-bad'}">${escapeHtml(d.jdlink)}</td>
+            <td class="${compCellClass(d.display)}">${escapeHtml(d.display)}</td>
+            <td class="${compCellClass(d.gps)}">${escapeHtml(d.gps)}</td>
+            <td class="${compCellClass(d.steering)}">${escapeHtml(d.steering)}</td>
+            <td class="${compCellClass(d.jdlink)}">${escapeHtml(d.jdlink)}</td>
             <td>${escapeHtml(d.site)}</td>
             <td>${escapeHtml(d.yearReceived || '') || '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
             <td>${d.userCategory ? `<span class="badge badge-cat" style="font-size:10px">${escapeHtml(d.userCategory)}</span>` : '<span style="color:var(--text-light);font-size:11px">—</span>'}</td>
@@ -6836,7 +6846,7 @@ function toggleMissingUnits() {
 // missing-field filters.
 let editQuickFilter = '';          // '' | 'faulty' | 'license'
 function unitHasFaultyPart(u) {
-    return groupDef(unitGroupOf(u)).components.some(c => !isGood(u[c.key]));
+    return groupDef(unitGroupOf(u)).components.some(c => !compOk(u[c.key]));
 }
 function unitLicenseDue(u) {
     if (isHeavy(u)) return false;
@@ -7702,6 +7712,7 @@ function populateHeavySuggestionLists() {
 // instead of being silently turned into 'Breakdown' (or written as '').
 function setHealthSelect(el, v) {
     if (isGood(v)) { el.value = 'Good'; return; }
+    if (isNotInstalled(v) && [...el.options].some(o => o.value === NOT_INSTALLED)) { el.value = NOT_INSTALLED; return; }
     if (!sameStoredValue(v, '')) { el.value = 'Breakdown'; return; }
     el.insertAdjacentHTML('afterbegin', '<option value="" data-temp>— not set —</option>');
     el.value = '';
@@ -7749,10 +7760,10 @@ function editUnit(id) {
     document.getElementById('formSite').value = unit.site || '';
     document.getElementById('formYearReceived').value = unit.yearReceived || '';
     document.getElementById('formStatus').value = isGood(unit.status) ? 'Good' : 'Breakdown';
-    document.getElementById('formDisplay').value = isGood(unit.display) ? 'Good' : 'Breakdown';
-    document.getElementById('formGPS').value = isGood(unit.gps) ? 'Good' : 'Breakdown';
-    document.getElementById('formSteering').value = isGood(unit.steering) ? 'Good' : 'Breakdown';
-    document.getElementById('formJDLink').value = isGood(unit.jdlink) ? 'Good' : 'Breakdown';
+    document.getElementById('formDisplay').value = healthSelectValue(unit.display);
+    document.getElementById('formGPS').value = healthSelectValue(unit.gps);
+    document.getElementById('formSteering').value = healthSelectValue(unit.steering);
+    document.getElementById('formJDLink').value = healthSelectValue(unit.jdlink);
 
     // License & notes
     renderUserCategoryOptions();
@@ -9525,9 +9536,9 @@ function showUnitProfile(id) {
     // John Deere chips it never had.
     const compRow = groupDef(unitGroupOf(u)).components.map(c => {
         const label = c.label;
-        const good = isGood(u[c.key]);
+        const good = isGood(u[c.key]), na = isNotInstalled(u[c.key]);
         const state = good ? 'Good' : (clean(u[c.key]) ? escapeHtml(clean(u[c.key])) : 'Not set');
-        return `<div class="profile-comp ${good ? 'ok' : 'bad'}"><i class="fas fa-${good ? 'circle-check' : 'circle-xmark'}" aria-hidden="true"></i> ${label}<span class="profile-comp__state">${state}</span></div>`;
+        return `<div class="profile-comp ${good ? 'ok' : na ? 'na' : 'bad'}"><i class="fas fa-${good ? 'circle-check' : na ? 'circle-minus' : 'circle-xmark'}" aria-hidden="true"></i> ${label}<span class="profile-comp__state">${state}</span></div>`;
     }).join('');
     const dmg = globalDamages
         .filter(r => r.unitId === id || (snLc && (r.sn || '').toLowerCase() === snLc))
@@ -10567,9 +10578,10 @@ function isDeviceDamageType(t) {
 // (Mechanical, Software, …) put the unit's status into Breakdown.
 function damageTargetField(damageType, component, unit) {
     if (!isDeviceDamageType(damageType)) return null;
-    if (unit && isHeavy(unit)) return heavyComponentField(component) || DAMAGE_DRIVES_NOTHING;
-    const compField = componentUnitField(component);
-    return compField && COMPONENT_KEYS.includes(compField) ? compField : DAMAGE_DRIVES_NOTHING;
+    const f = unit && isHeavy(unit) ? heavyComponentField(component) : componentUnitField(component);
+    const ok = f && (unit && isHeavy(unit) ? HEAVY_COMPONENT_KEYS : COMPONENT_KEYS).includes(f);
+    // A component the unit does not have fitted is never put into Breakdown.
+    return ok && !(unit && isNotInstalled(unit[f])) ? f : DAMAGE_DRIVES_NOTHING;
 }
 
 // ---- 2.33.0: units still in Breakdown only because of a precision device ----
@@ -24868,9 +24880,11 @@ function saveInspection(event, mode) {
     // Sent for checking: every component has a verdict and a photo, and a
     // broken one says what is wrong. A draft may be half-done.
     if (!asDraft) {
-        const missing = inspectionComponents().filter(c => !results[c.key]).map(c => c.label);
+        // 2.34.0: a component the unit does not have fitted needs no verdict or photo.
+        const fitted = inspectionComponents().filter(c => !(unit && isNotInstalled(unit[c.key])));
+        const missing = fitted.filter(c => !results[c.key]).map(c => c.label);
         if (missing.length) { showToast(`Choose Good/Damaged for: ${missing.join(', ')}`, 'warning'); return; }
-        const noPhoto = _insPhotosFailed ? [] : inspectionComponents().filter(c => !_insPhotos[c.key]).map(c => c.label);
+        const noPhoto = _insPhotosFailed ? [] : fitted.filter(c => !_insPhotos[c.key]).map(c => c.label);
         if (noPhoto.length) { showToast(`Photo required for: ${noPhoto.join(', ')}`, 'warning'); return; }
         const noNote = inspectionComponents().filter(c => results[c.key] === 'bad' && !notes[c.key]).map(c => c.label);
         if (noNote.length) { showToast(`Describe the damage: ${noNote.join(', ')}`, 'warning'); return; }
