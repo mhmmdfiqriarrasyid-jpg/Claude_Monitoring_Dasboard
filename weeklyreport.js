@@ -12,8 +12,13 @@
 
 const WR_TARGET = 95;          // precision health target, %
 const WR_STALE_DAYS = 14;      // a fault open longer than this is flagged
-const WR_COL = { ink: '1C2620', green: '24503A', cane: 'B88A2E', sage: '8C9A90', rust: 'A8432C', slate: '5D6B63', hair: 'DDE3DE', tint: 'F1F3EF', amber: 'C27C0E' };
-const WR_TONE = { good: WR_COL.green, warn: WR_COL.amber, bad: WR_COL.rust, muted: WR_COL.slate, ink: WR_COL.ink };
+// 2.37.0: the "bento" look — a soft grey sheet of white cards, one teal card
+// for the number that matters, an amber one for what needs attention. After
+// the bento brief of github.com/cheahhl814/design-pack (MIT), in the
+// dashboard's own colours.
+const WR_COL = { ink: '101828', green: '0F766E', deep: '115E59', cane: '0F766E', sage: 'B9D8D3', rust: 'B42318', slate: '667085', hair: 'E4E7EC', tint: 'EEF2F1', amber: 'B54708',
+    bg: 'F3F5F4', card: 'FFFFFF', good: '067647', warnBg: 'FFF7ED', warnLine: 'FED7AA', heroSub: 'B7E4DC' };
+const WR_TONE = { good: WR_COL.good, warn: WR_COL.amber, bad: WR_COL.rust, muted: WR_COL.slate, ink: WR_COL.ink };
 const WR_RAG = { good: 'On track', warn: 'Watch', bad: 'Action' };
 
 let _wrWeek = '', _wrAud = 'team', _wrNotes = '', _wrPages = [];
@@ -242,6 +247,32 @@ function buildWeeklyReport(from, opts) {
             week: ups.length ? ups[ups.length - 1].text : '', status: p.status, start: p.start || '', end: p.end || '' }; })
         .sort((a, b) => ({ red: 0, amber: 1, green: 2, done: 3 }[a.rag] ?? 2) - ({ red: 0, amber: 1, green: 2, done: 3 }[b.rag] ?? 2));
 
+    // 2.37.0: one page per project still running — where it stands, what moved
+    // this week, what blocks it and which goods it still waits for.
+    D.projectPages = (typeof projects !== 'undefined' ? projects : []).filter(p => !PJ_CLOSED.includes(p.status)).map(p => {
+        const pr = projectProgress(p), rag = projectRag(p, today), t = p.target || {};
+        const ups = (p.updates || []).filter(u => _wrIn(u.date, w)).sort((a, b) => (a.at || 0) - (b.at || 0));
+        // Progress at the start of the week, read from the first update of the week ("progress 3% → 21%").
+        const m0 = ups.map(u => /(\d+)%\s*→/.exec(u.progress || '')).find(Boolean);
+        const before = m0 ? Number(m0[1]) : (ups.length ? null : pr.pct);
+        const mats = p.materials || [];
+        const state = x => _pjMatState(x);
+        const short = mats.filter(x => state(x) !== 'ready').map(x => ({ name: x.name || '', need: Number(x.qty) || 0, have: _pjMatHave(x), uom: x.uom || '' }));
+        const goodsOf = id => { const l = _pjMatsOf(p, id); return l.length ? `${l.filter(x => state(x) === 'ready').length}/${l.length}` : ''; };
+        const steps = t.mode === 'milestones' ? (t.milestones || []).map(m => ({ label: m.label || '', weight: Number(m.weight) || 0, done: !!m.done, goods: m.id ? goodsOf(m.id) : '' }))
+            : (t.units || []).map(u => ({ label: u.name || u.sn || '', weight: null, done: !!u.done, goods: '' }));
+        const daysLeft = p.end ? Math.round((_pjDay(p.end) - _pjDay(today)) / 86400000) : null;
+        const s0 = p.start ? _pjDay(p.start) : NaN, e0 = p.end ? _pjDay(p.end) : NaN, n0 = _pjDay(today);
+        return { id: p.id, name: p.name || '', type: pjTypeLabel(p.type), company: p.company || '', pic: p.pic || '', status: pjStatusLabel(p.status),
+            departments: (p.departments || []).map(d => d.name + (d.pic ? ` (${d.pic})` : '')), pct: pr.pct, label: pr.label, done: pr.done, total: pr.total, what: t.what || '', rag, due: pjDueText(p, today), start: p.start || '', end: p.end || '', daysLeft,
+            timePct: isFinite(s0) && isFinite(e0) && e0 > s0 ? Math.max(0, Math.min(100, Math.round(100 * (n0 - s0) / (e0 - s0)))) : null,
+            delta: before == null ? null : pr.pct - before, mode: t.mode || 'units', steps, stepsDone: steps.filter(x => x.done).length,
+            updates: ups.filter(u => !u.auto || ups.every(x => x.auto)).slice(-4).map(u => ({ date: u.date, text: u.text || '', blocker: u.blocker || '' })),
+            blockers: ups.map(u => u.blocker).filter(Boolean).slice(-2),
+            jobs: (typeof otJobs !== 'undefined' ? otJobs : []).filter(j => j.projectId === p.id && _wrIn(j.date, w)).length,
+            goods: { total: mats.length, ready: mats.length - short.length, short: short.slice(0, 6), more: Math.max(0, short.length - 6) } };
+    }).sort((a, b) => ({ red: 0, amber: 1, green: 2 }[a.rag] ?? 2) - ({ red: 0, amber: 1, green: 2 }[b.rag] ?? 2));
+
     // Next week: what carries over, in the order it needs doing.
     const next = [];
     const hi = D.tickets.openList.filter(t => t.priority === 'high' || t.late);
@@ -272,7 +303,8 @@ function wrSaveSnapshot(D) {
 function buildWeeklyPages(D, aud, notes, media) {
     media = media || { daily: [], tickets: [], work: [] };
     const w = D.week, P = [];
-    const page = (section, title, cols, widths) => P.push({ kind: 'content', section, title, cols, widths: widths || cols.map(() => 1) });
+    const page = (section, title, cols, widths, extra) => P.push(Object.assign({ kind: 'content', section, title, cols, widths: widths || cols.map(() => 1) }, extra || {}));
+    media.projects = media.projects || {};
     const mgmt = aud === 'mgmt';
     const name = mgmt ? 'Precision Health Weekly Update' : 'Weekly Operation Report';
     P.push({ kind: 'cover', title: name, week: w.no,
@@ -282,17 +314,35 @@ function buildWeeklyPages(D, aud, notes, media) {
     const delta = (a, b, unit) => a == null || b == null ? '' : (a === b ? 'same as last week' : `${a > b ? '▲' : '▼'} ${_wrH(Math.abs(a - b))}${unit || ''} vs last week`);
 
     if (!mgmt) {
-        // Summary
+        // Summary: the one number, the week in six figures, and what needs attention.
+        const dl = (cur, prv, goodUp, unit) => (cur == null || prv == null || cur === prv) ? null
+            : { text: `${cur > prv ? '▲' : '▼'} ${_wrH(Math.abs(cur - prv))}${unit || ''}`, tone: (cur > prv) === goodUp ? 'good' : 'bad' };
         const stats = [];
-        if (t.on) stats.push({ value: _wrH(t.hours), label: 'work hours' }, { value: t.paddocks, label: 'paddocks worked' });
-        stats.push({ value: tk.newIn, label: 'tickets raised' }, { value: tk.open, label: 'tickets still open', tone: tk.overdue ? 'bad' : '' });
-        if (jb.on) stats.push({ value: `${jb.done} / ${jb.total}`, label: 'jobs done / logged' });
+        if (t.on) stats.push({ value: _wrH(t.hours), label: 'work hours' }, { value: t.paddocks, label: 'paddocks worked' }, { value: t.unitsUsed, label: 'units used' });
+        stats.push({ value: tk.newIn, label: 'tickets raised', delta: dl(tk.newIn, tk.newPrev, false) }, { value: tk.open, label: 'tickets still open', tone: tk.overdue ? 'bad' : '' });
+        if (jb.on) stats.push({ value: `${jb.done} / ${jb.total}`, label: 'jobs done / logged', delta: dl(jb.total, jb.prevTotal, true) });
         stats.push({ value: `${dm.newIn} / ${dm.fixedIn}`, label: 'new / fixed faults', tone: dm.newIn > dm.fixedIn ? 'bad' : '' });
-        const hero = t.on ? { type: 'hero', value: _wrFmtPct(t.pct), tone: _wrToneOf(t.pct, 100, 10), label: `of expected daily reports filed (${t.filed} of ${t.expected})`,
-            sub: t.missed.length ? `Missed: ${t.missed.slice(0, 5).join(', ')}${t.missed.length > 5 ? '…' : ''}` : 'Nobody missed a report', subTone: t.missed.length ? 'bad' : 'good', foot: delta(t.pct, t.prevPct, ' pts') }
-            : { type: 'hero', value: tk.newIn, label: 'field tickets raised this week', sub: `${tk.resolved} resolved · ${tk.open} still open` };
-        page('Summary', t.on ? `${t.filed} of ${t.expected} daily reports came in; the team logged ${_wrH(t.hours)} hours on ${_wrPlural(t.paddocks, 'paddock')}`
-            : `${_wrPlural(tk.newIn, 'ticket')} raised, ${jb.total} jobs logged this week`, [[hero], [{ type: 'stats', items: stats }]], [1, 1.5]);
+        const hero = t.on ? { type: 'hero', card: 'hero', title: 'Daily Report filed', value: _wrFmtPct(t.pct), label: `${t.filed} of ${t.expected} expected${t.prevPct != null && t.prevPct !== t.pct ? ` · ${t.pct > t.prevPct ? '▲' : '▼'} ${_wrH(Math.abs(t.pct - t.prevPct))} pts vs last week` : ''}`,
+            foot: t.missed.length ? `Missed: ${t.missed.slice(0, 5).join(', ')}${t.missed.length > 5 ? '…' : ''}` : 'Nobody missed a report' }
+            : { type: 'hero', card: 'hero', title: 'Field tickets', value: tk.newIn, label: 'raised this week', foot: `${tk.resolved} resolved · ${tk.open} still open` };
+        const attention = [];
+        if (tk.overdue) attention.push({ text: `${_wrPlural(tk.overdue, 'ticket')} past the due time`, tone: 'bad' });
+        if (dm.stale) attention.push({ text: `${_wrPlural(dm.stale, 'fault')} open more than ${WR_STALE_DAYS} days${dm.faults[0] ? ` (${dm.faults[0].unit})` : ''}`, tone: 'bad' });
+        if (D.licenses.expired) attention.push({ text: `${_wrPlural(D.licenses.expired, 'license')} expired`, tone: 'bad' });
+        if (D.licenses.soon) attention.push({ text: `${_wrPlural(D.licenses.soon, 'license expires', 'licenses expire')} within 30 days`, tone: 'warn' });
+        if (D.inspection.on && D.inspection.overdue + D.inspection.never) attention.push({ text: `${_wrPlural(D.inspection.overdue + D.inspection.never, 'heavy unit')} overdue for inspection`, tone: 'warn' });
+        if (jb.backlog.length) attention.push({ text: `${_wrPlural(jb.backlog.length, 'field issue')} waiting from jobs`, tone: 'warn' });
+        D.projectPages.filter(x => x.rag === 'red').slice(0, 2).forEach(x => attention.push({ text: `Project ${x.name}: ${x.due}`, tone: 'bad' }));
+        const health = { type: 'bars', title: 'Precision health', items: [['Tractors all Good', pr.pct], ...(pr.heavy ? [['Heavy devices', pr.heavyPct]] : []), ...pr.components.slice().sort((x, y) => (x[1] ?? 101) - (y[1] ?? 101)).slice(0, 2)], max: 100, target: WR_TARGET, unit: '%' };
+        const openTk = { type: 'table', title: 'Open tickets', head: [{ t: 'Ticket' }, { t: 'Prio' }, { t: 'PIC' }, { t: 'Days', a: 'right' }],
+            rows: tk.openList.slice(0, 4).map(x => [x.title, { text: (TK_PRIORITY[x.priority] || {}).label || '', chip: x.priority === 'high' ? 'bad' : x.priority === 'medium' ? 'warn' : 'good' }, x.pic || '—', { text: String(x.age), tone: x.late ? 'bad' : '', bold: x.late }]),
+            more: Math.max(0, tk.openList.length - 4), empty: 'No open tickets' };
+        const need = { type: 'list', card: attention.length ? 'warn' : '', title: 'Needs attention', items: attention.slice(0, 5), empty: 'Nothing urgent this week' };
+        const hoursCard = t.on ? { type: 'bars', title: 'Work hours per day', items: w.dayLabels.map((d, i) => [d.split(' ')[0], t.hoursPerDay[i]]), highlight: t.hoursPerDay.indexOf(Math.max(...t.hoursPerDay)), vertical: true }
+            : { type: 'bars', title: 'Tickets by category', items: tk.byCategory.slice(0, 5) };
+        page('Summary', t.on ? `${t.filed} of ${t.expected} daily reports came in; ${tk.open ? `${_wrPlural(tk.open, 'ticket')} still open${tk.overdue ? `, ${tk.overdue} past due` : ''}` : 'no ticket is open'}`
+            : `${_wrPlural(tk.newIn, 'ticket')} raised, ${jb.total} jobs logged this week`,
+            [[hero, health], [{ type: 'stats', title: 'Headline numbers', items: stats.slice(0, 6) }, openTk], [hoursCard, need]], [1.1, 1.6, 1.2]);
         // Daily Report
         if (t.on && t.members.length) {
             const M = { ok: { text: '✓', tone: 'good', bold: true }, miss: { text: '✗', tone: 'bad', bold: true }, off: { text: '–', tone: 'muted' }, leave: { text: 'L', tone: 'warn', bold: true }, future: { text: '·', tone: 'muted' } };
@@ -346,9 +396,10 @@ function buildWeeklyPages(D, aud, notes, media) {
             ['Field tickets', tk.overdue ? 'bad' : tk.open ? 'warn' : 'good', `${tk.open} open · ${tk.overdue} overdue`]];
         if (t.on) rag.push(['Team reports', _wrToneOf(t.pct, 100, 10), `${_wrFmtPct(t.pct)} filed`]);
         page('Summary', pr.pct == null ? 'Precision health' : `Precision health is ${pr.pct}%${last && last.pct != null ? ` — ${pr.pct >= last.pct ? 'up' : 'down'} ${_wrH(Math.abs(pr.pct - last.pct))} points` : ''}, ${pr.pct >= WR_TARGET ? 'at or above' : 'short of'} the ${WR_TARGET}% target`,
-            [[{ type: 'hero', value: _wrFmtPct(pr.pct), tone: _wrToneOf(pr.pct, WR_TARGET), label: `of ${pr.tractors} tractors have every precision component Good`,
-                sub: `${last && last.pct != null ? `Last week ${last.pct}% · ` : ''}Target ${WR_TARGET}%`, foot: pr.heavy ? `Heavy equipment devices ${_wrFmtPct(pr.heavyPct)}` : '' }],
-             [{ type: 'rag', items: rag }]], [1, 1.3]);
+            [[{ type: 'hero', card: 'hero', title: 'Tractor precision health', value: _wrFmtPct(pr.pct), label: `of ${pr.tractors} tractors have every precision component Good`,
+                sub: `${last && last.pct != null ? `Last week ${last.pct}% · ` : ''}Target ${WR_TARGET}%`, foot: pr.heavy ? `Heavy equipment devices ${_wrFmtPct(pr.heavyPct)}` : '' },
+               { type: 'bars', title: 'Components Good', items: pr.components, max: 100, target: WR_TARGET, unit: '%' }],
+             [{ type: 'rag', title: 'Status by area', items: rag }]], [1, 1.3]);
         const score = [
             ['Tractor precision health (all components Good)', _wrFmtPct(pr.pct), last ? _wrFmtPct(last.pct) : '—', `≥ ${WR_TARGET}%`, _wrToneOf(pr.pct, WR_TARGET)],
             ...pr.components.map(c => [c[0], _wrFmtPct(c[1]), '—', `≥ ${WR_TARGET}%`, _wrToneOf(c[1], WR_TARGET)]),
@@ -382,7 +433,7 @@ function buildWeeklyPages(D, aud, notes, media) {
         page('Issues', dm.stale ? `${_wrPlural(dm.stale, 'fault is', 'faults are')} older than ${WR_STALE_DAYS} days` : faults.length ? `${_wrPlural(faults.length, 'fault')} open, none older than ${WR_STALE_DAYS} days` : 'No open faults',
             [[{ type: 'table', compact: true, head: [{ t: 'Unit' }, { t: 'PT' }, { t: 'Part' }, { t: 'Days', a: 'right' }, { t: 'Problem' }],
                 rows: faults.slice(0, 8).map(f => [{ text: f.unit, bold: true }, f.pt, f.part, { text: String(f.days), tone: f.days > WR_STALE_DAYS ? 'bad' : '', bold: f.days > WR_STALE_DAYS }, f.what]), more: Math.max(0, faults.length - 8), empty: 'No open faults' },
-              ...(support.length ? [{ type: 'panel', title: 'Support needed', items: support.slice(0, 4) }] : [])]]);
+              ...(support.length ? [{ type: 'panel', card: 'warn', title: 'Support needed', items: support.slice(0, 4) }] : [])]]);
         // Field overview for the manager: tickets and jobs, short.
         page('Field tickets & jobs', `${_wrPlural(tk.newIn, 'ticket')} raised and ${tk.resolved} resolved; ${_wrPlural(jb.total, 'job')} done outside the Daily Report`,
             [[{ type: 'stats', small: true, items: [{ value: tk.newIn, label: 'tickets raised' }, { value: tk.resolved, label: 'resolved' }, { value: tk.open, label: 'open now' }, { value: tk.overdue, label: 'past due time', tone: tk.overdue ? 'bad' : '' }] },
@@ -400,8 +451,29 @@ function buildWeeklyPages(D, aud, notes, media) {
         page('Projects', need.length ? `${need.length} of ${_wrPlural(D.projects.length, 'project')} need attention: ${need.slice(0, 2).map(p => p.name).join(', ')}` : `All ${_wrPlural(D.projects.length, 'project')} on track`,
             [[{ type: 'projects', items: D.projects.slice(0, 5), more: Math.max(0, D.projects.length - 5) }]]);
     }
+    // 2.37.0: a page for each project still running.
+    (D.projectPages || []).forEach(x => {
+        const tone = x.rag === 'red' ? 'bad' : x.rag === 'amber' ? 'warn' : 'good';
+        const week = x.updates.map(u => ({ text: u.text, sub: _wrDate(u.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }), tone: 'good' }))
+            .concat(x.blockers.map(bk => ({ text: `Blocker: ${bk}`, tone: 'warn' })));
+        const left = [{ type: 'progress', card: 'hero', title: 'Progress', pct: x.pct, label: x.label, delta: x.delta, timePct: x.timePct, start: x.start, end: x.end, daysLeft: x.daysLeft, rag: PJ_RAG[x.rag] || '', tone }];
+        if (x.goods.total) left.push(x.goods.short.length
+            ? { type: 'table', card: 'warn', title: `Goods still short · ${x.goods.ready} of ${x.goods.total} complete`, head: [{ t: 'Item' }, { t: 'Need', a: 'right' }, { t: 'Have', a: 'right' }],
+                rows: x.goods.short.slice(0, 5).map(g => [g.name, `${_wrH(g.need)} ${g.uom}`.trim(), { text: _wrH(g.have), tone: g.have ? 'warn' : 'bad', bold: true }]), more: x.goods.more + Math.max(0, x.goods.short.length - 5) }
+            : { type: 'list', title: 'Goods', items: [{ text: `All ${x.goods.total} items have arrived`, tone: 'good' }] });
+        const right = [{ type: 'list', title: 'This week', items: week.slice(0, 5), empty: 'No update written this week' }];
+        const refs = media.projects[x.id] || [];
+        if (refs.length) right.push(Object.assign(_wrGallery(refs.slice(0, 4), 2), { title: 'From the field', inCard: true }));
+        else if (x.jobs) right.push({ type: 'kv', title: 'Jobs this week', items: [['Logged for this project', x.jobs]] });
+        const steps = x.steps.length
+            ? { type: 'steps', title: x.mode === 'milestones' ? 'Milestones & goods' : x.mode === 'units' ? 'Units' : 'Units involved', items: x.steps.slice(0, 11), more: Math.max(0, x.steps.length - 11) }
+            : { type: 'kv', title: `Target${x.what ? ' — ' + x.what : ''}`, grow: 1, items: [['Target', x.total], ['Done so far', x.done], ['Still to do', Math.max(0, x.total - x.done)], ['Jobs logged this week', x.jobs]] };
+        page('Projects', x.name, [left, [steps], right], [1, 1.45, 1.15],
+            { eyebrow: `Project in progress · ${x.type}${x.company ? ' · ' + x.company : ''}`, sub: [x.pic ? `PIC ${x.pic}` : '', x.departments.length ? `with ${x.departments.join(', ')}` : ''].filter(Boolean).join(' · '), projectId: x.id });
+    });
     const items = (notes || '').split('\n').map(s => s.trim()).filter(Boolean).concat(D.nextWeek).slice(0, 5);
-    page('Next week', items.length ? `Next week: ${items.slice(0, 2).map(s => s.charAt(0).toLowerCase() + s.slice(1)).join('; ')}`.slice(0, 120) : 'Next week', [[{ type: 'numbered', items: items.length ? items : ['Keep the Daily Report at 100%'] }]]);
+    const first = items[0] ? items[0].charAt(0).toLowerCase() + items[0].slice(1) : '';
+    page('Next week', first ? `Next week: ${first.length > 90 ? first.slice(0, 88).replace(/[\s,;:]+\S*$/, '') + '…' : first}${items.length > 1 ? `, and ${items.length - 1} more` : ''}` : 'Next week', [[{ type: 'numbered', items: items.length ? items : ['Keep the Daily Report at 100%'] }]]);
     return P;
 }
 
@@ -410,26 +482,33 @@ const _wrE = s => escapeHtml(String(s == null ? '' : s));
 function _wrCell(c, head) {
     const o = c && typeof c === 'object' ? c : { text: c };
     const a = o.a || (head && head.a) || 'left';
-    return `<td class="wr-a-${a}${o.tone ? ' wr-t-' + o.tone : ''}${o.bold ? ' wr-b' : ''}">${_wrE(o.text)}</td>`;
+    const inner = o.chip ? `<span class="wr-chip wr-chip--${o.chip}">${_wrE(o.text)}</span>` : _wrE(o.text);
+    return `<td class="wr-a-${a}${o.tone ? ' wr-t-' + o.tone : ''}${o.bold ? ' wr-b' : ''}">${inner}</td>`;
 }
+// What sits inside a card (its title is drawn by the card).
 function _wrBlockHtml(b) {
-    const title = b.title ? `<div class="wr-btitle">${_wrE(b.title)}</div>` : '';
     switch (b.type) {
-    case 'hero': return `<div class="wr-hero"><div class="wr-hero__v wr-t-${b.tone || 'good'}">${_wrE(b.value)}</div><div class="wr-hero__l">${_wrE(b.label)}</div>
-        ${b.sub ? `<div class="wr-hero__s wr-t-${b.subTone || 'muted'}">${_wrE(b.sub)}</div>` : ''}${b.foot ? `<div class="wr-hero__f">${_wrE(b.foot)}</div>` : ''}</div>`;
-    case 'stats': return `${title}<div class="wr-stats${b.small ? ' wr-stats--sm' : ''}">${b.items.length ? b.items.map(s => `<div class="wr-stat"><div class="wr-stat__v${s.tone ? ' wr-t-' + s.tone : ''}">${_wrE(_wrNum(s.value))}</div><div class="wr-stat__l">${_wrE(s.label)}</div></div>`).join('') : `<div class="wr-empty">${_wrE(b.empty || '—')}</div>`}</div>`;
-    case 'table': return `${title}${b.rows.length ? `<table class="wr-table${b.compact ? ' wr-table--c' : ''}"><thead><tr>${b.head.map(h => `<th class="wr-a-${h.a || 'left'}">${_wrE(h.t)}</th>`).join('')}</tr></thead>
-        <tbody>${b.rows.map(r => `<tr>${r.map((c, i) => _wrCell(c, b.head[i])).join('')}</tr>`).join('')}</tbody></table>${b.more ? `<div class="wr-more">+ ${b.more} more in the dashboard</div>` : ''}` : `<div class="wr-empty">${_wrE(b.empty || 'Nothing this week')}</div>`}`;
+    case 'hero': return `<div class="wr-hero"><div class="wr-hero__v">${_wrE(b.value)}</div><div class="wr-hero__l">${_wrE(b.label)}</div>
+        ${b.sub ? `<div class="wr-hero__s">${_wrE(b.sub)}</div>` : ''}${b.foot ? `<div class="wr-hero__f">${_wrE(b.foot)}</div>` : ''}</div>`;
+    case 'progress': return `<div class="wr-hero"><div class="wr-hero__v">${b.pct}%</div><div class="wr-hero__l">${_wrE(b.label)}${b.delta ? ` · ${b.delta > 0 ? '▲' : '▼'} ${Math.abs(b.delta)} pts this week` : b.delta === 0 ? ' · no change this week' : ''}</div>
+        <div class="wr-tl"><u style="width:${b.pct}%"></u>${b.timePct != null ? `<s style="left:${b.timePct}%" title="today"></s>` : ''}</div>
+        <div class="wr-hero__s">${_wrE([b.start && b.end ? `${b.start} → ${b.end}` : (b.end || ''), b.daysLeft == null ? '' : b.daysLeft >= 0 ? `${b.daysLeft} days left` : `${-b.daysLeft} days late`].filter(Boolean).join(' · '))}${b.rag ? ` · <b>${_wrE(b.rag)}</b>` : ''}</div></div>`;
+    case 'steps': return b.items.length ? `<div class="wr-steps">${b.items.map(m => `<div class="wr-step${m.done ? ' is-done' : ''}"><span class="wr-step__ck">${m.done ? '✓' : ''}</span><span class="wr-step__l">${_wrE(m.label)}</span>
+        ${m.weight != null ? `<span class="wr-step__w">${m.weight}%</span>` : ''}${m.goods ? `<span class="wr-step__g ${m.goods.split('/')[0] === m.goods.split('/')[1] ? 'wr-t-good' : 'wr-t-bad'}">▣ ${_wrE(m.goods)}</span>` : (m.weight != null ? '<span class="wr-step__g"></span>' : '')}</div>`).join('')}
+        ${b.more ? `<div class="wr-more">+ ${b.more} more in the dashboard</div>` : ''}</div>` : `<div class="wr-empty">${_wrE(b.empty || '—')}</div>`;
+    case 'stats': return `<div class="wr-stats${b.small ? ' wr-stats--sm' : ''}"${b.per ? ` style="grid-template-columns:repeat(${b.per},1fr)"` : ''}>${b.items.length ? b.items.map(s => `<div class="wr-stat"><div class="wr-stat__v${s.tone ? ' wr-t-' + s.tone : ''}">${_wrE(_wrNum(s.value))}</div><div class="wr-stat__l">${_wrE(s.label)}</div>${s.delta ? `<div class="wr-stat__d wr-t-${s.delta.tone}">${_wrE(s.delta.text)}</div>` : ''}</div>`).join('') : `<div class="wr-empty">${_wrE(b.empty || '—')}</div>`}</div>`;
+    case 'table': return b.rows.length ? `<table class="wr-table${b.compact ? ' wr-table--c' : ''}"><thead><tr>${b.head.map(h => `<th class="wr-a-${h.a || 'left'}">${_wrE(h.t)}</th>`).join('')}</tr></thead>
+        <tbody>${b.rows.map(r => `<tr>${r.map((c, i) => _wrCell(c, b.head[i])).join('')}</tr>`).join('')}</tbody></table>${b.more ? `<div class="wr-more">+ ${b.more} more in the dashboard</div>` : ''}` : `<div class="wr-empty">${_wrE(b.empty || 'Nothing this week')}</div>`;
     case 'bars': {
         const max = b.max || Math.max(1, ...b.items.map(i => Number(i[1]) || 0));
-        if (!b.items.length) return `${title}<div class="wr-empty">Nothing this week</div>`;
-        if (b.vertical) return `${title}<div class="wr-vbars">${b.items.map((it, i) => `<div class="wr-vbar"><span class="wr-vbar__v">${_wrH(it[1])}</span><i style="height:${Math.round(100 * (it[1] || 0) / max)}%" class="${i === b.highlight ? 'is-hi' : ''}"></i><span class="wr-vbar__l">${_wrE(it[0])}</span></div>`).join('')}</div>`;
-        return `${title}<div class="wr-bars">${b.items.map(it => { const v = it[1]; return `<div class="wr-bar"><span class="wr-bar__l">${_wrE(it[0])}</span><span class="wr-bar__t"><i style="width:${v == null ? 0 : Math.round(100 * v / max)}%" class="${b.target && v != null ? (v >= b.target ? 'is-good' : v >= b.target - 5 ? 'is-warn' : 'is-bad') : ''}"></i>${b.target ? `<b style="left:${b.target}%"></b>` : ''}</span><span class="wr-bar__v">${v == null ? '—' : _wrH(v) + (b.unit || '')}</span></div>`; }).join('')}</div>`;
+        if (!b.items.length) return '<div class="wr-empty">Nothing this week</div>';
+        if (b.vertical) return `<div class="wr-vbars">${b.items.map((it, i) => `<div class="wr-vbar${i === b.highlight ? ' is-hi' : ''}"><span class="wr-vbar__v">${_wrH(it[1])}</span><i style="height:${Math.round(100 * (it[1] || 0) / max)}%"></i><span class="wr-vbar__l">${_wrE(it[0])}</span></div>`).join('')}</div>`;
+        return `<div class="wr-bars">${b.items.map(it => { const v = it[1]; return `<div class="wr-bar"><span class="wr-bar__l">${_wrE(it[0])}</span><span class="wr-bar__t"><i style="width:${v == null ? 0 : Math.round(100 * v / max)}%" class="${b.target && v != null ? (v >= b.target ? 'is-good' : v >= b.target - 5 ? 'is-warn' : 'is-bad') : ''}"></i>${b.target ? `<b style="left:${b.target}%"></b>` : ''}</span><span class="wr-bar__v">${v == null ? '—' : _wrH(v) + (b.unit || '')}</span></div>`; }).join('')}</div>`;
     }
-    case 'list': return `${title}${b.items.length ? `<ul class="wr-list">${b.items.map(i => `<li><i class="wr-dot wr-bg-${i.tone || 'muted'}"></i><div><div>${_wrE(i.text)}</div>${i.sub ? `<div class="wr-sub">${_wrE(i.sub)}</div>` : ''}</div></li>`).join('')}</ul>` : `<div class="wr-empty">${_wrE(b.empty || '—')}</div>`}`;
+    case 'list': return b.items.length ? `<ul class="wr-list">${b.items.map(i => `<li><i class="wr-dot wr-bg-${i.tone || 'muted'}"></i><div><div>${_wrE(i.text)}</div>${i.sub ? `<div class="wr-sub">${_wrE(i.sub)}</div>` : ''}</div></li>`).join('')}</ul>` : `<div class="wr-empty">${_wrE(b.empty || '—')}</div>`;
     case 'rag': return `<ul class="wr-rag">${b.items.map(r => `<li><i class="wr-dot wr-bg-${r[1]}"></i><b>${_wrE(r[0])}</b><span>${_wrE(r[2])}</span></li>`).join('')}</ul>`;
-    case 'kv': return `<div class="wr-kv"><div class="wr-kv__t">${_wrE(b.title)}</div>${b.items.map(i => `<div class="wr-kv__r"><span>${_wrE(i[0])}</span><b>${_wrE(_wrNum(i[1]))}</b></div>`).join('')}</div>`;
-    case 'panel': return `<div class="wr-panel"><div class="wr-panel__t">${_wrE(b.title)}</div><ul>${b.items.map(i => `<li>${_wrE(i)}</li>`).join('')}</ul></div>`;
+    case 'kv': return `<div class="wr-kv">${b.items.map(i => `<div class="wr-kv__r"><span>${_wrE(i[0])}</span><b>${_wrE(_wrNum(i[1]))}</b></div>`).join('')}</div>`;
+    case 'panel': return `<ul class="wr-panel">${b.items.map(i => `<li>${_wrE(i)}</li>`).join('')}</ul>`;
     case 'note': return `<div class="wr-note">${_wrE(b.text)}</div>`;
     case 'gallery': return _wrGalleryHtml(b);
     case 'numbered': return `<ol class="wr-num">${b.items.map((s, i) => `<li><span>${String(i + 1).padStart(2, '0')}</span>${_wrE(s)}</li>`).join('')}</ol>`;
@@ -441,14 +520,24 @@ function _wrBlockHtml(b) {
     }
     return '';
 }
+// A block as a card: white by default, teal for the number that matters
+// ('hero'), amber for what needs attention ('warn'). A note and a full-page
+// gallery stand without one.
+const _wrBare = b => b.type === 'note' || (b.type === 'gallery' && !b.inCard);
+const _wrGrow = b => b.grow != null ? b.grow : (['steps', 'gallery', 'table', 'list', 'numbered', 'projects', 'rag'].includes(b.type) || (b.type === 'bars' && b.vertical) ? 1 : 0);
+function _wrCardHtml(b) {
+    if (_wrBare(b)) return `<div class="wr-bare${b.type === 'gallery' ? ' wr-bare--fill' : ''}">${_wrBlockHtml(b)}</div>`;
+    return `<div class="wr-card${b.card ? ' wr-card--' + b.card : ''} wr-card--${b.type}" style="flex-grow:${_wrGrow(b)}">${b.title ? `<div class="wr-card__t">${_wrE(b.title)}</div>` : ''}${_wrBlockHtml(b)}</div>`;
+}
 function weeklyPagesHtml(pages, D, aud) {
-    const foot = `${aud === 'mgmt' ? 'Precision Health Weekly Update' : 'Weekly Operation Report'} · Week ${D.week.no} · ${D.week.label}`;
+    const name = aud === 'mgmt' ? 'Precision Health Weekly Update' : 'Weekly Operation Report';
+    const eyebrow = `${name} · Week ${D.week.no} · ${D.week.label}`;
     return pages.map((p, i) => p.kind === 'cover'
         ? `<section class="wr-page wr-cover"><div class="wr-cover__brand"><img src="icons/icon-192.png" alt=""><span>Operation Technology</span></div>
-            <div class="wr-cover__main"><div><h1>${_wrE(p.title)}</h1>${p.lines.map((l, k) => `<p${k === 0 ? ' class="wr-b"' : ''}>${_wrE(l)}</p>`).join('')}</div><div class="wr-cover__wk">W${p.week}</div></div></section>`
-        : `<section class="wr-page"><header class="wr-head"><h2>${_wrE(p.title)}</h2><img src="icons/icon-192.png" alt=""></header>
-            <div class="wr-body">${p.cols.map((c, k) => `<div class="wr-col" style="flex:${p.widths[k]}">${c.map(_wrBlockHtml).join('')}</div>`).join('')}</div>
-            <footer class="wr-foot"><span>${_wrE(foot)}</span><span>${_wrE(p.section)} · ${i + 1}</span></footer></section>`).join('');
+            <div class="wr-cover__main"><div><div class="wr-cover__eyebrow">${_wrE(p.lines[0] || '')}</div><h1>${_wrE(p.title)}</h1>${p.lines.slice(1).map(l => `<p>${_wrE(l)}</p>`).join('')}</div><div class="wr-cover__wk">W${p.week}</div></div></section>`
+        : `<section class="wr-page"><header class="wr-head"><div class="wr-head__text"><div class="wr-eyebrow">${_wrE(p.eyebrow || eyebrow)}</div><h2>${_wrE(p.title)}</h2>${p.sub ? `<div class="wr-head__sub">${_wrE(p.sub)}</div>` : ''}</div><img src="icons/icon-192.png" alt=""></header>
+            <div class="wr-body${p.cols.length === 1 && p.cols[0].length > 1 && p.cols[0].every(b => b.type === 'kv') ? ' wr-body--grid' : ''}">${p.cols.map((c, k) => `<div class="wr-col" style="flex:${p.widths[k]}">${c.map(_wrCardHtml).join('')}</div>`).join('')}</div>
+            <footer class="wr-foot"><span>${_wrE(name)} · W${D.week.no}</span><span>${_wrE(p.section)} · ${i + 1}</span></footer></section>`).join('');
 }
 
 // ---- The view ----
@@ -467,7 +556,8 @@ function renderWeeklyReportView() {
     const D = buildWeeklyReport(_wrWeek, { preparedBy: (currentUserDoc && currentUserDoc.displayName) || (currentUser && currentUser.email ? shortActor(currentUser.email) : '') });
     wrSaveSnapshot(D);
     const refs = wrMediaRefs(D);
-    const media = { daily: _wrShow.daily ? refs.daily : [], tickets: _wrShow.tickets ? refs.tickets : [], work: _wrShow.work ? refs.work : [] };
+    const media = { daily: _wrShow.daily ? refs.daily : [], tickets: _wrShow.tickets ? refs.tickets : [], work: _wrShow.work ? refs.work : [], projects: _wrShow.work ? (refs.projects || {}) : {} };
+    Object.values(media.projects).forEach(list => wrLoadMedia(list.filter(r => !_wrHidden.has(r.key)).slice(0, 6)));
     // Load what a gallery can show, plus a few spares for pictures taken out or failed.
     [media.daily, media.tickets, media.work].forEach(list => wrLoadMedia(list.filter(r => !_wrHidden.has(r.key)).slice(0, WR_GALLERY_MAX + 3)));
     _wrPages = buildWeeklyPages(D, _wrAud, _wrNotes, media);
@@ -533,32 +623,40 @@ async function _wrLogoData() {
 // Column widths from the text in each column, and each row's height from how
 // many lines its longest cell wraps to (pptxgenjs does not measure text).
 function _wrTableLayout(b, wdt) {
-    const fs = b.compact ? 9 : 10, cw = fs * 0.0072, line = fs * 0.0185, base = b.compact ? 0.25 : 0.3;
+    const fs = b.compact ? 9 : 9.5, cw = fs * 0.0072, line = fs * 0.0185, base = b.compact ? 0.25 : 0.29;
     const txt = c => String(c && typeof c === 'object' ? (c.text == null ? '' : c.text) : (c == null ? '' : c));
     const n = b.head.length;
-    const weight = Array.from({ length: n }, (_, i) => Math.max(b.head[i].t ? 6 : 3, Math.min(42, Math.max(...[b.head[i].t, ...b.rows.map(r => txt(r[i]))].map(t => t.length)))));
-    const sum = weight.reduce((a, x) => a + x, 0);
-    const colW = weight.map(x => wdt * x / sum);
-    const rowH = r => Math.max(base, ...r.map((c, i) => Math.ceil(Math.max(1, txt(c).length) * cw / Math.max(0.2, colW[i] - 0.1)) * line + 0.08));
-    const heights = [base, ...b.rows.map(rowH)];
+    const len = Array.from({ length: n }, (_, i) => Math.max(...[b.head[i].t, ...b.rows.map(r => txt(r[i]))].map(t => t.length)));
+    // Short columns (a number, a chip, a name) get exactly the room their text
+    // needs, so they never wrap; the long ones share what is left.
+    const fixed = len.map(l => l <= 18 ? Math.max(0.42, l * cw * 1.45 + 0.16) : 0);
+    let rest = wdt - fixed.reduce((a, x) => a + x, 0);
+    const longSum = len.reduce((a, l, i) => a + (fixed[i] ? 0 : Math.min(60, l)), 0);
+    let colW;
+    if (!longSum) { const k = wdt / fixed.reduce((a, x) => a + x, 0); colW = fixed.map(x => x * k); }
+    else if (rest < wdt * 0.25) { const weight = len.map(l => Math.max(4, Math.min(42, l))), sum = weight.reduce((a, x) => a + x, 0); colW = weight.map(x => wdt * x / sum); }
+    else colW = len.map((l, i) => fixed[i] || rest * Math.min(60, l) / longSum);
+    const rowH = r => Math.max(base, ...r.map((c, i) => Math.ceil(Math.max(1, txt(c).length) * cw / Math.max(0.2, colW[i] - 0.1)) * line + 0.1));
+    const heights = [base * 0.85, ...b.rows.map(rowH)];
     return { colW, heights, total: heights.reduce((a, x) => a + x, 0), fs };
 }
-// Rough height of a block on a slide, to stack blocks in a column.
+// Rough height of what a card holds on a slide (inches), to stack cards in a column.
 function _wrBlockH(b, wdt) {
-    const t = b.title ? 0.32 : 0;
     switch (b.type) {
-    case 'hero': return 2.4;
-    case 'stats': return t + Math.ceil(Math.max(1, b.items.length) / (b.per || (b.small ? 2 : 3))) * (b.small ? 0.72 : 1.25);
-    case 'table': return t + (b.rows.length ? _wrTableLayout(b, wdt || 4).total + (b.more ? 0.25 : 0) : 0.3);
-    case 'bars': return t + (b.vertical ? 3.2 : Math.max(1, b.items.length) * 0.3 + 0.1);
-    case 'list': return t + Math.max(1, b.items.length) * 0.62;
-    case 'rag': return b.items.length * 0.55;
-    case 'kv': return 0.4 + b.items.length * 0.28;
-    case 'panel': return 0.5 + b.items.length * 0.28;
-    case 'note': return 0.35;
-    case 'numbered': return b.items.length * 0.72;
-    case 'gallery': return 3.75;
-    case 'projects': return b.items.length * 0.72 + (b.more ? 0.25 : 0);
+    case 'hero': return 1.05 + (b.sub ? 0.24 : 0) + (b.foot ? 0.3 : 0);
+    case 'progress': return 1.8;
+    case 'steps': return b.items.length ? b.items.length * 0.27 + (b.more ? 0.22 : 0) : 0.3;
+    case 'stats': { const per = b.per || (b.small ? 2 : 3), rows = Math.ceil(Math.max(1, b.items.length) / per); return rows * (b.small ? 0.6 : 0.72) + (b.items.some(i => i.delta) ? 0.12 : 0); }
+    case 'table': return b.rows.length ? _wrTableLayout(b, wdt || 4).total + (b.more ? 0.22 : 0) : 0.3;
+    case 'bars': return b.vertical ? 1.15 : Math.max(1, b.items.length) * 0.27;
+    case 'list': return b.items.length ? b.items.reduce((n, i) => n + (String(i.text).length * 0.064 > (wdt || 3) - 0.2 ? 0.36 : 0.2) + (i.sub ? 0.16 : 0) + 0.07, 0) : 0.3;
+    case 'rag': return b.items.length * 0.42;
+    case 'kv': return b.items.length * 0.27;
+    case 'panel': return b.items.length * 0.27;
+    case 'note': return 0.22;
+    case 'numbered': return b.items.length * 0.6;
+    case 'projects': return b.items.length * 0.68 + (b.more ? 0.22 : 0);
+    case 'gallery': return b.inCard ? 1.2 : 3.75;
     }
     return 0.5;
 }
@@ -599,167 +697,221 @@ async function downloadWeeklyPptx() {
     try { PptxGenJS = await loadPptxGen(); } catch (e) { showToast(navigator.onLine ? 'PowerPoint could not be prepared' : 'PowerPoint needs a signal the first time', 'error'); return; }
     showToast('Preparing the PowerPoint…', 'info');
     const logo = await _wrLogoData();
+    const C = WR_COL, pres = new PptxGenJS();
+    pres.layout = 'LAYOUT_16x9';
+    const repName = _wrAud === 'mgmt' ? 'Precision Health Weekly Update' : 'Weekly Operation Report';
+    pres.title = `${repName} — Week ${D.week.no}`;
+    pres.company = 'Operation Technology';
+    const eyebrow = `${repName} · Week ${D.week.no} · ${D.week.label}`.toUpperCase();
+    const face = 'Calibri';
+    const tx = (s, t, o) => s.addText(t, Object.assign({ margin: 0, fontFace: face, color: C.ink, valign: 'top' }, o));
+    const tone = k => WR_TONE[k] || C.ink;
+    const X0 = 0.4, W0 = 9.2, GAP = 0.14, PAD = 0.16;
+    // ---- layout: every card of every page gets its box (galleries their picture boxes) ----
+    const layout = pg => {
+        const y0 = pg.sub ? 1.42 : 1.32, avail = 5.22 - y0, cards = [];
+        if (pg.cols.length === 1 && pg.cols[0].length > 1 && pg.cols[0].every(b => b.type === 'kv')) {
+            const per = 3, list = pg.cols[0], rows = Math.ceil(list.length / per), cw = (W0 - GAP * (per - 1)) / per, ch = (avail - GAP * (rows - 1)) / rows;
+            list.forEach((b, j) => cards.push({ b, x: X0 + (j % per) * (cw + GAP), y: y0 + Math.floor(j / per) * (ch + GAP), w: cw, h: ch }));
+            return cards;
+        }
+        const total = pg.widths.reduce((a, x) => a + x, 0), space = W0 - GAP * (pg.cols.length - 1);
+        let cx = X0;
+        pg.cols.forEach((col, k) => {
+            const cw = space * pg.widths[k] / total;
+            const nat = col.map(b => _wrBare(b) ? _wrBlockH(b, cw) : PAD * 2 + (b.title ? 0.26 : 0) + _wrBlockH(b, cw - PAD * 2));
+            const room = avail - GAP * (col.length - 1), sum = nat.reduce((a, x) => a + x, 0);
+            const grow = col.map(_wrGrow), gsum = grow.reduce((a, x) => a + x, 0);
+            const hs = nat.map((h, i) => sum > room ? h * room / sum : h + (gsum ? (room - sum) * grow[i] / gsum : 0));
+            let cy = y0;
+            col.forEach((b, i) => { cards.push({ b, x: cx, y: cy, w: cw, h: hs[i] }); cy += hs[i] + GAP; });
+            cx += cw + GAP;
+        });
+        return cards;
+    };
+    const pages = _wrPages.map(pg => ({ pg, cards: pg.kind === 'cover' ? [] : layout(pg) }));
     // Pictures: cut to their boxes first (and the videos read, when asked for).
     const prep = new Map();
-    let videos = 0, videosLeft = 0;
-    for (const pg of _wrPages) for (const col of (pg.cols || [])) for (const b of col) if (b.type === 'gallery') {
-        const geom = _wrGalleryGeom(b.items.length, 0.5, 1.35, 9.0, 3.75);
+    let videosLeft = 0;
+    for (const { cards } of pages) for (const c of cards) if (c.b.type === 'gallery') {
+        const b = c.b;
+        if (b.inCard) { const ix = c.x + PAD, iy = c.y + PAD + (b.title ? 0.26 : 0), iw = c.w - PAD * 2, ih = c.y + c.h - PAD - iy, n = b.items.length, cols = n > 1 ? 2 : 1, rows = Math.ceil(n / cols), g = 0.08;
+            c.tiles = b.items.map((_, i) => ({ x: ix + (i % cols) * ((iw - g * (cols - 1)) / cols + g), y: iy + Math.floor(i / cols) * ((ih - g * (rows - 1)) / rows + g), w: (iw - g * (cols - 1)) / cols, h: Math.max(0.3, (ih - g * (rows - 1)) / rows), cap: 0 }));
+        } else c.tiles = _wrGalleryGeom(b.items.length, c.x, c.y, c.w, c.h);
         for (let i = 0; i < b.items.length; i++) {
-            const it = b.items[i], g = geom[i], asp = g.w / g.h;
+            const it = b.items[i], g = c.tiles[i], asp = g.w / g.h;
             if (it.kind === 'video') {
                 const cover = await _wrCrop(it.poster, asp, 'png');
                 let data = '';
-                if (_wrEmbedVideo) { data = await _wrVideoData(it.src, it.size); if (data) videos++; else videosLeft++; }
+                if (_wrEmbedVideo) { data = await _wrVideoData(it.src, it.size); if (!data) videosLeft++; }
                 prep.set(it.key, { img: cover, video: data });
             } else prep.set(it.key, { img: await _wrCrop(it.src, asp) });
         }
     }
-    const C = WR_COL, pres = new PptxGenJS();
-    pres.layout = 'LAYOUT_16x9';
-    pres.title = `${_wrAud === 'mgmt' ? 'Precision Health Weekly Update' : 'Weekly Operation Report'} — Week ${D.week.no}`;
-    pres.company = 'Operation Technology';
-    const foot = `${pres.title.replace(' — ', ' · ')} · ${D.week.label}`;
-    const head = 'Cambria', body = 'Calibri';
-    const tx = (s, t, o) => s.addText(t, Object.assign({ margin: 0, fontFace: body, color: C.ink, valign: 'top' }, o));
-    const tone = k => WR_TONE[k] || C.ink;
-    const cellOpt = (c, h) => { const o = c && typeof c === 'object' ? c : { text: c };
-        return { text: String(o.text == null ? '' : o.text), options: { align: o.a || (h && h.a) || 'left', color: o.tone ? tone(o.tone) : C.ink, bold: !!o.bold, border: [{ type: 'none' }, { type: 'none' }, { pt: 0.5, color: C.hair }, { type: 'none' }] } }; };
-    const drawBlock = (s, b, x, y, wdt) => {
-        let yy = y;
-        if (b.title && b.type !== 'kv' && b.type !== 'panel') { tx(s, b.title, { x, y: yy, w: wdt, h: 0.28, fontFace: head, fontSize: 12, bold: true }); yy += 0.32; }
+    const rect = (s, x, y, w, h, fill, line, radius) => s.addShape(radius === 0 ? pres.ShapeType.rect : pres.ShapeType.roundRect,
+        Object.assign({ x, y, w, h, fill: { color: fill }, line: line ? { color: line, width: 0.75 } : { color: fill, width: 0 } }, radius === 0 ? {} : { rectRadius: radius == null ? 0.1 : radius }));
+    const cellOpt = (c, h, sepColor) => { const o = c && typeof c === 'object' ? c : { text: c };
+        return { text: String(o.text == null ? '' : o.text), options: { align: o.a || (h && h.a) || 'left', color: o.chip ? tone(o.chip) : o.tone ? tone(o.tone) : C.ink, bold: !!o.bold || !!o.chip,
+            border: [{ pt: 0.5, color: sepColor }, { type: 'none' }, { type: 'none' }, { type: 'none' }] } }; };
+    // What a card holds, drawn inside (x, y, w, h). hero: on the teal card (white text).
+    const drawBlock = (s, c, x, y, w, h, hero) => {
+        const b = c.b, ink = hero ? 'FFFFFF' : C.ink, soft = hero ? C.heroSub : C.slate, sep = c.b.card === 'warn' ? 'FDE3C3' : 'EEF0F2';
         switch (b.type) {
         case 'hero':
-            tx(s, String(b.value), { x, y: yy, w: wdt, h: 1.05, fontFace: head, fontSize: 60, bold: true, color: tone(b.tone || 'good'), valign: 'bottom' });
-            tx(s, b.label, { x, y: yy + 1.1, w: wdt, h: 0.5, fontSize: 13 });
-            if (b.sub) tx(s, b.sub, { x, y: yy + 1.62, w: wdt, h: 0.45, fontSize: 11, color: tone(b.subTone || 'muted') });
-            if (b.foot) tx(s, b.foot, { x, y: yy + 2.08, w: wdt, h: 0.3, fontSize: 10.5, color: C.slate });
+            tx(s, String(b.value), { x, y, w, h: 0.82, fontSize: 46, bold: true, color: hero ? 'FFFFFF' : C.green, valign: 'middle', fit: 'shrink' });
+            tx(s, b.label, { x, y: y + 0.86, w, h: 0.22, fontSize: 10, color: ink, fit: 'shrink' });
+            if (b.sub) tx(s, b.sub, { x, y: y + 1.1, w, h: 0.22, fontSize: 9.5, color: soft });
+            if (b.foot) tx(s, b.foot, { x, y: y + h - 0.3, w, h: 0.3, fontSize: 9.5, color: soft, valign: 'bottom', fit: 'shrink' });
             break;
-        case 'stats': { const per = b.per || (b.small ? 2 : 3), cw = wdt / per, rh = b.small ? 0.72 : 1.25;
-            b.items.forEach((st, i) => { const cx = x + (i % per) * cw, cy = yy + Math.floor(i / per) * rh;
-                tx(s, _wrNum(st.value), { x: cx, y: cy, w: cw - 0.1, h: rh * 0.55, fontFace: head, fontSize: b.small ? 22 : 28, bold: true, color: st.tone ? tone(st.tone) : C.ink, valign: 'bottom' });
-                tx(s, st.label, { x: cx, y: cy + rh * 0.57, w: cw - 0.1, h: rh * 0.4, fontSize: b.small ? 9.5 : 11, color: C.slate }); });
-            if (!b.items.length) tx(s, b.empty || '—', { x, y: yy, w: wdt, h: 0.3, fontSize: 11, color: C.slate });
+        case 'progress': {
+            tx(s, `${b.pct}%`, { x, y, w, h: 0.82, fontSize: 46, bold: true, color: 'FFFFFF', valign: 'middle' });
+            tx(s, `${b.label}${b.delta ? ` · ${b.delta > 0 ? '▲' : '▼'} ${Math.abs(b.delta)} pts this week` : b.delta === 0 ? ' · no change this week' : ''}`, { x, y: y + 0.86, w, h: 0.22, fontSize: 10, color: 'FFFFFF', fit: 'shrink' });
+            rect(s, x, y + 1.2, w, 0.09, '3F9189', null, 0.045);
+            if (b.pct) rect(s, x, y + 1.2, Math.max(0.09, w * b.pct / 100), 0.09, 'FFFFFF', null, 0.045);
+            if (b.timePct != null) s.addShape(pres.ShapeType.line, { x: x + w * b.timePct / 100, y: y + 1.14, w: 0, h: 0.21, line: { color: 'FDBA74', width: 1.5 } });
+            tx(s, [{ text: [b.start && b.end ? `${b.start} → ${b.end}` : (b.end || ''), b.daysLeft == null ? '' : b.daysLeft >= 0 ? `${b.daysLeft} days left` : `${-b.daysLeft} days late`].filter(Boolean).join(' · ') + (b.rag ? ' · ' : '') }, { text: b.rag || '', options: { bold: true } }],
+                { x, y: y + 1.36, w, h: 0.36, fontSize: 9, color: C.heroSub });
+            break; }
+        case 'steps':
+            if (!b.items.length) { tx(s, b.empty || '—', { x, y, w, h: 0.3, fontSize: 10, color: soft }); break; }
+            { const rh = Math.min(0.3, (h - (b.more ? 0.22 : 0)) / b.items.length);
+            b.items.forEach((m, i) => { const cy = y + i * rh;
+                if (i) s.addShape(pres.ShapeType.line, { x, y: cy, w, h: 0, line: { color: sep, width: 0.5 } });
+                rect(s, x, cy + rh / 2 - 0.075, 0.15, 0.15, m.done ? C.green : C.tint, null, 0.035);
+                if (m.done) tx(s, '✓', { x, y: cy + rh / 2 - 0.075, w: 0.15, h: 0.15, fontSize: 7.5, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle' });
+                const gw = m.goods ? 0.5 : 0, ww = m.weight != null ? 0.4 : 0;
+                const lw = w - 0.24 - gw - ww - 0.05, maxc = Math.max(8, Math.floor(lw / 0.066));
+                tx(s, m.label.length > maxc ? m.label.slice(0, maxc - 1) + '…' : m.label, { x: x + 0.24, y: cy, w: lw, h: rh, fontSize: 9.5, color: m.done ? C.slate : C.ink, valign: 'middle' });
+                if (m.weight != null) tx(s, `${m.weight}%`, { x: x + w - gw - ww, y: cy, w: ww, h: rh, fontSize: 8.5, color: C.slate, align: 'right', valign: 'middle' });
+                if (m.goods) { const ok = m.goods.split('/')[0] === m.goods.split('/')[1]; tx(s, `▣ ${m.goods}`, { x: x + w - gw, y: cy, w: gw, h: rh, fontSize: 8.5, bold: true, color: ok ? C.good : C.rust, align: 'right', valign: 'middle' }); } });
+            if (b.more) tx(s, `+ ${b.more} more in the dashboard`, { x, y: y + b.items.length * rh + 0.03, w, h: 0.2, fontSize: 8.5, color: C.slate }); }
+            break;
+        case 'stats': { const per = b.per || (b.small ? 2 : 3), cw = w / per, rows = Math.ceil(Math.max(1, b.items.length) / per), rh = Math.min(b.small ? 0.7 : 0.95, h / rows);
+            b.items.forEach((st, i) => { const cx = x + (i % per) * cw, cy = y + Math.floor(i / per) * rh;
+                tx(s, _wrNum(st.value), { x: cx, y: cy, w: cw - 0.08, h: rh * 0.5, fontSize: b.small ? 18 : 22, bold: true, color: st.tone ? tone(st.tone) : ink, valign: 'bottom', fit: 'shrink' });
+                tx(s, st.label, { x: cx, y: cy + rh * 0.52, w: cw - 0.08, h: 0.2, fontSize: 8.5, color: soft, fit: 'shrink' });
+                if (st.delta) tx(s, st.delta.text, { x: cx, y: cy + rh * 0.52 + 0.19, w: cw - 0.08, h: 0.17, fontSize: 8, bold: true, color: tone(st.delta.tone) }); });
+            if (!b.items.length) tx(s, b.empty || '—', { x, y, w, h: 0.3, fontSize: 10, color: soft });
             break; }
         case 'table': {
-            if (!b.rows.length) { tx(s, b.empty || 'Nothing this week', { x, y: yy, w: wdt, h: 0.3, fontSize: 11, color: C.slate }); break; }
-            const H = b.head.map(h => ({ text: h.t, options: { bold: true, color: C.slate, fontSize: 9, align: h.a || 'left', border: [{ type: 'none' }, { type: 'none' }, { pt: 1, color: C.ink }, { type: 'none' }] } }));
-            const R = b.rows.map(r => r.map((c, i) => cellOpt(c, b.head[i])));
-            const L = _wrTableLayout(b, wdt);
-            s.addTable([H, ...R], { x, y: yy, w: wdt, colW: L.colW, rowH: L.heights, fontFace: body, fontSize: L.fs, color: C.ink, valign: 'top', margin: [0.03, 0.05, 0.03, 0.05], autoPage: false });
-            if (b.more) tx(s, `+ ${b.more} more in the dashboard`, { x, y: yy + L.total + 0.03, w: wdt, h: 0.22, fontSize: 9, color: C.slate });
+            if (!b.rows.length) { tx(s, b.empty || 'Nothing this week', { x, y, w, h: 0.3, fontSize: 10, color: soft }); break; }
+            const H = b.head.map(hd => ({ text: String(hd.t).toUpperCase(), options: { bold: true, color: C.slate, fontSize: 7.5, align: hd.a || 'left', border: [{ type: 'none' }, { type: 'none' }, { type: 'none' }, { type: 'none' }] } }));
+            const R = b.rows.map(r => r.map((cc, i) => cellOpt(cc, b.head[i], sep)));
+            const L = _wrTableLayout(b, w);
+            s.addTable([H, ...R], { x, y, w, colW: L.colW, rowH: L.heights, fontFace: face, fontSize: L.fs, color: C.ink, valign: 'middle', margin: [0.03, 0.05, 0.03, 0.05], autoPage: false });
+            if (b.more) tx(s, `+ ${b.more} more in the dashboard`, { x, y: y + L.total + 0.03, w, h: 0.2, fontSize: 8.5, color: C.slate });
             break; }
         case 'bars': {
+            if (!b.items.length) { tx(s, 'Nothing this week', { x, y, w, h: 0.3, fontSize: 10, color: soft }); break; }
             const max = b.max || Math.max(1, ...b.items.map(i => Number(i[1]) || 0));
-            if (b.vertical) { const n = b.items.length, bw = wdt / n, ch = 2.5;
-                b.items.forEach((it, i) => { const h = Math.max(0.02, ch * (it[1] || 0) / max), bx = x + i * bw + bw * 0.18;
-                    s.addShape(pres.ShapeType.rect, { x: bx, y: yy + 0.25 + ch - h, w: bw * 0.64, h, fill: { color: i === b.highlight ? C.green : C.sage }, line: { color: i === b.highlight ? C.green : C.sage, width: 0 } });
-                    tx(s, _wrH(it[1]), { x: x + i * bw, y: yy + ch - h, w: bw, h: 0.22, fontSize: 9, align: 'center' });
-                    tx(s, it[0], { x: x + i * bw, y: yy + 0.3 + ch, w: bw, h: 0.25, fontSize: 9, color: C.slate, align: 'center' }); });
+            if (b.vertical) { const n = b.items.length, g = 0.07, bw = (w - g * (n - 1)) / n, ch = Math.max(0.4, h - 0.42);
+                b.items.forEach((it, i) => { const bh = Math.max(0.02, ch * (it[1] || 0) / max), bx = x + i * (bw + g), col = i === b.highlight ? C.green : C.sage;
+                    rect(s, bx, y + 0.2 + ch - bh, bw, bh, col, null, 0);
+                    tx(s, _wrH(it[1]), { x: bx - 0.05, y: y + 0.2 + ch - bh - 0.19, w: bw + 0.1, h: 0.18, fontSize: 8, align: 'center', valign: 'bottom' });
+                    tx(s, it[0], { x: bx - 0.05, y: y + 0.24 + ch, w: bw + 0.1, h: 0.18, fontSize: 8, color: C.slate, align: 'center' }); });
                 break; }
-            const lw = Math.min(1.9, wdt * 0.38), vw = 0.6, tw = wdt - lw - vw - 0.1;
-            b.items.forEach((it, i) => { const cy = yy + i * 0.3, v = it[1];
-                tx(s, it[0], { x, y: cy, w: lw, h: 0.24, fontSize: 10, valign: 'middle' });
-                s.addShape(pres.ShapeType.rect, { x: x + lw, y: cy + 0.06, w: tw, h: 0.13, fill: { color: C.tint }, line: { color: C.tint, width: 0 } });
-                const col = b.target && v != null ? (v >= b.target ? C.green : v >= b.target - 5 ? C.amber : C.rust) : C.green;
-                if (v) s.addShape(pres.ShapeType.rect, { x: x + lw, y: cy + 0.06, w: Math.max(0.02, tw * v / max), h: 0.13, fill: { color: col }, line: { color: col, width: 0 } });
-                if (b.target) s.addShape(pres.ShapeType.line, { x: x + lw + tw * b.target / max, y: cy + 0.02, w: 0, h: 0.21, line: { color: C.ink, width: 1, dashType: 'dash' } });
-                tx(s, v == null ? '—' : _wrH(v) + (b.unit || ''), { x: x + lw + tw + 0.08, y: cy, w: vw, h: 0.24, fontSize: 10, bold: true, align: 'right', valign: 'middle' }); });
+            const lw = Math.min(1.7, w * 0.42), vw = 0.52, tw = w - lw - vw - 0.1, rh = Math.min(0.3, h / b.items.length);
+            b.items.forEach((it, i) => { const cy = y + i * rh, v = it[1];
+                tx(s, it[0], { x, y: cy, w: lw, h: rh, fontSize: 9.5, valign: 'middle', fit: 'shrink' });
+                rect(s, x + lw, cy + rh / 2 - 0.04, tw, 0.08, C.tint, null, 0.04);
+                const col = b.target && v != null ? (v >= b.target ? C.green : v >= b.target - 5 ? 'F79009' : C.rust) : C.green;
+                if (v) rect(s, x + lw, cy + rh / 2 - 0.04, Math.max(0.08, tw * Math.min(v, max) / max), 0.08, col, null, 0.04);
+                if (b.target) s.addShape(pres.ShapeType.line, { x: x + lw + tw * b.target / max, y: cy + rh / 2 - 0.09, w: 0, h: 0.18, line: { color: '344054', width: 0.75, dashType: 'dash' } });
+                tx(s, v == null ? '—' : _wrH(v) + (b.unit || ''), { x: x + lw + tw + 0.06, y: cy, w: vw + 0.04, h: rh, fontSize: 9.5, bold: true, align: 'right', valign: 'middle' }); });
             break; }
-        case 'list':
-            if (!b.items.length) { tx(s, b.empty || '—', { x, y: yy, w: wdt, h: 0.3, fontSize: 11, color: C.slate }); break; }
-            b.items.forEach((it, i) => { const cy = yy + i * 0.62;
-                s.addShape(pres.ShapeType.ellipse, { x, y: cy + 0.06, w: 0.12, h: 0.12, fill: { color: tone(it.tone || 'muted') }, line: { color: tone(it.tone || 'muted'), width: 0 } });
-                tx(s, it.text.slice(0, 140), { x: x + 0.22, y: cy, w: wdt - 0.22, h: 0.36, fontSize: 11, fit: 'shrink' });
-                if (it.sub) tx(s, it.sub, { x: x + 0.22, y: cy + 0.36, w: wdt - 0.22, h: 0.22, fontSize: 9, color: C.slate }); });
-            break;
-        case 'rag':
-            b.items.forEach((r, i) => { const cy = yy + i * 0.55;
-                s.addShape(pres.ShapeType.ellipse, { x, y: cy + 0.08, w: 0.16, h: 0.16, fill: { color: tone(r[1]) }, line: { color: tone(r[1]), width: 0 } });
-                tx(s, r[0], { x: x + 0.3, y: cy, w: wdt * 0.5, h: 0.32, fontSize: 13, bold: true });
-                tx(s, r[2], { x: x + wdt * 0.5, y: cy, w: wdt * 0.5, h: 0.32, fontSize: 12, color: C.slate, align: 'right' });
-                if (i < b.items.length - 1) s.addShape(pres.ShapeType.line, { x, y: cy + 0.46, w: wdt, h: 0, line: { color: C.hair, width: 0.75 } }); });
-            break;
-        case 'kv':
-            tx(s, b.title, { x, y: yy, w: wdt, h: 0.3, fontFace: head, fontSize: 13, bold: true, color: C.green });
-            b.items.forEach((it, i) => { tx(s, it[0], { x, y: yy + 0.38 + i * 0.28, w: wdt - 0.7, h: 0.25, fontSize: 11, color: C.slate });
-                tx(s, _wrNum(it[1]), { x: x + wdt - 0.7, y: yy + 0.38 + i * 0.28, w: 0.7, h: 0.25, fontSize: 11, bold: true, align: 'right' }); });
-            break;
-        case 'panel': {
-            const h = 0.5 + b.items.length * 0.28;
-            s.addShape(pres.ShapeType.roundRect, { x, y: yy, w: wdt, h, fill: { color: C.tint }, line: { color: C.tint, width: 0 }, rectRadius: 0.06 });
-            tx(s, b.title, { x: x + 0.2, y: yy + 0.1, w: wdt - 0.4, h: 0.28, fontFace: head, fontSize: 12, bold: true, color: C.green });
-            tx(s, b.items.map((t, k) => ({ text: t, options: { bullet: true, breakLine: k < b.items.length - 1 } })), { x: x + 0.2, y: yy + 0.42, w: wdt - 0.4, h: h - 0.5, fontSize: 10.5 });
+        case 'list': {
+            if (!b.items.length) { tx(s, b.empty || '—', { x, y, w, h: 0.3, fontSize: 10, color: soft }); break; }
+            let cy = y;
+            b.items.forEach(it => { const long = String(it.text).length * 0.064 > w - 0.2, th = long ? 0.36 : 0.2;
+                s.addShape(pres.ShapeType.ellipse, { x, y: cy + 0.07, w: 0.085, h: 0.085, fill: { color: it.tone === 'warn' ? 'F79009' : it.tone === 'bad' ? C.rust : it.tone === 'good' ? C.green : '98A2B3' }, line: { color: 'FFFFFF', width: 0 } });
+                tx(s, String(it.text).slice(0, 160), { x: x + 0.18, y: cy, w: w - 0.18, h: th, fontSize: 9.5, fit: 'shrink' });
+                if (it.sub) tx(s, it.sub, { x: x + 0.18, y: cy + th, w: w - 0.18, h: 0.17, fontSize: 8, color: C.slate });
+                cy += th + (it.sub ? 0.16 : 0) + 0.07; });
             break; }
-        case 'note': tx(s, b.text, { x, y: yy, w: wdt, h: 0.3, fontSize: 9.5, color: C.slate }); break;
+        case 'rag': { const rh = Math.min(0.5, h / b.items.length);
+            b.items.forEach((r, i) => { const cy = y + i * rh;
+                if (i) s.addShape(pres.ShapeType.line, { x, y: cy, w, h: 0, line: { color: sep, width: 0.5 } });
+                s.addShape(pres.ShapeType.ellipse, { x, y: cy + rh / 2 - 0.055, w: 0.11, h: 0.11, fill: { color: r[1] === 'warn' ? 'F79009' : r[1] === 'bad' ? C.rust : r[1] === 'good' ? C.green : '98A2B3' }, line: { color: 'FFFFFF', width: 0 } });
+                tx(s, r[0], { x: x + 0.22, y: cy, w: w * 0.52, h: rh, fontSize: 11, bold: true, valign: 'middle' });
+                tx(s, r[2], { x: x + w * 0.5, y: cy, w: w * 0.5, h: rh, fontSize: 10, color: C.slate, align: 'right', valign: 'middle' }); });
+            break; }
+        case 'kv': { const rh = Math.min(0.32, h / Math.max(1, b.items.length));
+            b.items.forEach((it, i) => { const cy = y + i * rh;
+                if (i) s.addShape(pres.ShapeType.line, { x, y: cy, w, h: 0, line: { color: sep, width: 0.5 } });
+                tx(s, it[0], { x, y: cy, w: w - 0.8, h: rh, fontSize: 10, color: C.slate, valign: 'middle' });
+                tx(s, _wrNum(it[1]), { x: x + w - 0.8, y: cy, w: 0.8, h: rh, fontSize: 11, bold: true, align: 'right', valign: 'middle' }); });
+            break; }
+        case 'panel': tx(s, b.items.map((t, k) => ({ text: t, options: { bullet: true, breakLine: k < b.items.length - 1 } })), { x, y, w, h, fontSize: 10 }); break;
+        case 'note': tx(s, b.text, { x, y, w, h: 0.22, fontSize: 8.5, color: C.slate }); break;
+        case 'numbered': { const rh = Math.min(0.62, h / b.items.length);
+            b.items.forEach((it, i) => { const cy = y + i * rh;
+                rect(s, x, cy + rh / 2 - 0.17, 0.34, 0.34, C.green, null, 0.07);
+                tx(s, String(i + 1).padStart(2, '0'), { x, y: cy + rh / 2 - 0.17, w: 0.34, h: 0.34, fontSize: 11, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle' });
+                tx(s, it, { x: x + 0.5, y: cy, w: w - 0.5, h: rh, fontSize: 13, valign: 'middle', fit: 'shrink' }); });
+            break; }
+        case 'projects':
+            b.items.forEach((p, i) => { const cy = y + i * 0.68, t2 = p.rag === 'red' ? 'bad' : p.rag === 'amber' ? 'warn' : 'good', col = t2 === 'good' ? C.green : tone(t2);
+                s.addShape(pres.ShapeType.ellipse, { x, y: cy + 0.07, w: 0.1, h: 0.1, fill: { color: col }, line: { color: 'FFFFFF', width: 0 } });
+                tx(s, p.name, { x: x + 0.2, y: cy, w: w * 0.33, h: 0.24, fontSize: 10.5, bold: true, fit: 'shrink' });
+                tx(s, [p.type, p.pt, p.pic].filter(Boolean).join(' · '), { x: x + 0.2, y: cy + 0.25, w: w * 0.33, h: 0.2, fontSize: 8.5, color: C.slate });
+                tx(s, `${p.pct}%`, { x: x + w * 0.37, y: cy, w: 0.7, h: 0.34, fontSize: 16, bold: true, color: col });
+                rect(s, x + w * 0.46, cy + 0.08, w * 0.22, 0.08, C.tint, null, 0.04);
+                if (p.pct) rect(s, x + w * 0.46, cy + 0.08, Math.max(0.08, w * 0.22 * p.pct / 100), 0.08, col, null, 0.04);
+                tx(s, `${p.label} · ${p.due}`, { x: x + w * 0.46, y: cy + 0.22, w: w * 0.24, h: 0.34, fontSize: 8, color: C.slate, fit: 'shrink' });
+                tx(s, p.week || '—', { x: x + w * 0.72, y: cy, w: w * 0.28, h: 0.55, fontSize: 9, color: C.slate, fit: 'shrink' }); });
+            if (b.more) tx(s, `+ ${b.more} more in the dashboard`, { x, y: y + b.items.length * 0.68, w, h: 0.2, fontSize: 8.5, color: C.slate });
+            break;
         case 'gallery':
-            _wrGalleryGeom(b.items.length, x, yy, wdt, 3.75).forEach((g, i) => {
+            (c.tiles || []).forEach((g, i) => {
                 const it = b.items[i], pr = prep.get(it.key) || {};
                 if (it.kind === 'video' && pr.video) {
                     const data = pr.video.replace(/^data:/, ''), extn = ((it.name || '').split('.').pop() || 'mp4').toLowerCase();
-                    const media = { type: 'video', data, extn: extn === 'mov' ? 'mov' : extn, x: g.x, y: g.y, w: g.w, h: g.h };
+                    const media = { type: 'video', data, extn, x: g.x, y: g.y, w: g.w, h: g.h };
                     if (pr.img) media.cover = pr.img;
                     s.addMedia(media);
-                } else if (pr.img) s.addImage({ data: pr.img, x: g.x, y: g.y, w: g.w, h: g.h });
+                } else if (pr.img) s.addImage({ data: pr.img, x: g.x, y: g.y, w: g.w, h: g.h, rounding: false });
                 else {
-                    s.addShape(pres.ShapeType.rect, { x: g.x, y: g.y, w: g.w, h: g.h, fill: { color: C.tint }, line: { color: C.tint, width: 0 } });
-                    tx(s, it.kind === 'video' ? 'Video — open it in the dashboard' : 'Photo in the dashboard', { x: g.x, y: g.y, w: g.w, h: g.h, fontSize: 10, color: C.slate, align: 'center', valign: 'middle' });
+                    rect(s, g.x, g.y, g.w, g.h, 'E7ECEA', null, 0.08);
+                    tx(s, it.kind === 'video' ? 'Video — open it in the dashboard' : 'Photo in the dashboard', { x: g.x, y: g.y, w: g.w, h: g.h, fontSize: 9, color: C.slate, align: 'center', valign: 'middle' });
                 }
                 if (it.kind === 'video' && !pr.video) {
                     const d = Math.min(g.w, g.h) * 0.28;
                     s.addShape(pres.ShapeType.ellipse, { x: g.x + (g.w - d) / 2, y: g.y + (g.h - d) / 2, w: d, h: d, fill: { color: '000000', transparency: 45 }, line: { color: 'FFFFFF', width: 1.5 } });
                     s.addShape(pres.ShapeType.triangle, { x: g.x + (g.w - d * 0.38) / 2 + d * 0.05, y: g.y + (g.h - d * 0.42) / 2, w: d * 0.38, h: d * 0.42, rotate: 90, fill: { color: 'FFFFFF' }, line: { color: 'FFFFFF', width: 0 } });
                 }
-                tx(s, it.cap, { x: g.x, y: g.y + g.h + 0.05, w: g.w, h: 0.22, fontSize: 9.5, bold: true, fit: 'shrink' });
-                tx(s, it.sub, { x: g.x, y: g.y + g.h + 0.26, w: g.w, h: 0.2, fontSize: 8.5, color: C.slate, fit: 'shrink' });
+                if (g.cap) { tx(s, it.cap, { x: g.x, y: g.y + g.h + 0.05, w: g.w, h: 0.2, fontSize: 9, bold: true, fit: 'shrink' });
+                    tx(s, it.sub, { x: g.x, y: g.y + g.h + 0.25, w: g.w, h: 0.18, fontSize: 8, color: C.slate, fit: 'shrink' }); }
             });
-            break;
-        case 'numbered':
-            b.items.forEach((it, i) => { const cy = yy + i * 0.72;
-                tx(s, String(i + 1).padStart(2, '0'), { x, y: cy, w: 0.8, h: 0.6, fontFace: head, fontSize: 28, bold: true, color: C.cane });
-                tx(s, it, { x: x + 0.95, y: cy + 0.12, w: wdt - 0.95, h: 0.45, fontSize: 15, fit: 'shrink' }); });
-            break;
-        case 'projects':
-            b.items.forEach((p, i) => { const cy = yy + i * 0.72, t2 = p.rag === 'red' ? 'bad' : p.rag === 'amber' ? 'warn' : 'good';
-                s.addShape(pres.ShapeType.ellipse, { x, y: cy + 0.07, w: 0.14, h: 0.14, fill: { color: tone(t2) }, line: { color: tone(t2), width: 0 } });
-                tx(s, p.name, { x: x + 0.25, y: cy, w: 3.2, h: 0.28, fontSize: 12, bold: true });
-                tx(s, [p.type, p.pt, p.pic].filter(Boolean).join(' · '), { x: x + 0.25, y: cy + 0.29, w: 3.2, h: 0.22, fontSize: 9, color: C.slate });
-                tx(s, `${p.pct}%`, { x: x + 3.5, y: cy, w: 0.8, h: 0.4, fontFace: head, fontSize: 18, bold: true, color: tone(t2) });
-                s.addShape(pres.ShapeType.rect, { x: x + 4.35, y: cy + 0.1, w: 2.0, h: 0.12, fill: { color: C.hair }, line: { color: C.hair, width: 0 } });
-                if (p.pct) s.addShape(pres.ShapeType.rect, { x: x + 4.35, y: cy + 0.1, w: 2.0 * p.pct / 100, h: 0.12, fill: { color: tone(t2) }, line: { color: tone(t2), width: 0 } });
-                tx(s, p.due, { x: x + 4.35, y: cy + 0.29, w: 2.2, h: 0.22, fontSize: 9, color: C.slate });
-                tx(s, p.week || '—', { x: x + 6.7, y: cy, w: wdt - 6.7, h: 0.55, fontSize: 9.5, color: C.slate, fit: 'shrink' }); });
-            if (b.more) tx(s, `+ ${b.more} more in the dashboard`, { x, y: yy + b.items.length * 0.72, w: wdt, h: 0.22, fontSize: 9, color: C.slate });
             break;
         }
     };
-    _wrPages.forEach((p, i) => {
+    pages.forEach(({ pg: p, cards }, i) => {
         const s = pres.addSlide();
-        s.background = { color: 'FFFFFF' };
         if (p.kind === 'cover') {
-            if (logo) s.addImage({ data: logo, x: 0.6, y: 0.55, w: 0.7, h: 0.7 });
-            tx(s, 'Operation Technology', { x: 1.45, y: 0.72, w: 5, h: 0.4, fontSize: 14, bold: true, color: C.green });
-            tx(s, p.title, { x: 0.6, y: 1.9, w: 6.6, h: 1.3, fontFace: head, fontSize: 34, bold: true, color: C.green, valign: 'bottom' });
-            tx(s, p.lines.map((l, k) => ({ text: l, options: { breakLine: k < p.lines.length - 1, bold: k === 0, color: k === 0 ? C.ink : C.slate } })), { x: 0.6, y: 3.35, w: 6.6, h: 1.3, fontSize: 14 });
-            tx(s, `W${p.week}`, { x: 6.9, y: 2.4, w: 2.6, h: 1.6, fontFace: head, fontSize: 80, bold: true, color: C.cane, align: 'right', valign: 'middle' });
+            s.background = { color: C.green };
+            if (logo) { s.addShape(pres.ShapeType.ellipse, { x: 0.55, y: 0.5, w: 0.7, h: 0.7, fill: { color: 'FFFFFF' }, line: { color: 'FFFFFF', width: 0 } }); s.addImage({ data: logo, x: 0.6, y: 0.55, w: 0.6, h: 0.6 }); }
+            tx(s, 'Operation Technology', { x: 1.4, y: 0.66, w: 5, h: 0.4, fontSize: 14, bold: true, color: 'FFFFFF' });
+            tx(s, String(p.lines[0] || '').toUpperCase(), { x: 0.6, y: 2.05, w: 6.6, h: 0.3, fontSize: 11, bold: true, color: C.heroSub, charSpacing: 1.5 });
+            tx(s, p.title, { x: 0.6, y: 2.4, w: 6.8, h: 0.95, fontSize: 36, bold: true, color: 'FFFFFF', valign: 'middle', fit: 'shrink' });
+            tx(s, p.lines.slice(1).map((l, k, arr) => ({ text: l, options: { breakLine: k < arr.length - 1 } })), { x: 0.6, y: 3.45, w: 6.6, h: 0.8, fontSize: 12.5, color: 'D5EFEA' });
+            tx(s, `W${p.week}`, { x: 6.6, y: 2.0, w: 3.0, h: 1.8, fontSize: 96, bold: true, color: '3F9189', align: 'right', valign: 'middle' });
             return;
         }
-        tx(s, p.title, { x: 0.5, y: 0.3, w: 8.4, h: 0.85, fontFace: head, fontSize: 20, bold: true, fit: 'shrink' });
-        if (logo) s.addImage({ data: logo, x: 9.15, y: 0.32, w: 0.38, h: 0.38 });
-        tx(s, foot, { x: 0.5, y: 5.22, w: 7.5, h: 0.25, fontSize: 8, color: C.slate });
-        tx(s, `${p.section} · ${i + 1}`, { x: 8.0, y: 5.22, w: 1.5, h: 0.25, fontSize: 8, color: C.slate, align: 'right' });
-        const total = p.widths.reduce((a, b) => a + b, 0), gap = 0.35, avail = 9.0 - gap * (p.cols.length - 1);
-        let cx = 0.5;
-        p.cols.forEach((col, k) => {
-            const cw = avail * p.widths[k] / total;
-            // A column of several equal cards (kv) is laid out as a grid.
-            if (col.length > 1 && col.every(b => b.type === 'kv')) {
-                const per = 3, kw = (cw - gap * (per - 1)) / per;
-                col.forEach((b, j) => drawBlock(s, b, cx + (j % per) * (kw + gap), 1.35 + Math.floor(j / per) * 1.85, kw));
-            } else {
-                let cy = 1.35;
-                col.forEach(b => { drawBlock(s, b, cx, cy, cw); cy += _wrBlockH(b, cw) + 0.25; });
-            }
-            cx += cw + gap;
+        s.background = { color: C.bg };
+        tx(s, (p.eyebrow ? String(p.eyebrow).toUpperCase() : eyebrow), { x: X0, y: 0.26, w: 8.4, h: 0.2, fontSize: 8, bold: true, color: C.green, charSpacing: 1.2 });
+        tx(s, p.title, { x: X0, y: 0.47, w: 8.5, h: p.sub ? 0.5 : 0.7, fontSize: 19, bold: true, valign: p.sub ? 'middle' : 'top', fit: 'shrink' });
+        if (p.sub) tx(s, p.sub, { x: X0, y: 1.0, w: 8.5, h: 0.24, fontSize: 9.5, color: C.slate, fit: 'shrink' });
+        if (logo) s.addImage({ data: logo, x: 9.22, y: 0.28, w: 0.38, h: 0.38 });
+        tx(s, `${repName} · W${D.week.no}`, { x: X0, y: 5.33, w: 6, h: 0.2, fontSize: 7.5, color: C.slate });
+        tx(s, `${p.section} · ${i + 1}`, { x: 7.6, y: 5.33, w: 2.0, h: 0.2, fontSize: 7.5, color: C.slate, align: 'right' });
+        cards.forEach(c => {
+            const b = c.b;
+            if (_wrBare(b)) { drawBlock(s, c, c.x, c.y, c.w, c.h, false); return; }
+            const hero = b.card === 'hero', warn = b.card === 'warn';
+            rect(s, c.x, c.y, c.w, c.h, hero ? C.green : warn ? C.warnBg : C.card, hero ? null : warn ? C.warnLine : C.hair, 0.1);
+            let iy = c.y + PAD;
+            if (b.title) { tx(s, String(b.title).toUpperCase(), { x: c.x + PAD, y: iy, w: c.w - PAD * 2, h: 0.2, fontSize: 7.5, bold: true, color: hero ? C.heroSub : warn ? C.amber : '475467', charSpacing: 0.8, fit: 'shrink' }); iy += 0.26; }
+            drawBlock(s, c, c.x + PAD, iy, c.w - PAD * 2, Math.max(0.2, c.y + c.h - PAD - iy), hero);
         });
     });
     try {
@@ -781,7 +933,7 @@ const _wrHidden = new Set();
 let _wrShow = { daily: true, tickets: true, work: true }, _wrEmbedVideo = false, _wrMediaT = null;
 
 function wrMediaRefs(D) {
-    const w = D.week, out = { daily: [], tickets: [], work: [] };
+    const w = D.week, out = { daily: [], tickets: [], work: [], projects: {} };
     const dayName = iso => _wrDate(iso).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' });
     // Daily Report: each paddock line with photos; spread over paddocks and days.
     if (D.team.on && typeof loadWorkLogPhotos === 'function') {
@@ -823,6 +975,16 @@ function wrMediaRefs(D) {
             (j.photoIds || []).slice(0, 2).forEach(id => out.work.push({ key: `pj:${id}`, kind: 'photo', cap: `${j.category} · ${j.description || ''}`.slice(0, 80), sub, load: () => loadWhPhoto(id, 'pj') }));
         });
         out.work.sort((a, b) => (a.kind === 'video' ? 0 : 1) - (b.kind === 'video' ? 0 : 1));
+        // 2.37.0: the pictures of each running project — this week's first, else its latest.
+        out.projects = {};
+        (typeof projects !== 'undefined' ? projects : []).filter(p => !PJ_CLOSED.includes(p.status)).forEach(p => {
+            const refs = [];
+            const ups = (p.updates || []).filter(u => (u.photoIds || []).length).sort((a, b) => (_wrIn(b.date, w) ? 1 : 0) - (_wrIn(a.date, w) ? 1 : 0) || String(b.date || '').localeCompare(String(a.date || '')));
+            ups.slice(0, 3).forEach(u => u.photoIds.slice(0, 2).forEach(id => refs.push({ key: `pj:${id}`, kind: 'photo', cap: dayName(u.date), sub: (u.text || '').slice(0, 50), load: () => loadWhPhoto(id, 'pj') })));
+            (typeof otJobs !== 'undefined' ? otJobs : []).filter(j => j.projectId === p.id && _wrIn(j.date, w)).forEach(j => (j.photoIds || []).slice(0, 2).forEach(id =>
+                refs.push({ key: `pj:${id}`, kind: 'photo', cap: dayName(j.date), sub: `${j.category}`.slice(0, 50), load: () => loadWhPhoto(id, 'pj') })));
+            if (refs.length) out.projects[p.id] = refs.slice(0, 6);
+        });
     }
     return out;
 }
@@ -876,13 +1038,13 @@ function setWeeklyMediaShow(part, on) { _wrShow[part] = !!on; renderWeeklyReport
 function setWeeklyEmbedVideo(on) { _wrEmbedVideo = !!on; }
 
 // One gallery block from a list of references.
-function _wrGallery(refs) {
-    return { type: 'gallery', items: _wrVisible(refs).map(r => { const m = _wrMedia.get(r.key) || { state: 'loading' };
+function _wrGallery(refs, max) {
+    return { type: 'gallery', items: _wrVisible(refs).slice(0, max || WR_GALLERY_MAX).map(r => { const m = _wrMedia.get(r.key) || { state: 'loading' };
         return { key: r.key, kind: r.kind, cap: r.cap, sub: r.sub, state: m.state, src: m.src || '', poster: m.poster || '', name: r.name || '', size: r.size || 0, type: r.type || '' }; }) };
 }
 function _wrGalleryHtml(b) {
     if (!b.items.length) return '<div class="wr-empty">No pictures this week</div>';
-    return `<div class="wr-gal wr-gal--${Math.min(b.items.length, WR_GALLERY_MAX)}">${b.items.map(it => {
+    return `<div class="wr-gal wr-gal--${Math.min(b.items.length, WR_GALLERY_MAX)}${b.inCard ? ' wr-gal--mini' : ''}">${b.items.map(it => {
         const img = it.kind === 'video' ? it.poster : it.src;
         const pic = it.state === 'loading' ? '<div class="wr-gal__ph">Loading…</div>'
             : img ? (it.kind === 'video' ? `<img src="${_wrE(img)}" alt="">` : `<img ${thumbAttrs(img, true)} alt="">`) : `<div class="wr-gal__ph"><i class="fas fa-film" aria-hidden="true"></i></div>`;

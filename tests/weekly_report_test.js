@@ -29,9 +29,18 @@ const path = require('path');
         t('next week otomatis (ticket mendesak dulu; jumlahnya ikut waktu karena SLA)', /^Close \d+ urgent or overdue tickets?: TK-261102-0800AB/.test(D.nextWeek[0]), true);
         const team = buildWeeklyPages(D, 'team', 'Barang radio datang Selasa');
         const mgmt = buildWeeklyPages(D, 'mgmt', '');
-        t('tanpa galeri (media kosong): versi tim', team.map(p => p.section || 'Cover'), ['Cover', 'Summary', 'Daily Report', 'Daily Report', 'Daily Report', 'Field tickets', 'Jobs & activities', 'Fleet & support', 'Projects', 'Next week']);
-        t('tanpa galeri: versi manajer', mgmt.map(p => p.section || 'Cover'), ['Cover', 'Summary', 'Scorecard', 'Precision health', 'Licenses', 'Issues', 'Field tickets & jobs', 'Projects', 'Next week']);
-        t('judul halaman berupa kesimpulan', [team[1].title, mgmt[1].title], ['34 of 37 daily reports came in; the team logged 291 hours on 5 paddocks', 'Precision health is 88.5%, short of the 95% target']);
+        t('tanpa galeri (media kosong): versi tim', team.map(p => p.section || 'Cover'), ['Cover', 'Summary', 'Daily Report', 'Daily Report', 'Daily Report', 'Field tickets', 'Jobs & activities', 'Fleet & support', 'Projects', 'Projects', 'Projects', 'Next week']);
+        t('tanpa galeri: versi manajer', mgmt.map(p => p.section || 'Cover'), ['Cover', 'Summary', 'Scorecard', 'Precision health', 'Licenses', 'Issues', 'Field tickets & jobs', 'Projects', 'Projects', 'Projects', 'Next week']);
+        t('judul halaman berupa kesimpulan', [/^34 of 37 daily reports came in; 3 tickets still open/.test(team[1].title), mgmt[1].title], [true, 'Precision health is 88.5%, short of the 95% target']);
+        // 2.37.0: bento cards + a page per running project
+        t('Summary: kartu utama (hero), angka, kesehatan, ticket, jam, perlu perhatian', team[1].cols.map(c => c.map(b => b.type + (b.card ? ':' + b.card : ''))), [['hero:hero', 'bars'], ['stats', 'table'], ['bars', 'list:warn']]);
+        const pp = D.projectPages;
+        t('halaman project: semua yang berjalan, yang merah dulu', pp.map(x => [x.name, x.rag, x.pct]), [['RTK radio repeater stage 2', 'red', 50], ['Depth Sensor - Cartrack (Phase 2)', 'green', 55]]);
+        t('project milestone: langkah + bobot; project jumlah: target & selesai', [pp[0].steps.map(m => [m.label, m.weight, m.done]), [pp[1].mode, pp[1].done, pp[1].total, pp[1].steps.length]],
+            [[['Survey', 20, true], ['PO', 30, true], ['Install', 50, false]], ['count', 22, 40, 0]]);
+        t('update minggu ini masuk ke halaman project', [pp[0].updates.map(u => u.text), pp[1].updates.map(u => u.text)], [['Goods still at Merauke port'], ['6 more sensors installed at MNM']]);
+        const pPage = team.find(p => p.projectId === 'pj2');
+        t('halaman project: eyebrow, judul = nama project, 3 kolom kartu', [pPage.title, /^Project in progress · /.test(pPage.eyebrow), pPage.cols.map(c => c.map(b => b.type))], ['RTK radio repeater stage 2', true, [['progress'], ['steps'], ['list']]]);
         t('catatan sendiri masuk paling atas di Next week', team[team.length - 1].cols[0][0].items[0], 'Barang radio datang Selasa');
         // 2.32.0: pictures
         const refs = wrMediaRefs(D);
@@ -45,7 +54,9 @@ const path = require('path');
         const wait = async () => { for (let i = 0; i < 40 && wrMediaPending(); i++) await new Promise(r => setTimeout(r, 150)); await new Promise(r => setTimeout(r, 400)); };
         await wait();
         const secs = () => [...document.querySelectorAll('#wrPages .wr-foot span:last-child')].map(x => x.textContent.split(' · ')[0]);
-        t('menu & halaman tampil untuk owner (dengan 3 galeri)', [currentView, document.querySelectorAll('#wrPages .wr-page').length, document.getElementById('wrWeek').value, document.querySelectorAll('#wrPages .wr-gal').length], ['weeklyReport', 13, '2026-10-31', 3]);
+        t('menu & halaman tampil untuk owner (dengan 3 galeri)', [currentView, document.querySelectorAll('#wrPages .wr-page').length, document.getElementById('wrWeek').value, document.querySelectorAll('#wrPages .wr-gal').length], ['weeklyReport', 15, '2026-10-31', 4]);
+        t('gaya bento: kartu putih, satu kartu teal, satu kartu perhatian', [document.querySelectorAll('#wrPages .wr-page:nth-child(2) .wr-card').length, document.querySelectorAll('#wrPages .wr-page:nth-child(2) .wr-card--hero').length, document.querySelectorAll('#wrPages .wr-page:nth-child(2) .wr-card--warn').length], [6, 1, 1]);
+        t('halaman project punya galeri kecil di dalam kartu', document.querySelectorAll('#wrPages .wr-gal--mini').length, 1);
         t('galeri: 6 foto Daily Report termuat', document.querySelectorAll('#wrPages .wr-gal')[0].querySelectorAll('img').length, 6);
         t('video: gambar diam + tanda play', [!!document.querySelector('#wrPages .wr-gal__play'), /^data:image\/jpeg/.test(document.querySelector('.wr-gal__play').parentElement.querySelector('img').getAttribute('src'))], [true, true]);
         const firstKey = refs.daily[0].key;
@@ -54,10 +65,10 @@ const path = require('path');
             [6, true]);
         resetWeeklyMedia();
         setWeeklyMediaShow('daily', false);
-        t('matikan foto Daily Report: galerinya hilang', document.querySelectorAll('#wrPages .wr-gal').length, 2);
+        t('matikan foto Daily Report: galerinya hilang', document.querySelectorAll('#wrPages .wr-gal').length, 3);
         setWeeklyMediaShow('daily', true);
         setWeeklyReportAudience('mgmt'); await wait();
-        t('versi manajer: satu galeri From the field (ticket + kerja)', [document.querySelectorAll('#wrPages .wr-page').length, document.querySelector('.wr-aud.active').dataset.aud, secs().includes('From the field')], [10, 'mgmt', true]);
+        t('versi manajer: satu galeri From the field (ticket + kerja)', [document.querySelectorAll('#wrPages .wr-page').length, document.querySelector('.wr-aud.active').dataset.aud, secs().includes('From the field')], [12, 'mgmt', true]);
         // Access: a viewer without the area does not see it.
         currentUser = { uid: 'v', email: 'v@x.id' }; currentUserDoc = { uid: 'v', role: 'staff', status: 'active', access: { tickets: 'view' } }; applyRoleGating();
         t('tanpa akses Weekly Report: menu disembunyikan', document.querySelector('.nav__link[data-view="weeklyReport"]').style.display, 'none');
@@ -80,7 +91,7 @@ const path = require('path');
     await page.emulateMedia({ media: 'print' });
     const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true });
     const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
-    T.push({ n: 'PDF: 13 halaman (satu per lembar)', g: pages, w: 13, pass: pages === 13 });
+    T.push({ n: 'PDF: 15 halaman (satu per lembar)', g: pages, w: 15, pass: pages === 15 });
     let pass = 0;
     for (const x of T) { if (x.pass) pass++; console.log(`${x.pass ? 'PASS' : 'FAIL'}  ${x.n}`); if (!x.pass) console.log(`        dapat=${JSON.stringify(x.g)} harap=${JSON.stringify(x.w)}`); }
     console.log(`\n${pass}/${T.length} lulus`);

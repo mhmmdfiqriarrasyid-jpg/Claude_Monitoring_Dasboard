@@ -591,6 +591,14 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.37.0 — Weekly Report gaya "bento" + halaman per project**: lembar abu
+  lembut berisi kartu putih, satu kartu teal untuk angka utama dan kartu oranye
+  untuk yang perlu perhatian (mengikuti *bento brief* dari
+  github.com/cheahhl814/design-pack, MIT, dengan warna dashboard) — sama di
+  layar, PDF dan PowerPoint. Halaman Summary jadi enam kartu. Baru: satu halaman
+  **Project in progress** untuk tiap project yang berjalan (progress + garis
+  waktu, milestone & barang, update dan kendala minggu ini, barang yang masih
+  kurang, foto), di kedua versi.
   **2.36.1 — Barang per milestone**: di project bermode Milestones, tiap
   milestone punya daftar barangnya sendiri (`material.milestoneId`, tombol
   *+ Item*, hitungan lengkap n/n); barang tanpa milestone ada di *Other goods*
