@@ -290,6 +290,10 @@ const { launch, BASE_URL } = require('./_env');
         showProjectDetail('mp1');
         t('tiap milestone punya tombol + Item', document.querySelectorAll('.pj-ms__item .pj-ms__head button').length, 1);
         showProjectMaterialForm('mp1', '', 'a');
+        // 2.36.2: the form opens ON TOP of the project detail (it used to open behind it).
+        { const r = document.getElementById('pjMatName').getBoundingClientRect();
+          const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          t('form Add item tampil di atas detail project', [document.getElementById('pjDetailModal').classList.contains('open'), !!top && top.id], [true, 'pjMatName']); }
         t('form: milestone terpilih', [document.getElementById('pjMatMilestoneGroup').style.display, document.getElementById('pjMatMilestone').value, [...document.getElementById('pjMatMilestone').options].map(o => o.textContent)],
             ['', 'a', ['— No single milestone (other goods) —', 'Instalasi Antenna']]);
         document.getElementById('pjMatName').value = 'Mounting Antenna';
