@@ -392,21 +392,24 @@ function buildWeeklyPages(D, aud, notes, media) {
         // Management (2.37.1, as the owner's own deck): precision health,
         // field tickets & jobs, the projects and one page each, next week.
         const worst = pr.components.filter(c => c[1] != null).sort((a, b) => a[1] - b[1])[0];
-        page('Precision health', worst ? `${worst[0]} is the weakest component at ${worst[1]}%${pr.bySite.length > 1 ? '; ' + pr.bySite.map(s => `${s.pt} ${_wrFmtPct(s.pct)}`).join(', ') : ''}` : 'Precision health by component',
+        page('Precision health', 'Component Health Precision and Sensor',
             [[{ type: 'bars', title: 'Tractor components Good, %', items: pr.components, max: 100, target: WR_TARGET, unit: '%' },
               ...(pr.heavy ? [{ type: 'bars', title: 'Heavy equipment devices Good, %', items: pr.heavyComponents, max: 100, target: WR_TARGET, unit: '%' }] : [])],
              [{ type: 'table', head: [{ t: 'PT' }, { t: 'Units', a: 'right' }, { t: 'All Good', a: 'right' }, ...COMPONENT_KEYS.map(k => ({ t: COMPONENT_LABELS[k] || k, a: 'right' }))],
                 rows: pr.bySite.map(s => [{ text: s.pt, bold: true }, s.units, { text: _wrFmtPct(s.pct), tone: _wrToneOf(s.pct, WR_TARGET), bold: true }, ...s.components.map(v => ({ text: _wrFmtPct(v), tone: _wrToneOf(v, WR_TARGET) }))]) }]], [1, 1.2]);
-        // Field overview for the manager: tickets and jobs, short.
-        page('Field tickets & jobs', `${_wrPlural(tk.newIn, 'ticket')} raised and ${tk.resolved} resolved; ${_wrPlural(jb.total, 'job')} done outside the Daily Report`,
-            [[{ type: 'stats', small: true, items: [{ value: tk.newIn, label: 'tickets raised' }, { value: tk.resolved, label: 'resolved' }, { value: tk.open, label: 'open now' }, { value: tk.overdue, label: 'past due time', tone: tk.overdue ? 'bad' : '' }] },
-              { type: 'table', head: [{ t: 'Open ticket' }, { t: 'Prio' }, { t: 'PIC' }, { t: 'Days', a: 'right' }], rows: tk.openList.slice(0, 5).map(x => [`${x.no} · ${x.title}`, (TK_PRIORITY[x.priority] || {}).label || '', x.pic || '—', { text: String(x.age), tone: x.late ? 'bad' : '' }]), empty: 'No open tickets' }],
-             [{ type: 'bars', title: 'Jobs by category', items: jb.byCategory.slice(0, 6) }, { type: 'kv', title: 'Jobs', items: [['Logged', jb.total], ['Done', jb.done], ['Field issues waiting', jb.backlog.length]] }]], [1.5, 1]);
+        // Issue in Field (2.38.0): three cards across, the open tickets below.
+        page('Issue in field', 'Issue in Field', [], [], { rows: [
+            { h: 1, widths: [1.3, 0.9, 1.15], cards: [
+                { type: 'stats', small: true, items: [{ value: tk.newIn, label: 'tickets raised' }, { value: tk.resolved, label: 'resolved' }, { value: tk.open, label: 'open now' }, { value: tk.overdue, label: 'past due time', tone: tk.overdue ? 'bad' : '' }] },
+                { type: 'kv', title: 'Jobs', items: [['Logged', jb.total], ['Done', jb.done], ['Field issues waiting', jb.backlog.length]] },
+                { type: 'bars', title: 'Jobs by category', items: jb.byCategory.slice(0, 4), empty: 'No jobs this week' }] },
+            { h: 2, widths: [1], cards: [
+                { type: 'table', head: [{ t: 'Open ticket' }, { t: 'Prio' }, { t: 'PIC' }, { t: 'Days', a: 'right' }], rows: tk.openList.slice(0, 6).map(x => [`${x.no} · ${x.title}`, (TK_PRIORITY[x.priority] || {}).label || '', x.pic || '—', { text: String(x.age), tone: x.late ? 'bad' : '' }]), more: Math.max(0, tk.openList.length - 6), empty: 'No open tickets' }] }] });
     }
     // Both: projects and next week.
     if (D.projects.length) {
         const need = D.projects.filter(p => p.rag === 'red' || p.rag === 'amber');
-        page('Projects', need.length ? `${need.length} of ${_wrPlural(D.projects.length, 'project')} need attention: ${need.slice(0, 2).map(p => p.name).join(', ')}` : `All ${_wrPlural(D.projects.length, 'project')} on track`,
+        page('Projects', mgmt ? 'Project' : need.length ? `${need.length} of ${_wrPlural(D.projects.length, 'project')} need attention: ${need.slice(0, 2).map(p => p.name).join(', ')}` : `All ${_wrPlural(D.projects.length, 'project')} on track`,
             [[{ type: 'projects', items: D.projects.slice(0, 5), more: Math.max(0, D.projects.length - 5) }]]);
     }
     // 2.37.0: a page for each project still running.
@@ -426,13 +429,21 @@ function buildWeeklyPages(D, aud, notes, media) {
         const steps = x.steps.length
             ? { type: 'steps', title: x.mode === 'milestones' ? 'Milestones & goods' : x.mode === 'units' ? 'Units' : 'Units involved', items: x.steps.slice(0, 11), more: Math.max(0, x.steps.length - 11) }
             : { type: 'kv', title: `Target${x.what ? ' — ' + x.what : ''}`, grow: 1, items: [['Target', x.total], ['Done so far', x.done], ['Still to do', Math.max(0, x.total - x.done)], ['Jobs logged this week', x.jobs]] };
-        page('Projects', x.name, [left, [steps], right], [1, 1.45, 1.15],
-            { eyebrow: `Project in progress · ${x.type}${x.company ? ' · ' + x.company : ''}`, sub: [x.pic ? `PIC ${x.pic}` : '', x.departments.length ? `with ${x.departments.join(', ')}` : ''].filter(Boolean).join(' · '), projectId: x.id });
+        // Management: "Project <name>", with its PT when two running projects share a name.
+        const twin = (D.projectPages || []).filter(y => y.name === x.name).length > 1;
+        page('Projects', mgmt ? `Project ${x.name}${twin && x.company ? ' – ' + x.company : ''}` : x.name, [left, [steps], right], [1, 1.45, 1.15],
+            mgmt ? { sub: x.departments.join(', '), projectId: x.id }
+                 : { eyebrow: `Project in progress · ${x.type}${x.company ? ' · ' + x.company : ''}`, sub: [x.pic ? `PIC ${x.pic}` : '', x.departments.length ? `with ${x.departments.join(', ')}` : ''].filter(Boolean).join(' · '), projectId: x.id });
     });
-    const items = (notes || '').split('\n').map(s => s.trim()).filter(Boolean).concat(D.nextWeek).slice(0, mgmt ? 3 : 5);
+    // 2.38.0: the management deck closes with the company's thank-you page instead.
+    if (mgmt) {
+        P.push({ kind: 'closing', title: 'Terima Kasih' });
+        P.forEach(p => { p.theme = 'msg'; if (p.kind === 'content') p.eyebrow = ''; });
+        return P;
+    }
+    const items = (notes || '').split('\n').map(s => s.trim()).filter(Boolean).concat(D.nextWeek).slice(0, 5);
     const first = items[0] ? items[0].charAt(0).toLowerCase() + items[0].slice(1) : '';
     page('Next week', first ? `Next week: ${first.length > 90 ? first.slice(0, 88).replace(/[\s,;:]+\S*$/, '') + '…' : first}${items.length > 1 ? `, and ${items.length - 1} more` : ''}` : 'Next week', [[{ type: 'numbered', items: items.length ? items : ['Keep the Daily Report at 100%'] }]]);
-    if (mgmt) P.forEach(p => { if (p.kind === 'content' && !p.eyebrow) p.eyebrow = ''; });
     return P;
 }
 
@@ -449,7 +460,7 @@ function _wrBlockHtml(b) {
     switch (b.type) {
     case 'hero': return `<div class="wr-hero"><div class="wr-hero__v">${_wrE(b.value)}</div><div class="wr-hero__l">${_wrE(b.label)}</div>
         ${b.sub ? `<div class="wr-hero__s">${_wrE(b.sub)}</div>` : ''}${b.foot ? `<div class="wr-hero__f">${_wrE(b.foot)}</div>` : ''}</div>`;
-    case 'progress': return `<div class="wr-hero"><div class="wr-hero__v">${b.pct}%</div><div class="wr-hero__l">${_wrE(b.label)}${b.delta ? ` · ${b.delta > 0 ? '▲' : '▼'} ${Math.abs(b.delta)} pts this week` : b.delta === 0 ? ' · no change this week' : ''}</div>
+    case 'progress': return `<div class="wr-hero"><div class="wr-hero__v">${b.pct}<small>%</small></div><div class="wr-hero__l">${_wrE(b.label)}${b.delta ? ` · ${b.delta > 0 ? '▲' : '▼'} ${Math.abs(b.delta)} pts this week` : b.delta === 0 ? ' · no change this week' : ''}</div>
         <div class="wr-tl"><u style="width:${b.pct}%"></u>${b.timePct != null ? `<s style="left:${b.timePct}%" title="today"></s>` : ''}</div>
         <div class="wr-hero__s">${_wrE([b.start && b.end ? `${b.start} → ${b.end}` : (b.end || ''), b.daysLeft == null ? '' : b.daysLeft >= 0 ? `${b.daysLeft} days left` : `${-b.daysLeft} days late`].filter(Boolean).join(' · '))}${b.rag ? ` · <b>${_wrE(b.rag)}</b>` : ''}</div></div>`;
     case 'steps': return b.items.length ? `<div class="wr-steps">${b.items.map(m => `<div class="wr-step${m.done ? ' is-done' : ''}"><span class="wr-step__ck">${m.done ? '✓' : ''}</span><span class="wr-step__l">${_wrE(m.label)}</span>
@@ -488,15 +499,30 @@ function _wrCardHtml(b) {
     if (_wrBare(b)) return `<div class="wr-bare${b.type === 'gallery' ? ' wr-bare--fill' : ''}">${_wrBlockHtml(b)}</div>`;
     return `<div class="wr-card${b.card ? ' wr-card--' + b.card : ''} wr-card--${b.type}" style="flex-grow:${_wrGrow(b)}">${b.title ? `<div class="wr-card__t">${_wrE(b.title)}</div>` : ''}${_wrBlockHtml(b)}</div>`;
 }
+// The body of a content page: columns of stacked cards, or (rows) bands of cards side by side.
+function _wrBodyHtml(p) {
+    if (p.rows) return `<div class="wr-body wr-body--rows">${p.rows.map(r => `<div class="wr-row" style="flex:${r.h}">${r.cards.map((b, k) =>
+        _wrCardHtml(b).replace('class="wr-card', `style="flex:${r.widths[k] || 1} 1 0" class="wr-card`)).join('')}</div>`).join('')}</div>`;
+    return `<div class="wr-body${p.cols.length === 1 && p.cols[0].length > 1 && p.cols[0].every(b => b.type === 'kv') ? ' wr-body--grid' : ''}">${p.cols.map((c, k) => `<div class="wr-col" style="flex:${p.widths[k]}">${c.map(_wrCardHtml).join('')}</div>`).join('')}</div>`;
+}
 function weeklyPagesHtml(pages, D, aud) {
-    const name = aud === 'mgmt' ? 'Precision Health Weekly Update' : 'Weekly Operation Report';
+    const name = aud === 'mgmt' ? 'Weekly Update' : 'Weekly Operation Report';
     const eyebrow = `${name} · Week ${D.week.no} · ${D.week.label}`;
-    return pages.map((p, i) => p.kind === 'cover'
+    return pages.map((p, i) => {
+        // 2.38.0: the management deck on the company template (report-assets/).
+        if (p.theme === 'msg') {
+            if (p.kind === 'cover') return `<section class="wr-page wr-msg wr-msg--cover"><img class="wr-msg__ot" src="icons/icon-192.png" alt="">
+                <div class="wr-msg__title"><h1>${_wrE(p.title)}${p.title2 ? `<br>${_wrE(p.title2)}` : ''}</h1><div class="wr-msg__week">${_wrE(p.lines[0] || '')}</div></div></section>`;
+            if (p.kind === 'closing') return `<section class="wr-page wr-msg wr-msg--closing"><h1>${_wrE(p.title)}</h1></section>`;
+            return `<section class="wr-page wr-msg wr-msg--content${p.sub ? ' has-sub' : ''}"><header class="wr-msg__head"><h2>${_wrE(p.title)}</h2>${p.sub ? `<div class="wr-msg__sub">${_wrE(p.sub)}</div>` : ''}</header>${_wrBodyHtml(p)}</section>`;
+        }
+        return p.kind === 'cover'
         ? `<section class="wr-page wr-cover"><img class="wr-cover__logo" src="icons/icon-192.png" alt="">
             <div class="wr-cover__main"><div><div class="wr-cover__eyebrow">${_wrE(p.lines[0] || '')}</div><h1>${_wrE(p.title)}${p.title2 ? `<br>${_wrE(p.title2)}` : ''}</h1>${p.lines.slice(1).map(l => `<p>${_wrE(l)}</p>`).join('')}</div></div></section>`
         : `<section class="wr-page"><header class="wr-head"><div class="wr-head__text">${p.eyebrow === '' ? '' : `<div class="wr-eyebrow">${_wrE(p.eyebrow || eyebrow)}</div>`}<h2>${_wrE(p.title)}</h2>${p.sub ? `<div class="wr-head__sub">${_wrE(p.sub)}</div>` : ''}</div><img src="icons/icon-192.png" alt=""></header>
-            <div class="wr-body${p.cols.length === 1 && p.cols[0].length > 1 && p.cols[0].every(b => b.type === 'kv') ? ' wr-body--grid' : ''}">${p.cols.map((c, k) => `<div class="wr-col" style="flex:${p.widths[k]}">${c.map(_wrCardHtml).join('')}</div>`).join('')}</div>
-            <footer class="wr-foot"><span>${_wrE(name)} · W${D.week.no}</span><span>${_wrE(p.section)} · ${i}</span></footer></section>`).join('');
+            ${_wrBodyHtml(p)}
+            <footer class="wr-foot"><span>${_wrE(name)} · W${D.week.no}</span><span>${_wrE(p.section)} · ${i}</span></footer></section>`;
+    }).join('');
 }
 
 // ---- The view ----
@@ -571,6 +597,12 @@ function loadPptxGen() {
         document.head.appendChild(s);
     });
     return _pptxLoading;
+}
+async function _wrImgData(url) {
+    try {
+        const b = await (await fetch(url)).blob();
+        return await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).replace(/^data:/, '')); fr.readAsDataURL(b); });
+    } catch (_) { return ''; }
 }
 async function _wrLogoData() {
     try {
@@ -657,6 +689,9 @@ async function downloadWeeklyPptx() {
     try { PptxGenJS = await loadPptxGen(); } catch (e) { showToast(navigator.onLine ? 'PowerPoint could not be prepared' : 'PowerPoint needs a signal the first time', 'error'); return; }
     showToast('Preparing the PowerPoint…', 'info');
     const logo = await _wrLogoData();
+    // 2.38.0: the company template's pictures, for the management deck.
+    const msg = _wrPages.some(p => p.theme === 'msg');
+    const bgCover = msg ? await _wrImgData('report-assets/msg-cover.jpg') : '', bgContent = msg ? await _wrImgData('report-assets/msg-content.jpg') : '';
     const C = WR_COL, pres = new PptxGenJS();
     pres.layout = 'LAYOUT_16x9';
     const repName = _wrAud === 'mgmt' ? 'Precision Health Weekly Update' : 'Weekly Operation Report';
@@ -669,7 +704,19 @@ async function downloadWeeklyPptx() {
     const X0 = 0.4, W0 = 9.2, GAP = 0.14, PAD = 0.16;
     // ---- layout: every card of every page gets its box (galleries their picture boxes) ----
     const layout = pg => {
-        const y0 = pg.sub ? 1.42 : 1.32, avail = 5.22 - y0, cards = [];
+        const isMsg = pg.theme === 'msg';
+        const y0 = isMsg ? (pg.sub ? 1.12 : 0.92) : (pg.sub ? 1.42 : 1.32), avail = (isMsg ? 5.4 : 5.22) - y0, cards = [];
+        if (pg.rows) {
+            const hsum = pg.rows.reduce((a, r) => a + r.h, 0), room = avail - GAP * (pg.rows.length - 1);
+            let cy = y0;
+            pg.rows.forEach(r => {
+                const rh = room * r.h / hsum, wsum = r.widths.reduce((a, x) => a + x, 0), space = W0 - GAP * (r.cards.length - 1);
+                let cx = X0;
+                r.cards.forEach((b, k) => { const cw = space * (r.widths[k] || 1) / wsum; cards.push({ b, x: cx, y: cy, w: cw, h: rh }); cx += cw + GAP; });
+                cy += rh + GAP;
+            });
+            return cards;
+        }
         if (pg.cols.length === 1 && pg.cols[0].length > 1 && pg.cols[0].every(b => b.type === 'kv')) {
             const per = 3, list = pg.cols[0], rows = Math.ceil(list.length / per), cw = (W0 - GAP * (per - 1)) / per, ch = (avail - GAP * (rows - 1)) / rows;
             list.forEach((b, j) => cards.push({ b, x: X0 + (j % per) * (cw + GAP), y: y0 + Math.floor(j / per) * (ch + GAP), w: cw, h: ch }));
@@ -692,7 +739,7 @@ async function downloadWeeklyPptx() {
         });
         return cards;
     };
-    const pages = _wrPages.map(pg => ({ pg, cards: pg.kind === 'cover' ? [] : layout(pg) }));
+    const pages = _wrPages.map(pg => ({ pg, cards: pg.kind === 'content' ? layout(pg) : [] }));
     // Pictures: cut to their boxes first (and the videos read, when asked for).
     const prep = new Map();
     let videosLeft = 0;
@@ -727,7 +774,7 @@ async function downloadWeeklyPptx() {
             if (b.foot) tx(s, b.foot, { x, y: y + h - 0.3, w, h: 0.3, fontSize: 9.5, color: soft, valign: 'bottom', fit: 'shrink' });
             break;
         case 'progress': {
-            tx(s, `${b.pct}%`, { x, y, w, h: 0.82, fontSize: 46, bold: true, color: 'FFFFFF', valign: 'middle' });
+            tx(s, [{ text: String(b.pct), options: { fontSize: 46 } }, { text: '%', options: { fontSize: 15 } }], { x, y, w, h: 0.82, bold: true, color: 'FFFFFF', valign: 'middle' });
             tx(s, `${b.label}${b.delta ? ` · ${b.delta > 0 ? '▲' : '▼'} ${Math.abs(b.delta)} pts this week` : b.delta === 0 ? ' · no change this week' : ''}`, { x, y: y + 0.86, w, h: 0.22, fontSize: 10, color: 'FFFFFF', fit: 'shrink' });
             rect(s, x, y + 1.2, w, 0.09, '3F9189', null, 0.045);
             if (b.pct) rect(s, x, y + 1.2, Math.max(0.09, w * b.pct / 100), 0.09, 'FFFFFF', null, 0.045);
@@ -852,8 +899,18 @@ async function downloadWeeklyPptx() {
             break;
         }
     };
+    const MSG_GREEN = '385723';
     pages.forEach(({ pg: p, cards }, i) => {
         const s = pres.addSlide();
+        if (p.theme === 'msg' && p.kind !== 'content') {
+            s.background = bgCover ? { data: bgCover } : { color: 'FFFFFF' };
+            if (p.kind === 'cover') {
+                if (logo) s.addImage({ data: logo, x: 5.74, y: 0.24, w: 0.65, h: 0.65 });
+                tx(s, [{ text: p.title, options: { breakLine: !!p.title2 } }, ...(p.title2 ? [{ text: p.title2 }] : [])], { x: 3.7, y: 1.83, w: 5.75, h: 1.27, fontSize: 33, bold: true, color: MSG_GREEN, valign: 'middle', fit: 'shrink' });
+                tx(s, String(p.lines[0] || '').toUpperCase(), { x: 3.7, y: 3.1, w: 5.6, h: 0.24, fontSize: 8.5, bold: true, color: MSG_GREEN, charSpacing: 1.5 });
+            } else tx(s, p.title, { x: 1.83, y: 1.3, w: 6.67, h: 1.43, fontSize: 37.5, bold: true, color: '000000', align: 'center', valign: 'middle' });
+            return;
+        }
         if (p.kind === 'cover') {
             s.background = { color: C.green };
             if (logo) { s.addShape(pres.ShapeType.ellipse, { x: 8.55, y: 0.38, w: 0.95, h: 0.95, fill: { color: 'FFFFFF' }, line: { color: 'FFFFFF', width: 0 } }); s.addImage({ data: logo, x: 8.6, y: 0.43, w: 0.85, h: 0.85 }); }
@@ -862,6 +919,11 @@ async function downloadWeeklyPptx() {
             if (p.lines.length > 1) tx(s, p.lines.slice(1).join('\n'), { x: 0.6, y: 3.95, w: 7.5, h: 0.6, fontSize: 12, color: 'D5EFEA' });
             return;
         }
+        if (p.theme === 'msg') {
+            s.background = bgContent ? { data: bgContent } : { color: 'FFFFFF' };
+            tx(s, p.title, { x: 0.39, y: 0.12, w: 8.55, h: 0.58, fontSize: 24, bold: true, color: MSG_GREEN, valign: 'middle', fit: 'shrink' });
+            if (p.sub) tx(s, p.sub, { x: 0.39, y: 0.82, w: 9.1, h: 0.22, fontSize: 10.5, color: C.slate, fit: 'shrink' });
+        } else {
         s.background = { color: C.bg };
         const noEyebrow = p.eyebrow === '';
         if (!noEyebrow) tx(s, (p.eyebrow ? String(p.eyebrow).toUpperCase() : eyebrow), { x: X0, y: 0.26, w: 8.4, h: 0.2, fontSize: 8, bold: true, color: C.green, charSpacing: 1.2 });
@@ -870,6 +932,7 @@ async function downloadWeeklyPptx() {
         if (logo) s.addImage({ data: logo, x: 9.22, y: 0.28, w: 0.38, h: 0.38 });
         tx(s, `${repName} · W${D.week.no}`, { x: X0, y: 5.33, w: 6, h: 0.2, fontSize: 7.5, color: C.slate });
         tx(s, `${p.section} · ${i}`, { x: 7.6, y: 5.33, w: 2.0, h: 0.2, fontSize: 7.5, color: C.slate, align: 'right' });
+        }
         cards.forEach(c => {
             const b = c.b;
             if (_wrBare(b)) { drawBlock(s, c, c.x, c.y, c.w, c.h, false); return; }

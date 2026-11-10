@@ -11468,3 +11468,24 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 .wr-cover .wr-cover__main { align-items: center; }
 .wr-cover h1 { font-size: 3.8cqw; line-height: 1.22; }
 .wr-head__text > h2:first-child { margin-top: 1.1cqw; }
+/* 2.38.0 — management deck on the company template (Merauke Sugar Group):
+   white pages, the template's pattern on the cover and the thank-you page, its
+   rule and corner ornament on content pages, titles in dark green. */
+.wr-hero__v small { font-size: .32em; font-weight: 700; margin-left: .15em; }
+.wr-msg { background: #fff center / 100% 100% no-repeat; --msg-green: #385723; }
+.wr-msg--cover, .wr-msg--closing { background-image: url('report-assets/msg-cover.jpg'); }
+.wr-msg--content { background-image: url('report-assets/msg-content.jpg'); }
+.wr-msg__ot { position: absolute; left: 57.4%; top: 4.2%; width: 6.5cqw; height: 6.5cqw; }
+.wr-msg__title { position: absolute; left: 37%; top: 32%; right: 4%; }
+.wr-msg__title h1 { margin: 0; font-family: Calibri, 'Open Sans', Arial, sans-serif; font-size: 4.15cqw; line-height: 1.22; font-weight: 700; color: var(--msg-green); letter-spacing: 0; }
+.wr-msg__week { margin-top: 1.4cqw; font-size: 1.05cqw; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--msg-green); }
+.wr-msg--closing h1 { position: absolute; left: 18%; right: 18%; top: 33%; text-align: center; margin: 0; font-family: Calibri, 'Open Sans', Arial, sans-serif; font-size: 4.7cqw; font-weight: 700; color: #000; letter-spacing: 0; }
+.wr-msg__head { position: absolute; left: 3.9%; right: 12%; top: 1.6cqw; height: 5.4cqw; display: flex; flex-direction: column; justify-content: center; }
+.wr-msg__head h2 { margin: 0; font-family: Calibri, 'Open Sans', Arial, sans-serif; font-size: 3cqw; line-height: 1.1; font-weight: 700; color: var(--msg-green); letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wr-msg__sub { position: absolute; top: 7.6cqw; left: 0; right: -6cqw; font-size: 1.05cqw; color: var(--slate); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wr-msg .wr-body { inset: 9.6cqw 3cqw 3.4cqw; }
+.wr-msg.has-sub .wr-body { inset: 11cqw 3cqw 3.4cqw; }
+.wr-msg .wr-card:not(.wr-card--hero):not(.wr-card--warn) { box-shadow: 0 0 0 1px var(--hair); }
+.wr-body--rows { flex-direction: column; }
+.wr-row { display: flex; gap: 1.25cqw; min-height: 0; }
+.wr-row > .wr-card { min-width: 0; }

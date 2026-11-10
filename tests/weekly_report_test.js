@@ -30,12 +30,15 @@ const path = require('path');
         const team = buildWeeklyPages(D, 'team', 'Barang radio datang Selasa');
         const mgmt = buildWeeklyPages(D, 'mgmt', '');
         t('tanpa galeri (media kosong): versi tim', team.map(p => p.section || 'Cover'), ['Cover', 'Summary', 'Daily Report', 'Daily Report', 'Daily Report', 'Field tickets', 'Jobs & activities', 'Fleet & support', 'Projects', 'Projects', 'Projects', 'Next week']);
-        t('tanpa galeri: versi manajer', mgmt.map(p => p.section || 'Cover'), ['Cover', 'Precision health', 'Field tickets & jobs', 'Projects', 'Projects', 'Projects', 'Next week']);
+        t('tanpa galeri: versi manajer', mgmt.map(p => p.section || 'Cover'), ['Cover', 'Precision health', 'Issue in field', 'Projects', 'Projects', 'Projects', 'Cover']);
         // 2.37.1: the management deck as the owner shaped it — cover, no eyebrow, 3 next-week points.
-        t('versi manajer: cover "Weekly Update / Division Operation Technology", tanpa eyebrow, Next week 3 poin',
-            [mgmt[0].title, mgmt[0].title2, mgmt[0].lines.length, mgmt[1].eyebrow, mgmt.find(p => p.projectId).eyebrow.startsWith('Project in progress'), mgmt[mgmt.length - 1].cols[0][0].items.length],
-            ['Weekly Update', 'Division Operation Technology', 1, '', true, 3]);
-        t('judul halaman berupa kesimpulan', [/^34 of 37 daily reports came in; 3 tickets still open/.test(team[1].title), mgmt[1].title], [true, 'Display is the weakest component at 96.2%; GPA 85.7%, MNM 91.7%']);
+        // 2.38.0: the management deck on the company template.
+        t('versi manajer: template perusahaan — judul, penutup Terima Kasih, tanpa Next week',
+            [mgmt.every(p => p.theme === 'msg'), mgmt[0].title, mgmt[0].title2, mgmt.slice(1, -1).map(p => p.title), mgmt[mgmt.length - 1].kind, mgmt[mgmt.length - 1].title],
+            [true, 'Weekly Update', 'Division Operation Technology', ['Component Health Precision and Sensor', 'Issue in Field', 'Project', 'Project RTK radio repeater stage 2', 'Project Depth Sensor - Cartrack (Phase 2)'], 'closing', 'Terima Kasih']);
+        t('Issue in Field: 3 kartu di atas, tabel ticket di bawah', mgmt[2].rows.map(r => r.cards.map(b => b.type)), [['stats', 'kv', 'bars'], ['table']]);
+        t('halaman project versi manajer: subjudul hanya departemen, tanpa eyebrow', [mgmt[4].sub, mgmt[4].eyebrow], ['', '']);
+        t('judul halaman berupa kesimpulan', [/^34 of 37 daily reports came in; 3 tickets still open/.test(team[1].title), mgmt[1].title], [true, 'Component Health Precision and Sensor']);
         // 2.37.0: bento cards + a page per running project
         t('Summary: kartu utama (hero), angka, kesehatan, ticket, jam, perlu perhatian', team[1].cols.map(c => c.map(b => b.type + (b.card ? ':' + b.card : ''))), [['hero:hero', 'bars'], ['stats', 'table'], ['bars', 'list:warn']]);
         const pp = D.projectPages;
@@ -72,8 +75,8 @@ const path = require('path');
         t('matikan foto Daily Report: galerinya hilang', document.querySelectorAll('#wrPages .wr-gal').length, 3);
         setWeeklyMediaShow('daily', true);
         setWeeklyReportAudience('mgmt'); await wait();
-        t('versi manajer: 7 halaman (2 project berjalan), tanpa galeri foto terpisah; nomor halaman mulai 1 setelah cover', [document.querySelectorAll('#wrPages .wr-page').length, document.querySelector('.wr-aud.active').dataset.aud, secs().includes('From the field'),
-            document.querySelector('#wrPages .wr-page:nth-child(2) .wr-foot span:last-child').textContent], [7, 'mgmt', false, 'Precision health · 1']);
+        t('versi manajer di layar: 7 halaman bertemplate (cover, isi, penutup)', [document.querySelectorAll('#wrPages .wr-page').length, document.querySelector('.wr-aud.active').dataset.aud,
+            document.querySelectorAll('#wrPages .wr-msg--cover').length, document.querySelectorAll('#wrPages .wr-msg--content').length, document.querySelectorAll('#wrPages .wr-msg--closing').length], [7, 'mgmt', 1, 5, 1]);
         // Access: a viewer without the area does not see it.
         currentUser = { uid: 'v', email: 'v@x.id' }; currentUserDoc = { uid: 'v', role: 'staff', status: 'active', access: { tickets: 'view' } }; applyRoleGating();
         t('tanpa akses Weekly Report: menu disembunyikan', document.querySelector('.nav__link[data-view="weeklyReport"]').style.display, 'none');

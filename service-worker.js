@@ -2,7 +2,7 @@
    Network-first for the app shell (so deploys show up on reload), cache-first
    for static assets, network-only for Firebase live endpoints. */
 
-const CACHE_NAME = 'tractor-monitor-2.37.1';
+const CACHE_NAME = 'tractor-monitor-2.38.0';
 
 // Same-origin core files — always revalidated from network first so a new
 // deploy is picked up on the next reload (falls back to cache when offline).
@@ -13,6 +13,8 @@ const CORE = [
     './projects.js',
     './tickets.js',
     './weeklyreport.js',
+    './report-assets/msg-cover.jpg',
+    './report-assets/msg-content.jpg',
     './firebase-init.js',
     './style.css',
     './logo.png',

@@ -591,6 +591,13 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.38.0 — Versi Manager memakai template perusahaan (Merauke Sugar
+  Group)**: cover dan halaman penutup "Terima Kasih" dengan pola template,
+  halaman isi putih dengan garis dan ornamen template (`report-assets/`),
+  judul hijau tua: Component Health Precision and Sensor → Issue in Field
+  (3 kartu + tabel ticket) → Project → "Project <nama>" per project (+ PT bila
+  namanya kembar) → Terima Kasih. Tanpa Next week dan tanpa footer. Sama di
+  layar, PDF dan PowerPoint.
   **2.37.1 — Versi Manager mengikuti deck owner**: cover "Weekly Update /
   Division Operation Technology" (logo kanan atas, tanpa W45 / prepared by);
   halaman: Precision health → Field tickets & jobs → Projects → satu halaman
