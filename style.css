@@ -11462,3 +11462,9 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 .wr-gal--mini .wr-gal__item { display: flex; min-height: 0; }
 .wr-gal--mini .wr-gal__pic, .wr-gal--mini.wr-gal--1 .wr-gal__pic, .wr-gal--mini.wr-gal--2 .wr-gal__pic, .wr-gal--mini.wr-gal--3 .wr-gal__pic { height: auto; min-height: 5cqw; flex: 1; aspect-ratio: auto; max-height: none; border-radius: .8cqw; }
 .wr-gal--mini figcaption { display: none; }
+
+/* 2.37.1 — cover as the owner's management deck: the week, a two-line title, the logo top right */
+.wr-cover__logo { position: absolute; top: 3.6cqw; right: 4.6cqw; width: 9cqw; height: 9cqw; background: #fff; border-radius: 50%; padding: .5cqw; }
+.wr-cover .wr-cover__main { align-items: center; }
+.wr-cover h1 { font-size: 3.8cqw; line-height: 1.22; }
+.wr-head__text > h2:first-child { margin-top: 1.1cqw; }

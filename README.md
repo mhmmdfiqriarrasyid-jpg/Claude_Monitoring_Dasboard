@@ -591,6 +591,12 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.37.1 — Versi Manager mengikuti deck owner**: cover "Weekly Update /
+  Division Operation Technology" (logo kanan atas, tanpa W45 / prepared by);
+  halaman: Precision health → Field tickets & jobs → Projects → satu halaman
+  per project → Next week (3 poin). Summary, Scorecard, Licenses, Issues dan
+  galeri foto tidak lagi di versi Manager. Nomor halaman mulai 1 setelah cover;
+  tabel di PowerPoint tidak lagi melewati kartunya.
   **2.37.0 — Weekly Report gaya "bento" + halaman per project**: lembar abu
   lembut berisi kartu putih, satu kartu teal untuk angka utama dan kartu oranye
   untuk yang perlu perhatian (mengikuti *bento brief* dari

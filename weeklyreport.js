@@ -307,9 +307,10 @@ function buildWeeklyPages(D, aud, notes, media) {
     media.projects = media.projects || {};
     const mgmt = aud === 'mgmt';
     const name = mgmt ? 'Precision Health Weekly Update' : 'Weekly Operation Report';
-    P.push({ kind: 'cover', title: name, week: w.no,
-        lines: [`Week ${w.no} · ${w.label}`, mgmt ? `All PTs · target ${WR_TARGET}% · faults flagged after ${WR_STALE_DAYS} days` : 'All PTs · Daily Report, field tickets, jobs and projects',
-                `Prepared by ${D.preparedBy || 'Operation Technology'} · ${D.generatedAt}`] });
+    // 2.37.1: the cover of the owner's own management deck — the week, a
+    // two-line title, the logo on its own; nothing else.
+    P.push({ kind: 'cover', title: mgmt ? 'Weekly Update' : 'Weekly Operation Report', title2: 'Division Operation Technology', week: w.no,
+        lines: [`Week ${w.no} · ${w.label}`] });
     const t = D.team, tk = D.tickets, jb = D.jobs, pr = D.precision, dm = D.damage;
     const delta = (a, b, unit) => a == null || b == null ? '' : (a === b ? 'same as last week' : `${a > b ? '▲' : '▼'} ${_wrH(Math.abs(a - b))}${unit || ''} vs last week`);
 
@@ -388,62 +389,19 @@ function buildWeeklyPages(D, aud, notes, media) {
         if (D.purchase.on) blocks.push(['Purchase', [['Submitted', D.purchase.submitted], ['Approved', D.purchase.approved], ['PO issued', D.purchase.po], ['Goods received', D.purchase.received]]]);
         page('Fleet & support', `${_wrPlural(dm.fixedIn, 'repair')} closed and ${_wrPlural(dm.newIn, 'new fault')}; ${dm.open} still open`, [blocks.map(b => ({ type: 'kv', title: b[0], items: b[1] }))], [1]);
     } else {
-        // Management: precision first.
-        const last = pr.lastWeek;
-        const rag = [['Tractor precision', _wrToneOf(pr.pct, WR_TARGET), `${_wrFmtPct(pr.pct)} vs ${WR_TARGET}%`], ['Heavy equipment devices', _wrToneOf(pr.heavyPct, WR_TARGET), _wrFmtPct(pr.heavyPct)],
-            ['Licenses', D.licenses.expired ? 'bad' : D.licenses.soon ? 'warn' : 'good', D.licenses.expired ? `${D.licenses.expired} expired` : `${D.licenses.soon} expiring ≤ 30 days`],
-            ['Open faults', dm.stale ? 'bad' : dm.open ? 'warn' : 'good', `${dm.open} open · ${dm.stale} > ${WR_STALE_DAYS} days`],
-            ['Field tickets', tk.overdue ? 'bad' : tk.open ? 'warn' : 'good', `${tk.open} open · ${tk.overdue} overdue`]];
-        if (t.on) rag.push(['Team reports', _wrToneOf(t.pct, 100, 10), `${_wrFmtPct(t.pct)} filed`]);
-        page('Summary', pr.pct == null ? 'Precision health' : `Precision health is ${pr.pct}%${last && last.pct != null ? ` — ${pr.pct >= last.pct ? 'up' : 'down'} ${_wrH(Math.abs(pr.pct - last.pct))} points` : ''}, ${pr.pct >= WR_TARGET ? 'at or above' : 'short of'} the ${WR_TARGET}% target`,
-            [[{ type: 'hero', card: 'hero', title: 'Tractor precision health', value: _wrFmtPct(pr.pct), label: `of ${pr.tractors} tractors have every precision component Good`,
-                sub: `${last && last.pct != null ? `Last week ${last.pct}% · ` : ''}Target ${WR_TARGET}%`, foot: pr.heavy ? `Heavy equipment devices ${_wrFmtPct(pr.heavyPct)}` : '' },
-               { type: 'bars', title: 'Components Good', items: pr.components, max: 100, target: WR_TARGET, unit: '%' }],
-             [{ type: 'rag', title: 'Status by area', items: rag }]], [1, 1.3]);
-        const score = [
-            ['Tractor precision health (all components Good)', _wrFmtPct(pr.pct), last ? _wrFmtPct(last.pct) : '—', `≥ ${WR_TARGET}%`, _wrToneOf(pr.pct, WR_TARGET)],
-            ...pr.components.map(c => [c[0], _wrFmtPct(c[1]), '—', `≥ ${WR_TARGET}%`, _wrToneOf(c[1], WR_TARGET)]),
-            ...(pr.heavy ? [['Heavy equipment devices (all Good)', _wrFmtPct(pr.heavyPct), last ? _wrFmtPct(last.heavyPct) : '—', `≥ ${WR_TARGET}%`, _wrToneOf(pr.heavyPct, WR_TARGET)]] : []),
-            [`Faults open > ${WR_STALE_DAYS} days`, String(dm.stale), '—', '0', dm.stale ? 'bad' : 'good'],
-            ['Licenses expired', String(D.licenses.expired), '—', '0', D.licenses.expired ? 'bad' : 'good'],
-            ['Licenses expiring ≤ 30 days', String(D.licenses.soon), '—', '—', D.licenses.soon ? 'warn' : 'good'],
-            ['Field tickets past due time', String(tk.overdue), '—', '0', tk.overdue ? 'bad' : 'good'],
-            ...(D.inspection.on ? [['Heavy inspections overdue', String(D.inspection.overdue + D.inspection.never), '—', '0', D.inspection.overdue + D.inspection.never ? 'warn' : 'good']] : []),
-            ...(t.on ? [['Daily Report filed', _wrFmtPct(t.pct), _wrFmtPct(t.prevPct), '100%', _wrToneOf(t.pct, 100, 10)]] : [])];
-        const need = score.filter(r => r[4] === 'bad').length;
-        page('Scorecard', need ? `${need} of ${score.length} measures need action` : `All ${score.length} measures are on track or close`,
-            [[{ type: 'table', compact: true, head: [{ t: '' }, { t: 'Measure' }, { t: 'This week', a: 'right' }, { t: 'Last week', a: 'right' }, { t: 'Target', a: 'right' }, { t: 'Status' }],
-                rows: score.map(r => [{ text: '●', tone: r[4], a: 'center' }, r[0], { text: r[1], bold: true }, { text: r[2], tone: 'muted' }, { text: r[3], tone: 'muted' }, { text: WR_RAG[r[4]], tone: r[4], bold: r[4] !== 'good' }]) }]]);
+        // Management (2.37.1, as the owner's own deck): precision health,
+        // field tickets & jobs, the projects and one page each, next week.
         const worst = pr.components.filter(c => c[1] != null).sort((a, b) => a[1] - b[1])[0];
         page('Precision health', worst ? `${worst[0]} is the weakest component at ${worst[1]}%${pr.bySite.length > 1 ? '; ' + pr.bySite.map(s => `${s.pt} ${_wrFmtPct(s.pct)}`).join(', ') : ''}` : 'Precision health by component',
             [[{ type: 'bars', title: 'Tractor components Good, %', items: pr.components, max: 100, target: WR_TARGET, unit: '%' },
               ...(pr.heavy ? [{ type: 'bars', title: 'Heavy equipment devices Good, %', items: pr.heavyComponents, max: 100, target: WR_TARGET, unit: '%' }] : [])],
              [{ type: 'table', head: [{ t: 'PT' }, { t: 'Units', a: 'right' }, { t: 'All Good', a: 'right' }, ...COMPONENT_KEYS.map(k => ({ t: COMPONENT_LABELS[k] || k, a: 'right' }))],
                 rows: pr.bySite.map(s => [{ text: s.pt, bold: true }, s.units, { text: _wrFmtPct(s.pct), tone: _wrToneOf(s.pct, WR_TARGET), bold: true }, ...s.components.map(v => ({ text: _wrFmtPct(v), tone: _wrToneOf(v, WR_TARGET) }))]) }]], [1, 1.2]);
-        page('Licenses', D.licenses.expired + D.licenses.soon ? `${_wrPlural(D.licenses.expired + D.licenses.soon, 'license')} need renewing — ${D.licenses.expired} expired, ${D.licenses.soon} within 30 days` : 'No license runs out in the next 30 days',
-            [[{ type: 'table', head: [{ t: 'License' }, { t: 'PT' }, { t: 'Active', a: 'right' }, { t: '≤ 30 days', a: 'right' }, { t: 'Expired', a: 'right' }],
-                rows: D.licenses.rows.map(r => [r.type, r.pt, r.active, { text: String(r.soon), tone: r.soon ? 'warn' : '', bold: !!r.soon }, { text: String(r.expired), tone: r.expired ? 'bad' : '', bold: !!r.expired }]), empty: 'No licenses recorded' }],
-             [{ type: 'stats', small: true, title: 'Ready to assign (stock)', items: D.licenses.stock.map(s => ({ value: s[1], label: s[0], tone: s[1] > 0 ? 'good' : 'bad' })), empty: 'No stock recorded' }]], [1.6, 1]);
-        const faults = dm.precisionFaults.length ? dm.precisionFaults : dm.faults;
-        const support = [];
-        if (dm.stale) support.push(`${_wrPlural(dm.stale, 'fault')} open more than ${WR_STALE_DAYS} days — parts or vendor follow-up needed`);
-        if (D.licenses.expired) support.push(`${_wrPlural(D.licenses.expired, 'expired license')} — renewal approval`);
-        D.licenses.stock.filter(s => s[1] <= 0).forEach(s => support.push(`No ${s[0]} license in stock`));
-        tk.openList.filter(x => x.priority === 'high').slice(0, 2).forEach(x => support.push(`${x.no}: ${x.title}`));
-        page('Issues', dm.stale ? `${_wrPlural(dm.stale, 'fault is', 'faults are')} older than ${WR_STALE_DAYS} days` : faults.length ? `${_wrPlural(faults.length, 'fault')} open, none older than ${WR_STALE_DAYS} days` : 'No open faults',
-            [[{ type: 'table', compact: true, head: [{ t: 'Unit' }, { t: 'PT' }, { t: 'Part' }, { t: 'Days', a: 'right' }, { t: 'Problem' }],
-                rows: faults.slice(0, 8).map(f => [{ text: f.unit, bold: true }, f.pt, f.part, { text: String(f.days), tone: f.days > WR_STALE_DAYS ? 'bad' : '', bold: f.days > WR_STALE_DAYS }, f.what]), more: Math.max(0, faults.length - 8), empty: 'No open faults' },
-              ...(support.length ? [{ type: 'panel', card: 'warn', title: 'Support needed', items: support.slice(0, 4) }] : [])]]);
         // Field overview for the manager: tickets and jobs, short.
         page('Field tickets & jobs', `${_wrPlural(tk.newIn, 'ticket')} raised and ${tk.resolved} resolved; ${_wrPlural(jb.total, 'job')} done outside the Daily Report`,
             [[{ type: 'stats', small: true, items: [{ value: tk.newIn, label: 'tickets raised' }, { value: tk.resolved, label: 'resolved' }, { value: tk.open, label: 'open now' }, { value: tk.overdue, label: 'past due time', tone: tk.overdue ? 'bad' : '' }] },
               { type: 'table', head: [{ t: 'Open ticket' }, { t: 'Prio' }, { t: 'PIC' }, { t: 'Days', a: 'right' }], rows: tk.openList.slice(0, 5).map(x => [`${x.no} · ${x.title}`, (TK_PRIORITY[x.priority] || {}).label || '', x.pic || '—', { text: String(x.age), tone: x.late ? 'bad' : '' }]), empty: 'No open tickets' }],
              [{ type: 'bars', title: 'Jobs by category', items: jb.byCategory.slice(0, 6) }, { type: 'kv', title: 'Jobs', items: [['Logged', jb.total], ['Done', jb.done], ['Field issues waiting', jb.backlog.length]] }]], [1.5, 1]);
-    }
-    if (mgmt) {
-        const mix = [], a = media.work.slice(), b = media.tickets.slice();
-        while (a.length || b.length) { if (a.length) mix.push(a.shift()); if (b.length) mix.push(b.shift()); }
-        if (mix.length) { const g = _wrGallery(mix); page('From the field', `From the field: ${_wrPlural(g.items.length, 'picture')} of this week's work and tickets`, [[g]]); }
     }
     // Both: projects and next week.
     if (D.projects.length) {
@@ -459,7 +417,7 @@ function buildWeeklyPages(D, aud, notes, media) {
         const left = [{ type: 'progress', card: 'hero', title: 'Progress', pct: x.pct, label: x.label, delta: x.delta, timePct: x.timePct, start: x.start, end: x.end, daysLeft: x.daysLeft, rag: PJ_RAG[x.rag] || '', tone }];
         if (x.goods.total) left.push(x.goods.short.length
             ? { type: 'table', card: 'warn', title: `Goods still short · ${x.goods.ready} of ${x.goods.total} complete`, head: [{ t: 'Item' }, { t: 'Need', a: 'right' }, { t: 'Have', a: 'right' }],
-                rows: x.goods.short.slice(0, 5).map(g => [g.name, `${_wrH(g.need)} ${g.uom}`.trim(), { text: _wrH(g.have), tone: g.have ? 'warn' : 'bad', bold: true }]), more: x.goods.more + Math.max(0, x.goods.short.length - 5) }
+                rows: x.goods.short.slice(0, 3).map(g => [g.name, `${_wrH(g.need)} ${g.uom}`.trim(), { text: _wrH(g.have), tone: g.have ? 'warn' : 'bad', bold: true }]), more: x.goods.more + Math.max(0, x.goods.short.length - 3) }
             : { type: 'list', title: 'Goods', items: [{ text: `All ${x.goods.total} items have arrived`, tone: 'good' }] });
         const right = [{ type: 'list', title: 'This week', items: week.slice(0, 5), empty: 'No update written this week' }];
         const refs = media.projects[x.id] || [];
@@ -471,9 +429,10 @@ function buildWeeklyPages(D, aud, notes, media) {
         page('Projects', x.name, [left, [steps], right], [1, 1.45, 1.15],
             { eyebrow: `Project in progress · ${x.type}${x.company ? ' · ' + x.company : ''}`, sub: [x.pic ? `PIC ${x.pic}` : '', x.departments.length ? `with ${x.departments.join(', ')}` : ''].filter(Boolean).join(' · '), projectId: x.id });
     });
-    const items = (notes || '').split('\n').map(s => s.trim()).filter(Boolean).concat(D.nextWeek).slice(0, 5);
+    const items = (notes || '').split('\n').map(s => s.trim()).filter(Boolean).concat(D.nextWeek).slice(0, mgmt ? 3 : 5);
     const first = items[0] ? items[0].charAt(0).toLowerCase() + items[0].slice(1) : '';
     page('Next week', first ? `Next week: ${first.length > 90 ? first.slice(0, 88).replace(/[\s,;:]+\S*$/, '') + '…' : first}${items.length > 1 ? `, and ${items.length - 1} more` : ''}` : 'Next week', [[{ type: 'numbered', items: items.length ? items : ['Keep the Daily Report at 100%'] }]]);
+    if (mgmt) P.forEach(p => { if (p.kind === 'content' && !p.eyebrow) p.eyebrow = ''; });
     return P;
 }
 
@@ -533,11 +492,11 @@ function weeklyPagesHtml(pages, D, aud) {
     const name = aud === 'mgmt' ? 'Precision Health Weekly Update' : 'Weekly Operation Report';
     const eyebrow = `${name} · Week ${D.week.no} · ${D.week.label}`;
     return pages.map((p, i) => p.kind === 'cover'
-        ? `<section class="wr-page wr-cover"><div class="wr-cover__brand"><img src="icons/icon-192.png" alt=""><span>Operation Technology</span></div>
-            <div class="wr-cover__main"><div><div class="wr-cover__eyebrow">${_wrE(p.lines[0] || '')}</div><h1>${_wrE(p.title)}</h1>${p.lines.slice(1).map(l => `<p>${_wrE(l)}</p>`).join('')}</div><div class="wr-cover__wk">W${p.week}</div></div></section>`
-        : `<section class="wr-page"><header class="wr-head"><div class="wr-head__text"><div class="wr-eyebrow">${_wrE(p.eyebrow || eyebrow)}</div><h2>${_wrE(p.title)}</h2>${p.sub ? `<div class="wr-head__sub">${_wrE(p.sub)}</div>` : ''}</div><img src="icons/icon-192.png" alt=""></header>
+        ? `<section class="wr-page wr-cover"><img class="wr-cover__logo" src="icons/icon-192.png" alt="">
+            <div class="wr-cover__main"><div><div class="wr-cover__eyebrow">${_wrE(p.lines[0] || '')}</div><h1>${_wrE(p.title)}${p.title2 ? `<br>${_wrE(p.title2)}` : ''}</h1>${p.lines.slice(1).map(l => `<p>${_wrE(l)}</p>`).join('')}</div></div></section>`
+        : `<section class="wr-page"><header class="wr-head"><div class="wr-head__text">${p.eyebrow === '' ? '' : `<div class="wr-eyebrow">${_wrE(p.eyebrow || eyebrow)}</div>`}<h2>${_wrE(p.title)}</h2>${p.sub ? `<div class="wr-head__sub">${_wrE(p.sub)}</div>` : ''}</div><img src="icons/icon-192.png" alt=""></header>
             <div class="wr-body${p.cols.length === 1 && p.cols[0].length > 1 && p.cols[0].every(b => b.type === 'kv') ? ' wr-body--grid' : ''}">${p.cols.map((c, k) => `<div class="wr-col" style="flex:${p.widths[k]}">${c.map(_wrCardHtml).join('')}</div>`).join('')}</div>
-            <footer class="wr-foot"><span>${_wrE(name)} · W${D.week.no}</span><span>${_wrE(p.section)} · ${i + 1}</span></footer></section>`).join('');
+            <footer class="wr-foot"><span>${_wrE(name)} · W${D.week.no}</span><span>${_wrE(p.section)} · ${i}</span></footer></section>`).join('');
 }
 
 // ---- The view ----
@@ -629,7 +588,8 @@ function _wrTableLayout(b, wdt) {
     const len = Array.from({ length: n }, (_, i) => Math.max(...[b.head[i].t, ...b.rows.map(r => txt(r[i]))].map(t => t.length)));
     // Short columns (a number, a chip, a name) get exactly the room their text
     // needs, so they never wrap; the long ones share what is left.
-    const fixed = len.map(l => l <= 18 ? Math.max(0.42, l * cw * 1.45 + 0.16) : 0);
+    const narrow = wdt < 3.2;
+    const fixed = len.map(l => l <= 18 ? Math.max(narrow ? 0.42 : 0.55, l * cw * (narrow ? 1.15 : 1.5) + (narrow ? 0.12 : 0.2)) : 0);
     let rest = wdt - fixed.reduce((a, x) => a + x, 0);
     const longSum = len.reduce((a, l, i) => a + (fixed[i] ? 0 : Math.min(60, l)), 0);
     let colW;
@@ -722,7 +682,10 @@ async function downloadWeeklyPptx() {
             const nat = col.map(b => _wrBare(b) ? _wrBlockH(b, cw) : PAD * 2 + (b.title ? 0.26 : 0) + _wrBlockH(b, cw - PAD * 2));
             const room = avail - GAP * (col.length - 1), sum = nat.reduce((a, x) => a + x, 0);
             const grow = col.map(_wrGrow), gsum = grow.reduce((a, x) => a + x, 0);
-            const hs = nat.map((h, i) => sum > room ? h * room / sum : h + (gsum ? (room - sum) * grow[i] / gsum : 0));
+            // Too tall: the cards that can give (tables, lists) shrink; a hero card keeps its size.
+            const keep = col.map(b => b.type === 'hero' || b.type === 'progress');
+            const keptH = nat.reduce((a, h, i) => a + (keep[i] ? h : 0), 0), flexH = sum - keptH;
+            const hs = nat.map((h, i) => sum > room ? (keep[i] || !flexH ? h : h * Math.max(0.2, room - keptH) / flexH) : h + (gsum ? (room - sum) * grow[i] / gsum : 0));
             let cy = y0;
             col.forEach((b, i) => { cards.push({ b, x: cx, y: cy, w: cw, h: hs[i] }); cy += hs[i] + GAP; });
             cx += cw + GAP;
@@ -796,10 +759,14 @@ async function downloadWeeklyPptx() {
         case 'table': {
             if (!b.rows.length) { tx(s, b.empty || 'Nothing this week', { x, y, w, h: 0.3, fontSize: 10, color: soft }); break; }
             const H = b.head.map(hd => ({ text: String(hd.t).toUpperCase(), options: { bold: true, color: C.slate, fontSize: 7.5, align: hd.a || 'left', border: [{ type: 'none' }, { type: 'none' }, { type: 'none' }, { type: 'none' }] } }));
-            const R = b.rows.map(r => r.map((cc, i) => cellOpt(cc, b.head[i], sep)));
             const L = _wrTableLayout(b, w);
-            s.addTable([H, ...R], { x, y, w, colW: L.colW, rowH: L.heights, fontFace: face, fontSize: L.fs, color: C.ink, valign: 'middle', margin: [0.03, 0.05, 0.03, 0.05], autoPage: false });
-            if (b.more) tx(s, `+ ${b.more} more in the dashboard`, { x, y: y + L.total + 0.03, w, h: 0.2, fontSize: 8.5, color: C.slate });
+            // Rows that do not fit the card are left to the dashboard ("+ n more"), never drawn over its edge.
+            let fit = b.rows.length;
+            while (fit > 1 && L.heights.slice(0, fit + 1).reduce((a, x) => a + x, 0) + ((b.more || fit < b.rows.length) ? 0.22 : 0) > h) fit--;
+            const more = (b.more || 0) + (b.rows.length - fit), heights = L.heights.slice(0, fit + 1), tot = heights.reduce((a, x) => a + x, 0);
+            const R = b.rows.slice(0, fit).map(r => r.map((cc, i) => cellOpt(cc, b.head[i], sep)));
+            s.addTable([H, ...R], { x, y, w, colW: L.colW, rowH: heights, fontFace: face, fontSize: L.fs, color: C.ink, valign: 'middle', margin: [0.03, 0.05, 0.03, 0.05], autoPage: false });
+            if (more) tx(s, `+ ${more} more in the dashboard`, { x, y: y + tot + 0.03, w, h: 0.2, fontSize: 8.5, color: C.slate });
             break; }
         case 'bars': {
             if (!b.items.length) { tx(s, 'Nothing this week', { x, y, w, h: 0.3, fontSize: 10, color: soft }); break; }
@@ -889,21 +856,20 @@ async function downloadWeeklyPptx() {
         const s = pres.addSlide();
         if (p.kind === 'cover') {
             s.background = { color: C.green };
-            if (logo) { s.addShape(pres.ShapeType.ellipse, { x: 0.55, y: 0.5, w: 0.7, h: 0.7, fill: { color: 'FFFFFF' }, line: { color: 'FFFFFF', width: 0 } }); s.addImage({ data: logo, x: 0.6, y: 0.55, w: 0.6, h: 0.6 }); }
-            tx(s, 'Operation Technology', { x: 1.4, y: 0.66, w: 5, h: 0.4, fontSize: 14, bold: true, color: 'FFFFFF' });
-            tx(s, String(p.lines[0] || '').toUpperCase(), { x: 0.6, y: 2.05, w: 6.6, h: 0.3, fontSize: 11, bold: true, color: C.heroSub, charSpacing: 1.5 });
-            tx(s, p.title, { x: 0.6, y: 2.4, w: 6.8, h: 0.95, fontSize: 36, bold: true, color: 'FFFFFF', valign: 'middle', fit: 'shrink' });
-            tx(s, p.lines.slice(1).map((l, k, arr) => ({ text: l, options: { breakLine: k < arr.length - 1 } })), { x: 0.6, y: 3.45, w: 6.6, h: 0.8, fontSize: 12.5, color: 'D5EFEA' });
-            tx(s, `W${p.week}`, { x: 6.6, y: 2.0, w: 3.0, h: 1.8, fontSize: 96, bold: true, color: '3F9189', align: 'right', valign: 'middle' });
+            if (logo) { s.addShape(pres.ShapeType.ellipse, { x: 8.55, y: 0.38, w: 0.95, h: 0.95, fill: { color: 'FFFFFF' }, line: { color: 'FFFFFF', width: 0 } }); s.addImage({ data: logo, x: 8.6, y: 0.43, w: 0.85, h: 0.85 }); }
+            tx(s, String(p.lines[0] || '').toUpperCase(), { x: 0.6, y: 2.3, w: 7.5, h: 0.3, fontSize: 11, bold: true, color: C.heroSub, charSpacing: 1.5 });
+            tx(s, [{ text: p.title, options: { breakLine: !!p.title2 } }, ...(p.title2 ? [{ text: p.title2 }] : [])], { x: 0.6, y: 2.68, w: 8.2, h: 1.2, fontSize: 30, bold: true, color: 'FFFFFF', valign: 'top', fit: 'shrink' });
+            if (p.lines.length > 1) tx(s, p.lines.slice(1).join('\n'), { x: 0.6, y: 3.95, w: 7.5, h: 0.6, fontSize: 12, color: 'D5EFEA' });
             return;
         }
         s.background = { color: C.bg };
-        tx(s, (p.eyebrow ? String(p.eyebrow).toUpperCase() : eyebrow), { x: X0, y: 0.26, w: 8.4, h: 0.2, fontSize: 8, bold: true, color: C.green, charSpacing: 1.2 });
-        tx(s, p.title, { x: X0, y: 0.47, w: 8.5, h: p.sub ? 0.5 : 0.7, fontSize: 19, bold: true, valign: p.sub ? 'middle' : 'top', fit: 'shrink' });
+        const noEyebrow = p.eyebrow === '';
+        if (!noEyebrow) tx(s, (p.eyebrow ? String(p.eyebrow).toUpperCase() : eyebrow), { x: X0, y: 0.26, w: 8.4, h: 0.2, fontSize: 8, bold: true, color: C.green, charSpacing: 1.2 });
+        tx(s, p.title, { x: X0, y: noEyebrow ? 0.34 : 0.47, w: 8.5, h: p.sub ? 0.5 : 0.7, fontSize: 19, bold: true, valign: noEyebrow ? 'middle' : (p.sub ? 'middle' : 'top'), fit: 'shrink' });
         if (p.sub) tx(s, p.sub, { x: X0, y: 1.0, w: 8.5, h: 0.24, fontSize: 9.5, color: C.slate, fit: 'shrink' });
         if (logo) s.addImage({ data: logo, x: 9.22, y: 0.28, w: 0.38, h: 0.38 });
         tx(s, `${repName} · W${D.week.no}`, { x: X0, y: 5.33, w: 6, h: 0.2, fontSize: 7.5, color: C.slate });
-        tx(s, `${p.section} · ${i + 1}`, { x: 7.6, y: 5.33, w: 2.0, h: 0.2, fontSize: 7.5, color: C.slate, align: 'right' });
+        tx(s, `${p.section} · ${i}`, { x: 7.6, y: 5.33, w: 2.0, h: 0.2, fontSize: 7.5, color: C.slate, align: 'right' });
         cards.forEach(c => {
             const b = c.b;
             if (_wrBare(b)) { drawBlock(s, c, c.x, c.y, c.w, c.h, false); return; }
