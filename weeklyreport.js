@@ -471,7 +471,7 @@ function _wrBlockHtml(b) {
         <tbody>${b.rows.map(r => `<tr>${r.map((c, i) => _wrCell(c, b.head[i])).join('')}</tr>`).join('')}</tbody></table>${b.more ? `<div class="wr-more">+ ${b.more} more in the dashboard</div>` : ''}` : `<div class="wr-empty">${_wrE(b.empty || 'Nothing this week')}</div>`;
     case 'bars': {
         const max = b.max || Math.max(1, ...b.items.map(i => Number(i[1]) || 0));
-        if (!b.items.length) return '<div class="wr-empty">Nothing this week</div>';
+        if (!b.items.length) return `<div class="wr-empty">${_wrE(b.empty || 'Nothing this week')}</div>`;
         if (b.vertical) return `<div class="wr-vbars">${b.items.map((it, i) => `<div class="wr-vbar${i === b.highlight ? ' is-hi' : ''}"><span class="wr-vbar__v">${_wrH(it[1])}</span><i style="height:${Math.round(100 * (it[1] || 0) / max)}%"></i><span class="wr-vbar__l">${_wrE(it[0])}</span></div>`).join('')}</div>`;
         return `<div class="wr-bars">${b.items.map(it => { const v = it[1]; return `<div class="wr-bar"><span class="wr-bar__l">${_wrE(it[0])}</span><span class="wr-bar__t"><i style="width:${v == null ? 0 : Math.round(100 * v / max)}%" class="${b.target && v != null ? (v >= b.target ? 'is-good' : v >= b.target - 5 ? 'is-warn' : 'is-bad') : ''}"></i>${b.target ? `<b style="left:${b.target}%"></b>` : ''}</span><span class="wr-bar__v">${v == null ? '—' : _wrH(v) + (b.unit || '')}</span></div>`; }).join('')}</div>`;
     }
@@ -530,6 +530,12 @@ function renderWeeklyReportView() {
     const sel = document.getElementById('wrWeek');
     if (!sel) return;
     if (!canViewWeeklyReport()) { document.getElementById('wrPages').innerHTML = '<div class="adm-empty">You do not have access to the weekly report.</div>'; return; }
+    const daily = _wrAud === 'daily';
+    [['wrWeekBox', daily], ['wrDayBox', !daily], ['wrNotesBox', daily], ['wrMediaBox', daily], ['wrDailyHint', !daily]].forEach(([id, hide]) => { const el = document.getElementById(id); if (el) el.hidden = hide; });
+    document.querySelectorAll('.wr-aud').forEach(b => b.classList.toggle('active', b.dataset.aud === _wrAud));
+    const sub = document.getElementById('wrSub');
+    if (sub) sub.textContent = daily ? 'One day for the manager — the Daily Report, issues, field photos, jobs and projects' : 'Saturday to Friday, from the Daily Report, tickets, jobs, units and projects';
+    if (daily) return renderDailyReportView();
     const choices = wrWeekChoices(12);
     // The last full week; on Friday (the week's last day) this week.
     if (!_wrWeek) _wrWeek = _wrDate(toISODate()).getDay() === 5 ? choices[0].from : choices[1].from;
@@ -555,11 +561,12 @@ function renderWeeklyReportView() {
     if (c) c.textContent = `${_wrPages.length} pages`;
 }
 function setWeeklyReportWeek(v) { _wrWeek = v; renderWeeklyReportView(); }
-function setWeeklyReportAudience(a) { _wrAud = a === 'mgmt' ? 'mgmt' : 'team'; renderWeeklyReportView(); }
+function setWeeklyReportAudience(a) { _wrAud = ['mgmt', 'daily'].includes(a) ? a : 'team'; renderWeeklyReportView(); }
 let _wrNotesT = null;
 function setWeeklyReportNotes(v) { _wrNotes = v; clearTimeout(_wrNotesT); _wrNotesT = setTimeout(renderWeeklyReportView, 500); }
 function _wrFileName(ext) {
     const D = window._wrLast;
+    if (_wrAud === 'daily') return `Daily_Report_${D && D.day ? D.day.date : ''}.${ext}`;
     return `${_wrAud === 'mgmt' ? 'Precision_Health_Update' : 'Weekly_Operation_Report'}_W${D ? D.week.no : ''}_${D ? D.week.from : ''}.${ext}`;
 }
 async function _wrWaitMedia() {
@@ -584,6 +591,42 @@ async function printWeeklyReport() {
     window.print();
     setTimeout(done, 1500);
 }
+
+// ---- Daily Report for the manager (2.39.0) ----
+// One day, on the company template: built by functions/dailyCore.js — the
+// same code the 07:00 WIT email runs, so the download and the email agree.
+let _wrDay = '';
+function wrDailyInput(date) {
+    const arr = v => Array.isArray(v) ? v : [];
+    return { date, now: Date.now(),
+        members: typeof teamMembers !== 'undefined' ? arr(teamMembers) : [], shifts: typeof teamShifts !== 'undefined' ? arr(teamShifts) : [],
+        leaves: typeof leaveRequests !== 'undefined' ? arr(leaveRequests) : [], workLogs: typeof workLogs !== 'undefined' ? arr(workLogs) : [],
+        tickets: typeof tickets !== 'undefined' ? arr(tickets) : [], damages: typeof globalDamages !== 'undefined' ? arr(globalDamages) : [],
+        jobs: typeof otJobs !== 'undefined' && canViewView('projects') ? arr(otJobs) : [], projects: typeof projects !== 'undefined' && canViewView('projects') ? arr(projects) : [],
+        units: arr(globalData) };
+}
+// The day's photo references, with how each is loaded on this device.
+function wrDailyRefs(D) {
+    return D.photos.map(p => Object.assign({ kind: 'photo' }, p, { load: p.src === 'wl'
+        ? async () => ((typeof loadWorkLogPhotos === 'function' ? await loadWorkLogPhotos(p.id) : [])[p.index] || '')
+        : () => loadWhPhoto(p.id, p.src) }));
+}
+function renderDailyReportView() {
+    if (!window.DailyCore) { document.getElementById('wrPages').innerHTML = '<div class="adm-empty">The daily report could not be loaded — reload the page.</div>'; return; }
+    if (!_wrDay) _wrDay = DailyCore.yesterday();
+    const inp = document.getElementById('wrDay');
+    if (inp) { inp.max = toISODate(); if (document.activeElement !== inp) inp.value = _wrDay; }
+    const D = DailyCore.buildDaily(wrDailyInput(_wrDay));
+    D.week = { no: '', label: D.day.label, from: D.day.date };   // what the shared renderers read
+    const refs = wrDailyRefs(D);
+    wrLoadMedia(refs.filter(r => !_wrHidden.has(r.key)));
+    _wrPages = DailyCore.dailyPages(D, { gallery: _wrGallery(refs) });
+    window._wrLast = D;
+    document.getElementById('wrPages').innerHTML = weeklyPagesHtml(_wrPages, D, 'mgmt');
+    const c = document.getElementById('wrCount');
+    if (c) c.textContent = `${_wrPages.length} pages`;
+}
+function setDailyReportDay(v) { if (/^\d{4}-\d{2}-\d{2}$/.test(v || '')) { _wrDay = v; renderWeeklyReportView(); } }
 
 // ---- PowerPoint ----
 let _pptxLoading = null;
@@ -694,8 +737,8 @@ async function downloadWeeklyPptx() {
     const bgCover = msg ? await _wrImgData('report-assets/msg-cover.jpg') : '', bgContent = msg ? await _wrImgData('report-assets/msg-content.jpg') : '';
     const C = WR_COL, pres = new PptxGenJS();
     pres.layout = 'LAYOUT_16x9';
-    const repName = _wrAud === 'mgmt' ? 'Precision Health Weekly Update' : 'Weekly Operation Report';
-    pres.title = `${repName} — Week ${D.week.no}`;
+    const repName = _wrAud === 'daily' ? 'Daily Report' : _wrAud === 'mgmt' ? 'Precision Health Weekly Update' : 'Weekly Operation Report';
+    pres.title = _wrAud === 'daily' ? `Daily Report — ${D.day.label}` : `${repName} — Week ${D.week.no}`;
     pres.company = 'Operation Technology';
     const eyebrow = `${repName} · Week ${D.week.no} · ${D.week.label}`.toUpperCase();
     const face = 'Calibri';
@@ -816,7 +859,7 @@ async function downloadWeeklyPptx() {
             if (more) tx(s, `+ ${more} more in the dashboard`, { x, y: y + tot + 0.03, w, h: 0.2, fontSize: 8.5, color: C.slate });
             break; }
         case 'bars': {
-            if (!b.items.length) { tx(s, 'Nothing this week', { x, y, w, h: 0.3, fontSize: 10, color: soft }); break; }
+            if (!b.items.length) { tx(s, b.empty || 'Nothing this week', { x, y, w, h: 0.3, fontSize: 10, color: soft }); break; }
             const max = b.max || Math.max(1, ...b.items.map(i => Number(i[1]) || 0));
             if (b.vertical) { const n = b.items.length, g = 0.07, bw = (w - g * (n - 1)) / n, ch = Math.max(0.4, h - 0.42);
                 b.items.forEach((it, i) => { const bh = Math.max(0.02, ch * (it[1] || 0) / max), bx = x + i * (bw + g), col = i === b.highlight ? C.green : C.sage;

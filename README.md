@@ -591,6 +591,20 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.39.0 — Daily Report untuk manager**: tab ketiga *Daily Report* di
+  Weekly Report — satu hari (default kemarin, pilih tanggal) di template
+  perusahaan: Daily Report Summary (lapor/diharapkan, siapa tidak lapor,
+  jam, paddock, unit, jam per job type, tabel per member) → Issue & Damage
+  (issue dari Daily Report, kerusakan baru/breakdown, ticket masuk & selesai)
+  → Field Photos (maks. 6, paddock berbeda dulu, lalu ticket/job/project) →
+  OT Jobs & Project Progress → Terima Kasih. Unduh PDF & PowerPoint seperti
+  Weekly Report. Data & halaman dibuat oleh `functions/dailyCore.js` — file
+  yang sama dipakai browser dan server. **Email otomatis**: Admin →
+  Notifications → *Daily Report for the manager* (penerima, jam WIT, default
+  07:00) — laporan kemarin dengan lampiran PowerPoint + PDF (dibuat server:
+  `dailyDeck.js` dengan pptxgenjs + pdfkit, `dailySend.js`), tombol *Send
+  now*. **Perlu publish ulang `firestore.rules`** (kunci `mgrEnabled`,
+  `mgrHour`, `mgrRecipients`) **dan deploy ulang functions.**
   **2.38.0 — Versi Manager memakai template perusahaan (Merauke Sugar
   Group)**: cover dan halaman penutup "Terima Kasih" dengan pola template,
   halaman isi putih dengan garis dan ornamen template (`report-assets/`),

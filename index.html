@@ -2274,7 +2274,7 @@
         <div class="page-head">
             <div class="page-head__text">
                 <h1 class="page-head__title">Weekly Report</h1>
-                <span class="page-head__sub">Saturday to Friday, from the Daily Report, tickets, jobs, units and projects</span>
+                <span class="page-head__sub" id="wrSub">Saturday to Friday, from the Daily Report, tickets, jobs, units and projects</span>
             </div>
             <div class="page-head__actions">
                 <button type="button" class="btn btn-secondary" onclick="printWeeklyReport()"><i class="fas fa-file-pdf" aria-hidden="true"></i> Save as PDF</button>
@@ -2282,14 +2282,17 @@
             </div>
         </div>
         <div class="wr-controls">
-            <label class="adm-select wr-controls__week"><span class="adm-select__label">Week</span><select id="wrWeek" onchange="setWeeklyReportWeek(this.value)"></select></label>
+            <label class="adm-select wr-controls__week" id="wrWeekBox"><span class="adm-select__label">Week</span><select id="wrWeek" onchange="setWeeklyReportWeek(this.value)"></select></label>
+            <label class="adm-select wr-controls__week" id="wrDayBox" hidden><span class="adm-select__label">Day</span><input type="date" id="wrDay" class="form-input" onchange="setDailyReportDay(this.value)"></label>
             <div class="wr-auds" role="tablist" aria-label="Version">
                 <button type="button" class="wr-aud" data-aud="team" role="tab" onclick="setWeeklyReportAudience('team')"><b>Team</b><span>Weekly Operation Report</span></button>
                 <button type="button" class="wr-aud" data-aud="mgmt" role="tab" onclick="setWeeklyReportAudience('mgmt')"><b>Manager / head</b><span>Weekly Update — company template</span></button>
+                <button type="button" class="wr-aud" data-aud="daily" role="tab" onclick="setWeeklyReportAudience('daily')"><b>Daily Report</b><span>One day for the manager — company template</span></button>
             </div>
-            <label class="wr-controls__notes"><span class="form-label">Next week — your own points <span class="form-optional">(one per line, optional)</span></span>
+            <p class="wr-controls__hint" id="wrDailyHint" hidden>The day's Daily Report, issues &amp; damage, field photos, OT jobs and project progress. It can also be emailed every morning (yesterday's report, PowerPoint + PDF): Admin &rarr; Notifications &rarr; Daily Report for the manager.</p>
+            <label class="wr-controls__notes" id="wrNotesBox"><span class="form-label">Next week — your own points <span class="form-optional">(one per line, optional)</span></span>
                 <textarea class="form-input form-textarea" id="wrNotes" rows="2" maxlength="600" placeholder="e.g. Stage-2 radio goods arrive Tuesday" oninput="setWeeklyReportNotes(this.value)"></textarea></label>
-            <div class="wr-controls__media">
+            <div class="wr-controls__media" id="wrMediaBox">
                 <span class="form-label">Pictures</span>
                 <label class="notif-check"><input type="checkbox" id="wrShow_daily" checked onchange="setWeeklyMediaShow('daily', this.checked)"> Daily Report</label>
                 <label class="notif-check"><input type="checkbox" id="wrShow_tickets" checked onchange="setWeeklyMediaShow('tickets', this.checked)"> Tickets</label>
@@ -4562,6 +4565,21 @@
                 <p class="form-hint" id="monthlyLast"></p>
             </section>
 
+            <section class="notif-sec" aria-labelledby="notifMgrTitle">
+                <h4 class="notif-title" id="notifMgrTitle">Daily Report for the manager</h4>
+                <p class="notif-desc">Yesterday on the company template — the Daily Report summary, issues &amp; damage, field photos, OT jobs and project progress — with the PowerPoint and PDF attached. The same deck as Weekly Report &rarr; Daily Report.</p>
+                <label class="form-label" for="mgrRecipients">Recipients</label>
+                <textarea class="form-input" id="mgrRecipients" rows="2" placeholder="manager@company.com"></textarea>
+                <label class="notif-check"><input type="checkbox" id="mgrEnabled" onchange="syncEmailDaily()"> Send automatically every day</label>
+                <div class="notif-sched" id="mgrHourGroup">
+                    <label class="notif-sched__f"><span class="form-label">Time <span class="form-optional">(WIT)</span></span>
+                        <select class="form-input" id="mgrHour"></select></label>
+                </div>
+                <div class="notif-actions"><button type="button" class="btn btn-secondary btn-sm" id="mgrSendBtn" onclick="sendNotificationNow('mgrDaily', this)"><i class="fas fa-paper-plane"></i> Send now</button>
+                    <span class="notif-note">Yesterday's report</span></div>
+                <p class="form-hint" id="mgrLast"></p>
+            </section>
+
             <section class="notif-sec" aria-labelledby="notifRemTitle">
                 <h4 class="notif-title" id="notifRemTitle">Daily Report reminder</h4>
                 <p class="notif-desc">Who has not sent the Daily Report of a shift that has ended — from the shift schedule, leaving out people on approved leave. Sent only when someone is missing.</p>
@@ -4895,6 +4913,7 @@
 <script src="script.js"></script>
 <script src="projects.js"></script>
 <script src="tickets.js"></script>
+<script src="functions/dailyCore.js"></script>
 <script src="weeklyreport.js"></script>
 <script type="module" src="firebase-init.js"></script>
 </body>

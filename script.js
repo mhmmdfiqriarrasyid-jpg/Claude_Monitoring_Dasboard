@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.38.0';
+const APP_VERSION = 'v2.39.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -5432,6 +5432,7 @@ function syncEmailDaily() {
         document.getElementById(p + 'WeekdayGroup').style.display = freq === 'weekly' ? '' : 'none';
         document.getElementById(p + 'MonthdayGroup').style.display = freq === 'monthly' ? '' : 'none';
     });
+    document.getElementById('mgrHourGroup').style.display = document.getElementById('mgrEnabled').checked ? '' : 'none';
     const sf = document.getElementById('monthlyFreq').value;
     document.getElementById('monthlySendNote').textContent = sf === 'daily' ? "Yesterday's summary" : sf === 'weekly' ? 'The last 7 days' : "Last month's report";
 }
@@ -5450,9 +5451,10 @@ function _notifLastText(m, what) {
 let _notifSaved = null;
 function _notifForm() {
     const el = id => document.getElementById(id);
-    return JSON.stringify(['emailRecipients', 'damageRecipients', 'reminderRecipients', 'monthlyRecipients'].map(id => _parseRecipients(el(id).value))
+    return JSON.stringify(['emailRecipients', 'damageRecipients', 'reminderRecipients', 'monthlyRecipients', 'mgrRecipients'].map(id => _parseRecipients(el(id).value))
         .concat([el('emailDaily').checked, el('emailHour').value, el('damageEnabled').checked, el('reminderEnabled').checked, el('reminderHour').value,
                  el('monthlyEnabled').checked, el('monthlyHour').value, el('pushDamage').checked, el('pushApprovals').checked, el('pushTickets').checked,
+                 el('mgrEnabled').checked, el('mgrHour').value,
                  ...NOTIF_SCHED.flatMap(([p]) => [el(p + 'Freq').value, el(p + 'Weekday').value, el(p + 'Monthday').value])]));
 }
 function _notifUnsaved() { return _notifSaved !== null && _notifForm() !== _notifSaved; }
@@ -5464,7 +5466,7 @@ async function sendNotificationNow(kind, btn) {
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending…'; }
     try {
         const r = await window.cloud.callFunction('sendNotificationNow', { kind });
-        const what = kind === 'damage' ? 'Test alert' : kind === 'monthly' ? 'Summary report' : 'Reminder';
+        const what = kind === 'damage' ? 'Test alert' : kind === 'monthly' ? 'Summary report' : kind === 'mgrDaily' ? 'Daily Report' : 'Reminder';
         if (r && r.sent) showToast(`${what} sent to ${r.recipients} recipient${r.recipients === 1 ? '' : 's'}`, 'success');
         else if (r && r.reason === 'no-recipients') showToast('Add recipients and save first', 'warning');
         else if (r && r.reason === 'no-records') showToast('There is no damage record yet to use as an example', 'info');
@@ -5485,26 +5487,27 @@ async function openEmailSettingsModal() {
     const owner = isOwner();
     _notifSaved = null;
     const ids = ['emailRecipients', 'emailDaily', 'emailHour', 'damageRecipients', 'damageEnabled', 'reminderRecipients', 'reminderEnabled', 'reminderHour',
-                 'monthlyRecipients', 'monthlyEnabled', 'monthlyHour', 'pushDamage', 'pushApprovals', 'pushTickets'];
+                 'monthlyRecipients', 'monthlyEnabled', 'monthlyHour', 'pushDamage', 'pushApprovals', 'pushTickets', 'mgrRecipients', 'mgrEnabled', 'mgrHour'];
     const el = id => document.getElementById(id);
-    ['emailHour', 'reminderHour', 'monthlyHour'].forEach(id => { if (!el(id).options.length) el(id).innerHTML = NOTIF_HOURS; });
+    ['emailHour', 'reminderHour', 'monthlyHour', 'mgrHour'].forEach(id => { if (!el(id).options.length) el(id).innerHTML = NOTIF_HOURS; });
     NOTIF_SCHED.forEach(([p, , , dfreq]) => {
         if (!el(p + 'Weekday').options.length) el(p + 'Weekday').innerHTML = NOTIF_WEEKDAYS.map((d, i) => `<option value="${i}">${d}</option>`).join('');
         if (!el(p + 'Monthday').options.length) el(p + 'Monthday').innerHTML = Array.from({ length: 28 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('');
         el(p + 'Freq').value = dfreq; el(p + 'Weekday').value = '1'; el(p + 'Monthday').value = '1';
         [p + 'Freq', p + 'Weekday', p + 'Monthday'].forEach(id => { el(id).disabled = !owner; });
     });
-    ['emailRecipients', 'damageRecipients', 'reminderRecipients', 'monthlyRecipients'].forEach(id => { el(id).value = ''; });
-    ['emailDaily', 'damageEnabled', 'reminderEnabled', 'monthlyEnabled'].forEach(id => { el(id).checked = false; });
+    ['emailRecipients', 'damageRecipients', 'reminderRecipients', 'monthlyRecipients', 'mgrRecipients'].forEach(id => { el(id).value = ''; });
+    ['emailDaily', 'damageEnabled', 'reminderEnabled', 'monthlyEnabled', 'mgrEnabled'].forEach(id => { el(id).checked = false; });
     el('monthlyHour').value = String(EMAIL_DEFAULT_HOUR);
+    el('mgrHour').value = String(EMAIL_DEFAULT_HOUR);
     el('pushDamage').checked = true; el('pushApprovals').checked = true; el('pushTickets').checked = true;
     el('emailHour').value = String(EMAIL_DEFAULT_HOUR);
     el('reminderHour').value = String(REMINDER_DEFAULT_HOUR);
     ids.forEach(id => { el(id).disabled = !owner; });
     el('emailSaveBtn').hidden = !owner;
-    ['damageSendBtn', 'reminderSendBtn', 'monthlySendBtn'].forEach(id => { el(id).hidden = !owner; });
+    ['damageSendBtn', 'reminderSendBtn', 'monthlySendBtn', 'mgrSendBtn'].forEach(id => { el(id).hidden = !owner; });
     el('emailOwnerNote').hidden = owner;
-    ['emailLast', 'damageLast', 'reminderLast', 'monthlyLast'].forEach(id => { el(id).textContent = ''; });
+    ['emailLast', 'damageLast', 'reminderLast', 'monthlyLast', 'mgrLast'].forEach(id => { el(id).textContent = ''; });
     syncEmailDaily();
     el('emailSettingsModal').classList.add('open');
     try {
@@ -5520,6 +5523,9 @@ async function openEmailSettingsModal() {
         el('monthlyRecipients').value = (s.monthlyRecipients || []).join('\n');
         el('monthlyEnabled').checked = !!s.monthlyEnabled;
         el('monthlyHour').value = String(Number.isInteger(s.monthlyHour) ? s.monthlyHour : EMAIL_DEFAULT_HOUR);
+        el('mgrRecipients').value = (s.mgrRecipients || []).join('\n');
+        el('mgrEnabled').checked = !!s.mgrEnabled;
+        el('mgrHour').value = String(Number.isInteger(s.mgrHour) ? s.mgrHour : EMAIL_DEFAULT_HOUR);
         el('pushDamage').checked = s.pushDamage !== false;
         el('pushApprovals').checked = s.pushApprovals !== false;
         el('pushTickets').checked = s.pushTickets !== false;
@@ -5539,6 +5545,7 @@ async function openEmailSettingsModal() {
         el('damageLast').textContent = _notifLastText(last.damageAlert, 'alert');
         el('reminderLast').textContent = _notifLastText(last.reportReminder, 'reminder');
         el('monthlyLast').textContent = _notifLastText(last.monthlyReport, 'summary report');
+        el('mgrLast').textContent = _notifLastText(last.mgrDaily, 'daily report');
     } catch (_) { /* the history line is a nicety */ }
 }
 function closeEmailSettingsModal() {
@@ -5549,7 +5556,8 @@ async function saveEmailSettings() {
     const el = id => document.getElementById(id);
     const lists = {};
     for (const [key, id, label] of [['recipients', 'emailRecipients', 'License Alert'], ['damageRecipients', 'damageRecipients', 'Breakdown alerts'],
-        ['reminderRecipients', 'reminderRecipients', 'Daily Report reminder'], ['monthlyRecipients', 'monthlyRecipients', 'Summary Report']]) {
+        ['reminderRecipients', 'reminderRecipients', 'Daily Report reminder'], ['monthlyRecipients', 'monthlyRecipients', 'Summary Report'],
+        ['mgrRecipients', 'mgrRecipients', 'Daily Report for the manager']]) {
         const list = _parseRecipients(el(id).value);
         const bad = list.filter(r => !EMAIL_RE.test(r));
         if (bad.length) { showToast(`${label}: not an email address — ${bad[0]}`, 'warning'); el(id).focus(); return; }
@@ -5563,6 +5571,7 @@ async function saveEmailSettings() {
         reminderRecipients: lists.reminderRecipients, reminderEnabled: el('reminderEnabled').checked, reminderHour: hour('reminderHour'),
         monthlyRecipients: lists.monthlyRecipients, monthlyEnabled: el('monthlyEnabled').checked, monthlyHour: hour('monthlyHour'),
         pushDamage: el('pushDamage').checked, pushApprovals: el('pushApprovals').checked, pushTickets: el('pushTickets').checked,
+        mgrRecipients: lists.mgrRecipients, mgrEnabled: el('mgrEnabled').checked, mgrHour: hour('mgrHour'),
         ...Object.fromEntries(NOTIF_SCHED.flatMap(([p, , key]) => [[key + 'Freq', el(p + 'Freq').value],
             [key + 'Weekday', parseInt(el(p + 'Weekday').value, 10) || 0], [key + 'Monthday', parseInt(el(p + 'Monthday').value, 10) || 1]])),
         updatedAt: Date.now(), updatedBy: (currentUser && currentUser.email) || ''
@@ -5571,6 +5580,7 @@ async function saveEmailSettings() {
     if (rec.damageEnabled && !rec.damageRecipients.length) { showToast('Breakdown alerts: add at least one recipient', 'warning'); return; }
     if (rec.reminderEnabled && !rec.reminderRecipients.length) { showToast('Daily Report reminder: add at least one recipient', 'warning'); return; }
     if (rec.monthlyEnabled && !rec.monthlyRecipients.length) { showToast('Summary Report: add at least one recipient', 'warning'); return; }
+    if (rec.mgrEnabled && !rec.mgrRecipients.length) { showToast('Daily Report for the manager: add at least one recipient', 'warning'); return; }
     try {
         await window.cloud.saveEmailSettings(rec);
     } catch (err) {
@@ -5584,7 +5594,7 @@ async function saveEmailSettings() {
         return f === 'weekly' ? `${NOTIF_WEEKDAYS[rec[key + 'Weekday']]} ${t}` : f === 'monthly' ? `day ${rec[key + 'Monthday']} ${t}` : `daily ${t}`;
     };
     logEvent({ action: 'update', unitName: '[Settings] Notifications', field: 'Email',
-        before: '', after: `License ${when(rec.dailyEnabled, 'send', rec.sendHour)} · Breakdown ${rec.damageEnabled ? 'on' : 'off'} · Reminder ${when(rec.reminderEnabled, 'reminder', rec.reminderHour)} · Summary ${when(rec.monthlyEnabled, 'monthly', rec.monthlyHour)} · Push ${[rec.pushDamage && 'damage', rec.pushApprovals && 'approvals', rec.pushTickets && 'tickets'].filter(Boolean).join('+') || 'off'}` });
+        before: '', after: `License ${when(rec.dailyEnabled, 'send', rec.sendHour)} · Breakdown ${rec.damageEnabled ? 'on' : 'off'} · Reminder ${when(rec.reminderEnabled, 'reminder', rec.reminderHour)} · Summary ${when(rec.monthlyEnabled, 'monthly', rec.monthlyHour)} · Manager daily ${rec.mgrEnabled ? `${String(rec.mgrHour).padStart(2, '0')}:00` : 'off'} · Push ${[rec.pushDamage && 'damage', rec.pushApprovals && 'approvals', rec.pushTickets && 'tickets'].filter(Boolean).join('+') || 'off'}` });
     _notifSaved = _notifForm();
     showToast('Notification settings saved', 'success');
 }

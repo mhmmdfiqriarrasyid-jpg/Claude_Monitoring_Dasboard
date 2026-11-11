@@ -670,12 +670,15 @@ service cloud.firestore {
              'reminderEnabled', 'reminderHour', 'reminderRecipients', 'damageEnabled', 'damageRecipients',
              'monthlyEnabled', 'monthlyHour', 'monthlyRecipients', 'pushDamage', 'pushApprovals', 'pushTickets',
              'sendFreq', 'sendWeekday', 'sendMonthday', 'reminderFreq', 'reminderWeekday', 'reminderMonthday',
-             'monthlyFreq', 'monthlyWeekday', 'monthlyMonthday', 'updatedAt', 'updatedBy'])
+             'monthlyFreq', 'monthlyWeekday', 'monthlyMonthday', 'mgrEnabled', 'mgrHour', 'mgrRecipients', 'updatedAt', 'updatedBy'])
         && schedOk(request.resource.data, 'send') && schedOk(request.resource.data, 'reminder') && schedOk(request.resource.data, 'monthly')
         && request.resource.data.get('pushDamage', true) is bool
         && request.resource.data.get('pushApprovals', true) is bool
         && request.resource.data.get('pushTickets', true) is bool
         && emailList(request.resource.data.get('monthlyRecipients', []))
+        && emailList(request.resource.data.get('mgrRecipients', []))
+        && request.resource.data.get('mgrEnabled', false) is bool
+        && hourOk(request.resource.data.get('mgrHour', 7))
         && request.resource.data.get('monthlyEnabled', false) is bool
         && hourOk(request.resource.data.get('monthlyHour', 7))
         && emailList(request.resource.data.get('recipients', []))

@@ -23,6 +23,8 @@ jobs:
           node-version: 22
       - name: Install
         run: npm install --no-audit --no-fund
+      - name: Install server packages (daily report deck)
+        run: npm ci --prefix functions --no-audit --no-fund
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - name: Run all suites

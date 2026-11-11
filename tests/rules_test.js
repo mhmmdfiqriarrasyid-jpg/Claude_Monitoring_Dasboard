@@ -573,6 +573,9 @@ async function check(name, p, expectOk) {
     await check('Email: jam di luar 0–23 DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, sendHour: 24 }), false);
     await check('Email: jam bukan angka bulat DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, sendHour: '7' }), false);
     await check('Notif: owner menyimpan pengingat Daily Report + breakdown', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, sendHour: 7, reminderEnabled: true, reminderHour: 17, reminderRecipients: ['sup@x.id'], damageEnabled: true, damageRecipients: ['mgr@x.id'] }), true);
+    await check('Notif: owner menyimpan Daily Report manajer (2.39.0)', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, mgrEnabled: true, mgrHour: 7, mgrRecipients: ['boss@x.id'] }), true);
+    await check('Notif: Daily Report manajer — jam salah DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, mgrHour: 25 }), false);
+    await check('Notif: Daily Report manajer — aktif bukan boolean DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, mgrEnabled: 'yes' }), false);
     await check('Notif: jam pengingat di luar 0–23 DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, reminderHour: -1 }), false);
     await check('Notif: penerima breakdown lebih dari 10 DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, damageRecipients: Array.from({ length: 11 }, (_, i) => i + '@x.id') }), false);
     await check('Notif: saklar bukan boolean DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, damageEnabled: 'yes' }), false);

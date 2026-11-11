@@ -6,6 +6,8 @@
 //                          · the Daily Report reminder, once a day at its hour
 //                          · a Breakdown / damage alert for each new damage record
 //                          · the Monthly Report on the 1st, at its hour (2.18.0)
+//                          · the manager's Daily Report (2.39.0): yesterday on the
+//                            company template, PowerPoint + PDF attached, daily at its hour
 //                          · push notifications to phones (2.18.0): new damage,
 //                            and Daily Reports / leave / inspections to approve
 //                          · housekeeping at 03:00 (2.19.0): error log > 30 days
@@ -79,6 +81,9 @@ async function emailSettings() {
         licenseSched: readSchedule(s, 'send', { freq: 'daily', hour: 7 }),
         reminderSched: readSchedule(s, 'reminder', { freq: 'daily', hour: 17 }),
         summarySched: readSchedule(s, 'monthly', { freq: 'monthly', hour: 7, monthday: 1 }),
+        mgrEnabled: !!s.mgrEnabled,
+        mgrHour: cleanHour(s.mgrHour, 7),
+        mgrRecipients: cleanList(s.mgrRecipients),
         pushDamage: s.pushDamage !== false,
         pushApprovals: s.pushApprovals !== false,
         pushTickets: s.pushTickets !== false
@@ -93,7 +98,8 @@ async function mail(to, m, log) {
         // and a stray newline are not part of an App Password.
         auth: { user, pass: GMAIL_APP_PASSWORD.value().replace(/\s+/g, '') }
     });
-    await transport.sendMail({ from: `"OT Dashboard" <${user}>`, to: to.join(', '), subject: m.subject, text: m.text, html: m.html });
+    await transport.sendMail({ from: `"OT Dashboard" <${user}>`, to: to.join(', '), subject: m.subject, text: m.text, html: m.html,
+        ...(m.attachments ? { attachments: m.attachments } : {}) });
     await db.collection('mailLog').add({ ...log, recipients: to, subject: m.subject, at: admin.firestore.FieldValue.serverTimestamp() });
 }
 
@@ -208,6 +214,17 @@ const housekeeping = now => housekeepingRun(db, admin.storage().bucket(), now);
 
 // ---- Daily backup + thumbnails (2.35.0), 02:00 WIT ----
 const { backupRun, backupList, backupManifest, restoreMissing } = require('./backup');
+const { composeDaily } = require('./dailySend');
+const { yesterday } = require('./dailyCore');
+
+// 2.39.0: the manager's Daily Report — yesterday, with the PowerPoint and PDF.
+async function sendMgrDaily(s, now, trigger, by) {
+    if (!s.mgrRecipients.length) return { sent: false, reason: 'no-recipients' };
+    const date = yesterday(now.getTime());
+    const r = await composeDaily({ db, bucket: admin.storage().bucket(), sharp: require('sharp'), date, now: now.getTime() });
+    await mail(s.mgrRecipients, r.m, { kind: 'mgrDaily', trigger: trigger || 'auto', by: by || '', items: r.D.team.reports, date, photos: r.photos });
+    return { sent: true, recipients: s.mgrRecipients.length, date, photos: r.photos };
+}
 const { thumbsBackfill } = require('./thumbs');
 exports.dailyMaintenance = onSchedule({
     schedule: '0 2 * * *', timeZone: 'Asia/Jayapura', region: REGION, retryCount: 1, timeoutSeconds: 540, memory: '1GiB'
@@ -281,7 +298,8 @@ async function oncePerDay(kind, today, fn) {
 }
 
 exports.notificationTick = onSchedule({
-    schedule: '*/10 * * * *', timeZone: 'Asia/Jayapura', region: REGION, secrets: SECRETS, retryCount: 0
+    schedule: '*/10 * * * *', timeZone: 'Asia/Jayapura', region: REGION, secrets: SECRETS, retryCount: 0,
+    memory: '1GiB', timeoutSeconds: 300   // 2.39.0: the daily deck (photos, PowerPoint, PDF)
 }, async () => {
     const now = new Date();
     _pushCtx = null;
@@ -292,6 +310,7 @@ exports.notificationTick = onSchedule({
     if (s.dailyEnabled && isDue(s.licenseSched, now)) jobs.push(oncePerDay('daily', today, () => sendReport('daily', '')));
     if (s.reminderEnabled && isDue(s.reminderSched, now)) jobs.push(oncePerDay('reminder', today, () => sendReminder(s, now)));
     if (s.monthlyEnabled && isDue(s.summarySched, now)) jobs.push(oncePerDay('monthly', today, () => sendMonthly(s, now)));
+    if (s.mgrEnabled && hour === s.mgrHour) jobs.push(oncePerDay('mgrDaily', today, () => sendMgrDaily(s, now)));
     if (hour === 3) jobs.push(oncePerDay('housekeeping', today, () => housekeeping(now)));
     jobs.push(scanDamage(s, now).then(n => { if (n) logger.info('damage alerts sent', { n }); }));
     if (s.pushApprovals) jobs.push(scanApprovals(now).then(n => { if (n) logger.info('approval pushes sent', { n }); }));
@@ -332,7 +351,7 @@ exports.sendLicenseAlert = onCall({ region: REGION, secrets: SECRETS, enforceApp
 // 2.15.1: the per-section buttons in Notification Settings.
 //   damage   — the newest damage record, as the alert would look, marked [Test]
 //   reminder — who has not sent the report of an ended shift, right now
-exports.sendNotificationNow = onCall({ region: REGION, secrets: SECRETS, enforceAppCheck: true }, async req => {
+exports.sendNotificationNow = onCall({ region: REGION, secrets: SECRETS, enforceAppCheck: true, memory: '1GiB', timeoutSeconds: 300 }, async req => {
     if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first');
     if (!isOwnerDoc(req.auth.uid, await userDoc(req.auth.uid))) throw new HttpsError('permission-denied', 'Only the Super Admin');
     const kind = req.data && req.data.kind;
@@ -349,6 +368,7 @@ exports.sendNotificationNow = onCall({ region: REGION, secrets: SECRETS, enforce
             return { sent: true, recipients: s.damageRecipients.length };
         }
         if (kind === 'monthly') return await sendMonthly(s, new Date(), 'manual', by);
+        if (kind === 'mgrDaily') return await sendMgrDaily(s, new Date(), 'manual', by);
         if (kind === 'reminder') {
             const r = await sendReminder(s, new Date(), 'manual', by);
             return r.sent ? { ...r, recipients: s.reminderRecipients.length } : r;
