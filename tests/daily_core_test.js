@@ -62,6 +62,9 @@ const data = {
     const m = C.dailyEmail(D, { attached: true, photos: 2 });
     t('email: subjek & isi', [m.subject, /Missed: Andi Wijaya/.test(m.html), /Selang hidrolik/.test(m.html), /RTK Tower/.test(m.text) || /Project updates: 1/.test(m.text)], ['Daily Report — Tue 10 Nov 2026', true, true, true]);
     t('email: HTML di-escape', C.dailyEmail(C.buildDaily({ date: day, workLogs: [{ id: 'x', date: day, memberId: 'q', memberName: '<b>', issue: '<script>' }] })).html.includes('&lt;script&gt;'), true);
+    t('laporan Office bertingkat: satu baris rapi, tidak terpotong (2.39.3)', C.buildDaily({ date: day, members: [{ id: 'a', name: 'Yuda' }], workLogs: [{ id: 'w', date: day, memberId: 'a', place: 'office', start: '07:00', end: '13:00',
+        task: 'Lokasi: Tower KM 8\nPekerjaan dan Unit :\n- Setting radio repeater dan antena\n- Cek kabel coax' }] }).team.members[0].work,
+        'Office · Lokasi: Tower KM 8 · Pekerjaan dan Unit: Setting radio repeater dan antena · Cek kabel coax');
     t('teks dipotong ke kotaknya', fitLine('Pasang Camera AI di seluruh unit traktor GPA', 1, 10), 'Pasang Camer…');
 
     const pptx = await renderPptx(P), pdf = await renderPdf(P);

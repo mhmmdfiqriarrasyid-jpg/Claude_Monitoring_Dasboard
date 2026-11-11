@@ -591,6 +591,11 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.39.3 — Daily Report tanpa teks terpotong "…"**: laporan Office dan
+  teks bertingkat (judul + daftar poin) dibaca jadi satu baris rapi
+  ("Lokasi: Tower KM 8 · Pekerjaan dan Unit: Setting radio · Cek kabel");
+  batas panjang dinaikkan dan sel tabel di PDF/PowerPoint server membungkus
+  sampai 3 baris (barisnya ikut tinggi) alih-alih dipotong.
   **2.39.2 — Daily Report: halaman OT Jobs & Project Progress dirapikan** —
   tiap job ditulis lengkap (tidak terpotong), status sebagai label, lalu
   baris keterangan: kategori, project, ticket, implement, unit, siapa, jam,

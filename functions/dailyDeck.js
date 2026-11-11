@@ -130,20 +130,24 @@ function drawBlock(ops, b, x, y, w, h, warn) {
     }
     case 'table': {
         if (!b.rows.length) return empty(b.empty);
+        // 2.39.3: a long cell wraps (up to three lines) and its row grows, instead of being cut.
         // Long tables (a big team) get tighter rows before any is left out.
-        const rh = Math.max(0.19, Math.min(0.25, h / (b.rows.length + 1))), size = rh < 0.23 ? 8 : 9, cols = tableCols(b, w, size);
+        const base = Math.max(0.19, Math.min(0.25, h / (b.rows.length + 1))), size = base < 0.23 ? 8 : 9, cols = tableCols(b, w, size), lh = size * 1.22 / 72;
+        const linesOf = r => Math.max(1, ...r.map((c, i) => Math.min(3, Math.ceil(str(plain(c).text).length * size * CHAR / Math.max(0.2, cols[i] - 0.1)))));
+        const hs = b.rows.map(r => Math.max(base, linesOf(r) * lh + 0.07));
         let fit = b.rows.length;
-        while (fit > 1 && rh * (fit + 1) + (fit < b.rows.length ? 0.22 : 0) > h) fit--;
-        const row = (cells, cy, head) => { let cx = x;
-            cells.forEach((c, i) => { const o = plain(c), cw = cols[i], a = o.a || b.head[i].a || 'left';
-                T(fitLine(head ? str(o.text).toUpperCase() : o.text, cw - 0.1, head ? 7.5 : size), { x: cx + 0.05, y: cy, w: cw - 0.1, h: rh, size: head ? 7.5 : size, bold: head || !!o.bold,
-                    color: head ? COL.slate : o.tone ? TONE[o.tone] || COL.ink : COL.ink, align: a, valign: 'middle' });
+        const used = n => base + hs.slice(0, n).reduce((a2, v) => a2 + v, 0) + (n < b.rows.length ? 0.22 : 0);
+        while (fit > 1 && used(fit) > h) fit--;
+        const row = (cells, cy, rh, head) => { let cx = x;
+            cells.forEach((c, i) => { const o = plain(c), cw = cols[i], a = o.a || b.head[i].a || 'left', fs = head ? 7.5 : size;
+                const txt = head ? fitLine(str(o.text).toUpperCase(), cw - 0.1, fs) : fitLines(o.text, cw - 0.1, rh - 0.04, fs);
+                T(txt, { x: cx + 0.05, y: cy, w: cw - 0.1, h: rh, size: fs, bold: head || !!o.bold, color: head ? COL.slate : o.tone ? TONE[o.tone] || COL.ink : COL.ink, align: a, valign: 'middle' });
                 cx += cw; }); };
-        row(b.head.map(hd => ({ text: hd.t, a: hd.a })), y, true);
-        b.rows.slice(0, fit).forEach((r, k) => { const cy = y + rh * (k + 1);
-            ops.push({ t: 'line', x, y: cy, w, h: 0, color: sep, width: 0.5 }); row(r, cy, false); });
+        row(b.head.map(hd => ({ text: hd.t, a: hd.a })), y, base, true);
+        let cy = y + base;
+        b.rows.slice(0, fit).forEach((r, k) => { ops.push({ t: 'line', x, y: cy, w, h: 0, color: sep, width: 0.5 }); row(r, cy, hs[k], false); cy += hs[k]; });
         const more = (b.more || 0) + b.rows.length - fit;
-        if (more) T(`+ ${more} more in the dashboard`, { x, y: y + rh * (fit + 1) + 0.03, w, h: 0.2, size: 8.5, color: COL.slate });
+        if (more) T(`+ ${more} more in the dashboard`, { x, y: cy + 0.03, w, h: 0.2, size: 8.5, color: COL.slate });
         return;
     }
     case 'gallery': {

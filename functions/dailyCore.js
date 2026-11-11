@@ -48,7 +48,13 @@
     const h1 = n => (Math.round((n || 0) * 10) / 10).toLocaleString('en-US');
     const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`;
     const first = s => String(s || '').trim().split(/\s+/)[0] || '';
-    const clip = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s; };
+    // What people typed on several lines (often a heading and a list of points) reads as one line:
+    // "Lokasi: Tower KM 8 · Pekerjaan: setting radio · cek kabel". Bullets go; a heading ending in ':'
+    // runs into its first point. A cut (rare: limits are generous) ends on a whole word.
+    const oneLine = s => String(s || '').split(/\n+/).map(l => l.replace(/^\s*(?:[-•*–]|\d+[.)])\s*/, '').replace(/\s+/g, ' ').replace(/\s+([:;,])/g, '$1').trim()).filter(Boolean)
+        .reduce((out, l) => !out ? l : /:$/.test(out) ? `${out} ${l}` : `${out} · ${l}`, '');
+    const clip = (s, n) => { s = oneLine(s).replace(/[:;,·\s]+$/, '');
+        if (s.length <= n) return s; const cut = s.slice(0, n - 1), sp = cut.lastIndexOf(' '); return (sp > n * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s:;,·-]+$/, '') + '…'; };
     function progressPct(p) {
         const t = (p && p.target) || {};
         if (t.mode === 'count') { const tot = Math.max(0, Number(t.count) || 0), d = Math.min(tot, Math.max(0, Number(t.done) || 0)); return tot ? Math.round(100 * d / tot) : 0; }
@@ -82,7 +88,7 @@
             else if (onLeave(m.id)) state = 'leave';
             else if (anyShift && (!sh || sh === 'libur')) state = 'off';
             else { state = 'miss'; expected++; }
-            const jobs = mine.flatMap(l => l.place === 'office' ? [{ paddock: 'Office', jobType: clip(l.task, 40), units: [] }] : logJobs(l));
+            const jobs = mine.flatMap(l => l.place === 'office' ? [{ paddock: 'Office', jobType: clip(l.task, 160), units: [] }] : logJobs(l));
             return { id: m.id, name: m.name || '', pt: pt(m.company), shift: SHIFT[sh] || '', state,
                 hours: mine.reduce((n, l) => n + minutes(l), 0) / 60,
                 work: [...new Set(jobs.map(j => [j.paddock, j.jobType].filter(Boolean).join(' · ')).filter(Boolean))].join('; '),
@@ -138,7 +144,7 @@
             if (sum && sum <= photoCount(l)) { let k = 0; js.forEach((j, i) => { if (counts[i]) cand.push({ key: `wl:${l.id}:${i}`, src: 'wl', id: l.id, index: k, group: j.paddock || '',
                 cap: [j.paddock, j.jobType].filter(Boolean).join(' · ') || 'Daily Report', sub: `${who}${(j.units || []).length ? ' · ' + j.units.map(unitName).filter(Boolean).join(', ') : ''}` }); k += counts[i]; }); }
             else cand.push({ key: `wl:${l.id}:g`, src: 'wl', id: l.id, index: 0, group: (js[0] || {}).paddock || l.place || '',
-                cap: l.place === 'office' ? `Office · ${clip(l.task, 40)}` : ([(js[0] || {}).paddock, (js[0] || {}).jobType].filter(Boolean).join(' · ') || 'Daily Report'), sub: who });
+                cap: l.place === 'office' ? `Office · ${clip(l.task, 50)}` : ([(js[0] || {}).paddock, (js[0] || {}).jobType].filter(Boolean).join(' · ') || 'Daily Report'), sub: who });
         });
         const seen = new Set(), daily = [];
         while (cand.length) { let b = cand.findIndex(c => !seen.has(c.group)); if (b < 0) b = 0; const c = cand.splice(b, 1)[0]; seen.add(c.group); daily.push(c); }
@@ -181,12 +187,12 @@
                 { value: D.fixed, label: 'repairs closed', tone: D.fixed ? 'good' : '' }, { value: tk.opened.length, label: 'tickets opened' }, { value: tk.resolved.length, label: 'tickets resolved', tone: tk.resolved.length ? 'good' : '' },
                 { value: tk.open, label: `open now${tk.overdue ? ` · ${tk.overdue} past due` : ''}`, tone: tk.overdue ? 'bad' : '' }] }] },
             { h: 2.3, widths: [1, 1.15, 1.25], cards: [
-                { type: 'list', title: 'Issues from the Daily Report', items: t.issues.slice(0, 5).map(i => ({ text: clip(i.text, 150), sub: i.who, tone: 'warn' })), empty: 'No issue written' },
+                { type: 'list', title: 'Issues from the Daily Report', items: t.issues.slice(0, 5).map(i => ({ text: clip(i.text, 200), sub: i.who, tone: 'warn' })), empty: 'No issue written' },
                 { type: 'table', title: 'New damage / breakdown', head: [{ t: 'Unit' }, { t: 'Part' }, { t: 'Status' }],
-                    rows: D.damage.map(d => [{ text: d.unit, bold: true }, clip([d.part, d.what].filter(Boolean).join(' — '), 60) || d.type || '—', { text: d.resolved ? 'Fixed' : d.breakdown ? 'Breakdown' : 'Open', tone: dmgTone(d), bold: true }]), empty: 'No new damage' },
+                    rows: D.damage.map(d => [{ text: d.unit, bold: true }, clip([d.part, d.what].filter(Boolean).join(' — '), 140) || d.type || '—', { text: d.resolved ? 'Fixed' : d.breakdown ? 'Breakdown' : 'Open', tone: dmgTone(d), bold: true }]), empty: 'No new damage' },
                 { type: 'table', title: 'Tickets opened & resolved', head: [{ t: 'Ticket' }, { t: 'Prio' }, { t: 'Status' }],
-                    rows: tk.opened.map(x => [{ text: clip(`${x.no} · ${x.title}`, 60), bold: true }, { text: x.prio, tone: x.priority === 'high' ? 'bad' : x.priority === 'medium' ? 'warn' : 'muted' }, x.status])
-                        .concat(tk.resolved.filter(x => !tk.opened.some(o => o.no === x.no)).map(x => [clip(`${x.no} · ${x.title}`, 60), { text: x.prio, tone: 'muted' }, { text: 'Resolved', tone: 'good', bold: true }])), empty: 'No ticket opened or resolved' }] }] });
+                    rows: tk.opened.map(x => [{ text: clip(`${x.no} · ${x.title}`, 120), bold: true }, { text: x.prio, tone: x.priority === 'high' ? 'bad' : x.priority === 'medium' ? 'warn' : 'muted' }, x.status])
+                        .concat(tk.resolved.filter(x => !tk.opened.some(o => o.no === x.no)).map(x => [clip(`${x.no} · ${x.title}`, 120), { text: x.prio, tone: 'muted' }, { text: 'Resolved', tone: 'good', bold: true }])), empty: 'No ticket opened or resolved' }] }] });
         if (opts.gallery && opts.gallery.items && opts.gallery.items.length) {
             const g = opts.gallery, groups = new Set(g.items.map(i => i.cap.split(' · ')[0]));
             page('Field Photos', { sub: `${plural(g.items.length, 'photo')} from ${plural(groups.size, 'place')} · ${D.day.label}`, cols: [[g]], widths: [1] });
