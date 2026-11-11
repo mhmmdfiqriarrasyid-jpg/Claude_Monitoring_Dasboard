@@ -591,6 +591,19 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.40.0 — Semua report dirapikan (Weekly Team, Weekly Manager, Daily)**:
+  kartu setinggi isinya; kartu kosong jadi satu baris strip di bawah judul
+  dan kolom kosong hilang (`DailyCore.fitPage`); tabel memakai ruang yang
+  ada sebelum "+ n more"; label bar, milestone dan keterangan foto boleh dua
+  baris (tanpa "…"). Update project diringkas per project untuk periodenya
+  (`summarizeUpdates`): centang lalu batal saling meniadakan, progress awal →
+  akhir dari catatannya sendiri, blocker oranye. Nama project kembar diberi
+  PT ("· GPA"); "Other / Infrastructure" → "Infrastructure". **Job log
+  mingguan** (Team & Manager): setiap job lengkap — hari, kategori, project,
+  ticket, unit, siapa, jam, status, masalah. Manager: tabel *Units with a
+  faulty component*; Issue in Field dengan kolom Unit, yang lewat SLA di
+  atas. Daily: status ticket per akhir hari itu, running projects yang
+  bergerak lebih dulu (▲/▼). Sama di layar, PDF, PowerPoint dan email.
   **2.39.3 — Daily Report tanpa teks terpotong "…"**: laporan Office dan
   teks bertingkat (judul + daftar poin) dibaca jadi satu baris rapi
   ("Lokasi: Tower KM 8 · Pekerjaan dan Unit: Setting radio · Cek kabel");

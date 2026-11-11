@@ -29,15 +29,36 @@ const path = require('path');
         t('next week otomatis (ticket mendesak dulu; jumlahnya ikut waktu karena SLA)', /^Close \d+ urgent or overdue tickets?: TK-261102-0800AB/.test(D.nextWeek[0]), true);
         const team = buildWeeklyPages(D, 'team', 'Barang radio datang Selasa');
         const mgmt = buildWeeklyPages(D, 'mgmt', '');
-        t('tanpa galeri (media kosong): versi tim', team.map(p => p.section || 'Cover'), ['Cover', 'Summary', 'Daily Report', 'Daily Report', 'Daily Report', 'Field tickets', 'Jobs & activities', 'Fleet & support', 'Projects', 'Projects', 'Projects', 'Next week']);
-        t('tanpa galeri: versi manajer', mgmt.map(p => p.section || 'Cover'), ['Cover', 'Precision health', 'Issue in field', 'Projects', 'Projects', 'Projects', 'Cover']);
+        t('tanpa galeri (media kosong): versi tim', team.map(p => p.section || 'Cover'), ['Cover', 'Summary', 'Daily Report', 'Daily Report', 'Daily Report', 'Field tickets', 'Jobs & activities', 'Jobs & activities', 'Fleet & support', 'Projects', 'Projects', 'Projects', 'Next week']);
+        t('tanpa galeri: versi manajer', mgmt.map(p => p.section || 'Cover'), ['Cover', 'Precision health', 'Issue in field', 'Jobs & activities', 'Projects', 'Projects', 'Projects', 'Cover']);
         // 2.37.1: the management deck as the owner shaped it — cover, no eyebrow, 3 next-week points.
         // 2.38.0: the management deck on the company template.
         t('versi manajer: template perusahaan — judul, penutup Terima Kasih, tanpa Next week',
             [mgmt.every(p => p.theme === 'msg'), mgmt[0].title, mgmt[0].title2, mgmt.slice(1, -1).map(p => p.title), mgmt[mgmt.length - 1].kind, mgmt[mgmt.length - 1].title],
-            [true, 'Weekly Update', 'Division Operation Technology', ['Component Health Precision and Sensor', 'Issue in Field', 'Project', 'Project RTK radio repeater stage 2', 'Project Depth Sensor - Cartrack (Phase 2)'], 'closing', 'Terima Kasih']);
+            [true, 'Weekly Update', 'Division Operation Technology', ['Component Health Precision and Sensor', 'Issue in Field', 'Job Log', 'Project', 'Project RTK radio repeater stage 2', 'Project Depth Sensor - Cartrack (Phase 2)'], 'closing', 'Terima Kasih']);
         t('Issue in Field: 3 kartu di atas, tabel ticket di bawah', mgmt[2].rows.map(r => r.cards.map(b => b.type)), [['stats', 'kv', 'bars'], ['table']]);
-        t('halaman project versi manajer: subjudul hanya departemen, tanpa eyebrow', [mgmt[4].sub, mgmt[4].eyebrow], ['', '']);
+        t('halaman project versi manajer: subjudul hanya departemen, tanpa eyebrow', [mgmt[5].sub, mgmt[5].eyebrow], ['', '']);
+        // 2.40.0: the job log — every job of the week in plain words, with its day, status and problem.
+        const log = team[7].cols.flat().flatMap(b => b.items);
+        t('job log: 5 job, hari + kategori + ticket, status, masalah', [team[7].title, log.length, log[0].text, log[0].tag.text, /^Mon 2 · Calibration · Ticket TK-261102-0800AB/.test(log[0].sub), log[0].note],
+            ['Job log: what the OT team did this week', 5, 'Calibration lime spreader LS006', 'In progress', true, 'Problem: Reading still wrong after calibration']);
+        t('job log versi manajer', [mgmt[3].title, mgmt[3].cols.flat().flatMap(b => b.items).length], ['Job Log', 5]);
+        t('manajer: unit dengan komponen rusak + ticket lewat SLA di atas', [mgmt[1].cols[1][1].title, mgmt[1].cols[1][1].rows.map(r => r[0].text), mgmt[2].rows[1].cards[0].head.map(h => h.t)],
+            ['Units with a faulty component', ['GGTR103G', 'HEX02', 'GGTR107G', 'GGTR118G'], ['Open ticket', 'Unit', 'Prio', 'PIC', 'Days']]);
+        // Ticks undone the same week cancel out; twin project names get their PT; empty cards become one line.
+        projects.push({ id: 'tw1', name: 'Twin', status: 'active', company: 'PT. Global Papua Abadi', target: { mode: 'milestones', milestones: [{ label: 'A', weight: 50, done: false }, { label: 'B', weight: 50, done: true }] },
+            updates: [{ date: '2026-11-02', at: 1, auto: true, text: 'Marked done: A', progress: 'progress 50% → 100%' }, { date: '2026-11-02', at: 2, auto: true, text: 'Marked not done: A', progress: 'progress 100% → 50%' },
+                { date: '2026-11-03', at: 3, auto: true, text: 'Marked done: B', progress: 'progress 0% → 50%' }] },
+            { id: 'tw2', name: 'Twin', status: 'active', company: 'PT. Murni Nusantara Mandiri', target: { mode: 'count', count: 2, done: 0 }, updates: [{ date: '2026-11-03', at: 4, auto: true, text: 'Marked done: X', progress: 'progress 0% → 50%' }, { date: '2026-11-04', at: 5, auto: true, text: 'Marked not done: X', progress: 'progress 50% → 0%' }] });
+        const D2 = buildWeeklyReport('2026-10-31', { today: '2026-11-06' });
+        const tw = D2.projectPages.filter(x => /^Twin/.test(x.name));
+        t('nama kembar + PT; centang lalu batal hilang; progress dari awal ke akhir minggu', [tw.map(x => x.name), tw.map(x => [x.sum.done, x.sum.undone, x.sum.start, x.sum.end, x.sum.empty])],
+            [['Twin · GPA', 'Twin · MNM'], [[['B'], [], 50, 50, false], [[], [], 0, 0, true]]]);
+        t('ringkasan Projects: baris minggu dari ringkasan, tipe tanpa "Other /"', [D2.projects.find(x => x.name === 'Twin · GPA').week, D2.projects.find(x => x.name === 'Twin · MNM').week, D2.projects.find(x => x.name === 'Twin · GPA').type],
+            ['Done: B', '', 'Infrastructure']);
+        const fit = DailyCore.fitPage({ kind: 'content', title: 'x', cols: [[{ type: 'list', items: [], empty: 'No job logged' }], [{ type: 'table', head: [], rows: [['a']] }, { type: 'bars', items: [], empty: 'No bars' }]], widths: [1, 1] });
+        t('kartu kosong → satu baris strip; kolom kosong hilang', [fit.strip, fit.cols.length, fit.cols[0].map(b => b.type), fit.widths], ['No job logged · No bars', 1, ['table'], [1]]);
+        projects = projects.filter(p => !/^tw/.test(p.id));
         t('judul halaman berupa kesimpulan', [/^34 of 37 daily reports came in; 3 tickets still open/.test(team[1].title), mgmt[1].title], [true, 'Component Health Precision and Sensor']);
         // 2.37.0: bento cards + a page per running project
         t('Summary: kartu utama (hero), angka, kesehatan, ticket, jam, perlu perhatian', team[1].cols.map(c => c.map(b => b.type + (b.card ? ':' + b.card : ''))), [['hero:hero', 'bars'], ['stats', 'table'], ['bars', 'list:warn']]);
@@ -61,7 +82,7 @@ const path = require('path');
         const wait = async () => { for (let i = 0; i < 40 && wrMediaPending(); i++) await new Promise(r => setTimeout(r, 150)); await new Promise(r => setTimeout(r, 400)); };
         await wait();
         const secs = () => [...document.querySelectorAll('#wrPages .wr-foot span:last-child')].map(x => x.textContent.split(' · ')[0]);
-        t('menu & halaman tampil untuk owner (dengan 3 galeri)', [currentView, document.querySelectorAll('#wrPages .wr-page').length, document.getElementById('wrWeek').value, document.querySelectorAll('#wrPages .wr-gal').length], ['weeklyReport', 15, '2026-10-31', 4]);
+        t('menu & halaman tampil untuk owner (dengan 3 galeri)', [currentView, document.querySelectorAll('#wrPages .wr-page').length, document.getElementById('wrWeek').value, document.querySelectorAll('#wrPages .wr-gal').length], ['weeklyReport', 16, '2026-10-31', 4]);
         t('gaya bento: kartu putih, satu kartu teal, satu kartu perhatian', [document.querySelectorAll('#wrPages .wr-page:nth-child(2) .wr-card').length, document.querySelectorAll('#wrPages .wr-page:nth-child(2) .wr-card--hero').length, document.querySelectorAll('#wrPages .wr-page:nth-child(2) .wr-card--warn').length], [6, 1, 1]);
         t('halaman project punya galeri kecil di dalam kartu', document.querySelectorAll('#wrPages .wr-gal--mini').length, 1);
         t('galeri: 6 foto Daily Report termuat', document.querySelectorAll('#wrPages .wr-gal')[0].querySelectorAll('img').length, 6);
@@ -75,8 +96,8 @@ const path = require('path');
         t('matikan foto Daily Report: galerinya hilang', document.querySelectorAll('#wrPages .wr-gal').length, 3);
         setWeeklyMediaShow('daily', true);
         setWeeklyReportAudience('mgmt'); await wait();
-        t('versi manajer di layar: 7 halaman bertemplate (cover, isi, penutup)', [document.querySelectorAll('#wrPages .wr-page').length, document.querySelector('.wr-aud.active').dataset.aud,
-            document.querySelectorAll('#wrPages .wr-msg--cover').length, document.querySelectorAll('#wrPages .wr-msg--content').length, document.querySelectorAll('#wrPages .wr-msg--closing').length], [7, 'mgmt', 1, 5, 1]);
+        t('versi manajer di layar: 8 halaman bertemplate (cover, isi, penutup)', [document.querySelectorAll('#wrPages .wr-page').length, document.querySelector('.wr-aud.active').dataset.aud,
+            document.querySelectorAll('#wrPages .wr-msg--cover').length, document.querySelectorAll('#wrPages .wr-msg--content').length, document.querySelectorAll('#wrPages .wr-msg--closing').length], [8, 'mgmt', 1, 6, 1]);
         // Access: a viewer without the area does not see it.
         currentUser = { uid: 'v', email: 'v@x.id' }; currentUserDoc = { uid: 'v', role: 'staff', status: 'active', access: { tickets: 'view' } }; applyRoleGating();
         t('tanpa akses Weekly Report: menu disembunyikan', document.querySelector('.nav__link[data-view="weeklyReport"]').style.display, 'none');
@@ -99,7 +120,7 @@ const path = require('path');
     await page.emulateMedia({ media: 'print' });
     const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true });
     const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length;
-    T.push({ n: 'PDF: 15 halaman (satu per lembar)', g: pages, w: 15, pass: pages === 15 });
+    T.push({ n: 'PDF: 16 halaman (satu per lembar)', g: pages, w: 16, pass: pages === 16 });
     let pass = 0;
     for (const x of T) { if (x.pass) pass++; console.log(`${x.pass ? 'PASS' : 'FAIL'}  ${x.n}`); if (!x.pass) console.log(`        dapat=${JSON.stringify(x.g)} harap=${JSON.stringify(x.w)}`); }
     console.log(`\n${pass}/${T.length} lulus`);

@@ -21,7 +21,7 @@ const path = require('path');
         t('Daily Report: 5 dari 6, Febri bolos, 45 jam', [D.team.filed, D.team.expected, D.team.missed, D.team.hours], [5, 6, ['Febri Manuel'], 45]);
         t('kendala hari itu: issue DR, kerusakan baru, ticket masuk', [D.team.issues.length, D.damage.map(d => [d.unit, d.part, d.resolved]), D.tickets.opened.map(x => x.no)],
             [0, [['GGTR118G', 'GPS', false]], ['TK-261103-1000CD']]);
-        t('jobs & update project hari itu', [D.jobs.map(j => [j.category, j.status]), D.updates.map(u => [u.project, u.text])],
+        t('jobs & update project hari itu', [D.jobs.map(j => [j.category, j.status]), D.updates.map(u => [u.project, u.s.texts[0]])],
             [[['Implement install', 'In progress']], [['RTK radio repeater stage 2', 'Goods still at Merauke port']]]);
         t('foto: paddock berbeda didahulukan', D.photos.length, 5);
         currentView = 'weeklyReport';

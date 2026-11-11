@@ -38,15 +38,35 @@ const plain = c => c && typeof c === 'object' ? c : { text: c };
 const str = v => String(v == null ? '' : v);
 
 // ---- Layout: the box of every card (same geometry as weeklyreport.js) ----
+// 2.40.0: the height a card needs for what it holds (estimates that match the drawing below).
+const lines = (t, size, w, max) => Math.min(max, Math.max(1, Math.ceil(str(t).length * size * CHAR / Math.max(0.3, w))));
+const barRowH = (it, w) => lines(it[0], 9.5, Math.min(1.7, w * 0.42) - 0.05, 2) > 1 ? 0.4 : 0.3;
+const listItemH = (it, w, tagW) => (it.head ? 0.19 : 0) + 0.165 * lines(it.text, 9.5, w - 0.18 - tagW, 3) + 0.03 + (it.sub ? 0.15 * lines(it.sub, 8, w - 0.18, 2) : 0) + (it.note ? 0.17 : 0);
+function blockH(b, w) {
+    switch (b.type) {
+    case 'stats': return Math.ceil(Math.max(1, b.items.length) / (b.per || 3)) * 0.62;
+    case 'bars': return b.items.length ? b.items.reduce((a, it) => a + barRowH(it, w), 0) : 0.3;
+    case 'list': { if (!b.items.length) return 0.3; const tagW = b.items.some(it => it.tag) ? 0.78 : 0; return b.items.reduce((a, it) => a + listItemH(it, w, tagW) + 0.09, 0) + (b.more ? 0.2 : 0); }
+    case 'table': { if (!b.rows.length) return 0.3; const cols = tableCols(b, w, 9), lh = 9 * 1.22 / 72;
+        return 0.25 + b.rows.reduce((a, r) => a + Math.max(0.25, Math.max(...r.map((c, i) => Math.min(3, Math.ceil(str(plain(c).text).length * 9 * CHAR / Math.max(0.2, cols[i] - 0.1))))) * lh + 0.07), 0) + (b.more ? 0.22 : 0); }
+    case 'gallery': return 99;   // takes the room there is
+    }
+    return 0.5;
+}
+const cardH = (b, w) => b.type === 'gallery' ? 99 : PAD * 2 + (b.title ? 0.26 : 0) + blockH(b, w - PAD * 2) + 0.04;
+// The box of every card: as tall as what it holds; squeezed (by the page's weights) only when it does not fit.
 function layout(pg) {
-    const y0 = pg.sub ? 1.12 : 0.92, avail = BOTTOM - y0, cards = [];
+    const y0 = (pg.sub ? 1.12 : 0.92) + (pg.strip ? 0.3 : 0), avail = BOTTOM - y0, cards = [];
     if (pg.rows) {
         const hsum = pg.rows.reduce((a, r) => a + r.h, 0), room = avail - GAP * (pg.rows.length - 1);
+        const geo = pg.rows.map(r => { const wsum = r.widths.reduce((a, x) => a + x, 0), space = W0 - GAP * (r.cards.length - 1); return r.cards.map((b, k) => space * (r.widths[k] || 1) / wsum); });
+        const nat = pg.rows.map((r, i) => Math.max(...r.cards.map((b, k) => cardH(b, geo[i][k]))));
+        const fits = nat.reduce((a, x) => a + x, 0) <= room;
         let cy = y0;
-        pg.rows.forEach(r => {
-            const rh = room * r.h / hsum, wsum = r.widths.reduce((a, x) => a + x, 0), space = W0 - GAP * (r.cards.length - 1);
+        pg.rows.forEach((r, i) => {
+            const rh = fits ? nat[i] : room * r.h / hsum;
             let cx = X0;
-            r.cards.forEach((b, k) => { const cw = space * (r.widths[k] || 1) / wsum; cards.push({ b, x: cx, y: cy, w: cw, h: rh }); cx += cw + GAP; });
+            r.cards.forEach((b, k) => { cards.push({ b, x: cx, y: cy, w: geo[i][k], h: rh }); cx += geo[i][k] + GAP; });
             cy += rh + GAP;
         });
         return cards;
@@ -54,11 +74,11 @@ function layout(pg) {
     const total = pg.widths.reduce((a, x) => a + x, 0), space = W0 - GAP * (pg.cols.length - 1);
     let cx = X0;
     pg.cols.forEach((col, k) => {
-        // A bars card takes what its bars need; the rest share what is left.
         const cw = space * pg.widths[k] / total, room = avail - GAP * (col.length - 1);
-        const fixed = col.map(b => b.type === 'bars' ? 0.62 + 0.3 * Math.max(1, b.items.length) : 0), free = room - fixed.reduce((a, x) => a + x, 0), flex = col.filter((b, i) => !fixed[i]).length;
+        const nat = col.map(b => Math.min(room, cardH(b, cw))), sum = nat.reduce((a, x) => a + x, 0);
+        const hs = sum <= room ? nat : nat.map(x => x * room / sum);
         let cy = y0;
-        col.forEach((b, i) => { const ch = fixed[i] || (flex ? free / flex : room / col.length); cards.push({ b, x: cx, y: cy, w: cw, h: ch }); cy += ch + GAP; });
+        col.forEach((b, i) => { cards.push({ b, x: cx, y: cy, w: cw, h: hs[i] }); cy += hs[i] + GAP; });
         cx += cw + GAP;
     });
     return cards;
@@ -97,9 +117,10 @@ function drawBlock(ops, b, x, y, w, h, warn) {
     case 'bars': {
         if (!b.items.length) return empty(b.empty);
         const max = b.max || Math.max(1, ...b.items.map(i => Number(i[1]) || 0));
-        const lw = Math.min(1.7, w * 0.42), vw = 0.52, tw = w - lw - vw - 0.1, rh = Math.min(0.3, h / b.items.length);
-        b.items.forEach((it, i) => { const cy = y + i * rh, v = Number(it[1]) || 0;
-            T(fitLine(it[0], lw - 0.05, 9.5), { x, y: cy, w: lw, h: rh, valign: 'middle' });
+        const lw = Math.min(1.7, w * 0.42), vw = 0.52, tw = w - lw - vw - 0.1, hs = b.items.map(it => barRowH(it, w)), k = Math.min(1, h / hs.reduce((a, v) => a + v, 0));
+        let by = y;
+        b.items.forEach((it, i) => { const rh = hs[i] * k, cy = by, v = Number(it[1]) || 0; by += rh;
+            T(fitLines(it[0], lw - 0.05, rh, 9.5), { x, y: cy, w: lw - 0.05, h: rh, valign: 'middle' });
             ops.push({ t: 'rect', x: x + lw, y: cy + rh / 2 - 0.04, w: tw, h: 0.08, fill: COL.tint, r: 0.04 });
             if (v) ops.push({ t: 'rect', x: x + lw, y: cy + rh / 2 - 0.04, w: Math.max(0.08, tw * Math.min(v, max) / max), h: 0.08, fill: COL.green, r: 0.04 });
             T(`${(Math.round(v * 10) / 10).toLocaleString('en-US')}${b.unit || ''}`, { x: x + lw + tw + 0.06, y: cy, w: vw + 0.04, h: rh, bold: true, align: 'right', valign: 'middle' }); });
@@ -179,6 +200,7 @@ function pageOps(pg) {
     ops.push({ t: 'bg', key: 'content' });
     T(fitLine(pg.title, 8.55, 24), { x: 0.39, y: 0.12, w: 8.55, h: 0.58, size: 24, bold: true, color: COL.msg, valign: 'middle' });
     if (pg.sub) T(fitLine(pg.sub, 9.1, 10.5), { x: 0.39, y: 0.82, w: 9.1, h: 0.22, size: 10.5, color: COL.slate });
+    if (pg.strip) T(fitLine('o  ' + pg.strip, W0, 9), { x: X0, y: pg.sub ? 1.12 : 0.92, w: W0, h: 0.22, size: 9, color: COL.slate });
     layout(pg).forEach(c => {
         const b = c.b;
         if (b.type === 'gallery') return drawBlock(ops, b, c.x, c.y, c.w, c.h, false);

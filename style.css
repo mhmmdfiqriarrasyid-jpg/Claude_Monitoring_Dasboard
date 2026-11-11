@@ -11286,7 +11286,7 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 /* bars */
 .wr-bars { display: flex; flex-direction: column; gap: .75cqw; }
 .wr-bar { display: grid; grid-template-columns: minmax(0, 40%) 1fr 4.8cqw; gap: .8cqw; align-items: center; font-size: 1.02cqw; }
-.wr-bar__l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wr-bar__l { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.2; overflow-wrap: anywhere; }   /* 2.40.0: two lines, no "…" mid-name */
 .wr-bar__t { position: relative; height: .8cqw; background: var(--tint); border-radius: 9px; }
 .wr-bar__t i { position: absolute; inset: 0 auto 0 0; background: var(--green); border-radius: 9px; }
 .wr-bar__t i.is-warn { background: #F79009; } .wr-bar__t i.is-bad { background: var(--rust); }
@@ -11334,7 +11334,7 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 .wr-step__ck { flex: none; width: 1.5cqw; height: 1.5cqw; border-radius: .45cqw; background: var(--tint); color: #fff; font-size: .95cqw; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
 .wr-step.is-done .wr-step__ck { background: var(--green); }
 .wr-step.is-done .wr-step__l { color: var(--slate); }
-.wr-step__l { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wr-step__l { min-width: 0; flex: 1; line-height: 1.25; overflow-wrap: anywhere; }
 .wr-step__w { margin-left: auto; font-size: .92cqw; color: var(--slate); flex: none; }
 .wr-step__g { font-size: .9cqw; font-weight: 700; width: 4cqw; text-align: right; flex: none; white-space: nowrap; }
 @media (max-width: 700px) {
@@ -11369,7 +11369,7 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 .wr-gal__item:hover .wr-gal__x, .wr-gal__x:focus-visible { opacity: 1; }
 @media (hover: none) { .wr-gal__x { opacity: .9; width: 24px; height: 24px; font-size: 15px; } }
 .wr-gal figcaption { display: flex; flex-direction: column; gap: .15cqw; margin-top: .6cqw; min-width: 0; }
-.wr-gal figcaption b { font-size: 1.05cqw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wr-gal figcaption b { font-size: 1.05cqw; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.2; }
 .wr-gal figcaption span { font-size: .9cqw; color: var(--slate); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media print { .wr-noprint { display: none !important; } }
 #wrPrint .wr-noprint { display: none !important; }
@@ -11495,5 +11495,12 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 .wr-msg.has-sub .wr-body { inset: 11cqw 3cqw 3.4cqw; }
 .wr-msg .wr-card:not(.wr-card--hero):not(.wr-card--warn) { box-shadow: 0 0 0 1px var(--hair); }
 .wr-body--rows { flex-direction: column; }
+/* 2.40.0: cards empty for the period become one thin line under the title */
+.wr-strip { position: absolute; left: 4cqw; right: 4cqw; top: 11.6cqw; display: flex; align-items: center; gap: .7cqw; font-size: 1cqw; color: var(--slate); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wr-page.has-strip .wr-body { top: 14cqw; }
+.wr-msg .wr-strip { left: 3cqw; right: 3cqw; top: 9.4cqw; }
+.wr-msg.has-sub .wr-strip { top: 10.8cqw; }
+.wr-msg.has-strip .wr-body { top: 11.8cqw; }
+.wr-msg.has-sub.has-strip .wr-body { top: 13.2cqw; }
 .wr-row { display: flex; gap: 1.25cqw; min-height: 0; }
 .wr-row > .wr-card { min-width: 0; }

@@ -71,6 +71,10 @@ const _wrInMs = (ms, w) => typeof ms === 'number' && ms >= w.start && ms < w.end
 const _wrPlural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`;
 const _wrNum = v => v == null ? '—' : (typeof v === 'number' ? v.toLocaleString('en-US') : String(v));
 const _wrFmtPct = v => v == null ? '—' : `${v}%`;
+// 2.40.0: shared with the daily report (functions/dailyCore.js): twin project names get their PT,
+// "Other / Infrastructure" reads "Infrastructure".
+const _wrNamer = () => window.DailyCore ? DailyCore.projectNamer(typeof projects !== 'undefined' ? projects : []) : (p => p.name || '');
+const _wrType = k => window.DailyCore ? DailyCore.typeLabel(pjTypeLabel(k)) : pjTypeLabel(k);
 const _wrToneOf = (v, target, warnGap) => v == null ? 'muted' : v >= target ? 'good' : v >= target - (warnGap || 5) ? 'warn' : 'bad';
 
 // ---- The numbers ----
@@ -169,7 +173,10 @@ function buildWeeklyReport(from, opts) {
         byCategory: [...jobs.reduce((m, j) => m.set(j.category || 'Other', (m.get(j.category || 'Other') || 0) + 1), new Map()).entries()].sort((a, b) => b[1] - a[1]),
         list: jobs.map(j => { const t = ticketOfJob(j); return { date: j.date, category: j.category, what: j.description || '', units: (j.units || []).map(u => u.name).join(', '), status: j.status || 'done', by: j.requestedBy || '', ticket: t ? t.no : '' }; }),
         backlog: (otJobs || []).filter(j => (j.issue || '').trim() && j.status !== 'done').map(j => ({ date: j.date, category: j.category, issue: j.issue.trim(), units: (j.units || []).map(u => u.name).join(', '), ticket: (ticketOfJob(j) || {}).no || '' })),
-        unfinished: (otJobs || []).filter(j => j.status !== 'done').length
+        unfinished: (otJobs || []).filter(j => j.status !== 'done').length,
+        // 2.40.0: every job of the week in plain words, for the Job log pages.
+        log: window.DailyCore ? jobs.map(j => DailyCore.jobInfo(j, { tickets: tk, projects: typeof projects !== 'undefined' ? projects : [], unitName: u => (u && (nameOf(u.id) || u.name || u.sn)) || '',
+            name: _wrNamer() })) : []
     };
 
     // Precision health: a tractor counts when every precision component is Good.
@@ -242,9 +249,12 @@ function buildWeeklyReport(from, opts) {
 
     // Projects.
     const pj = (typeof projects !== 'undefined' ? projects : []).filter(p => !PJ_CLOSED.includes(p.status) || (p.doneAt && _wrInMs(p.doneAt, w)));
-    D.projects = pj.map(p => { const pr = projectProgress(p), rag = projectRag(p, today); const ups = (p.updates || []).filter(u => _wrIn(u.date, w));
-        return { name: p.name || '', type: pjTypeLabel(p.type), pt: _wrPt(p.company), pic: p.pic || '', pct: pr.pct, label: pr.label, rag, due: pjDueText(p, today),
-            week: ups.length ? ups[ups.length - 1].text : '', status: p.status, start: p.start || '', end: p.end || '' }; })
+    const namer = _wrNamer(), sumOf = p => window.DailyCore ? DailyCore.summarizeUpdates(p, w.from, w.to) : null;
+    // 2.40.0: what the week really changed, in one line (ticks undone the same week cancel out).
+    const weekLine = p => { const e = window.DailyCore && DailyCore.projectEntry('', sumOf(p), projectProgress(p).pct); return e ? [e.text, e.note].filter(Boolean).join(' · ') : ''; };
+    D.projects = pj.map(p => { const pr = projectProgress(p), rag = projectRag(p, today);
+        return { name: namer(p), type: _wrType(p.type), pt: _wrPt(p.company), pic: p.pic || '', pct: pr.pct, label: pr.label, rag, due: pjDueText(p, today),
+            week: weekLine(p), status: p.status, start: p.start || '', end: p.end || '' }; })
         .sort((a, b) => ({ red: 0, amber: 1, green: 2, done: 3 }[a.rag] ?? 2) - ({ red: 0, amber: 1, green: 2, done: 3 }[b.rag] ?? 2));
 
     // 2.37.0: one page per project still running — where it stands, what moved
@@ -255,6 +265,7 @@ function buildWeeklyReport(from, opts) {
         // Progress at the start of the week, read from the first update of the week ("progress 3% → 21%").
         const m0 = ups.map(u => /(\d+)%\s*→/.exec(u.progress || '')).find(Boolean);
         const before = m0 ? Number(m0[1]) : (ups.length ? null : pr.pct);
+        const sum = sumOf(p);
         const mats = p.materials || [];
         const state = x => _pjMatState(x);
         const short = mats.filter(x => state(x) !== 'ready').map(x => ({ name: x.name || '', need: Number(x.qty) || 0, have: _pjMatHave(x), uom: x.uom || '' }));
@@ -263,10 +274,10 @@ function buildWeeklyReport(from, opts) {
             : (t.units || []).map(u => ({ label: u.name || u.sn || '', weight: null, done: !!u.done, goods: '' }));
         const daysLeft = p.end ? Math.round((_pjDay(p.end) - _pjDay(today)) / 86400000) : null;
         const s0 = p.start ? _pjDay(p.start) : NaN, e0 = p.end ? _pjDay(p.end) : NaN, n0 = _pjDay(today);
-        return { id: p.id, name: p.name || '', type: pjTypeLabel(p.type), company: p.company || '', pic: p.pic || '', status: pjStatusLabel(p.status),
+        return { id: p.id, name: namer(p), type: _wrType(p.type), pt: _wrPt(p.company), sum, company: p.company || '', pic: p.pic || '', status: pjStatusLabel(p.status),
             departments: (p.departments || []).map(d => d.name + (d.pic ? ` (${d.pic})` : '')), pct: pr.pct, label: pr.label, done: pr.done, total: pr.total, what: t.what || '', rag, due: pjDueText(p, today), start: p.start || '', end: p.end || '', daysLeft,
             timePct: isFinite(s0) && isFinite(e0) && e0 > s0 ? Math.max(0, Math.min(100, Math.round(100 * (n0 - s0) / (e0 - s0)))) : null,
-            delta: before == null ? null : pr.pct - before, mode: t.mode || 'units', steps, stepsDone: steps.filter(x => x.done).length,
+            delta: sum && sum.start != null && sum.end != null ? sum.end - sum.start : before == null ? null : pr.pct - before, mode: t.mode || 'units', steps, stepsDone: steps.filter(x => x.done).length,
             updates: ups.filter(u => !u.auto || ups.every(x => x.auto)).slice(-4).map(u => ({ date: u.date, text: u.text || '', blocker: u.blocker || '' })),
             blockers: ups.map(u => u.blocker).filter(Boolean).slice(-2),
             jobs: (typeof otJobs !== 'undefined' ? otJobs : []).filter(j => j.projectId === p.id && _wrIn(j.date, w)).length,
@@ -335,8 +346,9 @@ function buildWeeklyPages(D, aud, notes, media) {
         if (jb.backlog.length) attention.push({ text: `${_wrPlural(jb.backlog.length, 'field issue')} waiting from jobs`, tone: 'warn' });
         D.projectPages.filter(x => x.rag === 'red').slice(0, 2).forEach(x => attention.push({ text: `Project ${x.name}: ${x.due}`, tone: 'bad' }));
         const health = { type: 'bars', title: 'Precision health', items: [['Tractors all Good', pr.pct], ...(pr.heavy ? [['Heavy devices', pr.heavyPct]] : []), ...pr.components.slice().sort((x, y) => (x[1] ?? 101) - (y[1] ?? 101)).slice(0, 2)], max: 100, target: WR_TARGET, unit: '%' };
-        const openTk = { type: 'table', title: 'Open tickets', head: [{ t: 'Ticket' }, { t: 'Prio' }, { t: 'PIC' }, { t: 'Days', a: 'right' }],
-            rows: tk.openList.slice(0, 4).map(x => [x.title, { text: (TK_PRIORITY[x.priority] || {}).label || '', chip: x.priority === 'high' ? 'bad' : x.priority === 'medium' ? 'warn' : 'good' }, x.pic || '—', { text: String(x.age), tone: x.late ? 'bad' : '', bold: x.late }]),
+        // 2.40.0: no PIC column here (the Field tickets page has it), so the problem reads on fewer lines.
+        const openTk = { type: 'table', title: 'Open tickets', head: [{ t: 'Ticket' }, { t: 'Prio' }, { t: 'Days', a: 'right' }],
+            rows: tk.openList.slice(0, 4).map(x => [x.title, { text: (TK_PRIORITY[x.priority] || {}).label || '', chip: x.priority === 'high' ? 'bad' : x.priority === 'medium' ? 'warn' : 'good' }, { text: String(x.age), tone: x.late ? 'bad' : '', bold: x.late }]),
             more: Math.max(0, tk.openList.length - 4), empty: 'No open tickets' };
         const need = { type: 'list', card: attention.length ? 'warn' : '', title: 'Needs attention', items: attention.slice(0, 5), empty: 'Nothing urgent this week' };
         const hoursCard = t.on ? { type: 'bars', title: 'Work hours per day', items: w.dayLabels.map((d, i) => [d.split(' ')[0], t.hoursPerDay[i]]), highlight: t.hoursPerDay.indexOf(Math.max(...t.hoursPerDay)), vertical: true }
@@ -373,12 +385,12 @@ function buildWeeklyPages(D, aud, notes, media) {
                     x.pic || { text: 'no PIC', tone: 'warn' }, { text: String(x.age), tone: x.late ? 'bad' : '', bold: x.late }]), more: Math.max(0, tk.openList.length - 8), empty: 'No open tickets' }]], [1, 2]);
         if (media.tickets.length) { const g = _wrGallery(media.tickets), n = new Set(g.items.map(i => i.cap.split(' · ')[0])).size;
             page('Field tickets', `Tickets in pictures: ${_wrPlural(n, 'ticket')} from the field`, [[g]]); }
-        // Jobs
+        // Jobs (2.40.0): the week at a glance, then the job log — every job in plain words.
         if (jb.on) page('Jobs & activities', jb.total ? `${_wrPlural(jb.total, 'job')} outside the Daily Report${jb.byCategory[0] ? `, mostly ${jb.byCategory[0][0].toLowerCase()}` : ''}; ${jb.backlog.length} field issues waiting` : 'No jobs logged outside the Daily Report this week',
-            [[{ type: 'table', head: [{ t: 'Day' }, { t: 'Category' }, { t: 'What was done' }, { t: 'Units' }, { t: 'Status' }],
-                rows: jb.list.slice(0, 8).map(j => [_wrDate(j.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' }), { text: j.category, tone: 'good', bold: true }, j.what + (j.ticket ? ` · ${j.ticket}` : ''), { text: j.units || '—', tone: 'muted' },
-                    { text: JOB_STATUSES[j.status] || j.status, tone: j.status === 'done' ? 'good' : 'warn' }]), more: Math.max(0, jb.list.length - 8), empty: 'No jobs this week' },
-              ...(jb.backlog.length ? [{ type: 'list', title: 'Field issues / backlog', items: jb.backlog.slice(0, 3).map(b => ({ text: b.issue.split('\n')[0], sub: `${b.category} · ${b.units || '—'}${b.ticket ? ' · ' + b.ticket : ''}`, tone: 'warn' })) }] : [])]]);
+            [[{ type: 'kv', title: 'This week', items: [['Jobs logged', jb.total], ['Done', jb.done], ['Still open', jb.total - jb.done], ['Hours logged', _wrH(jb.hours)], ['Last week', jb.prevTotal]] },
+              { type: 'bars', title: 'Jobs by category', items: jb.byCategory.slice(0, 6), empty: 'No jobs this week' }],
+             [{ type: 'list', title: 'Field issues / backlog', items: jb.backlog.slice(0, 5).map(b => ({ text: b.issue.split('\n')[0], sub: `${b.category} · ${b.units || '—'}${b.ticket ? ' · ' + b.ticket : ''}`, tone: 'warn' })), more: Math.max(0, jb.backlog.length - 5), empty: 'No field issue waiting' }]], [1, 1.3]);
+        if (jb.on) _wrJobLog(page, jb, false);
         if (media.work.length) { const g = _wrGallery(media.work), v = g.items.filter(i => i.kind === 'video').length;
             page('Jobs & activities', `Projects and jobs in pictures${v ? ` — ${_wrPlural(v, 'video')} included` : ''}`, [[g]]); }
         // Fleet and support
@@ -396,7 +408,11 @@ function buildWeeklyPages(D, aud, notes, media) {
             [[{ type: 'bars', title: 'Tractor components Good, %', items: pr.components, max: 100, target: WR_TARGET, unit: '%' },
               ...(pr.heavy ? [{ type: 'bars', title: 'Heavy equipment devices Good, %', items: pr.heavyComponents, max: 100, target: WR_TARGET, unit: '%' }] : [])],
              [{ type: 'table', head: [{ t: 'PT' }, { t: 'Units', a: 'right' }, { t: 'All Good', a: 'right' }, ...COMPONENT_KEYS.map(k => ({ t: COMPONENT_LABELS[k] || k, a: 'right' }))],
-                rows: pr.bySite.map(s => [{ text: s.pt, bold: true }, s.units, { text: _wrFmtPct(s.pct), tone: _wrToneOf(s.pct, WR_TARGET), bold: true }, ...s.components.map(v => ({ text: _wrFmtPct(v), tone: _wrToneOf(v, WR_TARGET) }))]) }]], [1, 1.2]);
+                rows: pr.bySite.map(s => [{ text: s.pt, bold: true }, s.units, { text: _wrFmtPct(s.pct), tone: _wrToneOf(s.pct, WR_TARGET), bold: true }, ...s.components.map(v => ({ text: _wrFmtPct(v), tone: _wrToneOf(v, WR_TARGET) }))]) },
+              // 2.40.0: which units, not only how many.
+              { type: 'table', title: 'Units with a faulty component', head: [{ t: 'Unit' }, { t: 'PT' }, { t: 'Component' }, { t: 'Days', a: 'right' }],
+                rows: dm.precisionFaults.slice(0, 8).map(f => [{ text: f.unit, bold: true }, f.pt, f.part || f.type, { text: String(f.days), tone: f.days > WR_STALE_DAYS ? 'bad' : '', bold: f.days > WR_STALE_DAYS }]),
+                more: Math.max(0, dm.precisionFaults.length - 8), empty: 'No unit with a faulty component' }]], [1, 1.2]);
         // Issue in Field (2.38.0): three cards across, the open tickets below.
         page('Issue in field', 'Issue in Field', [], [], { rows: [
             { h: 1, widths: [1.3, 0.9, 1.15], cards: [
@@ -404,7 +420,12 @@ function buildWeeklyPages(D, aud, notes, media) {
                 { type: 'kv', title: 'Jobs', items: [['Logged', jb.total], ['Done', jb.done], ['Field issues waiting', jb.backlog.length]] },
                 { type: 'bars', title: 'Jobs by category', items: jb.byCategory.slice(0, 4), empty: 'No jobs this week' }] },
             { h: 2, widths: [1], cards: [
-                { type: 'table', head: [{ t: 'Open ticket' }, { t: 'Prio' }, { t: 'PIC' }, { t: 'Days', a: 'right' }], rows: tk.openList.slice(0, 6).map(x => [`${x.no} · ${x.title}`, (TK_PRIORITY[x.priority] || {}).label || '', x.pic || '—', { text: String(x.age), tone: x.late ? 'bad' : '' }]), more: Math.max(0, tk.openList.length - 6), empty: 'No open tickets' }] }] });
+                // 2.40.0: past-due first, with the unit; a late ticket in red.
+                { type: 'table', head: [{ t: 'Open ticket' }, { t: 'Unit' }, { t: 'Prio' }, { t: 'PIC' }, { t: 'Days', a: 'right' }],
+                    rows: tk.openList.slice().sort((a, b) => (b.late ? 1 : 0) - (a.late ? 1 : 0)).slice(0, 8).map(x => [{ text: `${x.no} · ${x.title}`, tone: x.late ? 'bad' : '', bold: x.late }, { text: x.units || '—', tone: 'muted' },
+                        { text: (TK_PRIORITY[x.priority] || {}).label || '', tone: x.priority === 'high' ? 'bad' : x.priority === 'medium' ? 'warn' : 'muted' }, x.pic || { text: 'no PIC', tone: 'warn' }, { text: String(x.age) + (x.late ? ' · late' : ''), tone: x.late ? 'bad' : '', bold: x.late }]),
+                    more: Math.max(0, tk.openList.length - 8), empty: 'No open tickets' }] }] });
+        if (jb.on) _wrJobLog(page, jb, true);
     }
     // Both: projects and next week.
     if (D.projects.length) {
@@ -415,25 +436,29 @@ function buildWeeklyPages(D, aud, notes, media) {
     // 2.37.0: a page for each project still running.
     (D.projectPages || []).forEach(x => {
         const tone = x.rag === 'red' ? 'bad' : x.rag === 'amber' ? 'warn' : 'good';
-        const week = x.updates.map(u => ({ text: u.text, sub: _wrDate(u.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }), tone: 'good' }))
-            .concat(x.blockers.map(bk => ({ text: `Blocker: ${bk}`, tone: 'warn' })));
+        // 2.40.0: what the week really changed (ticks undone the same week cancel out).
+        const sm = x.sum, week = !sm || sm.empty ? [] : [
+            ...sm.texts.slice(-3).map(tx => ({ text: tx, tone: 'good' })),
+            ...(sm.done.length ? [{ text: `Done: ${sm.done.join(', ')}`, tone: 'good' }] : []),
+            ...(sm.undone.length ? [{ text: `Not done any more: ${sm.undone.join(', ')}`, tone: 'warn' }] : []),
+            ...sm.blockers.slice(-2).map(bk => ({ text: `Blocker: ${bk}`, tone: 'warn' }))].map((it, i, a) => i === a.length - 1 && sm.by.length ? Object.assign(it, { sub: `by ${sm.by.join(', ')}` }) : it);
         const left = [{ type: 'progress', card: 'hero', title: 'Progress', pct: x.pct, label: x.label, delta: x.delta, timePct: x.timePct, start: x.start, end: x.end, daysLeft: x.daysLeft, rag: PJ_RAG[x.rag] || '', tone }];
         if (x.goods.total) left.push(x.goods.short.length
             ? { type: 'table', card: 'warn', title: `Goods still short · ${x.goods.ready} of ${x.goods.total} complete`, head: [{ t: 'Item' }, { t: 'Need', a: 'right' }, { t: 'Have', a: 'right' }],
                 rows: x.goods.short.slice(0, 3).map(g => [g.name, `${_wrH(g.need)} ${g.uom}`.trim(), { text: _wrH(g.have), tone: g.have ? 'warn' : 'bad', bold: true }]), more: x.goods.more + Math.max(0, x.goods.short.length - 3) }
             : { type: 'list', title: 'Goods', items: [{ text: `All ${x.goods.total} items have arrived`, tone: 'good' }] });
-        const right = [{ type: 'list', title: 'This week', items: week.slice(0, 5), empty: 'No update written this week' }];
+        const right = [{ type: 'list', title: 'This week', items: week.slice(0, 5), empty: 'No change this week' }];
         const refs = media.projects[x.id] || [];
         if (refs.length) right.push(Object.assign(_wrGallery(refs.slice(0, 4), 2), { title: 'From the field', inCard: true }));
         else if (x.jobs) right.push({ type: 'kv', title: 'Jobs this week', items: [['Logged for this project', x.jobs]] });
         const steps = x.steps.length
             ? { type: 'steps', title: x.mode === 'milestones' ? 'Milestones & goods' : x.mode === 'units' ? 'Units' : 'Units involved', items: x.steps.slice(0, 11), more: Math.max(0, x.steps.length - 11) }
-            : { type: 'kv', title: `Target${x.what ? ' — ' + x.what : ''}`, grow: 1, items: [['Target', x.total], ['Done so far', x.done], ['Still to do', Math.max(0, x.total - x.done)], ['Jobs logged this week', x.jobs]] };
+            : { type: 'kv', title: `Target${x.what ? ' — ' + x.what : ''}`, items: [['Target', x.total], ['Done so far', x.done], ['Still to do', Math.max(0, x.total - x.done)], ['Jobs logged this week', x.jobs]] };
         // Management: "Project <name>", with its PT when two running projects share a name.
-        const twin = (D.projectPages || []).filter(y => y.name === x.name).length > 1;
-        page('Projects', mgmt ? `Project ${x.name}${twin && x.company ? ' – ' + x.company : ''}` : x.name, [left, [steps], right], [1, 1.45, 1.15],
+        // (2.40.0: twin names already carry their PT — "… · GPA" — instead of the full company name.)
+        page('Projects', mgmt ? `Project ${x.name}` : x.name, [left, [steps], right], [1, 1.45, 1.15],
             mgmt ? { sub: x.departments.join(', '), projectId: x.id }
-                 : { eyebrow: `Project in progress · ${x.type}${x.company ? ' · ' + x.company : ''}`, sub: [x.pic ? `PIC ${x.pic}` : '', x.departments.length ? `with ${x.departments.join(', ')}` : ''].filter(Boolean).join(' · '), projectId: x.id });
+                 : { eyebrow: `Project in progress · ${x.type}${x.pt && x.pt !== '—' ? ' · ' + x.pt : ''}`, sub: [x.pic ? `PIC ${x.pic}` : '', x.departments.length ? `with ${x.departments.join(', ')}` : ''].filter(Boolean).join(' · '), projectId: x.id });
     });
     // 2.38.0: the management deck closes with the company's thank-you page instead.
     if (mgmt) {
@@ -445,6 +470,24 @@ function buildWeeklyPages(D, aud, notes, media) {
     const first = items[0] ? items[0].charAt(0).toLowerCase() + items[0].slice(1) : '';
     page('Next week', first ? `Next week: ${first.length > 90 ? first.slice(0, 88).replace(/[\s,;:]+\S*$/, '') + '…' : first}${items.length > 1 ? `, and ${items.length - 1} more` : ''}` : 'Next week', [[{ type: 'numbered', items: items.length ? items : ['Keep the Daily Report at 100%'] }]]);
     return P;
+}
+
+// 2.40.0: the job log — every job of the week in plain words, eight to a page (two columns),
+// at most three pages; the rest in the dashboard.
+const WR_LOG_PER_PAGE = 8, WR_LOG_PAGES = 3;
+function _wrJobLog(page, jb, mgmt) {
+    const log = (jb.log || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+    if (!log.length || !window.DailyCore) return;
+    const pages = Math.min(WR_LOG_PAGES, Math.ceil(log.length / WR_LOG_PER_PAGE));
+    for (let i = 0; i < pages; i++) {
+        const part = log.slice(i * WR_LOG_PER_PAGE, (i + 1) * WR_LOG_PER_PAGE).map(j => DailyCore.jobEntry(j, { day: true })), half = Math.ceil(part.length / 2);
+        const left = log.length - (i + 1) * WR_LOG_PER_PAGE;
+        const title = `${mgmt ? 'Job Log' : 'Job log'}${pages > 1 ? ` (${i + 1}/${pages})` : ''}`;
+        page('Jobs & activities', mgmt ? title : `${title}: what the OT team did this week`,
+            part.length > 3 ? [[{ type: 'list', items: part.slice(0, half) }], [{ type: 'list', items: part.slice(half), more: i === pages - 1 && left > 0 ? left : 0 }]]
+                            : [[{ type: 'list', items: part }]], part.length > 3 ? [1, 1] : [1],
+            { sub: `${_wrPlural(log.length, 'job')} · ${log.filter(j => j.done).length} done · ${log.filter(j => !j.done).length} still open${log.filter(j => j.issue).length ? ` · ${log.filter(j => j.issue).length} with a problem` : ''}` });
+    }
 }
 
 // ---- HTML ----
@@ -495,17 +538,20 @@ function _wrBlockHtml(b) {
 // ('hero'), amber for what needs attention ('warn'). A note and a full-page
 // gallery stand without one.
 const _wrBare = b => b.type === 'note' || (b.type === 'gallery' && !b.inCard);
-const _wrGrow = b => b.grow != null ? b.grow : (['steps', 'gallery', 'table', 'list', 'numbered', 'projects', 'rag'].includes(b.type) || (b.type === 'bars' && b.vertical) ? 1 : 0);
+// 2.40.0: a card is as tall as what it holds; only pictures and day-by-day bars stretch to fill.
+const _wrGrow = b => b.grow != null ? b.grow : ((b.type === 'gallery' && !b.inCard) || (b.type === 'bars' && b.vertical) ? 1 : 0);
 function _wrCardHtml(b) {
     if (_wrBare(b)) return `<div class="wr-bare${b.type === 'gallery' ? ' wr-bare--fill' : ''}">${_wrBlockHtml(b)}</div>`;
     return `<div class="wr-card${b.card ? ' wr-card--' + b.card : ''} wr-card--${b.type}" style="flex-grow:${_wrGrow(b)}">${b.title ? `<div class="wr-card__t">${_wrE(b.title)}</div>` : ''}${_wrBlockHtml(b)}</div>`;
 }
 // The body of a content page: columns of stacked cards, or (rows) bands of cards side by side.
 function _wrBodyHtml(p) {
-    if (p.rows) return `<div class="wr-body wr-body--rows">${p.rows.map(r => `<div class="wr-row" style="flex:${r.h}">${r.cards.map((b, k) =>
+    if (p.rows) return `<div class="wr-body wr-body--rows">${p.rows.map(r => `<div class="wr-row" style="flex:0 1 auto">${r.cards.map((b, k) =>
         _wrCardHtml(b).replace('class="wr-card', `style="flex:${r.widths[k] || 1} 1 0" class="wr-card`)).join('')}</div>`).join('')}</div>`;
     return `<div class="wr-body${p.cols.length === 1 && p.cols[0].length > 1 && p.cols[0].every(b => b.type === 'kv') ? ' wr-body--grid' : ''}">${p.cols.map((c, k) => `<div class="wr-col" style="flex:${p.widths[k]}">${c.map(_wrCardHtml).join('')}</div>`).join('')}</div>`;
 }
+// 2.40.0: what had nothing to show, in one thin line under the title.
+const _wrStripHtml = p => p.strip ? `<div class="wr-strip"><i class="wr-dot wr-bg-muted"></i>${_wrE(p.strip)}</div>` : '';
 function weeklyPagesHtml(pages, D, aud) {
     const name = aud === 'mgmt' ? 'Weekly Update' : 'Weekly Operation Report';
     const eyebrow = `${name} · Week ${D.week.no} · ${D.week.label}`;
@@ -515,12 +561,12 @@ function weeklyPagesHtml(pages, D, aud) {
             if (p.kind === 'cover') return `<section class="wr-page wr-msg wr-msg--cover"><img class="wr-msg__ot" src="icons/icon-192.png" alt="">
                 <div class="wr-msg__title"><h1>${_wrE(p.title)}${p.title2 ? `<br>${_wrE(p.title2)}` : ''}</h1><div class="wr-msg__week">${_wrE(p.lines[0] || '')}</div></div></section>`;
             if (p.kind === 'closing') return `<section class="wr-page wr-msg wr-msg--closing"><h1>${_wrE(p.title)}</h1></section>`;
-            return `<section class="wr-page wr-msg wr-msg--content${p.sub ? ' has-sub' : ''}"><header class="wr-msg__head"><h2>${_wrE(p.title)}</h2>${p.sub ? `<div class="wr-msg__sub">${_wrE(p.sub)}</div>` : ''}</header>${_wrBodyHtml(p)}</section>`;
+            return `<section class="wr-page wr-msg wr-msg--content${p.sub ? ' has-sub' : ''}${p.strip ? ' has-strip' : ''}"><header class="wr-msg__head"><h2>${_wrE(p.title)}</h2>${p.sub ? `<div class="wr-msg__sub">${_wrE(p.sub)}</div>` : ''}</header>${_wrStripHtml(p)}${_wrBodyHtml(p)}</section>`;
         }
         return p.kind === 'cover'
         ? `<section class="wr-page wr-cover"><img class="wr-cover__logo" src="icons/icon-192.png" alt="">
             <div class="wr-cover__main"><div><div class="wr-cover__eyebrow">${_wrE(p.lines[0] || '')}</div><h1>${_wrE(p.title)}${p.title2 ? `<br>${_wrE(p.title2)}` : ''}</h1>${p.lines.slice(1).map(l => `<p>${_wrE(l)}</p>`).join('')}</div></div></section>`
-        : `<section class="wr-page"><header class="wr-head"><div class="wr-head__text">${p.eyebrow === '' ? '' : `<div class="wr-eyebrow">${_wrE(p.eyebrow || eyebrow)}</div>`}<h2>${_wrE(p.title)}</h2>${p.sub ? `<div class="wr-head__sub">${_wrE(p.sub)}</div>` : ''}</div><img src="icons/icon-192.png" alt=""></header>
+        : `<section class="wr-page${p.strip ? ' has-strip' : ''}">${_wrStripHtml(p)}<header class="wr-head"><div class="wr-head__text">${p.eyebrow === '' ? '' : `<div class="wr-eyebrow">${_wrE(p.eyebrow || eyebrow)}</div>`}<h2>${_wrE(p.title)}</h2>${p.sub ? `<div class="wr-head__sub">${_wrE(p.sub)}</div>` : ''}</div><img src="icons/icon-192.png" alt=""></header>
             ${_wrBodyHtml(p)}
             <footer class="wr-foot"><span>${_wrE(name)} · W${D.week.no}</span><span>${_wrE(p.section)} · ${i}</span></footer></section>`;
     }).join('');
@@ -552,7 +598,7 @@ function renderWeeklyReportView() {
     Object.values(media.projects).forEach(list => wrLoadMedia(list.filter(r => !_wrHidden.has(r.key)).slice(0, 6)));
     // Load what a gallery can show, plus a few spares for pictures taken out or failed.
     [media.daily, media.tickets, media.work].forEach(list => wrLoadMedia(list.filter(r => !_wrHidden.has(r.key)).slice(0, WR_GALLERY_MAX + 3)));
-    _wrPages = buildWeeklyPages(D, _wrAud, _wrNotes, media);
+    _wrPages = buildWeeklyPages(D, _wrAud, _wrNotes, media).map(p => window.DailyCore ? DailyCore.fitPage(p) : p);   // 2.40.0: empty cards → strip
     const hid = document.getElementById('wrHiddenBtn');
     if (hid) { hid.hidden = !_wrHidden.size; hid.textContent = `Show ${_wrHidden.size} left-out picture${_wrHidden.size === 1 ? '' : 's'} again`; }
     ['daily', 'tickets', 'work'].forEach(k => { const el = document.getElementById('wrShow_' + k); if (el) el.checked = _wrShow[k]; });
@@ -677,15 +723,20 @@ function _wrTableLayout(b, wdt) {
     return { colW, heights, total: heights.reduce((a, x) => a + x, 0), fs };
 }
 // Rough height of what a card holds on a slide (inches), to stack cards in a column.
+// 2.40.0: the heights the PowerPoint draws with — the same numbers lay the cards out.
+const _wrLines = (s, size, w, max) => Math.min(max, Math.max(1, Math.ceil(String(s || '').length * size * 0.0072 / Math.max(0.3, w))));
+function _wrListItemH(it, w, tagW) { return (it.head ? 0.19 : 0) + 0.17 * _wrLines(it.text, 9.5, w - 0.18 - tagW, 3) + 0.03 + (it.sub ? 0.15 * _wrLines(it.sub, 8, w - 0.18, 2) : 0) + (it.note ? 0.17 : 0); }
+function _wrBarRowH(it, w) { return _wrLines(it[0], 9.5, Math.min(1.7, w * 0.42) - 0.05, 2) > 1 ? 0.4 : 0.3; }
+function _wrStepH(m, w) { const lw = w - 0.24 - (m.goods ? 0.5 : 0) - (m.weight != null ? 0.4 : 0) - 0.05; return _wrLines(m.label, 9.5, lw, 2) > 1 ? 0.4 : 0.28; }
 function _wrBlockH(b, wdt) {
     switch (b.type) {
     case 'hero': return 1.05 + (b.sub ? 0.24 : 0) + (b.foot ? 0.3 : 0);
     case 'progress': return 1.8;
-    case 'steps': return b.items.length ? b.items.length * 0.27 + (b.more ? 0.22 : 0) : 0.3;
-    case 'stats': { const per = b.per || (b.small ? 2 : 3), rows = Math.ceil(Math.max(1, b.items.length) / per); return rows * (b.small ? 0.6 : 0.72) + (b.items.some(i => i.delta) ? 0.12 : 0); }
+    case 'steps': return b.items.length ? b.items.reduce((a, m) => a + _wrStepH(m, wdt || 3), 0) + (b.more ? 0.22 : 0) : 0.3;
+    case 'stats': { const per = b.per || (b.small ? 2 : 3), rows = Math.ceil(Math.max(1, b.items.length) / per); return rows * (b.small ? 0.6 : 0.64) + (b.items.some(i => i.delta) ? 0.1 : 0); }
     case 'table': return b.rows.length ? _wrTableLayout(b, wdt || 4).total + (b.more ? 0.22 : 0) : 0.3;
-    case 'bars': return b.vertical ? 1.15 : Math.max(1, b.items.length) * 0.27;
-    case 'list': return b.items.length ? b.items.reduce((n, i) => n + (String(i.text).length * 0.064 > (wdt || 3) - 0.2 ? 0.36 : 0.2) + (i.sub ? 0.16 : 0) + (i.head ? 0.19 : 0) + (i.note ? 0.17 : 0) + 0.07, 0) : 0.3;
+    case 'bars': return b.vertical ? 1.15 : b.items.length ? b.items.reduce((a, it) => a + _wrBarRowH(it, wdt || 3), 0) : 0.3;
+    case 'list': { if (!b.items.length) return 0.3; const tagW = b.items.some(it => it.tag) ? 0.78 : 0; return b.items.reduce((n, it) => n + _wrListItemH(it, wdt || 3, tagW) + 0.09, 0) + (b.more ? 0.2 : 0); }
     case 'rag': return b.items.length * 0.42;
     case 'kv': return b.items.length * 0.27;
     case 'panel': return b.items.length * 0.27;
@@ -749,12 +800,18 @@ async function downloadWeeklyPptx() {
     // ---- layout: every card of every page gets its box (galleries their picture boxes) ----
     const layout = pg => {
         const isMsg = pg.theme === 'msg';
-        const y0 = isMsg ? (pg.sub ? 1.12 : 0.92) : (pg.sub ? 1.42 : 1.32), avail = (isMsg ? 5.4 : 5.22) - y0, cards = [];
+        const y0 = (isMsg ? (pg.sub ? 1.12 : 0.92) : (pg.sub ? 1.42 : 1.32)) + (pg.strip ? 0.3 : 0), avail = (isMsg ? 5.4 : 5.22) - y0, cards = [];
+        // (+0.04: a little air, so the last row of a table is never dropped for a rounding difference)
+        const natOf = (b, cw) => _wrBare(b) ? _wrBlockH(b, cw) : PAD * 2 + (b.title ? 0.26 : 0) + _wrBlockH(b, cw - PAD * 2) + 0.04;
         if (pg.rows) {
+            // 2.40.0: each band as tall as its tallest card; squeezed by its weight only when they do not fit.
             const hsum = pg.rows.reduce((a, r) => a + r.h, 0), room = avail - GAP * (pg.rows.length - 1);
+            const nat = pg.rows.map(r => { const wsum = r.widths.reduce((a, x) => a + x, 0), space = W0 - GAP * (r.cards.length - 1);
+                return Math.max(...r.cards.map((b, k) => natOf(b, space * (r.widths[k] || 1) / wsum))); });
+            const fits = nat.reduce((a, x) => a + x, 0) <= room;
             let cy = y0;
-            pg.rows.forEach(r => {
-                const rh = room * r.h / hsum, wsum = r.widths.reduce((a, x) => a + x, 0), space = W0 - GAP * (r.cards.length - 1);
+            pg.rows.forEach((r, ri) => {
+                const rh = fits ? nat[ri] : room * r.h / hsum, wsum = r.widths.reduce((a, x) => a + x, 0), space = W0 - GAP * (r.cards.length - 1);
                 let cx = X0;
                 r.cards.forEach((b, k) => { const cw = space * (r.widths[k] || 1) / wsum; cards.push({ b, x: cx, y: cy, w: cw, h: rh }); cx += cw + GAP; });
                 cy += rh + GAP;
@@ -770,11 +827,15 @@ async function downloadWeeklyPptx() {
         let cx = X0;
         pg.cols.forEach((col, k) => {
             const cw = space * pg.widths[k] / total;
-            const nat = col.map(b => _wrBare(b) ? _wrBlockH(b, cw) : PAD * 2 + (b.title ? 0.26 : 0) + _wrBlockH(b, cw - PAD * 2));
-            const room = avail - GAP * (col.length - 1), sum = nat.reduce((a, x) => a + x, 0);
+            const nat = col.map(b => natOf(b, cw));
+            const room = avail - GAP * (col.length - 1); let sum = nat.reduce((a, x) => a + x, 0);
             const grow = col.map(_wrGrow), gsum = grow.reduce((a, x) => a + x, 0);
             // Too tall: the cards that can give (tables, lists) shrink; a hero card keeps its size.
-            const keep = col.map(b => b.type === 'hero' || b.type === 'progress');
+            // 2.40.0: too tall — the number cards (stats) give up their spare air first, so a table keeps its rows.
+            if (sum > room) { let over = sum - room;
+                col.forEach((b, i) => { if (over > 0 && b.type === 'stats') { const per = b.per || (b.small ? 2 : 3), min = PAD * 2 + (b.title ? 0.26 : 0) + Math.ceil(Math.max(1, b.items.length) / per) * 0.5, give = Math.max(0, Math.min(over, nat[i] - min)); nat[i] -= give; over -= give; } });
+                sum = nat.reduce((a, x) => a + x, 0); }
+            const keep = col.map(b => b.type === 'hero' || b.type === 'progress' || b.type === 'stats');
             const keptH = nat.reduce((a, h, i) => a + (keep[i] ? h : 0), 0), flexH = sum - keptH;
             const hs = nat.map((h, i) => sum > room ? (keep[i] || !flexH ? h : h * Math.max(0.2, room - keptH) / flexH) : h + (gsum ? (room - sum) * grow[i] / gsum : 0));
             let cy = y0;
@@ -828,17 +889,20 @@ async function downloadWeeklyPptx() {
             break; }
         case 'steps':
             if (!b.items.length) { tx(s, b.empty || '—', { x, y, w, h: 0.3, fontSize: 10, color: soft }); break; }
-            { const rh = Math.min(0.3, (h - (b.more ? 0.22 : 0)) / b.items.length);
-            b.items.forEach((m, i) => { const cy = y + i * rh;
+            { // 2.40.0: a long name takes two lines instead of being cut.
+            const hs = b.items.map(m => _wrStepH(m, w)), sum = hs.reduce((a, v) => a + v, 0), k = Math.min(1, (h - (b.more ? 0.22 : 0)) / sum);
+            let cy = y;
+            b.items.forEach((m, i) => { const rh = hs[i] * k;
                 if (i) s.addShape(pres.ShapeType.line, { x, y: cy, w, h: 0, line: { color: sep, width: 0.5 } });
                 rect(s, x, cy + rh / 2 - 0.075, 0.15, 0.15, m.done ? C.green : C.tint, null, 0.035);
                 if (m.done) tx(s, '✓', { x, y: cy + rh / 2 - 0.075, w: 0.15, h: 0.15, fontSize: 7.5, bold: true, color: 'FFFFFF', align: 'center', valign: 'middle' });
                 const gw = m.goods ? 0.5 : 0, ww = m.weight != null ? 0.4 : 0;
-                const lw = w - 0.24 - gw - ww - 0.05, maxc = Math.max(8, Math.floor(lw / 0.066));
-                tx(s, m.label.length > maxc ? m.label.slice(0, maxc - 1) + '…' : m.label, { x: x + 0.24, y: cy, w: lw, h: rh, fontSize: 9.5, color: m.done ? C.slate : C.ink, valign: 'middle' });
+                const lw = w - 0.24 - gw - ww - 0.05;
+                tx(s, m.label, { x: x + 0.24, y: cy, w: lw, h: rh, fontSize: 9.5, color: m.done ? C.slate : C.ink, valign: 'middle', fit: 'shrink' });
                 if (m.weight != null) tx(s, `${m.weight}%`, { x: x + w - gw - ww, y: cy, w: ww, h: rh, fontSize: 8.5, color: C.slate, align: 'right', valign: 'middle' });
-                if (m.goods) { const ok = m.goods.split('/')[0] === m.goods.split('/')[1]; tx(s, `▣ ${m.goods}`, { x: x + w - gw, y: cy, w: gw, h: rh, fontSize: 8.5, bold: true, color: ok ? C.good : C.rust, align: 'right', valign: 'middle' }); } });
-            if (b.more) tx(s, `+ ${b.more} more in the dashboard`, { x, y: y + b.items.length * rh + 0.03, w, h: 0.2, fontSize: 8.5, color: C.slate }); }
+                if (m.goods) { const ok = m.goods.split('/')[0] === m.goods.split('/')[1]; tx(s, `▣ ${m.goods}`, { x: x + w - gw, y: cy, w: gw, h: rh, fontSize: 8.5, bold: true, color: ok ? C.good : C.rust, align: 'right', valign: 'middle' }); }
+                cy += rh; });
+            if (b.more) tx(s, `+ ${b.more} more in the dashboard`, { x, y: cy + 0.03, w, h: 0.2, fontSize: 8.5, color: C.slate }); }
             break;
         case 'stats': { const per = b.per || (b.small ? 2 : 3), cw = w / per, rows = Math.ceil(Math.max(1, b.items.length) / per), rh = Math.min(b.small ? 0.7 : 0.95, h / rows);
             b.items.forEach((st, i) => { const cx = x + (i % per) * cw, cy = y + Math.floor(i / per) * rh;
@@ -868,8 +932,10 @@ async function downloadWeeklyPptx() {
                     tx(s, _wrH(it[1]), { x: bx - 0.05, y: y + 0.2 + ch - bh - 0.19, w: bw + 0.1, h: 0.18, fontSize: 8, align: 'center', valign: 'bottom' });
                     tx(s, it[0], { x: bx - 0.05, y: y + 0.24 + ch, w: bw + 0.1, h: 0.18, fontSize: 8, color: C.slate, align: 'center' }); });
                 break; }
-            const lw = Math.min(1.7, w * 0.42), vw = 0.52, tw = w - lw - vw - 0.1, rh = Math.min(0.3, h / b.items.length);
-            b.items.forEach((it, i) => { const cy = y + i * rh, v = it[1];
+            // 2.40.0: a long label takes two lines (its row grows) instead of running into the bar.
+            const lw = Math.min(1.7, w * 0.42), vw = 0.52, tw = w - lw - vw - 0.1, bh = b.items.map(it => _wrBarRowH(it, w)), bk = Math.min(1, h / bh.reduce((a, v) => a + v, 0));
+            let by = y;
+            b.items.forEach((it, i) => { const rh = bh[i] * bk, cy = by, v = it[1]; by += rh;
                 tx(s, it[0], { x, y: cy, w: lw, h: rh, fontSize: 9.5, valign: 'middle', fit: 'shrink' });
                 rect(s, x + lw, cy + rh / 2 - 0.04, tw, 0.08, C.tint, null, 0.04);
                 const col = b.target && v != null ? (v >= b.target ? C.green : v >= b.target - 5 ? 'F79009' : C.rust) : C.green;
@@ -977,6 +1043,7 @@ async function downloadWeeklyPptx() {
             if (p.lines.length > 1) tx(s, p.lines.slice(1).join('\n'), { x: 0.6, y: 3.95, w: 7.5, h: 0.6, fontSize: 12, color: 'D5EFEA' });
             return;
         }
+        if (p.strip) tx(s, `○  ${p.strip}`, { x: X0, y: p.theme === 'msg' ? (p.sub ? 1.12 : 0.92) : (p.sub ? 1.42 : 1.32), w: W0, h: 0.22, fontSize: 9, italic: true, color: C.slate, fit: 'shrink' });
         if (p.theme === 'msg') {
             s.background = bgContent ? { data: bgContent } : { color: 'FFFFFF' };
             tx(s, p.title, { x: 0.39, y: 0.12, w: 8.55, h: 0.58, fontSize: 24, bold: true, color: MSG_GREEN, valign: 'middle', fit: 'shrink' });
