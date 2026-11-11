@@ -534,7 +534,7 @@ function renderWeeklyReportView() {
     [['wrWeekBox', daily], ['wrDayBox', !daily], ['wrNotesBox', daily], ['wrMediaBox', daily], ['wrDailyHint', !daily]].forEach(([id, hide]) => { const el = document.getElementById(id); if (el) el.hidden = hide; });
     document.querySelectorAll('.wr-aud').forEach(b => b.classList.toggle('active', b.dataset.aud === _wrAud));
     const sub = document.getElementById('wrSub');
-    if (sub) sub.textContent = daily ? 'One day for the manager — the Daily Report, issues, field photos, jobs and projects' : 'Saturday to Friday, from the Daily Report, tickets, jobs, units and projects';
+    if (sub) sub.textContent = daily ? 'One day for the manager — the Daily Report, issues, field photos, jobs and projects' : 'Weekly (Saturday to Friday) and daily reports, from the Daily Report, tickets, jobs, units and projects';
     if (daily) return renderDailyReportView();
     const choices = wrWeekChoices(12);
     // The last full week; on Friday (the week's last day) this week.

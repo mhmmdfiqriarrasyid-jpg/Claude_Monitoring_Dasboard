@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.39.0';
+const APP_VERSION = 'v2.39.1';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -14970,7 +14970,7 @@ const ACCESS_AREAS = [
     { key: 'leader',       label: 'Decision Inbox', levels: ['none', 'view'] },
     // 2.31.0: the weekly report (team and manager versions). It shows only
     // what the account can already read in the other areas.
-    { key: 'weeklyReport', label: 'Weekly Report', levels: ['none', 'view'] },
+    { key: 'weeklyReport', label: 'Reports', levels: ['none', 'view'] },
     { key: 'history',      label: 'History',        levels: ['none', 'view'] }
 ];
 

@@ -226,7 +226,7 @@ ${table(['Ticket', 'Priority', 'Status', 'PIC'], tk.opened.concat(tk.resolved.fi
 ${h('3. Field photos')}<p style="margin:0 0 6px;color:#475467;font-size:13px">${opts.photos ? `${plural(opts.photos, 'photo')} in the attached PowerPoint / PDF.` : 'No photo this day.'}</p>
 ${h('4. OT jobs & project progress')}${table(['Category', 'What was done', 'Units', 'Status'], D.jobs.map(j => [j.category, j.what + (j.ticket ? ` · ${j.ticket}` : ''), j.units || '-', j.status]), 'No job logged this day')}
 ${table(['Project', 'Update', 'Progress'], D.updates.map(u => [u.project, u.text + (u.blocker ? ` (Blocker: ${u.blocker})` : ''), u.progress || `${u.pct}%`]), 'No project update this day')}
-<p style="margin-top:18px;font-size:12px;color:#667085">Sent by the <a href="https://ot.techorchestrator.cloud">Operation Technology Dashboard</a> · Weekly Report → Daily for the full deck.</p></div>`;
+<p style="margin-top:18px;font-size:12px;color:#667085">Sent by the <a href="https://ot.techorchestrator.cloud">Operation Technology Dashboard</a> · Reports → Daily Report for the full deck.</p></div>`;
         const text = [`Daily Report — Division Operation Technology`, D.day.label, '',
             `${t.filed} of ${t.expected} expected reports filed · ${h1(t.hours)} work hours · ${t.paddocks} paddocks · ${t.units} units`,
             t.missed.length ? `Missed: ${t.missed.join(', ')}` : 'Nobody missed a report',
