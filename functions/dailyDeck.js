@@ -11,7 +11,7 @@ const path = require('path');
 const COL = { ink: '101828', green: '0F766E', sage: 'B9D8D3', rust: 'B42318', slate: '667085', hair: 'E4E7EC', tint: 'EEF2F1', amber: 'B54708',
     card: 'FFFFFF', good: '067647', warnBg: 'FFF7ED', warnLine: 'FED7AA', msg: '385723', sep: 'EEF0F2' };
 const TONE = { good: COL.good, warn: COL.amber, bad: COL.rust, muted: COL.slate };
-const X0 = 0.4, W0 = 9.2, GAP = 0.14, PAD = 0.16, BOTTOM = 5.4;
+const X0 = 0.4, W0p = 9.2, W0 = W0p, GAP = 0.14, PAD = 0.16, BOTTOM = 5.4;
 
 // Text is cut to its box here (neither writer measures text the same way).
 const CHAR = 0.0074;    // inches per point of font size, an average letter
@@ -41,7 +41,7 @@ const str = v => String(v == null ? '' : v);
 // 2.40.0: the height a card needs for what it holds (estimates that match the drawing below).
 const lines = (t, size, w, max) => Math.min(max, Math.max(1, Math.ceil(str(t).length * size * CHAR / Math.max(0.3, w))));
 const barRowH = (it, w) => lines(it[0], 9.5, Math.min(1.7, w * 0.42) - 0.05, 2) > 1 ? 0.4 : 0.3;
-const listItemH = (it, w, tagW) => (it.head ? 0.19 : 0) + 0.165 * lines(it.text, 9.5, w - 0.18 - tagW, 3) + 0.03 + (it.sub ? 0.15 * lines(it.sub, 8, w - 0.18, 2) : 0) + (it.note ? 0.17 : 0);
+const listItemH = (it, w, tagW) => (it.head ? 0.19 : 0) + 0.165 * lines(it.text, 9.5, w - 0.18 - tagW, 6) + 0.03 + (it.sub ? 0.15 * lines(it.sub, 8, w - 0.18, 2) : 0) + (it.note ? 0.17 : 0);
 function blockH(b, w) {
     switch (b.type) {
     case 'stats': return Math.ceil(Math.max(1, b.items.length) / (b.per || 3)) * 0.62;
@@ -55,13 +55,17 @@ function blockH(b, w) {
 }
 const cardH = (b, w) => b.type === 'gallery' ? 99 : PAD * 2 + (b.title ? 0.26 : 0) + blockH(b, w - PAD * 2) + 0.04;
 // The box of every card: as tall as what it holds; squeezed (by the page's weights) only when it does not fit.
-function layout(pg) {
-    const y0 = (pg.sub ? 1.12 : 0.92) + (pg.strip ? 0.3 : 0), avail = BOTTOM - y0, cards = [];
+// 2.40.1: z — laid out on a page z times smaller, drawn z times larger (see pageOps).
+function layout(pg, z) {
+    z = z || 1;
+    const W0 = W0p / z, y0 = (pg.sub ? 1.12 : 0.92) + (pg.strip ? 0.3 : 0), avail = (BOTTOM - y0) / z, cards = [];
+    cards.y0 = y0; cards.fits = true;
     if (pg.rows) {
         const hsum = pg.rows.reduce((a, r) => a + r.h, 0), room = avail - GAP * (pg.rows.length - 1);
         const geo = pg.rows.map(r => { const wsum = r.widths.reduce((a, x) => a + x, 0), space = W0 - GAP * (r.cards.length - 1); return r.cards.map((b, k) => space * (r.widths[k] || 1) / wsum); });
         const nat = pg.rows.map((r, i) => Math.max(...r.cards.map((b, k) => cardH(b, geo[i][k]))));
         const fits = nat.reduce((a, x) => a + x, 0) <= room;
+        cards.fits = fits;
         let cy = y0;
         pg.rows.forEach((r, i) => {
             const rh = fits ? nat[i] : room * r.h / hsum;
@@ -76,6 +80,7 @@ function layout(pg) {
     pg.cols.forEach((col, k) => {
         const cw = space * pg.widths[k] / total, room = avail - GAP * (col.length - 1);
         const nat = col.map(b => Math.min(room, cardH(b, cw))), sum = nat.reduce((a, x) => a + x, 0);
+        if (col.reduce((a, b) => a + cardH(b, cw), 0) > room) cards.fits = false;
         const hs = sum <= room ? nat : nat.map(x => x * room / sum);
         let cy = y0;
         col.forEach((b, i) => { cards.push({ b, x: cx, y: cy, w: cw, h: hs[i] }); cy += hs[i] + GAP; });
@@ -131,7 +136,7 @@ function drawBlock(ops, b, x, y, w, h, warn) {
         let cy = y, shown = 0;
         const tagW = b.items.some(it => it.tag) ? 0.78 : 0;
         for (const it of b.items) {
-            const tw = w - 0.18 - tagW, lines = Math.min(3, Math.max(1, Math.ceil(str(it.text).length * 9.5 * CHAR / tw)));
+            const tw = w - 0.18 - tagW, lines = Math.min(6, Math.max(1, Math.ceil(str(it.text).length * 9.5 * CHAR / tw)));
             const hh = it.head ? 0.19 : 0, th = 0.165 * lines + 0.03, subL = it.sub ? Math.min(2, Math.ceil(str(it.sub).length * 8 * CHAR / (w - 0.18))) : 0, subH = subL * 0.15, nh = it.note ? 0.17 : 0;
             const need = hh + th + subH + nh;
             if (shown && cy + need > y + h - (b.more ? 0.2 : 0)) break;
@@ -201,7 +206,11 @@ function pageOps(pg) {
     T(fitLine(pg.title, 8.55, 24), { x: 0.39, y: 0.12, w: 8.55, h: 0.58, size: 24, bold: true, color: COL.msg, valign: 'middle' });
     if (pg.sub) T(fitLine(pg.sub, 9.1, 10.5), { x: 0.39, y: 0.82, w: 9.1, h: 0.22, size: 10.5, color: COL.slate });
     if (pg.strip) T(fitLine('o  ' + pg.strip, W0, 9), { x: X0, y: pg.sub ? 1.12 : 0.92, w: W0, h: 0.22, size: 9, color: COL.slate });
-    layout(pg).forEach(c => {
+    // The largest zoom (up to 1.6) at which everything still fits; the cards' shapes are drawn that much larger.
+    let z = 1;
+    for (let k = 1.6; k > 1; k -= 0.05) { if (layout(pg, k).fits) { z = k; break; } }
+    const L = layout(pg, z), from = ops.length;
+    L.forEach(c => {
         const b = c.b;
         if (b.type === 'gallery') return drawBlock(ops, b, c.x, c.y, c.w, c.h, false);
         const warn = b.card === 'warn';
@@ -210,6 +219,9 @@ function pageOps(pg) {
         if (b.title) { T(fitLine(str(b.title).toUpperCase(), c.w - PAD * 2, 7.5), { x: c.x + PAD, y: iy, w: c.w - PAD * 2, h: 0.2, size: 7.5, bold: true, color: warn ? COL.amber : '475467' }); iy += 0.26; }
         drawBlock(ops, b, c.x + PAD, iy, c.w - PAD * 2, Math.max(0.2, c.y + c.h - PAD - iy), warn);
     });
+    if (z !== 1) for (let i = from; i < ops.length; i++) { const o = ops[i];
+        o.x = X0 + (o.x - X0) * z; o.y = L.y0 + (o.y - L.y0) * z; o.w *= z; o.h *= z;
+        if (o.size) o.size *= z; if (o.r) o.r *= z; }
     return ops;
 }
 

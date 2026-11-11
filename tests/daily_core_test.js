@@ -69,6 +69,9 @@ const data = {
     t('laporan Office bertingkat: satu baris rapi, tidak terpotong (2.39.3)', C.buildDaily({ date: day, members: [{ id: 'a', name: 'Yuda' }], workLogs: [{ id: 'w', date: day, memberId: 'a', place: 'office', start: '07:00', end: '13:00',
         task: 'Lokasi: Tower KM 8\nPekerjaan dan Unit :\n- Setting radio repeater dan antena\n- Cek kabel coax' }] }).team.members[0].work,
         'Office · Lokasi: Tower KM 8 · Pekerjaan dan Unit: Setting radio repeater dan antena · Cek kabel coax');
+    const { pageOps } = require(F('dailyDeck.js'));
+    const sizes = pageOps(noJobs).filter(o => o.t === 'text' && o.y > 1.2).map(o => o.size);
+    t('halaman yang isinya sedikit diperbesar sampai memenuhi slide (2.40.1)', Math.max(...sizes) > 12, true);
     t('teks dipotong ke kotaknya', fitLine('Pasang Camera AI di seluruh unit traktor GPA', 1, 10), 'Pasang Camer…');
 
     const pptx = await renderPptx(P), pdf = await renderPdf(P);

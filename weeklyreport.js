@@ -550,6 +550,29 @@ function _wrBodyHtml(p) {
         _wrCardHtml(b).replace('class="wr-card', `style="flex:${r.widths[k] || 1} 1 0" class="wr-card`)).join('')}</div>`).join('')}</div>`;
     return `<div class="wr-body${p.cols.length === 1 && p.cols[0].length > 1 && p.cols[0].every(b => b.type === 'kv') ? ' wr-body--grid' : ''}">${p.cols.map((c, k) => `<div class="wr-col" style="flex:${p.widths[k]}">${c.map(_wrCardHtml).join('')}</div>`).join('')}</div>`;
 }
+// 2.40.1: each page's body zoomed (up to 1.6×) until it fills the sheet — measured on the
+// page itself, the same rule the PowerPoint uses. Pictures and day-by-day bars already fill.
+function _wrFitPages(root) {
+    (root || document).querySelectorAll('.wr-page').forEach(pg => {
+        const body = pg.querySelector('.wr-body');
+        if (!body) return;
+        body.style.cssText = '';
+        if (body.classList.contains('wr-body--grid') || body.querySelector('.wr-bare--fill, .wr-vbars')) return;
+        const unit = pg.clientWidth / 100;
+        if (!unit || !body.clientHeight) return;
+        const W = body.clientWidth / unit, H = body.clientHeight / unit;
+        const gapOf = el => parseFloat(getComputedStyle(el).rowGap) || 0;
+        const need = () => body.classList.contains('wr-body--rows')
+            ? [...body.children].reduce((a, r) => a + Math.max(0, ...[...r.children].map(c => c.scrollHeight)), 0) + gapOf(body) * Math.max(0, body.children.length - 1)
+            : Math.max(0, ...[...body.children].map(col => [...col.children].reduce((a, c) => a + c.scrollHeight, 0) + gapOf(col) * Math.max(0, col.children.length - 1)));
+        if (need() > body.clientHeight + 1) return;
+        for (let z = 1.6; z > 1.001; z -= 0.05) {
+            body.style.cssText = `right:auto;bottom:auto;width:${(W / z).toFixed(3)}cqw;height:${(H / z).toFixed(3)}cqw;transform:scale(${z.toFixed(2)});transform-origin:0 0`;
+            if (need() <= body.clientHeight + 1) return;
+        }
+        body.style.cssText = '';
+    });
+}
 // 2.40.0: what had nothing to show, in one thin line under the title.
 const _wrStripHtml = p => p.strip ? `<div class="wr-strip"><i class="wr-dot wr-bg-muted"></i>${_wrE(p.strip)}</div>` : '';
 function weeklyPagesHtml(pages, D, aud) {
@@ -604,6 +627,7 @@ function renderWeeklyReportView() {
     ['daily', 'tickets', 'work'].forEach(k => { const el = document.getElementById('wrShow_' + k); if (el) el.checked = _wrShow[k]; });
     window._wrLast = D;
     document.getElementById('wrPages').innerHTML = weeklyPagesHtml(_wrPages, D, _wrAud);
+    _wrFitPages(document.getElementById('wrPages'));
     const c = document.getElementById('wrCount');
     if (c) c.textContent = `${_wrPages.length} pages`;
 }
@@ -670,6 +694,7 @@ function renderDailyReportView() {
     _wrPages = DailyCore.dailyPages(D, { gallery: _wrGallery(refs) });
     window._wrLast = D;
     document.getElementById('wrPages').innerHTML = weeklyPagesHtml(_wrPages, D, 'mgmt');
+    _wrFitPages(document.getElementById('wrPages'));
     const c = document.getElementById('wrCount');
     if (c) c.textContent = `${_wrPages.length} pages`;
 }
@@ -711,7 +736,8 @@ function _wrTableLayout(b, wdt) {
     // Short columns (a number, a chip, a name) get exactly the room their text
     // needs, so they never wrap; the long ones share what is left.
     const narrow = wdt < 3.2;
-    const fixed = len.map(l => l <= 18 ? Math.max(narrow ? 0.42 : 0.55, l * cw * (narrow ? 1.15 : 1.5) + (narrow ? 0.12 : 0.2)) : 0);
+    // (2.40.1: with a little more room, so "Medium" or "DAYS" never breaks in two)
+    const fixed = len.map(l => l <= 18 ? Math.max(0.5, l * cw * (narrow ? 1.35 : 1.5) + (narrow ? 0.16 : 0.2)) : 0);
     let rest = wdt - fixed.reduce((a, x) => a + x, 0);
     const longSum = len.reduce((a, l, i) => a + (fixed[i] ? 0 : Math.min(60, l)), 0);
     let colW;
@@ -725,7 +751,7 @@ function _wrTableLayout(b, wdt) {
 // Rough height of what a card holds on a slide (inches), to stack cards in a column.
 // 2.40.0: the heights the PowerPoint draws with — the same numbers lay the cards out.
 const _wrLines = (s, size, w, max) => Math.min(max, Math.max(1, Math.ceil(String(s || '').length * size * 0.0072 / Math.max(0.3, w))));
-function _wrListItemH(it, w, tagW) { return (it.head ? 0.19 : 0) + 0.17 * _wrLines(it.text, 9.5, w - 0.18 - tagW, 3) + 0.03 + (it.sub ? 0.15 * _wrLines(it.sub, 8, w - 0.18, 2) : 0) + (it.note ? 0.17 : 0); }
+function _wrListItemH(it, w, tagW) { return (it.head ? 0.19 : 0) + 0.17 * _wrLines(it.text, 9.5, w - 0.18 - tagW, 6) + 0.03 + (it.sub ? 0.15 * _wrLines(it.sub, 8, w - 0.18, 2) : 0) + (it.note ? 0.17 : 0); }
 function _wrBarRowH(it, w) { return _wrLines(it[0], 9.5, Math.min(1.7, w * 0.42) - 0.05, 2) > 1 ? 0.4 : 0.3; }
 function _wrStepH(m, w) { const lw = w - 0.24 - (m.goods ? 0.5 : 0) - (m.weight != null ? 0.4 : 0) - 0.05; return _wrLines(m.label, 9.5, lw, 2) > 1 ? 0.4 : 0.28; }
 function _wrBlockH(b, wdt) {
@@ -796,11 +822,15 @@ async function downloadWeeklyPptx() {
     const face = 'Calibri';
     const tx = (s, t, o) => s.addText(t, Object.assign({ margin: 0, fontFace: face, color: C.ink, valign: 'top' }, o));
     const tone = k => WR_TONE[k] || C.ink;
-    const X0 = 0.4, W0 = 9.2, GAP = 0.14, PAD = 0.16;
+    const X0 = 0.4, W0p = 9.2, GAP = 0.14, PAD = 0.16;
     // ---- layout: every card of every page gets its box (galleries their picture boxes) ----
-    const layout = pg => {
+    // 2.40.1: z — the page's zoom. The cards are laid out on a page z times smaller and then drawn
+    // z times larger (letters, rows, gaps), so a page with little on it is filled, not left half empty.
+    const layout = (pg, z) => {
+        z = z || 1;
         const isMsg = pg.theme === 'msg';
-        const y0 = (isMsg ? (pg.sub ? 1.12 : 0.92) : (pg.sub ? 1.42 : 1.32)) + (pg.strip ? 0.3 : 0), avail = (isMsg ? 5.4 : 5.22) - y0, cards = [];
+        const W0 = W0p / z, y0 = (isMsg ? (pg.sub ? 1.12 : 0.92) : (pg.sub ? 1.42 : 1.32)) + (pg.strip ? 0.3 : 0), avail = ((isMsg ? 5.4 : 5.22) - y0) / z, cards = [];
+        cards.y0 = y0; cards.fits = true;
         // (+0.04: a little air, so the last row of a table is never dropped for a rounding difference)
         const natOf = (b, cw) => _wrBare(b) ? _wrBlockH(b, cw) : PAD * 2 + (b.title ? 0.26 : 0) + _wrBlockH(b, cw - PAD * 2) + 0.04;
         if (pg.rows) {
@@ -809,6 +839,7 @@ async function downloadWeeklyPptx() {
             const nat = pg.rows.map(r => { const wsum = r.widths.reduce((a, x) => a + x, 0), space = W0 - GAP * (r.cards.length - 1);
                 return Math.max(...r.cards.map((b, k) => natOf(b, space * (r.widths[k] || 1) / wsum))); });
             const fits = nat.reduce((a, x) => a + x, 0) <= room;
+            cards.fits = fits;
             let cy = y0;
             pg.rows.forEach((r, ri) => {
                 const rh = fits ? nat[ri] : room * r.h / hsum, wsum = r.widths.reduce((a, x) => a + x, 0), space = W0 - GAP * (r.cards.length - 1);
@@ -821,6 +852,7 @@ async function downloadWeeklyPptx() {
         if (pg.cols.length === 1 && pg.cols[0].length > 1 && pg.cols[0].every(b => b.type === 'kv')) {
             const per = 3, list = pg.cols[0], rows = Math.ceil(list.length / per), cw = (W0 - GAP * (per - 1)) / per, ch = (avail - GAP * (rows - 1)) / rows;
             list.forEach((b, j) => cards.push({ b, x: X0 + (j % per) * (cw + GAP), y: y0 + Math.floor(j / per) * (ch + GAP), w: cw, h: ch }));
+            cards.grid = true;
             return cards;
         }
         const total = pg.widths.reduce((a, x) => a + x, 0), space = W0 - GAP * (pg.cols.length - 1);
@@ -829,6 +861,7 @@ async function downloadWeeklyPptx() {
             const cw = space * pg.widths[k] / total;
             const nat = col.map(b => natOf(b, cw));
             const room = avail - GAP * (col.length - 1); let sum = nat.reduce((a, x) => a + x, 0);
+            if (sum > room) cards.fits = false;
             const grow = col.map(_wrGrow), gsum = grow.reduce((a, x) => a + x, 0);
             // Too tall: the cards that can give (tables, lists) shrink; a hero card keeps its size.
             // 2.40.0: too tall — the number cards (stats) give up their spare air first, so a table keeps its rows.
@@ -844,7 +877,22 @@ async function downloadWeeklyPptx() {
         });
         return cards;
     };
-    const pages = _wrPages.map(pg => ({ pg, cards: pg.kind === 'content' ? layout(pg) : [] }));
+    // The largest zoom (up to 1.6) at which everything on the page still fits.
+    const zoomOf = pg => { for (let z = 1.6; z > 1; z -= 0.05) { const L = layout(pg, z); if (L.fits && !L.grid) return z; } return 1; };
+    const pages = _wrPages.map(pg => { if (pg.kind !== 'content') return { pg, cards: [], z: 1 }; const z = zoomOf(pg); return { pg, cards: layout(pg, z), z }; });
+    // A slide that draws z times larger around the top-left corner of the page body.
+    const zoomed = (s, z, oy) => {
+        if (z === 1) return s;
+        const zo = o => { const r = Object.assign({}, o);
+            if (typeof o.x === 'number') r.x = X0 + (o.x - X0) * z; if (typeof o.y === 'number') r.y = oy + (o.y - oy) * z;
+            ['w', 'h', 'rectRadius'].forEach(k => { if (typeof o[k] === 'number') r[k] = o[k] * z; });
+            if (o.fontSize) r.fontSize = o.fontSize * z;
+            ['rowH', 'colW', 'margin'].forEach(k => { if (Array.isArray(o[k])) r[k] = o[k].map(v => v * z); });
+            return r; };
+        const zr = runs => Array.isArray(runs) ? runs.map(c => c && c.options && c.options.fontSize ? Object.assign({}, c, { options: Object.assign({}, c.options, { fontSize: c.options.fontSize * z }) }) : c) : runs;
+        return { addText: (t, o) => s.addText(zr(t), zo(o)), addShape: (k, o) => s.addShape(k, zo(o)), addImage: o => s.addImage(zo(o)), addMedia: o => s.addMedia(zo(o)),
+            addTable: (rows, o) => s.addTable(rows.map(zr), zo(o)) };
+    };
     // Pictures: cut to their boxes first (and the videos read, when asked for).
     const prep = new Map();
     let videosLeft = 0;
@@ -949,7 +997,7 @@ async function downloadWeeklyPptx() {
             const tagW = b.items.some(it => it.tag) ? 0.78 : 0;
             for (const it of b.items) {
                 // Lines the text takes in its width (pptxgenjs does not measure), at most three.
-                const tw = w - 0.18 - tagW, lines = Math.min(3, Math.max(1, Math.ceil(String(it.text).length * 9.5 * 0.0072 / tw)));
+                const tw = w - 0.18 - tagW, lines = Math.min(6, Math.max(1, Math.ceil(String(it.text).length * 9.5 * 0.0072 / tw)));
                 const hh = it.head ? 0.19 : 0, th = 0.17 * lines + 0.03, subH = it.sub ? Math.min(2, Math.ceil(String(it.sub).length * 8 * 0.0072 / (w - 0.18))) * 0.15 : 0, nh = it.note ? 0.17 : 0;
                 const need = hh + th + subH + nh;
                 if (shown && cy + need > y + h - (b.more ? 0.2 : 0)) break;
@@ -1043,7 +1091,7 @@ async function downloadWeeklyPptx() {
             if (p.lines.length > 1) tx(s, p.lines.slice(1).join('\n'), { x: 0.6, y: 3.95, w: 7.5, h: 0.6, fontSize: 12, color: 'D5EFEA' });
             return;
         }
-        if (p.strip) tx(s, `○  ${p.strip}`, { x: X0, y: p.theme === 'msg' ? (p.sub ? 1.12 : 0.92) : (p.sub ? 1.42 : 1.32), w: W0, h: 0.22, fontSize: 9, italic: true, color: C.slate, fit: 'shrink' });
+        if (p.strip) tx(s, `○  ${p.strip}`, { x: X0, y: p.theme === 'msg' ? (p.sub ? 1.12 : 0.92) : (p.sub ? 1.42 : 1.32), w: W0p, h: 0.22, fontSize: 9, italic: true, color: C.slate, fit: 'shrink' });
         if (p.theme === 'msg') {
             s.background = bgContent ? { data: bgContent } : { color: 'FFFFFF' };
             tx(s, p.title, { x: 0.39, y: 0.12, w: 8.55, h: 0.58, fontSize: 24, bold: true, color: MSG_GREEN, valign: 'middle', fit: 'shrink' });
@@ -1058,8 +1106,9 @@ async function downloadWeeklyPptx() {
         tx(s, `${repName} · W${D.week.no}`, { x: X0, y: 5.33, w: 6, h: 0.2, fontSize: 7.5, color: C.slate });
         tx(s, `${p.section} · ${i}`, { x: 7.6, y: 5.33, w: 2.0, h: 0.2, fontSize: 7.5, color: C.slate, align: 'right' });
         }
+        const zs = zoomed(s, pages[i].z, cards.y0);
         cards.forEach(c => {
-            const b = c.b;
+            const b = c.b, s = zs;
             if (_wrBare(b)) { drawBlock(s, c, c.x, c.y, c.w, c.h, false); return; }
             const hero = b.card === 'hero', warn = b.card === 'warn';
             rect(s, c.x, c.y, c.w, c.h, hero ? C.green : warn ? C.warnBg : C.card, hero ? null : warn ? C.warnLine : C.hair, 0.1);

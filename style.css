@@ -11286,7 +11286,7 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 /* bars */
 .wr-bars { display: flex; flex-direction: column; gap: .75cqw; }
 .wr-bar { display: grid; grid-template-columns: minmax(0, 40%) 1fr 4.8cqw; gap: .8cqw; align-items: center; font-size: 1.02cqw; }
-.wr-bar__l { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.2; overflow-wrap: anywhere; }   /* 2.40.0: two lines, no "…" mid-name */
+.wr-bar__l { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; line-height: 1.2; overflow-wrap: anywhere; }   /* 2.40.0: two lines, no "…" mid-name */
 .wr-bar__t { position: relative; height: .8cqw; background: var(--tint); border-radius: 9px; }
 .wr-bar__t i { position: absolute; inset: 0 auto 0 0; background: var(--green); border-radius: 9px; }
 .wr-bar__t i.is-warn { background: #F79009; } .wr-bar__t i.is-bad { background: var(--rust); }

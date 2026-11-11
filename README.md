@@ -591,6 +591,10 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.40.1 — Isi tiap halaman memenuhi slide**: setelah kartu disusun,
+  halaman diperbesar otomatis (huruf, baris, jarak; maks. 1,6×) sampai isinya
+  memenuhi slide — di layar/Save as PDF (diukur dari halaman), PowerPoint dan
+  file email. Halaman yang sudah penuh, foto dan grafik harian tidak berubah.
   **2.40.0 — Semua report dirapikan (Weekly Team, Weekly Manager, Daily)**:
   kartu setinggi isinya; kartu kosong jadi satu baris strip di bawah judul
   dan kolom kosong hilang (`DailyCore.fitPage`); tabel memakai ruang yang
