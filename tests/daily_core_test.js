@@ -56,6 +56,9 @@ const data = {
     const P = C.dailyPages(D, {});
     t('halaman tanpa foto', P.map(p => p.title), ['Daily Report', 'Daily Report Summary', 'Issue & Damage', 'OT Jobs & Project Progress', 'Terima Kasih']);
     t('template perusahaan', P.every(p => p.theme === 'msg'), true);
+    const jl = P[3].cols[0][0].items[0], ul = P[3].cols[1][0].items[0];
+    t('job: teks lengkap, status sebagai label, keterangan informatif (2.39.2)', [jl.text, jl.tag, jl.sub, jl.note], ['Kalibrasi steering', { text: 'Done', tone: 'good' }, 'Calibration · Ticket TK-1', ''] );
+    t('update project: nama project, progress sekarang, blocker', [ul.head, ul.text, ul.sub, ul.note], ['RTK Tower', 'Pondasi selesai', 'progress 0% → 25% · progress now 25%', 'Blocker: Semen kurang']);
     const m = C.dailyEmail(D, { attached: true, photos: 2 });
     t('email: subjek & isi', [m.subject, /Missed: Andi Wijaya/.test(m.html), /Selang hidrolik/.test(m.html), /RTK Tower/.test(m.text) || /Project updates: 1/.test(m.text)], ['Daily Report — Tue 10 Nov 2026', true, true, true]);
     t('email: HTML di-escape', C.dailyEmail(C.buildDaily({ date: day, workLogs: [{ id: 'x', date: day, memberId: 'q', memberName: '<b>', issue: '<script>' }] })).html.includes('&lt;script&gt;'), true);

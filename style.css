@@ -11300,6 +11300,11 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 /* lists */
 .wr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .85cqw; font-size: 1.08cqw; }
 .wr-list li { display: flex; gap: .85cqw; align-items: flex-start; }
+.wr-li { flex: 1; min-width: 0; }
+.wr-li__h { font-weight: 700; }
+.wr-li__top { display: flex; gap: .8cqw; justify-content: space-between; align-items: flex-start; }
+.wr-li__top .wr-chip { flex-shrink: 0; }
+.wr-li__note { margin-top: .2cqw; font-size: .9cqw; font-weight: 600; color: var(--amber); }
 .wr-dot { display: inline-block; flex: none; width: .75cqw; height: .75cqw; border-radius: 50%; margin-top: .42cqw; }
 .wr-rag { list-style: none; margin: 0; padding: 0; }
 .wr-rag li { display: flex; align-items: center; gap: 1cqw; padding: .95cqw 0; border-top: 1px solid #EEF0F2; font-size: 1.2cqw; }

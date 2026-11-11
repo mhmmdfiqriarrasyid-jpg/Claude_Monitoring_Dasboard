@@ -475,7 +475,8 @@ function _wrBlockHtml(b) {
         if (b.vertical) return `<div class="wr-vbars">${b.items.map((it, i) => `<div class="wr-vbar${i === b.highlight ? ' is-hi' : ''}"><span class="wr-vbar__v">${_wrH(it[1])}</span><i style="height:${Math.round(100 * (it[1] || 0) / max)}%"></i><span class="wr-vbar__l">${_wrE(it[0])}</span></div>`).join('')}</div>`;
         return `<div class="wr-bars">${b.items.map(it => { const v = it[1]; return `<div class="wr-bar"><span class="wr-bar__l">${_wrE(it[0])}</span><span class="wr-bar__t"><i style="width:${v == null ? 0 : Math.round(100 * v / max)}%" class="${b.target && v != null ? (v >= b.target ? 'is-good' : v >= b.target - 5 ? 'is-warn' : 'is-bad') : ''}"></i>${b.target ? `<b style="left:${b.target}%"></b>` : ''}</span><span class="wr-bar__v">${v == null ? '—' : _wrH(v) + (b.unit || '')}</span></div>`; }).join('')}</div>`;
     }
-    case 'list': return b.items.length ? `<ul class="wr-list">${b.items.map(i => `<li><i class="wr-dot wr-bg-${i.tone || 'muted'}"></i><div><div>${_wrE(i.text)}</div>${i.sub ? `<div class="wr-sub">${_wrE(i.sub)}</div>` : ''}</div></li>`).join('')}</ul>` : `<div class="wr-empty">${_wrE(b.empty || '—')}</div>`;
+    // 2.39.2: an entry may carry a heading (head), a status chip (tag) and a problem line (note).
+    case 'list': return b.items.length ? `<ul class="wr-list">${b.items.map(i => `<li><i class="wr-dot wr-bg-${i.tone || 'muted'}"></i><div class="wr-li">${i.head ? `<div class="wr-li__h">${_wrE(i.head)}</div>` : ''}<div class="wr-li__top"><div>${_wrE(i.text)}</div>${i.tag ? `<span class="wr-chip wr-chip--${i.tag.tone || 'good'}">${_wrE(i.tag.text)}</span>` : ''}</div>${i.sub ? `<div class="wr-sub">${_wrE(i.sub)}</div>` : ''}${i.note ? `<div class="wr-li__note">${_wrE(i.note)}</div>` : ''}</div></li>`).join('')}</ul>${b.more ? `<div class="wr-more">+ ${b.more} more in the dashboard</div>` : ''}` : `<div class="wr-empty">${_wrE(b.empty || '—')}</div>`;
     case 'rag': return `<ul class="wr-rag">${b.items.map(r => `<li><i class="wr-dot wr-bg-${r[1]}"></i><b>${_wrE(r[0])}</b><span>${_wrE(r[2])}</span></li>`).join('')}</ul>`;
     case 'kv': return `<div class="wr-kv">${b.items.map(i => `<div class="wr-kv__r"><span>${_wrE(i[0])}</span><b>${_wrE(_wrNum(i[1]))}</b></div>`).join('')}</div>`;
     case 'panel': return `<ul class="wr-panel">${b.items.map(i => `<li>${_wrE(i)}</li>`).join('')}</ul>`;
@@ -684,7 +685,7 @@ function _wrBlockH(b, wdt) {
     case 'stats': { const per = b.per || (b.small ? 2 : 3), rows = Math.ceil(Math.max(1, b.items.length) / per); return rows * (b.small ? 0.6 : 0.72) + (b.items.some(i => i.delta) ? 0.12 : 0); }
     case 'table': return b.rows.length ? _wrTableLayout(b, wdt || 4).total + (b.more ? 0.22 : 0) : 0.3;
     case 'bars': return b.vertical ? 1.15 : Math.max(1, b.items.length) * 0.27;
-    case 'list': return b.items.length ? b.items.reduce((n, i) => n + (String(i.text).length * 0.064 > (wdt || 3) - 0.2 ? 0.36 : 0.2) + (i.sub ? 0.16 : 0) + 0.07, 0) : 0.3;
+    case 'list': return b.items.length ? b.items.reduce((n, i) => n + (String(i.text).length * 0.064 > (wdt || 3) - 0.2 ? 0.36 : 0.2) + (i.sub ? 0.16 : 0) + (i.head ? 0.19 : 0) + (i.note ? 0.17 : 0) + 0.07, 0) : 0.3;
     case 'rag': return b.items.length * 0.42;
     case 'kv': return b.items.length * 0.27;
     case 'panel': return b.items.length * 0.27;
@@ -878,12 +879,26 @@ async function downloadWeeklyPptx() {
             break; }
         case 'list': {
             if (!b.items.length) { tx(s, b.empty || '—', { x, y, w, h: 0.3, fontSize: 10, color: soft }); break; }
-            let cy = y;
-            b.items.forEach(it => { const long = String(it.text).length * 0.064 > w - 0.2, th = long ? 0.36 : 0.2;
+            let cy = y, shown = 0;
+            const tagW = b.items.some(it => it.tag) ? 0.78 : 0;
+            for (const it of b.items) {
+                // Lines the text takes in its width (pptxgenjs does not measure), at most three.
+                const tw = w - 0.18 - tagW, lines = Math.min(3, Math.max(1, Math.ceil(String(it.text).length * 9.5 * 0.0072 / tw)));
+                const hh = it.head ? 0.19 : 0, th = 0.17 * lines + 0.03, subH = it.sub ? Math.min(2, Math.ceil(String(it.sub).length * 8 * 0.0072 / (w - 0.18))) * 0.15 : 0, nh = it.note ? 0.17 : 0;
+                const need = hh + th + subH + nh;
+                if (shown && cy + need > y + h - (b.more ? 0.2 : 0)) break;
                 s.addShape(pres.ShapeType.ellipse, { x, y: cy + 0.07, w: 0.085, h: 0.085, fill: { color: it.tone === 'warn' ? 'F79009' : it.tone === 'bad' ? C.rust : it.tone === 'good' ? C.green : '98A2B3' }, line: { color: 'FFFFFF', width: 0 } });
-                tx(s, String(it.text).slice(0, 160), { x: x + 0.18, y: cy, w: w - 0.18, h: th, fontSize: 9.5, fit: 'shrink' });
-                if (it.sub) tx(s, it.sub, { x: x + 0.18, y: cy + th, w: w - 0.18, h: 0.17, fontSize: 8, color: C.slate });
-                cy += th + (it.sub ? 0.16 : 0) + 0.07; });
+                if (it.head) tx(s, it.head, { x: x + 0.18, y: cy, w: tw, h: 0.18, fontSize: 9.5, bold: true, fit: 'shrink' });
+                tx(s, String(it.text), { x: x + 0.18, y: cy + hh, w: tw, h: th, fontSize: 9.5, fit: 'shrink' });
+                if (it.tag) { const tc = it.tag.tone === 'warn' ? 'B54708' : it.tag.tone === 'bad' ? C.rust : C.good, bg = it.tag.tone === 'warn' ? 'FFFAEB' : it.tag.tone === 'bad' ? 'FEF3F2' : 'ECFDF3';
+                    rect(s, x + w - tagW + 0.06, cy + hh + 0.01, tagW - 0.06, 0.19, bg, null, 0.09);
+                    tx(s, it.tag.text, { x: x + w - tagW + 0.06, y: cy + hh + 0.01, w: tagW - 0.06, h: 0.19, fontSize: 7.5, bold: true, color: tc, align: 'center', valign: 'middle' }); }
+                if (it.sub) tx(s, it.sub, { x: x + 0.18, y: cy + hh + th, w: w - 0.18, h: subH, fontSize: 8, color: C.slate, fit: 'shrink' });
+                if (it.note) tx(s, it.note, { x: x + 0.18, y: cy + hh + th + subH, w: w - 0.18, h: 0.17, fontSize: 8, color: C.amber, bold: true, fit: 'shrink' });
+                cy += need + 0.09; shown++;
+            }
+            const left = (b.more || 0) + b.items.length - shown;
+            if (left) tx(s, `+ ${left} more in the dashboard`, { x, y: cy, w, h: 0.2, fontSize: 8.5, color: C.slate });
             break; }
         case 'rag': { const rh = Math.min(0.5, h / b.items.length);
             b.items.forEach((r, i) => { const cy = y + i * rh;

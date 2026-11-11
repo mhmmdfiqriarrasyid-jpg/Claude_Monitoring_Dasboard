@@ -591,6 +591,12 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.39.2 — Daily Report: halaman OT Jobs & Project Progress dirapikan** —
+  tiap job ditulis lengkap (tidak terpotong), status sebagai label, lalu
+  baris keterangan: kategori, project, ticket, implement, unit, siapa, jam,
+  peminta; masalah yang tersisa (Problem) dan blocker project dengan warna
+  oranye. Project update menampilkan nama project, progress sekarang dan
+  oleh siapa. Sama di layar, PDF, PowerPoint dan email.
   **2.39.1 — Menu *Weekly Report* menjadi *Reports*** (isinya Weekly Team,
   Weekly Manager dan Daily Report); juga judul halaman dan nama area akses.
   **2.39.0 — Daily Report untuk manager**: tab ketiga *Daily Report* di

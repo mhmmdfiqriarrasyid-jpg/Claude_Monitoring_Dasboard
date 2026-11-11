@@ -54,8 +54,11 @@ function layout(pg) {
     const total = pg.widths.reduce((a, x) => a + x, 0), space = W0 - GAP * (pg.cols.length - 1);
     let cx = X0;
     pg.cols.forEach((col, k) => {
-        const cw = space * pg.widths[k] / total, ch = (avail - GAP * (col.length - 1)) / col.length;
-        col.forEach((b, i) => cards.push({ b, x: cx, y: y0 + i * (ch + GAP), w: cw, h: ch }));
+        // A bars card takes what its bars need; the rest share what is left.
+        const cw = space * pg.widths[k] / total, room = avail - GAP * (col.length - 1);
+        const fixed = col.map(b => b.type === 'bars' ? 0.62 + 0.3 * Math.max(1, b.items.length) : 0), free = room - fixed.reduce((a, x) => a + x, 0), flex = col.filter((b, i) => !fixed[i]).length;
+        let cy = y0;
+        col.forEach((b, i) => { const ch = fixed[i] || (flex ? free / flex : room / col.length); cards.push({ b, x: cx, y: cy, w: cw, h: ch }); cy += ch + GAP; });
         cx += cw + GAP;
     });
     return cards;
@@ -104,15 +107,25 @@ function drawBlock(ops, b, x, y, w, h, warn) {
     }
     case 'list': {
         if (!b.items.length) return empty(b.empty);
-        let cy = y;
+        let cy = y, shown = 0;
+        const tagW = b.items.some(it => it.tag) ? 0.78 : 0;
         for (const it of b.items) {
-            const long = str(it.text).length * 9.5 * CHAR > w - 0.2, th = long ? 0.36 : 0.2, need = th + (it.sub ? 0.16 : 0);
-            if (cy + need > y + h + 0.02) break;
+            const tw = w - 0.18 - tagW, lines = Math.min(3, Math.max(1, Math.ceil(str(it.text).length * 9.5 * CHAR / tw)));
+            const hh = it.head ? 0.19 : 0, th = 0.165 * lines + 0.03, subL = it.sub ? Math.min(2, Math.ceil(str(it.sub).length * 8 * CHAR / (w - 0.18))) : 0, subH = subL * 0.15, nh = it.note ? 0.17 : 0;
+            const need = hh + th + subH + nh;
+            if (shown && cy + need > y + h - (b.more ? 0.2 : 0)) break;
             ops.push({ t: 'rect', x, y: cy + 0.07, w: 0.085, h: 0.085, fill: it.tone === 'warn' ? 'F79009' : it.tone === 'bad' ? COL.rust : it.tone === 'good' ? COL.green : '98A2B3', r: 0.0425 });
-            T(fitLines(it.text, w - 0.18, th, 9.5), { x: x + 0.18, y: cy, w: w - 0.18, h: th });
-            if (it.sub) T(fitLine(it.sub, w - 0.18, 8), { x: x + 0.18, y: cy + th, w: w - 0.18, h: 0.17, size: 8, color: COL.slate });
-            cy += need + 0.07;
+            if (it.head) T(fitLine(it.head, tw, 9.5), { x: x + 0.18, y: cy, w: tw, h: 0.18, bold: true });
+            T(fitLines(it.text, tw, th, 9.5), { x: x + 0.18, y: cy + hh, w: tw, h: th });
+            if (it.tag) { const tc = it.tag.tone === 'warn' ? COL.amber : it.tag.tone === 'bad' ? COL.rust : COL.good, bg = it.tag.tone === 'warn' ? 'FFFAEB' : it.tag.tone === 'bad' ? 'FEF3F2' : 'ECFDF3';
+                ops.push({ t: 'rect', x: x + w - tagW + 0.06, y: cy + hh + 0.01, w: tagW - 0.06, h: 0.19, fill: bg, r: 0.09 });
+                T(fitLine(it.tag.text, tagW - 0.1, 7.5), { x: x + w - tagW + 0.06, y: cy + hh + 0.01, w: tagW - 0.06, h: 0.19, size: 7.5, bold: true, color: tc, align: 'center', valign: 'middle' }); }
+            if (it.sub) T(fitLines(it.sub, w - 0.18, subH, 8), { x: x + 0.18, y: cy + hh + th, w: w - 0.18, h: subH, size: 8, color: COL.slate });
+            if (it.note) T(fitLine(it.note, w - 0.18, 8), { x: x + 0.18, y: cy + hh + th + subH, w: w - 0.18, h: 0.17, size: 8, bold: true, color: COL.amber });
+            cy += need + 0.09; shown++;
         }
+        const left = (b.more || 0) + b.items.length - shown;
+        if (left) T(`+ ${left} more in the dashboard`, { x, y: cy, w, h: 0.2, size: 8.5, color: COL.slate });
         return;
     }
     case 'table': {

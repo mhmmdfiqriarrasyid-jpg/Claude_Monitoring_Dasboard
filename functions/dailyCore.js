@@ -121,8 +121,9 @@
         const tkOf = j => (j.ticketId && tk.find(t => t.id === j.ticketId)) || tk.find(t => (t.jobIds || []).includes(j.id));
         const pjs = I.projects || [];
         const jobs = (I.jobs || []).filter(j => j.date === date).map(j => { const t = tkOf(j), p = j.projectId && pjs.find(x => x.id === j.projectId);
-            return { category: j.category || 'Other', what: j.description || '', units: (j.units || []).map(unitName).filter(Boolean).join(', '), status: JOB_STATUS[j.status] || 'Done',
-                done: (j.status || 'done') === 'done', hours: Number(j.hours) || 0, ticket: t ? t.no : '', project: p ? p.name : '', issue: String(j.issue || '').trim() }; });
+            return { category: j.category || 'Other', what: String(j.description || '').trim(), units: (j.units || []).map(unitName).filter(Boolean).join(', '), status: JOB_STATUS[j.status] || 'Done',
+                done: (j.status || 'done') === 'done', hours: Number(j.hours) || 0, ticket: t ? t.no : '', project: p ? p.name : '', issue: String(j.issue || '').trim(),
+                by: String(j.doneBy || '').trim(), requestedBy: String(j.requestedBy || '').trim(), implement: String(j.implement || '').trim() }; });
         const updates = [];
         pjs.forEach(p => (p.updates || []).filter(u => u.date === date).forEach(u => updates.push({ project: p.name || '', pct: progressPct(p), text: u.text || '', progress: u.progress || '',
             blocker: u.blocker || '', by: u.by || '', auto: !!u.auto })));
@@ -190,16 +191,21 @@
             const g = opts.gallery, groups = new Set(g.items.map(i => i.cap.split(' · ')[0]));
             page('Field Photos', { sub: `${plural(g.items.length, 'photo')} from ${plural(groups.size, 'place')} · ${D.day.label}`, cols: [[g]], widths: [1] });
         }
-        const done = D.jobs.filter(j => j.done).length;
-        page('OT Jobs & Project Progress', { sub: `${plural(D.jobs.length, 'job')} logged (${done} done) · ${plural(D.updates.length, 'project update')}`, rows: [
-            { h: 1, widths: [1], cards: [
-                { type: 'table', title: 'Jobs & activities', head: [{ t: 'Category' }, { t: 'What was done' }, { t: 'Units' }, { t: 'Status' }],
-                    rows: D.jobs.map(j => [{ text: j.category, bold: true, tone: 'good' }, clip(j.what + (j.ticket ? ` · ${j.ticket}` : '') + (j.project ? ` · ${j.project}` : ''), 110), { text: j.units || '—', tone: 'muted' },
-                        { text: j.status, tone: j.done ? 'good' : 'warn' }]), empty: 'No job logged this day' }] },
-            { h: 1, widths: [1.45, 1], cards: [
-                { type: 'list', title: 'Project updates', items: D.updates.filter(u => !u.auto || D.updates.every(x => x.auto)).slice(0, 5).map(u => ({ text: clip(`${u.project}: ${u.text || u.progress}`, 150),
-                    sub: [u.progress && u.text ? clip(u.progress, 70) : '', u.blocker ? 'Blocker: ' + clip(u.blocker, 60) : '', u.by].filter(Boolean).join(' · '), tone: u.blocker ? 'warn' : 'good' })), empty: 'No project update this day' },
-                { type: 'bars', title: 'Running projects, %', items: D.running.slice(0, 5).map(p => [p.name, p.pct]), max: 100, unit: '%', empty: 'No running project' }] }] });
+        // 2.39.2: each job as a short entry — what was done in full, then what it was for
+        // (category, project, ticket, units, who, hours), its status, and any problem left.
+        const done = D.jobs.filter(j => j.done).length, JOB_MAX = 5;
+        const jobItem = j => ({ text: clip(j.what || j.category, 220), tone: j.done ? 'good' : 'warn', tag: { text: j.status, tone: j.done ? 'good' : 'warn' },
+            sub: [j.category, j.project ? `Project ${j.project}` : '', j.ticket ? `Ticket ${j.ticket}` : '', j.implement ? `Implement ${j.implement}` : '', j.units ? `Units ${j.units}` : '',
+                j.by ? `By ${j.by}` : '', j.hours ? `${h1(j.hours)} h` : '', j.requestedBy ? `For ${j.requestedBy}` : ''].filter(Boolean).join(' · '),
+            note: j.issue ? `Problem: ${clip(j.issue, 140)}` : '' });
+        const ups = D.updates.filter(u => !u.auto || D.updates.every(x => x.auto)), UP_MAX = 3;
+        const upItem = u => ({ text: clip(u.text || u.progress, 160), tone: u.blocker ? 'warn' : 'good', head: u.project,
+            sub: [u.progress && u.text ? clip(u.progress.replace(/^Finished:\s*/, 'Finished: '), 90) : '', `progress now ${u.pct}%`, u.by].filter(Boolean).join(' · '),
+            note: u.blocker ? `Blocker: ${clip(u.blocker, 100)}` : '' });
+        page('OT Jobs & Project Progress', { sub: `Work outside the Daily Report · ${plural(D.jobs.length, 'job')} (${done} done, ${D.jobs.length - done} still open) · ${plural(ups.length, 'project update')}`,
+            cols: [[{ type: 'list', title: `Jobs & activities · ${D.jobs.length}`, items: D.jobs.slice(0, JOB_MAX).map(jobItem), more: Math.max(0, D.jobs.length - JOB_MAX), empty: 'No job logged this day' }],
+                [{ type: 'list', title: `Project updates · ${ups.length}`, items: ups.slice(0, UP_MAX).map(upItem), more: Math.max(0, ups.length - UP_MAX), empty: 'No project update this day' },
+                 { type: 'bars', title: 'Running projects, % done', items: D.running.slice(0, 4).map(p => [p.name, p.pct]), max: 100, unit: '%', empty: 'No running project' }]], widths: [1.45, 1] });
         P.push({ kind: 'closing', theme: 'msg', title: 'Terima Kasih' });
         return P;
     }
@@ -224,7 +230,7 @@ ${table(['Unit', 'Part / damage', 'Status'], D.damage.map(d => [d.unit, [d.part,
 ${table(['Ticket', 'Priority', 'Status', 'PIC'], tk.opened.concat(tk.resolved.filter(x => !tk.opened.some(o => o.no === x.no))).map(x => [`${x.no} · ${x.title}`, x.prio, x.status, x.pic || '-']), 'No ticket opened or resolved')}
 <p style="margin:0 0 6px;color:#475467;font-size:13px">Tickets open now: <b>${tk.open}</b>${tk.overdue ? ` · <span style="color:#B42318">${tk.overdue} past the due time</span>` : ''} · Units in breakdown now: <b>${D.breakdownNow}</b></p>
 ${h('3. Field photos')}<p style="margin:0 0 6px;color:#475467;font-size:13px">${opts.photos ? `${plural(opts.photos, 'photo')} in the attached PowerPoint / PDF.` : 'No photo this day.'}</p>
-${h('4. OT jobs & project progress')}${table(['Category', 'What was done', 'Units', 'Status'], D.jobs.map(j => [j.category, j.what + (j.ticket ? ` · ${j.ticket}` : ''), j.units || '-', j.status]), 'No job logged this day')}
+${h('4. OT jobs & project progress')}${table(['What was done', 'Category / for', 'Units · by', 'Status'], D.jobs.map(j => [j.what + (j.issue ? ` (Problem: ${j.issue})` : ''), [j.category, j.project && 'Project ' + j.project, j.ticket && 'Ticket ' + j.ticket].filter(Boolean).join(' · '), [j.units, j.by].filter(Boolean).join(' · ') || '-', j.status]), 'No job logged this day')}
 ${table(['Project', 'Update', 'Progress'], D.updates.map(u => [u.project, u.text + (u.blocker ? ` (Blocker: ${u.blocker})` : ''), u.progress || `${u.pct}%`]), 'No project update this day')}
 <p style="margin-top:18px;font-size:12px;color:#667085">Sent by the <a href="https://ot.techorchestrator.cloud">Operation Technology Dashboard</a> · Reports → Daily Report for the full deck.</p></div>`;
         const text = [`Daily Report — Division Operation Technology`, D.day.label, '',
