@@ -339,6 +339,45 @@ const { launch, BASE_URL } = require('./_env');
         t('centang lagi: hari ini', [ms0().done, ms0().doneAt], [true, toISODate()]);
         switchProjectsTab('projects'); document.getElementById('pjStatusFilter') && (document.getElementById('pjStatusFilter').value = ''); renderProjectsList();
         t('kartu project: ringkasan semua barang', [...document.querySelectorAll('.pj-card__mat')].map(x => x.textContent.trim()), ['Goods 2/3 ready']);
+        // 2.41.2: deleting updates — the case from the field: BD070 finished by a job on 11-09,
+        // then ticked off and on again twice on 11-11 (the ticks themselves end as "done").
+        const U = (id, date, at, text, progress, extra) => Object.assign({ id, date, at, by: 'Jefri', auto: true, text, progress }, extra || {});
+        projects.push({ id: 'dl1', name: 'Depth Sensor - Cartrack (Phase 2)', type: 'heavy', status: 'active', company: 'PT. Murni Nusantara Mandiri', createdByUid: 'o',
+            target: { mode: 'count', count: 14, done: 9, what: 'sensors', units: [{ id: 'b70', name: 'MNMT-BD070', done: true, doneAt: '2026-11-09' }, { id: 'b63', name: 'MNMT-BD063', done: true, doneAt: '2026-11-10' }] },
+            updates: [U('u1', '2026-11-09', 1, 'Other: Pemasangan 4 Unit Bulldozer', 'Finished: MNMT-BD070 · progress 0% → 29%'),
+                U('u2', '2026-11-10', 2, 'Other: Instalation Depth Sensor - Complete', 'Finished: MNMT-BD063 · progress 29% → 64%', { photoIds: ['ph9'] }),
+                U('u3', '2026-11-11', 3, 'Marked not done: MNMT-BD070', 'progress 64% → 57%'), U('u4', '2026-11-11', 4, 'Marked done: MNMT-BD070', 'progress 57% → 64%'),
+                U('u5', '2026-11-11', 5, 'Marked not done: MNMT-BD070', 'progress 64% → 57%'), U('u6', '2026-11-11', 6, 'Marked done: MNMT-BD070', 'progress 57% → 64%')] });
+        const dl = () => projects.find(x => x.id === 'dl1');
+        showProjectDetail('dl1'); await tick();
+        t('hapus update: tombol per update + tombol bersihkan centang yang saling membatalkan', [document.querySelectorAll('.pj-upd-del').length, /Remove 4 ticks that cancel out/.test(document.querySelector('.pj-upd-title').textContent)], [6, true]);
+        const dlBefore = { pct: projectProgress(dl()).pct, ticks: dl().target.units.map(u => u.done) };
+        let asked = ''; window.confirm = m => { asked = m; return true; };
+        cleanProjectUpdates('dl1'); await tick();
+        t('bersihkan: 4 centang bolak-balik hilang, 2 update job tetap', dl().updates.map(u => u.id), ['u1', 'u2']);
+        t('bersihkan: centang & progress tidak berubah', [projectProgress(dl()).pct, dl().target.units.map(u => u.done)], [dlBefore.pct, dlBefore.ticks]);
+        t('report hari 11-11: tidak ada perubahan yang dilaporkan', DailyCore.summarizeUpdates(dl(), '2026-11-11', '2026-11-11'), null);
+        t('tombol bersihkan hilang setelah dibersihkan', !!document.querySelector('.pj-upd-title button'), false);
+        // Deleting a job's "Finished" update: the units stay ticked, and the confirm says so; its photo goes too.
+        const delPh = []; const dw = window.deleteWhPhotos; window.deleteWhPhotos = (ids, st) => delPh.push([ids, st]);
+        deleteProjectUpdate('dl1', 'u2'); await tick(); window.deleteWhPhotos = dw;
+        t('hapus update job: dikonfirmasi dengan peringatan, fotonya ikut dihapus, centang tetap', [/stay ticked/.test(asked), dl().updates.map(u => u.id), delPh, dl().target.units[1].done], [true, ['u1'], [[['ph9'], 'pj']], true]);
+        // A "Marked done" record of a tick that still stands: warned, and the tick stays.
+        dl().updates.push(U('u7', '2026-11-12', 7, 'Marked done: MNMT-BD063', 'progress 57% → 64%'));
+        window.confirm = m => { asked = m; return false; };
+        deleteProjectUpdate('dl1', 'u7'); await tick();
+        t('batal hapus: update tetap ada', dl().updates.map(u => u.id), ['u1', 'u7']);
+        t('peringatan: centang tidak ikut berubah', /"MNMT-BD063" stays ticked done — deleting the update does not change the ticks/.test(asked), true);
+        window.confirm = () => true;
+        deleteProjectUpdate('dl1', 'u7'); await tick();
+        t('hapus: hanya update-nya, centang & progress tetap', [dl().updates.map(u => u.id), dl().target.units[1].done, projectProgress(dl()).pct], [["u1"], true, dlBefore.pct]);
+        t('tersimpan ke cloud & tercatat di History', [savedP[savedP.length - 1].id, savedP[savedP.length - 1].updates.length], ['dl1', 1]);
+        // Without edit access there is nothing to delete.
+        const pjAcc = currentUserDoc; currentUserDoc = { uid: 'v', role: 'staff', status: 'active', access: { projects: 'view' } };
+        showProjectDetail('dl1'); await tick();
+        t('hanya lihat: tidak ada tombol hapus', document.querySelectorAll('.pj-upd-del').length, 0);
+        deleteProjectUpdate('dl1', 'u1'); t('hanya lihat: hapus ditolak', dl().updates.length, 1);
+        currentUserDoc = pjAcc;
         closeProjectDetail();
         return T;
     });

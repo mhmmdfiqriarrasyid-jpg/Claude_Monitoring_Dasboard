@@ -704,9 +704,11 @@ function showProjectDetail(id, keepForm) {
             <button type="button" class="btn btn-primary btn-sm" onclick="countProjectJobUnits(${jsArg(p.id)})">Count units from jobs (+${_pjUncountedJobUnits(p)})</button></div>` : ''}
         ${jobs.length ? `<div class="pr-section-title">Jobs (${jobs.length})</div><div class="pj-links">${jobs.slice(0, 20).map(j => `<div class="pj-jobline"><b>${escapeHtml(j.date || '')}</b> ${escapeHtml(j.category)} — ${escapeHtml((j.description || '').slice(0, 90))}${(j.units || []).length ? ` <span class="adm-sub" style="display:inline">(${escapeHtml(j.units.map(u => u.name).join(', '))})</span>` : ''}${j.issue ? `<div class="pj-job-issue">⚠ ${escapeHtml(j.issue)}</div>` : ''}${(j.files || []).length ? `<div class="pj-filechips">${jobFilesHtml(j)}</div>` : ''}</div>`).join('')}</div>` : ''}
         ${addForm}
-        <div class="pr-section-title">Updates (${ups.length})</div>
+        <div class="pr-section-title pj-upd-title">Updates (${ups.length})${canEdit && _pjCancelling(p).length ? `<button type="button" class="btn btn-secondary btn-sm" onclick="cleanProjectUpdates(${jsArg(p.id)})" title="Ticks that were undone again — they change nothing">
+            <i class="fas fa-broom" aria-hidden="true"></i> Remove ${_pjCancelling(p).length} ticks that cancel out</button>` : ''}</div>
         ${ups.length ? `<ol class="pj-updates">${ups.map(u => `<li>
-            <div class="pj-updates__head"><b>${escapeHtml(u.date || '')}</b> · ${escapeHtml(u.by || '')}${u.auto ? ' <span class="pj-auto">auto</span>' : ''}${whPhotoChip(u.photoIds, 'update ' + (u.date || ''), 'pj')}</div>
+            <div class="pj-updates__head"><b>${escapeHtml(u.date || '')}</b> · ${escapeHtml(u.by || '')}${u.auto ? ' <span class="pj-auto">auto</span>' : ''}${whPhotoChip(u.photoIds, 'update ' + (u.date || ''), 'pj')}
+                ${canEdit && u.id ? `<button type="button" class="btn-icon pj-upd-del" title="Delete this update" aria-label="Delete this update" onclick="deleteProjectUpdate(${jsArg(p.id)}, ${jsArg(u.id)})"><i class="fas fa-trash" aria-hidden="true"></i></button>` : ''}</div>
             <div>${escapeHtml(u.text || '')}</div>
             ${u.progress ? `<div class="adm-sub">${escapeHtml(u.progress)}</div>` : ''}
             ${u.blocker ? `<div class="pj-blocker">Blocker: ${escapeHtml(u.blocker)}</div>` : ''}</li>`).join('')}</ol>` : '<p class="adm-muted">No updates yet.</p>'}`;
@@ -774,6 +776,50 @@ function saveProjectUpdate(id) {
 function _pjMatsOf(p, milestoneId) {
     const ids = new Set((((p.target || {}).milestones) || []).map(m => m.id));
     return (p.materials || []).filter(x => milestoneId ? x.milestoneId === milestoneId : (!x.milestoneId || !ids.has(x.milestoneId)));
+}
+// ---- Deleting updates (2.41.2) ----
+// An update is the project's log, not its state: deleting one never unticks a unit or
+// milestone and never changes the progress. So a delete that would leave the log saying
+// less than the ticks do is pointed out before it happens.
+const _pjTickRe = /^Marked (done|not done):\s*(.+)$/;
+// The auto ticks that undo each other (done then not done, or the reverse, for the same
+// item, one right after the other in that item's history): removing them changes nothing.
+function _pjCancelling(p) {
+    const stacks = new Map(), out = [];
+    (p.updates || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)) || (a.at || 0) - (b.at || 0)).forEach(u => {
+        const m = u.auto && _pjTickRe.exec(String(u.text || '').trim());
+        if (!m) return;
+        const k = m[2].trim(), st = stacks.get(k) || [], top = st[st.length - 1];
+        if (top && top.on !== (m[1] === 'done')) { st.pop(); out.push(top.id, u.id); } else st.push({ id: u.id, on: m[1] === 'done' });
+        stacks.set(k, st);
+    });
+    return out.filter(Boolean);
+}
+function deleteProjectUpdate(id, upId) {
+    const p = projects.find(x => x.id === id);
+    if (!p || !canEditProjectRecord(p)) return;
+    const u = (p.updates || []).find(x => x.id === upId);
+    if (!u) return;
+    // Is it the record of a tick that still stands? Then the ticks stay and only the note goes.
+    const t = p.target || {}, items = [...(t.units || []), ...(t.milestones || [])];
+    const m = u.auto && _pjTickRe.exec(String(u.text || '').trim());
+    const still = m && items.find(x => (x.name || x.label || x.sn || '') === m[2].trim() && !!x.done === (m[1] === 'done'));
+    const warn = still ? `\n\n"${m[2].trim()}" stays ${m[1] === 'done' ? 'ticked done' : 'not done'} — deleting the update does not change the ticks. If the tick itself was a mistake, change it in Target.`
+        : /Finished:/.test(u.progress || '') ? '\n\nThe units / milestones it finished stay ticked — change them in Target if needed.' : '';   // (a job's update is auto too)
+    if (!confirm(`Delete this update?\n\n${u.date || ''} · ${u.text || ''}${u.progress ? '\n' + u.progress : ''}${warn}`)) return;
+    if ((u.photoIds || []).length && typeof deleteWhPhotos === 'function') deleteWhPhotos(u.photoIds, 'pj');
+    const next = { ...p, updates: (p.updates || []).filter(x => x.id !== upId), updatedAt: Date.now() };
+    _pjPush(next, 'Update deleted', p, `Update deleted: ${String(u.text || '').slice(0, 80)}`);
+    showProjectDetail(id, true);
+}
+function cleanProjectUpdates(id) {
+    const p = projects.find(x => x.id === id);
+    if (!p || !canEditProjectRecord(p)) return;
+    const ids = new Set(_pjCancelling(p));
+    if (!ids.size || !confirm(`Remove ${ids.size} auto updates that undo each other?\n\nOnly ticks that were made and taken back again go; the ticks and the progress stay as they are now.`)) return;
+    const next = { ...p, updates: (p.updates || []).filter(x => !ids.has(x.id)), updatedAt: Date.now() };
+    _pjPush(next, `${ids.size} cancelling ticks removed`, p, 'Updates cleaned');
+    showProjectDetail(id, true);
 }
 // "done 2026-11-12" — for whoever may edit, a button that changes the day.
 function _pjDoneTag(p, kind, i, doneAt, canEdit) {

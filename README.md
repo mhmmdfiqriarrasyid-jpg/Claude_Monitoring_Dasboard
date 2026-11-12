@@ -591,6 +591,13 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.41.2 — Update project bisa dihapus**: tombol hapus per update (bagi
+  yang boleh mengedit project), dengan konfirmasi; foto update ikut dihapus;
+  tercatat di History. Menghapus update **tidak** mengubah centang maupun
+  progress — kalau update itu catatan centang yang masih berlaku (atau
+  "Finished:" dari job), konfirmasinya mengingatkan untuk mengubah centang di
+  Target bila memang salah. Tombol **Remove N ticks that cancel out**
+  membersihkan centang bolak-balik (done lalu not done untuk item yang sama).
   **2.41.1 — Tanggal selesai bisa diatur**: mencentang unit / milestone di
   detail project menanyakan *Finished on* (default hari ini, tidak boleh di
   masa depan); tanggal yang tercatat ("done 2026-11-11 ✎") bisa diklik untuk
