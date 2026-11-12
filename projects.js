@@ -371,6 +371,7 @@ function renderProjectFormLists() {
     document.getElementById('pjMilestones').innerHTML = _pjMilestones.map((m, i) => `<div class="pj-row">
         <input class="form-input" maxlength="120" placeholder="Milestone" aria-label="Milestone ${i + 1}" value="${escapeHtml(m.label || '')}" oninput="_pjMilestones[${i}].label = this.value">
         <label class="pj-weight"><input class="form-input" type="number" min="0" max="100" step="1" aria-label="Weight of milestone ${i + 1}" value="${Number(m.weight) || 0}" oninput="_pjMilestones[${i}].weight = Number(this.value) || 0"> %</label>
+        <input class="form-input pj-due" type="date" title="Target date (optional) — shows on the Calendar" aria-label="Target date of milestone ${i + 1}" value="${escapeHtml(m.due || '')}" onchange="_pjMilestones[${i}].due = this.value">
         <label class="notif-check"><input type="checkbox" ${m.done ? 'checked' : ''} onchange="_pjMilestones[${i}].done = this.checked; _pjMilestones[${i}].doneAt = this.checked ? toISODate() : ''"> done</label>
         <button type="button" class="btn-icon" aria-label="Remove milestone ${i + 1}" title="Remove" onclick="_pjMilestones.splice(${i}, 1); renderProjectFormLists()"><i class="fas fa-xmark"></i></button>
     </div>`).join('');
@@ -432,7 +433,9 @@ function saveProject(event) {
         target.done = Math.max(0, Math.min(count, Math.floor(Number(document.getElementById('pjCountDone').value) || 0)));
         target.what = (document.getElementById('pjCountWhat').value || '').trim();
     } else {
-        const ms = _pjMilestones.map(m => ({ id: m.id || _pjId('m'), label: (m.label || '').trim(), weight: Math.max(0, Number(m.weight) || 0), done: !!m.done, doneAt: m.doneAt || '' })).filter(m => m.label);
+        // 2.41.0: an optional target date per milestone (the Calendar shows it).
+        const ms = _pjMilestones.map(m => ({ id: m.id || _pjId('m'), label: (m.label || '').trim(), weight: Math.max(0, Number(m.weight) || 0), done: !!m.done, doneAt: m.doneAt || '',
+            due: /^\d{4}-\d{2}-\d{2}$/.test(m.due || '') ? m.due : '' })).filter(m => m.label);
         if (!ms.length || !ms.some(m => m.weight > 0)) { showToast('Add milestones with a weight', 'warning'); return; }
         target.milestones = ms;
         target.units = _pjUnits.map(u => ({ id: u.id, name: u.name || '', sn: u.sn || '', done: !!u.done, doneAt: u.doneAt || '' }));
@@ -628,7 +631,7 @@ function showProjectDetail(id, keepForm) {
         targetHtml = `<div class="pj-ms">${(t.milestones || []).map((m, i) => { const items = m.id ? _pjMatsOf(p, m.id) : [], ready = items.filter(x => _pjMatState(x) === 'ready').length;
             return `<div class="pj-ms__item${m.done ? ' is-done' : ''}">
             <div class="pj-ms__head"><label class="pj-ms__check"><input type="checkbox" ${m.done ? 'checked' : ''} ${canEdit ? '' : 'disabled'} onchange="toggleProjectTarget(${jsArg(p.id)}, 'milestone', ${i}, this.checked)">
-                <span><b>${escapeHtml(m.label)}</b> <span class="adm-sub">${Number(m.weight) || 0}%${m.done && m.doneAt ? ' · done ' + escapeHtml(m.doneAt) : ''}</span></span></label>
+                <span><b>${escapeHtml(m.label)}</b> <span class="adm-sub">${Number(m.weight) || 0}%${m.done && m.doneAt ? ' · done ' + escapeHtml(m.doneAt) : ''}${!m.done && m.due ? ` · <span class="${m.due < toISODate() ? 'pj-late' : ''}">target ${escapeHtml(m.due)}</span>` : ''}</span></span></label>
                 ${items.length ? `<span class="pj-ms__goods${ready === items.length ? ' is-ready' : ''}"><i class="fas fa-box-open" aria-hidden="true"></i> ${ready}/${items.length}</span>` : ''}
                 ${canEdit ? `<button type="button" class="btn btn-secondary btn-sm" onclick="showProjectMaterialForm(${jsArg(p.id)}, '', ${jsArg(m.id)})"><i class="fas fa-plus" aria-hidden="true"></i> Item</button>` : ''}</div>
             ${items.length ? _pjMatTable(p, items, canEdit) : ''}</div>`; }).join('')}</div>`;

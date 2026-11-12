@@ -591,6 +591,16 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.41.0 — Calendar (khusus owner)**: menu baru *Calendar* (`calendar.js`)
+  — tampilan Bulan (desktop) dan Agenda (HP), filter per kategori, klik
+  tanggal untuk detail, klik item untuk membuka datanya. Isi: shift & cuti
+  (approved / pending), Daily Report per hari (siapa yang belum lapor),
+  ticket (dibuka, selesai, batas SLA; yang lewat SLA juga di hari ini),
+  jatuh tempo inspeksi alat berat, lisensi GPS/Display berakhir, project
+  (mulai, deadline, target & selesai milestone) dan kerusakan (baru /
+  diperbaiki). Milestone project kini punya **target tanggal** (opsional).
+  Tidak ada data baru di Firestore selain kolom `due` milestone; rules tidak
+  berubah.
   **2.40.2 — Halaman foto mengikuti bentuk foto**: foto disusun dalam baris
   sesuai rasio aslinya (potret tetap potret, lanskap tetap lanskap) dan
   diperbesar sampai memenuhi halaman (`DailyCore.galleryLayout`; lanskap

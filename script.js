@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.40.2';
+const APP_VERSION = 'v2.41.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -1894,7 +1894,7 @@ function navigateTo(view) {
         showToast('You do not have access to this menu', 'warning');
         view = 'dashboard';
     }
-    if (view === 'users' && !isOwner()) {
+    if ((view === 'users' || view === 'calendar') && !isOwner()) {
         showToast('Owner only', 'warning');
         view = 'dashboard';
     }
@@ -1928,6 +1928,8 @@ function navigateTo(view) {
     if (insView) insView.style.display = (view === 'inspection') ? 'block' : 'none';
     const usersView = document.getElementById('viewUsers');
     if (usersView) usersView.style.display = (view === 'users') ? 'block' : 'none';
+    const calView = document.getElementById('viewCalendar');
+    if (calView) calView.style.display = (view === 'calendar') ? 'block' : 'none';
 
     const changed = currentView !== view;
     currentView = view;
@@ -2003,6 +2005,7 @@ function navigateTo(view) {
     if (view === 'tickets' && typeof renderTicketsView === 'function') renderTicketsView();
     if (view === 'weeklyReport' && typeof renderWeeklyReportView === 'function') renderWeeklyReportView();
     if (view === 'learning') renderLearningView();
+    if (view === 'calendar' && typeof renderCalendarView === 'function') renderCalendarView();
 
     if (view === 'inspection') renderInspectionView();
 
@@ -15161,7 +15164,7 @@ function applyRoleGating() {
     applyAccessVisibility();
 
     // If the user lost access to the current view, send them to the dashboard.
-    if ((!owner && currentView === 'users') ||
+    if ((!owner && (currentView === 'users' || currentView === 'calendar')) ||
         (GATED_VIEWS.includes(currentView) && !canViewView(currentView))) {
         navigateTo('dashboard');
     }
