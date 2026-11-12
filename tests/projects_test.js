@@ -315,7 +315,28 @@ const { launch, BASE_URL } = require('./_env');
         t('barang belum lengkap: ditanya dulu, dibatalkan', [/still waits for 1 item/.test(askedMs), /Mounting Antenna — have 1 of 2/.test(askedMs), projects.find(x => x.id === 'mp1').target.milestones[0].done], [true, true, false]);
         window.confirm = () => true;
         toggleProjectTarget('mp1', 'milestone', 0, true); await tick();
-        t('tetap ditandai selesai bila dijawab ya', projects.find(x => x.id === 'mp1').target.milestones[0].done, true);
+        // 2.41.1: marking done asks for the day it was really finished (today by default).
+        const dIn = document.getElementById('pjDoneDate'), yday = addDaysISO(toISODate(), -1);
+        t('selesai: ditanya tanggal selesai (default hari ini), belum tersimpan', [document.getElementById('pjDoneModal').classList.contains('open'), dIn.value, projects.find(x => x.id === 'mp1').target.milestones[0].done], [true, toISODate(), false]);
+        dIn.value = addDaysISO(toISODate(), 1); const tw = []; const st = window.showToast; window.showToast = m => tw.push(m);
+        saveProjectDoneDate(); window.showToast = st;
+        t('tanggal di masa depan ditolak', [tw[0], document.getElementById('pjDoneModal').classList.contains('open')], ['The finish date cannot be in the future', true]);
+        dIn.value = yday; saveProjectDoneDate(); await tick();
+        const ms0 = () => projects.find(x => x.id === 'mp1').target.milestones[0], lastUp = () => projects.find(x => x.id === 'mp1').updates.slice(-1)[0];
+        t('tetap ditandai selesai bila dijawab ya — pada tanggal yang dipilih (kemarin)', [ms0().done, ms0().doneAt, lastUp().date, lastUp().text], [true, yday, yday, 'Marked done: ' + ms0().label]);
+        // The day can be corrected afterwards; the "Marked done" update moves with it.
+        const dFix = addDaysISO(toISODate(), -3);
+        editProjectDoneDate('mp1', 'milestone', 0);
+        t('ubah tanggal: form terisi tanggal tersimpan', [document.getElementById('pjDoneTitle').textContent, dIn.value], ['Change the finish date', yday]);
+        dIn.value = dFix; saveProjectDoneDate(); await tick();
+        t('tanggal selesai diubah; update ikut pindah tanggal', [ms0().doneAt, lastUp().date, !!document.querySelector('.pj-donedate')], [dFix, dFix, true]);
+        // Cancelling a tick leaves the box unticked.
+        toggleProjectTarget('mp1', 'milestone', 0, false); await tick();
+        t('hapus centang: langsung, tanpa tanggal', [ms0().done, ms0().doneAt], [false, '']);
+        toggleProjectTarget('mp1', 'milestone', 0, true); await tick(); closeProjectDoneDate(true); await tick();
+        t('batal: tidak ditandai selesai', ms0().done, false);
+        toggleProjectTarget('mp1', 'milestone', 0, true); await tick(); saveProjectDoneDate(); await tick();
+        t('centang lagi: hari ini', [ms0().done, ms0().doneAt], [true, toISODate()]);
         switchProjectsTab('projects'); document.getElementById('pjStatusFilter') && (document.getElementById('pjStatusFilter').value = ''); renderProjectsList();
         t('kartu project: ringkasan semua barang', [...document.querySelectorAll('.pj-card__mat')].map(x => x.textContent.trim()), ['Goods 2/3 ready']);
         closeProjectDetail();

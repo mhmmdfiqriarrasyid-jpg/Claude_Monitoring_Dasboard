@@ -591,6 +591,12 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.41.1 — Tanggal selesai bisa diatur**: mencentang unit / milestone di
+  detail project menanyakan *Finished on* (default hari ini, tidak boleh di
+  masa depan); tanggal yang tercatat ("done 2026-11-11 ✎") bisa diklik untuk
+  diganti, dan update "Marked done" ikut pindah ke tanggal itu — sehingga
+  report dan Calendar menghitungnya di hari pekerjaan benar-benar selesai.
+  Di form project, milestone yang dicentang punya kolom tanggal selesai.
   **2.41.0 — Calendar (khusus owner)**: menu baru *Calendar* (`calendar.js`)
   — tampilan Bulan (desktop) dan Agenda (HP), filter per kategori, klik
   tanggal untuk detail, klik item untuk membuka datanya. Isi: shift & cuti

@@ -371,8 +371,9 @@ function renderProjectFormLists() {
     document.getElementById('pjMilestones').innerHTML = _pjMilestones.map((m, i) => `<div class="pj-row">
         <input class="form-input" maxlength="120" placeholder="Milestone" aria-label="Milestone ${i + 1}" value="${escapeHtml(m.label || '')}" oninput="_pjMilestones[${i}].label = this.value">
         <label class="pj-weight"><input class="form-input" type="number" min="0" max="100" step="1" aria-label="Weight of milestone ${i + 1}" value="${Number(m.weight) || 0}" oninput="_pjMilestones[${i}].weight = Number(this.value) || 0"> %</label>
-        <input class="form-input pj-due" type="date" title="Target date (optional) — shows on the Calendar" aria-label="Target date of milestone ${i + 1}" value="${escapeHtml(m.due || '')}" onchange="_pjMilestones[${i}].due = this.value">
-        <label class="notif-check"><input type="checkbox" ${m.done ? 'checked' : ''} onchange="_pjMilestones[${i}].done = this.checked; _pjMilestones[${i}].doneAt = this.checked ? toISODate() : ''"> done</label>
+        ${m.done ? `<input class="form-input pj-due pj-due--done" type="date" max="${toISODate()}" title="Day it was finished" aria-label="Day milestone ${i + 1} was finished" value="${escapeHtml(m.doneAt || '')}" onchange="_pjMilestones[${i}].doneAt = this.value || toISODate()">`
+                 : `<input class="form-input pj-due" type="date" title="Target date (optional) — shows on the Calendar" aria-label="Target date of milestone ${i + 1}" value="${escapeHtml(m.due || '')}" onchange="_pjMilestones[${i}].due = this.value">`}
+        <label class="notif-check"><input type="checkbox" ${m.done ? 'checked' : ''} onchange="_pjMilestones[${i}].done = this.checked; _pjMilestones[${i}].doneAt = this.checked ? (_pjMilestones[${i}].doneAt || toISODate()) : ''; renderProjectFormLists()"> done</label>
         <button type="button" class="btn-icon" aria-label="Remove milestone ${i + 1}" title="Remove" onclick="_pjMilestones.splice(${i}, 1); renderProjectFormLists()"><i class="fas fa-xmark"></i></button>
     </div>`).join('');
     document.getElementById('pjPrChips').innerHTML = _pjPrIds.map((id, k) => {
@@ -625,13 +626,13 @@ function showProjectDetail(id, keepForm) {
     if (t.mode === 'units') {
         targetHtml = `<div class="pj-targets">${(t.units || []).map((u, i) => `<label class="pj-target${u.done ? ' is-done' : ''}">
             <input type="checkbox" ${u.done ? 'checked' : ''} ${canEdit ? '' : 'disabled'} onchange="toggleProjectTarget(${jsArg(p.id)}, 'unit', ${i}, this.checked)">
-            <span><b>${escapeHtml(u.name || u.sn || '(unit)')}</b>${u.done && u.doneAt ? `<span class="adm-sub">done ${escapeHtml(u.doneAt)}</span>` : ''}</span></label>`).join('')}</div>`;
+            <span><b>${escapeHtml(u.name || u.sn || '(unit)')}</b>${u.done && u.doneAt ? _pjDoneTag(p, 'unit', i, u.doneAt, canEdit) : ''}</span></label>`).join('')}</div>`;
     } else if (t.mode === 'milestones') {
         // 2.36.1: each milestone carries the goods it needs.
         targetHtml = `<div class="pj-ms">${(t.milestones || []).map((m, i) => { const items = m.id ? _pjMatsOf(p, m.id) : [], ready = items.filter(x => _pjMatState(x) === 'ready').length;
             return `<div class="pj-ms__item${m.done ? ' is-done' : ''}">
             <div class="pj-ms__head"><label class="pj-ms__check"><input type="checkbox" ${m.done ? 'checked' : ''} ${canEdit ? '' : 'disabled'} onchange="toggleProjectTarget(${jsArg(p.id)}, 'milestone', ${i}, this.checked)">
-                <span><b>${escapeHtml(m.label)}</b> <span class="adm-sub">${Number(m.weight) || 0}%${m.done && m.doneAt ? ' · done ' + escapeHtml(m.doneAt) : ''}${!m.done && m.due ? ` · <span class="${m.due < toISODate() ? 'pj-late' : ''}">target ${escapeHtml(m.due)}</span>` : ''}</span></span></label>
+                <span><b>${escapeHtml(m.label)}</b> <span class="adm-sub">${Number(m.weight) || 0}%${m.done && m.doneAt ? ' · ' + _pjDoneTag(p, 'milestone', i, m.doneAt, canEdit) : ''}${!m.done && m.due ? ` · <span class="${m.due < toISODate() ? 'pj-late' : ''}">target ${escapeHtml(m.due)}</span>` : ''}</span></span></label>
                 ${items.length ? `<span class="pj-ms__goods${ready === items.length ? ' is-ready' : ''}"><i class="fas fa-box-open" aria-hidden="true"></i> ${ready}/${items.length}</span>` : ''}
                 ${canEdit ? `<button type="button" class="btn btn-secondary btn-sm" onclick="showProjectMaterialForm(${jsArg(p.id)}, '', ${jsArg(m.id)})"><i class="fas fa-plus" aria-hidden="true"></i> Item</button>` : ''}</div>
             ${items.length ? _pjMatTable(p, items, canEdit) : ''}</div>`; }).join('')}</div>`;
@@ -650,7 +651,7 @@ function showProjectDetail(id, keepForm) {
         targetHtml += `<div class="pj-subtitle">Units involved — ${ud} of ${t.units.length} done</div>
         <div class="pj-targets">${t.units.map((u, i) => `<label class="pj-target${u.done ? ' is-done' : ''}">
             <input type="checkbox" ${u.done ? 'checked' : ''} ${canEdit ? '' : 'disabled'} onchange="toggleProjectTarget(${jsArg(p.id)}, 'unit', ${i}, this.checked)">
-            <span><b>${escapeHtml(u.name || u.sn || '(unit)')}</b>${u.done && u.doneAt ? `<span class="adm-sub">done ${escapeHtml(u.doneAt)}</span>` : ''}</span></label>`).join('')}</div>`;
+            <span><b>${escapeHtml(u.name || u.sn || '(unit)')}</b>${u.done && u.doneAt ? _pjDoneTag(p, 'unit', i, u.doneAt, canEdit) : ''}</span></label>`).join('')}</div>`;
     }
     const jobs = otJobs.filter(j => j.projectId === p.id);
     const prs = (p.prIds || []).map(pid => (purchaseRequests || []).find(r => r.id === pid)).filter(Boolean);
@@ -774,6 +775,12 @@ function _pjMatsOf(p, milestoneId) {
     const ids = new Set((((p.target || {}).milestones) || []).map(m => m.id));
     return (p.materials || []).filter(x => milestoneId ? x.milestoneId === milestoneId : (!x.milestoneId || !ids.has(x.milestoneId)));
 }
+// "done 2026-11-12" — for whoever may edit, a button that changes the day.
+function _pjDoneTag(p, kind, i, doneAt, canEdit) {
+    return canEdit && !PJ_CLOSED.includes(p.status)
+        ? `<button type="button" class="pj-donedate" title="Change the day it was finished" onclick="event.preventDefault(); event.stopPropagation(); editProjectDoneDate(${jsArg(p.id)}, '${kind}', ${i})">done ${escapeHtml(doneAt)} <i class="fas fa-pen" aria-hidden="true"></i></button>`
+        : `<span class="adm-sub">done ${escapeHtml(doneAt)}</span>`;
+}
 function toggleProjectTarget(id, kind, i, on) {
     const p = projects.find(x => x.id === id);
     if (!p || !canEditProjectRecord(p)) return;
@@ -785,16 +792,74 @@ function toggleProjectTarget(id, kind, i, on) {
         const short = _pjMatsOf(p, item.id).filter(x => _pjMatState(x) !== 'ready');
         if (short.length && !confirm(`"${item.label}" still waits for ${short.length} item(s):\n\n${short.slice(0, 8).map(x => `• ${x.name} — have ${_pjMatHave(x)} of ${x.qty} ${x.uom || ''}`).join('\n')}\n\nMark it done anyway?`)) { showProjectDetail(id, true); return; }
     }
+    // 2.41.1: marking done asks for the day it was really finished (today by default).
+    if (on) { _pjDoneOpen(id, kind, i, false); return; }
+    _pjApplyToggle(id, kind, i, false, '');
+}
+function _pjApplyToggle(id, kind, i, on, date) {
+    const p = projects.find(x => x.id === id);
+    if (!p || !canEditProjectRecord(p)) return;
+    const t = JSON.parse(JSON.stringify(p.target || {}));
+    const item = kind === 'unit' ? (t.units || [])[i] : (t.milestones || [])[i];
+    if (!item) return;
     const was = !!item.done;
-    item.done = !!on; item.doneAt = on ? toISODate() : '';
+    item.done = !!on; item.doneAt = on ? (date || toISODate()) : '';
     // A unit of a Number project counts in "Done so far" too.
     if (kind === 'unit' && t.mode === 'count' && was !== !!on) t.done = Math.max(0, Math.min(Number(t.count) || 0, (Number(t.done) || 0) + (on ? 1 : -1)));
     const before = projectProgress(p).pct;
     let next = { ...p, target: t };
     const after = projectProgress(next).pct;
-    next = _pjWithUpdate(next, { id: _pjId('u'), date: toISODate(), at: Date.now(), by: _pjMe(), byUid: myUid(), auto: true,
+    // The update is dated the day it was finished, so the reports count it on that day.
+    next = _pjWithUpdate(next, { id: _pjId('u'), date: on ? item.doneAt : toISODate(), at: Date.now(), by: _pjMe(), byUid: myUid(), auto: true,
         text: `${on ? 'Marked done' : 'Marked not done'}: ${item.name || item.label || item.sn || ''}`, progress: `progress ${before}% → ${after}%`, photoIds: [] });
     _pjPush(next, on ? 'Marked done' : 'Marked not done', p, 'Progress');
+    showProjectDetail(id, true);
+}
+// 2.41.1: "Finished on" — when ticking, or to correct the day afterwards (change = true).
+let _pjDone = null;
+function _pjDoneOpen(id, kind, i, change) {
+    const p = projects.find(x => x.id === id);
+    const item = p && (kind === 'unit' ? ((p.target || {}).units || [])[i] : ((p.target || {}).milestones || [])[i]);
+    if (!item || !canEditProjectRecord(p)) return;
+    _pjDone = { id, kind, i, change };
+    document.getElementById('pjDoneTitle').textContent = change ? 'Change the finish date' : 'Mark done';
+    document.getElementById('pjDoneSave').textContent = change ? 'Save date' : 'Mark done';
+    document.getElementById('pjDoneWhat').textContent = `${kind === 'unit' ? 'Unit' : 'Milestone'}: ${item.name || item.label || item.sn || ''}`;
+    const inp = document.getElementById('pjDoneDate');
+    inp.max = toISODate(); inp.min = p.start || '';
+    inp.value = change && item.doneAt ? item.doneAt : toISODate();
+    document.getElementById('pjDoneModal').classList.add('open');
+    setTimeout(() => inp.focus(), 50);
+}
+function editProjectDoneDate(id, kind, i) { _pjDoneOpen(id, kind, i, true); }
+function closeProjectDoneDate(cancelled = true) {   // Esc and the × cancel too
+    document.getElementById('pjDoneModal').classList.remove('open');
+    const d = _pjDone; _pjDone = null;
+    if (cancelled && d && !d.change) showProjectDetail(d.id, true);   // the box goes back to unticked
+}
+function saveProjectDoneDate(e) {
+    if (e) e.preventDefault();
+    const d = _pjDone, date = document.getElementById('pjDoneDate').value;
+    if (!d) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { showToast('Pick the day it was finished', 'warning'); return; }
+    if (date > toISODate()) { showToast('The finish date cannot be in the future', 'warning'); return; }
+    _pjDone = null;
+    document.getElementById('pjDoneModal').classList.remove('open');
+    if (d.change) _pjSetDoneDate(d.id, d.kind, d.i, date); else _pjApplyToggle(d.id, d.kind, d.i, true, date);
+}
+// Corrects the day a ticked item was finished; its "Marked done" update moves to that day too.
+function _pjSetDoneDate(id, kind, i, date) {
+    const p = projects.find(x => x.id === id);
+    if (!p || !canEditProjectRecord(p)) return;
+    const t = JSON.parse(JSON.stringify(p.target || {}));
+    const item = kind === 'unit' ? (t.units || [])[i] : (t.milestones || [])[i];
+    if (!item || !item.done || item.doneAt === date) return;
+    const name = item.name || item.label || item.sn || '', before = item.doneAt;
+    item.doneAt = date;
+    const updates = (p.updates || []).slice();
+    for (let k = updates.length - 1; k >= 0; k--) if (updates[k].auto && updates[k].text === `Marked done: ${name}`) { updates[k] = { ...updates[k], date }; break; }
+    const next = { ...p, target: t, updates, updatedAt: Date.now() };
+    _pjPush(next, `Finish date ${before || '—'} → ${date}: ${name}`, p, 'Progress');
     showProjectDetail(id, true);
 }
 
