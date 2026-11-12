@@ -23,7 +23,7 @@ const path = require('path');
             [0, [['GGTR118G', 'GPS', false]], ['TK-261103-1000CD']]);
         t('jobs & update project hari itu', [D.jobs.map(j => [j.category, j.status]), D.updates.map(u => [u.project, u.s.texts[0]])],
             [[['Implement install', 'In progress']], [['RTK radio repeater stage 2', 'Goods still at Merauke port']]]);
-        t('foto: paddock berbeda didahulukan', D.photos.length, 5);
+        t('foto: paddock berbeda didahulukan, foto ke-2 tiap baris sebagai cadangan (2.40.2)', [D.photos.length, D.photos.slice(0, 5).every(p => p.key.split(':').length === 3), D.photos[5].key.split(':').length], [10, true, 4]);
         currentView = 'weeklyReport';
         navigateTo('weeklyReport'); setWeeklyReportAudience('daily'); setDailyReportDay('2026-11-03'); await wait();
         const titles = [...document.querySelectorAll('#wrPages .wr-page')].map(p => (p.querySelector('h1,h2') || {}).textContent);
@@ -32,7 +32,7 @@ const path = require('path');
         t('template perusahaan di setiap halaman', [...document.querySelectorAll('#wrPages .wr-page')].every(p => p.classList.contains('wr-msg')), true);
         t('kontrol mingguan disembunyikan, pemilih tanggal tampil', [document.getElementById('wrWeekBox').hidden, document.getElementById('wrDayBox').hidden, document.getElementById('wrNotesBox').hidden, document.getElementById('wrDay').value],
             [true, false, true, '2026-11-03']);
-        t('foto lapangan dimuat', document.querySelectorAll('#wrPages .wr-gal__item img').length, 5);
+        t('foto lapangan dimuat: genap 6, tiap foto pada bentuknya sendiri', [document.querySelectorAll('#wrPages .wr-gal__item img').length, !!document.querySelector('#wrPages .wr-gal--j')], [6, true]);
         t('ringkasan: Febri "Missed"', [...document.querySelectorAll('#wrPages .wr-table tr')].some(r => /Febri Manuel/.test(r.textContent) && /Missed/.test(r.textContent)), true);
         t('nama file', [_wrFileName('pptx'), _wrFileName('pdf')], ['Daily_Report_2026-11-03.pptx', 'Daily_Report_2026-11-03.pdf']);
         setWeeklyReportAudience('mgmt'); await wait();

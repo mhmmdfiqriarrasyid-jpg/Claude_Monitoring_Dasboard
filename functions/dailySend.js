@@ -5,7 +5,7 @@
 // bucket: a Storage bucket, sharp: the sharp module. tests/daily_deck_test.js.
 'use strict';
 const { buildDaily, dailyPages, dailyEmail, PHOTO_MAX } = require('./dailyCore');
-const { renderPptx, renderPdf, layout, galleryGeom } = require('./dailyDeck');
+const { renderPptx, renderPdf, layout, tilesOf } = require('./dailyDeck');
 
 const PHOTO_COL = { wl: ['workLogPhotos', 'photos'], tk: ['ticketPhotos', 'photo'], pj: ['projectPhotos', 'photo'] };
 const all = async (q) => (await q.get()).docs.map(d => ({ id: d.id, ...d.data() }));
@@ -45,7 +45,10 @@ async function composeDaily({ db, bucket, sharp, date, now }) {
         if (items.length >= PHOTO_MAX) break;
         try {
             const raw = await photoBuffer(db, bucket, ref);
-            if (raw) items.push({ key: ref.key, kind: 'photo', cap: ref.cap, sub: ref.sub, data: await sharp(raw).rotate().resize({ width: 1400, height: 1400, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 80 }).toBuffer() });
+            if (!raw) continue;
+            // 2.40.2: keep its shape (ar) so a portrait photo gets a portrait box.
+            const { data, info } = await sharp(raw).rotate().resize({ width: 1400, height: 1400, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 80 }).toBuffer({ resolveWithObject: true });
+            items.push({ key: ref.key, kind: 'photo', cap: ref.cap, sub: ref.sub, data, ar: info.width && info.height ? info.width / info.height : 4 / 3 });
         } catch (_) { /* a photo that cannot be read is left out */ }
     }
     const pages = dailyPages(D, { gallery: items.length ? { type: 'gallery', items } : null });
@@ -53,7 +56,7 @@ async function composeDaily({ db, bucket, sharp, date, now }) {
     const gp = pages.find(p => p.cols && p.cols[0] && p.cols[0][0] && p.cols[0][0].type === 'gallery');
     if (gp) {
         const c = layout(gp)[0];
-        const boxes = galleryGeom(items.length, c.x, c.y, c.w, c.h);
+        const boxes = tilesOf(items, c.x, c.y, c.w, c.h);
         for (let i = 0; i < items.length; i++) {
             try { items[i].data = await sharp(items[i].data).resize(Math.round(boxes[i].w * 160), Math.round(boxes[i].h * 160), { fit: 'cover' }).jpeg({ quality: 78 }).toBuffer(); } catch (_) { /* keep it whole */ }
         }

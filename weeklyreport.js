@@ -575,7 +575,10 @@ function _wrFitPages(root) {
 }
 // 2.40.0: what had nothing to show, in one thin line under the title.
 const _wrStripHtml = p => p.strip ? `<div class="wr-strip"><i class="wr-dot wr-bg-muted"></i>${_wrE(p.strip)}</div>` : '';
+// The body of a page in slide inches (10 × 5.625), as the PowerPoint lays it out.
+const _wrBodyBox = p => { const msg = p.theme === 'msg', y0 = (msg ? (p.sub ? 1.12 : 0.92) : (p.sub ? 1.42 : 1.32)) + (p.strip ? 0.3 : 0); return { w: 9.2, h: (msg ? 5.4 : 5.22) - y0 }; };
 function weeklyPagesHtml(pages, D, aud) {
+    pages.forEach(p => { if (p.kind === 'content' && p.cols && p.cols.length === 1 && p.cols[0].length === 1 && p.cols[0][0].type === 'gallery' && !p.cols[0][0].inCard) p.cols[0][0].box = _wrBodyBox(p); });
     const name = aud === 'mgmt' ? 'Weekly Update' : 'Weekly Operation Report';
     const eyebrow = `${name} · Week ${D.week.no} · ${D.week.label}`;
     return pages.map((p, i) => {
@@ -900,7 +903,8 @@ async function downloadWeeklyPptx() {
         const b = c.b;
         if (b.inCard) { const ix = c.x + PAD, iy = c.y + PAD + (b.title ? 0.26 : 0), iw = c.w - PAD * 2, ih = c.y + c.h - PAD - iy, n = b.items.length, cols = n > 1 ? 2 : 1, rows = Math.ceil(n / cols), g = 0.08;
             c.tiles = b.items.map((_, i) => ({ x: ix + (i % cols) * ((iw - g * (cols - 1)) / cols + g), y: iy + Math.floor(i / cols) * ((ih - g * (rows - 1)) / rows + g), w: (iw - g * (cols - 1)) / cols, h: Math.max(0.3, (ih - g * (rows - 1)) / rows), cap: 0 }));
-        } else c.tiles = _wrGalleryGeom(b.items.length, c.x, c.y, c.w, c.h);
+        } else c.tiles = window.DailyCore ? DailyCore.galleryLayout(b.items.map(it => it.ar), c.w, c.h, { gap: 0.16, cap: 0.42 }).map(g => ({ x: c.x + g.x, y: c.y + g.y, w: g.w, h: g.h, cap: 0.42 }))
+            : _wrGalleryGeom(b.items.length, c.x, c.y, c.w, c.h);
         for (let i = 0; i < b.items.length; i++) {
             const it = b.items[i], g = c.tiles[i], asp = g.w / g.h;
             if (it.kind === 'video') {
@@ -1205,6 +1209,8 @@ function wrLoadMedia(refs) {
                 const src = await r.load();
                 const m = { state: src ? 'ok' : 'fail', src: src || '' };
                 if (src && r.kind === 'video') m.poster = await _wrVideoPoster(src);
+                // 2.40.2: its shape (width / height), so a portrait photo gets a portrait box.
+                if (src) m.ar = await _wrAspect(r.kind === 'video' ? m.poster : src);
                 _wrMedia.set(r.key, m);
             } catch (_) { _wrMedia.set(r.key, { state: 'fail' }); }
             clearTimeout(_wrMediaT);
@@ -1212,6 +1218,12 @@ function wrLoadMedia(refs) {
         }
     };
     return Promise.all([one(), one(), one()]);
+}
+function _wrAspect(src) {
+    if (!src) return Promise.resolve(0);
+    return new Promise(res => { const im = new Image(); const t = setTimeout(() => res(0), 15000);
+        im.onload = () => { clearTimeout(t); res(im.naturalWidth && im.naturalHeight ? im.naturalWidth / im.naturalHeight : 0); };
+        im.onerror = () => { clearTimeout(t); res(0); }; im.src = src; });
 }
 function wrMediaPending() { return [..._wrMedia.values()].some(m => m.state === 'loading'); }
 // A still from the video, a second in (or its first frame).
@@ -1243,15 +1255,20 @@ function setWeeklyEmbedVideo(on) { _wrEmbedVideo = !!on; }
 // One gallery block from a list of references.
 function _wrGallery(refs, max) {
     return { type: 'gallery', items: _wrVisible(refs).slice(0, max || WR_GALLERY_MAX).map(r => { const m = _wrMedia.get(r.key) || { state: 'loading' };
-        return { key: r.key, kind: r.kind, cap: r.cap, sub: r.sub, state: m.state, src: m.src || '', poster: m.poster || '', name: r.name || '', size: r.size || 0, type: r.type || '' }; }) };
+        return { key: r.key, kind: r.kind, cap: r.cap, sub: r.sub, state: m.state, src: m.src || '', poster: m.poster || '', name: r.name || '', size: r.size || 0, type: r.type || '', ar: m.ar || 0 }; }) };
 }
 function _wrGalleryHtml(b) {
     if (!b.items.length) return '<div class="wr-empty">No pictures this week</div>';
-    return `<div class="wr-gal wr-gal--${Math.min(b.items.length, WR_GALLERY_MAX)}${b.inCard ? ' wr-gal--mini' : ''}">${b.items.map(it => {
+    // 2.40.2: a page of pictures — rows at each photo's own shape, filling the page (DailyCore.galleryLayout);
+    // b.box: the page's body in slide inches, set by the page builder's caller (see weeklyPagesHtml).
+    const J = !b.inCard && window.DailyCore && b.box ? DailyCore.galleryLayout(b.items.map(it => it.ar), b.box.w, b.box.h, { gap: 0.16, cap: 0.42 }) : null;
+    const pos = i => { if (!J) return ''; const g = J[i], W = b.box.w, H = b.box.h;
+        return ` style="left:${(100 * g.x / W).toFixed(2)}%;top:${(100 * g.y / H).toFixed(2)}%;width:${(100 * g.w / W).toFixed(2)}%;height:${(100 * (g.h + 0.42) / H).toFixed(2)}%;--ph:${(100 * g.h / (g.h + 0.42)).toFixed(2)}%"`; };
+    return `<div class="wr-gal wr-gal--${Math.min(b.items.length, WR_GALLERY_MAX)}${b.inCard ? ' wr-gal--mini' : ''}${J ? ' wr-gal--j' : ''}">${b.items.map((it, i) => {
         const img = it.kind === 'video' ? it.poster : it.src;
         const pic = it.state === 'loading' ? '<div class="wr-gal__ph">Loading…</div>'
             : img ? (it.kind === 'video' ? `<img src="${_wrE(img)}" alt="">` : `<img ${thumbAttrs(img, true)} alt="">`) : `<div class="wr-gal__ph"><i class="fas fa-film" aria-hidden="true"></i></div>`;
-        return `<figure class="wr-gal__item"><div class="wr-gal__pic">${pic}${it.kind === 'video' ? '<span class="wr-gal__play" aria-hidden="true"></span>' : ''}
+        return `<figure class="wr-gal__item"${pos(i)}><div class="wr-gal__pic">${pic}${it.kind === 'video' ? '<span class="wr-gal__play" aria-hidden="true"></span>' : ''}
             <button type="button" class="wr-gal__x wr-noprint" title="Leave this out of the report" aria-label="Leave this picture out" onclick="hideWeeklyMedia(${jsArg(it.key)})">&times;</button></div>
             <figcaption><b>${_wrE(it.cap)}</b><span>${_wrE(it.sub)}</span></figcaption></figure>`; }).join('')}</div>`;
 }

@@ -88,6 +88,7 @@ function layout(pg, z) {
     });
     return cards;
 }
+const tilesOf = (items, x, y, w, h) => require('./dailyCore').galleryLayout(items.map(it => it.ar), w, h, { gap: 0.16, cap: 0.42 }).map(g => ({ x: x + g.x, y: y + g.y, w: g.w, h: g.h }));
 function galleryGeom(n, x, y, w0, h0) {
     const cols = n <= 3 ? Math.max(1, n) : 3, rows = n <= 3 ? 1 : 2, gap = 0.25, cap = 0.48;
     const w = (w0 - gap * (cols - 1)) / cols, rowH = (h0 - gap * (rows - 1)) / rows, ph = Math.min(rowH - cap, w * 0.75);
@@ -177,7 +178,8 @@ function drawBlock(ops, b, x, y, w, h, warn) {
         return;
     }
     case 'gallery': {
-        galleryGeom(b.items.length, x, y, w, h).forEach((g, i) => {
+        // 2.40.2: each photo at its own shape, in rows that fill the page (dailyCore.galleryLayout).
+        tilesOf(b.items, x, y, w, h).forEach((g, i) => {
             const it = b.items[i];
             if (it.data) ops.push({ t: 'img', data: it.data, x: g.x, y: g.y, w: g.w, h: g.h });
             else { ops.push({ t: 'rect', x: g.x, y: g.y, w: g.w, h: g.h, fill: 'E7ECEA', r: 0.08 }); T('Photo in the dashboard', { x: g.x, y: g.y, w: g.w, h: g.h, size: 9, color: COL.slate, align: 'center', valign: 'middle' }); }
@@ -286,4 +288,4 @@ function renderPdf(pages, opts) {
     return done;
 }
 
-module.exports = { renderPptx, renderPdf, pageOps, layout, fitLine, fitLines, galleryGeom };
+module.exports = { renderPptx, renderPdf, pageOps, layout, fitLine, fitLines, galleryGeom, tilesOf };

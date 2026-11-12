@@ -11359,6 +11359,11 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
 .wr-gal--1 { grid-template-columns: minmax(0, 60%); justify-content: center; }
 .wr-gal--2 { grid-template-columns: repeat(2, 1fr); }
 .wr-gal__item { margin: 0; min-width: 0; }
+/* 2.40.2: a page of pictures laid out by DailyCore.galleryLayout — each at its own shape */
+.wr-gal--j { display: block; position: relative; height: 100%; }
+.wr-gal--j .wr-gal__item { position: absolute; display: flex; flex-direction: column; }
+.wr-gal.wr-gal--j .wr-gal__pic { aspect-ratio: auto; height: var(--ph); max-height: none; width: 100%; flex: none; }
+.wr-gal--j figcaption { margin-top: .5cqw; }
 .wr-gal__pic { position: relative; aspect-ratio: 4 / 3; background: var(--tint); overflow: hidden; border-radius: .4cqw; }
 .wr-gal--1 .wr-gal__pic, .wr-gal--2 .wr-gal__pic, .wr-gal--3 .wr-gal__pic { aspect-ratio: 4 / 3; max-height: 30cqw; width: 100%; }
 .wr-gal__pic img { width: 100%; height: 100%; object-fit: cover; display: block; }

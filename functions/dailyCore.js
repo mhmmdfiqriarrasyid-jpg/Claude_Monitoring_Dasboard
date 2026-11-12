@@ -122,6 +122,45 @@
                 j.units ? `Units ${j.units}` : '', j.by ? `By ${j.by}` : '', j.hours ? `${h1(j.hours)} h` : '', j.requestedBy ? `For ${j.requestedBy}` : ''].filter(Boolean).join(' · '),
             note: j.issue ? `Problem: ${clip(j.issue, 160)}` : '' };
     }
+    // 2.40.2: photos in rows, each at its own shape (portrait stays portrait), sized to fill the
+    // box. Every way of cutting the photos (in order) into rows is tried; the one whose photos
+    // cover the most of the box wins. ars: width / height of each photo; W, H: the box; gap
+    // between photos, cap: the caption under each row. Returns [{ x, y, w, h }] (photo only).
+    function galleryLayout(ars, W, H, o) {
+        o = o || {};
+        const n = ars.length, g = o.gap == null ? 0.16 : o.gap, cap = o.cap == null ? 0.42 : o.cap;
+        if (!n) return [];
+        const a = ars.map(x => (x > 0.2 && x < 5 ? x : 4 / 3));
+        let best = null;
+        for (let mask = 0; mask < 1 << (n - 1); mask++) {
+            const rows = [[0]];
+            for (let i = 1; i < n; i++) { if (mask & (1 << (i - 1))) rows.push([i]); else rows[rows.length - 1].push(i); }
+            const hs = rows.map(r => (W - g * (r.length - 1)) / r.reduce((t, i) => t + a[i], 0));
+            const room = H - rows.length * cap - g * (rows.length - 1);
+            if (room <= 0) continue;
+            const k = Math.min(1, room / hs.reduce((t, h) => t + h, 0));
+            const area = rows.reduce((t, r, j) => t + r.reduce((u, i) => u + a[i] * (hs[j] * k) * (hs[j] * k), 0), 0);
+            if (!best || area > best.area + 1e-9) best = { rows, hs, k, area };
+        }
+        if (!best) return a.map(() => ({ x: 0, y: 0, w: 0, h: 0 }));
+        const out = [], used = best.hs.reduce((t, h) => t + h * best.k, 0) + best.rows.length * cap + g * (best.rows.length - 1);
+        let y = Math.max(0, (H - used) / 2);
+        best.rows.forEach((r, j) => {
+            // A row short of the full width is widened: landscape photos by up to 35%, portrait ones by up to
+            // 10% (each loses a little at top and bottom; a portrait photo stays clearly portrait).
+            const h = best.hs[j] * best.k, nat = r.reduce((t, i) => t + a[i] * h, 0);
+            let extra = Math.max(0, W - g * (r.length - 1) - nat);
+            const wide = r.filter(i => a[i] >= 1), wl = wide.reduce((t, i) => t + a[i] * h, 0);
+            const fl = wl ? Math.min(1.35, 1 + extra / wl) : 1; extra -= wl * (fl - 1);
+            const tall = r.filter(i => a[i] < 1), wt = tall.reduce((t, i) => t + a[i] * h, 0);
+            const ft = wt ? Math.min(1.1, 1 + Math.max(0, extra) / wt) : 1;
+            const wOf = i => a[i] * h * (a[i] >= 1 ? fl : ft), rw = r.reduce((t, i) => t + wOf(i), 0) + g * (r.length - 1);
+            let x = (W - rw) / 2;
+            r.forEach(i => { out[i] = { x, y, w: wOf(i), h }; x += wOf(i) + g; });
+            y += h + cap + g;
+        });
+        return out;
+    }
     // The page as it is drawn: a card with nothing in it becomes one line in a thin strip under
     // the title, a column (or band) left with no card goes, and the others take the room.
     const EMPTY = { list: b => !(b.items || []).length, table: b => !(b.rows || []).length, bars: b => !(b.items || []).length, steps: b => !(b.items || []).length,
@@ -219,12 +258,16 @@
             .sort((a, b) => (b.today - a.today) || a.name.localeCompare(b.name));
 
         // ---- Photos: Daily Report paddock lines (different paddocks first), tickets, jobs, projects ----
-        const cand = [];
+        const cand = [], extra = [];
         logs.filter(l => photoCount(l) > 0).forEach(l => {
             const js = l.place === 'office' ? [] : logJobs(l), counts = js.map(j => Math.max(0, Math.floor(Number(j.photoCount) || 0))), sum = counts.reduce((a, b) => a + b, 0);
             const who = first(l.memberName);
-            if (sum && sum <= photoCount(l)) { let k = 0; js.forEach((j, i) => { if (counts[i]) cand.push({ key: `wl:${l.id}:${i}`, src: 'wl', id: l.id, index: k, group: j.paddock || '',
-                cap: [j.paddock, j.jobType].filter(Boolean).join(' · ') || 'Daily Report', sub: `${who}${(j.units || []).length ? ' · ' + j.units.map(unitName).filter(Boolean).join(', ') : ''}` }); k += counts[i]; }); }
+            if (sum && sum <= photoCount(l)) { let k = 0; js.forEach((j, i) => { if (counts[i]) {
+                const base = { src: 'wl', id: l.id, group: j.paddock || '', cap: [j.paddock, j.jobType].filter(Boolean).join(' · ') || 'Daily Report', sub: `${who}${(j.units || []).length ? ' · ' + j.units.map(unitName).filter(Boolean).join(', ') : ''}` };
+                cand.push(Object.assign({ key: `wl:${l.id}:${i}`, index: k }, base));
+                // 2.40.2: the line's other photos wait as spares, used when the day has fewer than six.
+                for (let e = 1; e < Math.min(counts[i], 3); e++) extra.push(Object.assign({ key: `wl:${l.id}:${i}:${e}`, index: k + e }, base, { sub: `${base.sub} · photo ${e + 1}` }));
+            } k += counts[i]; }); }
             else cand.push({ key: `wl:${l.id}:g`, src: 'wl', id: l.id, index: 0, group: (js[0] || {}).paddock || l.place || '',
                 cap: l.place === 'office' ? `Office · ${clip(l.task, 50)}` : ([(js[0] || {}).paddock, (js[0] || {}).jobType].filter(Boolean).join(' · ') || 'Daily Report'), sub: who });
         });
@@ -238,8 +281,8 @@
         pjs.forEach(p => (p.updates || []).filter(u => u.date === date && (u.photoIds || []).length).forEach(u =>
             other.push({ key: `pj:${u.photoIds[0]}`, src: 'pj', id: u.photoIds[0], cap: clip(p.name || 'Project', 60), sub: clip(u.text, 60) })));
         // Four from the Daily Report and the rest from the others when both have them; spares after.
-        const photos = [...daily.slice(0, 4), ...other.slice(0, PHOTO_MAX - Math.min(4, daily.length)), ...daily.slice(4), ...other.slice(PHOTO_MAX - Math.min(4, daily.length))]
-            .filter((p, i, a) => a.findIndex(x => x.key === p.key) === i).slice(0, PHOTO_MAX + 4);
+        const photos = [...daily.slice(0, 4), ...other.slice(0, PHOTO_MAX - Math.min(4, daily.length)), ...daily.slice(4), ...other.slice(PHOTO_MAX - Math.min(4, daily.length)), ...extra]
+            .filter((p, i, a) => a.findIndex(x => x.key === p.key) === i).slice(0, PHOTO_MAX + 6);
 
         return { day, team, damage, fixed, tickets, breakdownNow, jobs, updates, running, photos,
             generatedAt: new Date(now).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) };
@@ -327,5 +370,5 @@ ${table(['Project', 'What changed', 'Progress'], D.updates.map(u => { const e = 
         return { subject: `Daily Report — ${D.day.short}`, html, text };
     }
 
-    return { buildDaily, dailyPages, dailyEmail, dayInfo, yesterday, PHOTO_MAX, fitPage, summarizeUpdates, projectEntry, projectNamer, jobInfo, jobEntry, typeLabel, oneLine, clip, ptShort: pt, dayName };
+    return { buildDaily, dailyPages, dailyEmail, dayInfo, yesterday, PHOTO_MAX, fitPage, galleryLayout, summarizeUpdates, projectEntry, projectNamer, jobInfo, jobEntry, typeLabel, oneLine, clip, ptShort: pt, dayName };
 }));

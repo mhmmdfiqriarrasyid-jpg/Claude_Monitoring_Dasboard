@@ -72,6 +72,8 @@ const data = {
     const { pageOps } = require(F('dailyDeck.js'));
     const sizes = pageOps(noJobs).filter(o => o.t === 'text' && o.y > 1.2).map(o => o.size);
     t('halaman yang isinya sedikit diperbesar sampai memenuhi slide (2.40.1)', Math.max(...sizes) > 12, true);
+    const G = C.galleryLayout([4 / 3, 0.66, 4 / 3, 4 / 3, 0.66, 4 / 3], 9.2, 4.2);
+    t('galeri: potret tetap potret, lanskap tetap lanskap, semua di dalam halaman (2.40.2)', [G.every((g, i) => (g.w < g.h) === ([1, 4].includes(i))), G.every(g => g.x >= -1e-9 && g.x + g.w <= 9.2 + 1e-9 && g.y + g.h <= 4.2 + 1e-9)], [true, true]);
     t('teks dipotong ke kotaknya', fitLine('Pasang Camera AI di seluruh unit traktor GPA', 1, 10), 'Pasang Camer…');
 
     const pptx = await renderPptx(P), pdf = await renderPdf(P);

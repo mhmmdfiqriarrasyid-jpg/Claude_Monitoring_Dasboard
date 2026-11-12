@@ -591,6 +591,12 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.40.2 — Halaman foto mengikuti bentuk foto**: foto disusun dalam baris
+  sesuai rasio aslinya (potret tetap potret, lanskap tetap lanskap) dan
+  diperbesar sampai memenuhi halaman (`DailyCore.galleryLayout`; lanskap
+  boleh melebar s.d. 35%, potret s.d. 10%). Daily Report: bila foto hari itu
+  kurang dari 6, foto ke-2 dari baris paddock yang sama ikut dipakai. Sama di
+  layar, PDF, PowerPoint dan email.
   **2.40.1 — Isi tiap halaman memenuhi slide**: setelah kartu disusun,
   halaman diperbesar otomatis (huruf, baris, jarak; maks. 1,6×) sampai isinya
   memenuhi slide — di layar/Save as PDF (diukur dari halaman), PowerPoint dan
