@@ -1,2 +1,1614 @@
-# Claude_Monitoring_Dasboard
-Claude_AI_Create_Monitoring Dashboard
+# Operation Technology Dashboard
+
+Dashboard pemantauan armada traktor dan perangkat presisi: status unit,
+kerusakan, lisensi, operasional tim, dan gudang. Aplikasi web statis
+(HTML + CSS + JavaScript tanpa build) dengan Firebase Authentication dan
+Cloud Firestore.
+
+---
+
+## Menjalankan di komputer sendiri
+
+```bash
+npm run serve          # menyajikan folder ini di http://localhost:8765
+```
+
+Tidak ada langkah build. Berkas yang diedit langsung tampil setelah reload.
+
+---
+
+## Deploy
+
+Aplikasi ini dilayani **GitHub Pages dari branch kerja**, bukan dari `main`.
+Cukup push ke branch tersebut; Pages membangun ulang dalam satu-dua menit.
+
+Setelah deploy, **lihat pojok kanan bawah halaman**. Di situ tertulis versi yang
+sedang berjalan, misalnya `v96`. Kalau angkanya belum berubah setelah Anda
+deploy, yang terbuka masih versi lama — bukan kode Anda yang salah.
+
+Kalau versinya tetap tidak berubah padahal deploy sudah jalan, service worker
+lama masih memegang berkas: buka DevTools → Application → Service Workers →
+**Unregister**, lalu reload sekali. Ini hanya perlu sekali.
+
+### Setiap deploy wajib menaikkan dua angka
+
+`APP_VERSION` di `script.js` dan `CACHE_NAME` di `service-worker.js` harus
+dinaikkan bersamaan. Keduanya menandai build yang sama; kalau `CACHE_NAME`
+tidak naik, service worker tidak akan mengambil berkas baru.
+
+---
+
+## ⚠️ Firestore rules — langkah yang paling sering terlewat
+
+`firestore.rules` **tidak ikut ter-deploy** bersama aplikasi. Berkas itu harus
+di-paste manual:
+
+> Firebase Console → Firestore Database → Rules → tempel seluruh isi
+> `firestore.rules` → **Publish**
+
+**Publish ulang setiap kali:**
+
+- ada koleksi Firestore baru,
+- ada area akses baru di `ACCESS_AREAS` (`script.js`),
+- aturan tulis sebuah koleksi berubah.
+
+Kalau terlewat, aplikasinya tetap terbuka dan tombolnya tetap ada, tetapi
+penyimpanan ditolak diam-diam oleh server. Beberapa halaman menampilkan spanduk
+merah "Firestore rules memblokir …" saat ini terjadi — itu petunjuknya.
+
+Daftar owner di `firestore.rules` harus sama persis dengan `OWNER_EMAILS` di
+`firebase-init.js`.
+
+---
+
+## Model akses
+
+Setiap akun punya satu **role** dan sebuah peta **akses per area**.
+
+| Role | Arti |
+|---|---|
+| `owner` | Super Admin — akses penuh, tidak bisa dikunci keluar |
+| `staff`, `pbt`, `khl` | Label saja; **tidak memberi akses apa pun** sampai diatur per area |
+| `team`, `viewer` | Role lama, masih dihormati apa adanya |
+
+Area yang bisa diatur (`ACCESS_AREAS` di `script.js`) — tiap area bernilai
+`none` / `view` / `edit`:
+
+`editUnits`, `implements`, `damage`, `licenseStock`, `teamShift`, `teamLog`,
+`teamMembers`, `teamLogApprove`, `warehouse`, `inspection`,
+`inspectionApprove`, `history`, plus `csv` (`none` / `export` / `full`).
+
+`teamLogApprove` sengaja terpisah dari `teamLog`: seorang pemeriksa bisa
+menyetujui laporan tanpa bisa mengubah isinya — dan pemisahan itu ditegakkan
+oleh Firestore rules, bukan hanya oleh tampilan.
+
+`inspection` (teknisi: mengisi laporan cek alat berat, membuat jadwal) dan
+`inspectionApprove` (atasan: menyetujui / minta revisi) dipisah dengan alasan
+yang sama.
+
+**Batas kelompok unit (v165):** `access.unitScope` = `all` / `tractor` /
+`heavy` (baris pertama dialog Access, plus tombol "View only — …"). Akun yang
+dibatasi hanya melihat unit dan kerusakan kelompoknya, Unit Database dan
+Damage menjadi lihat-saja, dan area kelompok lain tertutup (Implements +
+License Stock untuk alat berat; Inspection untuk pertanian). Tanpa nilai =
+semua; nilai lain = tertutup. Owner tidak pernah dibatasi. Ditegakkan juga di
+rules (`lvlOf`/`scopeOf`).
+
+Editor `damage` tanpa edit `editUnits` boleh mengubah unit **hanya** lewat
+kerusakan (v162): status, delapan field komponen, alasan breakdown, jam
+downtime dan `breakdownDamageId` — nilai Good/Breakdown saja, dan riwayat
+downtime hanya bisa bertambah satu interval (`damageLinkOnly` di rules).
+
+**Purchase Request (2.9.0):** area `purchase` = `none` / `own` / `view` /
+`edit`. Halaman *Purchase Requests* mengikuti isian sistem kantor (Title, PT,
+PR No., PR date, Normal/Urgent, CAPEX/Expense, item + spesifikasi) dan
+melacak status Draft → Submitted → Approved → PO issued → Partially
+received → Received (atau Rejected / Cancelled, wajib alasan). `edit`
+menyetujui, mencatat PO dan menerima barang — penerimaan menyimpan foto
+dokumentasi dan bisa langsung mencatat **Stock in** di Warehouse (perlu edit
+`warehouse`). `own` hanya membuat dan melihat permintaannya sendiri, dan
+hanya bisa mengubah selama masih draf. Lampiran dan foto penerimaan disimpan
+di `purchasePhotos` (maks. 10 per form). PR yang menunggu persetujuan, Urgent,
+atau tertahan ≥ 7 hari di satu langkah muncul di Decision inbox.
+
+**Paddock & Daily Report (2.10.0):** Daily Report berisi satu atau lebih
+baris *Paddock → Type Job → Unit*. Saat dikirim, setiap baris wajib punya
+paddock, jenis pekerjaan dan minimal satu unit (draf boleh belum lengkap).
+Paddock dipilih dari daftar per PT (koleksi `paddocks`, satu dokumen per PT)
+sesuai PT anggota; PT tanpa daftar menawarkan semua paddock. Daftar diatur di
+Master lists → **Paddocks** oleh pemegang edit `teamMembers`: impor Excel
+(satu sheet per PT, kolom *Paddock ID (PID)*; sheet "GPA" otomatis cocok ke
+"PT. Global Papua Abadi") atau CSV, tambah/hapus satu per satu. **Job Types**
+juga master list (`masterLists/jobType`); selama kosong pilihannya
+Application, Tillage, Harvesting, Planting. Field lama `paddock` (gabungan)
+dan `units` (tanpa ganda) tetap diisi untuk tampilan dan ekspor lama.
+
+**Implement Group (2.10.7):** setiap implement punya field `group`
+(misalnya Primary Tillage, Planting). Daftarnya master list
+`masterLists/implGroup` (edit oleh pemegang edit `implements`); selama
+kosong, isian bebas. Tabel Implements punya kolom dan filter Group, dan
+tombol **Set group** untuk implement yang dicentang.
+
+**Kalender laporan (2.11.0):** di tab Daily reports, kalender bulanan
+menunjukkan per hari berapa anggota yang melapor dari yang diharapkan
+(hijau semua, oranye sebagian, merah tidak ada), dengan inisial yang
+melapor. Klik hari untuk melihat siapa yang melapor (dengan status
+persetujuan dan jam) dan siapa yang belum; yang cuti/sakit disetujui atau
+shift libur dihitung "Not expected". Mengikuti filter Company; laporan
+draf tidak dihitung; disembunyikan untuk akses Daily Report "own".
+
+**Library & CSP (2.11.1):** Chart.js, PapaParse, EmailJS, SheetJS, Font
+Awesome dan font Poppins/Open Sans disimpan di `vendor/` (salinan persis
+dari paket npm resmi, versi terkunci — lihat `vendor/README.md`), bukan
+dari CDN pihak ketiga. `index.html` memasang Content-Security-Policy:
+script hanya dari situs ini + `www.gstatic.com` (Firebase), koneksi hanya
+ke `*.googleapis.com` dan `*.cloudfunctions.net` (2.14.0; EmailJS sudah dilepas), tanpa plugin/objek.
+`'unsafe-inline'` masih perlu untuk atribut `onclick`. Menambah library
+atau layanan luar baru = tambahkan juga ke CSP, atau browser akan
+memblokirnya (`tests/csp_test.js` memeriksa ini).
+
+**Pasang sebagai aplikasi (2.11.6):** dashboard adalah PWA. Di HP muncul
+banner "Install OT Dashboard" (bisa ditutup, muncul lagi 30 hari kemudian)
+dan menu user punya **Install app**. Chrome/Edge memakai prompt install
+bawaan browser; di iPhone ditampilkan langkah Safari → Share → Add to Home
+Screen. Ikon yang ditekan lama punya shortcut (Add daily report, Report
+damage, Decision inbox, Units) lewat `?action=…`, dijalankan sesudah login.
+
+**Learning Center (2.12.0):** menu baru untuk PDF (manual, SOP, panduan).
+Semua akun aktif bisa membaca; area akses **Learning Center (add material)**
+(`learning`: none/edit) untuk menambah/mengubah/menghapus. Materi bisa
+**Upload PDF** (maks. 15 MB) atau **Link** (Google Drive tampil di dalam
+halaman, link lain dibuka di tab baru). Di paket Spark, PDF upload disimpan
+di Firestore sebagai potongan base64 ≤ 700 KB (`learningFiles/<fileId>__<n>`,
+dibaca per id tanpa index) dan dibaca hanya oleh akun yang login. Katalog di
+`learningItems`; `file.storage` = `'firestore'` sekarang — `'storage'`
+disiapkan untuk Cloud Storage saat pindah ke Blaze (`loadLearningPdfBytes`).
+PDF digambar dengan PDF.js lokal (`vendor/pdfjs`, dimuat saat dibuka,
+`isEvalSupported: false`) supaya juga tampil di HP Android. Kategori =
+master list `learnCategory` (kosong = 5 kategori bawaan).
+**E-book (2.12.2):** upload juga menerima **EPUB, MOBI dan AZW3** (format
+dikenali dari isi file, `file.format`). Dibuka dengan foliate-js lokal
+(`vendor/foliate`, dimuat saat dibuka) — tombol ‹ › (dan panah keyboard),
+ukuran huruf A−/A+, persentase bacaan. Iframe buku di-sandbox **tanpa**
+`allow-scripts`, jadi script di dalam buku tidak bisa berjalan; perubahan
+lokal pada foliate ditandai "OT Dashboard" (lihat `vendor/README.md`).
+Buku ber-DRM (Kindle yang dibeli) tidak bisa dibuka.
+
+**Satu akun hanya boleh aktif di satu perangkat.** Login terbaru menang;
+perangkat lain keluar sendiri.
+
+---
+
+## Menjalankan uji
+
+```bash
+npm install            # sekali saja
+npm test               # menyalakan server sendiri, lalu menjalankan semua suite
+```
+
+2.140 pemeriksaan di lima puluh satu suite, menggerakkan Chromium sungguhan terhadap
+aplikasi yang disajikan. Kalau mesin Anda sudah punya Chromium dan tidak ingin
+Playwright mengunduh miliknya:
+
+```bash
+CHROME_PATH=/jalur/ke/chrome npm test
+```
+
+Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
+`session_test`, `warehouse_test`, `approval_test`, `leader_test`, `recap_test`,
+`photos_test`, `migration_test`, `history_scan_test`, `validation_test`,
+`datacheck_test`, `damagephotos_test`, `mobile_test`, `window_test`,
+`backup_test`, `keyboard_test`, `leave_test`, `unitgroups_test`,
+`hardening_test`, `followup_test`, `licsync_test`, `xss_test`, `auditfix_test`, `regress`.
+
+---
+
+## Susunan berkas
+
+| Berkas | Isi |
+|---|---|
+| `index.html` | Seluruh tampilan: sembilan view dan semua modal |
+| `script.js` | Seluruh logika aplikasi |
+| `style.css` | Gaya, termasuk mode kartu untuk layar ponsel |
+| `firebase-init.js` | Jembatan Firebase → `window.cloud` |
+| `firestore.rules` | Aturan keamanan — **di-publish manual** |
+| `service-worker.js` | Cache PWA; `CACHE_NAME` dinaikkan tiap deploy |
+| `tests/` | Uji browser |
+| `.claude/skills/` | Skill Claude Code (Ponytail v5.2.0, MIT): `/ponytail`, `/ponytail-review`, `/ponytail-audit`, `/ponytail-debt`, `/ponytail-gain`, `/ponytail-help`. Mode `/ponytail` hanya aktif bila dipanggil; asal dan perubahan lokal di `.claude/skills/ponytail/UPSTREAM.md` |
+| `.claude/skills/ui-ux-pro-max/` | Skill Claude Code UI UX Pro Max v2.15.0 (MIT): panduan UI/UX + basis data gaya, warna, tipografi, chart, aksesibilitas; dicari dengan `python3 .claude/skills/ui-ux-pro-max/scripts/search.py`. Asal, yang sengaja tidak disalin, dan perubahan lokal di `UPSTREAM.md` di folder itu |
+
+---
+
+## Catatan untuk yang melanjutkan
+
+- **Foto disimpan sebagai data URL, bukan di Cloud Storage** — tetapi di
+  koleksinya sendiri, bukan di dalam dokumen yang dilanggan. Semuanya
+  dikecilkan dulu (1024px / 200 KB) dan dibatasi jumlahnya. Kalau suatu hari
+  pindah ke Cloud Storage, dua koleksi di bawah ini yang diganti.
+- **Foto laporan harian ada di koleksi terpisah `workLogPhotos/{idLaporan}`,
+  dan koleksi itu tidak pernah di-`onSnapshot`.** Dokumen laporannya hanya
+  menyimpan `photoCount`. Ini disengaja: `subscribeWorkLogs` berlangganan
+  seluruh koleksi tanpa `limit()`, jadi selama foto ada di dalam dokumen
+  laporan, setiap perangkat mengunduh ulang semua foto setiap kali aplikasi
+  dibuka. Jangan tambahkan langganan ke `workLogPhotos` — ambil per dokumen
+  lewat `loadWorkLogPhotos(id)`.
+- **Foto kerusakan ada di `damagePhotos/{idCatatan}`**, dengan pengaturan yang
+  sama persis dan alasan yang sama: `damageRecords` juga dilanggan utuh tanpa
+  `limit()`. Catatannya hanya menyimpan `hasPhoto`; ambil lewat
+  `loadDamagePhoto(id)`. Jangan pernah melanggan koleksi ini.
+  **Tidak ada lagi data URL yang disimpan di dalam dokumen Firestore** —
+  kalau Anda hendak menambahkan satu, pisahkan sejak awal.
+- **Tulisan cloud lewat `cloudWrite()`.** Jangan panggil `logEvent()` di dalam
+  `.then()` sebuah tulisan Firestore: offline, promise-nya tidak pernah selesai
+  dan jejak auditnya hilang.
+- **⚠️ Jangan pernah menulis migrasi data yang dijaga hanya penanda
+  `localStorage`.** Penanda itu per-browser, bukan per-database: ganti
+  perangkat, hapus data situs, atau install ulang PWA, dan migrasinya jalan
+  lagi. Empat migrasi seperti itu pernah ada di sini (nickname, lisensi ×2,
+  site) dan menimpa 366 field dengan data Excel Mei 2026 setiap kali seseorang
+  membukanya di browser baru — termasuk mengembalikan unit ke PT yang salah.
+  Semuanya sudah dihapus — begitu juga `applyDefaultLicensesIfNeeded()`, yang
+  dulu jadi contoh di sini: bentuknya sama (penanda per-browser) dan begitu ada
+  alat berat ia akan menempelkan lisensi SF-RTK ke excavator. Kalau memang perlu
+  migrasi: `isOwner()`, **hanya mengisi yang kosong**, dan — ini yang dulu
+  terlewat — **hanya untuk field milik kelompok unit itu**
+  (`fieldAllowedForGroup(field, unitGroupOf(u))`). Untuk alat berat, kolom
+  lisensi yang kosong berarti *tidak berlaku*, bukan *belum diisi*.
+- **Catatan riwayat bisa berbohong, dan ada alat untuk itu.** `logEvent()`
+  menulis sebelum server menjawab, jadi tulisan yang ditolak tetap
+  meninggalkan barisnya. `/history` diizinkan oleh `canEditAnything()` — edit
+  di area **mana pun** — sementara tiap koleksi dijaga areanya sendiri, jadi
+  catatan bisa lolos walau datanya ditolak. Tombol **Periksa** di modal History
+  (khusus owner) memindai seluruh koleksi dan menawarkan menghapus baris yang
+  nilainya terbukti tidak pernah bergerak. Sengaja dibuat sempit: hanya update
+  field unit, hanya baris terbaru per unit+field, dan hanya kalau nilainya
+  masih persis seperti sebelum perubahan.
+- **Semua penulis `units` mengunci dirinya sendiri** lewat `canWriteUnits()`,
+  bukan hanya di pemanggil. Pemanggil baru tidak boleh mewarisi nol
+  perlindungan seperti dulu.
+- **Cache offline menentukan mahal-murahnya membuka aplikasi.** Dengan cache
+  hangat, Firestore melanjutkan tiap langganan dari posisi terakhir dan hanya
+  menarik yang berubah. `firebase-init.js` memakai `persistentLocalCache` +
+  `persistentMultipleTabManager`; API lama `enableIndexedDbPersistence`
+  **menyerah total begitu ada tab kedua**, jadi admin yang membuka dua tab dulu
+  tidak punya cache sama sekali. Cek `window.cloud.cacheMode` di console —
+  `persistent-multitab` berarti sehat, `memory` berarti tiap reload menarik
+  ulang semuanya.
+- **Langganan `shifts` dibatasi jendela tanggal** (`SHIFT_WINDOW_DAYS`,
+  ±4 bulan), karena koleksi itu bertambah satu dokumen per orang per hari
+  selamanya. Mundur melewati jendela **melebarkan** langganannya lewat
+  `ensureShiftWindowCovers()` — jangan pernah menggantinya dengan sekadar
+  menyembunyikan data. Dijaga `tests/window_test.js`.
+  `workLogs` sengaja **tidak** dibatasi: enam tempat membacanya di luar jendela
+  mana pun (Kotak Keputusan untuk laporan tertunda umur berapa pun, profil
+  unit, Periksa Data, rekap bulan lama, ekspor CSV, daftar paddock), jadi
+  penghematannya kecil sementara peluang data hilang diam-diam besar.
+- **Ukuran untuk ponsel ada di satu blok di ujung `style.css`**
+  (`@media (max-width: 700px)`), dan dijaga `tests/mobile_test.js`. Aturan yang
+  tidak boleh dilanggar: **setiap field form minimal `16px`.** Safari iPhone
+  nge-zoom halaman tiap kali field di bawah 16px difokuskan dan tidak pernah
+  kembali — satu field 13px membuat seluruh aplikasi membesar sampai pengguna
+  reload. Sisanya soal ukuran sentuh: kontrol ≥40px, tombol ≥44px.
+  Desktop sengaja tidak ikut berubah, dan itu juga diuji.
+- **Modal yang isinya dibungkus `<form>` langsung di bawah `.modal-card`**
+  bergantung pada `.modal-card > form { display:flex; … min-height:0 }`.
+  Tanpa itu form tidak bisa menyusut, kartu (`overflow:hidden`) memotongnya,
+  dan di ponsel tidak ada yang bisa di-scroll — tombol Simpan tak terjangkau.
+  `mobile_test` membuka setiap modal di 360×600 dan memeriksanya.
+- **`.btn-sm` didefinisikan dua kali di `style.css`** dan yang kedua menang di
+  semua lebar. Sunting yang kedua; yang pertama tidak berpengaruh apa-apa.
+- **Validasi ada di fungsi simpan, bukan hanya di atribut HTML.**
+  `checkWorkLogHours`, `checkUnitFields`, `checkStockBalance`. Polanya: yang
+  pasti salah **ditolak**, yang mungkin benar **dikonfirmasi**. Shift malam 23
+  jam itu mencurigakan tetapi sah, jadi ia ditanya — bukan dilarang.
+- **Halaman Leader → Periksa Data** mencari data yang sudah terlanjur kotor:
+  SN kembar, karakter tak terlihat, ejaan PT yang beda tipis, jam laporan tidak
+  wajar, tanggal masa depan, lisensi yang mulai dan habis di hari yang sama
+  (tanda tangan migrasi Excel yang dihapus di v100), kerusakan tanpa unit, stok
+  minus. Tiap pemeriksaan satu fungsi murni `dc*()` — tambah yang baru dengan
+  mendaftarkannya di `DATA_CHECKS`. **Hanya perapian spasi yang boleh otomatis**;
+  itu satu-satunya perbaikan yang tidak bisa mengubah arti sebuah nilai.
+- **Jangan mencetak blok `firestore.rules` ke dalam UI.** Lima spanduk dulu
+  melakukannya dengan aturan yang sudah usang, dan menyuruh owner
+  menempelkannya — yang akan memutus semua akun non-owner. Pakai
+  `renderRulesBanner()`: ia menunjuk ke berkas di repo, menyesuaikan pesannya
+  untuk owner vs bukan, dan dibersihkan `clearRulesBanner()` begitu datanya
+  mengalir lagi.
+- **Data yang disalin** (nama anggota, nama unit, perusahaan) selalu punya
+  jalur baca yang mengutamakan data hidup dan jatuh ke salinan hanya kalau
+  aslinya sudah terhapus.
+- **Cadangan itu satu tabel, bukan daftar yang ditulis dua kali.** `BACKUP_PARTS`
+  (`script.js`) menggerakkan ekspor **dan** restore sekaligus. Koleksi baru =
+  satu baris di sana. Jangan pernah menambah koleksi ke `exportBackup` saja:
+  selama tiga versi berkasnya berisi empat koleksi dari lima belas sementara
+  tombolnya berjudul *"full JSON backup"*, dan seluruh modul Tim dan Gudang
+  tidak punya cadangan sama sekali.
+  - `fullRead` ada untuk koleksi yang salinan di memorinya **sengaja tidak
+    lengkap**. `shifts` hanya memuat jendela 120 hari, jadi mencadangkannya
+    dari `teamShifts` menghasilkan berkas yang terlihat utuh dan tidak — dan
+    restore mode GANTI yang dihitung dari larik itu akan menghapus setiap shift
+    di luar jendela.
+  - `users` dan `history` **sengaja** tidak ikut. Lihat `BACKUP_EXCLUDED`;
+    alasannya ikut ditampilkan di laporan restore supaya tidak jadi misteri.
+  - Laporan restore wajib menyebut koleksi yang **tidak ada di berkas**. Itu
+    baris yang paling penting: restore yang diam-diam mencakup lebih sedikit
+    dari yang disangka orang adalah kegagalan yang modal itu ada untuk dicegah.
+- **Alur pengiriman laporan harian & izin/sakit (dijaga `tests/workflow_test.js`).**
+  Draf → Kirim → Menunggu → Disetujui, atau kembali sebagai Perlu Revisi.
+  Hanya draf dan yang dikembalikan yang bisa diedit/dihapus; yang menunggu
+  bisa *ditarik kembali* ke draf oleh pengirimnya; yang disetujui hanya bisa
+  dibuka lagi oleh atasan lewat Minta Revisi (wajib catatan). Owner bebas.
+  Draf tidak dihitung di KPI lapor hari ini, rekap, ringkasan mingguan,
+  profil unit, maupun penanda izin di jadwal, dan tidak terlihat orang lain.
+  Pengirim diberi tahu di aplikasi: badge Tim + badge tab, kotak "Perlu
+  direvisi" di atas tabel, dan toast saat dibuka / saat ada revisi atau
+  persetujuan baru (penanda per akun di localStorage
+  `teamApprovalSeen:<uid>:<jenis>`). Foto/surat ditulis SEBELUM laporannya,
+  karena rules hanya mengizinkan foto berubah selama laporannya terbuka.
+- **Bahasa antarmuka.** Seluruh teks yang dilihat pengguna berbahasa Inggris:
+  menu, judul, kolom dan `data-label`, tombol, form, label status, toast,
+  confirm/prompt, paragraf penjelasan, header CSV ekspor, label riwayat baru
+  (`[Damage]`, `[Inspection]`, `FAILED (code) — change not saved`) dan format
+  tanggal (`en-GB`). **Nilai tersimpan tidak pernah diterjemahkan** — kunci
+  seperti `izin`, `pagi`, `pending`, `Mekanis`, `breakdownReason` 'Diset via
+  impor CSV' tetap; yang tampil lewat peta label (mis. `DAMAGE_TYPE_LABEL`).
+  Impor CSV tetap menerima header lama berbahasa Indonesia. Riwayat lama
+  tetap tampil apa adanya. Selector `data-label` di style.css harus ikut nama
+  kolom yang sama.
+- **Kualitas data (dijaga `tests/dataquality_test.js`).** Tiga alat:
+  (1) **Clean Up Values** (`valueMergeModal`, tombol di kartu kelengkapan
+  dan "Merge…" di Data Check): pilih ejaan yang maksudnya sama → semua
+  record diubah ke satu ejaan lewat `updateUnitsBatch` (satu simpan lokal,
+  satu batch cloud, baris riwayat per field seperti `updateUnit`), bisa
+  Undo. Field: jenis/brand/teks penuh Implement, Work Tool, Machine Type,
+  Model, Site, dan Company anggota tim (`saveTeamMembers`). (2) **Data
+  Check** baru: ejaan mirip (`similarSpelling`: sama setelah huruf/tanda
+  baca diabaikan atau 1–2 salah ketik; nama ≤4 huruf harus sama persis;
+  angka harus sama), field kunci kosong per kelompok, implement yang tidak
+  ada di daftar Implements. (3) **Data Completeness** di atas Unit Database:
+  % field kunci terisi (`REQUIRED_UNIT_FIELDS`, dibulatkan ke bawah), chip
+  per kekurangan memfilter tabel (`editMissingFilter`, direset saat pindah
+  kelompok). Implement terbalik "Brand — Jenis" dinilai per pasangan dari
+  ejaan LAIN (`_knownImplementBrands().pairs`).
+- **Master Lists: Site, Brand, Company (dijaga `tests/masterlist_test.js`
+  dan rules_test).** Koleksi `masterLists` (dokumen `site`, `brand`,
+  `company`; `{id, values[]}` ≤ 500), dibuka dari Admin → Master Lists atau
+  kartu Data Completeness. Hak ubah: Site = editUnits, Brand = implements
+  atau editUnits, Company = teamMembers (sama di `firestore.rules`
+  `canEditMasterList`). Daftar kosong = bebas; daftar berisi = satu-satunya
+  pilihan (`checkMasterValue`, cocok tanpa peduli huruf/spasi/tanda baca,
+  menyimpan ejaan daftar) di form unit, Bulk Edit, edit langsung, impor CSV
+  unit (Site), form & impor Implements (Brand), anggota tim (Company) dan
+  target Clean Up Values. Rename ikut mengubah record (unit, Implements +
+  teks implement unit, anggota). "Add the values in use" mengisi daftar dari
+  data, ejaan mirip dilipat ke yang terbanyak. Data Check "Not in a master
+  list". Belum termasuk Backup JSON (daftarnya kecil dan bisa diisi ulang
+  dari data).
+- **Brand pada unit Heavy Equipment (dijaga `tests/heavybrand_test.js`).**
+  Field `brand` (heavy saja — ada di `HEAVY_ONLY_FIELDS`, jadi firewall
+  kelompok menolaknya pada traktor): kolom sebelum Model di Unit Database
+  dan dashboard, form, Bulk Edit, profil, ekspor/impor CSV (`Brand`/`Merek`; header
+  bersama, jadi kolom Brand di sheet traktor diabaikan tanpa peringatan),
+  field kunci di kartu kelengkapan, Clean Up Values. Memakai daftar Brand
+  yang sama dengan Implements di Master Lists (pemakaian & rename mencakup
+  keduanya).
+  Sejak v146 brand alat berat punya daftar sendiri: **Heavy Equipment
+  Brands** (`masterLists/heavyBrand`, hak ubah editUnits), terpisah dari
+  **Implement Brands** (`masterLists/brand`) untuk Agricultural.
+- **Nomor versi 2.8.0 (sebelumnya v186).** Versi kini memakai format
+  **MAJOR.MINOR.PATCH**:
+  - **PATCH** (angka belakang, 2.8.**1**): perbaikan kecil atau penyetelan
+    tampilan.
+  - **MINOR** (angka tengah, 2.**9**.0): fitur baru.
+  - **MAJOR** (angka depan, **3**.0.0): desain ulang atau perubahan besar yang
+    harus dipelajari ulang pengguna.
+  Pemetaan riwayat: 1.x = v1–v170 (dashboard awal sampai Export Photos),
+  **2.0.0 = v171** (desain F), 2.1.0 v172 penerima alokasi, 2.2.0 v173 profil
+  perangkat, 2.2.1 v174 catatan rapi, 2.3.0 v175 peran kustom, 2.4.0 v176 riak
+  air, 2.4.1 v177, 2.5.0 v178 grid & tebu, 2.5.1–2.5.3 v179–v181 penyetelan
+  halaman masuk, 2.6.0 v182 layar tunggu, 2.6.1–2.6.2 v183–v184, 2.7.0 v185
+  foto Warehouse, **2.8.0 = v186** Damage Types.
+- **Damage Types sendiri v186 (dijaga `tests/masterlist_test.js` dan
+  rules_test).** Admin → **Master Lists** punya daftar baru **Damage Types**
+  yang bisa diisi siapa pun dengan hak ubah Damage. Isinya **menambah**
+  pilihan di form kerusakan dan filter tipe, di samping Mechanical, Software
+  dan Device Precision (bawaan, tidak bisa dihapus). Tipe tambahan berlaku
+  seperti Mechanical terhadap status unit; aturan khusus Device Precision
+  tidak berubah. Ganti nama di daftar ikut mengganti tipe di catatan
+  kerusakan; catatan dengan tipe yang sudah dihapus dari daftar tetap bisa
+  diedit. **Perlu publish ulang `firestore.rules`** (izin daftar
+  `damageType`).
+- **Foto Warehouse v185 (dijaga `tests/warehouse_test.js` dan 6 skenario
+  baru di `tests/rules_test.js`).** Form **Device** dan **Stock in / out**
+  punya bagian *Photos*: sampai **10 foto** per item (pilih beberapa sekaligus),
+  pratinjau kotak dengan tombol hapus, klik untuk memperbesar. Setiap foto
+  satu dokumen di koleksi baru `warehousePhotos/{id}` (dikompres ≤250 KB),
+  item hanya menyimpan daftar `photoIds`, jadi tidak pernah kena batas 1 MB.
+  Tabel menampilkan chip 📷 jumlah foto (klik = galeri), profil perangkat
+  menampilkan galeri foto. Menghapus item ikut menghapus fotonya. Rules:
+  baca = lihat Warehouse, tulis = ubah Warehouse, maksimal ~400 KB per foto.
+  **Perlu publish ulang `firestore.rules`.**
+- **Kategori device 2.12.3 (dijaga `tests/warehouse_test.js` dan 2 skenario
+  di `tests/rules_test.js`).** Kolom *Type* device sekarang bernama
+  **Category** dan punya master list `deviceType` (Master lists → Device
+  Categories, juga lewat tautan *Manage categories* di form). Kosong = bebas
+  ketik seperti dulu; terisi = hanya kategori di daftar yang diterima
+  (ejaan disamakan), Rename ikut mengubah semua device. Di bawah tab
+  Warehouse ada satu baris penjelasan: Devices = per buah dengan nomor seri,
+  Stock items = dihitung jumlahnya. Rules: daftar ditulis oleh editor
+  Warehouse. **Perlu publish ulang `firestore.rules`.**
+- **Filter Brand device 2.12.4 (dijaga `tests/warehouse_test.js`).** Di
+  samping Category ada filter **Brand** yang isinya hanya brand dari kategori
+  terpilih, lengkap dengan jumlah device ("Baofeng (150)"); ejaan yang hanya
+  beda kapital/spasi dihitung satu, device tanpa brand muncul sebagai
+  "No brand set". Ganti kategori → brand yang tidak ada di sana kembali ke
+  All brands. Export ikut filter. Tanpa perubahan rules.
+- **Master lists dikelompokkan 2.12.5 (dijaga `tests/masterlist_test.js`).**
+  Tab di modal Master lists dibagi per area (`MASTER_TAB_GROUPS`): *Fleet*
+  (Sites, Heavy Equipment Brands, Implement Brands, Implement Groups),
+  *Team & reports* (Companies, Job Types, Paddocks), *Damage & warehouse*
+  (Damage Types, Device Categories), *Learning Center* (Learning
+  Categories). Grup tanpa daftar yang boleh dilihat akun itu disembunyikan.
+  Daftar baru wajib dimasukkan ke salah satu grup.
+- **Learning Center di Cloud Storage 2.13.0 (Blaze; dijaga
+  `tests/learning_storage_test.js` dan `tests/storage_rules_test.js`).**
+  Upload baru disimpan di Cloud Storage `learning/<fileId>/<nama>` dengan
+  progres: PDF/EPUB/MOBI/AZW3 sampai **100 MB**, **video MP4/MOV/WebM sampai
+  500 MB** (diputar langsung di penampil). `file.storage = 'cloud'`, `path`,
+  `contentType`; materi lama (`'firestore'`, potongan) tetap terbaca. Kalau
+  Storage menolak, file ≤ 15 MB (bukan video) tetap disimpan sebagai potongan
+  Firestore. Ganti/hapus materi ikut menghapus file di Storage. SDK Storage
+  dimuat saat dipakai; `firebasestorage.googleapis.com` tidak di-cache service
+  worker dan diizinkan di CSP `media-src`.
+  **Setup sekali:** (1) aktifkan Storage (lokasi US-CENTRAL1/US-EAST1/US-WEST1
+  untuk kuota gratis); (2) publish `storage.rules` di Console → Storage →
+  Rules (izinkan akses baca Firestore saat diminta); (3) set CORS bucket dari
+  Cloud Shell dengan `storage-cors.json`:
+  `gsutil cors set storage-cors.json gs://ot-monitoring-tractor.firebasestorage.app`
+  — tanpa CORS, PDF/EPUB tidak bisa dibaca di penampil (video tetap jalan)
+  dan penampil menawarkan "Open the file in a new tab".
+  Tes rules Storage: `npx firebase emulators:exec --only firestore,storage
+  --project demo-ot "node tests/storage_rules_test.js"`.
+- **Backup harian Firestore (Blaze, diaktifkan 2 Nov 2026).** Jadwal bawaan
+  Firestore, tanpa kode: `gcloud firestore backups schedules create
+  --database='(default)' --recurrence=daily --retention=7d` — 7 backup terakhir
+  disimpan Google (terpisah dari bucket Storage). Cek: `gcloud firestore
+  backups list`. Memulihkan = restore ke database baru lalu pindahkan datanya
+  (`gcloud firestore databases restore --source-backup=… --destination-database=…`).
+- **Email lisensi dari server 2.14.0 (Cloud Functions; dijaga
+  `tests/license_report_test.js` + skenario Email di `tests/rules_test.js`).**
+  EmailJS dilepas. `functions/` berisi `dailyLicenseAlert` (tiap hari 07:00
+  WIT) dan `sendLicenseAlert` (tombol Email Report), lewat Gmail App Password
+  di Secret Manager. Laporan dibuat `functions/licenseReport.js` dengan aturan
+  yang sama persis dengan dashboard (tes membandingkan keduanya). Penerima dan
+  saklar harian disimpan di `settings/email` (hanya owner yang mengubah,
+  pembaca License Stock bisa melihat); `mailLog` ditulis server saja.
+  **Perlu publish ulang `firestore.rules`** dan deploy fungsi dari Cloud
+  Shell — langkahnya di `functions/README.md`.
+  **2.15.0:** satu fungsi terjadwal `notificationTick` (tiap 10 menit, WIT)
+  menggantikan `dailyLicenseAlert` dan menambah **email breakdown/kerusakan**
+  (tiap catatan kerusakan baru, ditandai Breakdown bila unit di-set
+  Breakdown) serta **pengingat Daily Report** (siapa yang belum kirim laporan
+  shift yang sudah selesai — Pagi ≥15:00, Siang ≥23:00, Malam ≥07:00 esoknya;
+  tanpa anggota nonaktif / cuti disetujui; draft = belum kirim). Masing-masing
+  punya penerima dan saklar sendiri di Admin → Notifications; menu terlihat
+  oleh owner dan pembaca License Stock (hanya-lihat). **Remove user /
+  Reject** sekarang juga menghapus akun login lewat fungsi
+  `deleteSignInAccount`; dialog langkah manual hanya muncul bila server gagal.
+  Dijaga `tests/team_notices_test.js`, `tests/authdel_test.js`,
+  `tests/license_report_test.js`, skenario Notif di `tests/rules_test.js`.
+  **Perlu publish `firestore.rules` + deploy ulang fungsi** (deploy akan
+  menanyakan penghapusan `dailyLicenseAlert` — jawab y).
+  **2.23.0 — Materi tebu harian.** Fakta bawaan pindah ke `data/agri-facts.json`
+  (tanpa Wikipedia: FAO, Universitas Brawijaya, INSTIPER, NC State, NSW
+  DPIRD, SASRI, LSU AgCenter, US EPA). Setiap pagi ±05:00 WIT sebuah tugas
+  terjadwal Claude menambah **satu** materi bersumber (aturan di
+  `CLAUDE.md` → *Daily sugarcane fact*), dijaga `tests/agri_bank_test.js`
+  (lengkap, https, tanpa Wikipedia, satu per hari, tidak dobel). Materi hari
+  itu tampil paling depan dengan tanda *New today*; di *Manage* tiap materi
+  harian bisa di-*Hide* (`settings/agri.hidden`). File data di-network-first
+  oleh service worker. **Perlu publish `firestore.rules`.**
+  **2.22.0 — Sugarcane knowledge.** Kartu *Fleet health* di Dashboard (angkanya
+  sama dengan kartu Good) diganti kartu pengetahuan tebu: satu fakta tiap
+  kali, berganti setiap 60 detik (titik penanda), ‹ › untuk berpindah, dan
+  **berhenti selama ditekan/ditahan** sampai dilepas. Setiap fakta punya
+  sumber yang bisa diklik (https). 10 fakta bawaan (Wikipedia, FAO) di
+  `AGRI_BUILTIN`; editor Learning menambah fakta sendiri lewat *Manage*
+  (`agriFacts`, sumber + tautan https wajib) dan bisa mematikan fakta bawaan
+  (`settings/agri`). Dijaga `tests/agri_facts_test.js` + skenario Agri di rules.
+  **Perlu publish `firestore.rules`.**
+  **2.21.0 — Implement aktual per PT.** Setiap profil implement mencatat
+  jumlah unit yang dimiliki tiap PT (`owned: { site: n }`, isian *Actual
+  units* di form; PT = Master lists → Sites). Bagian baru **Actual implements
+  per PT** di halaman Implements: kartu per PT (dimiliki · terpasang di
+  traktor · free) dan tabel per jenis **dan brand** implement (2.21.1; Owned / On tractor / Free per
+  PT, Total owned); *free* negatif ditandai merah (lebih banyak traktor
+  memakainya daripada yang dicatat). Tabel profil punya kolom *Units*
+  (mis. "GPA 10 MNM 4"); Export CSV menambah kolom *Units <PT>*. Dijaga
+  `tests/impl_owned_test.js`. Tanpa perubahan rules.
+  **2.20.0 — Jadwal notifikasi.** License Alert, Daily Report reminder dan
+  laporan ringkasan (dulu Monthly Report, sekarang *Summary Report*) masing-
+  masing bisa **Daily / Weekly (pilih hari) / Monthly (pilih tanggal 1–28)** pada
+  jam pilihan (`<p>Freq`, `<p>Weekday`, `<p>Monthday`; p = send / reminder /
+  monthly). Ringkasan mengikuti periodenya: kemarin, 7 hari terakhir, atau
+  bulan lalu. `functions/schedule.js` (`readSchedule`, `isDue`, `periodRange`),
+  dijaga `tests/schedule_test.js`. **Perlu publish `firestore.rules` + deploy
+  ulang fungsi.**
+  **2.19.0 — Catatan error, jejak belajar, arsip History.**
+  *Error log*: error di kode dashboard (bukan ekstensi / skrip luar, maks. 20
+  per halaman, tanpa duplikat) dicatat ke `clientErrors`; owner membacanya di
+  **Admin → Error log** (dikelompokkan per pesan + versi, bisa dihapus).
+  *Seen by*: membuka materi Learning Center mencatat `learningViews/
+  {itemId}__{uid}`; editor Learning melihat siapa yang sudah membuka (kapan,
+  berapa kali), owner juga melihat akun aktif yang belum. *Housekeeping* di
+  `notificationTick` jam 03:00 WIT (`functions/housekeeping.js`): error log
+  > 30 hari dihapus, History > 2 tahun dipindah ke Storage
+  `archives/history/YYYY-MM.json` (digabung dengan isi file bulan itu, baru
+  lalu dihapus dari Firestore); owner membukanya lewat History → *Archived
+  history*. Dijaga `tests/errlog_learnviews_test.js`, `tests/housekeeping_e2e.js`
+  (emulator), skenario 2.19.0 di rules dan storage rules. **Perlu publish
+  `firestore.rules` + `storage.rules` dan deploy ulang fungsi.**
+  **2.18.0 — Laporan bulanan & push notification.** Admin → Notifications
+  punya bagian **Monthly Report** (tanggal 1 tiap bulan pada jam pilihan, atau
+  *Send now*: kerusakan per tipe & unit, downtime per unit, Daily Report & jam
+  kerja per PT, lisensi yang akan habis — `functions/monthlyReport.js`, dijaga
+  `tests/monthly_report_test.js`) dan **Phone notifications (push)**: kerusakan /
+  Breakdown baru untuk yang bisa melihat Damage, dan Daily Report / izin /
+  inspeksi yang menunggu persetujuan untuk penyetujunya (bukan pembuatnya) —
+  `functions/pushNotices.js` (`tests/push_notices_test.js`). Tiap orang
+  menyalakannya per HP lewat menu akun → *Turn on phone notifications*
+  (token di `pushTokens/{token}`, rules: hanya pemiliknya); service worker
+  menampilkan notifikasi dan membuka tautannya (`tests/sw_push_test.js`,
+  `tests/push_menu_test.js`). Butuh kunci **Web Push certificate** publik di
+  `PUSH_VAPID_KEY` (`firebase-init.js`); tanpa kunci menu push disembunyikan.
+  **Perlu publish `firestore.rules` + deploy ulang fungsi.**
+  **2.17.0 — Foto di Cloud Storage.** Semua foto (Warehouse, Fuel, Purchase,
+  Damage before/after, Daily Report & surat izin, Inspection) diunggah ke
+  `photos/<koleksi>/<record>/<file>`; dokumen fotonya di Firestore tetap
+  berbentuk sama tetapi menyimpan `sp:<path>` alih-alih base64. Dibaca sebagai
+  download URL (`safeImageSrc` menerima URL bucket proyek ini saja, CSP
+  `img-src` mengizinkannya). Offline / Storage menolak → disimpan inline seperti
+  dulu. Foto lama dipindah otomatis saat dibuka oleh akun yang boleh
+  menulisnya; foto yang dihapus/diganti ikut dihapus dari Storage. Backup tetap
+  berisi gambar utuh (`{ inline: true }`). Lapisan ini di `firebase-init.js`
+  (`_savePhotoDoc` / `_getPhotoDoc`), diuji dengan SDK asli + emulator di
+  `tests/photo_storage_e2e.js` (12 skenario); rules foto di `storage.rules`
+  (dijaga `tests/storage_rules_test.js`, 29 skenario). **Perlu publish ulang
+  `storage.rules`.**
+- **CI (2.17.0):** `.github/workflows/tests.yml` menjalankan `npm test`
+  (Playwright) serta tes rules Firestore & Storage di emulator pada setiap
+  push dan pull request. `firebase.json` memuat port emulator (8181 / 9199).
+  **2.16.0 — Daily Report atas nama yang login** (dijaga
+  `tests/worklog_owner_test.js`, `tests/paddock_test.js` dan skenario 2.16.0
+  di `tests/rules_test.js`). Owner menautkan member ke akun login di Team →
+  Manage Members (`accountUid`, `accountEmail`; hanya owner yang boleh
+  mengubahnya). Akun berakses Daily Report *own* otomatis memakai member-nya
+  dan tidak bisa memilih orang lain (rules `memberMine`); akun tanpa tautan
+  diminta menghubungi Super Admin. Akun *edit* mulai dari member-nya tetapi
+  boleh mengganti. Setiap baris paddock punya **Work Description** sendiri
+  (wajib saat dikirim); kolom deskripsi umum hilang — `task` diisi otomatis
+  dari deskripsi per paddock, laporan lama memindahkan deskripsinya ke paddock
+  pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
+  = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
+  menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.42.0 — Tanpa scroll di dalam scroll (tahap 1)**: `tables.js` — 13 daftar
+  panjang (Dashboard, Damage, Licenses, Team, Leader, Inspection, Warehouse,
+  Jobs) tidak lagi berada di kotak 320–640px yang ber-scroll sendiri: tinggi
+  mengikuti isi, judul kolom menempel di atas saat halaman di-scroll (bila tabel
+  muat lebar), dan di atas 50 baris muncul **Show 50 more / Show all**. "Pilih
+  semua" (Damage, Licenses) hanya memilih baris yang tampil. **Jobs &
+  Activities** jadi 4 kolom (Date · Job · Units & people · Status) — teks
+  turun baris, maks. 4 unit + "+n", ✏️/🗑 selalu terlihat — tidak perlu geser
+  ke samping di 1280 px sampai zoom 75–80 %; kartu angka jadi satu strip. Di
+  layar lebar (≥1700 px, termasuk zoom 75–80 %) halaman memakai lebar sampai
+  1760 px. `tests/tables_test.js`.
+  **2.41.3 — Semua tombol ikon seragam**: tombol ikon kecil (`.btn-icon`,
+  mis. ✏️ / 🗑 di tabel barang project, hapus update) tidak lagi tampil
+  sebagai kotak abu-abu bawaan browser berbingkai hitam tebal — kini kotak
+  bergaris tipis; hijau saat diarahkan, merah untuk 🗑. Dicek otomatis di
+  semua halaman: tidak ada lagi tombol dengan gaya bawaan browser.
+  **2.41.2 — Update project bisa dihapus**: tombol hapus per update (bagi
+  yang boleh mengedit project), dengan konfirmasi; foto update ikut dihapus;
+  tercatat di History. Menghapus update **tidak** mengubah centang maupun
+  progress — kalau update itu catatan centang yang masih berlaku (atau
+  "Finished:" dari job), konfirmasinya mengingatkan untuk mengubah centang di
+  Target bila memang salah. Tombol **Remove N ticks that cancel out**
+  membersihkan centang bolak-balik (done lalu not done untuk item yang sama).
+  **2.41.1 — Tanggal selesai bisa diatur**: mencentang unit / milestone di
+  detail project menanyakan *Finished on* (default hari ini, tidak boleh di
+  masa depan); tanggal yang tercatat ("done 2026-11-11 ✎") bisa diklik untuk
+  diganti, dan update "Marked done" ikut pindah ke tanggal itu — sehingga
+  report dan Calendar menghitungnya di hari pekerjaan benar-benar selesai.
+  Di form project, milestone yang dicentang punya kolom tanggal selesai.
+  **2.41.0 — Calendar (khusus owner)**: menu baru *Calendar* (`calendar.js`)
+  — tampilan Bulan (desktop) dan Agenda (HP), filter per kategori, klik
+  tanggal untuk detail, klik item untuk membuka datanya. Isi: shift & cuti
+  (approved / pending), Daily Report per hari (siapa yang belum lapor),
+  ticket (dibuka, selesai, batas SLA; yang lewat SLA juga di hari ini),
+  jatuh tempo inspeksi alat berat, lisensi GPS/Display berakhir, project
+  (mulai, deadline, target & selesai milestone) dan kerusakan (baru /
+  diperbaiki). Milestone project kini punya **target tanggal** (opsional).
+  Tidak ada data baru di Firestore selain kolom `due` milestone; rules tidak
+  berubah.
+  **2.40.2 — Halaman foto mengikuti bentuk foto**: foto disusun dalam baris
+  sesuai rasio aslinya (potret tetap potret, lanskap tetap lanskap) dan
+  diperbesar sampai memenuhi halaman (`DailyCore.galleryLayout`; lanskap
+  boleh melebar s.d. 35%, potret s.d. 10%). Daily Report: bila foto hari itu
+  kurang dari 6, foto ke-2 dari baris paddock yang sama ikut dipakai. Sama di
+  layar, PDF, PowerPoint dan email.
+  **2.40.1 — Isi tiap halaman memenuhi slide**: setelah kartu disusun,
+  halaman diperbesar otomatis (huruf, baris, jarak; maks. 1,6×) sampai isinya
+  memenuhi slide — di layar/Save as PDF (diukur dari halaman), PowerPoint dan
+  file email. Halaman yang sudah penuh, foto dan grafik harian tidak berubah.
+  **2.40.0 — Semua report dirapikan (Weekly Team, Weekly Manager, Daily)**:
+  kartu setinggi isinya; kartu kosong jadi satu baris strip di bawah judul
+  dan kolom kosong hilang (`DailyCore.fitPage`); tabel memakai ruang yang
+  ada sebelum "+ n more"; label bar, milestone dan keterangan foto boleh dua
+  baris (tanpa "…"). Update project diringkas per project untuk periodenya
+  (`summarizeUpdates`): centang lalu batal saling meniadakan, progress awal →
+  akhir dari catatannya sendiri, blocker oranye. Nama project kembar diberi
+  PT ("· GPA"); "Other / Infrastructure" → "Infrastructure". **Job log
+  mingguan** (Team & Manager): setiap job lengkap — hari, kategori, project,
+  ticket, unit, siapa, jam, status, masalah. Manager: tabel *Units with a
+  faulty component*; Issue in Field dengan kolom Unit, yang lewat SLA di
+  atas. Daily: status ticket per akhir hari itu, running projects yang
+  bergerak lebih dulu (▲/▼). Sama di layar, PDF, PowerPoint dan email.
+  **2.39.3 — Daily Report tanpa teks terpotong "…"**: laporan Office dan
+  teks bertingkat (judul + daftar poin) dibaca jadi satu baris rapi
+  ("Lokasi: Tower KM 8 · Pekerjaan dan Unit: Setting radio · Cek kabel");
+  batas panjang dinaikkan dan sel tabel di PDF/PowerPoint server membungkus
+  sampai 3 baris (barisnya ikut tinggi) alih-alih dipotong.
+  **2.39.2 — Daily Report: halaman OT Jobs & Project Progress dirapikan** —
+  tiap job ditulis lengkap (tidak terpotong), status sebagai label, lalu
+  baris keterangan: kategori, project, ticket, implement, unit, siapa, jam,
+  peminta; masalah yang tersisa (Problem) dan blocker project dengan warna
+  oranye. Project update menampilkan nama project, progress sekarang dan
+  oleh siapa. Sama di layar, PDF, PowerPoint dan email.
+  **2.39.1 — Menu *Weekly Report* menjadi *Reports*** (isinya Weekly Team,
+  Weekly Manager dan Daily Report); juga judul halaman dan nama area akses.
+  **2.39.0 — Daily Report untuk manager**: tab ketiga *Daily Report* di
+  Weekly Report — satu hari (default kemarin, pilih tanggal) di template
+  perusahaan: Daily Report Summary (lapor/diharapkan, siapa tidak lapor,
+  jam, paddock, unit, jam per job type, tabel per member) → Issue & Damage
+  (issue dari Daily Report, kerusakan baru/breakdown, ticket masuk & selesai)
+  → Field Photos (maks. 6, paddock berbeda dulu, lalu ticket/job/project) →
+  OT Jobs & Project Progress → Terima Kasih. Unduh PDF & PowerPoint seperti
+  Weekly Report. Data & halaman dibuat oleh `functions/dailyCore.js` — file
+  yang sama dipakai browser dan server. **Email otomatis**: Admin →
+  Notifications → *Daily Report for the manager* (penerima, jam WIT, default
+  07:00) — laporan kemarin dengan lampiran PowerPoint + PDF (dibuat server:
+  `dailyDeck.js` dengan pptxgenjs + pdfkit, `dailySend.js`), tombol *Send
+  now*. **Perlu publish ulang `firestore.rules`** (kunci `mgrEnabled`,
+  `mgrHour`, `mgrRecipients`) **dan deploy ulang functions.**
+  **2.38.0 — Versi Manager memakai template perusahaan (Merauke Sugar
+  Group)**: cover dan halaman penutup "Terima Kasih" dengan pola template,
+  halaman isi putih dengan garis dan ornamen template (`report-assets/`),
+  judul hijau tua: Component Health Precision and Sensor → Issue in Field
+  (3 kartu + tabel ticket) → Project → "Project <nama>" per project (+ PT bila
+  namanya kembar) → Terima Kasih. Tanpa Next week dan tanpa footer. Sama di
+  layar, PDF dan PowerPoint.
+  **2.37.1 — Versi Manager mengikuti deck owner**: cover "Weekly Update /
+  Division Operation Technology" (logo kanan atas, tanpa W45 / prepared by);
+  halaman: Precision health → Field tickets & jobs → Projects → satu halaman
+  per project → Next week (3 poin). Summary, Scorecard, Licenses, Issues dan
+  galeri foto tidak lagi di versi Manager. Nomor halaman mulai 1 setelah cover;
+  tabel di PowerPoint tidak lagi melewati kartunya.
+  **2.37.0 — Weekly Report gaya "bento" + halaman per project**: lembar abu
+  lembut berisi kartu putih, satu kartu teal untuk angka utama dan kartu oranye
+  untuk yang perlu perhatian (mengikuti *bento brief* dari
+  github.com/cheahhl814/design-pack, MIT, dengan warna dashboard) — sama di
+  layar, PDF dan PowerPoint. Halaman Summary jadi enam kartu. Baru: satu halaman
+  **Project in progress** untuk tiap project yang berjalan (progress + garis
+  waktu, milestone & barang, update dan kendala minggu ini, barang yang masih
+  kurang, foto), di kedua versi.
+  **2.36.1 — Barang per milestone**: di project bermode Milestones, tiap
+  milestone punya daftar barangnya sendiri (`material.milestoneId`, tombol
+  *+ Item*, hitungan lengkap n/n); barang tanpa milestone ada di *Other goods*
+  (item dari PR masuk ke sana, bisa dipindah lewat Edit → *For milestone*).
+  Menandai milestone selesai saat barangnya belum lengkap meminta konfirmasi.
+  **2.36.0 — Materials / goods di project**: detail project punya daftar barang
+  (`project.materials`: nama, butuh, satuan, sudah ada, catatan) — *Add item*,
+  edit, hapus, dan *From <PR>* untuk mengambil item Purchase Request yang
+  terhubung (jumlah "Have" mengikuti penerimaan di PR). Status per barang
+  Complete / Partly / Not yet, kekurangan (*Short*), ringkasan di kartu project.
+  Tanpa perubahan rules.
+  **2.35.0 — Backup harian, eskalasi SLA ticket, thumbnail foto, Software =
+  device.** (1) Fungsi `dailyMaintenance` (02:00 WIT) menulis seluruh koleksi
+  Firestore ke Storage `backups/<tanggal>/<koleksi>.json.gz` + manifest; simpan
+  30 hari dan tanggal 1 tiap bulan selama setahun (`functions/backup.js`,
+  `tests/backup_e2e.js`). Owner: Unit Database → **Server Backups** (daftar,
+  *Back up now*, unduh, *Restore missing* — hanya menambah yang hilang, tidak
+  menimpa; akun & akses tidak bisa direstore). (2) Push SLA ticket: *due soon*
+  (seperempat waktu terakhir) ke PIC, *overdue* ke PIC + tim OT, diulang tiap
+  24 jam sampai 2 minggu (`ticketSlaPushes`). (3) Tiap foto punya salinan kecil
+  `<file>_t` di folder yang sama — dibuat aplikasi saat upload, yang belum ada
+  dibuat server tiap malam (`functions/thumbs.js`, `sharp`); daftar & galeri
+  memakai yang kecil, foto penuh saat dibuka. (4) Tipe kerusakan *Software*
+  diperlakukan seperti *Device Precision*. **Perlu publish `storage.rules` dan
+  deploy Cloud Functions.**
+  **2.34.0 — Komponen *Not installed***: tiap komponen (GPS, Display, Steering,
+  JDLink, Camera AI, Telematic Box, Switch Limiter, Rotary Lamp) bisa diisi *Not
+  installed* di form unit. Tidak dihitung masalah, tidak masuk persen kesehatan
+  komponen (hanya unit yang terpasang), tidak dikaitkan ke Damage, tidak wajib
+  di inspeksi; tampil abu-abu. Tanpa perubahan rules.
+  **2.33.1 — Banner Warehouse menyebut yang ditolak** (bukan selalu "devices
+  dan stockItems"), hilang sendiri saat bacaan berhasil lagi, dan tercatat di
+  Error log.
+  **2.33.0 — Kerusakan alat precision tidak membuat unit Breakdown**: tipe
+  *Device Precision* hanya membuat komponennya Breakdown (GPS/Display/Steering/
+  JDLink, Camera AI/Telematic Box/Switch Limiter/Rotary Lamp); bagian tanpa
+  kolom (Processor, antena …) tidak mengubah unit dan tampil di Needs attention
+  sebagai *Device*. Mekanis/Software tetap membuat status Breakdown. Data lama:
+  banner di halaman Damage *Set them running*. Tanpa perubahan rules.
+  **2.32.1 — Koreksi penerimaan barang (PR)**: tiap penerimaan di detail PR
+  punya *Edit receipt* — jumlah, tanggal, catatan, foto bisa dikoreksi, atau
+  *Delete this receipt*. Jumlah diterima per item, status (po / partial /
+  received) dan baris Stock in Warehouse ikut dikoreksi (`purchaseItemId` di
+  baris stok). Tanpa perubahan rules.
+  **2.32.0 — Foto & video di Weekly Report**: halaman galeri otomatis —
+  *From the field* (foto paddock Daily Report, paddock & hari berbeda dulu),
+  *Tickets in pictures*, *Projects and jobs in pictures* (foto update project,
+  foto job, video job sebagai gambar diam + tanda play); versi manajer satu
+  galeri *From the field*. Maks 6 per halaman, × untuk mengeluarkan foto,
+  centang per sumber, *Videos inside the PowerPoint* (≤ 60 MB per video).
+  **2.31.0 — Weekly Report** (menu baru di Operations, `weeklyreport.js`,
+  area akses *Weekly Report: view*). Minggu Sabtu–Jumat, dua versi dari angka
+  yang sama: *Team* (Weekly Operation Report: Daily Report, field tickets, jobs,
+  fleet & support, projects, next week) dan *Manager / head* (Precision Health
+  Weekly Update: precision health vs target 95%, scorecard, licenses, faults
+  > 14 hari, tickets & jobs, projects). *Save as PDF* (satu lembar 16:9 per
+  halaman) dan *Download PowerPoint* (`vendor/pptxgen.bundle.js`, dimuat saat
+  dibutuhkan). Angka precision disimpan per minggu di perangkat untuk
+  perbandingan minggu lalu. Tanpa perubahan rules.
+  **2.30.1 — Ticket ↔ Jobs & Activities**: job menyimpan `ticketId` dan
+  menampilkan label ticket di tabel Jobs; form Job punya *Part of ticket*;
+  job tertaut yang diset Done menawarkan Resolve ticket; field issue di job
+  bisa dijadikan ticket (*Raise a ticket*). Tanpa perubahan rules.
+  **2.30.0 — Tickets** (menu baru di Operations, `tickets.js`, dijaga
+  `tests/tickets_test.js`, `tests/ticket_notices_test.js`, `tests/rules_test.js`,
+  `tests/storage_rules_test.js`). **Semua akun aktif** melaporkan masalah di
+  lapangan (judul, kategori, prioritas, unit, lokasi/paddock, detail, foto) dan
+  hanya melihat ticket miliknya; area akses baru **Tickets**: *view* membaca
+  semua, *edit* (tim OT) menugaskan PIC, mengerjakan dan me-resolve. Status
+  Open → Assigned → In progress → Resolved → Closed; pelapor mengonfirmasi
+  (Closed) atau membuka lagi. Batas waktu per prioritas: High 4 jam, Medium 1
+  hari, Low 3 hari — yang lewat ditandai merah dan masuk Decision inbox.
+  Timeline catatan per ticket; **Log job** dari ticket (tertaut, ticket jadi In
+  progress) dan **Report damage** (form kerusakan terisi). PIC dipilih dari
+  `ticketStaff` (tiap akun OT menulis kartunya sendiri). Push (Cloud Functions,
+  tiap 10 menit, `mailState/tickets`): ticket baru → tim OT, ditugaskan → PIC,
+  status berubah → pelapor; saklar *Tickets* di Notifications. Master list
+  *Ticket Categories*. **Perlu publish `firestore.rules` + `storage.rules`, dan
+  deploy Cloud Functions.**
+  **2.29.9:** lampiran job juga menerima **video** (MP4, MOV, WebM; maks
+  200 MB/video, tetap maks 5 lampiran). **Perlu publish ulang `storage.rules`.**
+  **2.29.8:** job bisa diberi **lampiran PDF** (maks 5, 25 MB/file) di Cloud
+  Storage `projectFiles/<job>/<file>` — diunggah saat dipilih (dengan progres),
+  dihapus lagi bila form dibatalkan atau lampiran dibuang lalu disimpan; dibuka
+  di tab baru dari tabel Jobs dan detail project. **Perlu publish ulang
+  `storage.rules`.**
+  **2.29.6:** job punya kolom **Field issues / backlog** (`issue`, opsional) —
+  tampil merah di tabel, detail project dan profil unit; tile *Field issues* dan
+  filter status *With field issues*.
+  **2.29.5 — antrean foto (photo outbox)** (dijaga `tests/photo_storage_e2e.js`):
+  foto yang gagal naik ke Storage dulu disimpan inline di dokumennya; beberapa
+  foto inline membuat dokumen > 1 MB, ditolak Firestore, dan foto hilang
+  (laporan menghitung 8, isinya 1). Kini foto itu menunggu di perangkat
+  pengirim (IndexedDB `ot-photo-outbox`) dan dokumen memegang `pending:<token>`
+  di tempatnya (urutan per paddock tetap); dikirim ulang saat login, saat
+  sinyal kembali, dan tiap menit, lalu token diganti `sp:` (updateDoc) —
+  maksimal 30 hari. Unggahan 2 sekaligus, batas waktu 120 detik. Migrasi foto
+  inline lama tetap menyimpannya inline bila gagal. Jendela View memberi tahu
+  bila foto yang tiba lebih sedikit dari yang dihitung laporan.
+  **2.29.4 — Daily Report bisa dilihat tanpa Edit** (dijaga
+  `tests/worklog_view_test.js`): klik baris tabel atau tombol 👁 membuka jendela
+  baca-saja — status persetujuan, member, PT, jam kerja, tempat kerja, issue,
+  tiap paddock (jenis pekerjaan, unit, deskripsi, fotonya sendiri; foto dibuka
+  dengan keterangan paddock), lalu tombol Approve / Send back / Reopen untuk
+  pemeriksa dan Edit untuk yang boleh mengubah. Jendela mengikuti snapshot
+  laporan (disetujui di perangkat lain, diedit, dihapus).
+  **2.29.2:** job **Done** yang ditautkan ke project bertarget angka/milestone
+  memasukkan unitnya ke daftar unit project (target angka: +1 per unit baru);
+  job lama yang belum terhitung muncul dengan tombol **Count units from jobs**.
+  **2.29.1:** project dengan target **angka** atau **milestone** bisa diberi
+  **unit terkait** (opsional, lebih dari satu, alat berat maupun traktor) —
+  `target.units` dipakai untuk semua mode. Di update, unit yang dicentang
+  selesai; pada target angka tiap unit menambah 1 ke *Done so far* (juga saat
+  job Done di unit itu, dan berkurang lagi bila centangnya dilepas).
+  **2.29.0 — Projects & Jobs** (menu baru di Operations, `projects.js`, dijaga
+  `tests/projects_test.js`, `tests/rules_test.js`, `tests/storage_rules_test.js`).
+  Dua jenis pekerjaan di luar Daily Report (KHL & PBT):
+  - **Project** (`projects/{id}`): nama, jenis (Precision – Agriculture /
+    Heavy Equipment / Other), PT, departemen yang terlibat + PIC-nya, PIC OT,
+    mulai & target selesai, status (Planned / In progress / On hold / Done /
+    Cancelled). Target salah satu dari: **unit** (1 atau banyak; tiap unit
+    selesai dicentang), **angka** (mis. 20 antena), atau **milestone**
+    berbobot (template: Survey, PR/PO, Goods received, Installation, Testing,
+    Handover). Progres % dihitung dari target; kesehatan otomatis: lewat
+    tenggat = *Action needed*, tertinggal >15 poin dari waktu berjalan atau on
+    hold = *Watch*, selain itu *On track* (bisa diatur manual). Update berisi
+    tanggal, apa yang dikerjakan, unit/milestone yang selesai, kendala, foto
+    (`projectPhotos`, Storage `photos/projectPhotos/`); maksimal 300 update.
+    PR terkait ditautkan dan statusnya tampil.
+  - **Job / Activity** (`otJobs/{id}`): kalibrasi, pasang/lepas implement,
+    pasang/swap device, troubleshooting, firmware, survey, meeting, koordinasi,
+    training, admin (Master lists → *Job Categories*; departemen di
+    *Departments*). Unit opsional, diminta oleh (departemen), dikerjakan oleh,
+    jam, status, foto, dan project opsional. **Pasang implement** yang Done
+    mengganti implement unit di Unit Database (sekali; nilai sebelumnya
+    dicatat) — perlu akses edit Unit Database. Job Done yang bagian dari project
+    berbasis unit otomatis mencentang unit itu (update *auto*). Daftar job
+    difilter per minggu **Sabtu–Jumat**.
+  - Akses area **Projects & Jobs**: *own* menambah & mengubah miliknya saja,
+    *view* membaca, *edit* semuanya. Profil unit menampilkan job & project-nya.
+  - Belum masuk file backup JSON (sama seperti Purchase Requests); terlindungi
+    backup harian Firestore. **Perlu publish ulang `firestore.rules` dan
+    `storage.rules`.**
+  **2.28.0 — Print checklist penerimaan barang** (dijaga
+  `tests/pr_actions_test.js`): di detail PR berstatus Approved / PO issued /
+  Partially received / Received ada tombol **Print checklist** — satu lembar
+  A4 berisi data PR + PO, tiap item (dipesan, sudah diterima, sisa, kotak
+  *Received now* dan *OK*, catatan kondisi), riwayat penerimaan sebelumnya, dan
+  tiga kolom tanda tangan. Dicetak dari `#printSheet` saja
+  (`body.printing-sheet`); setiap cetak tercatat di History.
+  **2.27.0 — satuan barang Purchase Request** (dijaga `tests/pr_uom_test.js`):
+  Master lists → **Item Units** (`masterLists/uom`, grup *Damage, warehouse &
+  purchase*, diatur editor Purchase). Kolom Unit di Purchase details memakai
+  daftar ini sebagai pilihan (kosong = pcs, set, unit, box, pack, roll, m, kg,
+  liter) dan tetap bisa diketik bebas. Satuan pertama yang ditambahkan ikut
+  menyimpan sembilan bawaan. **Perlu publish ulang `firestore.rules`.**
+  **2.26.1 — foto laporan yang hilang ("Photos not found")**: sejak 2.17.0
+  foto diunggah ke Storage dulu, baru dokumennya ditulis — sehingga laporan
+  (sudah *pending*) sering sampai duluan dan rules menolak foto akun non-owner.
+  `firestore.rules` kini mengizinkan **pengirim** laporan/izin yang masih
+  *pending* menulis fotonya (`recordSentByMe`); disetujui tetap terkunci.
+  Laporan yang terlanjur kosong: saat fotonya dibuka, gambar dicari di
+  Storage (`photos/workLogPhotos/<id>/`, `listAll`) lalu dokumen fotonya
+  ditulis kembali (dijaga `tests/rules_test.js`, `tests/storage_rules_test.js`,
+  `tests/photo_storage_e2e.js`). **Perlu publish ulang `firestore.rules`.**
+  **2.26.0 — Implements dua tab** (dijaga `tests/impl_tabs_test.js`):
+  *Profiles* (traktor per implement + daftar profil) dan *Actual per PT*.
+  Di Actual, **Fill in counts** mengubah kolom Owned jadi isian untuk semua
+  profil (tipe + brand); Free dan total ikut berubah saat mengetik, **Save
+  counts** menyimpan ke `owned` profil pertama tipe + brand itu (profil kembar
+  dikosongkan untuk PT itu). Tipe yang dipakai traktor tanpa profil ditandai
+  *no profile*. Tab mengingat pilihan terakhir; angka merah di tab = jumlah
+  tipe dengan Free negatif.
+  **2.25.0 — foto per paddock** (dijaga `tests/worklog_job_photos_test.js`):
+  di laporan Field setiap baris paddock punya foto sendiri, maksimal 8. Semua
+  foto tetap satu daftar di `workLogPhotos/{id}` — foto paddock 1, paddock 2,
+  …, lalu foto umum (Office, maks 4, atau foto laporan lama yang tampil
+  sebagai *Other photos*) — dan tiap baris menyimpan `jobs[i].photoCount`.
+  Lightbox di tabel memberi keterangan paddock + jenis pekerjaan per foto.
+  Tanpa sinyal, foto baru di atas ±800KB ditolak saat simpan (dokumen 1MB).
+  Rules tidak berubah.
+  **2.15.4:** catatan kerusakan **baru** selalu men-set Breakdown otomatis
+  (kotak centangnya disembunyikan; komponen untuk tipe Device, status unit
+  untuk tipe lain; tidak berlaku bila "Already repaired"). Catatan lama yang
+  diedit tidak berubah tautannya; kotak hanya muncul untuk catatan terbuka
+  yang belum menahan apa pun (dijaga `tests/damagesync_test.js`).
+  **2.15.3:** tipe kerusakan sendiri dari Master lists yang diawali "Device"
+  (mis. "Device") berlaku seperti Device Precision — yang di-set Breakdown
+  komponennya, bukan status unit (`isDeviceDamageType`, dijaga
+  `tests/unitgroups_test.js`). Catatan lama yang terlanjur memegang status
+  unit pindah ke komponen cukup dengan Edit → Save.
+  **2.15.1:** tiap bagian punya tombol sendiri — License *Send now*,
+  Breakdown *Send test* (contoh dari catatan kerusakan terbaru, subjek
+  [Test]) dan Reminder *Send now* — lewat fungsi `sendNotificationNow`
+  (owner saja). Save tidak lagi menutup layar; tombol kirim menolak bila ada
+  perubahan yang belum disimpan. **Perlu deploy ulang fungsi.**
+  2.14.2: jam kirim harian dipilih di layar itu (`sendHour`, WIT, bawaan
+  07:00) dan bisa dimatikan; fungsi berjalan tiap jam dan hanya mengirim
+  pada jam terpilih, sekali sehari (`mailState/daily`). **Perlu deploy ulang
+  fungsi + publish ulang `firestore.rules`.**
+  2.14.1: pengaturannya punya menu sendiri **Admin → Notifications**
+  (owner, dan pembaca License Stock hanya-lihat) dengan tombol *Send now*;
+  ikon ⚙️ di License Alerts membuka layar yang sama.
+- **Riak air di halaman masuk v176.** Panel teal di halaman Sign in dan
+  halaman menunggu persetujuan menampilkan riak air yang mengikuti kursor
+  (atau jari di HP); klik/tap membuat riak yang lebih besar. Simulasi
+  gelombang kecil di `<canvas>` di belakang logo, berhenti sendiri saat air
+  tenang dan saat panel tersembunyi, dan tidak berjalan sama sekali bila
+  perangkat meminta *reduced motion*.
+  Sejak v181 logo dan nama ikut terdistorsi oleh air: selama riak bergerak keduanya digambar ke canvas dan dibengkokkan mengikuti kemiringan permukaan, lalu kembali tajam saat air tenang.
+  Sejak v179 area terang di sekitar kartu Sign in berlatar titik-titik grid
+  gelap yang halus dan beberapa batang tebu samar (teal) di bagian bawahnya.
+- **Peran kustom & Daily Report "Own only" v175 (dijaga
+  `tests/roles_custom_test.js`, `unitscope_test`, dan 32 skenario baru di
+  `tests/rules_test.js`).** Akses kini **murni lewat peran**:
+  - *Roles* (panel di halaman Users, hanya Super Admin): **New role** → beri
+    nama, lalu set tiap halaman *None / View / Edit*, CSV, dan untuk Daily
+    Report pilihan **Own only**. Tombol *Add the example roles* membuat Field
+    Team, Technician, Supervisor, Viewer yang bisa diubah atau dihapus.
+  - *Edit access* per orang hanya memilih **satu peran** + **Unit group**
+    (dan akun: sign out, jadikan Super Admin, hapus). Tidak ada pengecualian
+    per orang. Pendaftar baru bisa langsung disetujui dengan peran.
+  - **Mengubah peran berlaku untuk semua pemegangnya**: sebelum disimpan
+    muncul daftar perubahan + jumlah orang; level ditulis ke dokumen tiap
+    orang (`access`, `roleId`, `roleName`). Yang gagal ditulis tampil *Not
+    in sync* dengan tombol Sync. Peran yang masih dipakai tidak bisa dihapus.
+    Akun lama tampil *No role yet* dan tetap dengan akses lamanya sampai
+    diberi peran.
+  - **Daily Report "Own only"**: mengisi laporan & izin sendiri, hanya
+    melihat miliknya (query `where createdByUid == uid`), bisa mengubah /
+    menghapus / menarik kembali selama draf atau dikembalikan, dan **setelah
+    disetujui hanya bisa dilihat**. Ditegakkan juga di rules (`teamLogOwn`,
+    `mineIn`, `recordMine`). Pemegang Edit biasa tidak berubah.
+  - Rules: koleksi baru `roles/{id}` (hanya Super Admin), level `own` di
+    workLogs / leaveRequests / workLogPhotos. **Perlu publish ulang
+    `firestore.rules`.**
+- **Profil perangkat v173 (dijaga `tests/warehouse_test.js`).** Klik nama
+  perangkat di tabel Warehouse untuk membuka profilnya: SN, tipe, brand/model,
+  status, lokasi, SN baterai, catatan, dan **Allocation history** — setiap
+  alokasi (divisi, penerima, jabatan, tanggal alokasi, tanggal kembali, lama
+  dipegang), terbaru di atas; alokasi yang masih berjalan ditandai *Still
+  allocated*. Bisa dibuka semua yang boleh melihat Warehouse; tombol Edit hanya
+  untuk yang boleh mengubah. Di HP tiap alokasi tampil sebagai kartu.
+  Sejak v174 catatan panjang di tabel perangkat dipotong rapi (2 baris di
+  desktop, 3 di HP, dengan "…"); teks lengkapnya ada di tooltip dan profil.
+- **Warehouse: penerima, tanggal alokasi/kembali, SN baterai v172 (dijaga
+  `tests/warehouse_test.js`).** Perangkat *Allocated* kini mencatat **divisi**,
+  **nama penerima** (wajib), **jabatan** (opsional) dan **tanggal alokasi**
+  (wajib, default hari ini). Saat perangkat yang dialokasikan diubah ke
+  status lain, form meminta **tanggal kembali**; alokasi itu (divisi, orang,
+  jabatan, tanggal alokasi & kembali) disimpan di `allocationHistory`
+  perangkat dan tabel menampilkan "Returned … from …". Centang **Has a
+  battery** memunculkan **Battery serial number** (wajib bila dicentang, tidak
+  boleh sama dengan baterai perangkat lain); SN baterai tampil di kolom
+  perangkat dan ikut pencarian. CSV perangkat mendapat kolom Recipient Name,
+  Recipient Position, Allocation Date, Last Returned, Battery SN. Rules tidak
+  berubah.
+- **Tampilan "F · Soft UI" v171 (dijaga `tests/navgroups_test.js`, `leader_test`,
+  `leave_test`, `unitgroups_test` dan semua suite lain).** Seluruh aplikasi
+  memakai gaya desain F: latar abu-abu muda `#F6F7FB`, kartu putih dengan
+  bayangan lembut (radius 16px), aksen teal `#0F766E`, judul Poppins dan teks
+  Open Sans, chip status berwarna lembut, tab bergaris bawah.
+  - *Menu samping* kini satu tautan per halaman: Dashboard, Decision inbox ·
+    Fleet (Units, Implements, Damage, Inspection, Licenses) · Operations (Team,
+    Warehouse) · Admin (Users, Master lists, History). Kelompok alat dipilih di
+    halaman itu sendiri (Agricultural / Heavy / All). Akun yang dibatasi satu
+    kelompok tetap hanya melihat halaman dan tombol kelompoknya. Akun ada di
+    bawah menu.
+  - *Bar atas*: kotak cari, chip sinkron (titik hijau hanya saat tersambung),
+    lonceng ke Decision inbox dengan titik merah bila ada yang menunggu.
+  - *HP*: baris atas ringkas, **navigasi bawah** (Home, Units, Damage, Inbox,
+    More) dan tombol bulat **+ Report damage** untuk yang boleh mengubah
+    Damage; item yang tidak boleh dibuka disembunyikan.
+  - *Setiap halaman* punya kepala halaman (judul, satu baris keterangan, aksi
+    di kanan) dan ubin angka dari data nyata: Dashboard (tab Overview /
+    Reliability, Needs attention, lingkaran Fleet health, bilah per site),
+    Units (filter cepat berjumlah, menu ⋯ untuk Import/Backup/Restore, banner
+    data kurang), Damage (Open, unit Breakdown, diperbaiki bulan ini, rata-rata
+    lama perbaikan; filter Repair), Inspection, Licenses (stok vs minimum,
+    Expiring soon), Implements (traktor per implement), Decision inbox
+    (ringkasan + Approve/Send back cuti langsung di baris), Team (ubin hari
+    ini/minggu ini), Warehouse (ubin status perangkat sebagai filter), Users
+    (menunggu persetujuan, tabel pengguna, arti peran), History (filter When /
+    Who / Action).
+  - *Lisensi expired tidak lagi tampil di Dashboard* (kartu License Alerts,
+    Needs attention, kartu Licenses due, kalimat ringkasan): Dashboard hanya
+    memuat lisensi yang **akan habis dalam 30 hari**. Lisensi yang sudah lewat
+    tetap terlihat di tabel **Units** (kolom GPS / Display Expiry, "Expired …
+    ago") dan filter cepat *License due*. Email laporan harian juga hanya
+    memuat yang akan habis. Decision inbox dan *Expiring soon* di halaman
+    Licenses tetap menampilkan yang expired.
+  - *SF-1 dan G5 Basic tidak punya masa berlaku*: tanggal akhir yang
+    tersimpan pada tier dasar ini (mis. dari impor tanggal lama per serial
+    number atau CSV) diabaikan (`licenseExpiryEnd`), jadi tidak pernah tampil
+    "Expired" atau masuk hitungan. Datanya tidak dihapus. Dijaga
+    `tests/lowfix_test.js`.
+  - Semua id, handler, hak akses, golden traktor dan perilaku HP (44px, 16px,
+    tanpa geser samping) tetap. Rules tidak berubah.
+- **Export Photos v170 (dijaga `tests/damage_beforeafter_test.js`).** Tombol
+  *Photos (ZIP)* (dulu *Export Photos*) di halaman Damage mengunduh semua foto Before/After dari
+  catatan yang sedang tampil (ikut filter kelompok/tipe/pencarian/unit) dalam
+  satu ZIP: satu folder per **Nickname unit** (nickname sama → ditambah SN),
+  nama file `tanggal_tipe_komponen_before|after.jpg`, plus `photo_list.csv`.
+  ZIP dibuat di browser tanpa library (`makeZip`, disimpan tanpa kompresi —
+  JPEG sudah terkompresi). Butuh hak export CSV; akun terbatas hanya
+  kelompoknya. Setiap foto dibaca dari server sekali (perhatikan kuota baca
+  bila fotonya ratusan).
+- **Perangkat "Allocated" v169 (dijaga `tests/warehouse_test.js`).** Status
+  baru untuk perangkat yang diserahkan ke **divisi** (bukan dipasang di unit):
+  kolom *Division (recipient)* wajib diisi, dengan saran dari divisi yang
+  pernah dipakai; "di mana" tampil sebagai `Division: …`; KPI, filter status,
+  pencarian dan CSV (kolom Division) ikut. Rules tidak berubah.
+- **Kendaraan & BBM v158 (dijaga `tests/vehicles_test.js` dan rules_test).**
+  Tab baru **Vehicles & Fuel** di Warehouse untuk motor operasional.
+  - *Kendaraan* (`vehicles/{id}`): plat/nama, jenis, brand, model, tanggal
+    serah terima dan **KM odometer saat serah terima** (`startKm`), pemegang,
+    status (In use / Retired). Kendaraan yang sudah punya catatan BBM tidak
+    bisa dihapus — jadikan Retired.
+  - *Catatan isi BBM* (`fuelLogs/{id}`): tanggal, liter, KM odometer saat
+    mengisi, catatan, foto struk opsional (`fuelPhotos/{id}`, tidak
+    di-subscribe, dikirim sebelum catatannya).
+  - *Perhitungan* (`fuelHistory`, `vehicleStats`): jarak = KM ini − KM
+    sebelumnya (yang pertama dari KM serah terima; berikutnya dari KM
+    tertinggi sejauh ini), km/L ≈ jarak ÷ liter isi ini (anggapan isi
+    penuh; liter dari catatan tanpa jarak terukur ikut dihitung di catatan
+    terukur berikutnya), rata-rata = (KM sekarang − KM serah terima) ÷ total
+    liter, sama dengan angka di kartu; ringkasan bulan berjalan. Ditandai untuk dicek: KM lebih rendah dari sebelumnya, di
+    bawah KM serah terima, KM sama, konsumsi di luar ×½…×2 median kendaraan.
+  - Form: KM terakhir ditampilkan; KM lebih rendah, lompatan >1.500 km, dan
+    tanggal sebelum serah terima ditanya dulu; tanggal masa depan dan liter
+    ≤ 0 ditolak. Kotak Keputusan: "Fuel records to check" (60 hari). CSV,
+    cadangan (`vehicles`, `fuelLogs`, foto `fuelPhotos`).
+  - Akses: area **Warehouse** yang sudah ada. **Perlu publish
+    firestore.rules** (blok `vehicles`, `fuelLogs`, `fuelPhotos`).
+  - *Perbaikan v159 (hasil review):* liter diketik dengan koma ("3,5") dan KM
+    dengan titik/koma ribuan ("9.012") dibaca benar (`parseLiters`,
+    `parseKm`; kolomnya `type="text"` + `inputmode`); peringatan KM membaca
+    urutan tanggal (`_fuelPreview` mensimulasikan riwayat dengan catatan
+    baru), jadi mengedit catatan lama atau mengisi catatan terlupa tidak
+    memicu pertanyaan palsu, dan KM yang melebihi bacaan sesudahnya
+    ditanya; liter tidak wajar (>10 L motor, >80 L lainnya, atau >2,5× isi
+    terbesar) ditanya; simpan/hapus yang ditolak server dikembalikan di layar
+    dan muncul di "Not saved" untuk dibuka lagi; tombol Handle di Kotak
+    Keputusan mengosongkan filter; pesan jelas bila semua kendaraan Retired;
+    catatan kendaraan tampil di kartu; toolbar tidak melebar di HP; riwayat
+    kendaraan tidak tertutup bilah atas. Rules tidak berubah.
+  - *Perbaikan v160 (review ulang):* isi BBM tepat di KM serah terima
+    dianggap tangki penuh awal — tidak ditandai dan tidak dihitung sebagai
+    konsumsi; liter hanya dibawa ke catatan berikutnya dari KM salah ketik
+    (bukan dari catatan sebelum serah terima); isi ulang di KM yang sama
+    menambah liter isi sebelumnya; rata-rata = jarak terukur ÷ liter yang
+    terukur (kartu menulis "excl. N L" bila ada liter yang tidak dihitung);
+    "Previous reading" memakai tanggal bacaan tertinggi itu sendiri, dan saat
+    KM belum diisi menyebut bacaan terakhir di hari itu; KM lebih rendah dari
+    isi lain di hari yang sama ditanya; tanggal sebelum serah terima cukup
+    satu pertanyaan.
+  - *Perbaikan v161 (jalur gagal):* foto struk yang ditolak bersama
+    catatannya tidak lagi memunculkan "Record saved, but the receipt photo
+    failed" (pesan itu hanya muncul bila catatannya benar-benar tersimpan);
+    "Open it again" di pemberitahuan "Not saved" tidak lagi membuang isian bila
+    form tidak bisa terbuka (akses hilang, kendaraan Retired) — `reopenUnsent`
+    menyimpan entri bila fungsi buka-ulang mengembalikan `false`, berlaku juga
+    untuk laporan harian, cuti, pengecekan dan kerusakan; membuka ulang di
+    atas form BBM yang sedang diketik ditanya dulu; catatan/kendaraan yang
+    dibuat lalu dihapus saat offline dan keduanya ditolak server tidak muncul
+    lagi (`_refusedCreates`); tautan panjang di catatan kendaraan tidak
+    melebarkan kartu di HP.
+- **Tampilan fase 1 v156 — HP di lapangan (dijaga `tests/ux_phase1_test.js`).**
+  Hasil review ui-ux-pro-max (rencana lengkap: artifact "Rencana Tampilan OT
+  Dashboard").
+  - *Tombol aksi kartu:* di tata letak kartu (≤700px) sel aksi selebar kartu;
+    tombol ikon menampilkan `title`-nya sebagai label (`::after`), tinggi
+    ≥52px; Approve/Request revision berjarak 8px; tombol Compact disembunyikan.
+  - *Form di HP:* `.form-grid` satu kolom `minmax(0,1fr)` — form kerusakan
+    tidak lagi melewati tepi layar.
+  - *Ketikan tidak hilang:* `watchFormEdits()` mencatat isi form saat modal
+    terbuka; X / Cancel / Back bertanya ("Discard what you typed?") bila
+    berubah — form kerusakan, laporan harian, izin, inspeksi, unit
+    (`closeModal(force)`; simpan memakai force). Form yang dibuka lagi dari
+    "Not saved" selalu ditanya (`_formReopened`).
+  - *Masuk akun:* overlay loading di atas layar masuk dan form (z-index 600),
+    dengan teks (`showLoading(show, text)`); tombol submit nonaktif selama
+    proses (`setFormBusy`).
+  - *Pencarian unit:* hasilnya kini benar-benar tampil (`display:block`); di
+    HP berupa daftar selebar layar di bawah bar atas.
+  - *Pindah halaman:* halaman baru dibuka dari atas; Back kembali ke posisi
+    gulir sebelumnya (disimpan di entri riwayat, `scrollRestoration=manual`).
+  - *Menu HP:* `openNav/closeNav`; punya entri riwayat sendiri — Back, Esc,
+    ketuk area gelap, atau tombol ✕ menutupnya; halaman yang dipilih dari
+    menu mengambil alih entri menu.
+  - *Offline:* titik status kuning tanpa denyut; di HP label pendek
+    "Offline" (kalimat lengkap tetap untuk pembaca layar).
+  - *Tombol menu:* titik oranye + `aria-label` ("Menu — 22 decisions
+    waiting") saat ada keputusan, laporan cek atau revisi menunggu.
+  - *Perbaikan review v157:* memilih halaman yang sedang tampil dari menu
+    tidak menambah entri riwayat; modal yang dibuka dari menu (History,
+    Master Lists) mengambil alih entri menu; menu menutup entrinya satu
+    microtask kemudian (`closeNav`), jadi urutan ketukan apa pun benar.
+    Gulir hanya pada satu penggulung (`.main` di laptop, jendela di HP) —
+    Back tidak lagi menggeser bar atas di laptop. Status sibuk masuk/daftar
+    akun (`setAuthBusy` / `releaseAuthBusy`) bertahan sampai layar berikutnya
+    tampil (aplikasi, pending, atau sign-in), dengan batas 45 detik.
+    Form yang ditolak saat dibuka ulang tidak lagi ditandai; anggota nonaktif
+    tetap terpilih saat daftar anggota dibangun ulang. Mode compact hanya di
+    layar lebar; tombol "To Damage" di kartu inspeksi tidak terjepit; daftar
+    pencarian di atas banner sesi (`body.gsearch-open`).
+- **Batas kelompok unit v165 (dijaga `tests/unitscope_test.js` dan
+  rules_test). Perlu publish firestore.rules.**
+  - Klien: `effectiveUnitScope`, `grantedAccess` (yang tersimpan) dan
+    `effectiveAccess` (yang berlaku). `applyUnitScopeToData` menyaring
+    `globalData`/`globalDamages` saat data masuk (snapshot, cache perangkat,
+    perubahan akses live), jadi semua layar ikut: dashboard, Unit Database,
+    Damage, pencarian, profil ("outside your access"), Kotak Keputusan,
+    Periksa Data, rekap, CSV, History (`historyRowInScope`). Pemilih kelompok
+    terkunci tanpa menyimpan preferensi perangkat; tautan kelompok lain dan
+    "All" hilang dari sidebar.
+  - Sesi terbatas tidak pernah menulis daftar unit/kerusakan ke perangkat
+    (cincin auto-backup akan menyimpannya dan restore akan menghapus kelompok
+    lain); cadangan dan restore ditolak. Langganan koleksi kelompok lain
+    tidak dibuka. Perangkat/stok Warehouse yang tertaut ke unit kelompok lain
+    tetap tertaut saat diedit.
+  - Rules: `lvlOf(d, area)` dan `scopeOf(d)` membaca dokumen user sekali
+    (batas 1.000 ekspresi), `canEditAnything` dihitung sekali; Implements,
+    License Stock, syarat lisensi tertutup untuk alat berat, pengecekan untuk
+    pertanian; owner hanya bisa menyimpan nilai kelompok yang dikenal (dicek
+    hanya saat akses berubah). **Fase ini menyembunyikan di aplikasi; data
+    unit/kerusakan kelompok lain masih bisa dibaca lewat devtools sampai
+    tahap kunci-baca berikutnya.**
+  - *Perbaikan v166 (review):* History memutuskan baris dari kelompok unitnya
+    dulu (unit bernama "[BU] …" tidak lolos), hanya tag modul netral yang
+    lewat, dan baris daftar brand kelompok lain disembunyikan; keluar akun
+    mengembalikan status batas (`applyScopeChange` setelah `currentUserDoc =
+    null`), jadi masuk lagi tetap tersaring; perubahan batas live menutup
+    profil/pencarian, menggambar ulang History dan Master Lists, mengosongkan
+    filter Unit Database; dari terbatas ke semua: daftar dari cloud dipakai
+    lagi, preferensi kelompok perangkat kembali, filter Damage "All Groups"
+    benar, dan tidak ada penurunan lisensi otomatis dari salinan perangkat
+    (`_unitsFromDeviceOnly`); dashboard digambar ulang tanpa efek samping;
+    tautan Warehouse ke unit yang sudah dihapus kembali ditolak untuk akun
+    tanpa batas; nilai kelompok tak dikenal tampil apa adanya di dialog Access
+    dan harus dipilih dulu sebelum disimpan; rules membaca field `access`
+    bukan-map sebagai kosong.
+  - **Rahasia di server (v167).** Akun terbatas tidak lagi bisa membaca data
+    kelompok lain lewat devtools:
+    - Setiap unit dan catatan kerusakan menyimpan `unitGroup` (unit baru dan
+      restore: kosong → `tractor`; kerusakan: kelompok unitnya). Data lama
+      diisi sekali oleh owner lewat **Store unit groups** di halaman Users
+      (tulisan parsial, hanya kolom itu). Unit berkelompok tak dikenal tidak
+      terlihat oleh akun terbatas sampai diperbaiki di Periksa Data.
+    - Baris History menyimpan `unitGroup` (`tractor`/`heavy`/`shared`/'');
+      bila rules lama menolak kolom itu, baris dikirim lagi tanpa kolom
+      (`_historyWithoutGroup`) — tidak ada riwayat yang hilang saat rollout.
+    - Akun terbatas meminta `where('unitGroup','==',kelompok)` untuk unit
+      dan kerusakan, dan `where('unitGroup','in',[kelompok,'shared'])` +
+      `orderBy('timestamp','desc')` untuk History (`scopeQueryGroup`,
+      `scopeHistoryGroups`). Rules (`readsGroupOf`) menolak bacaan lain;
+      foto kerusakan dicek lewat catatan induknya (`id.split('__after')`).
+    - **Index:** History akun terbatas butuh composite index di Firestore:
+      koleksi `history`, `unitGroup` Ascending + `timestamp` Descending.
+    - **Perangkat bersama:** menu akun → **Sign out & erase this device**
+      menghapus cache unit/kerusakan/implement/lisensi/riwayat/cincin
+      cadangan dan database offline Firestore. Lampiran unit (IndexedDB
+      lokal) tidak dihapus.
+    - Masih terlihat oleh akun terbatas (hanya nama): nama unit di laporan
+      harian, perangkat/stok Warehouse, dan daftar brand di master list.
+  - *Perbaikan v168 (review):* kirim-ulang History tanpa kolom diputuskan per
+    kiriman (batch yang ditolak bersamaan tidak hilang; penolakan karena hal
+    lain tidak mematikan kolom itu); owner mengisi kelompok History lama lewat
+    **Store unit groups** (rules: hanya kolom itu, sekali, owner saja); unit
+    yang dihapus tetap mencap kelompoknya di baris History; restore cadangan
+    otomatis dan unggahan pertama owner mencap kelompok; kelompok yang diatur
+    di Periksa Data ikut mencap kerusakannya; rules melarang mengosongkan
+    kelompok catatan kerusakan (tab lama), dan nilai `'none'` tidak membaca
+    apa pun; editor Warehouse terbatas tetap menyimpan tautan ke unit yang
+    tidak terlihat; batas dicabut → salinan perangkat, bukan daftar satu
+    kelompok; index History yang belum ada tidak mematikan langganan.
+    **Perangkat:** akun terbatas yang pertama kali memakai perangkat di bawah
+    batasnya membersihkan salinan offline + database offline dan memuat ulang
+    (`protectDeviceForScope`, sekali per akun+batas; dilewati bila ada yang
+    belum terkirim). "Sign out & erase" memberi sinyal ke tab lain untuk
+    memuat ulang dan memberi tahu bila database offline tidak bisa dihapus
+    karena tab lain masih terbuka.
+- **Kerusakan ↔ status unit v162 (dijaga `tests/damagesync_test.js` dan
+  rules_test). Perlu publish firestore.rules (blok `units`).**
+  - Catatan kerusakan yang terbuka *menahan* satu tempat di unitnya
+    (`drove`): Mekanis/Software → **status unit Breakdown** (alasan + 
+    `breakdownDamageId`); Device Precision pada komponen → **hanya komponen
+    itu** (alat berat: Camera AI/Telematic Box/Switch Limiter/Rotary Lamp —
+    status unit tidak berubah, keputusan pemilik; traktor: seperti dulu).
+  - Unit/komponen kembali Good hanya saat catatan **terakhir** yang
+    menahannya selesai atau dihapus (`openDamageHolders`,
+    `releaseDamageOnUnit`); alasan pindah ke catatan tertua yang masih
+    terbuka. Breakdown yang diset manual (tanpa catatan yang menahannya)
+    tidak diambil alih: alasan tidak ditimpa, selesai tidak membuatnya Good.
+  - Catatan yang sengaja tidak dicentang: `drove:''`, `noHold:true` — tidak
+    menahan dan tidak lagi menghalangi unit kembali Good.
+  - Edit catatan terbuka: kotak "set Breakdown" tampil; pindah unit, ganti
+    tipe/komponen, centang/lepas centang → lepas yang lama, tahan yang baru
+    (`_planDamageEdit`). Hapus (satu/massal) melepas seperti *Mark done*;
+    konfirmasinya menyebut efeknya. **Reopen** di baris Done. **Already
+    repaired on …** di form Tambah: tercatat selesai, unit tidak disentuh.
+  - Tulisan ke unit lewat `_applyDamageLink`: hanya `DAMAGE_LINK_FIELDS`,
+    dikirim parsial (`updateUnitsFields`; cadangan `saveUnits` parsial) —
+    akun yang hanya boleh edit Damage kini benar-benar mengubah status
+    (dulu gagal diam-diam). Ditolak server → baris FAILED + tarik ulang.
+  - Set Good manual saat masih ada kerusakan terbuka (sel, form, bulk edit)
+    ditanya dulu; impor CSV menyebut jumlahnya. Catatannya tetap terbuka.
+  - Periksa Data **Heavy unit status vs open damage**: per unit pilih **Set
+    Breakdown** / **Mark done**, atau **Set Good** untuk Breakdown yang
+    ditinggal catatan yang sudah selesai/dihapus. Tidak pernah otomatis.
+  - Penanda: "Unit: Breakdown" / "Unit is Good" di tabel Damage, "N open
+    damage" di Unit Database dan dashboard (ke Damage dengan pencarian SN),
+    efek di dialog Mark done.
+  - *Perbaikan v163:* saat unit kembali Good lewat kerusakan, interval
+    downtime yang baru ditutup ikut dalam tulisan parsial (dulu array-nya
+    dipakai bersama sehingga perbedaannya tidak terlihat, dan riwayat
+    MTTR/MTBF hilang setelah snapshot berikutnya).
+  - *Perbaikan v164 (review):* edit biasa tidak lagi menjadikan catatan yang
+    tidak tertaut "sengaja tidak dicentang" (Periksa Data tetap
+    menanyakannya); Reopen menahan unit lagi kecuali catatan yang sengaja tidak
+    dicentang (`noHold`); Breakdown yang ditinggal catatan yang sudah
+    selesai/dihapus diambil alih catatan baru (`adopted`), bukan dianggap
+    manual; alasan dari catatan sebelum v162 (tanpa `breakdownDamageId`, teks
+    sama) pindah ke catatan yang masih terbuka; catatan lama yang dipindah
+    lewat Edit atau dihapus massal ditanya seperti Mark done, dan tidak
+    ditanya bila catatan lain masih menahan; tulisan unit yang ditolak server
+    melepas tautan catatannya (`_unlinkOnRefused`); pesan Mark done dan
+    konfirmasi hapus massal menyebut komponennya; impor CSV juga menghitung
+    komponen; penanda "N open damage" dan Open di Periksa Data memfilter per
+    unit (`damageUnitFilter`); snapshot kerusakan memperbarui penanda di
+    Unit Database tanpa menghapus pilihan Bulk Edit, dan dashboard ikut
+    diperbarui. Rules: riwayat downtime lama tidak bisa diubah, interval baru
+    harus menutup jam breakdown di server, jam itu hanya berubah bersama
+    status dan dalam rentang wajar, `breakdownDamageId` ≤ 64 karakter.
+- **Foto kerusakan Before / After v151 (dijaga `tests/damage_beforeafter_test.js`
+  dan rules_test).**
+  - Foto yang sudah ada = **Before** (`damagePhotos/{id}`, tanda `hasPhoto`).
+    Foto sesudah perbaikan = **After** di `damagePhotos/{id}__after` (tanda
+    `hasAfterPhoto` di catatannya). Koleksi dan rules sama — tidak perlu
+    publish rules.
+  - *Mark done* kini membuka dialog "Mark as repaired" (`openDamageRepair`)
+    dengan foto After opsional; fotonya ditulis SEBELUM catatannya, dan
+    tanda ikut dalam satu tulisan catatan (`resolveDamage(id, {confirmed,
+    extra})`). Catatan yang sudah selesai tanpa foto After mendapat tombol
+    **+ After** (mode foto saja; juga untuk mengganti).
+  - Kolom **Photos**: tombol Before / After; penampil memberi label
+    (tanggal kerusakan / tanggal perbaikan), panah untuk berpindah, dan
+    tombol **Side by side** (di HP tegak keduanya bertumpuk).
+  - Form Edit punya slot After sendiri (disembunyikan di form Tambah); ubah
+    teks saja tidak menulis foto apa pun. Hapus catatan / restore GANTI ikut
+    menghapus kedua dokumen foto; cadangan membawa `damageAfterPhotos`;
+    CSV punya kolom *Photo Before* dan *Photo After*.
+  - Foto After yang ditolak server masuk `#unsentNotice` dan bisa dibuka
+    lagi dengan fotonya. Catatan yang berubah di perangkat lain membuang
+    salinan foto di perangkat ini, dan hasil kosong tidak di-cache.
+  - *Perbaikan review v152:* Esc di penampil foto tidak lagi ikut menutup
+    dialog di bawahnya; tombol Simpan menunggu foto yang masih diproses
+    (`_repairBusy`, `_dmgPhotoBusy`); foto yang diproses untuk satu catatan
+    tidak bisa masuk form/dialog catatan lain (`_dmgFormGen`, `_repairGen`);
+    `hasAfterPhoto` hanya ditulis bila fotonya benar-benar bisa dikirim
+    (`damageAfterPhotoBlocker` — versi lama / belum tersambung menahan
+    simpan); membuka dialog lain tidak menimpa foto yang belum disimpan;
+    restore GANTI dari cadangan lama menghapus dokumen foto catatan yang di
+    berkasnya tidak berfoto (`_dropUnflaggedPhotos`); HP miring tetap
+    berdampingan. Batasan yang diterima: perangkat yang masih v150 dan
+    menghapus catatan meninggalkan dokumen `__after` — muat ulang semua
+    perangkat ke versi terbaru.
+  - *v153:* keluar / akses dicabut kini juga membuang salinan foto After di
+    memori (`tearDownCloudSync`), seperti foto Before — di HP bersama, akun
+    berikutnya tanpa akses Kerusakan tidak bisa membukanya.
+  - *v154:* form Edit/Tambah mengirim foto yang ditambah atau diganti
+    (Before maupun After) SEBELUM catatannya (`sendDamageBeforePhoto`,
+    `sendDamageAfterPhoto`), sama seperti dialog Mark as repaired. HP lain
+    tidak lagi bisa menyimpan foto lama di jeda unggah, dan tanda "waiting to
+    send" / peringatan keluar bertahan sampai fotonya terkirim. Menghapus
+    foto tetap sesudah catatan.
+  - *v155 (should-fix ponytail-review):* foto yang diketuk langsung tampil;
+    sisi lainnya diunduh sesudahnya dan bergabung ke penampil yang masih
+    terbuka (`openDamagePhotos`). Satu pemuat untuk kedua slot form
+    (`loadDamageSlot`, dijaga `_dmgFormGen`) — hasil dari form yang sudah
+    ditutup tidak lagi mengganggu form berikutnya. Hapus catatan dan restore
+    GANTI memakai satu jalur (`dropDamagePhotos` → `_dropPhotoDoc`), termasuk
+    membuang salinan foto di memori. Pembungkus `openDamagePhoto` dan
+    `damagePhotoButton` dihapus. Tes baru untuk "hasil kosong tidak diingat".
+- **Pemakaian di HP / lapangan v150 (dijaga `tests/field_phone_test.js`).**
+  - *Tombol Back:* setiap modal mendapat entri riwayat (`setupBackButton`,
+    lewat MutationObserver yang sama dengan fokus); Back menutup modal teratas
+    lewat closer-nya sendiri (peringatan foto tetap bertanya; batal = entri
+    dikembalikan), atau kembali ke halaman sebelumnya (`_pushViewHistory` di
+    navigateTo). Menutup lewat tombol hanya mundur bila entri teratas memang
+    entri modal — `history.back()` asinkron, dan mundur dari entri halaman
+    akan keluar dari aplikasi. Form kerusakan kini juga bertanya soal foto.
+  - *Simpan ditolak server:* isi form + foto disalin saat Simpan
+    (`captureFormState`, `_snapWorkLog/Leave/Inspection/Damage`); bila
+    ditolak, pemberitahuan tetap `#unsentNotice` dengan "Open it again" /
+    "Discard". Pesan dalam bahasa biasa (`plainSaveError`); petunjuk rules
+    hanya untuk owner.
+  - *Waiting to send:* laporan harian, izin dan kerusakan berlangganan dengan
+    `_onSnapshotWithPending` (hasPendingWrites); tanda di baris
+    (`queuedTag`), hitungan di bar atas (`#queuedPill`), sign out menyebut
+    semuanya (`queuedSummary`).
+  - *Sesi 24 jam:* peringatan 30 menit sebelumnya (`#sessionBanner`, tombol
+    Sign in again / Later); habis saat form terbuka atau tanpa sinyal →
+    ditunda (`requestExpiry`) sampai form ditutup dan ada sinyal.
+  - *iPhone zoom:* aturan terakhir di style.css memaksa 16px untuk semua
+    input/select/textarea/contenteditable di ≤700px.
+- **Perbaikan grup 1 v149 (dijaga `tests/session_revoke_test.js`,
+  `restore_merge_test.js`, `dq_fixes_test.js`, `ui_safety_test.js` dan
+  rules_test).**
+  - *Sesi:* `claimSession`/`revokeUserSession` MENGGANTI seluruh map
+    `activeSession` (updateDoc), tidak menggabung. Dulu "Sign out of active
+    device" meninggalkan `revokedAt/revokedBy` di map, rules menolak setiap
+    klaim berikutnya, dan akun itu terkunci selamanya. Klaim yang ditolak
+    tidak lagi dibaca sebagai pengambilalihan (`_claimRefusedId`).
+  - *Persetujuan:* rules mewajibkan `createdByUid` saat membuat, dan
+    `submittedByUid` = akun sendiri setiap kali catatan menjadi pending;
+    pemeriksa tidak boleh penulis MAUPUN pengirim (`selfCheckBlock`). Catatan
+    lama tanpa penulis tetap bisa diperiksa.
+  - *Restore:* GABUNG = data sekarang menang, hanya id yang belum ada yang
+    ditambah (unit juga per id), hanya itu yang dikirim, foto hanya untuk
+    itu. GANTI menulis dokumen UTUH (`replaceDocs`). Satu baris History per
+    koleksi. Master Lists dan License Requirements ikut cadangan
+    (`_restoreMasterLists`; daftar kosong di berkas tidak menghapus).
+  - *Impor CSV lisensi:* baris yang sudah ada di ledger dilewati (dihitung
+    per kunci `licenseTxnKey`, jadi dua pengiriman identik tetap dua).
+  - *Ejaan mirip:* `similarSpelling` sadar-token — angka, angka romawi, huruf
+    tunggal dan kode ≤3 huruf harus sama persis; toleransi salah ketik hanya
+    untuk kata panjang. "Add the values in use" hanya melipat beda
+    huruf/spasi/tanda baca.
+  - *Merge jenis/brand implement* saat daftar Implements dipakai: rekaman
+    Implements ikut diganti nama, unit ditulis ulang ke label daftar, syarat
+    lisensi ikut pindah (`_carryLicenseRequirement`); Undo mengembalikan
+    semuanya. Mengubah jenis/brand di form Implements juga menulis ulang unit.
+  - *Tulis parsial:* `updateUnitsBatch` → `updateUnitsFields` (batch.update,
+    hanya field yang berubah); merge anggota → `updateTeamMembersFields`.
+  - *Versi baru:* tidak memuat ulang saat form terbuka (`userIsBusy`); banner
+    "A new version is ready — Reload", lalu memuat ulang sendiri setelah form
+    ditutup bila cache permanen.
+  - *Edit sel Unit Database:* tabel tidak digambar ulang selama sel fokus;
+    `saveInlineEdit` mengabaikan blur dari redraw/snapshot.
+  - *Hapus unit:* konfirmasi (lebih dari 10: ketik jumlahnya), History
+    menyimpan ringkasan unit (`deletedUnitSummary`), jadwal cek mengabaikan
+    unit yang sudah dihapus.
+- **License Purchase Plan (dijaga `tests/licplan_test.js`).** Tab di License
+  Stock. Syarat lisensi per JENIS implement (tanpa brand) di koleksi
+  `licenseRequirements/{slug jenis}` `{type, gps: ''|SF-1|SF-RTK, display:
+  ''|G5 Basic|G5 Advance}`, diubah oleh akses edit License Stock (rules
+  membatasi nilainya). Setiap unit Agricultural dicek pada tanggal rencana
+  (`lpCheck`): SF-RTK/G5 Advance berbayar (tidak punya, tier lebih rendah, atau
+  habis sebelum tanggal → beli/perpanjang); SF-1/G5 Basic gratis ("Set …
+  (free)"); G5 Advance mencakup G5 Basic, SF-RTK mencakup SF-1. Harus dibeli =
+  kebutuhan − sisa stok (`computeLicenseSummary`). Kartu per kombinasi, tabel
+  per jenis, daftar unit, Export CSV, badge tab. Distribusi lisensi ke unit
+  otomatis mengurangi rencana.
+- **Masuk akun (dijaga `tests/signin_test.js`).** Jam sesi 24 jam di-reset
+  SEBELUM `signIn()` — Firebase memanggil listener auth sebelum promise-nya
+  selesai, dan cap waktu basi (sengaja disimpan saat sesi kedaluwarsa
+  offline) dulu langsung mengeluarkan orang lagi dengan "Daily session
+  ended". Kolom email/password tanpa huruf kapital otomatis, tombol mata,
+  petunjuk spesifik saat password ditolak (spasi di ujung, kapital pertama,
+  Caps Lock), "Forgot password?" (`sendPasswordResetEmail`, pesan sama untuk
+  email terdaftar/tidak), pesan untuk akun terkunci sementara dan
+  dinonaktifkan.
+- **Implement wajib dari daftar Implements (dijaga `tests/implpick_test.js`).**
+  Begitu daftar Implements berisi, `checkImplementValue` menjaga form unit
+  (lewat `checkUnitFields`, dengan hint di bawah kolom), Bulk Edit, edit
+  langsung di tabel, impor CSV (unit baru → kosong, update → tetap; dicatat
+  di laporan impor) dan target Clean Up Values. Nilai dikenali lewat label,
+  nama profil, atau jenis+brand dalam huruf/urutan/pemisah apa pun
+  (`findImplementRecord`), lalu disimpan dengan ejaan daftar
+  (`implementOptionLabel`). Nilai lama di luar daftar tidak dipaksa hilang —
+  boleh dipertahankan, tidak boleh diganti ke nilai asing lain. Data Check
+  membedakan "tidak dikenal" (Merge…) dan "beda ejaan" (tombol Match
+  implements to the Implements list → `matchImplementsToList`). Daftar
+  kosong = bebas seperti dulu.
+- **Isi jadwal shift cepat (dijaga `tests/shiftfill_test.js`).** Tiap
+  anggota punya pilihan "Fill week…" (Morning/Afternoon/Night Senin–Sabtu +
+  Minggu Off, Morning/Night setiap hari, Same as last week, Clear this
+  week), dan toolbar punya **Copy Last Week** untuk seluruh tim (hanya sel
+  yang minggu lalu terisi; konfirmasi menyebut berapa sel yang ditimpa).
+  Semuanya lewat `applyShiftChanges` → `saveShiftChanges` (satu batch, satu
+  baris riwayat), dengan rollback bila ditolak server. Rules shifts tidak
+  berubah.
+- **Laporan cek tanpa sinyal (dijaga `tests/offline_test.js`).** Firestore
+  menyimpan tulisan offline di antrean perangkat (cache persisten, bertahan
+  saat aplikasi ditutup) dan mengirimnya sendiri. `subscribeInspections`
+  memakai `includeMetadataChanges` dan memberi daftar id yang
+  `hasPendingWrites` → `insQueuedIds`: baris laporan bertanda "Waiting to
+  send", kotak `#insSyncNotice` menyebut jumlahnya, form memberi tahu saat
+  offline, toast saat antrean habis, dan Sign out meminta konfirmasi bila
+  masih ada antrean (Firestore menahannya sampai akun yang sama masuk lagi).
+- **Ringkasan unit per Implement / Alat Kerja (dijaga `tests/toolsummary_test.js`).**
+  Kartu di atas tabel Unit Database: tab Agricultural menghitung per
+  `implement`, tab Heavy per `workTool`. Ikut filter status & site (bukan
+  kotak cari); ejaan yang hanya beda huruf besar/spasi digabung
+  (`toolKeyOf`); "Tanpa …" selalu tampil. Agricultural dihitung per JENIS
+  implement dengan rincian brand di bawahnya (`toolPartsOf`: record
+  Implements bila cocok, jika tidak dipecah dari "Jenis — Brand"; urutan
+  terbalik "Brand — Jenis" dikenali dari skor `_knownImplementBrands`). Klik
+  jenis = semua brand-nya, klik brand = hanya brand itu (`TOOL_SEP`). Klik baris = filter tabel
+  (`editToolFilter`, ikut ke Export CSV, direset saat pindah tab).
+- **Menu samping per kelompok alat (dijaga `tests/navgroups_test.js`).**
+  Ringkasan · Agricultural Equipment · Heavy Equipment · Tim · Inventaris ·
+  Admin. Dashboard, Unit Database dan Kerusakan tetap SATU halaman; kelompok
+  dipilih HANYA dari menu samping (tab kelompok di Dashboard dan Unit
+  Database sudah dihapus — judul tabel menyebut kelompoknya); tautannya (`data-group`, `goNav`) membuka halaman itu
+  pada kelompoknya dan `markActiveNav` menyalakan tautan kelompok yang sedang
+  tampil. Kerusakan punya filter kelompok (`damageGroup`; catatan mengikuti
+  unit hidupnya, unit yang sudah dihapus memakai `unitGroup` di catatan).
+  `updateNavGroups` menyembunyikan Dashboard per kelompok bagi akun yang
+  tidak bekerja dengan kelompok itu (`NAV_GROUP_AREAS`), menyembunyikan
+  Dashboard Heavy/Semua bila armada hanya satu kelompok, lalu menyembunyikan
+  judul grup yang semua tautannya tersembunyi.
+- **Pengecekan Alat Berat (dijaga `tests/inspection_test.js`).** Menu
+  sendiri dengan tiga tab: Status Unit, Jadwal, Laporan Cek. Laporan cek
+  berisi 4 komponen alat berat (Camera AI, Telematic Box, Switch Limiter,
+  Rotary Lamp), masing-masing Baik/Rusak + **1 foto wajib** + catatan (wajib
+  kalau Rusak), lewat alur Draf → Kirim → Disetujui / Perlu Revisi yang sama
+  dengan laporan harian (`TEAM_AREAS` / `INS_AREAS` memilih area aksesnya).
+  **Cek berikutnya = tanggal cek AKTUAL laporan terkirim terakhir + 14 hari**
+  (`INSPECTION_INTERVAL_DAYS`); draf tidak dihitung, laporan yang dikembalikan
+  tetap dihitung (pengecekannya sudah terjadi). Jadwal (`inspectionPlans`)
+  hanya daftar unit per tanggal; cek di luar jadwal tetap sah dan ikut
+  mereset 14 hari. Komponen Rusak masuk ke Kerusakan **setelah disetujui**,
+  oleh akun yang punya akses edit Kerusakan (`applyInspectionFindings`,
+  stempel `appliedAt` supaya hanya sekali); tanpa akses itu muncul di Kotak
+  Keputusan. Foto di `inspectionPhotos/{id}` (tidak di-subscribe), ditulis
+  SEBELUM laporannya.
+- **`firestore.rules` diuji di emulator: `tests/rules_test.js`** (253 skenario;
+  bukan bagian `npm test` karena butuh Java + firebase-tools — perintahnya di
+  kepala berkas). Jalankan SEBELUM mem-publish rules. Yang dijaga rules:
+  alur persetujuan laporan/izin (transisi status di atas, kunci isi dan foto
+  selama menunggu/disetujui, tarik kembali hanya oleh pengirim, approver
+  hanya menyentuh field persetujuan dengan emailnya sendiri dan tidak untuk
+  catatannya sendiri), baca per area untuk laporan, izin, surat
+  sakit, foto kerusakan dan riwayat, riwayat terikat ke uid+email pelaku,
+  bentuk dokumen pendaftar dan `activeSession`, `id` = ID dokumen, dan nilai
+  shift yang dikenal. Langganan di `initCloudSync` mengikuti aturan baca yang
+  sama — ubah keduanya bersamaan.
+- **Aturan anti-XSS (dijaga `tests/xss_test.js`).** Nilai yang ditulis satu
+  pengguna tampil di layar pengguna lain, termasuk Super Admin:
+  - `showToast` menampilkan TEKS. Kirim nilai mentah; jangan `escapeHtml`.
+  - Argumen di atribut `onclick`/`onchange` selalu lewat `jsArg(v)`, bukan
+    `'${escapeHtml(v)}'` — browser mengembalikan `&#39;` menjadi `'` sebelum
+    handler berjalan.
+  - Nilai yang menjadi nama kelas harus dari daftar yang dikenal (lihat
+    `shiftFor`); `src` foto lewat `safeImageSrc`.
+  - `id` setiap record diambil dari ID dokumen Firestore (`withDocId` di
+    `firebase-init.js`), bukan dari field `id` yang bisa diisi siapa saja.
+- **Jangan memanggil `window.cloud.X()` telanjang.** Service worker menyajikan
+  `firebase-init.js` network-first tapi jatuh ke cache saat fetch gagal —
+  yaitu saat sinyal buruk, yaitu saat orang menyimpan. Pakai `cloudFn('X')`
+  (mengembalikan `null` + toast) atau, di posisi argumen `cloudWrite(...)`,
+  `cloudCall('X', ...)` yang menolak dengan `code: 'stale-client'` alih-alih
+  melempar `TypeError` keluar dari handler klik.
+- **Sel tabel tanpa `data-label` itu `display:none` di ponsel.** Di tabel
+  `table--cardable`, `style.css` menyembunyikan setiap `<td>` yang tidak
+  membawanya. Kolom yang lupa dilabeli tidak terlihat rusak — ia hanya **hilang**
+  di perangkat yang justru dipakai tim lapangan. Dua sel di Edit Units sengaja
+  tanpa label (nomor baris dan kotak centang); sisanya wajib. Ada ujinya di
+  `mobile_test`.
+- **Modal baru wajib didaftarkan di `MODAL_CLOSERS`.** Escape menutup modal
+  paling atas lewat peta itu; `keyboard_test` gagal kalau ada modal yang lupa.
+  Header tabel yang bisa diurut butuh `tabindex="0" role="button"` — penangan
+  Enter/Spasi-nya sudah terdelegasi, jadi tidak perlu `onkeydown` per header.
+- **Riwayat audit dilanggan malas dan digerbang.** `startHistorySubscription()`
+  baru jalan saat History dibuka, dan hanya untuk `hasAccess('history','view')`.
+  Dulu ia jalan untuk semua orang saat login: 500 dokumen berisi nama dan email
+  pelaku, termasuk ke akun yang menu History-nya memang disembunyikan.
+- **Id dokumen shift itu deterministik** (`tanggal_anggota`), jadi dua orang
+  bisa saling menimpa. Tidak ada merge — yang ada adalah `updatedBy` di
+  dokumennya dan `_shiftPendingWrites`, supaya yang kalah **diberi tahu**
+  alih-alih melihat gridnya berubah sendiri.
+- **Cadangan otomatis (`BACKUP_RING_KEY`) sekarang ada yang membacanya.**
+  Isinya **hanya unit** dan **hanya perangkat ini** — bukan pengganti tombol
+  Backup. Pemulihannya lewat jalur yang sama dengan restore berkas, termasuk
+  `cloudPushUnits`, karena rollback lokal saja akan dibatalkan snapshot
+  berikutnya.
+- **Izin / Sakit menumpang area `teamLog`, bukan punya areanya sendiri.**
+  Yang boleh mengisi laporan harian boleh mengisi izin; yang boleh menyetujui
+  laporan boleh menyetujui izin. Area baru akan menyentuh delapan tempat
+  (`ACCESS_AREAS`, `VIEW_AREAS`, `RO_FLAGS`, CSS, `canEditAnything()` di rules,
+  komentar header rules, `roles_test`) **dan** mengharuskan owner memberi izin
+  itu satu per satu ke tiap akun sebelum fiturnya bisa dipakai siapa pun.
+- **Surat sakit / surat izin disimpan di koleksi `workLogPhotos`.** Namanya
+  historis, bukan pembatas isinya: bentuk dokumennya sama persis dan rules-nya
+  sudah `canEditArea('teamLog')`. Pakai alias `getTeamDocs` / `saveTeamDocs` /
+  `deleteTeamDocs` di `firebase-init.js`, jangan panggil nama aslinya. Id tidak
+  mungkin bentrok — laporan `wl_`, izin `lv_`.
+- **Jenis izin disimpan sebagai KUNCI** (`'izin'`, `'sakit'`, `'alpa'`), dengan
+  label terpisah di `LEAVE_TYPES`. Menambah jenis keempat = satu baris di sana.
+  Jangan sekali-kali menyamakan nilai simpan dengan teks yang tampil.
+- **Rentang tanggal izin inklusif dua ujungnya.** `leaveDays('5','5') === 1`.
+  Dan tanggalnya **boleh di masa depan** — izin memang direncanakan, jadi form
+  ini sengaja TIDAK memakai `data-nofuture` seperti form lain.
+- **Hanya izin yang DISETUJUI menandai jadwal shift**, dan penandanya murni
+  tampilan: `renderShiftGrid` tidak pernah menulis ke koleksi `shifts`.
+  Menulis ke sana akan menimpa jadwal yang sudah diisi, dan koleksi itu
+  berjendela 120 hari sehingga izin yang lebih lama tidak punya sel untuk
+  ditulisi sama sekali. Dua hitungan ikut menyesuaikan: `onDuty` di ringkasan
+  mingguan, dan penyebut "Lapor Hari Ini".
+- **`leaveRequests` dilanggan utuh tanpa jendela, dan itu disengaja.**
+  Pengajuan yang menunggu persetujuan bisa berumur berapa pun, jadi jendela
+  tanggal akan menyembunyikan persis baris yang Kotak Keputusan ada untuk
+  memunculkannya. Volumenya ±200 dokumen setahun. **Tinjau ulang di ±2.000
+  dokumen** dan jendelakan seperti `subscribeShifts`.
+- **Foto dan surat lama dimuat SESUDAH form terbuka**, dan menyimpan set yang
+  diubah MENGGANTI set yang tersimpan. Karena itu tombol Tambah Foto / Tambah
+  Surat menunggu sampai yang lama tiba, dan tetap mati kalau gagal tiba
+  (`setPhotoAddState`). Hasil muat dan kompresi yang terlambat dibuang lewat
+  penghitung generasi (`_lvDocsGen`, `_wlPhotosGen`) — tanpa itu, surat
+  pengajuan A bisa mendarat di form pengajuan B.
+- **Foto kerusakan, foto laporan harian, dan surat izin ikut cadangan kalau
+  diminta** (`BACKUP_PHOTO_KINDS`). Ketiganya satu dokumen per catatan dan harus
+  diunduh satu per satu, jadi Export menanyakannya dulu; kalau ditolak, berkas
+  dan toast-nya mencatatnya di `omitted`. Restore menulisnya kembali hanya untuk
+  catatan yang ikut dipulihkan, dan restore GANTI yang menghapus catatan ikut
+  menghapus dokumen fotonya (`_dropPhotoDoc`) — dokumen itu tidak pernah
+  didaftar, jadi yang tertinggal tidak akan pernah ditemukan lagi.
+- **Distribusi lisensi → lisensi unit berbasis selisih.** `licenseSyncPlan()`
+  mengambil distribusi TERBARU per unit + jenis (GPS / Display), unitnya
+  dicari lewat id lalu SN (`liveUnitFor`), dan menandai tiap baris `sync`
+  (sudah sesuai — tidak pernah ditulis), `update`, atau `newer` (unit berlaku
+  lebih lama dari distribusi terbarunya — diperpanjang manual, atau
+  distribusinya dihapus). "Sync ke Unit" menampilkan pratinjau dan hanya
+  menulis baris yang dicentang; `newer` tidak dicentang. Distribusi premium
+  yang sudah habis ditulis langsung dalam keadaan akhir turun-otomatisnya
+  (`distributionTarget`), jadi unit yang sudah turun ke SF-1 terbaca sesuai
+  dan tidak dipantulkan kembali ke SF-RTK. Distribusi tanpa tanggal dilewati —
+  targetnya akan jadi "hari ini + 1 tahun", berubah setiap hari.
+  - **Yang masuk langsung tersinkron.** Form Distribusi dan Import CSV
+    menerapkan distribusinya ke unit saat itu juga, dengan aturan yang sama
+    (`update` ditulis, `newer` tidak). Impor hanya menulis unit yang
+    diputuskan oleh baris impornya — baris lama yang sudah tidak sinkron
+    sebelumnya dibiarkan untuk pratinjau Sync. Membetulkan tanggal distribusi
+    yang MENENTUKAN lisensi unit boleh memundurkannya (`force`); distribusi
+    lain tidak. Tidak ada sinkron otomatis di latar belakang: itu akan jalan
+    di setiap perangkat, termasuk yang datanya basi.
+  - **Tanggal distribusi harus YYYY-MM-DD** (`isoDistributionDate`); yang lain
+    ditandai "Tanggal tidak valid", tidak ditebak. Impor CSV membaca
+    D/M/YYYY hari-dulu (`csvLicenseDate`) dan menyamakan ejaan jenis
+    (`canonicalLicenseType`). Jenis ditulis ke unit dengan ejaan kanonik dan
+    dibandingkan persis, jadi unit berisi 'sf-rtk' ikut dibetulkan.
+  - **Pratinjau Sync mengingat apa yang ditampilkannya.** Baris yang status
+    atau isinya berubah sebelum Terapkan (unit diperpanjang di perangkat lain)
+    dilewati dan dilaporkan, tidak ditulis.
+  - **Distribusi yang menentukan lisensi unit lalu dihapus, dipindah ke unit
+    lain, diganti jenisnya, atau diubah jadi stok masuk** (`_drivenBy`,
+    `_releaseDistributions`): unitnya ditawari kembali ke distribusi
+    sebelumnya, atau dikosongkan kalau tidak ada lagi. Satu konfirmasi per
+    tindakan; Batal membiarkannya dan mengatakannya.
+  - **Tombol Sync ke Unit hanya muncul kalau ada yang "Belum"** — alat
+    perbaikan, bukan langkah rutin. Baris "Unit lebih baru" tidak
+    memunculkannya: itu keadaan yang disengaja (perpanjangan manual).
+  - **Kolom Status Unit** di Riwayat Stok Lisensi: Tersinkron, Belum, Unit
+    lebih baru, Digantikan (distribusi lama yang sudah diganti yang lebih
+    baru), Unit tidak ada, Bukan Pertanian, Tanggal tidak valid
+    (`licenseSyncPlan().recStatus`).
+- **Unit terbagi dua kelompok: Agricultural Equipment dan Heavy Equipment.**
+  Satu koleksi `units`, satu kolom `unitGroup` (`'tractor'` | `'heavy'`).
+  Registrinya `UNIT_GROUPS` (`script.js`): label, komponen yang dipantau, dan
+  kolom milik tiap kelompok. Aturannya:
+  - **190 dokumen lama tidak pernah ditulis ulang.** `unitGroup` yang kosong
+    dibaca `'tractor'` (`unitGroupOf`). Jangan pernah menormalkannya di objek
+    `globalData` — `updateUnit` mengirim seluruh objek, jadi normalisasi di
+    tempat ikut tertulis oleh suntingan berikutnya.
+  - **Hanya penciptaan yang menulis `unitGroup`**, dan kelompok yang terbaca
+    **tidak bisa diubah** sesudahnya. Unit yang salah kelompok dihapus lalu
+    ditambah ulang. Restore GANTI yang akan mengubah kelompok unit hidup ditolak.
+    Satu-satunya pengecualian: kelompok yang **tidak terbaca** (lihat di bawah).
+  - **Firewall di `updateUnit` dan `addUnits`** membuang `undefined`, membuang
+    `unitGroup`, dan membuang kolom milik kelompok lain. Satu-satunya
+    pengecualian: Periksa Data mengosongkan kolom silang (`clearStray`).
+  - **Kelompok yang tidak terbaca** (`hasUnreadableGroup`: terisi tapi bukan
+    nilai yang dikenal, mis. `"Heavy Equip"` dari cadangan yang disunting
+    tangan, atau kelompok dari versi yang lebih baru) dibaca sebagai traktor,
+    tapi **tidak ada yang boleh menulis kolom milik kelompok mana pun** ke unit
+    itu. Form Edit dan edit sebaris menolak, impor CSV menandainya gagal, dan
+    restore GANTI dari berkas yang membawanya ditolak sebelum menulis apa
+    pun. Cadangan otomatis tidak ditolak: isinya salinan data perangkat ini
+    sendiri, jadi menolaknya membuat rollback mustahil selama unit seperti itu
+    ada — dan unit yang kembali dipagari persis seperti yang hidup. Kerusakan
+    "set Breakdown" pada komponen unit seperti itu juga ditolak. Periksa Data tidak melaporkannya sebagai "field kelompok
+    lain" — kolom mana yang silang bergantung pada kelompok yang belum
+    diketahui, dan membersihkannya akan menghapus data asli. Jalan keluarnya
+    tombol **Tetapkan kelompok** (`setUnreadableGroups`), satu-satunya penulis
+    `unitGroup` sesudah penciptaan (`updateUnit(…, { setGroup: true })`), dan
+    hanya untuk kelompok yang tidak terbaca.
+  - **CSV yang kelompoknya disimpulkan dari kolomnya** sama mengikatnya dengan
+    kolom `Unit Group`: berkas berkolom Camera AI tidak memperbarui traktor
+    yang kebetulan ber-SN sama, dan sebaliknya (`csvInferredGroup`).
+  - **Apa pun yang dulu meng-hardcode Display/GPS/Steering/JDLink sekarang
+    bertanya ke kelompok unitnya** (`detectIssues`, `countIssues`, ring
+    komponen, tabel Repair, filter). Komponen alat berat yang kosong dihitung
+    bermasalah, sama seperti traktor.
+  - **Kerusakan**: `damageTargetField(type, component, unit)` punya keadaan
+    ketiga, `DAMAGE_DRIVES_NOTHING`, untuk catatan lama yang menyebut komponen
+    John Deere pada alat berat — tidak ditulis ke unit, tidak dijadikan status.
+  - **Lisensi SF/G5 hanya untuk kelompok pertanian.** Batas tulisnya
+    `applyDistributedLicenseToUnit`.
+  - **CSV**: kolom kelompok **hanya** `Unit Group`. "Kelompok" dan "Group" nama
+    kolom yang wajar di CSV traktor untuk hal lain. Tanpa kolom itu, kelompok
+    disimpulkan hanya dari empat header komponen alat berat vs header JD.
+  - **Label "Alat Kerja", bukan "Attachment"** — unit sudah punya kolom berkas
+    "Attachments", dan keduanya bersebelahan.
+  - **Tanpa satu pun alat berat, tampilan traktor identik byte demi byte** dengan
+    sebelum perubahan ini. Itu diuji terhadap `tests/fixtures/tractor_golden.json`,
+    yang direkam dari kode lama. Jangan merekam ulang golden kecuali memang
+    sengaja mengubah tampilan traktor.
+  - Preferensi tab/cakupan disimpan per perangkat, tapi selama belum ada alat
+    berat, keduanya selalu jatuh ke Pertanian.
