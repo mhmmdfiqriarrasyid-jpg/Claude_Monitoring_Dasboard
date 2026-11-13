@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.41.3';
+const APP_VERSION = 'v2.42.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -2007,6 +2007,7 @@ function navigateTo(view) {
     if (view === 'weeklyReport' && typeof renderWeeklyReportView === 'function') renderWeeklyReportView();
     if (view === 'learning') renderLearningView();
     if (view === 'calendar' && typeof renderCalendarView === 'function') renderCalendarView();
+    if (typeof twRefresh === 'function') twRefresh();   // 2.42.0: long lists measured once their page shows
 
     if (view === 'inspection') renderInspectionView();
 
@@ -10257,7 +10258,8 @@ document.addEventListener('ot:view', e => {
 // ---- Selection ----
 function toggleSelectAllDamages() {
     const checked = document.getElementById('selectAllDamage').checked;
-    document.querySelectorAll('.damage-check').forEach(cb => { cb.checked = checked; });
+    // 2.42.0: only the rows on screen — never those still behind "Show more" (tables.js).
+    document.querySelectorAll('.damage-check').forEach(cb => { cb.checked = checked && !cb.closest('tr.tw-hide'); });
     updateSelectedDamageCount();
 }
 
@@ -12008,7 +12010,8 @@ function renderLicenseStockTable() {
 // ---- Selection ----
 function toggleSelectAllLicense() {
     const checked = document.getElementById('selectAllLicense').checked;
-    document.querySelectorAll('.license-check').forEach(cb => { cb.checked = checked; });
+    // 2.42.0: only the rows on screen — never those still behind "Show more" (tables.js).
+    document.querySelectorAll('.license-check').forEach(cb => { cb.checked = checked && !cb.closest('tr.tw-hide'); });
     updateSelectedLicenseCount();
 }
 

@@ -591,6 +591,17 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.42.0 — Tanpa scroll di dalam scroll (tahap 1)**: `tables.js` — 13 daftar
+  panjang (Dashboard, Damage, Licenses, Team, Leader, Inspection, Warehouse,
+  Jobs) tidak lagi berada di kotak 320–640px yang ber-scroll sendiri: tinggi
+  mengikuti isi, judul kolom menempel di atas saat halaman di-scroll (bila tabel
+  muat lebar), dan di atas 50 baris muncul **Show 50 more / Show all**. "Pilih
+  semua" (Damage, Licenses) hanya memilih baris yang tampil. **Jobs &
+  Activities** jadi 4 kolom (Date · Job · Units & people · Status) — teks
+  turun baris, maks. 4 unit + "+n", ✏️/🗑 selalu terlihat — tidak perlu geser
+  ke samping di 1280 px sampai zoom 75–80 %; kartu angka jadi satu strip. Di
+  layar lebar (≥1700 px, termasuk zoom 75–80 %) halaman memakai lebar sampai
+  1760 px. `tests/tables_test.js`.
   **2.41.3 — Semua tombol ikon seragam**: tombol ikon kecil (`.btn-icon`,
   mis. ✏️ / 🗑 di tabel barang project, hapus update) tidak lagi tampil
   sebagai kotak abu-abu bawaan browser berbingkai hitam tebal — kini kotak

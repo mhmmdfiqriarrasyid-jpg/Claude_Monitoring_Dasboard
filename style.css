@@ -11582,3 +11582,48 @@ body[data-ro-projects] .editonly--projects { display: none !important; }
     .cal-chips .adm-count { margin-left: 0; width: 100%; }
 }
 @media (max-width: 700px) { .pj-row { flex-wrap: wrap; } .pj-due { width: auto; flex: 1 1 140px; } }
+
+/* ==================== Long lists (2.42.0, tables.js) ==================== */
+/* One scroll per page: the list's box is as tall as its rows. */
+.table-wrapper.tw-page { max-height: none !important; }
+/* It fits the width: open the box, so the header row stays at the top of the page. */
+.table-wrapper.tw-fit { overflow: visible; }
+.table-card.tw-card-open { overflow: visible; }
+.table-wrapper.tw-fit .data-table thead { position: sticky; top: 0; z-index: 5; box-shadow: 0 1px 0 var(--border); }
+tr.tw-hide { display: none !important; }
+.tw-more { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px 16px; border-top: 1px solid var(--border-light); }
+.tw-more__n { font-size: 13px; color: var(--text-secondary); margin-right: 6px; }
+
+/* Jobs & Activities in four columns (2.42.0): the text wraps, nothing runs off the side. */
+@media (min-width: 701px) {
+    #jobTable { table-layout: fixed; width: 100%; }
+    #jobTable th.jb-date, #jobTable td.jb-date { width: 108px; }
+    #jobTable th:nth-child(3) { width: 26%; }
+    #jobTable th:nth-child(4) { width: 168px; }
+    #jobTable td { white-space: normal; vertical-align: top; }
+    #jobTable td.jb-job .adm-stack > span:not(.pj-cat) { overflow-wrap: anywhere; }
+    #jobTable .jb-units { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+    #jobTable .jb-people { display: flex; flex-direction: column; gap: 1px; font-size: 13px; margin-top: 2px; }
+    #jobTable .jb-status__top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
+    #jobTable .jb-hours { font-size: 13px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+}
+#jobTable .jb-more { background: var(--border-light); color: var(--text-secondary); cursor: help; }
+
+/* The job tiles: one thin strip, not two rows of big cards. */
+@media (min-width: 701px) {
+    #jobTiles { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    #jobTiles .wh-tile { flex: 1 1 140px; flex-direction: row; align-items: baseline; gap: 8px; padding: 10px 14px; min-height: 0; }
+    #jobTiles .wh-tile__value { font-size: 20px; order: -1; }
+    #jobTiles .wh-tile__hint, #jobTiles .wh-tile__sub, #jobTiles small { display: none; }
+}
+
+/* Wide screens (and 75–80% zoom): the page uses the room instead of a 1440px column. */
+@media (min-width: 1700px) { .main { max-width: 1760px; } }
+/* The job tiles on a phone: three small ones a row. */
+@media (max-width: 700px) {
+    #jobTiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
+    #jobTiles .wh-tile { padding: 8px 10px; min-height: 0; gap: 0; }
+    #jobTiles .wh-tile__value { font-size: 18px; }
+    #jobTiles .wh-tile__label { font-size: 11px; }
+    #jobTiles .wh-tile__sub { display: none; }
+}

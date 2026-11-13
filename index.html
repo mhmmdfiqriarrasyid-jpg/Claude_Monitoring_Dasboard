@@ -2398,12 +2398,10 @@
                         <select id="jobStatusFilter" onchange="renderJobsList()"><option value="">Any status</option><option value="open">Open</option><option value="progress">In progress</option><option value="done">Done</option><option value="issue">With field issues</option></select></label>
                     <span class="pr-count" id="jobCount"></span>
                 </div>
-                <div class="table-wrapper" style="max-height:none">
+                <div class="table-wrapper">
                     <table class="data-table table--cardable adm-table" id="jobTable">
                         <thead><tr>
-                            <th scope="col">Date</th><th scope="col">Job</th><th scope="col">Units</th><th scope="col">Requested / done by</th>
-                            <th scope="col" class="num">Hours</th><th scope="col">Status</th>
-                            <th scope="col" class="col-actions"><span class="adm-sr">Actions</span></th>
+                            <th scope="col" class="jb-date">Date</th><th scope="col">Job</th><th scope="col">Units &amp; people</th><th scope="col">Status</th>
                         </tr></thead>
                         <tbody id="jobBody"></tbody>
                     </table>
@@ -4952,6 +4950,7 @@
 <script src="functions/dailyCore.js"></script>
 <script src="weeklyreport.js"></script>
 <script src="calendar.js"></script>
+<script src="tables.js"></script>
 <script type="module" src="firebase-init.js"></script>
 </body>
 </html>

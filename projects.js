@@ -1019,7 +1019,7 @@ function renderJobsList() {
     const byCat = new Map();
     rows.forEach(j => byCat.set(j.category, (byCat.get(j.category) || 0) + 1));
     const top = [...byCat.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
-    const tile = (n, label, sub, tone) => `<div class="wh-tile pr-tile--${tone}"><span class="wh-tile__label">${escapeHtml(label)}</span><span class="wh-tile__value">${n}</span><span class="wh-tile__sub">${escapeHtml(sub)}</span></div>`;
+    const tile = (n, label, sub, tone) => `<div class="wh-tile pr-tile--${tone}" title="${escapeHtml(sub)}"><span class="wh-tile__label">${escapeHtml(label)}</span><span class="wh-tile__value">${n}</span><span class="wh-tile__sub">${escapeHtml(sub)}</span></div>`;
     const tiles = document.getElementById('jobTiles');
     const hours = rows.reduce((n, j) => n + (Number(j.hours) || 0), 0);
     if (tiles) tiles.innerHTML = tile(rows.length, 'Jobs', perLabel, 'teal')
@@ -1032,7 +1032,7 @@ function renderJobsList() {
     const tbody = document.getElementById('jobBody');
     if (!tbody) return;
     if (!rows.length) {
-        tbody.innerHTML = `<tr><td colspan="7" class="adm-empty">${otJobs.length ? 'No jobs in this period or filter'
+        tbody.innerHTML = `<tr><td colspan="4" class="adm-empty">${otJobs.length ? 'No jobs in this period or filter'
             : `No jobs yet.${canAddProjects() ? ' Use <strong>Log job</strong> for calibrations, implement installs, meetings and other work outside the Daily Report.' : ''}`}</td></tr>`;
         return;
     }
@@ -1040,8 +1040,8 @@ function renderJobsList() {
         const p = j.projectId ? projects.find(x => x.id === j.projectId) : null;
         const can = canEditProjectRecord(j);
         return `<tr>
-            <td data-label="Date" class="adm-nowrap">${escapeHtml(j.date || '')}</td>
-            <td data-label="Job"><span class="adm-stack"><span class="pj-cat">${escapeHtml(j.category || '')}</span>
+            <td data-label="Date" class="adm-nowrap jb-date">${escapeHtml(j.date || '')}</td>
+            <td data-label="Job" class="jb-job"><span class="adm-stack"><span class="pj-cat">${escapeHtml(j.category || '')}</span>
                 <span>${escapeHtml(j.description || '')}</span>
                 ${j.issue ? `<span class="pj-job-issue"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i> ${escapeHtml(j.issue)}</span>` : ''}
                 ${(j.files || []).length ? `<span class="pj-filechips">${jobFilesHtml(j)}</span>` : ''}
@@ -1049,15 +1049,23 @@ function renderJobsList() {
                 ${p ? `<button type="button" class="adm-link" onclick="showProjectDetail(${jsArg(p.id)})">Project: ${escapeHtml(p.name)}</button>` : ''}
                 ${_jobTicketChip(j)}
                 ${j.issue && !_jobTicketChip(j) && typeof canHandleTickets === 'function' && canHandleTickets() ? `<button type="button" class="adm-link pj-ticketlink" onclick="ticketFromJob(${jsArg(j.id)})"><i class="fas fa-ticket" aria-hidden="true"></i> Raise a ticket for this issue</button>` : ''}</span></td>
-            <td data-label="Units">${(j.units || []).length ? j.units.map(u => `<button type="button" class="badge badge-cat pj-unitlink" onclick="showUnitProfile(${jsArg(u.id)})">${escapeHtml(u.name || u.sn || '')}</button>`).join(' ') : '<span class="adm-muted">—</span>'}${j.company ? `<span class="adm-sub">${escapeHtml(j.company)}</span>` : ''}</td>
-            <td data-label="Requested / done by"><span class="adm-stack"><span>${escapeHtml(j.requestedBy || '—')}</span><span class="adm-sub">by ${escapeHtml(j.doneBy || '—')}</span></span></td>
-            <td data-label="Hours" class="num">${j.hours ? escapeHtml(String(j.hours)) : '<span class="adm-muted">—</span>'}</td>
-            <td data-label="Status"><span class="pj-jstatus pj-jstatus--${escapeHtml(j.status || 'done')}">${escapeHtml(JOB_STATUSES[j.status] || 'Done')}</span>${whPhotoChip(j.photoIds, j.category || 'job', 'pj')}</td>
-            <td class="col-actions">${can ? `<div class="row-actions">
+            ${_jobWhoCell(j)}
+            <td data-label="Status" class="jb-status"><div class="jb-status__top"><span class="pj-jstatus pj-jstatus--${escapeHtml(j.status || 'done')}">${escapeHtml(JOB_STATUSES[j.status] || 'Done')}</span>${j.hours ? `<span class="jb-hours">${escapeHtml(String(j.hours))} h</span>` : ''}${whPhotoChip(j.photoIds, j.category || 'job', 'pj')}</div>
+                ${can ? `<div class="row-actions">
                 <button class="btn btn-secondary" title="Edit" aria-label="Edit job" onclick="editJob(${jsArg(j.id)})"><i class="fas fa-pen" aria-hidden="true"></i></button>
                 <button class="btn btn-secondary" title="Delete" aria-label="Delete job" onclick="deleteJob(${jsArg(j.id)})"><i class="fas fa-trash" aria-hidden="true"></i></button></div>` : ''}</td>
         </tr>`;
     }).join('');
+}
+// 2.42.0: units, who asked and who did it — one column (the table no longer runs off the side).
+// More than four units: the first four and "+n" (all of them in its tooltip).
+function _jobWhoCell(j) {
+    const us = j.units || [], show = us.slice(0, 4), rest = us.slice(4);
+    const chips = show.map(u => `<button type="button" class="badge badge-cat pj-unitlink" onclick="showUnitProfile(${jsArg(u.id)})">${escapeHtml(u.name || u.sn || '')}</button>`).join(' ')
+        + (rest.length ? ` <span class="badge jb-more" title="${escapeHtml(rest.map(u => u.name || u.sn || '').join(', '))}">+${rest.length}</span>` : '');
+    return `<td data-label="Units & people" class="jb-who">${us.length ? `<div class="jb-units">${chips}</div>` : ''}${j.company ? `<span class="adm-sub">${escapeHtml(j.company)}</span>` : ''}
+        ${j.requestedBy || j.doneBy ? `<span class="jb-people">${j.requestedBy ? `<span>${escapeHtml(j.requestedBy)}</span>` : ''}${j.doneBy ? `<span class="adm-sub">by ${escapeHtml(j.doneBy)}</span>` : ''}</span>` : ''}
+        ${!us.length && !j.requestedBy && !j.doneBy ? '<span class="adm-muted">—</span>' : ''}</td>`;
 }
 function _jobFillSelects(rec, projectId) {
     const cats = jobCategoryChoices();
