@@ -591,6 +591,11 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.41.3 — Semua tombol ikon seragam**: tombol ikon kecil (`.btn-icon`,
+  mis. ✏️ / 🗑 di tabel barang project, hapus update) tidak lagi tampil
+  sebagai kotak abu-abu bawaan browser berbingkai hitam tebal — kini kotak
+  bergaris tipis; hijau saat diarahkan, merah untuk 🗑. Dicek otomatis di
+  semua halaman: tidak ada lagi tombol dengan gaya bawaan browser.
   **2.41.2 — Update project bisa dihapus**: tombol hapus per update (bagi
   yang boleh mengedit project), dengan konfirmasi; foto update ikut dihapus;
   tercatat di History. Menghapus update **tidak** mengubah centang maupun
