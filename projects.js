@@ -30,6 +30,7 @@ const PJ_STATUSES = [
 const PJ_CLOSED = ['done', 'cancelled'];
 const PJ_DEFAULT_MILESTONES = [['Survey & design', 10], ['PR / PO', 15], ['Goods received', 20], ['Installation', 35], ['Testing', 15], ['Handover', 5]];
 const PJ_RAG = { green: 'On track', amber: 'Watch', red: 'Action needed', done: 'Done', cancelled: 'Cancelled' };
+const PJ_RAG_SET = ['green', 'amber', 'red'];   // what a manual RAG may be
 const PJ_UPDATES_MAX = 300;
 const JOB_STATUSES = { open: 'Open', progress: 'In progress', done: 'Done' };
 
@@ -77,7 +78,7 @@ function projectRag(p, today) {
     if (!p) return 'green';
     if (p.status === 'done') return 'done';
     if (p.status === 'cancelled') return 'cancelled';
-    if (p.ragOverride) return p.ragOverride;
+    if (PJ_RAG_SET.includes(p.ragOverride)) return p.ragOverride;   // 2.43.0: only a known value — it lands in a class name
     const now = _pjDay(today || toISODate());
     const s = _pjDay(p.start), e = _pjDay(p.end);
     const pct = projectProgress(p).pct;
@@ -89,7 +90,7 @@ function projectRag(p, today) {
     }
     return 'green';
 }
-function pjRagChip(rag) { return `<span class="pj-rag pj-rag--${rag}"><span class="pj-rag__dot" aria-hidden="true"></span>${escapeHtml(PJ_RAG[rag] || rag)}</span>`; }
+function pjRagChip(rag) { if (!PJ_RAG[rag]) rag = 'green'; return `<span class="pj-rag pj-rag--${rag}"><span class="pj-rag__dot" aria-hidden="true"></span>${escapeHtml(PJ_RAG[rag] || rag)}</span>`; }
 // The day the work reached 100% (2.30.3): the last unit or milestone done, else
 // the last progress update — not the day it was typed in, so work logged
 // after the fact is not counted late.
@@ -968,15 +969,15 @@ function removeJobFile(i) {
     if (!f) return;
     if (f.uploading) { showToast('Wait until it finishes uploading', 'info'); return; }
     _jobFiles.splice(i, 1);
-    if (f.isNew) { if (!f.failed && window.cloud && window.cloud.deleteProjectFile) window.cloud.deleteProjectFile(f.path).catch(() => {}); }
+    if (f.isNew) { if (!f.failed && window.cloud && window.cloud.deleteProjectFile) window.cloud.deleteProjectFile(f.path, _jobDraftId).catch(() => {}); }
     else _jobFilesRemoved.push(f.path);
     renderJobFiles();
 }
-async function openProjectFile(path) {
+async function openProjectFile(path, jobId) {
     // The tab opens on the click itself — a phone blocks one opened after a wait.
     const w = window.open('', '_blank');
     try {
-        const url = await window.cloud.projectFileUrl(path);
+        const url = await window.cloud.projectFileUrl(path, jobId);
         if (w) { w.opener = null; w.location.href = url; } else window.location.href = url;
     } catch (err) {
         if (w) w.close();
@@ -984,7 +985,7 @@ async function openProjectFile(path) {
     }
 }
 function jobFilesHtml(j) {
-    return (j.files || []).map(f => `<button type="button" class="pj-filechip" title="Open ${escapeHtml(f.name)}" onclick="event.stopPropagation(); openProjectFile(${jsArg(f.path)})"><i class="fas ${_fileIcon(f)}" aria-hidden="true"></i> ${escapeHtml(f.name)}</button>`).join('');
+    return (j.files || []).map(f => `<button type="button" class="pj-filechip" title="Open ${escapeHtml(f.name)}" onclick="event.stopPropagation(); openProjectFile(${jsArg(f.path)}, ${jsArg(j.id || '')})"><i class="fas ${_fileIcon(f)}" aria-hidden="true"></i> ${escapeHtml(f.name)}</button>`).join('');
 }
 function getFilteredJobs() {
     const q = (document.getElementById('jobSearch')?.value || '').trim().toLowerCase();
@@ -1137,7 +1138,7 @@ function editJob(id) {
 }
 function closeJobModal() {
     // Cancelled: PDFs uploaded in this form go again; ones removed stay (not saved).
-    if (!_jobSaved) _jobFiles.filter(f => f.isNew && !f.failed && !f.uploading).forEach(f => window.cloud && window.cloud.deleteProjectFile && window.cloud.deleteProjectFile(f.path).catch(() => {}));
+    if (!_jobSaved) _jobFiles.filter(f => f.isNew && !f.failed && !f.uploading).forEach(f => window.cloud && window.cloud.deleteProjectFile && window.cloud.deleteProjectFile(f.path, _jobDraftId).catch(() => {}));
     _jobFiles = []; _jobFilesRemoved = [];
     if (!_jobSaved && typeof _jobTicketLink !== 'undefined') _jobTicketLink = '';
     document.getElementById('otJobModal').classList.remove('open');
@@ -1268,7 +1269,7 @@ function saveJob(event) {
         }
     }
     _jobPush(rec, existing ? 'Job saved' : 'Job logged', existing);
-    _jobFilesRemoved.forEach(path => window.cloud && window.cloud.deleteProjectFile && window.cloud.deleteProjectFile(path).catch(() => {}));
+    _jobFilesRemoved.forEach(path => window.cloud && window.cloud.deleteProjectFile && window.cloud.deleteProjectFile(path, rec.id).catch(() => {}));
     _jobSaved = true;
     // 2.30.1: linked to a ticket — the ticket lists the job, and a finished job offers to resolve it.
     if (typeof linkJobToTicket === 'function') {
@@ -1290,7 +1291,7 @@ function deleteJob(id) {
     if (!j || !canEditProjectRecord(j)) return;
     if (!confirm(`Delete this job (${j.category}, ${j.date})?${j.appliedImplement ? '\n\nThe implement set on the unit stays as it is.' : ''}`)) return;
     deleteWhPhotos(j.photoIds || [], 'pj');
-    (j.files || []).forEach(f => window.cloud && window.cloud.deleteProjectFile && window.cloud.deleteProjectFile(f.path).catch(() => {}));
+    (j.files || []).forEach(f => window.cloud && window.cloud.deleteProjectFile && window.cloud.deleteProjectFile(f.path, j.id).catch(() => {}));
     otJobs = otJobs.filter(x => x.id !== id);
     cloudWrite({ action: 'delete', unitName: `[Job] ${j.category}`, field: j.date, before: j.description || '', after: '' },
         cloudCall('deleteOtJob', id), 'Job deleted', () => showToast('Failed to delete the job', 'error'));

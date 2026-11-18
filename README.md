@@ -591,6 +591,19 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.43.0 — Perbaikan keamanan (audit, fase 1)**: nilai yang masuk ke class
+  HTML hanya nilai yang dikenal (RAG project, format file Learning, jumlah
+  receipt sebagai angka); link di dalam e-book hanya http(s). Foto Purchase /
+  Projects / Tickets dan lampiran job terikat ke record yang dinamai id-nya:
+  akun *own* hanya menyentuh milik record-nya sendiri, tidak pernah menimpa
+  file yang ada (`firestore.rules`, `storage.rules`). Path di dokumen foto
+  dicek sebelum dipakai (hapus: hanya folder dokumen itu; baca: hanya foto
+  record) di browser dan di Daily Report server. Outbox foto: membuka lagi
+  laporan yang fotonya belum terkirim tidak lagi menghilangkannya (gabung,
+  bukan timpa; transaksi saat mengirim). Tes: `tests/security_f1_test.js`,
+  skenario F1 di `tests/rules_test.js` dan `tests/storage_rules_test.js`,
+  B1/S4 di `tests/photo_storage_e2e.js`. **Perlu publish ulang
+  `firestore.rules` dan `storage.rules`, dan deploy ulang Functions.**
   **2.42.0 — Tanpa scroll di dalam scroll (tahap 1)**: `tables.js` — 13 daftar
   panjang (Dashboard, Damage, Licenses, Team, Leader, Inspection, Warehouse,
   Jobs) tidak lagi berada di kotak 320–640px yang ber-scroll sendiri: tinggi

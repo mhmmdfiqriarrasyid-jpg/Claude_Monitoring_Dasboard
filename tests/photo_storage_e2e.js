@@ -75,6 +75,65 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8811';
     const left = await C.flushPhotoOutbox();
     const o2 = await raw('workLogPhotos', 'wl_out');
     out.outboxFlushed = [left, o2.photos.length, o2.photos.every(x => x.startsWith('sp:')), await C.pendingPhotoUploads()];
+    // 2.43.0 (B1): a report reopened while its photos still wait keeps them — one
+    // removed and one added used to lose every photo that was waiting.
+    const offline = on => Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => !on });
+    const exists = async p => !!(await st.mod.getMetadata(st.mod.ref(st.s, p)).catch(() => null));
+    offline(true);
+    await C.saveWorkLogPhotos('wl_b1', [img1, img2, img1]);
+    const b0 = (await raw('workLogPhotos', 'wl_b1')).photos;
+    const shown = await C.getWorkLogPhotos('wl_b1');                    // the form opens: the photos themselves
+    out.b1Shown = [shown.length, shown.every(x => /^data:image\/(jpeg|png);base64,/.test(x))];
+    const c3 = document.createElement('canvas'); c3.width = 6; c3.height = 6; c3.getContext('2d').fillRect(0, 0, 3, 3);
+    await C.saveWorkLogPhotos('wl_b1', [shown[0], shown[2], c3.toDataURL('image/jpeg')]);     // the 2nd removed, a new one added
+    const b1 = (await raw('workLogPhotos', 'wl_b1')).photos;
+    out.b1Kept = [b1.length, b1[0] === b0[0], b1[1] === b0[2], b1[2].startsWith('pending:') && !b0.includes(b1[2]), await C.pendingPhotoUploads()];
+    offline(false);
+    const left1 = await C.flushPhotoOutbox();
+    const b2 = (await raw('workLogPhotos', 'wl_b1')).photos;
+    out.b1Flushed = [left1, b2.length, b2.every(x => x.startsWith('sp:photos/workLogPhotos/wl_b1/')), await C.pendingPhotoUploads()];
+    // A photo waiting on another phone: a placeholder here, and saved back it is still that photo.
+    await FS.setDoc(FS.doc(db, 'workLogPhotos', 'wl_b2'), { id: 'wl_b2', photos: ['pending:elsewhere1'], updatedAt: 1 });
+    const sh2 = await C.getWorkLogPhotos('wl_b2');
+    out.b2Placeholder = /^data:image\/png;base64,/.test(sh2[0]);
+    await C.saveWorkLogPhotos('wl_b2', [sh2[0], img1]);
+    const b2d = (await raw('workLogPhotos', 'wl_b2')).photos;
+    out.b2Kept = [b2d[0], b2d[1].startsWith('sp:')];
+    // Same browser: the form was opened before the upload, saved after it — the upload is kept.
+    offline(true);
+    await C.saveWorkLogPhotos('wl_b3', [img1]);
+    const sh3 = await C.getWorkLogPhotos('wl_b3');
+    offline(false);
+    await C.flushPhotoOutbox();
+    const up3 = (await raw('workLogPhotos', 'wl_b3')).photos[0];
+    await C.saveWorkLogPhotos('wl_b3', [sh3[0], img2]);
+    await new Promise(r => setTimeout(r, 500));
+    const b3 = (await raw('workLogPhotos', 'wl_b3')).photos;
+    out.b3 = [up3.startsWith('sp:'), b3[0] === up3, await exists(up3.slice(3))];
+    // Another phone sent it while the form was open here: its upload is kept, nothing deleted.
+    await FS.setDoc(FS.doc(db, 'workLogPhotos', 'wl_b4'), { id: 'wl_b4', photos: ['pending:elsewhere2'], updatedAt: 1 });
+    const sh4 = await C.getWorkLogPhotos('wl_b4');
+    await st.mod.uploadString(st.mod.ref(st.s, 'photos/workLogPhotos/wl_b4/x1'), img1, 'data_url');
+    await FS.setDoc(FS.doc(db, 'workLogPhotos', 'wl_b4'), { id: 'wl_b4', photos: ['sp:photos/workLogPhotos/wl_b4/x1'], updatedAt: 2 });
+    await C.saveWorkLogPhotos('wl_b4', [sh4[0], img2]);
+    await new Promise(r => setTimeout(r, 500));
+    const b4 = (await raw('workLogPhotos', 'wl_b4')).photos;
+    out.b4 = [b4[0], b4[1].startsWith('sp:'), await exists('photos/workLogPhotos/wl_b4/x1')];
+    // 2.43.0 (S4): a path planted in a photo document is never deleted or loaded.
+    await st.mod.uploadString(st.mod.ref(st.s, 'learning/f9/book'), img1, 'data_url');
+    await st.mod.uploadString(st.mod.ref(st.s, 'photos/inspectionPhotos/in9/i1'), img1, 'data_url');
+    await FS.setDoc(FS.doc(db, 'damagePhotos', 'd9'), { id: 'd9', photo: 'sp:learning/f9/book', updatedAt: 1 });
+    out.plantedLoad = await C.getDamagePhoto('d9');
+    await C.deleteDamagePhoto('d9');
+    await FS.setDoc(FS.doc(db, 'damagePhotos', 'd8'), { id: 'd8', photo: 'sp:photos/inspectionPhotos/in9/i1', updatedAt: 1 });
+    out.copiedLoads = /^http:\/\/127\.0\.0\.1:9198\//.test(await C.getDamagePhoto('d8'));
+    await C.saveDamagePhoto('d8', img2);                                 // replaced: the inspection's photo stays
+    await C.deleteProjectFile('learning/f9/book', 'job_1');
+    await new Promise(r => setTimeout(r, 500));
+    out.plantedKept = [await exists('learning/f9/book'), await exists('photos/inspectionPhotos/in9/i1')];
+    out.jobFileGuard = [await C.projectFileUrl('backups/2026-11-10/users.json.gz', 'job_1').then(() => 'opened', () => 'refused'),
+                        await C.projectFileUrl('projectFiles/job_2/a.pdf', 'job_1').then(() => 'opened', () => 'refused'),
+                        await C.learningFileUrl('backups/x.json').then(() => 'opened', () => 'refused')];
     // inspection map
     await C.saveInspectionPhotos('in1', { gps: img1, cam: '' });
     const i1 = await raw('inspectionPhotos', 'in1');
@@ -98,7 +157,10 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8811';
     return out;
   });
   const want = { stored: 'sp:photos/damagePhotos/d1/', objExists: true, url: true, inline: 'data:image/jpeg;base64,', kept: true, newOne: true,
-    removedGone: true, lostPlain: 0, recovered: [2, true], writtenBack: ['sp:photos/workLogPhotos/wl_lost/k2', 'sp:photos/workLogPhotos/wl_lost/k3'], outboxPending: [3, true, 3], outboxFlushed: [0, 3, true, 0], map: [true, ''], legacyServed: true, migrated: [true, 'dev1'], deleted: [true, true], after: ['after', true] };
+    removedGone: true, lostPlain: 0, recovered: [2, true], writtenBack: ['sp:photos/workLogPhotos/wl_lost/k2', 'sp:photos/workLogPhotos/wl_lost/k3'], outboxPending: [3, true, 3], outboxFlushed: [0, 3, true, 0],
+    b1Shown: [3, true], b1Kept: [3, true, true, true, 3], b1Flushed: [0, 3, true, 0], b2Placeholder: true, b2Kept: ['pending:elsewhere1', true],
+    b3: [true, true, true], b4: ['sp:photos/workLogPhotos/wl_b4/x1', true, true],
+    plantedLoad: '', copiedLoads: true, plantedKept: [true, true], jobFileGuard: ['refused', 'refused', 'refused'], map: [true, ''], legacyServed: true, migrated: [true, 'dev1'], deleted: [true, true], after: ['after', true] };
   let fail = 0;
   Object.keys(want).forEach(k => { const ok = JSON.stringify(R[k]) === JSON.stringify(want[k]); if (!ok) fail++;
     console.log(`${ok ? 'PASS' : 'FAIL'}  ${k}${ok ? '' : ' dapat=' + JSON.stringify(R[k])}`); });

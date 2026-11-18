@@ -343,9 +343,10 @@ export class View extends HTMLElement {
             e.preventDefault()
             const href_ = a.getAttribute('href')
             const href = section?.resolveHref?.(href_) ?? href_
+            // OT Dashboard 2.43.0: only http(s) links leave the book, never javascript: or data:.
             if (book?.isExternal?.(href))
                 Promise.resolve(this.#emit('external-link', { a, href }, true))
-                    .then(x => x ? globalThis.open(href, '_blank') : null)
+                    .then(x => x && /^https?:\/\//i.test(String(href).trim()) ? globalThis.open(href, '_blank', 'noopener,noreferrer') : null)
                     .catch(e => console.error(e))
             else Promise.resolve(this.#emit('link', { a, href }, true))
                 .then(x => x ? this.goTo(href) : null)

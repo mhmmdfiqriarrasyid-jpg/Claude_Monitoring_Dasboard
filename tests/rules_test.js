@@ -651,7 +651,7 @@ async function check(name, p, expectOk) {
     await check('Jobs: tanpa kategori DITOLAK', setDoc(doc(PJO, 'otJobs', 'j2'), { id: 'j2', category: '', createdByUid: 'pjO' }), false);
     await check('Jobs: own TIDAK bisa mengubah job orang lain', setDoc(doc(PJO, 'otJobs', 'j_other'), { id: 'j_other', category: 'Meeting', createdByUid: 'pjO' }), false);
     await check('Jobs: editor menghapus job', deleteDoc(doc(PJE, 'otJobs', 'j_other')), true);
-    await check('Foto project: own menyimpan', setDoc(doc(PJO, 'projectPhotos', 'ph1'), { id: 'ph1', ownerId: 'p_own', photo: 'sp:photos/projectPhotos/p_own/a' }), true);
+    await check('Foto project: own menyimpan', setDoc(doc(PJO, 'projectPhotos', 'p_own__p1'), { id: 'p_own__p1', ownerId: 'p_own', photo: 'sp:photos/projectPhotos/p_own__p1/a' }), true);
     await check('Foto project: view TIDAK bisa menyimpan', setDoc(doc(PJV, 'projectPhotos', 'ph2'), { id: 'ph2', photo: 'x' }), false);
     await check('Job Categories: editor projects menyimpan daftar', setDoc(doc(PJE, 'masterLists', 'jobCategory'), { id: 'jobCategory', values: ['Calibration'] }), true);
     await check('Departments: own TIDAK bisa menyimpan daftar', setDoc(doc(PJO, 'masterLists', 'department'), { id: 'department', values: ['Workshop'] }), false);
@@ -688,8 +688,8 @@ async function check(name, p, expectOk) {
     await check('Ticket staff: tim OT menulis kartunya sendiri', setDoc(doc(TKE, 'ticketStaff', 'tkE'), { uid: 'tkE', name: 'E', email: 'tkE@x.id', updatedAt: 1 }), true);
     await check('Ticket staff: kartu orang lain DITOLAK', setDoc(doc(TKE, 'ticketStaff', 'tkV'), { uid: 'tkV', name: 'V' }), false);
     await check('Ticket staff: pelapor TIDAK bisa membaca', getDoc(doc(TK1, 'ticketStaff', 'tkE')), false);
-    await check('Foto ticket: pelapor menyimpan untuk ticket miliknya', setDoc(doc(TK1, 'ticketPhotos', 'tk_n__p1'), { id: 'tk_n__p1', ownerId: 'tk_n', photo: 'sp:x' }), true);
-    await check('Foto ticket: pelapor TIDAK untuk ticket orang lain', setDoc(doc(TK1, 'ticketPhotos', 'tk_other__p1'), { id: 'tk_other__p1', ownerId: 'tk_other', photo: 'sp:x' }), false);
+    await check('Foto ticket: pelapor menyimpan untuk ticket miliknya', setDoc(doc(TK1, 'ticketPhotos', 'tk_n__p1'), { id: 'tk_n__p1', ownerId: 'tk_n', photo: 'sp:photos/ticketPhotos/tk_n__p1/a' }), true);
+    await check('Foto ticket: pelapor TIDAK untuk ticket orang lain', setDoc(doc(TK1, 'ticketPhotos', 'tk_other__p1'), { id: 'tk_other__p1', ownerId: 'tk_other', photo: 'sp:photos/ticketPhotos/tk_other__p1/a' }), false);
     await check('Foto ticket: pelapor membaca foto ticket miliknya', getDoc(doc(TK1, 'ticketPhotos', 'tk_n__p1')), true);
     await check('Ticket Categories: tim OT menyimpan daftar', setDoc(doc(TKE, 'masterLists', 'ticketCategory'), { id: 'ticketCategory', values: ['GPS'] }), true);
     // 2.27.0: satuan barang Purchase Request
@@ -701,6 +701,74 @@ async function check(name, p, expectOk) {
     await check('Item Units: editor purchase menyimpan daftar', setDoc(doc(as('prE'), 'masterLists', 'uom'), { id: 'uom', values: ['pcs', 'drum'] }), true);
     await check('Item Units: akun purchase own TIDAK bisa menyimpan', setDoc(doc(as('prOwn'), 'masterLists', 'uom'), { id: 'uom', values: ['x'] }), false);
     await check('Item Units: editor warehouse TIDAK bisa menyimpan', setDoc(doc(as('wh'), 'masterLists', 'uom'), { id: 'uom', values: ['x'] }), false);
+
+    // ---- 2.43.0: audit keamanan Fase 1 ----
+    // (a) Foto purchase / project / ticket: akun 'own' hanya menyentuh foto record miliknya.
+    await env.withSecurityRulesDisabled(async ctx => {
+        const db = ctx.firestore();
+        await setDoc(doc(db, 'purchasePhotos', 'pr_other__p1'), { id: 'pr_other__p1', ownerId: 'pr_other', photo: 'sp:photos/purchasePhotos/pr_other__p1/a' });
+        await setDoc(doc(db, 'purchasePhotos', 'pr_sub__p9'), { id: 'pr_sub__p9', ownerId: 'pr_sub', photo: 'sp:photos/purchasePhotos/pr_sub__p9/a' });
+        await setDoc(doc(db, 'purchasePhotos', 'pr_sub__rc1__p1'), { id: 'pr_sub__rc1__p1', ownerId: 'pr_sub__rc1', photo: 'sp:photos/purchasePhotos/pr_sub__rc1__p1/a' });
+        await setDoc(doc(db, 'purchasePhotos', 'pr_gone__p1'), { id: 'pr_gone__p1', ownerId: 'pr_gone', photo: 'sp:photos/purchasePhotos/pr_gone__p1/a' });
+        await setDoc(doc(db, 'purchaseRequests', 'pr_mine2'), { id: 'pr_mine2', title: 'x', status: 'draft', createdByUid: 'prO' });
+        await setDoc(doc(db, 'projects', 'pj_other'), { id: 'pj_other', name: 'Radio', createdByUid: 'pjE' });
+        await setDoc(doc(db, 'otJobs', 'job_mine'), { id: 'job_mine', category: 'Calibration', createdByUid: 'pjO' });
+        await setDoc(doc(db, 'otJobs', 'job_other'), { id: 'job_other', category: 'Calibration', createdByUid: 'pjE' });
+        await setDoc(doc(db, 'projects', 'job_other'), { id: 'job_other', name: 'Look-alike', createdByUid: 'pjO' });
+        await setDoc(doc(db, 'projectPhotos', 'pj_other__p1'), { id: 'pj_other__p1', ownerId: 'pj_other', photo: 'sp:photos/projectPhotos/pj_other__p1/a' });
+        await setDoc(doc(db, 'projectPhotos', 'job_other__p1'), { id: 'job_other__p1', ownerId: 'job_other', photo: 'sp:photos/projectPhotos/job_other__p1/a' });
+        await setDoc(doc(db, 'ticketPhotos', 'tk_other__p1'), { id: 'tk_other__p1', ownerId: 'tk_other', photo: 'sp:photos/ticketPhotos/tk_other__p1/a' });
+    });
+    const PO2 = as('prO');
+    const prPh = (id, o) => Object.assign({ id, ownerId: id.split('__p')[0], photo: 'sp:photos/purchasePhotos/' + id + '/a' }, o);
+    await check('F1 PR foto: own membaca foto request miliknya', getDoc(doc(PO2, 'purchasePhotos', 'pr_sub__p9')), true);
+    await check('F1 PR foto: own membaca foto receipt request miliknya', getDoc(doc(PO2, 'purchasePhotos', 'pr_sub__rc1__p1')), true);
+    await check('F1 PR foto: own TIDAK membaca foto request orang lain', getDoc(doc(PO2, 'purchasePhotos', 'pr_other__p1')), false);
+    await check('F1 PR foto: own TIDAK menimpa foto request orang lain', setDoc(doc(PO2, 'purchasePhotos', 'pr_other__p1'), prPh('pr_other__p1')), false);
+    await check('F1 PR foto: own TIDAK menghapus foto request orang lain', deleteDoc(doc(PO2, 'purchasePhotos', 'pr_other__p1')), false);
+    await check('F1 PR foto: own TIDAK menambah foto ke request orang lain', setDoc(doc(PO2, 'purchasePhotos', 'pr_other__p7'), prPh('pr_other__p7')), false);
+    await check('F1 PR foto: own TIDAK memakai ownerId request lain', setDoc(doc(PO2, 'purchasePhotos', 'pr_mine2__p7'), prPh('pr_mine2__p7', { ownerId: 'pr_other' })), false);
+    await check('F1 PR foto: own menyimpan foto Storage di foldernya sendiri', setDoc(doc(PO2, 'purchasePhotos', 'pr_mine2__p8'), prPh('pr_mine2__p8')), true);
+    await check('F1 PR foto: own menghapus foto request miliknya', deleteDoc(doc(PO2, 'purchasePhotos', 'pr_mine2__p8')), true);
+    await check('F1 PR foto: own merapikan foto request yang sudah dihapus', deleteDoc(doc(PO2, 'purchasePhotos', 'pr_gone__p1')), true);
+    await check('F1 PR foto: own membuka foto yang belum ada (tanpa error)', getDoc(doc(PO2, 'purchasePhotos', 'pr_other__p404')), true);
+    await check('F1 PR foto: editor tetap mengelola foto siapa pun', setDoc(doc(as('prE'), 'purchasePhotos', 'pr_other__p1'), prPh('pr_other__p1')), true);
+    // (b) Isi foto tidak boleh menunjuk ke file lain di bucket.
+    await check('F1 path: ref ke Learning DITOLAK', setDoc(doc(PO2, 'purchasePhotos', 'pr_mine2__p6'), prPh('pr_mine2__p6', { photo: 'sp:learning/f1/book.pdf' })), false);
+    await check('F1 path: ref ke folder foto lain DITOLAK', setDoc(doc(PO2, 'purchasePhotos', 'pr_mine2__p6'), prPh('pr_mine2__p6', { photo: 'sp:photos/purchasePhotos/pr_other__p1/a' })), false);
+    await check('F1 path: editor pun TIDAK bisa menunjuk file lain', setDoc(doc(as('prE'), 'purchasePhotos', 'pr_other__p5'), prPh('pr_other__p5', { photo: 'sp:backups/2026-11-10/users.json.gz' })), false);
+    await check('F1 path: naik folder (..) DITOLAK', setDoc(doc(as('prE'), 'purchasePhotos', 'pr_other__p5'), prPh('pr_other__p5', { photo: 'sp:photos/purchasePhotos/pr_other__p5/../../../learning/x' })), false);
+    await check('F1 path: awalan lain di depan DITOLAK', setDoc(doc(as('prE'), 'purchasePhotos', 'pr_other__p5'), prPh('pr_other__p5', { photo: 'xsp:photos/purchasePhotos/pr_other__p5/a' })), false);
+    await check('F1 path: id dokumen aneh DITOLAK', setDoc(doc(as('prE'), 'purchasePhotos', 'pr_other.x'), { id: 'pr_other.x', ownerId: 'pr_other', photo: 'data:image/jpeg;base64,AA' }), false);
+    await check('F1 path: foto inline tetap diterima', setDoc(doc(PO2, 'purchasePhotos', 'pr_mine2__p5'), prPh('pr_mine2__p5', { photo: 'data:image/jpeg;base64,AA' })), true);
+    await check('F1 path: token outbox tetap diterima', setDoc(doc(PO2, 'purchasePhotos', 'pr_mine2__p4'), prPh('pr_mine2__p4', { photo: 'pending:mi3k2abc9z' })), true);
+    // projects / jobs
+    const pjPh = (id, o) => Object.assign({ id, ownerId: id.split('__p')[0], photo: 'sp:photos/projectPhotos/' + id + '/a' }, o);
+    await check('F1 Foto project: own TIDAK menimpa foto project orang lain', setDoc(doc(PJO, 'projectPhotos', 'pj_other__p1'), pjPh('pj_other__p1')), false);
+    await check('F1 Foto project: own TIDAK menghapus foto project orang lain', deleteDoc(doc(PJO, 'projectPhotos', 'pj_other__p1')), false);
+    await check('F1 Foto job: own TIDAK menimpa foto job orang lain', setDoc(doc(PJO, 'projectPhotos', 'job_other__p1'), pjPh('job_other__p1')), false);
+    await check('F1 Foto job: own TIDAK menghapus foto job orang lain (meski punya project bernama sama)', deleteDoc(doc(PJO, 'projectPhotos', 'job_other__p1')), false);
+    await check('F1 Foto job: own menyimpan foto job miliknya', setDoc(doc(PJO, 'projectPhotos', 'job_mine__p1'), pjPh('job_mine__p1')), true);
+    await check('F1 Foto job: own menghapus foto job miliknya', deleteDoc(doc(PJO, 'projectPhotos', 'job_mine__p1')), true);
+    await check('F1 Foto project: own tetap membaca semua (seperti project-nya)', getDoc(doc(PJO, 'projectPhotos', 'pj_other__p1')), true);
+    await check('F1 Foto project: editor menimpa foto siapa pun', setDoc(doc(PJE, 'projectPhotos', 'job_mine__p2'), pjPh('job_mine__p2')), true);
+    // tickets
+    const tkPh = (id, o) => Object.assign({ id, ownerId: id.split('__p')[0], photo: 'sp:photos/ticketPhotos/' + id + '/a' }, o);
+    await check('F1 Foto ticket: ticket karangan (tidak ada) DITOLAK', setDoc(doc(TK1, 'ticketPhotos', 'tk_ghost__p1'), tkPh('tk_ghost__p1')), false);
+    await check('F1 Foto ticket: TIDAK menimpa foto ticket orang lain lewat ownerId palsu', setDoc(doc(TK1, 'ticketPhotos', 'tk_other__p1'), tkPh('tk_other__p1', { ownerId: 'tk_n' })), false);
+    await check('F1 Foto ticket: TIDAK memindahkan foto ke ticket sendiri', updateDoc(doc(TK1, 'ticketPhotos', 'tk_other__p1'), { ownerId: 'tk_n' }), false);
+    await check('F1 Foto ticket: pelapor TIDAK membaca foto ticket orang lain', getDoc(doc(TK1, 'ticketPhotos', 'tk_other__p1')), false);
+    await check('F1 Foto ticket: pelapor memperbarui fotonya (outbox)', updateDoc(doc(TK1, 'ticketPhotos', 'tk_n__p1'), { photo: 'sp:photos/ticketPhotos/tk_n__p1/b', updatedAt: 5 }), true);
+    await check('F1 Foto ticket: tim OT menyimpan foto ticket mana pun', setDoc(doc(TKE, 'ticketPhotos', 'tk_other__p2'), tkPh('tk_other__p2')), true);
+    // (c) Nilai yang masuk ke class HTML hanya nilai yang dikenal.
+    await check('F1 RAG: nilai dikenal diterima', setDoc(doc(PJO, 'projects', 'p_own'), { id: 'p_own', name: 'RTK', createdByUid: 'pjO', ragOverride: 'red' }), true);
+    await check('F1 RAG: nilai berisi markup DITOLAK', setDoc(doc(PJO, 'projects', 'p_own'), { id: 'p_own', name: 'RTK', createdByUid: 'pjO', ragOverride: 'x"><img src=x onerror=alert(1)>' }), false);
+    await check('F1 RAG: editor pun DITOLAK', setDoc(doc(PJE, 'projects', 'p1'), { id: 'p1', name: 'Camera AI', createdByUid: 'pjE', ragOverride: 'evil' }), false);
+    await check('F1 Learning: format dikenal diterima', setDoc(doc(O, 'learningItems', 'lc_f1'), { id: 'lc_f1', title: 'Book', source: 'upload', file: { id: 'f1', format: 'epub', name: 'b.epub' } }), true);
+    await check('F1 Learning: data lama tanpa format diterima', setDoc(doc(O, 'learningItems', 'lc_f2'), { id: 'lc_f2', title: 'Old', source: 'upload', file: { id: 'f2', name: 'a.pdf' } }), true);
+    await check('F1 Learning: format berisi markup DITOLAK', setDoc(doc(O, 'learningItems', 'lc_f3'), { id: 'lc_f3', title: 'X', source: 'upload', file: { id: 'f3', format: 'pdf x" onmouseover="alert(1)' } }), false);
+    await check('F1 Purchase own: request dengan receipts palsu DITOLAK', setDoc(doc(PO2, 'purchaseRequests', 'pr_o9'), { id: 'pr_o9', title: 'y', status: 'submitted', createdByUid: 'prO', receipts: [{ id: 'r', items: [{ itemId: 'i', qty: '<img src=x onerror=alert(1)>' }] }] }), false);
+    await check('F1 Purchase own: request baru dengan receipts kosong diterima', setDoc(doc(PO2, 'purchaseRequests', 'pr_o8'), { id: 'pr_o8', title: 'y', status: 'draft', createdByUid: 'prO', receipts: [] }), true);
 
     await env.cleanup();
     let pass = 0;

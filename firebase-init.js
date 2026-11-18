@@ -181,9 +181,35 @@ function _thumbUrlOf(url) {
     })());
     return _thumbUrls.get(ref);
 }
+// ---- Paths read from documents (2.43.0) ----
+// A photo document is written by whoever may add photos, so the "sp:<path>" it
+// holds is checked before this browser acts on it with its own rights:
+//   · deleting: only a file in that document's own folder, photos/<col>/<doc>/
+//     (a planted path used to make the owner's browser delete any file — a
+//     Learning Center book, another record's photo);
+//   · reading: only a record photo, photos/<col>/<record>/<file> (a damage record
+//     shows the inspection photo it was copied from), never the rest of the bucket
+//     (Learning files, backups, archives).
+const _photoDir = docId => String(docId).replace(/[^\w-]/g, '_');
+const _PHOTO_PATH = /^photos\/([A-Za-z]+)\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_-]+)$/;
+function _photoRefShape(r) { return typeof r === 'string' && r.startsWith(PHOTO_REF) && _PHOTO_PATH.test(r.slice(PHOTO_REF.length)); }
+function _ownPhotoRef(col, docId, r) {
+    const m = typeof r === 'string' && r.startsWith(PHOTO_REF) ? _PHOTO_PATH.exec(r.slice(PHOTO_REF.length)) : null;
+    return !!m && m[1] === col && m[2] === _photoDir(docId);
+}
+function _learnFileOk(path) {
+    const m = /^learning\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_.-]+)$/.exec(typeof path === 'string' ? path : '');
+    return !!m && !/^\.+$/.test(m[2]);
+}
+// A job attachment: projectFiles/<job>/<file>, of that job when it is known.
+function _jobFileOk(path, jobId) {
+    const m = /^projectFiles\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_.-]+)$/.exec(typeof path === 'string' ? path : '');
+    return !!m && !/^\.+$/.test(m[2]) && (jobId == null || jobId === '' || m[1] === String(jobId));
+}
 async function _photoDown(v, inline) {
     if (typeof v === 'string' && v.startsWith(PHOTO_PENDING)) return '';
     if (typeof v !== 'string' || !v.startsWith(PHOTO_REF)) return v;
+    if (!_photoRefShape(v)) { console.warn('[photos] not a photo path, not loaded:', v.slice(0, 80)); return ''; }
     try {
         const st = await _storage();
         const url = await st.mod.getDownloadURL(st.mod.ref(st.s, v.slice(PHOTO_REF.length)));
@@ -210,7 +236,9 @@ async function _photoMap(v, fn) {
 const _photoRefs = v => (typeof v === 'string' ? [v] : Array.isArray(v) ? v : v && typeof v === 'object' ? Object.values(v) : [])
     .filter(x => typeof x === 'string' && x.startsWith(PHOTO_REF));
 const _hasInline = v => (typeof v === 'string' ? [v] : Array.isArray(v) ? v : v && typeof v === 'object' ? Object.values(v) : []).some(_isImgData);
-async function _dropPhotoRefs(refs) {
+async function _dropPhotoRefs(col, docId, list) {
+    const refs = (list || []).filter(r => _ownPhotoRef(col, docId, r));
+    if (refs.length < (list || []).length) console.warn(`[photos] ${(list || []).length - refs.length} path(s) outside ${col}/${docId} left in place`);
     if (!refs.length) return;
     try {
         const st = await _storage();
@@ -259,12 +287,69 @@ async function _outbox(mode, fn) {
         tx.onerror = () => { db.close(); rej(tx.error); };
     });
 }
-const _outboxPut = job => _outbox('readwrite', st => st.put(job));
 const _outboxDel = key => _outbox('readwrite', st => st.delete(key));
 const _outboxAll = () => _outbox('readonly', st => st.getAll());
+const _outboxGet = key => _outbox('readonly', st => st.get(key));
+// 2.43.0: a job is changed by reading and writing it in one transaction, so a save
+// and an upload running at the same time no longer overwrite each other's photos.
+// edit(job or undefined) returns the job to keep, or null to remove it.
+async function _outboxEdit(key, edit) {
+    const db = await _outboxDb();
+    return new Promise((res, rej) => {
+        const tx = db.transaction('jobs', 'readwrite');
+        const st = tx.objectStore('jobs');
+        let out = null;
+        const g = st.get(key);
+        g.onsuccess = () => {
+            out = edit(g.result);
+            if (out && Object.keys(out.pend || {}).length) st.put(out); else { out = null; st.delete(key); }
+        };
+        tx.oncomplete = () => { db.close(); res(out); };
+        tx.onerror = () => { db.close(); rej(tx.error); };
+    });
+}
+// The values held by a photo field: a string, a list, or a { key: image } map.
+const _valuesOf = v => typeof v === 'string' ? [v] : Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []);
+const _isPending = x => typeof x === 'string' && x.startsWith(PHOTO_PENDING);
+// What a form shows for a photo still waiting in an outbox, and the token it stands
+// for: saved back, it is that same token again. It used to be read as '' — saved
+// back, the waiting photo was gone (2.43.0).
+// "col/doc/field" -> Map(shown value -> its tokens, in order): two identical
+// pictures waiting in one report stay two photos.
+const _pendingShown = new Map();
+function _pendingPlaceholder(tok) {
+    try {
+        const c = document.createElement('canvas'); c.width = 320; c.height = 240;
+        const g = c.getContext('2d');
+        g.fillStyle = '#e5e7eb'; g.fillRect(0, 0, 320, 240);
+        g.fillStyle = '#374151'; g.font = '16px sans-serif'; g.textAlign = 'center';
+        g.fillText('Photo waiting to upload', 160, 112);
+        g.fillText('from the phone that took it', 160, 134);
+        g.fillStyle = '#9ca3af'; g.font = '10px sans-serif';
+        g.fillText(tok.slice(PHOTO_PENDING.length), 160, 228);   // also keeps each placeholder unique
+        return c.toDataURL('image/png');
+    } catch (_) { return ''; }
+}
+function _pendingView(key, tok, data, inline) {
+    // A report (inline) uses the photo itself when this device holds it, else leaves it out.
+    if (inline) return data || '';
+    const shown = data || _pendingPlaceholder(tok) || tok;
+    let m = _pendingShown.get(key);
+    if (!m) _pendingShown.set(key, m = new Map());
+    const list = m.get(shown) || [];
+    if (!list.includes(tok)) list.push(tok);
+    m.set(shown, list);
+    return shown;
+}
 const _photoToken = () => PHOTO_PENDING + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
-const _mapValue = (v, fn) => typeof v === 'string' ? fn(v) : Array.isArray(v) ? v.map(fn)
+const _mapValue = (v, fn) => typeof v === 'string' ? fn(v) : Array.isArray(v) ? v.map(x => fn(x))
     : (v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fn(x)])) : v);
+// The same, with each value's place (list index or map key).
+const _mapKeyed = (v, fn) => typeof v === 'string' ? fn(v, undefined) : Array.isArray(v) ? v.map((x, i) => fn(x, i))
+    : (v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fn(x, k)])) : v);
+// Waiting photos this browser has sent, token -> "sp:" ref: a form opened before
+// the upload saves the upload, not the old token (2.43.0).
+const _tokenDone = new Map();
 let _outboxBusy = false, _outboxTimer = null;
 async function _flushPhotoOutbox() {
     if (_outboxBusy) return;
@@ -281,26 +366,39 @@ async function _flushPhotoOutbox() {
                 if (typeof up === 'string' && up.startsWith(PHOTO_REF)) refs[tok] = up;
             }
             if (Object.keys(refs).length) {
-                const used = new Set();
+                let used = new Set();
+                const ref = doc(db, job.col, job.docId);
+                const swap = d => { used = new Set(); return _mapValue(d[job.field], x => (refs[x] ? (used.add(x), refs[x]) : x)); };
                 try {
-                    const snap = await getDoc(doc(db, job.col, job.docId));
-                    if (snap.exists()) {
-                        const next = _mapValue(snap.data()[job.field], x => (refs[x] ? (used.add(x), refs[x]) : x));
-                        if (used.size) await updateDoc(doc(db, job.col, job.docId), { [job.field]: next, updatedAt: Date.now() });
+                    // 2.43.0: read and written in one transaction, so a save of the same
+                    // report in between is not overwritten with the list as it was before.
+                    if (typeof FS.runTransaction === 'function') {
+                        await FS.runTransaction(db, async tx => {
+                            const snap = await tx.get(ref);
+                            if (!snap.exists()) { used = new Set(); return; }
+                            const next = swap(snap.data());
+                            if (used.size) tx.update(ref, { [job.field]: next, updatedAt: Date.now() });
+                        });
+                    } else {
+                        const snap = await getDoc(ref);
+                        if (snap.exists()) { const next = swap(snap.data()); if (used.size) await updateDoc(ref, { [job.field]: next, updatedAt: Date.now() }); }
                     }
                 } catch (err) {
                     // Locked by now (approved) or not ours: try again later, until the job expires.
                     console.warn('[photos] outbox: document not updated:', err && (err.code || err.message));
-                    _dropPhotoRefs(Object.values(refs));
+                    _dropPhotoRefs(job.col, job.docId, Object.values(refs));
                     left++;
                     continue;
                 }
+                used.forEach(t => _tokenDone.set(t, refs[t]));
                 // A token no longer in the document (photo deleted, record gone): its upload is an orphan.
-                _dropPhotoRefs(Object.entries(refs).filter(([t]) => !used.has(t)).map(([, r]) => r));
-                Object.keys(refs).forEach(t => { delete job.pend[t]; });
+                _dropPhotoRefs(job.col, job.docId, Object.entries(refs).filter(([t]) => !used.has(t)).map(([, r]) => r));
+                // Only the photos sent here leave the job: a save may have added others meanwhile.
+                const sent = new Set(Object.keys(refs));
+                await _outboxEdit(job.key, cur => cur ? { ...cur, pend: Object.fromEntries(Object.entries(cur.pend || {}).filter(([t]) => !sent.has(t))) } : null);
             }
-            if (Object.keys(job.pend || {}).length) { await _outboxPut(job); left++; }
-            else await _outboxDel(job.key);
+            const rest = await _outboxGet(job.key);
+            if (rest && Object.keys(rest.pend || {}).length) left++;
         }
     } catch (err) {
         console.warn('[photos] outbox not flushed:', err && (err.message || err));
@@ -317,27 +415,62 @@ if (typeof window !== 'undefined') window.addEventListener('online', () => setTi
 // opts.keepInline: a photo that cannot be uploaded stays inline (the read-time
 // migration of an old document — never a reason to lose what it holds).
 async function _savePhotoDoc(col, docId, field, value, fields, opts) {
-    let before = [];
-    try { const old = await getDoc(doc(db, col, docId)); if (old.exists()) before = _photoRefs(old.data()[field]); } catch (_) { /* new or unreadable */ }
+    let latest;   // what the document holds now
+    try { const old = await getDoc(doc(db, col, docId)); if (old.exists()) latest = old.data()[field]; } catch (_) { /* new or unreadable */ }
+    const before = _photoRefs(latest), now = new Set(_valuesOf(latest));
+    const key = `${col}/${docId}/${field}`;
+    let waiting = {};   // photos of this document still on this device
+    try { const job = await _outboxGet(key); waiting = (job && job.pend) || {}; } catch (_) { /* no outbox here */ }
     const pend = {};
+    let stale = false;
+    const shownMap = _pendingShown.get(key), usedTok = new Set();
     let stored = await _photoMapLimited(value, async x => {
+        // 2.43.0: a photo still waiting (as the form showed it) stays that same waiting photo.
+        if (typeof x === 'string' && shownMap && shownMap.has(x)) {
+            const t = shownMap.get(x).find(c => !usedTok.has(c));
+            if (t) { usedTok.add(t); x = t; }
+        }
+        if (_isPending(x)) {
+            if (_tokenDone.has(x)) return _tokenDone.get(x);   // sent by this browser since the form opened
+            if (!now.has(x) && !waiting[x]) stale = true;      // sent from another device since
+            return x;
+        }
         const up = await _photoUp(col, docId, x);
         if (_isImgData(up) && !(opts && opts.keepInline)) { const tok = _photoToken(); pend[tok] = up; return tok; }
         return up;
     }, 2);
-    if (Object.keys(pend).length) {
+    // A waiting photo another device has sent meanwhile sits in the document as its
+    // upload now, in the same place: that is what is kept, and nothing is deleted.
+    if (stale) {
+        const have = new Set(_valuesOf(stored));
+        stored = _mapKeyed(stored, (x, k) => {
+            if (!_isPending(x) || now.has(x) || waiting[x] || pend[x]) return x;
+            const there = typeof latest === 'string' ? latest : (latest && typeof latest === 'object' ? latest[k] : undefined);
+            return typeof there === 'string' && there.startsWith(PHOTO_REF) && !have.has(there) ? there : x;
+        });
+    }
+    // The outbox keeps the waiting photos the document still holds, plus the new
+    // ones — added to the job, never replacing it (it used to: every photo still
+    // waiting from before was lost).
+    const tokens = new Set(_valuesOf(stored).filter(_isPending));
+    if (Object.keys(pend).length || Object.keys(waiting).length) {
         try {
-            await _outboxPut({ key: `${col}/${docId}/${field}`, col, docId, field, pend, uid: auth.currentUser ? auth.currentUser.uid : '', at: Date.now() });
-            if (!_outboxTimer) _outboxTimer = setTimeout(() => { _outboxTimer = null; _flushPhotoOutbox(); }, 30000);
+            const me = auth.currentUser ? auth.currentUser.uid : '';
+            await _outboxEdit(key, cur => ({ key, col, docId, field, uid: Object.keys(pend).length ? me : ((cur && cur.uid) || me), at: Date.now(),
+                pend: { ...Object.fromEntries(Object.entries((cur && cur.pend) || {}).filter(([t]) => tokens.has(t))), ...pend } }));
+            if (Object.keys(pend).length && !_outboxTimer) _outboxTimer = setTimeout(() => { _outboxTimer = null; _flushPhotoOutbox(); }, 30000);
         } catch (err) {
-            // No outbox on this device: keep them inline, as before.
-            console.warn('[photos] outbox unavailable, kept inline:', err && err.message);
-            stored = _mapValue(stored, x => (pend[x] || x));
+            if (Object.keys(pend).length) {
+                // No outbox on this device: keep them inline, as before.
+                console.warn('[photos] outbox unavailable, kept inline:', err && err.message);
+                stored = _mapValue(stored, x => (pend[x] || x));
+            }
         }
     }
     await setDoc(doc(db, col, docId), { ...fields, [field]: stored, updatedAt: Date.now() });
+    if (stale) { console.warn(`[photos] ${col}/${docId} changed on another device while open — nothing removed from Storage`); return; }
     const keep = new Set(_photoRefs(stored));
-    _dropPhotoRefs(before.filter(r => !keep.has(r)));
+    _dropPhotoRefs(col, docId, before.filter(r => !keep.has(r)));
 }
 async function _getPhotoDoc(col, docId, field, empty, opts, fieldsOf) {
     const snap = await getDoc(doc(db, col, docId));
@@ -350,7 +483,15 @@ async function _getPhotoDoc(col, docId, field, empty, opts, fieldsOf) {
     if (_hasInline(v) && !(opts && opts.noMigrate) && !(typeof navigator !== 'undefined' && navigator.onLine === false)) {
         _savePhotoDoc(col, docId, field, v, fieldsOf ? fieldsOf(data) : { id: data.id || docId }, { keepInline: true }).catch(() => {});
     }
-    return _photoMap(v, x => _photoDown(x, opts && opts.inline));
+    // 2.43.0: a photo still waiting to upload shows as itself when this device holds
+    // it (else as a placeholder), and saved back it is the same waiting photo.
+    let waiting = {};
+    if (_valuesOf(v).some(_isPending)) {
+        try { const job = await _outboxGet(`${col}/${docId}/${field}`); waiting = (job && job.pend) || {}; } catch (_) { /* no outbox here */ }
+    }
+    const inline = opts && opts.inline, key = `${col}/${docId}/${field}`;
+    return _photoMap(v, x => !_isPending(x) ? _photoDown(x, inline)
+        : (_tokenDone.has(x) ? _photoDown(_tokenDone.get(x), inline) : _pendingView(key, x, waiting[x], inline)));
 }
 // 2.26.1: a report whose photo document never landed (refused by the rules
 // before 2.26.1, see firestore.rules → recordSentByMe) still has its images in
@@ -380,7 +521,7 @@ async function _deletePhotoDoc(col, docId, field) {
     let refs = [];
     try { const old = await getDoc(doc(db, col, docId)); if (old.exists()) refs = _photoRefs(old.data()[field]); } catch (_) { /* gone */ }
     await deleteDoc(doc(db, col, docId));
-    _dropPhotoRefs(refs);
+    _dropPhotoRefs(col, docId, refs);
 }
 
 // App Check (2.11.2): every request carries a reCAPTCHA token proving it
@@ -1132,11 +1273,14 @@ window.cloud = {
                 () => resolve());
         });
     },
+    // 2.43.0: only a Learning Center file, learning/<fileId>/<name> — the path comes from the item.
     async learningFileUrl(path) {
+        if (!_learnFileOk(path)) throw new Error('not a Learning Center file');
         const st = await _storage();
         return st.mod.getDownloadURL(st.mod.ref(st.s, path));
     },
     async deleteLearningFile(path) {
+        if (!_learnFileOk(path)) { console.warn('[learning] not a Learning Center file, left in place:', String(path).slice(0, 80)); return; }
         const st = await _storage();
         try { await st.mod.deleteObject(st.mod.ref(st.s, path)); }
         catch (err) { if (!err || err.code !== 'storage/object-not-found') throw err; }
@@ -1170,11 +1314,13 @@ window.cloud = {
                 reject, () => resolve());
         });
     },
-    async projectFileUrl(path) {
+    async projectFileUrl(path, jobId) {
+        if (!_jobFileOk(path, jobId)) throw new Error('not an attachment of this job');   // 2.43.0
         const st = await _storage();
         return st.mod.getDownloadURL(st.mod.ref(st.s, path));
     },
-    async deleteProjectFile(path) {
+    async deleteProjectFile(path, jobId) {
+        if (!_jobFileOk(path, jobId)) { console.warn('[jobs] not an attachment of this job, left in place:', String(path).slice(0, 80)); return; }   // 2.43.0
         const st = await _storage();
         try { await st.mod.deleteObject(st.mod.ref(st.s, path)); }
         catch (err) { if (!err || err.code !== 'storage/object-not-found') throw err; }

@@ -1178,7 +1178,7 @@ function wrMediaRefs(D) {
         (typeof otJobs !== 'undefined' ? otJobs : []).filter(j => _wrIn(j.date, w)).forEach(j => {
             const sub = `${dayName(j.date)}${(j.units || []).length ? ' · ' + j.units.map(u => u.name).join(', ') : ''}`;
             (j.files || []).filter(f => /^video\//.test(f.type || '')).slice(0, 2).forEach(f => out.work.push({ key: `vid:${f.path}`, kind: 'video', cap: `${j.category} · ${j.description || ''}`.slice(0, 80), sub: `${sub} · video`,
-                name: f.name, size: f.size || 0, type: f.type, load: async () => window.cloud && window.cloud.projectFileUrl ? window.cloud.projectFileUrl(f.path) : '' }));
+                name: f.name, size: f.size || 0, type: f.type, load: async () => window.cloud && window.cloud.projectFileUrl ? window.cloud.projectFileUrl(f.path, j.id) : '' }));
             (j.photoIds || []).slice(0, 2).forEach(id => out.work.push({ key: `pj:${id}`, kind: 'photo', cap: `${j.category} · ${j.description || ''}`.slice(0, 80), sub, load: () => loadWhPhoto(id, 'pj') }));
         });
         out.work.sort((a, b) => (a.kind === 'video' ? 0 : 1) - (b.kind === 'video' ? 0 : 1));

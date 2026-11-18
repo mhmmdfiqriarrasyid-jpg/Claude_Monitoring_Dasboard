@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.42.0';
+const APP_VERSION = 'v2.43.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -19788,7 +19788,8 @@ function learnVideoMime(name) {
     return /\.webm$/i.test(name) ? 'video/webm' : /\.mov$/i.test(name) ? 'video/quicktime' : 'video/mp4';
 }
 const LEARN_FORMAT_LABEL = { pdf: 'PDF', epub: 'EPUB', mobi: 'MOBI', video: 'Video' };
-function learnFormatOf(item) { return (item && item.file && item.file.format) || 'pdf'; }
+// 2.43.0: only a known format — the value lands in a class name and picks the reader.
+function learnFormatOf(item) { const f = item && item.file && item.file.format; return Object.prototype.hasOwnProperty.call(LEARN_FORMAT_LABEL, f) ? f : 'pdf'; }
 function lcFmtSize(n) {
     n = Number(n) || 0;
     return n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
@@ -20217,6 +20218,7 @@ function _lcBookCss() {
     return `html { color-scheme: light; } body { font-size: ${_lcFont}% !important; line-height: 1.55; }
         img, svg { max-width: 100%; height: auto; }`;
 }
+function lcSafeExternal(href) { return typeof href === 'string' && /^https?:\/\/[^\s]+$/i.test(href.trim()); }
 async function openLearningBook(item, gen) {
     const body = document.getElementById('lcViewerBody');
     body.innerHTML = '<p class="lc-loading" id="lcLoading">Opening…</p>';
@@ -20231,6 +20233,13 @@ async function openLearningBook(item, gen) {
         body.classList.add('lc-viewer__body--book');
         const view = document.createElement('foliate-view');
         view.className = 'lc-book';
+        // 2.43.0: a link inside the book opens only as a web page (http/https), in a
+        // separate tab that cannot reach this one. A javascript: link used to run here.
+        view.addEventListener('external-link', e => {
+            e.preventDefault();
+            const href = e.detail && e.detail.href;
+            if (lcSafeExternal(href)) window.open(href, '_blank', 'noopener,noreferrer');
+        });
         body.appendChild(view);
         await view.open(new File([bytes], (item.file && item.file.name) || 'book.epub', { type: LEARN_MIME[learnFormatOf(item)] || '' }));
         if (gen !== _lcRenderGen) return;
@@ -20646,7 +20655,7 @@ function showPurchaseDetail(id) {
         ${receipts.length ? `<div class="pr-section-title">Goods received</div>
             <div class="pr-receipts">${receipts.map(x => `<div class="pr-receipt">
                 <div><strong>${escapeHtml(x.date || '')}</strong>${x.by ? ` · ${escapeHtml(x.by)}` : ''}${(x.stockIds || []).length ? ' · <span class="pr-budget pr-budget--expense">In Warehouse stock</span>' : ''}</div>
-                <div class="adm-sub">${(x.items || []).map(ri => { const it = items.find(i => i.id === ri.itemId); return `${escapeHtml(it ? it.spec : 'item')} × ${ri.qty}`; }).join(' · ')}</div>
+                <div class="adm-sub">${(x.items || []).map(ri => { const it = items.find(i => i.id === ri.itemId); return `${escapeHtml(it ? it.spec : 'item')} × ${Number(ri.qty) || 0}`; }).join(' · ')}</div>
                 ${x.note ? `<div class="adm-sub">${escapeHtml(x.note)}</div>` : ''}
                 ${whPhotoChip(x.photoIds, 'receipt ' + (x.date || ''), 'pr')}
                 ${canManagePurchase() && r.status !== 'cancelled' ? `<button type="button" class="adm-link pr-receipt__edit" onclick="showPurchaseReceive(${jsArg(r.id)}, ${jsArg(x.id)})"><i class="fas fa-pen" aria-hidden="true"></i> Edit receipt</button>` : ''}
@@ -20803,7 +20812,7 @@ function showPurchaseReceive(id, receiptId) {
     if (rc && rows[0]) document.getElementById('prReceiveLocation').value = rows[0].location || '';
     document.getElementById('prReceiveNote').value = rc ? (rc.note || '') : '';
     document.getElementById('prReceiveItems').innerHTML = (r.items || []).map((it, i) => {
-        const mine = rc ? ((rc.items || []).find(x => x.itemId === it.id) || {}).qty || 0 : 0;
+        const mine = rc ? Number(((rc.items || []).find(x => x.itemId === it.id) || {}).qty) || 0 : 0;
         const others = (Number(it.receivedQty) || 0) - mine;
         const left = Math.max(0, (Number(it.qty) || 0) - others);
         const val = rc ? mine : left;

@@ -20,6 +20,11 @@ async function gatherDaily(db, date) {
     return { date, members, shifts, leaves, workLogs, tickets, damages, jobs, projects, units };
 }
 
+// photos/<col>/<doc>/<file>, the folder the app uploads a document's photos to.
+function photoPathOk(col, docId, path) {
+    const m = /^photos\/([A-Za-z]+)\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_-]+)$/.exec(String(path || ''));
+    return !!m && m[1] === col && m[2] === String(docId).replace(/[^\w-]/g, '_');
+}
 // One stored photo ("sp:<path>" in Storage, or an old inline data URL) as a Buffer.
 async function photoBuffer(db, bucket, ref) {
     const [col, field] = PHOTO_COL[ref.src] || [];
@@ -30,6 +35,9 @@ async function photoBuffer(db, bucket, ref) {
     const one = Array.isArray(v) ? v[ref.index || 0] : v;
     if (typeof one !== 'string' || !one) return null;
     if (one.startsWith('sp:')) {
+        // 2.43.0: only a photo in that document's own folder. The document is written
+        // by users and this server reads with admin rights, past the storage rules.
+        if (!photoPathOk(col, ref.id, one.slice(3))) return null;
         const [buf] = await bucket.file(one.slice(3)).download();
         return buf;
     }
@@ -70,4 +78,4 @@ async function composeDaily({ db, bucket, sharp, date, now }) {
     return { m, D, photos: items.length, pages: pages.length };
 }
 
-module.exports = { gatherDaily, photoBuffer, composeDaily };
+module.exports = { gatherDaily, photoBuffer, photoPathOk, composeDaily };

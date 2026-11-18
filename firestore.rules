@@ -538,11 +538,14 @@ service cloud.firestore {
       allow read:   if canViewArea('purchase') || (purchaseOwn() && mineIn(resource.data));
       allow create: if idMatches(id) && request.resource.data.get('createdByUid', '') == request.auth.uid
                     && (canEditArea('purchase')
-                        || (purchaseOwn() && request.resource.data.get('status', '') in ['draft', 'submitted']));
+                        || (purchaseOwn() && request.resource.data.get('status', '') in ['draft', 'submitted']
+                            // 2.43.0: a request goods were never received for has no receipts yet
+                            && request.resource.data.get('receipts', []) == []));
       allow update: if idMatches(id) && (canEditArea('purchase')
                     || (purchaseOwn() && mineIn(resource.data) && resource.data.get('status', '') == 'draft'
                         && request.resource.data.get('createdByUid', '') == request.auth.uid
-                        && request.resource.data.get('status', '') in ['draft', 'submitted']));
+                        && request.resource.data.get('status', '') in ['draft', 'submitted']
+                        && request.resource.data.get('receipts', []) == []));
       allow delete: if canEditArea('purchase')
                     || (purchaseOwn() && mineIn(resource.data) && resource.data.get('status', '') == 'draft');
     }
@@ -562,12 +565,14 @@ service cloud.firestore {
           && request.resource.data.get(field, '').size() > 0
           && request.resource.data.get(field, '').size() <= max;
     }
+    // 2.43.0: a manual RAG is one of the known values (it is drawn into a class name).
+    function ragOk() { return request.resource.data.get('ragOverride', '') in ['', 'green', 'amber', 'red']; }
     match /projects/{id} {
       allow read:   if projectsRead();
-      allow create: if idMatches(id) && textOk('name', 200)
+      allow create: if idMatches(id) && textOk('name', 200) && ragOk()
                     && request.resource.data.get('createdByUid', '') == request.auth.uid
                     && (canEditArea('projects') || projectsOwn());
-      allow update: if idMatches(id) && textOk('name', 200) && projectsKeep(resource.data);
+      allow update: if idMatches(id) && textOk('name', 200) && ragOk() && projectsKeep(resource.data);
       allow delete: if canEditArea('projects') || (projectsOwn() && mineIn(resource.data));
     }
     match /otJobs/{id} {
@@ -578,12 +583,40 @@ service cloud.firestore {
       allow update: if idMatches(id) && textOk('category', 80) && projectsKeep(resource.data);
       allow delete: if canEditArea('projects') || (projectsOwn() && mineIn(resource.data));
     }
+    // ---- Photos of one record (2.43.0) ----
+    // A photo document is named <record>__p<n> (a receipt: <request>__<receipt>__p<n>),
+    // so the record it belongs to is the part of its id before the first "__".
+    // An 'own' account touches only the photos of its own records: it used to be
+    // able to replace or delete anybody's. A record already gone (deleted just
+    // before its photos) leaves orphans that may still be removed.
+    function recOfPhoto(id) { return id.split('__')[0]; }
+    function recMine(path, orGone) { return exists(path) ? mineIn(get(path).data) : orGone; }
+    // Jobs are named job_…, projects pj_… (projects.js _pjId).
+    function pjRecPath(rid) {
+      return rid.matches('job_.*') ? /databases/$(database)/documents/otJobs/$(rid)
+                                  : /databases/$(database)/documents/projects/$(rid);
+    }
+    function prRecPath(rid) { return /databases/$(database)/documents/purchaseRequests/$(rid); }
+    // The stored picture: inline, still on the sender's phone, or a Storage file in
+    // this document's own folder — never a path elsewhere in the bucket (whoever
+    // later deletes the photo would delete that file with their own rights).
+    function photoValOk(col, id) {
+      let v = request.resource.data.get('photo', '');
+      return id.matches('[A-Za-z0-9_-]+') && v is string && v.size() <= 400000
+          && (v == '' || v.matches('data:image/.*') || v.matches('pending:[a-z0-9]+')
+              || v.matches('sp:photos/' + col + '/' + id + '/[A-Za-z0-9_-]+'));
+    }
+    // The photo stays with the record it was taken for.
+    function photoOwnerKept(id) {
+      return recOfPhoto(request.resource.data.get('ownerId', '')) == recOfPhoto(id)
+          && (resource == null || resource.data.get('ownerId', '') == request.resource.data.get('ownerId', ''));
+    }
     match /projectPhotos/{id} {
       allow read:   if projectsRead();
-      allow delete: if canEditArea('projects') || projectsOwn();
-      allow create, update: if (canEditArea('projects') || projectsOwn()) && idMatches(id)
-                    && request.resource.data.get('photo', '') is string
-                    && request.resource.data.get('photo', '').size() <= 400000;
+      allow delete: if canEditArea('projects') || (projectsOwn() && recMine(pjRecPath(recOfPhoto(id)), true));
+      allow create, update: if idMatches(id) && photoValOk('projectPhotos', id)
+                    && (canEditArea('projects')
+                        || (projectsOwn() && photoOwnerKept(id) && recMine(pjRecPath(recOfPhoto(id)), false)));
     }
     // ---- Tickets (2.30.0) ----
     // Every active account files tickets and follows its own (queries must ask
@@ -611,14 +644,16 @@ service cloud.firestore {
       allow delete: if canEditArea('tickets');
     }
     // Photos of a ticket: its reporter and whoever may see tickets.
-    function ticketOfPhoto(ownerId) { return /databases/$(database)/documents/tickets/$(ownerId); }
+    // 2.43.0: the ticket is the one the photo's id names, and it must exist and be
+    // the reporter's own. A made-up ticket id used to let anyone write any ticket's photo.
+    function ticketOfPhoto(tid) { return /databases/$(database)/documents/tickets/$(tid); }
+    function ticketPhotoMine(id) {
+      return exists(ticketOfPhoto(recOfPhoto(id))) && ticketMine(get(ticketOfPhoto(recOfPhoto(id))).data);
+    }
     match /ticketPhotos/{id} {
-      allow read:   if canViewArea('tickets')
-                    || (isActive() && exists(ticketOfPhoto(resource.data.get('ownerId', '-'))) && ticketMine(get(ticketOfPhoto(resource.data.get('ownerId', '-'))).data));
-      allow create, update: if isActive() && idMatches(id)
-                    && request.resource.data.get('photo', '') is string && request.resource.data.get('photo', '').size() <= 400000
-                    && (canEditArea('tickets') || !exists(ticketOfPhoto(request.resource.data.get('ownerId', '-')))
-                        || ticketMine(get(ticketOfPhoto(request.resource.data.get('ownerId', '-'))).data));
+      allow read:   if canViewArea('tickets') || (isActive() && (resource == null || ticketPhotoMine(id)));
+      allow create, update: if isActive() && idMatches(id) && photoValOk('ticketPhotos', id)
+                    && (canEditArea('tickets') || (photoOwnerKept(id) && ticketPhotoMine(id)));
       allow delete: if canEditArea('tickets');
     }
     // Who can be given a ticket: each OT account writes its own card here.
@@ -631,10 +666,15 @@ service cloud.firestore {
     }
     // Learning Center (2.12.0): every active account reads; 'learning' edit
     // adds and removes material. Uploaded PDFs are stored in pieces.
+    // 2.43.0: an uploaded file is one of the known formats (it picks the reader and a class name).
+    function learnFileOk() {
+      let f = request.resource.data.get('file', null);
+      return f == null || (f is map && f.get('format', 'pdf') in ['pdf', 'epub', 'mobi', 'video']);
+    }
     match /learningItems/{id} {
       allow read: if isActive();
       allow delete: if canEditArea('learning');
-      allow create, update: if canEditArea('learning') && idMatches(id)
+      allow create, update: if canEditArea('learning') && idMatches(id) && learnFileOk()
         && request.resource.data.get('title', '') is string
         && request.resource.data.get('title', '').size() > 0
         && request.resource.data.get('title', '').size() <= 200;
@@ -728,12 +768,14 @@ service cloud.firestore {
       allow read: if isOwner() || canViewArea('licenseStock') || canViewArea('teamLog') || canViewArea('damage');
       allow write: if false;
     }
+    // 2.43.0: an 'own' requester sees and changes the photos of its own requests only.
     match /purchasePhotos/{id} {
-      allow read:   if canViewArea('purchase') || purchaseOwn();
-      allow delete: if canEditArea('purchase') || purchaseOwn();
-      allow create, update: if (canEditArea('purchase') || purchaseOwn()) && idMatches(id)
-                    && request.resource.data.get('photo', '') is string
-                    && request.resource.data.get('photo', '').size() <= 400000;
+      allow read:   if canViewArea('purchase')
+                    || (purchaseOwn() && (resource == null || recMine(prRecPath(recOfPhoto(id)), false)));
+      allow delete: if canEditArea('purchase') || (purchaseOwn() && recMine(prRecPath(recOfPhoto(id)), true));
+      allow create, update: if idMatches(id) && photoValOk('purchasePhotos', id)
+                    && (canEditArea('purchase')
+                        || (purchaseOwn() && photoOwnerKept(id) && recMine(prRecPath(recOfPhoto(id)), false)));
     }
     // Device and stock photos (v185), one document per photo, up to ten per item.
     match /warehousePhotos/{id} { allow read: if canViewArea('warehouse'); allow delete: if canEditArea('warehouse');

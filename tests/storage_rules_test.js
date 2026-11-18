@@ -104,6 +104,69 @@ const { doc, setDoc } = require('firebase/firestore');
     await check('backup: owner pun TIDAK bisa menulis (server saja)', uploadBytes(ref(st('own'), 'backups/2026-11-10/units.json.gz'), pdf, { contentType: 'application/gzip' }), false);
     await check('foto: folder koleksi lain tertutup', img(st('own'), 'photos/lainnya/x/a'), false);
 
+    // ---- 2.43.0: audit keamanan Fase 1 — akun 'own' hanya menyentuh file record miliknya ----
+    await env.withSecurityRulesDisabled(async c => {
+        const db = c.firestore();
+        await setDoc(doc(db, 'users', 'prO'), { uid: 'prO', role: 'staff', status: 'active', access: { purchase: 'own' } });
+        await setDoc(doc(db, 'users', 'prE'), { uid: 'prE', role: 'staff', status: 'active', access: { purchase: 'edit' } });
+        await setDoc(doc(db, 'users', 'pjE'), { uid: 'pjE', role: 'staff', status: 'active', access: { projects: 'edit' } });
+        await setDoc(doc(db, 'users', 'tkE'), { uid: 'tkE', role: 'staff', status: 'active', access: { tickets: 'edit' } });
+        await setDoc(doc(db, 'purchaseRequests', 'pr_mine'), { id: 'pr_mine', createdByUid: 'prO' });
+        await setDoc(doc(db, 'purchaseRequests', 'pr_other'), { id: 'pr_other', createdByUid: 'prE' });
+        await setDoc(doc(db, 'projects', 'pj_mine'), { id: 'pj_mine', createdByUid: 'pjO' });
+        await setDoc(doc(db, 'projects', 'pj_other'), { id: 'pj_other', createdByUid: 'pjE' });
+        await setDoc(doc(db, 'otJobs', 'job_mine'), { id: 'job_mine', createdByUid: 'pjO' });
+        await setDoc(doc(db, 'otJobs', 'job_other'), { id: 'job_other', createdByUid: 'pjE' });
+        await setDoc(doc(db, 'projects', 'job_other'), { id: 'job_other', createdByUid: 'pjO' });   // look-alike id in the other collection
+        await setDoc(doc(db, 'tickets', 'tk_mine'), { id: 'tk_mine', reportedByUid: 'rd' });
+        await setDoc(doc(db, 'tickets', 'tk_other'), { id: 'tk_other', reportedByUid: 'tkE' });
+    });
+    await env.withSecurityRulesDisabled(async c => {
+        const s = c.storage();
+        for (const p of ['photos/purchasePhotos/pr_other__p1/a', 'photos/purchasePhotos/pr_mine__p1/a', 'photos/purchasePhotos/pr_gone__p1/a',
+                         'photos/projectPhotos/pj_other__p1/a', 'photos/projectPhotos/job_other__p1/a', 'photos/projectPhotos/job_mine__p1/a',
+                         'photos/ticketPhotos/tk_other__p1/a', 'photos/ticketPhotos/tk_mine__p1/a']) {
+            await uploadBytes(ref(s, p), jpg, { contentType: 'image/jpeg' });
+        }
+        for (const p of ['projectFiles/job_other/a.pdf', 'projectFiles/job_mine/a.pdf']) await uploadBytes(ref(s, p), pdf, { contentType: 'application/pdf' });
+    });
+    // purchase
+    await check('F1 PR: own membaca foto request miliknya', getBytes(ref(st('prO'), 'photos/purchasePhotos/pr_mine__p1/a')), true);
+    await check('F1 PR: own TIDAK membaca foto request orang lain', getBytes(ref(st('prO'), 'photos/purchasePhotos/pr_other__p1/a')), false);
+    await check('F1 PR: own TIDAK menimpa foto request orang lain', img(st('prO'), 'photos/purchasePhotos/pr_other__p1/a'), false);
+    await check('F1 PR: own TIDAK menambah foto ke folder request orang lain', img(st('prO'), 'photos/purchasePhotos/pr_other__p2/b'), false);
+    await check('F1 PR: own TIDAK menghapus foto request orang lain', deleteObject(ref(st('prO'), 'photos/purchasePhotos/pr_other__p1/a')), false);
+    await check('F1 PR: own mengunggah ke request miliknya', img(st('prO'), 'photos/purchasePhotos/pr_mine__p2/b'), true);
+    await check('F1 PR: own mengunggah ke request baru (belum tersimpan)', img(st('prO'), 'photos/purchasePhotos/pr_new1__p1/a'), true);
+    await check('F1 PR: own mengunggah foto receipt request miliknya', img(st('prO'), 'photos/purchasePhotos/pr_mine__rc1__p1/a'), true);
+    await check('F1 PR: own TIDAK menimpa file yang sudah ada (miliknya pun)', img(st('prO'), 'photos/purchasePhotos/pr_mine__p1/a'), false);
+    await check('F1 PR: own menghapus foto request miliknya', deleteObject(ref(st('prO'), 'photos/purchasePhotos/pr_mine__p2/b')), true);
+    await check('F1 PR: own merapikan foto request yang sudah dihapus', deleteObject(ref(st('prO'), 'photos/purchasePhotos/pr_gone__p1/a')), true);
+    await check('F1 PR: editor menimpa foto siapa pun', img(st('prE'), 'photos/purchasePhotos/pr_other__p1/a'), true);
+    // projects / jobs
+    await check('F1 Project: own TIDAK menimpa foto project orang lain', img(st('pjO'), 'photos/projectPhotos/pj_other__p1/a'), false);
+    await check('F1 Project: own TIDAK menghapus foto project orang lain', deleteObject(ref(st('pjO'), 'photos/projectPhotos/pj_other__p1/a')), false);
+    await check('F1 Job: own TIDAK menghapus foto job orang lain (meski punya project bernama sama)', deleteObject(ref(st('pjO'), 'photos/projectPhotos/job_other__p1/a')), false);
+    await check('F1 Job: own TIDAK menambah foto ke job orang lain', img(st('pjO'), 'photos/projectPhotos/job_other__p2/a'), false);
+    await check('F1 Job: own mengunggah ke job miliknya', img(st('pjO'), 'photos/projectPhotos/job_mine__p2/a'), true);
+    await check('F1 Job: own menghapus foto job miliknya', deleteObject(ref(st('pjO'), 'photos/projectPhotos/job_mine__p1/a')), true);
+    await check('F1 Project: own tetap membaca foto project siapa pun', getBytes(ref(st('pjO'), 'photos/projectPhotos/pj_other__p1/a')), true);
+    await check('F1 Lampiran: own TIDAK menimpa lampiran job orang lain', put(st('pjO'), 'projectFiles/job_other/a.pdf', 'application/pdf'), false);
+    await check('F1 Lampiran: own TIDAK menghapus lampiran job orang lain', deleteObject(ref(st('pjO'), 'projectFiles/job_other/a.pdf')), false);
+    await check('F1 Lampiran: own TIDAK menambah lampiran ke job orang lain', put(st('pjO'), 'projectFiles/job_other/b.pdf', 'application/pdf'), false);
+    await check('F1 Lampiran: own mengunggah ke job miliknya', put(st('pjO'), 'projectFiles/job_mine/b.pdf', 'application/pdf'), true);
+    await check('F1 Lampiran: own mengunggah ke job yang belum tersimpan', put(st('pjO'), 'projectFiles/job_draft1/a.pdf', 'application/pdf'), true);
+    await check('F1 Lampiran: own menghapus lampiran job miliknya', deleteObject(ref(st('pjO'), 'projectFiles/job_mine/a.pdf')), true);
+    await check('F1 Lampiran: editor menghapus lampiran siapa pun', deleteObject(ref(st('pjE'), 'projectFiles/job_other/a.pdf')), true);
+    // tickets
+    await check('F1 Ticket: pelapor TIDAK membaca foto ticket orang lain', getBytes(ref(st('rd'), 'photos/ticketPhotos/tk_other__p1/a')), false);
+    await check('F1 Ticket: pelapor TIDAK menimpa foto ticket orang lain', img(st('rd'), 'photos/ticketPhotos/tk_other__p1/a'), false);
+    await check('F1 Ticket: pelapor TIDAK menambah foto ke ticket orang lain', img(st('rd'), 'photos/ticketPhotos/tk_other__p2/a'), false);
+    await check('F1 Ticket: pelapor membaca foto ticket miliknya', getBytes(ref(st('rd'), 'photos/ticketPhotos/tk_mine__p1/a')), true);
+    await check('F1 Ticket: pelapor menambah foto ke ticket miliknya', img(st('rd'), 'photos/ticketPhotos/tk_mine__p2/a'), true);
+    await check('F1 Ticket: pelapor TIDAK menimpa file yang sudah ada', img(st('rd'), 'photos/ticketPhotos/tk_mine__p1/a'), false);
+    await check('F1 Ticket: tim OT menimpa foto ticket', img(st('tkE'), 'photos/ticketPhotos/tk_other__p1/a'), true);
+
     await env.cleanup();
     let pass = 0;
     T.forEach(x => { if (x.pass) pass++; else console.log('FAIL', x.name, '\n   ', x.err || ''); });
