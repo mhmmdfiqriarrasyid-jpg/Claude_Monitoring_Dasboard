@@ -591,6 +591,22 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.44.2 — 3D Models (hasil review)**: frame studio punya CSP sendiri
+  (script/style hanya dari CDN umum, tanpa request keluar) dan `frame-src`
+  dashboard hanya ke authDomain-nya sendiri; studio di Storage hanya
+  `text/plain` / `text/plain;charset=utf-8`. Escape di dalam studio menutup
+  viewer. Simpan model: tiap upload punya path sendiri (file yang dipakai tidak
+  pernah tertimpa), isi form dibaca sekali, "Close anyway" saat upload tidak
+  menyimpan apa pun dan membersihkan upload-nya; model yang sudah dihapus
+  orang lain tidak dibuat ulang (`updateModel3d`, catatan per part lewat
+  `updateModel3dPart`). Viewer: satu sesi per buka (dibuka dua kali = satu
+  viewer), unduhan dibatalkan saat ditutup, cache hanya file ≤ 40 MB. Tombol
+  3D untuk beberapa model menampilkan persis model itu; panel Parts di HP bisa
+  ditutup; Space di tombol tidak melepas part. **Perlu publish ulang
+  `storage.rules`.**
+  **2.44.1 — 3D Models**: `models3d-frame.html` hanya berjalan di dalam
+  sandbox dashboard (origin buram); disematkan situs lain tanpa sandbox, ia
+  tidak melakukan apa pun.
   **2.44.0 — 3D Models**: menu baru *3D Models* (`models3d.js`) — galeri
   model 3D untuk bongkar-pasang implement / unit per part. Dua jenis:
   **GLB studio** (file .glb dari CAD / Blender / SketchUp, dibuka di viewer

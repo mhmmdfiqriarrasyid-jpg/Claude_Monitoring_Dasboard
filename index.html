@@ -10,7 +10,7 @@
          2.11.2) from Google; the app talks only to Google/Firebase APIs and
          EmailJS. 'unsafe-inline' for scripts is
          still needed by the onclick="" attributes in this page. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com; style-src 'self' 'unsafe-inline' blob:; font-src 'self' data: blob:; img-src 'self' data: blob: https://www.gstatic.com https://firebasestorage.googleapis.com; connect-src 'self' https://*.googleapis.com https://www.gstatic.com https://www.google.com https://*.cloudfunctions.net data: blob:; frame-src 'self' https://*.firebaseapp.com https://www.google.com https://recaptcha.google.com https://drive.google.com blob:; worker-src 'self'; manifest-src 'self'; media-src 'self' blob: data: https://firebasestorage.googleapis.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com; style-src 'self' 'unsafe-inline' blob:; font-src 'self' data: blob:; img-src 'self' data: blob: https://www.gstatic.com https://firebasestorage.googleapis.com; connect-src 'self' https://*.googleapis.com https://www.gstatic.com https://www.google.com https://*.cloudfunctions.net data: blob:; frame-src 'self' https://ot-monitoring-tractor.firebaseapp.com https://www.google.com https://recaptcha.google.com https://drive.google.com blob:; worker-src 'self'; manifest-src 'self'; media-src 'self' blob: data: https://firebasestorage.googleapis.com; object-src 'none'; base-uri 'self'; form-action 'self'">
     <meta name="referrer" content="strict-origin-when-cross-origin">
 
     <!-- Fonts & Icons (self-hosted, see vendor/README.md) -->
@@ -254,7 +254,7 @@
                 <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z"></path><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"></path></svg>
                 <span class="nav__text">Learning Center</span>
             </button>
-            <button type="button" class="nav__link" data-view="models3d" onclick="navigateTo('models3d')">
+            <button type="button" class="nav__link" data-view="models3d" onclick="if (typeof m3ShowAll === 'function') _m3Only = null; navigateTo('models3d')">
                 <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 3 7v10l9 5 9-5V7z"></path><path d="m3 7 9 5 9-5"></path><path d="M12 12v10"></path></svg>
                 <span class="nav__text">3D Models</span>
             </button>

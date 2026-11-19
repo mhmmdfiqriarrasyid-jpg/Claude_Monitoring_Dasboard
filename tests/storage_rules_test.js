@@ -179,6 +179,8 @@ const { doc, setDoc } = require('firebase/firestore');
     await check('3D: editor mengunggah GLB', put(st('m3E'), 'models3d/m3_a1/rake.glb', 'model/gltf-binary'), true);
     await check('3D: editor mengunggah studio (sebagai teks)', put(st('m3E'), 'models3d/m3_a1/studio.html', 'text/plain'), true);
     await check('3D: studio sebagai text/html DITOLAK', put(st('m3E'), 'models3d/m3_a1/x.html', 'text/html'), false);
+    await check('3D: "text/plain,text/html" (dibaca browser sebagai HTML) DITOLAK', put(st('m3E'), 'models3d/m3_a1/z.html', 'text/plain,text/html'), false);
+    await check('3D: studio text/plain;charset=utf-8 diterima', put(st('m3E'), 'models3d/m3_a1/s2.html', 'text/plain;charset=utf-8'), true);
     await check('3D: editor mengunggah gambar kartu', uploadBytes(ref(st('m3E'), 'models3d/m3_a1/thumb.jpg'), jpg, { contentType: 'image/jpeg' }), true);
     await check('3D: tipe lain (PDF) DITOLAK', put(st('m3E'), 'models3d/m3_a1/x.pdf', 'application/pdf'), false);
     await check('3D: semua akun aktif membaca', getBytes(ref(st('rd'), 'models3d/m3_a1/rake.glb')), true);

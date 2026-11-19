@@ -1335,6 +1335,17 @@ window.cloud = {
             err => { console.warn('[cloud] models3d subscription error:', err && err.code); if (errorCallback) errorCallback(err); });
     },
     async saveModel3d(rec) { await setDoc(doc(db, 'models3d', rec.id), rec); },
+    // 2.44.2: changes to an existing model — fails (not-found) once it was deleted,
+    // instead of creating it again. Fields given are replaced whole (a map too).
+    async updateModel3d(rec) { await updateDoc(doc(db, 'models3d', rec.id), rec); },
+    // One part's notes only (null removes them), so two editors noting different parts
+    // at the same time keep both.
+    async updateModel3dPart(id, key, info, level) {
+        if (!/^[A-Za-z0-9_-]{1,200}$/.test(String(key))) throw new Error('bad part key');
+        const upd = { [`parts.${key}`]: info === null ? FS.deleteField() : info, updatedAt: Date.now() };
+        if (level !== undefined) upd.level = level;
+        await updateDoc(doc(db, 'models3d', id), upd);
+    },
     async deleteModel3d(id) { await deleteDoc(doc(db, 'models3d', id)); },
     async uploadModel3dFile(path, data, contentType, onProgress) {
         if (!_m3PathOk(path)) throw new Error('not a 3D model path');

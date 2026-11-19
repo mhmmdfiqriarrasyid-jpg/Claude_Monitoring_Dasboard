@@ -31,15 +31,26 @@ function _m3Valid(m) {
     return m && typeof m.id === 'string' && /^m3_[a-z0-9]+$/.test(m.id) && typeof m.name === 'string'
         && (m.kind === 'glb' || m.kind === 'studio') && m.file && typeof m.file.path === 'string';
 }
+let _m3ImplRedraw = 0, _m3ImplSig = '';
 function applyModels3dSnapshot(list) {
     models3d = (list || []).filter(_m3Valid).sort((a, b) => a.name.localeCompare(b.name));
+    if (!list || !list.length) { _m3Bytes.clear(); }   // signed out (or nothing left): no model kept in memory
+    // The open model follows other editors' part notes and picture (same object: the
+    // loaders compare their session, not the model).
+    if (_m3Open) {
+        const f = models3d.find(x => x.id === _m3Open.model.id);
+        if (f) { _m3Open.model.parts = f.parts || {}; _m3Open.model.thumb = f.thumb || ''; _m3Open.model.level = f.level; if (_m3Open.viewer) _m3SchedRender(); }
+    }
     if (typeof currentView !== 'undefined' && currentView === 'models3d') renderModels3dView();
-    // The 3D buttons on implement rows follow the links.
+    // The 3D buttons on implement rows follow the links — redrawn only when the links
+    // change (a redraw drops the rows ticked for "Delete selected").
+    const sig = JSON.stringify(models3d.map(m => [m.id, m.implements || []]));
+    if (sig === _m3ImplSig) return;
+    _m3ImplSig = sig;
     if (typeof currentView !== 'undefined' && currentView === 'implements' && typeof renderImplementsTable === 'function' && !_m3ImplRedraw) {
         _m3ImplRedraw = setTimeout(() => { _m3ImplRedraw = 0; if (currentView === 'implements') renderImplementsTable(); }, 300);
     }
 }
-let _m3ImplRedraw = 0;
 
 // ---- Links: implements and unit models ----
 // An implement is named by its profile name, its "Type — Brand" label or its type.
@@ -61,13 +72,18 @@ function models3dForUnit(u) {
     return models3d.filter(m => (m.implements || []).some(n => names.has(_m3Norm(n)))
         || (model && (m.unitModels || []).some(n => _m3Norm(n) === model)));
 }
+// Several models for one implement or unit: the library shows exactly those.
+let _m3Only = null;   // Set of model ids from a 3D button, or null
 function _m3OpenFor(list) {
     if (!list.length) return;
     if (list.length === 1) { openModel3d(list[0].id); return; }
-    navigateTo('models3d');
+    _m3Kind = '';
     const s = document.getElementById('m3Search');
-    if (s) { s.value = list[0].implements && list[0].implements[0] ? list[0].implements[0] : ''; renderModels3dView(); }
+    if (s) s.value = '';
+    _m3Only = new Set(list.map(m => m.id));
+    navigateTo('models3d');
 }
+function m3ShowAll() { _m3Only = null; renderModels3dView(); }
 // The chip after an implement's name in the Implements table.
 function m3ImplementChip(imp) {
     const list = models3dForImplement(imp);
@@ -99,10 +115,12 @@ function renderModels3dView() {
     if (!grid) return;
     const q = _m3Norm((document.getElementById('m3Search') || {}).value);
     document.querySelectorAll('#m3Kinds [data-kind]').forEach(b => b.setAttribute('aria-pressed', b.dataset.kind === _m3Kind ? 'true' : 'false'));
-    const list = models3d.filter(m => (!_m3Kind || m.kind === _m3Kind)
+    if (q) _m3Only = null;   // typing a search shows the whole library again
+    const list = models3d.filter(m => (!_m3Only || _m3Only.has(m.id)) && (!_m3Kind || m.kind === _m3Kind)
         && (!q || [m.name, m.category, m.description, ...(m.implements || []), ...(m.unitModels || [])].some(v => _m3Norm(v).includes(q))));
     const cnt = document.getElementById('m3Count');
-    if (cnt) cnt.textContent = models3d.length ? `${list.length} of ${models3d.length}` : '';
+    if (cnt) cnt.innerHTML = _m3Only ? `${list.length} linked model${list.length === 1 ? '' : 's'} · <button type="button" class="lc-manage-link" onclick="m3ShowAll()">Show all</button>`
+        : (models3d.length ? `${list.length} of ${models3d.length}` : '');
     const edit = canEditModels3d();
     if (!list.length) {
         grid.innerHTML = `<div class="m3-empty">${models3d.length ? 'No model matches the search.'
@@ -133,14 +151,15 @@ function renderModels3dView() {
     }).join('');
     grid.querySelectorAll('img[data-thumb]').forEach(img => _m3ThumbUrl(img.dataset.thumb).then(u => { if (u) img.src = u; else img.remove(); }));
 }
-function setModels3dKind(kind) { _m3Kind = kind || ''; renderModels3dView(); }
+function setModels3dKind(kind) { _m3Kind = kind || ''; _m3Only = null; renderModels3dView(); }
 const _M3_CUBE = '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 7v10l9 5 9-5V7z"></path><path d="m3 7 9 5 9-5"></path><path d="M12 12v10"></path></svg>';
 
 // ---- Add / edit ----
-let _m3Edit = null, _m3File = null, _m3FileKind = '', _m3Pic = '', _m3Links = { implements: [], unitModels: [] }, _m3Busy = false;
+let _m3Edit = null, _m3File = null, _m3FileKind = '', _m3Pic = '', _m3Links = { implements: [], unitModels: [] }, _m3Busy = false, _m3FormSeq = 0;
 function showAddModel3dForm() { if (!requireEdit('models3d')) return; _m3OpenForm(null); }
 function editModel3d(id) { if (!requireEdit('models3d')) return; const m = models3d.find(x => x.id === id); if (m) _m3OpenForm(m); }
 function _m3OpenForm(m) {
+    _m3FormSeq++;
     _m3Edit = m; _m3File = null; _m3FileKind = ''; _m3Pic = '';
     _m3Links = { implements: [...((m && m.implements) || [])], unitModels: [...((m && m.unitModels) || [])] };
     document.getElementById('m3FormTitle').textContent = m ? 'Edit 3D model' : 'Add 3D model';
@@ -151,7 +170,7 @@ function _m3OpenForm(m) {
     document.getElementById('m3Desc').value = m ? (m.description || '') : '';
     document.getElementById('m3FileInput').value = '';
     document.getElementById('m3PicInput').value = '';
-    document.getElementById('m3FileNote').textContent = m ? `Now: ${m.file.name || m.file.path.split('/').pop()} (${M3_KIND_LABEL[m.kind]}, ${lcFmtSize(m.file.size)}) — pick a file only to replace it.` : 'A .glb file, or a studio page (.html).';
+    document.getElementById('m3FileNote').textContent = m ? `Now: ${m.file.name || m.file.path.split('/').pop()} (${M3_KIND_LABEL[m.kind]}, ${lcFmtSize(m.file.size)}) — pick a file only to replace it.${m.kind === 'glb' && Object.keys(m.parts || {}).length ? ' A new GLB keeps the part notes: they follow each part\'s place in the file.' : ''}` : 'A .glb file, or a studio page (.html).';
     document.getElementById('m3PicNote').textContent = m && m.thumb ? 'A picture is set — pick one only to replace it.' : (m && m.kind === 'glb' ? 'Optional — a GLB model gets one the first time it is opened.' : 'Optional.');
     _m3Progress(null);
     // Suggestions: the implements and the unit models already in the dashboard.
@@ -167,8 +186,15 @@ function _m3OpenForm(m) {
 }
 function closeModel3dForm() {
     if (_m3Busy && !confirm('The upload is still running. Close anyway? The model is not saved.')) return;
+    _m3FormSeq++;   // a save still running for this form stops and leaves nothing behind
     document.getElementById('m3Modal').classList.remove('open');
     _m3Edit = null; _m3File = null; _m3Pic = '';
+    _m3SetFormBusy(false);
+}
+// While a file uploads the form cannot change under it.
+function _m3SetFormBusy(on) {
+    _m3Busy = !!on;
+    ['m3SaveBtn', 'm3FileInput', 'm3PicInput'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !!on; });
 }
 function _m3RenderChips() {
     ['implements', 'unitModels'].forEach(kind => {
@@ -254,67 +280,89 @@ async function saveModel3d(event) {
     if (_m3Busy || !requireEdit('models3d')) return;
     const name = document.getElementById('m3Name').value.trim().slice(0, 160);
     if (!name) { showToast('Give the model a name', 'warning'); document.getElementById('m3Name').focus(); return; }
-    const old = _m3Edit;
-    if (!old && !_m3File) { showToast('Pick the model file (.glb or .html)', 'warning'); return; }
+    if (!_m3Edit && !_m3File) { showToast('Pick the model file (.glb or .html)', 'warning'); return; }
     if (!window.cloud || !window.cloud.saveModel3d || !window.cloud.uploadModel3dFile) { showToast('Reload the page — an old version is still active', 'warning'); return; }
     // A link typed but not added with + still counts.
     ['implements', 'unitModels'].forEach(k => m3AddLink(k));
-    const id = old ? old.id : _m3Id();
-    const kind = _m3File ? _m3FileKind : old.kind;
-    let file = old ? { ...old.file } : null;
-    let thumb = old ? (old.thumb || '') : '';
+    // 2.44.2: everything the form holds is read now — the uploads take a while, and the
+    // form may be closed (or another one opened) before they end.
+    const seq = _m3FormSeq, f = _m3File, fKind = _m3FileKind, pic = _m3Pic, editId = _m3Edit ? _m3Edit.id : null;
+    const category = document.getElementById('m3Category').value || 'Other';
+    const description = document.getElementById('m3Desc').value.trim().slice(0, 2000);
+    const links = { implements: _m3Links.implements.slice(0, 30), unitModels: _m3Links.unitModels.slice(0, 30) };
+    const id = editId || _m3Id();
     const uploaded = [];
-    _m3Busy = true;
-    document.getElementById('m3SaveBtn').disabled = true;
+    const stillOpen = () => seq === _m3FormSeq;
+    _m3SetFormBusy(true);
     try {
-        if (_m3File) {
-            const path = `models3d/${id}/${_m3SafeName(_m3File.name, kind)}`;
-            const type = kind === 'glb' ? 'model/gltf-binary' : 'text/plain;charset=utf-8';   // a studio page is kept as text: its link never runs as a page
+        let file = null, newThumb = '';
+        if (f) {
+            // Each upload has a path of its own: the file in use is never overwritten,
+            // so a failed or abandoned save can always remove what it uploaded.
+            const path = `models3d/${id}/${Date.now().toString(36)}-${_m3SafeName(f.name, fKind)}`;
+            const type = fKind === 'glb' ? 'model/gltf-binary' : 'text/plain;charset=utf-8';   // a studio page is kept as text: its link never runs as a page
             _m3Progress(0);
-            await window.cloud.uploadModel3dFile(path, _m3File, type, p => _m3Progress(p));
+            await window.cloud.uploadModel3dFile(path, f, type, p => { if (stillOpen()) _m3Progress(p); });
             uploaded.push(path);
-            file = { path, name: _m3File.name.slice(0, 160), size: _m3File.size, contentType: type };
+            file = { path, name: f.name.slice(0, 160), size: f.size, contentType: type };
+            if (!stillOpen()) throw Object.assign(new Error('closed'), { code: 'm3/closed' });
         }
-        if (_m3Pic) {
-            _m3Progress(1, 'Saving the picture…');
+        if (pic) {
+            if (stillOpen()) _m3Progress(1, 'Saving the picture…');
             const tp = `models3d/${id}/thumb.jpg`;
-            await window.cloud.uploadModel3dFile(tp, await _m3JpegBlob(_m3Pic), 'image/jpeg');
+            await window.cloud.uploadModel3dFile(tp, await _m3JpegBlob(pic), 'image/jpeg');
+            if (!editId) uploaded.push(tp);
             _m3ThumbUrls.delete(tp);
-            thumb = tp;
+            newThumb = tp;
+            if (!stillOpen()) throw Object.assign(new Error('closed'), { code: 'm3/closed' });
         }
+        // The model as it is now (another editor may have changed it since the form opened).
+        const old = editId ? models3d.find(x => x.id === editId) : null;
+        if (editId && !old) throw Object.assign(new Error('gone'), { code: 'm3/gone' });
+        const kind = f ? fKind : old.kind;
+        const me = (currentUserDoc && (currentUserDoc.displayName || currentUserDoc.email)) || '';
+        // A new GLB without a picture of its own gets a fresh one the first time it is opened.
+        const thumb = newThumb || (f && kind === 'glb' ? '' : ((old && old.thumb) || ''));
         const rec = {
-            ...(old || {}), id, name, kind,
-            category: document.getElementById('m3Category').value || 'Other',
-            description: document.getElementById('m3Desc').value.trim().slice(0, 2000),
-            // A new GLB without a picture of its own gets a fresh one the first time it is opened.
-            file, thumb: _m3File && kind === 'glb' && !_m3Pic ? '' : thumb,
-            implements: _m3Links.implements.slice(0, 30), unitModels: _m3Links.unitModels.slice(0, 30),
-            parts: _m3File && old && file.path !== old.file.path ? {} : ((old && old.parts) || {}),
+            ...(old || {}), id, name, kind, category, description,
+            file: file || { ...old.file }, thumb,
+            implements: links.implements, unitModels: links.unitModels,
+            // Part notes belong to a GLB: a studio page has none.
+            parts: kind === 'glb' && old && old.kind === 'glb' ? (old.parts || {}) : {},
             createdByUid: old ? (old.createdByUid || '') : myUid(),
-            createdBy: old ? (old.createdBy || '') : ((currentUserDoc && (currentUserDoc.displayName || currentUserDoc.email)) || ''),
+            createdBy: old ? (old.createdBy || '') : me,
             createdAt: old ? (old.createdAt || Date.now()) : Date.now(),
-            updatedAt: Date.now(), updatedBy: (currentUserDoc && (currentUserDoc.displayName || currentUserDoc.email)) || ''
+            updatedAt: Date.now(), updatedBy: me
         };
-        await window.cloud.saveModel3d(rec);
-        // A replaced file goes; so does the picture of a model that became a new GLB (it gets a fresh one).
-        if (old && file.path !== old.file.path) window.cloud.deleteModel3dFile(old.file.path).catch(() => {});
-        _m3Busy = false;
+        if (!old || !old.level || kind !== 'glb') delete rec.level;
+        // An existing model is updated, never written anew: if someone deleted it
+        // meanwhile, the update fails instead of bringing it back.
+        const upd = { ...rec };
+        if (old && kind === 'glb' && old.kind === 'glb') delete upd.parts;   // part notes stay as other editors left them
+        await (old && window.cloud.updateModel3d ? window.cloud.updateModel3d(upd) : window.cloud.saveModel3d(rec));
+        if (old && file) window.cloud.deleteModel3dFile(old.file.path).catch(() => {});
+        if (old && old.thumb && !rec.thumb) { window.cloud.deleteModel3dFile(old.thumb).catch(() => {}); _m3ThumbUrls.delete(old.thumb); }
         const i = models3d.findIndex(x => x.id === id);
         if (i >= 0) models3d[i] = rec; else models3d.push(rec);
+        _m3Bytes.delete(old && file ? old.file.path : '');
         if (typeof logEvent === 'function') logEvent({ action: old ? 'update' : 'add', unitId: '', unitName: `[3D] ${name}`, field: '3D model', before: '', after: M3_KIND_LABEL[kind] });
-        showToast(old ? '3D model saved' : '3D model added', 'success');
-        closeModel3dForm();
+        _m3SetFormBusy(false);
+        if (stillOpen()) {
+            showToast(old ? '3D model saved' : '3D model added', 'success');
+            closeModel3dForm();
+        }
         renderModels3dView();
     } catch (err) {
-        console.error('[3d] save failed:', err);
         // An upload whose document never landed is removed again.
         uploaded.forEach(p => window.cloud.deleteModel3dFile(p).catch(() => {}));
-        showToast(err && (err.code === 'permission-denied' || err.code === 'storage/unauthorized')
-            ? '3D Models need the new firestore.rules and storage.rules — publish them first' : 'The model was not saved — try again', 'error');
+        if (err && err.code === 'm3/closed') return;   // "Close anyway": nothing saved, nothing left behind
+        console.error('[3d] save failed:', err);
+        showToast(err && (err.code === 'm3/gone' || err.code === 'not-found') ? 'This model was deleted meanwhile — nothing was saved'
+            : err && (err.code === 'permission-denied' || err.code === 'storage/unauthorized') ? '3D Models need the new firestore.rules and storage.rules — publish them first'
+            : 'The model was not saved — try again', 'error');
     } finally {
-        _m3Busy = false;
-        _m3Progress(null);
-        const b = document.getElementById('m3SaveBtn'); if (b) b.disabled = false;
+        if (stillOpen()) { _m3SetFormBusy(false); _m3Progress(null); }
+        else if (_m3Busy && !document.getElementById('m3Modal').classList.contains('open')) _m3SetFormBusy(false);
     }
 }
 async function deleteModel3d(id) {
@@ -324,7 +372,7 @@ async function deleteModel3d(id) {
     try {
         await window.cloud.deleteModel3d(id);
         window.cloud.deleteModel3dFile(m.file.path).catch(() => {});
-        if (m.thumb) window.cloud.deleteModel3dFile(m.thumb).catch(() => {});
+        window.cloud.deleteModel3dFile(m.thumb || `models3d/${m.id}/thumb.jpg`).catch(() => {});
         models3d = models3d.filter(x => x.id !== id);
         if (typeof logEvent === 'function') logEvent({ action: 'delete', unitId: '', unitName: `[3D] ${m.name}`, field: '3D model', before: M3_KIND_LABEL[m.kind], after: '' });
         showToast('3D model deleted', 'success');
@@ -335,28 +383,42 @@ async function deleteModel3d(id) {
 }
 
 // ---- Open ----
-let _m3Open = null;          // { model, viewer?, frame?, onMsg? }
-const _m3Bytes = new Map();  // Storage path -> ArrayBuffer | string (the last two models opened)
-async function _m3Fetch(model, asText, onProgress) {
+let _m3Open = null;          // the open viewer: { model, ctl, viewer?, onMsg?, onKey? } — each open is its own object
+// The last models opened, kept for a quick reopen — small files only (a 200 MB GLB is
+// not held in memory after its viewer closes).
+const _m3Bytes = new Map();  // Storage path -> ArrayBuffer | string
+const M3_CACHE_MAX = 40 * 1024 * 1024;
+async function _m3Fetch(model, asText, onProgress, signal) {
     const key = model.file.path;
     if (_m3Bytes.has(key)) return _m3Bytes.get(key);
     const url = await window.cloud.model3dFileUrl(key);
     let res;
-    try { res = await fetch(url); }
-    catch (_) { const e = new Error('The file could not be read (the bucket needs CORS for this site, as for the Learning Center)'); e.url = url; throw e; }
+    try { res = await fetch(url, { signal }); }
+    catch (err) {
+        if (err && err.name === 'AbortError') throw err;
+        const e = new Error('The file could not be read (the bucket needs CORS for this site, as for the Learning Center)'); e.url = url; throw e;
+    }
     if (!res.ok) throw new Error(`The file could not be read (HTTP ${res.status})`);
-    const total = Number(res.headers.get('content-length')) || model.file.size || 0;
+    const total = Number(res.headers.get('content-length')) || 0;
     let buf;
     if (res.body && res.body.getReader && total) {
-        const reader = res.body.getReader(), chunks = [];
-        let got = 0;
-        for (;;) { const { done, value } = await reader.read(); if (done) break; chunks.push(value); got += value.length; if (onProgress) onProgress(Math.min(1, got / total)); }
-        const out = new Uint8Array(got); let o = 0; chunks.forEach(c => { out.set(c, o); o += c.length; });
-        buf = out.buffer;
+        // Read straight into one buffer (no list of chunks plus a copy of them).
+        const reader = res.body.getReader();
+        let out = new Uint8Array(total), got = 0;
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (got + value.length > out.length) { const bigger = new Uint8Array(Math.max(out.length * 2, got + value.length)); bigger.set(out.subarray(0, got)); out = bigger; }
+            out.set(value, got); got += value.length;
+            if (onProgress) onProgress(Math.min(1, got / total));
+        }
+        buf = got === out.length ? out.buffer : out.slice(0, got).buffer;
     } else buf = await res.arrayBuffer();
     const val = asText ? new TextDecoder('utf-8').decode(buf) : buf;
-    _m3Bytes.set(key, val);
-    while (_m3Bytes.size > 2) _m3Bytes.delete(_m3Bytes.keys().next().value);
+    if (buf.byteLength <= M3_CACHE_MAX) {
+        _m3Bytes.set(key, val);
+        while (_m3Bytes.size > 2) _m3Bytes.delete(_m3Bytes.keys().next().value);
+    }
     return val;
 }
 function openModel3d(id) {
@@ -367,13 +429,17 @@ function openModel3d(id) {
     document.getElementById('m3ViewerSub').textContent = [M3_KIND_LABEL[m.kind], m.category].filter(Boolean).join(' · ');
     document.getElementById('m3Viewer').classList.add('open');
     document.getElementById('m3Viewer').dataset.kind = m.kind;
-    _m3Open = { model: m };
-    if (m.kind === 'studio') _m3OpenStudio(m); else _m3OpenGlb(m);
+    // 2.44.2: every open is its own session; the loaders check it, not the model (the
+    // same model opened twice used to build two viewers).
+    const o = { model: m, ctl: typeof AbortController === 'function' ? new AbortController() : null };
+    _m3Open = o;
+    if (m.kind === 'studio') _m3OpenStudio(m, o); else _m3OpenGlb(m, o);
 }
 function closeModel3dViewer(quiet) {
     const o = _m3Open;
     _m3Open = null;
     if (o) {
+        if (o.ctl) { try { o.ctl.abort(); } catch (_) {} }   // a download still running stops
         if (o.onMsg) window.removeEventListener('message', o.onMsg);
         if (o.viewer) { try { o.viewer.dispose(); } catch (_) {} }
         if (o.onKey) document.removeEventListener('keydown', o.onKey);
@@ -387,27 +453,34 @@ function _m3Fail(msg) {
     const body = document.getElementById('m3ViewerBody');
     if (body) body.innerHTML = `<p class="m3-fail">${_m3Esc(msg)}</p>`;
 }
+const _m3Aborted = err => err && err.name === 'AbortError';
 
 // A studio page: fetched as text, then handed to the sandboxed frame, which turns into it.
-async function _m3OpenStudio(m) {
+async function _m3OpenStudio(m, o) {
     const body = document.getElementById('m3ViewerBody');
     body.innerHTML = '<p class="m3-wait" id="m3Wait">Opening…</p>';
     let html;
-    try { html = await _m3Fetch(m, true, p => { const w = document.getElementById('m3Wait'); if (w) w.textContent = `Loading ${Math.round(p * 100)}%…`; }); }
-    catch (err) { if (_m3Open && _m3Open.model === m) _m3Fail(navigator.onLine ? err.message : 'This model needs a signal to open'); return; }
-    if (!_m3Open || _m3Open.model !== m) return;
+    try { html = await _m3Fetch(m, true, p => { const w = document.getElementById('m3Wait'); if (w && _m3Open === o) w.textContent = `Loading ${Math.round(p * 100)}%…`; }, o.ctl && o.ctl.signal); }
+    catch (err) { if (_m3Open === o && !_m3Aborted(err)) _m3Fail(navigator.onLine ? err.message : 'This model needs a signal to open'); return; }
+    if (_m3Open !== o) return;
     const frame = document.createElement('iframe');
     frame.className = 'm3-studio';
     frame.title = m.name;
     // allow-scripts only: no allow-same-origin (so an opaque origin), no forms, popups or top navigation.
     frame.setAttribute('sandbox', 'allow-scripts');
     frame.setAttribute('referrerpolicy', 'no-referrer');
+    let sent = false;
+    // Only this frame is listened to: 'ready' gets the page (once); 'escape' — Escape
+    // pressed inside the studio, where the dashboard's own key handler cannot hear it —
+    // closes the viewer.
     const onMsg = e => {
-        if (e.source !== frame.contentWindow || !e.data || e.data.type !== 'ot-studio-ready') return;
-        window.removeEventListener('message', onMsg);
-        frame.contentWindow.postMessage({ type: 'ot-studio', html }, '*');   // the frame's origin is opaque: '*' is the only target
+        if (e.source !== frame.contentWindow || !e.data) return;
+        if (e.data.type === 'ot-studio-ready' && !sent) {
+            sent = true;
+            frame.contentWindow.postMessage({ type: 'ot-studio', html }, '*');   // the frame's origin is opaque: '*' is the only target
+        } else if (e.data.type === 'ot-studio-escape' && _m3Open === o) closeModel3dViewer();
     };
-    _m3Open.onMsg = onMsg;
+    o.onMsg = onMsg;
     window.addEventListener('message', onMsg);
     frame.src = 'models3d-frame.html';
     body.innerHTML = '';
@@ -430,6 +503,7 @@ const _M3_STUDIO_HTML = `
 <div class="m3s" id="m3Studio">
     <aside class="m3s-panel" id="m3Panel">
         <div class="m3s-panel__head">
+            <button type="button" class="m3s-tool m3s-tool--panel m3s-panel__close" onclick="m3TogglePanel(false)" aria-controls="m3Panel">Close parts</button>
             <label class="m3s-field"><span>Part detail</span><select id="m3Level" onchange="m3SetLevel(this.value)"></select></label>
             <input type="search" id="m3PartSearch" class="form-input" placeholder="Search name, item # or part number" oninput="m3RenderParts()">
             <div class="m3s-filters" role="group" aria-label="Show">
@@ -472,17 +546,17 @@ const _M3_STUDIO_HTML = `
     </div>
 </div>`;
 let _m3PartFilter = '', _m3EditPart = false, _m3IsolateKey = null;
-async function _m3OpenGlb(m) {
+async function _m3OpenGlb(m, o) {
     const body = document.getElementById('m3ViewerBody');
     body.innerHTML = _M3_STUDIO_HTML;
     _m3PartFilter = ''; _m3EditPart = false; _m3IsolateKey = null;
-    const wait = t => { const w = document.getElementById('m3Loading'); if (w) { w.hidden = !t; w.textContent = t || ''; } };
+    const wait = t => { const w = document.getElementById('m3Loading'); if (w && _m3Open === o) { w.hidden = !t; w.textContent = t || ''; } };
     let buf;
     try {
         await _m3LoadThree();
-        buf = await _m3Fetch(m, false, p => wait(`Loading ${Math.round(p * 100)}%…`));
-    } catch (err) { if (_m3Open && _m3Open.model === m) _m3Fail(navigator.onLine ? err.message : 'This model needs a signal to open'); return; }
-    if (!_m3Open || _m3Open.model !== m) return;
+        buf = await _m3Fetch(m, false, p => wait(`Loading ${Math.round(p * 100)}%…`), o.ctl && o.ctl.signal);
+    } catch (err) { if (_m3Open === o && !_m3Aborted(err)) _m3Fail(navigator.onLine ? err.message : 'This model needs a signal to open'); return; }
+    if (_m3Open !== o) return;
     wait('Building the model…');
     const tip = document.getElementById('m3Tip');
     let v;
@@ -501,37 +575,45 @@ async function _m3OpenGlb(m) {
         },
         onChange: () => { _m3SchedRender(); }
     }); } catch (err) { _m3Fail(err && err.message ? err.message : 'This browser cannot show 3D models'); return; }
-    _m3Open.viewer = v;
+    // Kept on the session before loading: closing meanwhile disposes it.
+    o.viewer = v;
     try { await v.load(buf); }
-    catch (err) { if (_m3Open && _m3Open.model === m) _m3Fail(err && err.message ? err.message : 'The model could not be read'); return; }
-    if (!_m3Open || _m3Open.model !== m) return;
+    catch (err) { if (_m3Open === o) _m3Fail(err && err.message ? err.message : 'The model could not be read'); return; }
+    buf = null;
+    if (_m3Open !== o) return;
     // The level the editor chose last time, when it still exists.
     if (m.level != null && v.levels.some(l => String(l.level) === String(m.level))) v.setLevel(m.level === 'mesh' ? 'mesh' : Number(m.level));
     wait('');
     const lv = document.getElementById('m3Level');
     lv.innerHTML = v.levels.map(l => `<option value="${_m3Esc(l.level)}">${l.level === 'mesh' ? 'Every piece' : `Level ${_m3Esc(l.level)}`} (${l.count})</option>`).join('');
     lv.value = String(v.level);
-    _m3Open.onKey = e => {
-        if (!_m3Open || !_m3Open.viewer || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return;
+    o.onKey = e => {
+        if (_m3Open !== o) return;
+        const t = e.target || {};
+        if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '') || t.isContentEditable) return;
         if (e.key === 'ArrowRight') { e.preventDefault(); m3Do('step', 1); }
         else if (e.key === 'ArrowLeft') { e.preventDefault(); m3Do('step', -1); }
-        else if (e.key === ' ' && v.selected) { e.preventDefault(); m3Do('toggle'); }
+        // Space takes the picked part off / puts it back — not when a button has the
+        // focus: there Space presses the button.
+        else if (e.key === ' ' && v.selected && !(t.closest && t.closest('button, a[href], [role=button], summary'))) { e.preventDefault(); m3Do('toggle'); }
     };
-    document.addEventListener('keydown', _m3Open.onKey);
+    document.addEventListener('keydown', o.onKey);
     m3RenderParts(); m3RenderInsp();
     // A model without a card picture gets one, taken by the first editor who opens it.
     if (!m.thumb && canEditModels3d()) setTimeout(() => _m3MakeThumb(m), 900);
 }
 async function _m3MakeThumb(m) {
     const o = _m3Open;
-    if (!o || o.model !== m || !o.viewer || m.thumb) return;
+    if (!o || o.model !== m || !o.viewer || m.thumb || !window.cloud.updateModel3d) return;
+    // Still there, and still without a picture (someone may have deleted it or set one).
+    const cur = models3d.find(x => x.id === m.id);
+    if (!cur || cur.thumb) return;
     try {
         const data = o.viewer.snapshot(640);
         if (!/^data:image\/jpeg/.test(data)) return;
         const tp = `models3d/${m.id}/thumb.jpg`;
         await window.cloud.uploadModel3dFile(tp, _m3DataUrlBlob(data), 'image/jpeg');
-        const cur = models3d.find(x => x.id === m.id) || m;
-        await window.cloud.saveModel3d({ ...cur, thumb: tp, updatedAt: Date.now() });
+        await window.cloud.updateModel3d({ id: m.id, thumb: tp, updatedAt: Date.now() });
         m.thumb = tp; _m3ThumbUrls.delete(tp);
     } catch (err) { console.warn('[3d] card picture not saved:', err && (err.code || err.message)); }
 }
@@ -650,11 +732,12 @@ function m3SetLevel(level) {
     o.viewer.setLevel(level === 'mesh' ? 'mesh' : Number(level));
     _m3IsolateKey = null;
     const ex = document.getElementById('m3Explode'); if (ex) { ex.value = 0; m3Explode(0); }
-    // An editor's choice is kept for everyone (the part notes belong to that level).
-    if (canEditModels3d() && String(o.model.level) !== String(level)) {
-        const cur = models3d.find(x => x.id === o.model.id) || o.model;
+    // An editor's choice becomes everyone's starting level — only while the model has no
+    // part notes: once it has, the level is the one they were written at (m3SavePart).
+    const cur = models3d.find(x => x.id === o.model.id);
+    if (cur && canEditModels3d() && !Object.keys(cur.parts || {}).length && String(cur.level) !== String(level) && window.cloud.updateModel3d) {
         o.model.level = level;
-        window.cloud.saveModel3d({ ...cur, level: level === 'mesh' ? 'mesh' : Number(level), updatedAt: Date.now() }).catch(() => {});
+        window.cloud.updateModel3d({ id: cur.id, level: level === 'mesh' ? 'mesh' : Number(level), updatedAt: Date.now() }).catch(() => {});
     }
 }
 function m3TogglePanel(open) {
@@ -668,23 +751,28 @@ async function m3SavePart(event) {
     if (!o || !o.viewer || !o.viewer.selected || !requireEdit('models3d')) return;
     const key = o.viewer.selected, p = o.viewer.part(key);
     const val = id => (document.getElementById(id).value || '').trim();
-    const qty = Math.max(0, Math.min(9999, parseInt(val('m3pQty'), 10) || 0));
+    const n = parseInt(val('m3pQty'), 10);
+    const qty = Number.isFinite(n) ? Math.max(0, Math.min(9999, n)) : 1;   // a blank quantity is the default, 1
     const info = { itemNo: val('m3pItem').slice(0, 20), partNumber: val('m3pNum').slice(0, 60), name: val('m3pName').slice(0, 120), qty, note: val('m3pNote').slice(0, 600) };
     if (p && info.name === p.name) info.name = '';   // the model's own name is not stored twice
-    const cur = models3d.find(x => x.id === o.model.id) || o.model;
-    const parts = { ...(cur.parts || {}) };
+    const cur = models3d.find(x => x.id === o.model.id);
+    if (!cur) { showToast('This model was deleted meanwhile — nothing was saved', 'warning'); return; }
+    const pk = _m3PKey(key);
     const empty = !info.itemNo && !info.partNumber && !info.name && qty === 1 && !info.note;
-    if (empty) delete parts[_m3PKey(key)]; else parts[_m3PKey(key)] = info;
-    if (Object.keys(parts).length > 3000) { showToast('Up to 3,000 parts can carry notes', 'warning'); return; }
-    const rec = { ...cur, parts, level: o.viewer.level, updatedAt: Date.now() };
+    const count = Object.keys(cur.parts || {}).length + (cur.parts && cur.parts[pk] ? 0 : 1);
+    if (!empty && count > 3000) { showToast('Up to 3,000 parts can carry notes', 'warning'); return; }
     try {
-        await window.cloud.saveModel3d(rec);
-        o.model.parts = parts;
-        const i = models3d.findIndex(x => x.id === rec.id); if (i >= 0) models3d[i] = rec;
+        // Only this part's notes are written: another editor's notes on other parts stay.
+        await window.cloud.updateModel3dPart(cur.id, pk, empty ? null : info, o.viewer.level);
+        const parts = { ...(cur.parts || {}) };
+        if (empty) delete parts[pk]; else parts[pk] = info;
+        cur.parts = parts; cur.level = o.viewer.level; o.model.parts = parts; o.model.level = o.viewer.level;
         _m3EditPart = false;
         showToast('Part details saved', 'success');
         m3RenderInsp(); m3RenderParts();
     } catch (err) {
-        showToast(err && err.code === 'permission-denied' ? 'View-only access — ask the owner for edit rights' : 'Not saved — try again', 'error');
+        showToast(err && err.code === 'not-found' ? 'This model was deleted meanwhile — nothing was saved'
+            : err && err.code === 'permission-denied' ? 'View-only access — ask the owner for edit rights'
+            : err && err.code === 'invalid-argument' ? 'This model has too many part notes to save more' : 'Not saved — try again', 'error');
     }
 }

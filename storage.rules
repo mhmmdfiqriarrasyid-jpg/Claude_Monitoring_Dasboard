@@ -180,7 +180,7 @@ service firebase.storage {
     // picture. Every active account reads; 'models3d' edit writes.
     function isModelFile() {
       return (request.resource.contentType in ['model/gltf-binary', 'application/octet-stream'] && request.resource.size <= 200 * 1024 * 1024)
-          || (request.resource.contentType.matches('text/plain.*') && request.resource.size <= 15 * 1024 * 1024)
+          || (request.resource.contentType in ['text/plain', 'text/plain;charset=utf-8'] && request.resource.size <= 15 * 1024 * 1024)
           || (request.resource.contentType == 'image/jpeg' && request.resource.size <= 1024 * 1024);
     }
     match /models3d/{model}/{file} {
