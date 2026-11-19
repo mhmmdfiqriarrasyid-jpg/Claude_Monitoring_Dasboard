@@ -17,6 +17,12 @@
 // becomes that page.
 (function () {
     'use strict';
+    // 2.44.1: only ever a page inside the dashboard's sandbox="allow-scripts" frame,
+    // whose origin is opaque ('null'). Opened any other way — framed by another
+    // site without a sandbox, or on its own — it does nothing: else that site,
+    // as the parent, could hand it a page that ran with the dashboard's origin.
+    // (Fails closed: a browser without self.origin also stops here.)
+    if (self.origin !== 'null' || window.parent === window) return;
     function onMessage(e) {
         if (e.source !== window.parent || !e.data || e.data.type !== 'ot-studio' || typeof e.data.html !== 'string') return;
         window.removeEventListener('message', onMessage);
