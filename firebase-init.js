@@ -285,6 +285,8 @@ async function _outbox(mode, fn) {
         const req = fn(tx.objectStore('jobs'));
         tx.oncomplete = () => { db.close(); res(req && req.result); };
         tx.onerror = () => { db.close(); rej(tx.error); };
+        // 2.43.2: a commit that fails (a full phone) aborts with no error event.
+        tx.onabort = () => { db.close(); rej(tx.error || new Error('outbox transaction aborted')); };
     });
 }
 const _outboxDel = key => _outbox('readwrite', st => st.delete(key));
@@ -306,6 +308,7 @@ async function _outboxEdit(key, edit) {
         };
         tx.oncomplete = () => { db.close(); res(out); };
         tx.onerror = () => { db.close(); rej(tx.error); };
+        tx.onabort = () => { db.close(); rej(tx.error || new Error('outbox transaction aborted')); };
     });
 }
 // The values held by a photo field: a string, a list, or a { key: image } map.
@@ -317,6 +320,9 @@ const _isPending = x => typeof x === 'string' && x.startsWith(PHOTO_PENDING);
 // "col/doc/field" -> Map(shown value -> its tokens, in order): two identical
 // pictures waiting in one report stay two photos.
 const _pendingShown = new Map();
+// The placeholders handed out: a reader (a report, a copy into another record, a
+// cache) asks window.cloud.isWaitingPhoto and leaves them out (2.43.2).
+const _placeholderSrc = new Set();
 function _pendingPlaceholder(tok) {
     try {
         const c = document.createElement('canvas'); c.width = 320; c.height = 240;
@@ -334,6 +340,7 @@ function _pendingView(key, tok, data, inline) {
     // A report (inline) uses the photo itself when this device holds it, else leaves it out.
     if (inline) return data || '';
     const shown = data || _pendingPlaceholder(tok) || tok;
+    if (!data) _placeholderSrc.add(shown);
     let m = _pendingShown.get(key);
     if (!m) _pendingShown.set(key, m = new Map());
     const list = m.get(shown) || [];
@@ -352,16 +359,23 @@ const _mapKeyed = (v, fn) => typeof v === 'string' ? fn(v, undefined) : Array.is
 const _tokenDone = new Map();
 // "col/doc/field" -> the field as last loaded for a form: where each waiting photo was.
 const _loadedVals = new Map();
-let _outboxBusy = false, _outboxTimer = null;
+let _outboxBusy = false, _outboxTimer = null, _outboxAgain = false;
 async function _flushPhotoOutbox() {
-    if (_outboxBusy) return;
+    // 2.43.2: asked again while busy (a new save): it runs again soon after.
+    if (_outboxBusy) { _outboxAgain = true; return; }
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-    _outboxBusy = true;
+    _outboxBusy = true; _outboxAgain = false;
     let left = 0;
+    // Only this device's cache answered (Firestore not reached): that copy may be older
+    // than another device's save, so it is not written from — unless it holds this
+    // device's own unsent write, which goes first anyway.
+    const cacheOnly = s => s.metadata.fromCache && !s.metadata.hasPendingWrites;
     try {
         for (const job of (await _outboxAll()) || []) {
             if (job.uid && auth.currentUser && job.uid !== auth.currentUser.uid) { left++; continue; }   // another account's, on a shared phone
             if (Date.now() - (job.at || 0) > _OUTBOX_DAYS * 86400000) { await _outboxDel(job.key); continue; }
+            try { if (cacheOnly(await getDoc(doc(db, job.col, job.docId)))) { left++; continue; } }
+            catch (_) { left++; continue; }
             const refs = {};
             for (const [tok, data] of Object.entries(job.pend || {})) {
                 const up = await _photoUp(job.col, job.docId, data);
@@ -377,6 +391,7 @@ async function _flushPhotoOutbox() {
                     // thrown away as an orphan.) Nothing is awaited between the read and
                     // the update, so a save on this device cannot slip in between.
                     const snap = await getDoc(ref);
+                    if (cacheOnly(snap)) throw Object.assign(new Error('only a cached copy'), { code: 'unavailable' });
                     if (snap.exists()) {
                         const next = _mapValue(snap.data()[job.field], x => (refs[x] ? (used.add(x), refs[x]) : x));
                         if (used.size) {
@@ -406,7 +421,7 @@ async function _flushPhotoOutbox() {
     } finally {
         _outboxBusy = false;
     }
-    if (left && !_outboxTimer) _outboxTimer = setTimeout(() => { _outboxTimer = null; _flushPhotoOutbox(); }, 60000);
+    if ((left || _outboxAgain) && !_outboxTimer) _outboxTimer = setTimeout(() => { _outboxTimer = null; _flushPhotoOutbox(); }, _outboxAgain ? 5000 : 60000);
     return left;
 }
 if (typeof window !== 'undefined') window.addEventListener('online', () => setTimeout(_flushPhotoOutbox, 3000));
@@ -416,14 +431,10 @@ if (typeof window !== 'undefined') window.addEventListener('online', () => setTi
 // opts.keepInline: a photo that cannot be uploaded stays inline (the read-time
 // migration of an old document — never a reason to lose what it holds).
 async function _savePhotoDoc(col, docId, field, value, fields, opts) {
-    let latest;   // what the document holds now
-    try { const old = await getDoc(doc(db, col, docId)); if (old.exists()) latest = old.data()[field]; } catch (_) { /* new or unreadable */ }
-    const before = _photoRefs(latest), now = new Set(_valuesOf(latest));
     const key = `${col}/${docId}/${field}`;
     let waiting = {};   // photos of this document still on this device
     try { const job = await _outboxGet(key); waiting = (job && job.pend) || {}; } catch (_) { /* no outbox here */ }
     const pend = {};
-    let stale = false;
     const shownMap = _pendingShown.get(key), usedTok = new Set();
     let stored = await _photoMapLimited(value, async x => {
         // 2.43.0: a photo still waiting (as the form showed it) stays that same waiting photo.
@@ -431,44 +442,19 @@ async function _savePhotoDoc(col, docId, field, value, fields, opts) {
             const t = shownMap.get(x).find(c => !usedTok.has(c));
             if (t) { usedTok.add(t); x = t; }
         }
-        if (_isPending(x)) {
-            if (_tokenDone.has(x)) return _tokenDone.get(x);   // sent by this browser since the form opened
-            if (!now.has(x) && !waiting[x]) stale = true;      // sent from another device since
-            return x;
-        }
+        if (_isPending(x)) return x;
+        if (typeof x === 'string' && _placeholderSrc.has(x)) return '';   // another document's placeholder is no photo
         const up = await _photoUp(col, docId, x);
         if (_isImgData(up) && !(opts && opts.keepInline)) { const tok = _photoToken(); pend[tok] = up; return tok; }
         return up;
     }, 2);
-    // A waiting photo another device has sent meanwhile sits in the document as its
-    // upload now, in the same place: that is what is kept, and nothing is deleted.
-    // Its place is where the token was when the form loaded the document (not where it
-    // is in the list being saved: a photo removed before it moves it), and only an
-    // upload that is new since then is taken. One that cannot be placed is added at the
-    // end of a list rather than lost.
-    if (stale) {
-        const loaded = _loadedVals.get(key), seen = new Set(_valuesOf(loaded));
-        const placeOf = t => typeof loaded === 'string' ? (loaded === t ? '' : null)
-            : Array.isArray(loaded) ? (loaded.indexOf(t) >= 0 ? loaded.indexOf(t) : null)
-            : (loaded && typeof loaded === 'object' ? (Object.keys(loaded).find(k => loaded[k] === t) ?? null) : null);
-        const fresh = r => typeof r === 'string' && r.startsWith(PHOTO_REF) && !seen.has(r);
-        const have = new Set(_valuesOf(stored));
-        stored = _mapKeyed(stored, x => {
-            if (!_isPending(x) || now.has(x) || waiting[x] || pend[x]) return x;
-            const at = placeOf(x);
-            if (at === null) return x;
-            const there = at === '' ? latest : (latest && typeof latest === 'object' ? latest[at] : undefined);
-            if (fresh(there) && !have.has(there)) { have.add(there); return there; }
-            return x;
-        });
-        if (Array.isArray(stored) && Array.isArray(latest)) stored = stored.concat(latest.filter(r => fresh(r) && !have.has(r)));
-    }
-    // Sent by this browser while this save was on its way (the upload replaced the
-    // token in the document): saved as the upload, not as the old token.
-    const _resolveSent = v => _mapValue(v, x => (_isPending(x) && _tokenDone.has(x) ? _tokenDone.get(x) : x));
-    // The outbox keeps the waiting photos the document still holds, plus the new
-    // ones — added to the job, never replacing it (it used to: every photo still
-    // waiting from before was lost).
+    // 2.43.2: the document is read only now, after the uploads (they take seconds,
+    // and another device may send a waiting photo meanwhile) — just before writing.
+    let latest;
+    try { const cur = await getDoc(doc(db, col, docId)); if (cur.exists()) latest = cur.data()[field]; } catch (_) { /* new or unreadable */ }
+    // The outbox keeps the waiting photos the form still holds, plus the new ones —
+    // added to the job, never replacing it (it used to: every photo still waiting
+    // from before was lost).
     const tokens = new Set(_valuesOf(stored).filter(_isPending));
     if (Object.keys(pend).length || Object.keys(waiting).length) {
         try {
@@ -484,11 +470,43 @@ async function _savePhotoDoc(col, docId, field, value, fields, opts) {
             }
         }
     }
-    stored = _resolveSent(stored);   // nothing is awaited between this and the write
+    // ---- From here to the write nothing is awaited. ----
+    // Sent by this browser meanwhile (its upload replaced the token in the document):
+    // saved as the upload, not as the old token.
+    stored = _mapValue(stored, x => (_isPending(x) && _tokenDone.has(x) ? _tokenDone.get(x) : x));
+    const now = new Set(_valuesOf(latest)), before = _photoRefs(latest);
+    // Against what the form loaded (when one did): where each waiting photo was, and
+    // which photos are new since — another device's.
+    const loaded = _loadedVals.get(key);
+    const seen = loaded === undefined ? null : new Set(_valuesOf(loaded));
+    let dropped = new Set();
+    if (seen) {
+        const placeOf = t => typeof loaded === 'string' ? (loaded === t ? '' : null)
+            : Array.isArray(loaded) ? (loaded.indexOf(t) >= 0 ? loaded.indexOf(t) : null)
+            : (loaded && typeof loaded === 'object' ? (Object.keys(loaded).find(k => loaded[k] === t) ?? null) : null);
+        const there = t => { const at = placeOf(t); return at === null ? undefined : at === '' ? latest : (latest && typeof latest === 'object' ? latest[at] : undefined); };
+        const fresh = r => typeof r === 'string' && r.startsWith(PHOTO_REF) && !seen.has(r);
+        const kept = new Set(_valuesOf(stored));
+        // A waiting photo the form had and the user removed: its upload is not brought back.
+        dropped = new Set(_valuesOf(loaded).filter(t => _isPending(t) && !kept.has(t) && !kept.has(_tokenDone.get(t))).map(there).filter(fresh));
+        const have = new Set(kept);
+        // A waiting photo another device has sent meanwhile: its upload, in its place (where
+        // the token was when the form loaded — a photo removed before it moves it).
+        stored = _mapKeyed(stored, x => {
+            if (!_isPending(x) || now.has(x) || waiting[x] || pend[x]) return x;
+            const r = there(x);
+            if (fresh(r) && !have.has(r) && !dropped.has(r)) { have.add(r); return r; }
+            return x;
+        });
+        // A photo another device added since the form opened stays (a list keeps it at the end).
+        if (Array.isArray(stored) && Array.isArray(latest)) stored = stored.concat(latest.filter(r => fresh(r) && !have.has(r) && !dropped.has(r)));
+    }
     await setDoc(doc(db, col, docId), { ...fields, [field]: stored, updatedAt: Date.now() });
-    if (stale) { console.warn(`[photos] ${col}/${docId} changed on another device while open — nothing removed from Storage`); return; }
+    _loadedVals.set(key, stored);   // what this browser now knows the document holds
+    // Removed from Storage: what the document held and no longer holds — of the photos
+    // the form had seen, or a waiting one it dropped. Another device's new photo never.
     const keep = new Set(_photoRefs(stored));
-    _dropPhotoRefs(col, docId, before.filter(r => !keep.has(r)));
+    _dropPhotoRefs(col, docId, before.filter(r => !keep.has(r) && (!seen || seen.has(r) || dropped.has(r))));
 }
 async function _getPhotoDoc(col, docId, field, empty, opts, fieldsOf) {
     const snap = await getDoc(doc(db, col, docId));
@@ -1666,6 +1684,9 @@ window.cloud = {
     // 2.29.5: photos waiting on this device, and a manual retry.
     async pendingPhotoUploads() { try { return ((await _outboxAll()) || []).reduce((n, j) => n + Object.keys(j.pend || {}).length, 0); } catch (_) { return 0; } },
     flushPhotoOutbox() { return _flushPhotoOutbox(); },
+    // 2.43.2: the "waiting to upload" placeholder a form shows for a photo still on
+    // another phone — no photo for a report, a copy or a cache.
+    isWaitingPhoto(src) { return typeof src === 'string' && (_placeholderSrc.has(src) || src.startsWith(PHOTO_PENDING)); },
     async getWorkLogPhotos(id, opts) {
         const got = await _getPhotoDoc(WORK_LOG_PHOTOS_COL, id, 'photos', [], opts);
         if (got.length || !(opts && opts.recover)) return got;

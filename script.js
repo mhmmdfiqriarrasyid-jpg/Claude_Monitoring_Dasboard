@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.43.1';
+const APP_VERSION = 'v2.43.2';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -9320,13 +9320,16 @@ function damageHasAfterPhoto(rec) {
 
 // A miss is not remembered: a photo sent from another phone that has not
 // reached the server yet would otherwise read "not found" until a reload.
+// 2.43.2: the placeholder a form shows for a photo still on another phone (see
+// firebase-init.js isWaitingPhoto): never cached, copied or put in a report.
+const _isWaitingPh = s => !!(s && window.cloud && window.cloud.isWaitingPhoto && window.cloud.isWaitingPhoto(s));
 async function loadDamagePhoto(id) {
     const rec = globalDamages.find(d => d.id === id);
     if (rec && rec.photo) return rec.photo;
     if (_dmgPhotoCache.get(id)) return _dmgPhotoCache.get(id);
     if (!window.cloud || !window.cloud.getDamagePhoto) return '';
     const photo = await window.cloud.getDamagePhoto(id);
-    if (photo) _dmgPhotoCache.set(id, photo);
+    if (photo && !_isWaitingPh(photo)) _dmgPhotoCache.set(id, photo);
     return photo;
 }
 
@@ -9334,7 +9337,7 @@ async function loadDamageAfterPhoto(id) {
     if (_dmgAfterCache.get(id)) return _dmgAfterCache.get(id);
     if (!window.cloud || !window.cloud.getDamageAfterPhoto) return '';
     const photo = await window.cloud.getDamageAfterPhoto(id);
-    if (photo) _dmgAfterCache.set(id, photo);
+    if (photo && !_isWaitingPh(photo)) _dmgAfterCache.set(id, photo);
     return photo;
 }
 
@@ -16245,7 +16248,7 @@ async function loadWorkLogPhotos(id) {
     // back from Storage (see _recoverPhotos in firebase-init.js).
     const expect = workLogPhotoCount(rec);
     const photos = await window.cloud.getWorkLogPhotos(id, expect ? { recover: true, expect } : undefined);
-    _wlPhotoCache.set(id, photos);
+    if (!photos.some(_isWaitingPh)) _wlPhotoCache.set(id, photos);
     return photos.slice();
 }
 
@@ -20995,7 +20998,7 @@ async function loadWhPhoto(id, store) {
     const fn = _PH_FN[store || 'wh'].get;
     let src = '';
     try { src = window.cloud && window.cloud[fn] ? await window.cloud[fn](id) : ''; } catch (e) { console.warn('[photos] not loaded', id, e && e.code); }
-    if (src) _whPhotoCache.set(id, src);
+    if (src && !_isWaitingPh(src)) _whPhotoCache.set(id, src);
     return src;
 }
 // A form opens: its photos are the item's stored ones, loaded in the background.
@@ -24803,7 +24806,7 @@ async function loadInspectionPhotos(id) {
     const fn = window.cloud && window.cloud.getInspectionPhotos;
     if (!fn) return {};
     const photos = await window.cloud.getInspectionPhotos(id);
-    _insPhotoCache.set(id, photos || {});
+    if (!Object.values(photos || {}).some(_isWaitingPh)) _insPhotoCache.set(id, photos || {});
     return photos || {};
 }
 
@@ -25227,7 +25230,8 @@ async function applyInspectionFindings(id) {
         try { photos = await loadInspectionPhotos(id); } catch (_) { photos = {}; }
         const ids = [];
         for (const c of inspectionBadBits(r)) {
-            const photo = safeImageSrc(photos[c.key]);
+            // 2.43.2: a photo still on the technician's phone is not copied (its placeholder would become the damage photo).
+            const photo = _isWaitingPh(photos[c.key]) ? '' : safeImageSrc(photos[c.key]);
             const note = (r.notes || {})[c.key] || '';
             const rec = {
                 id: generateDamageId(),

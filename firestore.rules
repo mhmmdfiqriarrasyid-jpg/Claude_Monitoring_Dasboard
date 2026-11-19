@@ -536,7 +536,7 @@ service cloud.firestore {
     function purchaseOwn() { return isActive() && lvl('purchase') == 'own'; }
     match /purchaseRequests/{id} {
       allow read:   if canViewArea('purchase') || (purchaseOwn() && mineIn(resource.data));
-      allow create: if idMatches(id) && request.resource.data.get('createdByUid', '') == request.auth.uid
+      allow create: if idMatches(id) && newIdOk(id) && request.resource.data.get('createdByUid', '') == request.auth.uid
                     && (canEditArea('purchase')
                         || (purchaseOwn() && request.resource.data.get('status', '') in ['draft', 'submitted']
                             // 2.43.0: a request goods were never received for has no receipts yet
@@ -567,9 +567,13 @@ service cloud.firestore {
     }
     // 2.43.0: a manual RAG is one of the known values (it is drawn into a class name).
     function ragOk() { return request.resource.data.get('ragOverride', '') in ['', 'green', 'amber', 'red']; }
+    // 2.43.2: a new record's id has the app's shape (projects.js _pjId: pj_… / job_…,
+    // never "__"): a job named like a project, or a request named like a receipt, made
+    // another record's photos look like its own when it was deleted.
+    function newIdOk(id) { return !id.matches('.*__.*'); }
     match /projects/{id} {
       allow read:   if projectsRead();
-      allow create: if idMatches(id) && textOk('name', 200) && ragOk()
+      allow create: if idMatches(id) && newIdOk(id) && !id.matches('job_.*') && textOk('name', 200) && ragOk()
                     && request.resource.data.get('createdByUid', '') == request.auth.uid
                     && (canEditArea('projects') || projectsOwn());
       allow update: if idMatches(id) && textOk('name', 200) && ragOk() && projectsKeep(resource.data);
@@ -577,7 +581,7 @@ service cloud.firestore {
     }
     match /otJobs/{id} {
       allow read:   if projectsRead();
-      allow create: if idMatches(id) && textOk('category', 80)
+      allow create: if idMatches(id) && newIdOk(id) && id.matches('job_.*') && textOk('category', 80)
                     && request.resource.data.get('createdByUid', '') == request.auth.uid
                     && (canEditArea('projects') || projectsOwn());
       allow update: if idMatches(id) && textOk('category', 80) && projectsKeep(resource.data);
@@ -632,7 +636,7 @@ service cloud.firestore {
     }
     match /tickets/{id} {
       allow read:   if canViewArea('tickets') || (isActive() && ticketMine(resource.data));
-      allow create: if isActive() && idMatches(id) && ticketOk()
+      allow create: if isActive() && idMatches(id) && newIdOk(id) && ticketOk()
                     && request.resource.data.get('reportedByUid', '') == request.auth.uid
                     && request.resource.data.get('status', '') == 'open';
       allow update: if idMatches(id) && ticketOk() && (canEditArea('tickets')
@@ -777,13 +781,23 @@ service cloud.firestore {
               ? (mineIn(get(prRecPath(recOfPhoto(id))).data) && get(prRecPath(recOfPhoto(id))).data.get('status', '') in ['draft', 'submitted'])
               : orGone);
     }
+    // 2.43.2: whatever the status, the requester may still finish a photo that was
+    // waiting on its phone (pending: -> its upload in the photo's own folder), and
+    // change nothing else — or a request approved meanwhile lost that photo for good.
+    function prPhotoFinish(id) {
+      return resource != null && id.split('__').size() == 2
+          && resource.data.get('photo', '') is string && resource.data.get('photo', '').matches('pending:[a-z0-9]+')
+          && request.resource.data.get('photo', '').matches('sp:photos/purchasePhotos/' + id + '/[A-Za-z0-9_-]+')
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['photo', 'updatedAt'])
+          && recMine(prRecPath(recOfPhoto(id)), false);
+    }
     match /purchasePhotos/{id} {
       allow read:   if canViewArea('purchase')
                     || (purchaseOwn() && (resource == null || recMine(prRecPath(recOfPhoto(id)), false)));
       allow delete: if canEditArea('purchase') || (purchaseOwn() && prPhotoOpen(id, true));
       allow create, update: if idMatches(id) && photoValOk('purchasePhotos', id)
                     && (canEditArea('purchase')
-                        || (purchaseOwn() && photoOwnerKept(id) && prPhotoOpen(id, false)));
+                        || (purchaseOwn() && photoOwnerKept(id) && (prPhotoOpen(id, false) || prPhotoFinish(id))));
     }
     // Device and stock photos (v185), one document per photo, up to ten per item.
     match /warehousePhotos/{id} { allow read: if canViewArea('warehouse'); allow delete: if canEditArea('warehouse');

@@ -118,7 +118,10 @@ service firebase.storage {
     }
     match /photos/purchasePhotos/{rec}/{file} {
       allow read: if canView('purchase') || (isOwn('purchase') && prMineSt(rec, false));
-      allow create: if (canEdit('purchase') || (isOwn('purchase') && resource == null && prOpenSt(rec, true))) && isImage();
+      // 2.43.2: an upload into the request's own photo folder is allowed whatever its status
+      // (a photo that waited on the phone is finished after approval); whether the request
+      // shows it is decided by firestore.rules. Replacing and deleting stay limited.
+      allow create: if (canEdit('purchase') || (isOwn('purchase') && resource == null && rec.split('__').size() == 2 && prMineSt(rec, true))) && isImage();
       allow update: if canEdit('purchase') && isImage();
       allow delete: if canEdit('purchase') || (isOwn('purchase') && prOpenSt(rec, true));
     }

@@ -231,7 +231,7 @@
         // ---- Issues & damage ----
         const broken = u => !!u && String(u.status || '').trim().toLowerCase() === 'breakdown';
         const dmg = I.damages || [];
-        const damage = dmg.filter(d => d.date === date).map(d => ({ unit: d.unitName || nameOf(d.unitId) || d.sn || '', pt: pt(d.site), part: d.component || '', type: d.damageType || '',
+        const damage = dmg.filter(d => d.date === date).map(d => ({ unit: d.unitName || nameOf(d.unitId) || d.sn || '', pt: pt(d.site), part: String(d.component || ''), type: String(d.damageType || ''),
             what: d.description || '', resolved: !!d.resolved, breakdown: !d.resolved && broken(units.find(u => u.id === d.unitId)) }));
         const fixed = dmg.filter(d => d.resolved && d.resolvedAt === date).length;
         const tk = I.tickets || [];
@@ -242,7 +242,7 @@
             if (TK_DONE.includes(t.status)) return `Open → resolved ${r ? dayName(isoOf(new Date(r))) : 'later'}`;
             return TK_STATUS[t.status] || t.status || ''; };
         const tkRow = t => ({ no: t.no || '', title: t.title || '', prio: PRIO_LABEL[t.priority] || '', priority: t.priority || 'medium', status: statusThen(t),
-            pic: t.assigneeName || '', units: (t.units || []).map(unitName).filter(Boolean).join(', '), category: t.category || '' });
+            pic: String(t.assigneeName || ''), units: (t.units || []).map(unitName).filter(Boolean).join(', '), category: String(t.category || '') });
         const openNow = tk.filter(t => !TK_DONE.includes(t.status));
         const tickets = { opened: tk.filter(t => inDay(t.reportedAt)).map(tkRow), resolved: tk.filter(t => inDay(t.resolvedAt || evAt(t, 'resolved'))).map(tkRow),
             open: openNow.length, overdue: openNow.filter(t => now > (t.reportedAt || 0) + (PRIO_HOURS[t.priority] || 24) * 3600000).length };

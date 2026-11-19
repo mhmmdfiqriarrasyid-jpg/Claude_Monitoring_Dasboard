@@ -140,6 +140,40 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8811';
     await pSave; await pFlush;
     const b6 = (await raw('workLogPhotos', 'wl_b6')).photos;
     out.b6 = [b6.length, b6[0].startsWith('sp:photos/workLogPhotos/wl_b6/'), b6[0].startsWith('sp:') && await exists(b6[0].slice(3)), await C.pendingPhotoUploads()];
+    // 2.43.2: a placeholder is recognisable, and saved into another document it is no photo.
+    out.b7 = [C.isWaitingPhoto(sh2[0]), C.isWaitingPhoto(img1)];
+    await C.saveDamagePhoto('d7', sh2[0]);
+    out.b7.push((await raw('damagePhotos', 'd7')).photo);
+    // A waiting photo removed in the form stays removed when the other phone sends it meanwhile.
+    for (const n of ['a', 'u1', 'u2']) await st.mod.uploadString(st.mod.ref(st.s, `photos/workLogPhotos/wl_b8/${n}`), img1, 'data_url');
+    await FS.setDoc(FS.doc(db, 'workLogPhotos', 'wl_b8'), { id: 'wl_b8', photos: ['sp:photos/workLogPhotos/wl_b8/a', 'pending:other81', 'pending:other82'], updatedAt: 1 });
+    const sh8 = await C.getWorkLogPhotos('wl_b8');
+    await FS.setDoc(FS.doc(db, 'workLogPhotos', 'wl_b8'), { id: 'wl_b8', photos: ['sp:photos/workLogPhotos/wl_b8/a', 'sp:photos/workLogPhotos/wl_b8/u1', 'sp:photos/workLogPhotos/wl_b8/u2'], updatedAt: 2 });
+    await C.saveWorkLogPhotos('wl_b8', [sh8[0], sh8[2]]);              // the first waiting photo removed here
+    await new Promise(r => setTimeout(r, 500));
+    out.b8 = [(await raw('workLogPhotos', 'wl_b8')).photos, await exists('photos/workLogPhotos/wl_b8/u1'), await exists('photos/workLogPhotos/wl_b8/a')];
+    // A photo another device added while the form was open stays, and is not deleted.
+    await st.mod.uploadString(st.mod.ref(st.s, 'photos/workLogPhotos/wl_b9/a'), img1, 'data_url');
+    await st.mod.uploadString(st.mod.ref(st.s, 'photos/workLogPhotos/wl_b9/b'), img1, 'data_url');
+    await FS.setDoc(FS.doc(db, 'workLogPhotos', 'wl_b9'), { id: 'wl_b9', photos: ['sp:photos/workLogPhotos/wl_b9/a'], updatedAt: 1 });
+    const sh9 = await C.getWorkLogPhotos('wl_b9');
+    await FS.setDoc(FS.doc(db, 'workLogPhotos', 'wl_b9'), { id: 'wl_b9', photos: ['sp:photos/workLogPhotos/wl_b9/a', 'sp:photos/workLogPhotos/wl_b9/b'], updatedAt: 2 });
+    await C.saveWorkLogPhotos('wl_b9', [sh9[0], img2]);
+    await new Promise(r => setTimeout(r, 500));
+    const b9 = (await raw('workLogPhotos', 'wl_b9')).photos;
+    out.b9 = [b9.length, b9[0], b9[1].startsWith('sp:photos/workLogPhotos/wl_b9/'), b9[2], await exists('photos/workLogPhotos/wl_b9/b')];
+    // Firestore not reached and no write of this device queued: the outbox waits instead of writing from the cached copy.
+    offline(true);
+    await C.saveWorkLogPhotos('wl_b10', [img1]);
+    offline(false);
+    await FS.disableNetwork(db);
+    const leftOff = await C.flushPhotoOutbox();
+    const b10a = (await raw('workLogPhotos', 'wl_b10')).photos[0];
+    await FS.enableNetwork(db);
+    await new Promise(r => setTimeout(r, 300));
+    const leftOn = await C.flushPhotoOutbox();
+    const b10b = (await raw('workLogPhotos', 'wl_b10')).photos[0];
+    out.b10 = [leftOff >= 1, b10a.startsWith('pending:'), leftOn, b10b.startsWith('sp:photos/workLogPhotos/wl_b10/')];
     // 2.43.0 (S4): a path planted in a photo document is never deleted or loaded.
     await st.mod.uploadString(st.mod.ref(st.s, 'learning/f9/book'), img1, 'data_url');
     await st.mod.uploadString(st.mod.ref(st.s, 'photos/inspectionPhotos/in9/i1'), img1, 'data_url');
@@ -181,6 +215,8 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8811';
     removedGone: true, lostPlain: 0, recovered: [2, true], writtenBack: ['sp:photos/workLogPhotos/wl_lost/k2', 'sp:photos/workLogPhotos/wl_lost/k3'], outboxPending: [3, true, 3], outboxFlushed: [0, 3, true, 0],
     b1Shown: [3, true], b1Kept: [3, true, true, true, 3], b1Flushed: [0, 3, true, 0], b2Placeholder: true, b2Kept: ['pending:elsewhere1', true],
     b3: [true, true, true], b4: ['sp:photos/workLogPhotos/wl_b4/x1', true, true], b5: ['sp:photos/workLogPhotos/wl_b5/t1'], b6: [1, true, true, 0],
+    b7: [true, false, ''], b8: [['sp:photos/workLogPhotos/wl_b8/a', 'sp:photos/workLogPhotos/wl_b8/u2'], false, true],
+    b9: [3, 'sp:photos/workLogPhotos/wl_b9/a', true, 'sp:photos/workLogPhotos/wl_b9/b', true], b10: [true, true, 0, true],
     plantedLoad: '', copiedLoads: true, plantedKept: [true, true], jobFileGuard: ['refused', 'refused', 'refused'], map: [true, ''], legacyServed: true, migrated: [true, 'dev1'], deleted: [true, true], after: ['after', true] };
   let fail = 0;
   Object.keys(want).forEach(k => { const ok = JSON.stringify(R[k]) === JSON.stringify(want[k]); if (!ok) fail++;

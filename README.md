@@ -591,6 +591,20 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.43.2 — Lanjutan fase 1 (review kedua)**: id record baru harus
+  berbentuk seperti buatan aplikasi (`job_…` untuk job, bukan `job_…` untuk
+  project, tanpa `__` di request / project / job / ticket). Pemohon Purchase
+  tetap bisa menyelesaikan foto yang masih menunggu di HP-nya setelah request
+  di-approve (hanya pending → upload, tidak mengubah yang lain). Penanda
+  "Photo waiting to upload" tidak lagi di-cache, disalin ke Damage dari
+  inspeksi, atau masuk laporan (`window.cloud.isWaitingPhoto`). Simpan foto
+  membaca dokumen tepat sebelum menulis; foto yang ditambah perangkat lain
+  saat form terbuka tetap ada dan tidak dihapus; foto menunggu yang dihapus
+  pengguna tidak muncul lagi. Outbox: tidak menulis dari salinan cache saja,
+  dijalankan lagi bila diminta saat sibuk, transaksi IndexedDB yang batal
+  tidak menggantung. PowerPoint (browser dan server) tahan nilai `tone`
+  aneh. **Perlu publish ulang `firestore.rules` dan `storage.rules`, dan
+  deploy ulang Functions.**
   **2.43.1 — Lanjutan fase 1 (hasil review)**: token class di Weekly/Daily
   Report disaring (`_wrK`) — sel tabel bisa berasal langsung dari field record.
   Menghapus record hanya menghapus foto yang id-nya milik record itu

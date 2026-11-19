@@ -158,7 +158,7 @@ function buildWeeklyReport(from, opts) {
         noPic: openNow.filter(t => t.status === 'open').length,
         byCategory: [...tk.filter(t => _wrInMs(t.reportedAt, w)).reduce((m, t) => m.set(t.category || 'Other', (m.get(t.category || 'Other') || 0) + 1), new Map()).entries()].sort((a, b) => b[1] - a[1]),
         openList: openNow.slice().sort((a, b) => (prio[a.priority] ?? 1) - (prio[b.priority] ?? 1) || (a.reportedAt || 0) - (b.reportedAt || 0)).map(t => ({
-            no: t.no, title: t.title, priority: t.priority, status: t.status, pic: t.assigneeName || '', units: (t.units || []).map(u => u.name).join(', '),
+            no: t.no, title: t.title, priority: t.priority, status: t.status, pic: String(t.assigneeName || ''), units: (t.units || []).map(u => u.name).join(', '),
             age: Math.max(0, Math.floor((Date.now() - (t.reportedAt || Date.now())) / 86400000)), late: ticketOverdue(t), jobs: ticketJobs(t).length
         }))
     };
@@ -828,7 +828,8 @@ async function downloadWeeklyPptx() {
     const eyebrow = `${repName} · Week ${D.week.no} · ${D.week.label}`.toUpperCase();
     const face = 'Calibri';
     const tx = (s, t, o) => s.addText(t, Object.assign({ margin: 0, fontFace: face, color: C.ink, valign: 'top' }, o));
-    const tone = k => WR_TONE[k] || C.ink;
+    // 2.43.2: own keys only — a stored value such as 'constructor' used to stop the PowerPoint.
+    const tone = k => (typeof k === 'string' && Object.prototype.hasOwnProperty.call(WR_TONE, k)) ? WR_TONE[k] : C.ink;
     const X0 = 0.4, W0p = 9.2, GAP = 0.14, PAD = 0.16;
     // ---- layout: every card of every page gets its box (galleries their picture boxes) ----
     // 2.40.1: z — the page's zoom. The cards are laid out on a page z times smaller and then drawn
@@ -1210,7 +1211,9 @@ function wrLoadMedia(refs) {
         while (i < todo.length) {
             const r = todo[i++];
             try {
-                const src = await r.load();
+                let src = await r.load();
+                // 2.43.2: a photo still on a field phone (its "waiting" placeholder) is left out, as the server email does.
+                if (typeof _isWaitingPh === 'function' && _isWaitingPh(src)) src = '';
                 const m = { state: src ? 'ok' : 'fail', src: src || '' };
                 if (src && r.kind === 'video') m.poster = await _wrVideoPoster(src);
                 // 2.40.2: its shape (width / height), so a portrait photo gets a portrait box.

@@ -11,6 +11,8 @@ const path = require('path');
 const COL = { ink: '101828', green: '0F766E', sage: 'B9D8D3', rust: 'B42318', slate: '667085', hair: 'E4E7EC', tint: 'EEF2F1', amber: 'B54708',
     card: 'FFFFFF', good: '067647', warnBg: 'FFF7ED', warnLine: 'FED7AA', msg: '385723', sep: 'EEF0F2' };
 const TONE = { good: COL.good, warn: COL.amber, bad: COL.rust, muted: COL.slate };
+// 2.43.2: own keys only — a stored value such as 'constructor' used to stop the deck.
+const toneOf = k => (typeof k === 'string' && Object.prototype.hasOwnProperty.call(TONE, k)) ? TONE[k] : COL.ink;
 const X0 = 0.4, W0p = 9.2, W0 = W0p, GAP = 0.14, PAD = 0.16, BOTTOM = 5.4;
 
 // Text is cut to its box here (neither writer measures text the same way).
@@ -116,7 +118,7 @@ function drawBlock(ops, b, x, y, w, h, warn) {
         const per = b.per || 3, cw = w / per, rows = Math.ceil(Math.max(1, b.items.length) / per), rh = Math.min(0.7, h / rows);
         if (!b.items.length) return empty(b.empty);
         b.items.forEach((s, i) => { const cx = x + (i % per) * cw, cy = y + Math.floor(i / per) * rh;
-            T(fitLine(s.value == null ? '—' : s.value, cw - 0.08, 18), { x: cx, y: cy, w: cw - 0.08, h: rh * 0.5, size: 18, bold: true, color: s.tone ? TONE[s.tone] || COL.ink : COL.ink, valign: 'bottom' });
+            T(fitLine(s.value == null ? '—' : s.value, cw - 0.08, 18), { x: cx, y: cy, w: cw - 0.08, h: rh * 0.5, size: 18, bold: true, color: s.tone ? toneOf(s.tone) : COL.ink, valign: 'bottom' });
             T(fitLine(s.label, cw - 0.08, 8.5), { x: cx, y: cy + rh * 0.52, w: cw - 0.08, h: 0.2, size: 8.5, color: COL.slate }); });
         return;
     }
@@ -168,7 +170,7 @@ function drawBlock(ops, b, x, y, w, h, warn) {
         const row = (cells, cy, rh, head) => { let cx = x;
             cells.forEach((c, i) => { const o = plain(c), cw = cols[i], a = o.a || b.head[i].a || 'left', fs = head ? 7.5 : size;
                 const txt = head ? fitLine(str(o.text).toUpperCase(), cw - 0.1, fs) : fitLines(o.text, cw - 0.1, rh - 0.04, fs);
-                T(txt, { x: cx + 0.05, y: cy, w: cw - 0.1, h: rh, size: fs, bold: head || !!o.bold, color: head ? COL.slate : o.tone ? TONE[o.tone] || COL.ink : COL.ink, align: a, valign: 'middle' });
+                T(txt, { x: cx + 0.05, y: cy, w: cw - 0.1, h: rh, size: fs, bold: head || !!o.bold, color: head ? COL.slate : o.tone ? toneOf(o.tone) : COL.ink, align: a, valign: 'middle' });
                 cx += cw; }); };
         row(b.head.map(hd => ({ text: hd.t, a: hd.a })), y, base, true);
         let cy = y + base;

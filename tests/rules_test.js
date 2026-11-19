@@ -647,8 +647,8 @@ async function check(name, p, expectOk) {
     await check('Projects: view TIDAK bisa menulis', setDoc(doc(PJV, 'projects', 'p_v'), { id: 'p_v', name: 'x', createdByUid: 'pjV' }), false);
     await check('Projects: tanpa akses TIDAK bisa membaca', getDoc(doc(N, 'projects', 'p_other')), false);
     await check('Projects: editor mengubah milik orang lain', setDoc(doc(PJE, 'projects', 'p_own'), { id: 'p_own', name: 'RTK base', createdByUid: 'pjO' }), true);
-    await check('Jobs: own mencatat job', setDoc(doc(PJO, 'otJobs', 'j1'), { id: 'j1', category: 'Calibration', createdByUid: 'pjO' }), true);
-    await check('Jobs: tanpa kategori DITOLAK', setDoc(doc(PJO, 'otJobs', 'j2'), { id: 'j2', category: '', createdByUid: 'pjO' }), false);
+    await check('Jobs: own mencatat job', setDoc(doc(PJO, 'otJobs', 'job_1'), { id: 'job_1', category: 'Calibration', createdByUid: 'pjO' }), true);
+    await check('Jobs: tanpa kategori DITOLAK', setDoc(doc(PJO, 'otJobs', 'job_2'), { id: 'job_2', category: '', createdByUid: 'pjO' }), false);
     await check('Jobs: own TIDAK bisa mengubah job orang lain', setDoc(doc(PJO, 'otJobs', 'j_other'), { id: 'j_other', category: 'Meeting', createdByUid: 'pjO' }), false);
     await check('Jobs: editor menghapus job', deleteDoc(doc(PJE, 'otJobs', 'j_other')), true);
     await check('Foto project: own menyimpan', setDoc(doc(PJO, 'projectPhotos', 'p_own__p1'), { id: 'p_own__p1', ownerId: 'p_own', photo: 'sp:photos/projectPhotos/p_own__p1/a' }), true);
@@ -746,6 +746,20 @@ async function check(name, p, expectOk) {
     await check('F1 PR foto: own TIDAK menambah foto ke request yang sudah PO', setDoc(doc(PO2, 'purchasePhotos', 'pr_po__p2'), prPh('pr_po__p2')), false);
     await check('F1 PR foto: own tetap membaca foto receipt request miliknya', getDoc(doc(PO2, 'purchasePhotos', 'pr_po__rc1__p1')), true);
     await check('F1 PR foto: editor mencatat foto receipt', setDoc(doc(as('prE'), 'purchasePhotos', 'pr_po__rc2__p1'), prPh('pr_po__rc2__p1', { ownerId: 'pr_po__rc2' })), true);
+    // 2.43.2: foto yang masih menunggu di HP pemohon tetap bisa diselesaikan setelah request di-approve.
+    await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'purchasePhotos', 'pr_po__p7'), { id: 'pr_po__p7', ownerId: 'pr_po', photo: 'pending:abc123', updatedAt: 1 }));
+    await check('F1 PR foto: pemohon menyelesaikan foto yang menunggu (request sudah PO)', updateDoc(doc(PO2, 'purchasePhotos', 'pr_po__p7'), { photo: 'sp:photos/purchasePhotos/pr_po__p7/x1', updatedAt: 2 }), true);
+    await check('F1 PR foto: setelah selesai TIDAK bisa diganti lagi', updateDoc(doc(PO2, 'purchasePhotos', 'pr_po__p7'), { photo: 'sp:photos/purchasePhotos/pr_po__p7/x2', updatedAt: 3 }), false);
+    await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'purchasePhotos', 'pr_po__p8'), { id: 'pr_po__p8', ownerId: 'pr_po', photo: 'pending:abc124', updatedAt: 1 }));
+    await check('F1 PR foto: menyelesaikan sambil mengubah field lain DITOLAK', updateDoc(doc(PO2, 'purchasePhotos', 'pr_po__p8'), { photo: 'sp:photos/purchasePhotos/pr_po__p8/x1', ownerId: 'pr_po', note: 'x', updatedAt: 2 }), false);
+    await check('F1 PR foto: menyelesaikan ke folder lain DITOLAK', updateDoc(doc(PO2, 'purchasePhotos', 'pr_po__p8'), { photo: 'sp:photos/purchasePhotos/pr_po__p1/a', updatedAt: 2 }), false);
+    // 2.43.2: id record baru berbentuk seperti buatan aplikasi.
+    await check('F1 id: job dengan id seperti project DITOLAK', setDoc(doc(PJO, 'otJobs', 'pj_other'), { id: 'pj_other', category: 'Calibration', createdByUid: 'pjO' }), false);
+    await check('F1 id: project dengan id seperti job DITOLAK', setDoc(doc(PJO, 'projects', 'job_mine'), { id: 'job_mine', name: 'x', createdByUid: 'pjO' }), false);
+    await check('F1 id: request dengan "__" (seperti receipt) DITOLAK', setDoc(doc(PO2, 'purchaseRequests', 'pr_po__rc1'), { id: 'pr_po__rc1', title: 'y', status: 'draft', createdByUid: 'prO', receipts: [] }), false);
+    await check('F1 id: ticket dengan "__" DITOLAK', setDoc(doc(TK1, 'tickets', 'tk_other__x'), { id: 'tk_other__x', title: 'x', category: 'GPS', priority: 'low', status: 'open', reportedByUid: 'khl1', events: [] }), false);
+    await check('F1 id: project baru berbentuk pj_… diterima', setDoc(doc(PJO, 'projects', 'pj_new1'), { id: 'pj_new1', name: 'x', createdByUid: 'pjO' }), true);
+    await check('F1 id: job baru berbentuk job_… diterima', setDoc(doc(PJO, 'otJobs', 'job_new1'), { id: 'job_new1', category: 'Calibration', createdByUid: 'pjO' }), true);
     // (b) Isi foto tidak boleh menunjuk ke file lain di bucket.
     await check('F1 path: ref ke Learning DITOLAK', setDoc(doc(PO2, 'purchasePhotos', 'pr_mine2__p6'), prPh('pr_mine2__p6', { photo: 'sp:learning/f1/book.pdf' })), false);
     await check('F1 path: ref ke folder foto lain DITOLAK', setDoc(doc(PO2, 'purchasePhotos', 'pr_mine2__p6'), prPh('pr_mine2__p6', { photo: 'sp:photos/purchasePhotos/pr_other__p1/a' })), false);

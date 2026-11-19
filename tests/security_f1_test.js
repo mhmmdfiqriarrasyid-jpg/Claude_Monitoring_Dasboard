@@ -101,6 +101,17 @@ const { launch, BASE_URL } = require('./_env');
         deleteWhPhotos(['pr_1__p1', 'pr_1__rc_1__p1', 'pr_2__p1'], 'pr', 'pr_1');
         t('photos: another record’s photo ids on a record are never deleted with it', gone, ['job_a__p1', 'job_a__p2', 'pr_1__p1', 'pr_1__rc_1__p1']);
 
+        // ---- (g) 2.43.2: a "waiting to upload" placeholder is never cached or put in a report ----
+        const WAIT = 'data:image/png;base64,V0FJVA==';
+        window.cloud.isWaitingPhoto = s => s === WAIT;
+        window.cloud.getProjectPhoto = () => Promise.resolve(WAIT);
+        _whPhotoCache.delete('job_w__p1');
+        const got1 = await loadWhPhoto('job_w__p1', 'pj');
+        t('waiting photo: shown, but not cached for the session', [got1, _whPhotoCache.has('job_w__p1')], [WAIT, false]);
+        _wrMedia.delete('pj:job_w__p1');
+        await wrLoadMedia([{ key: 'pj:job_w__p1', kind: 'photo', load: () => loadWhPhoto('job_w__p1', 'pj') }]);
+        t('waiting photo: left out of the report', (_wrMedia.get('pj:job_w__p1') || {}).state, 'fail');
+
         await tick(100);
         t('TOTAL: nothing ran', window.__pwn, 0);
         return T;
