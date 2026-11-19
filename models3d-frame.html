@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D studio</title>
+<style>html,body{margin:0;height:100%;background:#0b1220;color:#cbd5e1;font:14px system-ui,sans-serif}p{padding:16px}</style>
+</head>
+<body>
+<p>Opening the studio…</p>
+<script>
+// 3D Models (2.44.0): the frame a studio page runs in. The dashboard opens this
+// file in <iframe sandbox="allow-scripts"> — no allow-same-origin, so it runs in
+// an opaque origin: whatever the studio page does, it cannot read the
+// dashboard's session, storage or data, nor navigate the dashboard. The page
+// arrives once, as text, from the window that opened the frame; the frame then
+// becomes that page.
+(function () {
+    'use strict';
+    function onMessage(e) {
+        if (e.source !== window.parent || !e.data || e.data.type !== 'ot-studio' || typeof e.data.html !== 'string') return;
+        window.removeEventListener('message', onMessage);
+        document.open();
+        document.write(e.data.html);
+        document.close();
+    }
+    window.addEventListener('message', onMessage);
+    window.parent.postMessage({ type: 'ot-studio-ready' }, '*');
+})();
+</script>
+</body>
+</html>

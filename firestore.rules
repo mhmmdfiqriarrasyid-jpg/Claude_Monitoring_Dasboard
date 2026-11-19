@@ -115,7 +115,7 @@ service cloud.firestore {
         || editOn(a, role, 'teamShift') || editOn(a, role, 'teamLog') || editOn(a, role, 'teamMembers')
         || a.get('teamLog', null) == 'own'
         || editOn(a, role, 'purchase') || a.get('purchase', null) == 'own'
-        || editOn(a, role, 'learning')
+        || editOn(a, role, 'learning') || editOn(a, role, 'models3d')
         || editOn(a, role, 'projects') || a.get('projects', null) == 'own'
         || editOn(a, role, 'tickets')
         || editOn(a, role, 'teamLogApprove') || editOn(a, role, 'warehouse')
@@ -667,6 +667,27 @@ service cloud.firestore {
                     && request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'updatedAt'])
                     && request.resource.data.get('uid', '') == uid;
       allow delete: if isOwner() || uid == request.auth.uid;
+    }
+    // 3D Models (2.44.0): every active account opens them; 'models3d' edit adds,
+    // changes and removes. A model is one file in Storage, models3d/<id>/<file>
+    // (a GLB, or a studio page kept as text), plus an optional card picture.
+    function m3Ok(id) {
+      let d = request.resource.data;
+      return idMatches(id) && id.matches('m3_[a-z0-9]+') && textOk('name', 160)
+          && d.get('kind', '') in ['studio', 'glb']
+          && d.get('file', null) is map
+          && d.file.get('path', '') is string && d.file.get('path', '').matches('models3d/' + id + '/[A-Za-z0-9_.-]+')
+          && d.get('thumb', '') is string && (d.get('thumb', '') == '' || d.get('thumb', '') == 'models3d/' + id + '/thumb.jpg')
+          && d.get('category', '') is string && d.get('category', '').size() <= 60
+          && d.get('description', '') is string && d.get('description', '').size() <= 2000
+          && d.get('implements', []) is list && d.get('implements', []).size() <= 30
+          && d.get('unitModels', []) is list && d.get('unitModels', []).size() <= 30
+          && d.get('parts', {}) is map && d.get('parts', {}).size() <= 3000;
+    }
+    match /models3d/{id} {
+      allow read: if isActive();
+      allow create, update: if canEditArea('models3d') && m3Ok(id);
+      allow delete: if canEditArea('models3d');
     }
     // Learning Center (2.12.0): every active account reads; 'learning' edit
     // adds and removes material. Uploaded PDFs are stored in pieces.

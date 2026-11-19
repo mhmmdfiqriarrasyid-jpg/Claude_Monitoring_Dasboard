@@ -760,6 +760,29 @@ async function check(name, p, expectOk) {
     await check('F1 id: ticket dengan "__" DITOLAK', setDoc(doc(TK1, 'tickets', 'tk_other__x'), { id: 'tk_other__x', title: 'x', category: 'GPS', priority: 'low', status: 'open', reportedByUid: 'khl1', events: [] }), false);
     await check('F1 id: project baru berbentuk pj_… diterima', setDoc(doc(PJO, 'projects', 'pj_new1'), { id: 'pj_new1', name: 'x', createdByUid: 'pjO' }), true);
     await check('F1 id: job baru berbentuk job_… diterima', setDoc(doc(PJO, 'otJobs', 'job_new1'), { id: 'job_new1', category: 'Calibration', createdByUid: 'pjO' }), true);
+
+    // ---- 2.44.0: 3D Models ----
+    await env.withSecurityRulesDisabled(async ctx => {
+        const db = ctx.firestore();
+        await setDoc(doc(db, 'users', 'm3E'), { uid: 'm3E', email: 'm3E@x.id', role: 'staff', status: 'active', access: { models3d: 'edit' } });
+    });
+    const M3E = as('m3E');
+    const m3 = (id, o) => Object.assign({ id, name: 'Harrell Series 50', kind: 'glb', category: 'Implement', description: '',
+        file: { path: `models3d/${id}/rake.glb`, name: 'rake.glb', size: 1000, contentType: 'model/gltf-binary' }, thumb: '',
+        implements: ['Rock Rake'], unitModels: [], parts: { 'n0_1': { itemNo: 'F1', partNumber: '85-566-50', name: 'Main Tool Bar', qty: 1, note: '' } },
+        createdByUid: 'm3E', createdAt: 1, updatedAt: 1 }, o);
+    await check('3D: editor menambah model GLB', setDoc(doc(M3E, 'models3d', 'm3_a1'), m3('m3_a1')), true);
+    await check('3D: editor menambah studio HTML', setDoc(doc(M3E, 'models3d', 'm3_a2'), m3('m3_a2', { kind: 'studio', file: { path: 'models3d/m3_a2/studio.html', name: 'studio.html', size: 9, contentType: 'text/plain' } })), true);
+    await check('3D: semua akun aktif membaca', getDoc(doc(as('nobody'), 'models3d', 'm3_a1')), true);
+    await check('3D: akun tanpa akses edit TIDAK bisa menambah', setDoc(doc(as('nobody'), 'models3d', 'm3_a3'), m3('m3_a3')), false);
+    await check('3D: path file di luar folder model DITOLAK', setDoc(doc(M3E, 'models3d', 'm3_a4'), m3('m3_a4', { file: { path: 'learning/f1/book.pdf', name: 'x' } })), false);
+    await check('3D: path file model lain DITOLAK', setDoc(doc(M3E, 'models3d', 'm3_a4'), m3('m3_a4', { file: { path: 'models3d/m3_a1/rake.glb', name: 'x' } })), false);
+    await check('3D: jenis tidak dikenal DITOLAK', setDoc(doc(M3E, 'models3d', 'm3_a4'), m3('m3_a4', { kind: 'exe' })), false);
+    await check('3D: id bentuk lain DITOLAK', setDoc(doc(M3E, 'models3d', 'x1'), m3('x1', { file: { path: 'models3d/x1/a.glb' } })), false);
+    await check('3D: gambar kartu di tempat lain DITOLAK', setDoc(doc(M3E, 'models3d', 'm3_a4'), m3('m3_a4', { thumb: 'photos/x/y' })), false);
+    await check('3D: akun tanpa akses edit TIDAK bisa menghapus', deleteDoc(doc(as('nobody'), 'models3d', 'm3_a1')), false);
+    await check('3D: editor menghapus', deleteDoc(doc(M3E, 'models3d', 'm3_a2')), true);
+    await check('3D: owner selalu bisa', setDoc(doc(O, 'models3d', 'm3_a5'), m3('m3_a5')), true);
     // (b) Isi foto tidak boleh menunjuk ke file lain di bucket.
     await check('F1 path: ref ke Learning DITOLAK', setDoc(doc(PO2, 'purchasePhotos', 'pr_mine2__p6'), prPh('pr_mine2__p6', { photo: 'sp:learning/f1/book.pdf' })), false);
     await check('F1 path: ref ke folder foto lain DITOLAK', setDoc(doc(PO2, 'purchasePhotos', 'pr_mine2__p6'), prPh('pr_mine2__p6', { photo: 'sp:photos/purchasePhotos/pr_other__p1/a' })), false);

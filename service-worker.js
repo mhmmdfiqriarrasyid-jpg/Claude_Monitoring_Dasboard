@@ -2,7 +2,7 @@
    Network-first for the app shell (so deploys show up on reload), cache-first
    for static assets, network-only for Firebase live endpoints. */
 
-const CACHE_NAME = 'tractor-monitor-2.43.2';
+const CACHE_NAME = 'tractor-monitor-2.44.0';
 
 // Same-origin core files — always revalidated from network first so a new
 // deploy is picked up on the next reload (falls back to cache when offline).
@@ -15,6 +15,9 @@ const CORE = [
     './weeklyreport.js',
     './calendar.js',
     './tables.js',
+    './models3d.js',
+    './models3d-viewer.js',
+    './models3d-frame.html',
     './functions/dailyCore.js',
     './report-assets/msg-cover.jpg',
     './report-assets/msg-content.jpg',
@@ -51,7 +54,7 @@ const CORE = [
 // path, so the app shell silently fell back to cache-first and a fresh deploy
 // kept serving the previous style.css and script.js.
 const SCOPE_PATH = new URL('./', self.registration.scope).pathname;
-const NETWORK_FIRST_PATHS = ['', 'index.html', 'script.js', 'projects.js', 'tickets.js', 'weeklyreport.js', 'calendar.js', 'tables.js', 'functions/dailyCore.js', 'firebase-init.js', 'style.css', 'data/agri-facts.json']
+const NETWORK_FIRST_PATHS = ['', 'index.html', 'script.js', 'projects.js', 'tickets.js', 'weeklyreport.js', 'calendar.js', 'tables.js', 'models3d.js', 'models3d-viewer.js', 'models3d-frame.html', 'functions/dailyCore.js', 'firebase-init.js', 'style.css', 'data/agri-facts.json']
     .map(file => SCOPE_PATH + file);
 
 // Hosts whose responses must always go to the network (real-time data, auth).

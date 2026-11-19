@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.43.2';
+const APP_VERSION = 'v2.44.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -967,6 +967,8 @@ const MODAL_CLOSERS = {
     iosInstallModal:      'closeIosInstall',
     lcModal:              'closeLearningForm',
     lcViewer:             'closeLearningViewer',
+    m3Modal:              'closeModel3dForm',
+    m3Viewer:             'closeModel3dViewer',
     teamMembersModal:     'closeTeamMembersModal',
     workLogModal:         'closeWorkLogModal',
     leaveModal:           'closeLeaveModal',
@@ -1931,6 +1933,8 @@ function navigateTo(view) {
     if (usersView) usersView.style.display = (view === 'users') ? 'block' : 'none';
     const calView = document.getElementById('viewCalendar');
     if (calView) calView.style.display = (view === 'calendar') ? 'block' : 'none';
+    const m3View = document.getElementById('viewModels3d');
+    if (m3View) m3View.style.display = (view === 'models3d') ? 'block' : 'none';
 
     const changed = currentView !== view;
     currentView = view;
@@ -2007,6 +2011,7 @@ function navigateTo(view) {
     if (view === 'weeklyReport' && typeof renderWeeklyReportView === 'function') renderWeeklyReportView();
     if (view === 'learning') renderLearningView();
     if (view === 'calendar' && typeof renderCalendarView === 'function') renderCalendarView();
+    if (view === 'models3d' && typeof renderModels3dView === 'function') renderModels3dView();
     if (typeof twRefresh === 'function') twRefresh();   // 2.42.0: long lists measured once their page shows
 
     if (view === 'inspection') renderInspectionView();
@@ -8801,7 +8806,7 @@ function renderImplementsTable() {
         <tr>
             <td class="col-check"><input type="checkbox" class="impl-check" data-id="${escapeHtml(d.id)}" onchange="updateSelectedImplementCount()"></td>
             <td>${i + 1}</td>
-            <td data-label="Profile Name"><strong>${escapeHtml(d.profileName)}</strong></td>
+            <td data-label="Profile Name"><strong>${escapeHtml(d.profileName)}</strong>${typeof m3ImplementChip === 'function' ? m3ImplementChip(d) : ''}</td>
             <td data-label="Brand" class="fp-muted">${escapeHtml(d.brand || '') || '—'}</td>
             <td data-label="Equipment Type">${_toolNorm(d.equipmentType) ? `<span class="fp-chip fp-chip--neutral">${escapeHtml(_toolNorm(d.equipmentType))}</span>` : '<span class="fp-muted">—</span>'}</td>
             <td data-label="Implement Group">${_toolNorm(d.group) ? `<span class="fp-chip impl-group-chip">${escapeHtml(_toolNorm(d.group))}</span>` : '<span class="fp-muted">—</span>'}</td>
@@ -9643,6 +9648,7 @@ function showUnitProfile(id) {
     if (profSub) profSub.textContent = [isHeavy(u) ? [u.brand, u.model].filter(Boolean).join(' ') : u.model, u.site].filter(Boolean).join(' · ');
     document.getElementById('unitProfileEditBtn').onclick = () => { closeUnitProfile(); editUnit(id); };
     document.getElementById('unitProfileHistoryBtn').onclick = () => showHistory(id);
+    if (typeof m3SetUnitButton === 'function') m3SetUnitButton(u);   // 2.44.0: its 3D model, when one shows it
 
     const snLc = (u.sn || '').toLowerCase();
     const dash = '<span style="color:var(--text-light)">—</span>';
@@ -13739,6 +13745,10 @@ function initCloudSync() {
             cloudLearningUnsub = window.cloud.subscribeLearningItems(applyLearningSnapshot,
                 err => console.warn('[cloud] learningItems offline:', err && err.code));
         }
+        // 2.44.0: 3D models (models3d.js) — every active account reads them.
+        if (window.cloud.subscribeModels3d && typeof applyModels3dSnapshot === 'function') {
+            cloudModels3dUnsub = window.cloud.subscribeModels3d(applyModels3dSnapshot);
+        }
         if (window.cloud.subscribePurchaseRequests && canViewView('purchase')) {
             // 'own' may read only its own requests, so it must ask for those.
             const ownPr = purchaseOwnOnly();
@@ -14030,6 +14040,8 @@ function tearDownCloudSync() {
     otJobs = [];
     if (cloudLearningUnsub) { try { cloudLearningUnsub(); } catch (_) {} cloudLearningUnsub = null; }
     learningItems = [];
+    if (cloudModels3dUnsub) { try { cloudModels3dUnsub(); } catch (_) {} cloudModels3dUnsub = null; }
+    if (typeof applyModels3dSnapshot === 'function') applyModels3dSnapshot([]);
     purchaseRequests = [];
     if (cloudStockUnsub) { try { cloudStockUnsub(); } catch (_) {} cloudStockUnsub = null; }
     warehouseDevices = [];
@@ -14975,6 +14987,8 @@ const ACCESS_AREAS = [
     // separately, for the same reason as teamLogApprove — the supervisor who
     // approves or sends a report back.
     { key: 'inspection',        label: 'Heavy Equipment Inspection',  levels: ['none', 'view', 'edit'] },
+    // 2.44.0: everyone active opens the 3D models; 'edit' adds and changes them.
+    { key: 'models3d',          label: '3D Models (add & edit models)', levels: ['none', 'edit'] },
     { key: 'inspectionApprove', label: 'Inspection Approval', levels: ['none', 'edit'] },
     // Read-only by nature: it shows what other areas already allow, nothing more.
     { key: 'leader',       label: 'Decision Inbox', levels: ['none', 'view'] },
@@ -15014,7 +15028,7 @@ const RO_FLAGS = {
     licenseStock: 'roLicense', teamShift: 'roTeamshift', teamLog: 'roTeamlog',
     teamMembers: 'roTeammembers', teamLogApprove: 'roTeamapprove',
     warehouse: 'roWarehouse', inspection: 'roInspection', purchase: 'roPurchase', projects: 'roProjects', tickets: 'roTickets',
-    learning: 'roLearning'
+    learning: 'roLearning', models3d: 'roModels3d'
 };
 // 'own' acts as edit for the area's buttons; which records it may touch is
 // decided per record (ownTeamOnly / canEditTeamRecord).
@@ -19763,6 +19777,7 @@ function populateWarehouseFilters() {
 // ============================================================
 let learningItems = [];
 let cloudLearningUnsub = null;
+let cloudModels3dUnsub = null;   // 2.44.0: 3D Models (models3d.js)
 let _lcCategory = '';
 const LEARN_DEFAULT_CATEGORIES = ['Precision Agriculture', 'Heavy Equipment', 'Safety (K3)', 'Dashboard How-to', 'General'];
 const LEARN_MAX_BYTES = 15 * 1024 * 1024;       // files kept in Firestore pieces (Spark fallback)

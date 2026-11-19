@@ -14,6 +14,7 @@ pack <name>@<version>`) and bump CACHE_NAME in service-worker.js.
 | pdfjs/ | pdfjs-dist@3.11.174 (legacy/build/pdf.min.js + pdf.worker.min.js), loaded only when a PDF is opened in the Learning Center |
 | foliate/ | foliate-js@1.0.1 (view, paginator, fixed-layout, epub, epubcfi, mobi, fb2, comic-book, progress, overlayer, text-walker, search + vendor/zip.js, vendor/fflate.js), loaded only when an EPUB/MOBI is opened. Five local changes, each marked "OT Dashboard": the book iframes are sandboxed without allow-scripts, view.js opens only http(s) links from a book (2.43.0), fixed-layout.js no longer imports the construct-style-sheets polyfill, and paginator.js skips the background, column and after-scroll steps while a section is not loaded (or already closed), and mobi.js gives MOBI sections a doctype (standards mode) |
 | pptxgen.bundle.js | pptxgenjs@3.12.0 (dist/pptxgen.bundle.js, includes JSZip), loaded only when a weekly report is downloaded as PowerPoint |
+| three/ | three@0.147.0 (build/three.min.js, examples/js/loaders/GLTFLoader.js, examples/js/controls/OrbitControls.js), loaded only when a GLB model is opened in 3D Models (2.44.0) |
 | fonts/ + fonts.css | @fontsource/poppins@5.0.8, @fontsource/open-sans@5.0.28 (Latin) |
 
 Licences are in `licenses/`. Firebase is still loaded from www.gstatic.com,

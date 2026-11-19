@@ -591,6 +591,23 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.44.0 — 3D Models**: menu baru *3D Models* (`models3d.js`) — galeri
+  model 3D untuk bongkar-pasang implement / unit per part. Dua jenis:
+  **GLB studio** (file .glb dari CAD / Blender / SketchUp, dibuka di viewer
+  bawaan `models3d-viewer.js` + three.js r147 di `vendor/three/`: daftar part
+  per level, cari, lepas / pasang per part, lepas semua, langkah ◀ ▶,
+  explode, X-ray, kamera Iso / Front / Side / Top, info part — item #, part
+  number, qty, catatan — disimpan per model) dan **Studio page** (file .html
+  buatan sendiri seperti studio Harrell Series 50, dijalankan apa adanya di
+  `models3d-frame.html` dalam `<iframe sandbox="allow-scripts">` — origin
+  buram, tidak bisa menyentuh sesi / data dashboard; file disimpan sebagai
+  text/plain). Model bisa menyebut implement dan model unit: baris Implements
+  dan profil unit mendapat tombol 3D. Area akses baru **3D Models**: semua
+  akun aktif melihat, *edit* menambah / mengubah / menghapus. Firestore
+  `models3d/{m3_…}`, Storage `models3d/<id>/` (GLB ≤ 200 MB, studio ≤ 15 MB,
+  gambar kartu). Tes: `tests/models3d_test.js`, `tests/models3d_viewer_test.js`,
+  skenario 3D di `rules_test.js` / `storage_rules_test.js`. **Perlu publish
+  ulang `firestore.rules` dan `storage.rules`.**
   **2.43.2 — Lanjutan fase 1 (review kedua)**: id record baru harus
   berbentuk seperti buatan aplikasi (`job_…` untuk job, bukan `job_…` untuk
   project, tanpa `__` di request / project / job / ticket). Pemohon Purchase

@@ -174,6 +174,18 @@ const { doc, setDoc } = require('firebase/firestore');
     await check('F1 Ticket: pelapor menambah foto ke ticket miliknya', img(st('rd'), 'photos/ticketPhotos/tk_mine__p2/a'), true);
     await check('F1 Ticket: pelapor TIDAK menimpa file yang sudah ada', img(st('rd'), 'photos/ticketPhotos/tk_mine__p1/a'), false);
     await check('F1 Ticket: tim OT menimpa foto ticket', img(st('tkE'), 'photos/ticketPhotos/tk_other__p1/a'), true);
+    // ---- 2.44.0: 3D Models ----
+    await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'users', 'm3E'), { uid: 'm3E', role: 'staff', status: 'active', access: { models3d: 'edit' } }));
+    await check('3D: editor mengunggah GLB', put(st('m3E'), 'models3d/m3_a1/rake.glb', 'model/gltf-binary'), true);
+    await check('3D: editor mengunggah studio (sebagai teks)', put(st('m3E'), 'models3d/m3_a1/studio.html', 'text/plain'), true);
+    await check('3D: studio sebagai text/html DITOLAK', put(st('m3E'), 'models3d/m3_a1/x.html', 'text/html'), false);
+    await check('3D: editor mengunggah gambar kartu', uploadBytes(ref(st('m3E'), 'models3d/m3_a1/thumb.jpg'), jpg, { contentType: 'image/jpeg' }), true);
+    await check('3D: tipe lain (PDF) DITOLAK', put(st('m3E'), 'models3d/m3_a1/x.pdf', 'application/pdf'), false);
+    await check('3D: semua akun aktif membaca', getBytes(ref(st('rd'), 'models3d/m3_a1/rake.glb')), true);
+    await check('3D: akun belum aktif TIDAK membaca', getBytes(ref(st('off'), 'models3d/m3_a1/rake.glb')), false);
+    await check('3D: tanpa akses edit TIDAK mengunggah', put(st('rd'), 'models3d/m3_a1/y.glb', 'model/gltf-binary'), false);
+    await check('3D: tanpa akses edit TIDAK menghapus', deleteObject(ref(st('rd'), 'models3d/m3_a1/rake.glb')), false);
+    await check('3D: editor menghapus', deleteObject(ref(st('m3E'), 'models3d/m3_a1/rake.glb')), true);
 
     await env.cleanup();
     let pass = 0;

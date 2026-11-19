@@ -197,6 +197,11 @@ function _ownPhotoRef(col, docId, r) {
     const m = typeof r === 'string' && r.startsWith(PHOTO_REF) ? _PHOTO_PATH.exec(r.slice(PHOTO_REF.length)) : null;
     return !!m && m[1] === col && m[2] === _photoDir(docId);
 }
+// 2.44.0: a 3D model's file or card picture, models3d/<m3_…>/<file>.
+function _m3PathOk(path) {
+    const m = /^models3d\/(m3_[a-z0-9]+)\/([A-Za-z0-9_.-]+)$/.exec(typeof path === 'string' ? path : '');
+    return !!m && !/^\.+$/.test(m[2]);
+}
 function _learnFileOk(path) {
     const m = /^learning\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_.-]+)$/.exec(typeof path === 'string' ? path : '');
     return !!m && !/^\.+$/.test(m[2]);
@@ -1318,6 +1323,36 @@ window.cloud = {
     },
     async deleteLearningFile(path) {
         if (!_learnFileOk(path)) { console.warn('[learning] not a Learning Center file, left in place:', String(path).slice(0, 80)); return; }
+        const st = await _storage();
+        try { await st.mod.deleteObject(st.mod.ref(st.s, path)); }
+        catch (err) { if (!err || err.code !== 'storage/object-not-found') throw err; }
+    },
+    // ---- 3D Models (2.44.0) ----
+    // One document per model in models3d/{id}; its file (and card picture) under
+    // models3d/<id>/ in Storage. Only paths of that shape are read or deleted.
+    subscribeModels3d(callback, errorCallback) {
+        return onSnapshot(collection(db, 'models3d'), snap => callback(snap.docs.map(withDocId)),
+            err => { console.warn('[cloud] models3d subscription error:', err && err.code); if (errorCallback) errorCallback(err); });
+    },
+    async saveModel3d(rec) { await setDoc(doc(db, 'models3d', rec.id), rec); },
+    async deleteModel3d(id) { await deleteDoc(doc(db, 'models3d', id)); },
+    async uploadModel3dFile(path, data, contentType, onProgress) {
+        if (!_m3PathOk(path)) throw new Error('not a 3D model path');
+        const st = await _storage();
+        const task = st.mod.uploadBytesResumable(st.mod.ref(st.s, path), data, { contentType, cacheControl: 'private, max-age=86400' });
+        return new Promise((resolve, reject) => {
+            task.on('state_changed',
+                snap => { if (onProgress && snap.totalBytes) onProgress(snap.bytesTransferred / snap.totalBytes); },
+                reject, () => resolve());
+        });
+    },
+    async model3dFileUrl(path) {
+        if (!_m3PathOk(path)) throw new Error('not a 3D model path');
+        const st = await _storage();
+        return st.mod.getDownloadURL(st.mod.ref(st.s, path));
+    },
+    async deleteModel3dFile(path) {
+        if (!_m3PathOk(path)) { console.warn('[3d] not a 3D model path, left in place:', String(path).slice(0, 80)); return; }
         const st = await _storage();
         try { await st.mod.deleteObject(st.mod.ref(st.s, path)); }
         catch (err) { if (!err || err.code !== 'storage/object-not-found') throw err; }
