@@ -39,7 +39,12 @@ function applyModels3dSnapshot(list) {
     // loaders compare their session, not the model).
     if (_m3Open) {
         const f = models3d.find(x => x.id === _m3Open.model.id);
-        if (f) { _m3Open.model.parts = f.parts || {}; _m3Open.model.thumb = f.thumb || ''; _m3Open.model.level = f.level; if (_m3Open.viewer) _m3SchedRender(); }
+        if (f) {
+            const changed = JSON.stringify(f.parts || {}) !== JSON.stringify(_m3Open.model.parts || {});
+            _m3Open.model.parts = f.parts || {}; _m3Open.model.thumb = f.thumb || ''; _m3Open.model.level = f.level;
+            // Only when its notes changed — and the Part details form being typed in is left alone.
+            if (_m3Open.viewer && changed) { m3RenderParts(); if (!_m3EditPart) m3RenderInsp(); }
+        }
     }
     if (typeof currentView !== 'undefined' && currentView === 'models3d') renderModels3dView();
     // The 3D buttons on implement rows follow the links — redrawn only when the links
@@ -292,6 +297,7 @@ async function saveModel3d(event) {
     const links = { implements: _m3Links.implements.slice(0, 30), unitModels: _m3Links.unitModels.slice(0, 30) };
     const id = editId || _m3Id();
     const uploaded = [];
+    let picPath = '';
     const stillOpen = () => seq === _m3FormSeq;
     _m3SetFormBusy(true);
     try {
@@ -313,7 +319,7 @@ async function saveModel3d(event) {
             await window.cloud.uploadModel3dFile(tp, await _m3JpegBlob(pic), 'image/jpeg');
             if (!editId) uploaded.push(tp);
             _m3ThumbUrls.delete(tp);
-            newThumb = tp;
+            newThumb = tp; picPath = tp;
             if (!stillOpen()) throw Object.assign(new Error('closed'), { code: 'm3/closed' });
         }
         // The model as it is now (another editor may have changed it since the form opened).
@@ -346,15 +352,17 @@ async function saveModel3d(event) {
         if (i >= 0) models3d[i] = rec; else models3d.push(rec);
         _m3Bytes.delete(old && file ? old.file.path : '');
         if (typeof logEvent === 'function') logEvent({ action: old ? 'update' : 'add', unitId: '', unitName: `[3D] ${name}`, field: '3D model', before: '', after: M3_KIND_LABEL[kind] });
-        _m3SetFormBusy(false);
         if (stillOpen()) {
+            _m3SetFormBusy(false);   // another form opened since keeps its own busy state
             showToast(old ? '3D model saved' : '3D model added', 'success');
             closeModel3dForm();
-        }
+        } else showToast(`"${name}" was saved after all`, 'success');
         renderModels3dView();
     } catch (err) {
         // An upload whose document never landed is removed again.
         uploaded.forEach(p => window.cloud.deleteModel3dFile(p).catch(() => {}));
+        // The model was deleted meanwhile: its picture, uploaded just now, goes too.
+        if (editId && picPath && err && (err.code === 'm3/gone' || err.code === 'not-found')) { window.cloud.deleteModel3dFile(picPath).catch(() => {}); _m3ThumbUrls.delete(picPath); }
         if (err && err.code === 'm3/closed') return;   // "Close anyway": nothing saved, nothing left behind
         console.error('[3d] save failed:', err);
         showToast(err && (err.code === 'm3/gone' || err.code === 'not-found') ? 'This model was deleted meanwhile — nothing was saved'
@@ -764,9 +772,11 @@ async function m3SavePart(event) {
     try {
         // Only this part's notes are written: another editor's notes on other parts stay.
         await window.cloud.updateModel3dPart(cur.id, pk, empty ? null : info, o.viewer.level);
-        const parts = { ...(cur.parts || {}) };
+        // From the model as it is now: another editor's note may have arrived during the write.
+        const latest = models3d.find(x => x.id === cur.id) || cur;
+        const parts = { ...(latest.parts || {}) };
         if (empty) delete parts[pk]; else parts[pk] = info;
-        cur.parts = parts; cur.level = o.viewer.level; o.model.parts = parts; o.model.level = o.viewer.level;
+        latest.parts = parts; latest.level = o.viewer.level; o.model.parts = parts; o.model.level = o.viewer.level;
         _m3EditPart = false;
         showToast('Part details saved', 'success');
         m3RenderInsp(); m3RenderParts();

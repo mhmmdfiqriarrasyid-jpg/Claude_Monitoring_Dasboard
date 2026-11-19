@@ -3,10 +3,12 @@
 <head>
 <meta charset="utf-8">
 <!-- 2.44.2: what a studio page may load once it runs here. Scripts and styles from the
-     usual CDNs and inline; pictures and media only from inside the page; no requests
-     out (connect-src 'none', no forms) — a studio page cannot send what someone types
-     anywhere. The policy stays after the page is written in, and the page cannot loosen it. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net data:; img-src data: blob:; media-src data: blob:; worker-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+     usual CDNs and inline; pictures, media and fetches only of what is inside the page
+     (data:, blob:) — no HTTP, WebSocket, form or navigation requests out. The policy
+     stays after the page is written in, and the page cannot loosen it. WebRTC
+     (STUN/TURN) is not covered by CSP in browsers: the viewer's header therefore says
+     that the dashboard never asks for a password inside a studio page. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com data:; img-src data: blob:; media-src data: blob:; worker-src blob:; connect-src data: blob:; form-action 'none'; base-uri 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>3D studio</title>
 <style>html,body{margin:0;height:100%;background:#0b1220;color:#cbd5e1;font:14px system-ui,sans-serif}p{padding:16px}</style>

@@ -591,8 +591,15 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.44.3 — 3D Models (review ulang)**: header viewer studio memberi tahu
+  bahwa dashboard tidak pernah meminta password di halaman studio (WebRTC
+  tidak bisa diblok CSP); studio boleh membaca data di dalam halamannya
+  sendiri (`connect-src data: blob:`, font unpkg). Form *Part details* tidak
+  lagi terhapus oleh perubahan model lain; catatan part dari editor lain yang
+  datang saat menyimpan tetap tampil; gambar kartu model yang terhapus saat
+  diedit ikut dibersihkan; status sibuk form tidak bocor ke form berikutnya.
   **2.44.2 — 3D Models (hasil review)**: frame studio punya CSP sendiri
-  (script/style hanya dari CDN umum, tanpa request keluar) dan `frame-src`
+  (script/style hanya dari CDN umum, tanpa request HTTP / WebSocket / form keluar; WebRTC tidak bisa diblok CSP, jadi header viewer studio menulis bahwa dashboard tidak pernah meminta password di situ) dan `frame-src`
   dashboard hanya ke authDomain-nya sendiri; studio di Storage hanya
   `text/plain` / `text/plain;charset=utf-8`. Escape di dalam studio menutup
   viewer. Simpan model: tiap upload punya path sendiri (file yang dipakai tidak

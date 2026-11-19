@@ -78,10 +78,14 @@ const { launch, BASE_URL } = require('./_env');
 
         // ---- add: a studio page ----
         const studio = `<!doctype html><html><body><h1>Studio</h1><script>
-            const r = { type: 'probe' };
-            try { r.parent = parent.document.title; } catch (e) { r.parent = 'blocked'; }
-            try { r.ls = localStorage.getItem('x'); } catch (e) { r.ls = 'blocked'; }
-            parent.postMessage(r, '*');<\/script></body></html>`;
+            (async () => {
+                const r = { type: 'probe' };
+                try { r.parent = parent.document.title; } catch (e) { r.parent = 'blocked'; }
+                try { r.ls = localStorage.getItem('x'); } catch (e) { r.ls = 'blocked'; }
+                try { r.data = await (await fetch('data:text/plain,ok')).text(); } catch (e) { r.data = 'blocked'; }
+                try { await fetch('/index.html'); r.http = 'sent'; } catch (e) { r.http = 'blocked'; }
+                parent.postMessage(r, '*');
+            })();<\/script></body></html>`;
         const setFile = (id, file) => { const dt = new DataTransfer(); dt.items.add(file); const el = document.getElementById(id); el.files = dt.files; return m3PickFile({ target: el }); };
         showAddModel3dForm();
         await setFile('m3FileInput', new File(['not a model'], 'notes.txt', { type: 'text/plain' }));
@@ -104,6 +108,8 @@ const { launch, BASE_URL } = require('./_env');
         const fr = document.querySelector('#m3ViewerBody iframe');
         t('studio: runs in a sandbox with scripts only', fr && fr.getAttribute('sandbox'), 'allow-scripts');
         t('studio: no access to the dashboard page or its storage', [got.parent, got.ls], ['blocked', 'blocked']);
+        t('studio: reads what is inside the page (data:), sends nothing out over HTTP', [got.data, got.http], ['ok', 'blocked']);
+        t('studio: the header says the dashboard never asks for a password here', getComputedStyle(document.querySelector('#m3Viewer .m3-viewer__warn')).display !== 'none', true);
         closeModel3dViewer();
         t('studio: closing removes the frame', document.querySelectorAll('#m3ViewerBody iframe').length, 0);
 
@@ -177,6 +183,14 @@ const { launch, BASE_URL } = require('./_env');
             document.getElementById('m3PartSearch').value = ''; m3RenderParts();
             m3Do('attachAll'); await tick(600);
             t('glb: put all back', document.querySelectorAll('#m3PartList .m3s-row.is-off').length, 0);
+            t('glb: no studio warning on a GLB', getComputedStyle(document.querySelector('#m3Viewer .m3-viewer__warn')).display, 'none');
+            // Another editor's change elsewhere does not wipe what is being typed.
+            m3EditPart(true); await tick();
+            document.getElementById('m3pNote').value = 'half typed';
+            applyModels3dSnapshot(models3d.map(m => m.id === 'm3_g' ? m : { ...m, description: 'changed elsewhere' }));
+            await tick(80);
+            t('glb: a snapshot leaves the Part details form being typed in alone', (document.getElementById('m3pNote') || {}).value, 'half typed');
+            m3EditPart(false);
             // An owner opening a GLB without a picture gives it one.
             for (let i = 0; i < 30 && !updates.some(s => s.id === 'm3_g' && s.thumb); i++) await tick(100);
             t('glb: the first editor to open it saves a card picture', updates.some(s => s.id === 'm3_g' && s.thumb === 'models3d/m3_g/thumb.jpg') && uploads.some(u => u[0] === 'models3d/m3_g/thumb.jpg' && u[1] === 'image/jpeg'), true);
