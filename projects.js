@@ -600,7 +600,7 @@ function deleteProject(id) {
     const p = projects.find(x => x.id === id);
     if (!p || !canEditProjectRecord(p)) return;
     if (!confirm(`Delete the project "${p.name}" and its updates?\n\nJobs linked to it stay, without the link.`)) return;
-    deleteWhPhotos((p.updates || []).flatMap(u => u.photoIds || []), 'pj');
+    deleteWhPhotos((p.updates || []).flatMap(u => u.photoIds || []), 'pj', p.id);
     projects = projects.filter(x => x.id !== id);
     cloudWrite({ action: 'delete', unitName: `[Project] ${p.name}`, field: 'Project', before: pjStatusLabel(p.status), after: '' },
         cloudCall('deleteProject', id), 'Project deleted', err => showToast('Failed to delete the project', 'error'));
@@ -808,7 +808,7 @@ function deleteProjectUpdate(id, upId) {
     const warn = still ? `\n\n"${m[2].trim()}" stays ${m[1] === 'done' ? 'ticked done' : 'not done'} — deleting the update does not change the ticks. If the tick itself was a mistake, change it in Target.`
         : /Finished:/.test(u.progress || '') ? '\n\nThe units / milestones it finished stay ticked — change them in Target if needed.' : '';   // (a job's update is auto too)
     if (!confirm(`Delete this update?\n\n${u.date || ''} · ${u.text || ''}${u.progress ? '\n' + u.progress : ''}${warn}`)) return;
-    if ((u.photoIds || []).length && typeof deleteWhPhotos === 'function') deleteWhPhotos(u.photoIds, 'pj');
+    if ((u.photoIds || []).length && typeof deleteWhPhotos === 'function') deleteWhPhotos(u.photoIds, 'pj', p.id);
     const next = { ...p, updates: (p.updates || []).filter(x => x.id !== upId), updatedAt: Date.now() };
     _pjPush(next, 'Update deleted', p, `Update deleted: ${String(u.text || '').slice(0, 80)}`);
     showProjectDetail(id, true);
@@ -1290,7 +1290,7 @@ function deleteJob(id) {
     const j = otJobs.find(x => x.id === id);
     if (!j || !canEditProjectRecord(j)) return;
     if (!confirm(`Delete this job (${j.category}, ${j.date})?${j.appliedImplement ? '\n\nThe implement set on the unit stays as it is.' : ''}`)) return;
-    deleteWhPhotos(j.photoIds || [], 'pj');
+    deleteWhPhotos(j.photoIds || [], 'pj', j.id);
     (j.files || []).forEach(f => window.cloud && window.cloud.deleteProjectFile && window.cloud.deleteProjectFile(f.path, j.id).catch(() => {}));
     otJobs = otJobs.filter(x => x.id !== id);
     cloudWrite({ action: 'delete', unitName: `[Job] ${j.category}`, field: j.date, before: j.description || '', after: '' },

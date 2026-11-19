@@ -80,6 +80,27 @@ const { launch, BASE_URL } = require('./_env');
         const viewSrc = await (await fetch('vendor/foliate/view.js')).text();
         t('e-book links: the reader itself also refuses other schemes', /OT Dashboard 2\.43\.0[\s\S]{0,400}\^https\?:/.test(viewSrc), true);
 
+        // ---- (e) weekly / daily report cells and items built from stored records ----
+        const box = document.createElement('div'); document.body.appendChild(box);
+        const evilCell = { text: 'Budi', chip: 'good"><img src=x data-pwn="1" onerror="window.__pwn++">', tone: 'bad" data-pwn="1', a: 'left" data-pwn="1' };
+        box.innerHTML = `<table><tbody><tr>${_wrCell(evilCell, { a: 'right" data-pwn="1' })}</tr></tbody></table>`
+            + _wrBlockHtml({ type: 'list', items: [{ text: 'x', tone: 'bad" data-pwn="1', tag: { text: 'y', tone: 'good" data-pwn="1' } }] })
+            + _wrBlockHtml({ type: 'stats', items: [{ value: 1, label: 'x', tone: 'bad" data-pwn="1', delta: { text: '+1', tone: 'good" data-pwn="1' } }] })
+            + _wrBlockHtml({ type: 'rag', items: [['x', 'red" data-pwn="1', 'y']] });
+        await tick();
+        t('report: an object written into a record field adds no attribute or markup', [injected(), window.__pwn, box.querySelector('td').textContent], [0, 0, 'Budi']);
+        t('report: a normal cell keeps its style', (() => { box.innerHTML = `<table><tbody><tr>${_wrCell({ text: 'Open', chip: 'warn', tone: 'bad', a: 'right' })}</tr></tbody></table>`;
+            const td = box.querySelector('td'); return [td.className, td.querySelector('span').className]; })(), ['wr-a-right wr-t-bad', 'wr-chip wr-chip--warn']);
+        box.remove();
+
+        // ---- (f) deleting a record deletes only the photos named after it ----
+        const gone = [];
+        window.cloud.deleteProjectPhoto = id => { gone.push(id); return Promise.resolve(); };
+        window.cloud.deletePurchasePhoto = id => { gone.push(id); return Promise.resolve(); };
+        deleteWhPhotos(['job_a__p1', 'job_victim__p9', 'pj_victim__p2', 'job_a__p2'], 'pj', 'job_a');
+        deleteWhPhotos(['pr_1__p1', 'pr_1__rc_1__p1', 'pr_2__p1'], 'pr', 'pr_1');
+        t('photos: another record’s photo ids on a record are never deleted with it', gone, ['job_a__p1', 'job_a__p2', 'pr_1__p1', 'pr_1__rc_1__p1']);
+
         await tick(100);
         t('TOTAL: nothing ran', window.__pwn, 0);
         return T;

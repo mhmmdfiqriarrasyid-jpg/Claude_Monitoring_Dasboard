@@ -111,7 +111,8 @@ const { doc, setDoc } = require('firebase/firestore');
         await setDoc(doc(db, 'users', 'prE'), { uid: 'prE', role: 'staff', status: 'active', access: { purchase: 'edit' } });
         await setDoc(doc(db, 'users', 'pjE'), { uid: 'pjE', role: 'staff', status: 'active', access: { projects: 'edit' } });
         await setDoc(doc(db, 'users', 'tkE'), { uid: 'tkE', role: 'staff', status: 'active', access: { tickets: 'edit' } });
-        await setDoc(doc(db, 'purchaseRequests', 'pr_mine'), { id: 'pr_mine', createdByUid: 'prO' });
+        await setDoc(doc(db, 'purchaseRequests', 'pr_mine'), { id: 'pr_mine', createdByUid: 'prO', status: 'draft' });
+        await setDoc(doc(db, 'purchaseRequests', 'pr_done'), { id: 'pr_done', createdByUid: 'prO', status: 'received' });
         await setDoc(doc(db, 'purchaseRequests', 'pr_other'), { id: 'pr_other', createdByUid: 'prE' });
         await setDoc(doc(db, 'projects', 'pj_mine'), { id: 'pj_mine', createdByUid: 'pjO' });
         await setDoc(doc(db, 'projects', 'pj_other'), { id: 'pj_other', createdByUid: 'pjE' });
@@ -124,6 +125,7 @@ const { doc, setDoc } = require('firebase/firestore');
     await env.withSecurityRulesDisabled(async c => {
         const s = c.storage();
         for (const p of ['photos/purchasePhotos/pr_other__p1/a', 'photos/purchasePhotos/pr_mine__p1/a', 'photos/purchasePhotos/pr_gone__p1/a',
+                         'photos/purchasePhotos/pr_done__p1/a', 'photos/purchasePhotos/pr_done__rc1__p1/a',
                          'photos/projectPhotos/pj_other__p1/a', 'photos/projectPhotos/job_other__p1/a', 'photos/projectPhotos/job_mine__p1/a',
                          'photos/ticketPhotos/tk_other__p1/a', 'photos/ticketPhotos/tk_mine__p1/a']) {
             await uploadBytes(ref(s, p), jpg, { contentType: 'image/jpeg' });
@@ -138,7 +140,12 @@ const { doc, setDoc } = require('firebase/firestore');
     await check('F1 PR: own TIDAK menghapus foto request orang lain', deleteObject(ref(st('prO'), 'photos/purchasePhotos/pr_other__p1/a')), false);
     await check('F1 PR: own mengunggah ke request miliknya', img(st('prO'), 'photos/purchasePhotos/pr_mine__p2/b'), true);
     await check('F1 PR: own mengunggah ke request baru (belum tersimpan)', img(st('prO'), 'photos/purchasePhotos/pr_new1__p1/a'), true);
-    await check('F1 PR: own mengunggah foto receipt request miliknya', img(st('prO'), 'photos/purchasePhotos/pr_mine__rc1__p1/a'), true);
+    await check('F1 PR: own TIDAK mengunggah foto receipt (itu milik pengelola)', img(st('prO'), 'photos/purchasePhotos/pr_mine__rc1__p1/a'), false);
+    await check('F1 PR: own membaca foto receipt request miliknya', getBytes(ref(st('prO'), 'photos/purchasePhotos/pr_done__rc1__p1/a')), true);
+    await check('F1 PR: own TIDAK menghapus foto receipt request miliknya', deleteObject(ref(st('prO'), 'photos/purchasePhotos/pr_done__rc1__p1/a')), false);
+    await check('F1 PR: own TIDAK menambah foto setelah request diterima', img(st('prO'), 'photos/purchasePhotos/pr_done__p2/a'), false);
+    await check('F1 PR: own TIDAK menghapus foto setelah request diterima', deleteObject(ref(st('prO'), 'photos/purchasePhotos/pr_done__p1/a')), false);
+    await check('F1 PR: pengelola menambah foto receipt', img(st('prE'), 'photos/purchasePhotos/pr_done__rc2__p1/a'), true);
     await check('F1 PR: own TIDAK menimpa file yang sudah ada (miliknya pun)', img(st('prO'), 'photos/purchasePhotos/pr_mine__p1/a'), false);
     await check('F1 PR: own menghapus foto request miliknya', deleteObject(ref(st('prO'), 'photos/purchasePhotos/pr_mine__p2/b')), true);
     await check('F1 PR: own merapikan foto request yang sudah dihapus', deleteObject(ref(st('prO'), 'photos/purchasePhotos/pr_gone__p1/a')), true);

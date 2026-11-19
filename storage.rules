@@ -107,11 +107,20 @@ service firebase.storage {
         ? recMineSt(/databases/(default)/documents/otJobs/$(recOf(folder)), orNew)
         : recMineSt(/databases/(default)/documents/projects/$(recOf(folder)), orNew);
     }
+    // A requester changes only its request's own photos (not a receipt's: <request>__<receipt>__p<n>),
+    // while the request is a draft or just submitted.
+    function prOpenSt(folder, orNew) {
+      let p = /databases/(default)/documents/purchaseRequests/$(recOf(folder));
+      return folder.split('__').size() == 2
+          && (firestore.exists(p) ? (firestore.get(p).data.get('createdByUid', '') == request.auth.uid
+                                     && firestore.get(p).data.get('status', '') in ['draft', 'submitted'])
+                                  : orNew);
+    }
     match /photos/purchasePhotos/{rec}/{file} {
       allow read: if canView('purchase') || (isOwn('purchase') && prMineSt(rec, false));
-      allow create: if (canEdit('purchase') || (isOwn('purchase') && resource == null && prMineSt(rec, true))) && isImage();
+      allow create: if (canEdit('purchase') || (isOwn('purchase') && resource == null && prOpenSt(rec, true))) && isImage();
       allow update: if canEdit('purchase') && isImage();
-      allow delete: if canEdit('purchase') || (isOwn('purchase') && prMineSt(rec, true));
+      allow delete: if canEdit('purchase') || (isOwn('purchase') && prOpenSt(rec, true));
     }
     // 2.29.0: Projects & Jobs (project updates and job photos)
     match /photos/projectPhotos/{rec}/{file} {

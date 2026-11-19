@@ -733,6 +733,19 @@ async function check(name, p, expectOk) {
     await check('F1 PR foto: own merapikan foto request yang sudah dihapus', deleteDoc(doc(PO2, 'purchasePhotos', 'pr_gone__p1')), true);
     await check('F1 PR foto: own membuka foto yang belum ada (tanpa error)', getDoc(doc(PO2, 'purchasePhotos', 'pr_other__p404')), true);
     await check('F1 PR foto: editor tetap mengelola foto siapa pun', setDoc(doc(as('prE'), 'purchasePhotos', 'pr_other__p1'), prPh('pr_other__p1')), true);
+    // Bukti penerimaan dan foto request yang sudah diproses tidak bisa diganti pemohon.
+    await env.withSecurityRulesDisabled(async ctx => {
+        const db = ctx.firestore();
+        await setDoc(doc(db, 'purchaseRequests', 'pr_po'), { id: 'pr_po', title: 'x', status: 'po', createdByUid: 'prO' });
+        await setDoc(doc(db, 'purchasePhotos', 'pr_po__p1'), { id: 'pr_po__p1', ownerId: 'pr_po', photo: 'sp:photos/purchasePhotos/pr_po__p1/a' });
+        await setDoc(doc(db, 'purchasePhotos', 'pr_po__rc1__p1'), { id: 'pr_po__rc1__p1', ownerId: 'pr_po__rc1', photo: 'sp:photos/purchasePhotos/pr_po__rc1__p1/a' });
+    });
+    await check('F1 PR foto: own TIDAK menimpa foto receipt request miliknya', setDoc(doc(PO2, 'purchasePhotos', 'pr_po__rc1__p1'), prPh('pr_po__rc1__p1', { ownerId: 'pr_po__rc1' })), false);
+    await check('F1 PR foto: own TIDAK menghapus foto receipt request miliknya', deleteDoc(doc(PO2, 'purchasePhotos', 'pr_po__rc1__p1')), false);
+    await check('F1 PR foto: own TIDAK menghapus foto request yang sudah PO', deleteDoc(doc(PO2, 'purchasePhotos', 'pr_po__p1')), false);
+    await check('F1 PR foto: own TIDAK menambah foto ke request yang sudah PO', setDoc(doc(PO2, 'purchasePhotos', 'pr_po__p2'), prPh('pr_po__p2')), false);
+    await check('F1 PR foto: own tetap membaca foto receipt request miliknya', getDoc(doc(PO2, 'purchasePhotos', 'pr_po__rc1__p1')), true);
+    await check('F1 PR foto: editor mencatat foto receipt', setDoc(doc(as('prE'), 'purchasePhotos', 'pr_po__rc2__p1'), prPh('pr_po__rc2__p1', { ownerId: 'pr_po__rc2' })), true);
     // (b) Isi foto tidak boleh menunjuk ke file lain di bucket.
     await check('F1 path: ref ke Learning DITOLAK', setDoc(doc(PO2, 'purchasePhotos', 'pr_mine2__p6'), prPh('pr_mine2__p6', { photo: 'sp:learning/f1/book.pdf' })), false);
     await check('F1 path: ref ke folder foto lain DITOLAK', setDoc(doc(PO2, 'purchasePhotos', 'pr_mine2__p6'), prPh('pr_mine2__p6', { photo: 'sp:photos/purchasePhotos/pr_other__p1/a' })), false);

@@ -768,14 +768,22 @@ service cloud.firestore {
       allow read: if isOwner() || canViewArea('licenseStock') || canViewArea('teamLog') || canViewArea('damage');
       allow write: if false;
     }
-    // 2.43.0: an 'own' requester sees and changes the photos of its own requests only.
+    // 2.43.0: an 'own' requester sees the photos of its own requests only, and changes
+    // only the request's own photos (<request>__p<n>, never a receipt's) while the
+    // request is still its to change (draft, or just submitted) — like the request itself.
+    function prPhotoOpen(id, orGone) {
+      return id.split('__').size() == 2
+          && (exists(prRecPath(recOfPhoto(id)))
+              ? (mineIn(get(prRecPath(recOfPhoto(id))).data) && get(prRecPath(recOfPhoto(id))).data.get('status', '') in ['draft', 'submitted'])
+              : orGone);
+    }
     match /purchasePhotos/{id} {
       allow read:   if canViewArea('purchase')
                     || (purchaseOwn() && (resource == null || recMine(prRecPath(recOfPhoto(id)), false)));
-      allow delete: if canEditArea('purchase') || (purchaseOwn() && recMine(prRecPath(recOfPhoto(id)), true));
+      allow delete: if canEditArea('purchase') || (purchaseOwn() && prPhotoOpen(id, true));
       allow create, update: if idMatches(id) && photoValOk('purchasePhotos', id)
                     && (canEditArea('purchase')
-                        || (purchaseOwn() && photoOwnerKept(id) && recMine(prRecPath(recOfPhoto(id)), false)));
+                        || (purchaseOwn() && photoOwnerKept(id) && prPhotoOpen(id, false)));
     }
     // Device and stock photos (v185), one document per photo, up to ten per item.
     match /warehousePhotos/{id} { allow read: if canViewArea('warehouse'); allow delete: if canEditArea('warehouse');

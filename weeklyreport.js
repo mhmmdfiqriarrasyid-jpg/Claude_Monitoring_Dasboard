@@ -492,11 +492,15 @@ function _wrJobLog(page, jb, mgmt) {
 
 // ---- HTML ----
 const _wrE = s => escapeHtml(String(s == null ? '' : s));
+// 2.43.0: a class-name token (tone, chip, alignment, card style). A cell or an item
+// can come straight from a stored record, so a value written as an object by another
+// account must not add attributes or markup: only letters, digits and '-' are kept.
+const _wrK = s => String(s == null ? '' : s).replace(/[^A-Za-z0-9-]/g, '');
 function _wrCell(c, head) {
     const o = c && typeof c === 'object' ? c : { text: c };
-    const a = o.a || (head && head.a) || 'left';
-    const inner = o.chip ? `<span class="wr-chip wr-chip--${o.chip}">${_wrE(o.text)}</span>` : _wrE(o.text);
-    return `<td class="wr-a-${a}${o.tone ? ' wr-t-' + o.tone : ''}${o.bold ? ' wr-b' : ''}">${inner}</td>`;
+    const a = _wrK(o.a || (head && head.a) || 'left');
+    const inner = o.chip ? `<span class="wr-chip wr-chip--${_wrK(o.chip)}">${_wrE(o.text)}</span>` : _wrE(o.text);
+    return `<td class="wr-a-${a}${o.tone ? ' wr-t-' + _wrK(o.tone) : ''}${o.bold ? ' wr-b' : ''}">${inner}</td>`;
 }
 // What sits inside a card (its title is drawn by the card).
 function _wrBlockHtml(b) {
@@ -509,8 +513,8 @@ function _wrBlockHtml(b) {
     case 'steps': return b.items.length ? `<div class="wr-steps">${b.items.map(m => `<div class="wr-step${m.done ? ' is-done' : ''}"><span class="wr-step__ck">${m.done ? '✓' : ''}</span><span class="wr-step__l">${_wrE(m.label)}</span>
         ${m.weight != null ? `<span class="wr-step__w">${m.weight}%</span>` : ''}${m.goods ? `<span class="wr-step__g ${m.goods.split('/')[0] === m.goods.split('/')[1] ? 'wr-t-good' : 'wr-t-bad'}">▣ ${_wrE(m.goods)}</span>` : (m.weight != null ? '<span class="wr-step__g"></span>' : '')}</div>`).join('')}
         ${b.more ? `<div class="wr-more">+ ${b.more} more in the dashboard</div>` : ''}</div>` : `<div class="wr-empty">${_wrE(b.empty || '—')}</div>`;
-    case 'stats': return `<div class="wr-stats${b.small ? ' wr-stats--sm' : ''}"${b.per ? ` style="grid-template-columns:repeat(${b.per},1fr)"` : ''}>${b.items.length ? b.items.map(s => `<div class="wr-stat"><div class="wr-stat__v${s.tone ? ' wr-t-' + s.tone : ''}">${_wrE(_wrNum(s.value))}</div><div class="wr-stat__l">${_wrE(s.label)}</div>${s.delta ? `<div class="wr-stat__d wr-t-${s.delta.tone}">${_wrE(s.delta.text)}</div>` : ''}</div>`).join('') : `<div class="wr-empty">${_wrE(b.empty || '—')}</div>`}</div>`;
-    case 'table': return b.rows.length ? `<table class="wr-table${b.compact ? ' wr-table--c' : ''}"><thead><tr>${b.head.map(h => `<th class="wr-a-${h.a || 'left'}">${_wrE(h.t)}</th>`).join('')}</tr></thead>
+    case 'stats': return `<div class="wr-stats${b.small ? ' wr-stats--sm' : ''}"${b.per ? ` style="grid-template-columns:repeat(${b.per},1fr)"` : ''}>${b.items.length ? b.items.map(s => `<div class="wr-stat"><div class="wr-stat__v${s.tone ? ' wr-t-' + _wrK(s.tone) : ''}">${_wrE(_wrNum(s.value))}</div><div class="wr-stat__l">${_wrE(s.label)}</div>${s.delta ? `<div class="wr-stat__d wr-t-${_wrK(s.delta.tone)}">${_wrE(s.delta.text)}</div>` : ''}</div>`).join('') : `<div class="wr-empty">${_wrE(b.empty || '—')}</div>`}</div>`;
+    case 'table': return b.rows.length ? `<table class="wr-table${b.compact ? ' wr-table--c' : ''}"><thead><tr>${b.head.map(h => `<th class="wr-a-${_wrK(h.a || 'left')}">${_wrE(h.t)}</th>`).join('')}</tr></thead>
         <tbody>${b.rows.map(r => `<tr>${r.map((c, i) => _wrCell(c, b.head[i])).join('')}</tr>`).join('')}</tbody></table>${b.more ? `<div class="wr-more">+ ${b.more} more in the dashboard</div>` : ''}` : `<div class="wr-empty">${_wrE(b.empty || 'Nothing this week')}</div>`;
     case 'bars': {
         const max = b.max || Math.max(1, ...b.items.map(i => Number(i[1]) || 0));
@@ -519,8 +523,8 @@ function _wrBlockHtml(b) {
         return `<div class="wr-bars">${b.items.map(it => { const v = it[1]; return `<div class="wr-bar"><span class="wr-bar__l">${_wrE(it[0])}</span><span class="wr-bar__t"><i style="width:${v == null ? 0 : Math.round(100 * v / max)}%" class="${b.target && v != null ? (v >= b.target ? 'is-good' : v >= b.target - 5 ? 'is-warn' : 'is-bad') : ''}"></i>${b.target ? `<b style="left:${b.target}%"></b>` : ''}</span><span class="wr-bar__v">${v == null ? '—' : _wrH(v) + (b.unit || '')}</span></div>`; }).join('')}</div>`;
     }
     // 2.39.2: an entry may carry a heading (head), a status chip (tag) and a problem line (note).
-    case 'list': return b.items.length ? `<ul class="wr-list">${b.items.map(i => `<li><i class="wr-dot wr-bg-${i.tone || 'muted'}"></i><div class="wr-li">${i.head ? `<div class="wr-li__h">${_wrE(i.head)}</div>` : ''}<div class="wr-li__top"><div>${_wrE(i.text)}</div>${i.tag ? `<span class="wr-chip wr-chip--${i.tag.tone || 'good'}">${_wrE(i.tag.text)}</span>` : ''}</div>${i.sub ? `<div class="wr-sub">${_wrE(i.sub)}</div>` : ''}${i.note ? `<div class="wr-li__note">${_wrE(i.note)}</div>` : ''}</div></li>`).join('')}</ul>${b.more ? `<div class="wr-more">+ ${b.more} more in the dashboard</div>` : ''}` : `<div class="wr-empty">${_wrE(b.empty || '—')}</div>`;
-    case 'rag': return `<ul class="wr-rag">${b.items.map(r => `<li><i class="wr-dot wr-bg-${r[1]}"></i><b>${_wrE(r[0])}</b><span>${_wrE(r[2])}</span></li>`).join('')}</ul>`;
+    case 'list': return b.items.length ? `<ul class="wr-list">${b.items.map(i => `<li><i class="wr-dot wr-bg-${_wrK(i.tone || 'muted')}"></i><div class="wr-li">${i.head ? `<div class="wr-li__h">${_wrE(i.head)}</div>` : ''}<div class="wr-li__top"><div>${_wrE(i.text)}</div>${i.tag ? `<span class="wr-chip wr-chip--${_wrK(i.tag.tone || 'good')}">${_wrE(i.tag.text)}</span>` : ''}</div>${i.sub ? `<div class="wr-sub">${_wrE(i.sub)}</div>` : ''}${i.note ? `<div class="wr-li__note">${_wrE(i.note)}</div>` : ''}</div></li>`).join('')}</ul>${b.more ? `<div class="wr-more">+ ${b.more} more in the dashboard</div>` : ''}` : `<div class="wr-empty">${_wrE(b.empty || '—')}</div>`;
+    case 'rag': return `<ul class="wr-rag">${b.items.map(r => `<li><i class="wr-dot wr-bg-${_wrK(r[1])}"></i><b>${_wrE(r[0])}</b><span>${_wrE(r[2])}</span></li>`).join('')}</ul>`;
     case 'kv': return `<div class="wr-kv">${b.items.map(i => `<div class="wr-kv__r"><span>${_wrE(i[0])}</span><b>${_wrE(_wrNum(i[1]))}</b></div>`).join('')}</div>`;
     case 'panel': return `<ul class="wr-panel">${b.items.map(i => `<li>${_wrE(i)}</li>`).join('')}</ul>`;
     case 'note': return `<div class="wr-note">${_wrE(b.text)}</div>`;
@@ -542,7 +546,7 @@ const _wrBare = b => b.type === 'note' || (b.type === 'gallery' && !b.inCard);
 const _wrGrow = b => b.grow != null ? b.grow : ((b.type === 'gallery' && !b.inCard) || (b.type === 'bars' && b.vertical) ? 1 : 0);
 function _wrCardHtml(b) {
     if (_wrBare(b)) return `<div class="wr-bare${b.type === 'gallery' ? ' wr-bare--fill' : ''}">${_wrBlockHtml(b)}</div>`;
-    return `<div class="wr-card${b.card ? ' wr-card--' + b.card : ''} wr-card--${b.type}" style="flex-grow:${_wrGrow(b)}">${b.title ? `<div class="wr-card__t">${_wrE(b.title)}</div>` : ''}${_wrBlockHtml(b)}</div>`;
+    return `<div class="wr-card${b.card ? ' wr-card--' + _wrK(b.card) : ''} wr-card--${_wrK(b.type)}" style="flex-grow:${_wrGrow(b)}">${b.title ? `<div class="wr-card__t">${_wrE(b.title)}</div>` : ''}${_wrBlockHtml(b)}</div>`;
 }
 // The body of a content page: columns of stacked cards, or (rows) bands of cards side by side.
 function _wrBodyHtml(p) {

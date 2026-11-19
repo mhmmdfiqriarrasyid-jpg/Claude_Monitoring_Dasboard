@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.43.0';
+const APP_VERSION = 'v2.43.1';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -20608,7 +20608,7 @@ function deletePurchase(id) {
     const r = purchaseRequests.find(x => x.id === id);
     if (!r || !canEditPurchaseRecord(r)) return;
     if (!confirm(`Delete purchase request ${r.prNo || r.title}?\n\nIts photos are deleted too. Stock already booked in Warehouse stays.`)) return;
-    deleteWhPhotos([...(r.photoIds || []), ...(r.receipts || []).flatMap(x => x.photoIds || [])], 'pr');
+    deleteWhPhotos([...(r.photoIds || []), ...(r.receipts || []).flatMap(x => x.photoIds || [])], 'pr', r.id);
     purchaseRequests = purchaseRequests.filter(x => x.id !== id);
     cloudWrite({ action: 'delete', unitName: `[Purchase] ${r.prNo || r.title}`, field: 'Purchase request', before: prStatusDef(r.status).label, after: '' },
         cloudCall('deletePurchaseRequest', id), 'Request deleted',
@@ -20942,7 +20942,7 @@ function deletePurchaseReceipt() {
     const stock = (rc.stockIds || []).length;
     if (!confirm(`Delete the receipt of ${rc.date}? Its quantities go back to "still due"${stock ? ` and its ${stock} Warehouse stock-in row(s) are removed` : ''}.`)) return;
     _prSyncReceiptStock(r, rc, [], rc.date, null);
-    deleteWhPhotos(rc.photoIds || [], 'pr');
+    deleteWhPhotos(rc.photoIds || [], 'pr', `${r.id}__${rc.id}`);
     const next = _prAfterReceipts(r, (r.receipts || []).filter(x => x.id !== rc.id));
     _prPush(next, 'Receipt deleted', r);
     closePurchaseReceive();
@@ -21071,13 +21071,16 @@ function whPhotoCommit(kind, ownerId) {
         }
         if (it.id) ids.push(it.id);
     });
-    deleteWhPhotos(st.removed, _PH_STORE[kind]);
+    deleteWhPhotos(st.removed, _PH_STORE[kind], ownerId);
     st.removed = [];
     return ids;
 }
-function deleteWhPhotos(ids, store) {
+// 2.43.0: ownerId — only photos named after that record (<record>__p…) are deleted.
+// A record's photo list is written by whoever edits it, so ids of another record's
+// photos placed there must not be deleted with the rights of whoever deletes it.
+function deleteWhPhotos(ids, store, ownerId) {
     const fn = _PH_FN[store || 'wh'].del;
-    (ids || []).forEach(id => {
+    (ids || []).filter(id => ownerId == null || String(id).startsWith(`${ownerId}__`)).forEach(id => {
         _whPhotoCache.delete(id);
         if (window.cloud && window.cloud[fn] && !suppressCloudWrites) window.cloud[fn](id).catch(() => {});
     });
@@ -21558,7 +21561,7 @@ function deleteDevice(id) {
     const d = warehouseDevices.find(x => x.id === id);
     if (!d) return;
     if (!confirm(`Delete device ${d.type || ''} SN ${d.sn}?\n\nIts history in the audit log is kept.`)) return;
-    deleteWhPhotos(d.photoIds);
+    deleteWhPhotos(d.photoIds, 'wh', d.id);
     cloudWrite(
         { action: 'delete',
           unitName: `[Inventory] ${d.type || 'Device'} ${d.sn}`,
@@ -22650,7 +22653,7 @@ function deleteStockItem(id) {
     const r = stockLedger.find(x => x.id === id);
     if (!r) return;
     if (!confirm(`Delete stock-${r.txnType === 'OUT' ? 'out' : 'in'} transaction ${r.qty} ${r.itemName} (${r.date})?`)) return;
-    deleteWhPhotos(r.photoIds);
+    deleteWhPhotos(r.photoIds, 'wh', r.id);
     cloudWrite(
         { action: 'delete',
           unitName: `[Inventory] ${r.itemName}`,

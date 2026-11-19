@@ -119,6 +119,27 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8811';
     await new Promise(r => setTimeout(r, 500));
     const b4 = (await raw('workLogPhotos', 'wl_b4')).photos;
     out.b4 = [b4[0], b4[1].startsWith('sp:'), await exists('photos/workLogPhotos/wl_b4/x1')];
+    // ...and when a photo before it was removed here, the upload still takes its place (not the removed one).
+    await st.mod.uploadString(st.mod.ref(st.s, 'photos/workLogPhotos/wl_b5/a1'), img1, 'data_url');
+    await FS.setDoc(FS.doc(db, 'workLogPhotos', 'wl_b5'), { id: 'wl_b5', photos: ['sp:photos/workLogPhotos/wl_b5/a1', 'pending:elsewhere3'], updatedAt: 1 });
+    const sh5 = await C.getWorkLogPhotos('wl_b5');
+    await st.mod.uploadString(st.mod.ref(st.s, 'photos/workLogPhotos/wl_b5/t1'), img2, 'data_url');
+    await FS.setDoc(FS.doc(db, 'workLogPhotos', 'wl_b5'), { id: 'wl_b5', photos: ['sp:photos/workLogPhotos/wl_b5/a1', 'sp:photos/workLogPhotos/wl_b5/t1'], updatedAt: 2 });
+    await C.saveWorkLogPhotos('wl_b5', [sh5[1]]);                       // the first photo removed here
+    out.b5 = (await raw('workLogPhotos', 'wl_b5')).photos;
+    // The photo document still queued on this device when the upload goes: the upload
+    // replaces the token behind that write (it used to be thrown away as an orphan).
+    await FS.disableNetwork(db);
+    offline(true);
+    const pSave = C.saveWorkLogPhotos('wl_b6', [img1]);
+    await new Promise(r => setTimeout(r, 400));
+    offline(false);
+    const pFlush = C.flushPhotoOutbox();
+    await new Promise(r => setTimeout(r, 1500));
+    await FS.enableNetwork(db);
+    await pSave; await pFlush;
+    const b6 = (await raw('workLogPhotos', 'wl_b6')).photos;
+    out.b6 = [b6.length, b6[0].startsWith('sp:photos/workLogPhotos/wl_b6/'), b6[0].startsWith('sp:') && await exists(b6[0].slice(3)), await C.pendingPhotoUploads()];
     // 2.43.0 (S4): a path planted in a photo document is never deleted or loaded.
     await st.mod.uploadString(st.mod.ref(st.s, 'learning/f9/book'), img1, 'data_url');
     await st.mod.uploadString(st.mod.ref(st.s, 'photos/inspectionPhotos/in9/i1'), img1, 'data_url');
@@ -159,7 +180,7 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8811';
   const want = { stored: 'sp:photos/damagePhotos/d1/', objExists: true, url: true, inline: 'data:image/jpeg;base64,', kept: true, newOne: true,
     removedGone: true, lostPlain: 0, recovered: [2, true], writtenBack: ['sp:photos/workLogPhotos/wl_lost/k2', 'sp:photos/workLogPhotos/wl_lost/k3'], outboxPending: [3, true, 3], outboxFlushed: [0, 3, true, 0],
     b1Shown: [3, true], b1Kept: [3, true, true, true, 3], b1Flushed: [0, 3, true, 0], b2Placeholder: true, b2Kept: ['pending:elsewhere1', true],
-    b3: [true, true, true], b4: ['sp:photos/workLogPhotos/wl_b4/x1', true, true],
+    b3: [true, true, true], b4: ['sp:photos/workLogPhotos/wl_b4/x1', true, true], b5: ['sp:photos/workLogPhotos/wl_b5/t1'], b6: [1, true, true, 0],
     plantedLoad: '', copiedLoads: true, plantedKept: [true, true], jobFileGuard: ['refused', 'refused', 'refused'], map: [true, ''], legacyServed: true, migrated: [true, 'dev1'], deleted: [true, true], after: ['after', true] };
   let fail = 0;
   Object.keys(want).forEach(k => { const ok = JSON.stringify(R[k]) === JSON.stringify(want[k]); if (!ok) fail++;

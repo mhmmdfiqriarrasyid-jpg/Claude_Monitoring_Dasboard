@@ -591,6 +591,16 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.43.1 — Lanjutan fase 1 (hasil review)**: token class di Weekly/Daily
+  Report disaring (`_wrK`) — sel tabel bisa berasal langsung dari field record.
+  Menghapus record hanya menghapus foto yang id-nya milik record itu
+  (`deleteWhPhotos(ids, store, ownerId)`). Pemohon Purchase (*own*) hanya
+  mengubah foto request-nya sendiri — bukan foto receipt — selama request
+  masih draft / baru diajukan. Outbox foto kembali membaca dokumen seperti yang
+  dilihat perangkat ini (termasuk tulisan yang belum terkirim) lalu memperbarui
+  di belakangnya; foto yang dikirim perangkat lain saat form terbuka diletakkan
+  di tempatnya semula. **Perlu publish ulang `firestore.rules` dan
+  `storage.rules`.**
   **2.43.0 — Perbaikan keamanan (audit, fase 1)**: nilai yang masuk ke class
   HTML hanya nilai yang dikenal (RAG project, format file Learning, jumlah
   receipt sebagai angka); link di dalam e-book hanya http(s). Foto Purchase /
