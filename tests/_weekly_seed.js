@@ -11,9 +11,11 @@ window.__seed = () => {
     projectFileUrl: path => Promise.resolve('tests/fixtures/wr/v1.mp4') };
   const GPA = 'PT. Global Papua Abadi', MNM = 'PT. Murni Nusantara Mandiri';
   const comp = (bad) => ({ display: bad === 'display' ? 'Breakdown' : 'Good', gps: bad === 'gps' ? 'Breakdown' : 'Good', steering: bad === 'steering' ? 'Breakdown' : 'Good', jdlink: 'Good' });
+  // Licence end dates count from today (the report's licence list does): expiring soon, expired, far.
+  const LIC = days => { const d = new Date(Date.now() + days * 86400000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   globalData = [];
   for (let i = 1; i <= 26; i++) globalData.push({ id: 't' + i, name: `GGTR1${String(i).padStart(2, '0')}G`, sn: 'S' + i, site: i <= 14 ? GPA : MNM, unitGroup: 'tractor', status: i === 3 ? 'Breakdown' : 'Good',
-    ...comp(i === 3 ? 'steering' : i === 7 ? 'display' : i === 18 ? 'gps' : ''), gpsLicense: 'SF-RTK', gpsLicenseEndDate: i < 4 ? '2026-11-20' : i === 5 ? '2026-10-01' : '2027-05-01', licenseDisplay: 'G5 Advance', displayLicenseEndDate: '2027-03-01' });
+    ...comp(i === 3 ? 'steering' : i === 7 ? 'display' : i === 18 ? 'gps' : ''), gpsLicense: 'SF-RTK', gpsLicenseEndDate: i < 4 ? LIC(20) : i === 5 ? LIC(-50) : LIC(200), licenseDisplay: 'G5 Advance', displayLicenseEndDate: LIC(120) });
   for (let i = 1; i <= 8; i++) globalData.push({ id: 'h' + i, name: `HEX0${i}`, sn: 'H' + i, site: MNM, unitGroup: 'heavy', status: 'Good', cameraAi: i === 2 ? 'Breakdown' : 'Good', telematicBox: 'Good', switchLimiter: 'Good', rotaryLamp: 'Good' });
   globalDamages = [
     { id: 'd1', date: '2026-10-15', unitId: 't3', unitName: 'GGTR103G', site: GPA, damageType: 'Device Precision', component: 'Steering Sensor', description: 'Steering sensor error, waiting for spare from vendor', resolved: false },

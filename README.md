@@ -481,8 +481,10 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   WIT) dan `sendLicenseAlert` (tombol Email Report), lewat Gmail App Password
   di Secret Manager. Laporan dibuat `functions/licenseReport.js` dengan aturan
   yang sama persis dengan dashboard (tes membandingkan keduanya). Penerima dan
-  saklar harian disimpan di `settings/email` (hanya owner yang mengubah,
-  pembaca License Stock bisa melihat); `mailLog` ditulis server saja.
+  saklar harian disimpan di `settings/email` (hanya owner yang mengubah;
+  sejak 2.45.0 hanya owner dan pembaca License Stock yang bisa membaca);
+  `mailLog` ditulis server saja dan sejak 2.45.0 hanya dibaca owner serta
+  pembaca License Stock yang tidak dibatasi satu unit group.
   **Perlu publish ulang `firestore.rules`** dan deploy fungsi dari Cloud
   Shell — langkahnya di `functions/README.md`.
   **2.15.0:** satu fungsi terjadwal `notificationTick` (tiap 10 menit, WIT)
@@ -591,6 +593,29 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.45.0 — Fase 2 keamanan & bug** (dijaga `tests/functions_guard_test.js`,
+  `tests/client_safety_f2_test.js`, rules/storage tests): bukti laporan harian,
+  izin, pembelian, project, ticket yang sudah disetujui/terkunci tidak bisa
+  diganti lagi di Storage; id laporan harian tidak boleh `lv_…` dan id izin
+  harus `lv_…`. Ticket: pelapor hanya menambah satu event miliknya sendiri,
+  reopen mengosongkan `resolvedAt`, semua waktu ticket harus angka; jam SLA
+  push dihitung paling awal dari saat server menerima ticket. Data aneh
+  (list berisi null, map di kolom angka) tidak lagi menghentikan halaman
+  Tickets/Projects/Team, laporan mingguan, dan email harian (`DailyCore.tidy`
+  dengan jenis `num`). Server: tombol Email Report dibatasi (10 menit sekali,
+  3/akun/hari, 10/hari; owner tidak ditahan) dan menolak lebih awal; push
+  dikirim per 500 token, maksimal 5 perangkat terbaru per akun (perangkat
+  yang dipakai memperbarui tanggalnya sekali sehari), token lama dihapus.
+  `settings/email` dan `mailLog` dibaca lebih sedikit orang (lihat atas).
+  CSV aman di Excel berlocale `;`. Klien: antrean offline dihitung per jenis,
+  daftar *Not sent* tidak hilang saat akses berubah, ZIP foto Damage memuat
+  foto dari Storage. Inspeksi → Damage: foto disalin jadi milik catatan
+  Damage sendiri (unduhan hanya foto yang dicatat, dengan batas waktu);
+  laporan yang dibuka ulang lalu disetujui lagi mencatat temuan barunya
+  (`appliedKeys`), komponen yang catatannya sudah selesai dicatat ulang bila
+  ditemukan rusak lagi. **Perlu publish ulang `firestore.rules` dan
+  `storage.rules`, lalu deploy Functions.** Catatan Damage dari inspeksi
+  sebelum 2.45.0 masih memakai foto inspeksi (belum dimigrasi).
   **2.44.3 — 3D Models (review ulang)**: header viewer studio memberi tahu
   bahwa dashboard tidak pernah meminta password di halaman studio (WebRTC
   tidak bisa diblok CSP); studio boleh membaca data di dalam halamannya

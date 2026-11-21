@@ -22,15 +22,19 @@ const { launch, BASE_URL } = require('./_env');
         window.cloud = { isReady: true,
             saveUnits: ok, deleteUnits: ok, getAllUnits: () => Promise.resolve([]), addHistoryEvents: ok, subscribeUsers: () => () => {},
             saveDamage: r => { calls.push(['damage', clone(r)]); return ok(); }, saveDamages: ok,
-            saveDamagePhoto: (id) => { calls.push(['damagePhoto', id]); return ok(); },
+            saveDamagePhoto: (id, p) => { calls.push(['damagePhoto', id, p]); return ok(); },
             saveInspectionPlan: r => { calls.push(['plan', clone(r)]); return ok(); },
             deleteInspectionPlan: id => { calls.push(['delPlan', id]); return ok(); },
             saveInspection: r => { calls.push(['ins', clone(r)]); return ok(); },
             deleteInspection: id => { calls.push(['delIns', id]); return ok(); },
             saveInspectionPhotos: (id, p) => { calls.push(['photos', id, Object.keys(p).sort()]); return ok(); },
             deleteInspectionPhotos: id => { calls.push(['delPhotos', id]); return ok(); },
-            getInspectionPhotos: () => Promise.resolve({ cameraAi: PH, telematicBox: PH, switchLimiter: PH, rotaryLamp: PH }) };
+            // 2.45.0: read for display a photo is a download URL (of the inspection's own object); inline, the picture itself.
+            getInspectionPhotos: (id, o) => { calls.push(['getInsPhotos', id, !!(o && o.inline)]);
+                const v = o && o.inline ? PH : SURL;
+                return Promise.resolve({ cameraAi: v, telematicBox: v, switchLimiter: v, rotaryLamp: v }); } };
         const PH = 'data:image/jpeg;base64,QUJD';
+        const SURL = 'https://firebasestorage.googleapis.com/v0/b/ot-monitoring-tractor.firebasestorage.app/o/photos%2FinspectionPhotos%2Fx%2Fa?alt=media&token=abc-1';
         const toasts = [];
         window.showToast = m => { toasts.push(String(m)); };
         window.confirm = () => true;
@@ -160,9 +164,12 @@ const { launch, BASE_URL } = require('./_env');
         const dmg = last('damage');
         t('komponen rusak masuk ke Kerusakan', dmg && [dmg.unitId, dmg.damageType, dmg.component, dmg.fromInspection, dmg.hasPhoto], ['h1', 'Device Precision', 'Rotary Lamp', rep.id, true]);
         t('dengan fotonya', calls.some(c => c[0] === 'damagePhoto' && c[1] === dmg.id), true);
+        // B6: a copy of the picture (uploaded into the damage record's own folder), never the inspection's download URL.
+        t('B6 foto dibaca inline', calls.filter(c => c[0] === 'getInsPhotos' && c[1] === rep.id).map(c => c[2]), [true]);
+        t('B6 foto kerusakan = salinan gambar, bukan URL objek inspeksi', calls.find(c => c[0] === 'damagePhoto' && c[1] === dmg.id)[2], PH);
         t('komponen unit di-set Breakdown', globalData.find(u => u.id === 'h1').rotaryLamp, 'Breakdown');
         const stamp = calls.filter(c => c[0] === 'ins').map(c => c[1]).reverse().find(r => r.id === rep.id);
-        t('laporan ditandai sudah diterapkan', [!!stamp.appliedAt, stamp.appliedDamageIds], [true, [dmg.id]]);
+        t('laporan ditandai sudah diterapkan', [!!stamp.appliedAt, stamp.appliedDamageIds, stamp.appliedKeys], [true, [dmg.id], ['rotaryLamp']]);
         const nd = calls.filter(c => c[0] === 'damage').length;
         applyInspectionFindings(rep.id);
         await tick(50);
@@ -188,6 +195,55 @@ const { launch, BASE_URL } = require('./_env');
         const n2 = calls.length;
         approveInspection(last('ins').id);
         t('teknisi tidak bisa menyetujui', calls.length, n2);
+
+        // =============== B9: dibuka lagi setelah dicatat ke Kerusakan ===============
+        // The server merges each write (setDoc merge), so a field a write leaves out stays.
+        const merge = r => { const i = inspections.findIndex(x => x.id === r.id); inspections[i] = { ...inspections[i], ...r }; };
+        as('boss', BOSS);
+        window.prompt = () => 'Yang rusak Camera AI, bukan Rotary Lamp';
+        reviseInspection(rep.id);
+        merge(last('ins'));
+        t('B9 dibuka lagi: stempel lama masih ada (merge)', [inspections.find(x => x.id === rep.id).approval, !!inspections.find(x => x.id === rep.id).appliedAt], ['revision', true]);
+        as('tech', TECH);
+        editInspection(rep.id);
+        await tick(50);
+        setInspectionResult('rotaryLamp', 'good'); setInspectionResult('cameraAi', 'bad');
+        document.getElementById('insNote_cameraAi').value = 'Kamera retak';
+        saveInspection(null);
+        const fixed = last('ins');
+        t('B9 teknisi mengirim ulang tanpa menyentuh stempel', [fixed.id, fixed.approval, 'appliedAt' in fixed, 'appliedKeys' in fixed], [rep.id, 'pending', false, false]);
+        merge(fixed);
+        as('boss', BOSS);
+        toasts.length = 0;
+        const nd2 = calls.filter(c => c[0] === 'damage').length;
+        approveInspection(rep.id);
+        await tick(100);
+        const newDmg = calls.filter(c => c[0] === 'damage').slice(nd2).map(c => c[1]);
+        t('B9 persetujuan ulang: temuan baru masuk ke Kerusakan, yang lama tidak dobel',
+          [...new Set(newDmg.map(d => d.component))], ['Camera AI']);
+        const dmg2 = newDmg[newDmg.length - 1];
+        t('B9 komponen baru di-set Breakdown', globalData.find(u => u.id === 'h1').cameraAi, 'Breakdown');
+        const stamp2 = calls.filter(c => c[0] === 'ins').map(c => c[1]).reverse().find(r => r.id === rep.id);
+        t('B9 stempel ditambah, bukan diganti', [stamp2.appliedKeys, stamp2.appliedDamageIds], [['rotaryLamp', 'cameraAi'], [dmg.id, dmg2.id]]);
+        t('B9 catatan lama untuk komponen yang kini Good disebut', toasts.some(m => /Still open in Damage.*Rotary Lamp/.test(m)), true);
+        renderInspectionReports();
+        const b9row = [...document.querySelectorAll('#insReportBody tr')].find(tr => tr.textContent.includes('EX-h1'));
+        t('B9 tidak ada lagi tombol To Damage, tertulis Logged in Damage', [!!b9row.querySelector('.ins-apply'), b9row.textContent.includes('Logged in Damage')], [false, true]);
+        // Approved yet again with the same findings: nothing new is logged.
+        merge({ ...stamp2, approval: 'pending', approvedAt: 0, submittedByUid: 'tech' });
+        const nd3 = calls.filter(c => c[0] === 'damage').length;
+        approveInspection(rep.id);
+        await tick(100);
+        t('B9 disetujui lagi tanpa perubahan: tidak ada catatan dobel', calls.filter(c => c[0] === 'damage').length, nd3);
+        // A stamp from before 2.45.0 names no components.
+        const legacy = { id: 'lg', unitId: 'h2', date: '2026-09-01', approval: 'approved', createdByUid: 'x', results: { cameraAi: 'bad', rotaryLamp: 'bad' }, appliedDamageIds: ['dl1'] };
+        globalDamages.push({ id: 'dl1', component: 'Rotary Lamp', fromInspection: 'lg', unitId: 'h2', resolved: false });
+        t('B9 stempel lama, belum disetujui ulang: dianggap lengkap', inspectionNeedsApply({ ...legacy, approvedAt: 100, appliedAt: 200 }), false);
+        t('B9 stempel lama, disetujui ulang: hanya yang belum ada catatannya',
+          inspectionUnappliedBits({ ...legacy, approvedAt: 300, appliedAt: 200 }).map(c => c.key), ['cameraAi']);
+        t('B9 stempel yang tidak sampai ke server: catatan dari laporan ini tetap dihitung',
+          inspectionUnappliedBits({ ...legacy, appliedDamageIds: [], approvedAt: 300 }).map(c => c.key), ['cameraAi']);
+        globalDamages = globalDamages.filter(d => d.id !== 'dl1');
 
         // =============== Kotak Keputusan ===============
         as('owner', { role: 'owner' });

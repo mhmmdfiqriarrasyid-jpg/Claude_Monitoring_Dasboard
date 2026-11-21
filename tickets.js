@@ -50,7 +50,12 @@ function tkPrioChip(p) { return `<span class="tk-pchip tk-pchip--${escapeHtml(p 
 
 // ---- Snapshots ----
 function applyTicketsSnapshot(list) {
-    tickets = (list || []).slice().sort((a, b) => (b.reportedAt || 0) - (a.reportedAt || 0));
+    // 2.45.0: any active account files tickets and the rules check only a few fields — each is read
+    // through DailyCore.tidy (lists as lists of records, text as text), so one odd ticket (units: 5,
+    // events: [null]) no longer stops the Tickets page and the reports for everyone.
+    const l = Array.isArray(list) ? list : [];
+    tickets = (window.DailyCore && DailyCore.tidy ? l.map(t => DailyCore.tidy(t, DailyCore.SHAPES.ticket)).filter(Boolean) : l.filter(t => t && typeof t === 'object'))
+        .sort((a, b) => (b.reportedAt || 0) - (a.reportedAt || 0));
     updateTicketBadge();
     if (currentView === 'tickets') renderTicketsView();
     const modal = document.getElementById('tkDetailModal');
@@ -101,7 +106,12 @@ function _tkPush(rec, msg, existing) {
     if (i >= 0) tickets[i] = rec; else tickets.unshift(rec);
     const onErr = err => {
         console.error('[tickets] save failed:', err);
-        showToast(err && err.code === 'permission-denied' ? 'Tickets need the new firestore.rules — publish them first' : 'Failed to save the ticket', 'error');
+        const denied = err && err.code === 'permission-denied';
+        // 2.45.0: a reporter's write made on an older copy of the ticket (the OT team changed it
+        // meanwhile) is refused by the rules — that is no reason to look for unpublished rules.
+        showToast(!denied ? 'Failed to save the ticket'
+            : canHandleTickets() ? 'Tickets need the new firestore.rules — publish them first'
+            : 'The ticket changed meanwhile — open it again and retry', 'error');
     };
     if (canHandleTickets()) {
         cloudWrite({ action: existing ? 'update' : 'create', unitId: (rec.units || [])[0]?.id || '', unitName: `[Ticket] ${rec.no}`, field: rec.title,
@@ -150,7 +160,8 @@ function renderTicketsView() {
     const tile = (n, label, sub2, tone) => `<div class="wh-tile pr-tile--${tone}"><span class="wh-tile__label">${label}</span><span class="wh-tile__value">${n}</span><span class="wh-tile__sub">${sub2}</span></div>`;
     const active = tickets.filter(t => t.status !== 'closed');
     const week = Date.now() - 7 * 86400000;
-    const solved = tickets.filter(t => t.resolvedAt && t.resolvedAt >= now - 30 * 86400000);
+    // 2.45.0: only tickets still resolved or closed (a reopened one may hold an old resolvedAt).
+    const solved = tickets.filter(t => TK_DONE.includes(t.status) && t.resolvedAt && t.resolvedAt >= now - 30 * 86400000);
     const avg = solved.length ? solved.reduce((n, t) => n + (t.resolvedAt - (t.reportedAt || t.resolvedAt)), 0) / solved.length : 0;
     const tiles = document.getElementById('tkTiles');
     if (tiles) tiles.innerHTML = all
@@ -400,7 +411,7 @@ function setTicketStatus(id, status) {
     if (status === 'open' && TK_DONE.includes(t.status)) {
         const r = prompt('Why is it reopened?', '');
         if (r == null) return;
-        text = r.trim();
+        text = r.trim().slice(0, 2000);   // 2.45.0: the length firestore.rules takes from a reporter
     }
     const now = Date.now();
     let next = { ...t, status };
@@ -408,8 +419,10 @@ function setTicketStatus(id, status) {
     if (status === 'resolved') { next.resolvedAt = now; next.resolution = text; }
     if (status === 'closed') next.closedAt = now;
     if (status === 'open' && TK_DONE.includes(t.status)) { next.resolvedAt = null; next.closedAt = null; if (handle) next.reportedAt = t.reportedAt; }
-    // A reporter's write may touch only events, status, closedAt and updatedAt (firestore.rules).
-    if (!handle) next = { ...t, status, closedAt: status === 'closed' ? now : (t.closedAt || null) };
+    // A reporter's write may touch only events (one of its own added), status, closedAt,
+    // resolvedAt, updatedAt and lastActorUid (firestore.rules).
+    // 2.45.0: "Not fixed — reopen" clears resolvedAt too — it kept counting as resolved.
+    if (!handle) next = { ...t, status, closedAt: status === 'closed' ? now : null, ...(status === 'open' ? { resolvedAt: null } : {}) };
     const type = status === 'open' ? 'reopen' : status;
     next = _tkEvent(next, type, text ? { text } : {});
     _tkPush(next, `${TK_STATUSES[status].label}`, t);
@@ -441,11 +454,11 @@ function ticketChoicesForJob(currentId) {
 // The ticket of a job: its own ticketId, or (jobs logged on 2.30.0) the ticket that lists it.
 function ticketOfJob(j) {
     if (!j || typeof tickets === 'undefined') return null;
-    return (j.ticketId && tickets.find(t => t.id === j.ticketId)) || tickets.find(t => (t.jobIds || []).includes(j.id)) || null;
+    return (j.ticketId && tickets.find(t => t.id === j.ticketId)) || tickets.find(t => Array.isArray(t.jobIds) && t.jobIds.includes(j.id)) || null;
 }
 function ticketJobs(t) {
     if (typeof otJobs === 'undefined') return [];
-    return otJobs.filter(j => j.ticketId === t.id || (!j.ticketId && (t.jobIds || []).includes(j.id)));
+    return otJobs.filter(j => j.ticketId === t.id || (!j.ticketId && Array.isArray(t.jobIds) && t.jobIds.includes(j.id)));
 }
 // Called by saveJob (projects.js) after a job is saved: link it to its ticket
 // (and off the one it had before).

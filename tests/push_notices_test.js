@@ -25,6 +25,16 @@ t('isi: kerusakan tanpa breakdown', p.composePush('damage', 'd2', { unitName: 'X
 t('isi: daily report', p.composePush('workLog', 'w1', { memberName: 'Andi', date: '2026-11-03' }),
   { title: 'Daily Report to check', body: 'Andi · 2026-11-03', url: './?action=inbox', tag: 'wl-w1' });
 t('isi: teks panjang dipotong', p.composePush('damage', 'd3', { unitName: 'X', damageType: 'M', description: 'a'.repeat(400) }).body.length, 160);
+// 2.45.0: tokens — an account's newest 5, the rest handed back to be removed; each token once; batches of 500.
+const tk = p.tokensByAccount([{ id: 'a1', uid: 'a', createdAt: 1 }, ...Array.from({ length: 7 }, (_, i) => ({ id: `b${i}`, uid: 'b', createdAt: i })), { id: 'x', uid: '' }, null, { id: 5, uid: 'c' }, { id: 'c1', uid: 'c', createdAt: 'x' }]);
+t('token: 5 terbaru per akun, sisanya dikembalikan untuk dihapus, data aneh dilewati', [[...tk.byUid.entries()], tk.extra], [[['a', ['a1']], ['b', ['b6', 'b5', 'b4', 'b3', 'b2']], ['c', ['c1']]], ['b1', 'b0']]);
+const many = new Map(Array.from({ length: 130 }, (_, i) => [`u${i}`, [`t${i}a`, `t${i}b`, `t${i}c`, `t${i}d`, `t${i}e`]]));
+many.set('dup', ['t0a']);
+const bs = p.pushBatches([...many.keys(), 'u0', 'none'], many);
+t('token: batch paling banyak 500, tiap token sekali', [bs.map(b => b.length), new Set(bs.flat()).size], [[500, 150], 650]);
+t('token: tanpa penerima = tanpa batch', p.pushBatches([], many), []);
+t('isi ticket: unit bukan daftar / berisi null tidak membuat gagal', [p.composePush('ticketNew', 'k', { title: 'X', category: 'C', units: 5 }).body, p.composePush('ticketOverdue', 'k', { title: 'X', units: [null, { name: 'GGTR' }] }).body],
+  ['C — ', ' · Medium priority · no PIC yet · GGTR']);
 let pass = 0;
 T.forEach(x => { if (x.pass) pass++; console.log(`${x.pass ? 'PASS' : 'FAIL'}  ${x.name}${x.pass ? '' : `\n        dapat=${JSON.stringify(x.g)} harap=${JSON.stringify(x.w)}`}`); });
 console.log(`\n${pass}/${T.length} lulus`);

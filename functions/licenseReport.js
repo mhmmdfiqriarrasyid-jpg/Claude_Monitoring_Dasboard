@@ -143,4 +143,29 @@ ${low.length ? `<h3 style="margin:18px 0 6px;font-size:15px">Low license stock</
     return { subject: `License Alert: ${report.soonCount} expiring soon`, text, html, report, low };
 }
 
-module.exports = { buildAlertList, lowStockList, composeEmail, getExpiryStatus };
+// ---- The License Alert sent by hand (2.45.0) ----
+// Anyone who may see License Stock can press "Email Report", and every press mails all the
+// recipients through the one Gmail account every notice shares (its daily quota). So it is
+// limited, in mailState/licenseManual (index.js checks and records in one transaction):
+// one send every 10 minutes for everybody, at most 3 a day per account and 10 a day in all.
+// The owner is not held (they set the recipients and test them) but is counted, so a send
+// by the owner starts the 10 minutes for the others and uses one of the day's 10.
+const MANUAL_LIMIT = { gapMin: 10, perAccount: 3, perDay: 10 };
+// state: what mailState/licenseManual holds ({ day, total, byUid, lastAt }) or null; now: ms.
+// Returns { ok: true, next } (the state to save) or { ok: false, message } (for the caller).
+function manualSendCheck(state, uid, now, owner) {
+    const d = new Date(now), p = n => String(n).padStart(2, '0');
+    const day = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;   // WIT on the server
+    const s = state && state.day === day ? state : { day, total: 0, byUid: {} };
+    const byUid = s.byUid && typeof s.byUid === 'object' ? s.byUid : {};
+    const mine = Number(byUid[uid]) || 0, total = Number(s.total) || 0, last = Number(state && state.lastAt) || 0;
+    if (!owner) {
+        const wait = Math.ceil((last + MANUAL_LIMIT.gapMin * 60000 - now) / 60000);
+        if (wait > 0) return { ok: false, message: `The License Alert was sent less than ${MANUAL_LIMIT.gapMin} minutes ago — try again in ${wait} min` };
+        if (mine >= MANUAL_LIMIT.perAccount) return { ok: false, message: `You have sent the License Alert ${mine} times today — try again tomorrow` };
+        if (total >= MANUAL_LIMIT.perDay) return { ok: false, message: `The License Alert has been sent ${total} times today — try again tomorrow` };
+    }
+    return { ok: true, next: { day, total: total + 1, byUid: Object.assign({}, byUid, { [uid]: mine + 1 }), lastAt: now } };
+}
+
+module.exports = { buildAlertList, lowStockList, composeEmail, getExpiryStatus, manualSendCheck, MANUAL_LIMIT };

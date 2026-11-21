@@ -18,6 +18,59 @@
     const PJ_CLOSED = ['done', 'cancelled'];
     const PHOTO_MAX = 6;
 
+    // 2.45.0: records come as users wrote them, and the rules check only a few of their fields.
+    // A list is read as a list of records (objects) or of ids (strings), a text as text, and a
+    // label only from the table's own keys: one odd ticket, report, job or project used to stop
+    // the manager's email and the Reports page for everyone.
+    const isRec = x => !!x && typeof x === 'object' && !Array.isArray(x);
+    const objs = v => Array.isArray(v) ? v.filter(isRec) : [];
+    const idList = v => Array.isArray(v) ? v.filter(x => typeof x === 'string' && x) : [];
+    const txt = v => typeof v === 'string' ? v : typeof v === 'number' && isFinite(v) ? String(v) : '';
+    const lab = (map, k) => typeof k === 'string' && Object.prototype.hasOwnProperty.call(map, k) ? map[k] : undefined;
+    // What each kind of record holds that users write freely: 'text', 'ids' (a list of ids), 'num' (a
+    // finite number; anything else but null is left out — a map with a toString key made every sort
+    // and sum throw), a shape for each record of a list, or { $obj: shape } for one object. The browser reads every ticket,
+    // project and job through it (tickets.js, projects.js), and this file reads its input through it.
+    const SHAPES = {
+        ticket: { no: 'text', title: 'text', category: 'text', description: 'text', location: 'text', reportedBy: 'text', assigneeName: 'text', resolution: 'text', company: 'text',
+            reportedAt: 'num', updatedAt: 'num', resolvedAt: 'num', closedAt: 'num', startedAt: 'num',
+            events: { at: 'num', type: 'text', by: 'text', text: 'text' }, units: { name: 'text', sn: 'text' }, photoIds: 'ids', jobIds: 'ids' },
+        project: { name: 'text', company: 'text', pic: 'text', description: 'text', type: 'text', start: 'text', end: 'text',
+            updatedAt: 'num', doneAt: 'num', createdAt: 'num',
+            updates: { at: 'num', date: 'text', text: 'text', progress: 'text', blocker: 'text', by: 'text', photoIds: 'ids' }, materials: { name: 'text', uom: 'text', note: 'text' },
+            departments: { name: 'text', pic: 'text' }, prIds: 'ids',
+            target: { $obj: { what: 'text', count: 'num', done: 'num', units: { name: 'text', sn: 'text' }, milestones: { label: 'text', weight: 'num' } } } },
+        job: { date: 'text', category: 'text', description: 'text', issue: 'text', requestedBy: 'text', doneBy: 'text', company: 'text', implement: 'text',
+            hours: 'num', updatedAt: 'num', createdAt: 'num',
+            units: { name: 'text', sn: 'text' }, files: { name: 'text', type: 'text', path: 'text' }, photoIds: 'ids' },
+        workLog: { date: 'text', memberName: 'text', task: 'text', issue: 'text', place: 'text', paddock: 'text', start: 'text', end: 'text',
+            createdAt: 'num', updatedAt: 'num', submittedAt: 'num', photoCount: 'num',
+            jobs: { paddock: 'text', jobType: 'text', units: { name: 'text', sn: 'text' } }, units: { name: 'text', sn: 'text' } }
+    };
+    // The record with those fields cleaned — only the fields it has; the same object when nothing changed.
+    function tidy(r, shape) {
+        if (!isRec(r)) return null;
+        let out = r;
+        Object.keys(shape || {}).forEach(k => {
+            if (!Object.prototype.hasOwnProperty.call(r, k)) return;
+            const s = shape[k], v = r[k];
+            if (s === 'num') {
+                if (v === null || (typeof v === 'number' && isFinite(v))) return;
+                if (out === r) out = Object.assign({}, r);
+                delete out[k];
+                return;
+            }
+            let nv;
+            if (s === 'text') nv = typeof v === 'string' ? v : txt(v);
+            else if (s === 'ids') nv = Array.isArray(v) && v.every(x => typeof x === 'string' && x) ? v : idList(v);
+            else if (s.$obj) nv = isRec(v) ? tidy(v, s.$obj) : {};
+            else { const list = objs(v).map(x => tidy(x, s)); nv = Array.isArray(v) && list.length === v.length && list.every((x, i) => x === v[i]) ? v : list; }
+            if (nv !== v) { if (out === r) out = Object.assign({}, r); out[k] = nv; }
+        });
+        return out;
+    }
+    const tidyAll = (list, shape) => objs(list).map(r => tidy(r, shape));
+
     const pad = n => String(n).padStart(2, '0');
     const isoOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     const dayOf = iso => new Date(iso + 'T00:00:00');
@@ -37,9 +90,10 @@
     const hhmm = v => { const x = /^(\d{1,2}):(\d{2})/.exec(String(v || '')); return x ? (+x[1]) * 60 + (+x[2]) : null; };
     function minutes(l) { const s = hhmm(l && l.start), e = hhmm(l && l.end); if (s == null || e == null) return 0; const d = e - s; return d < 0 ? d + 1440 : d; }
     const submitted = r => (r && r.approval) !== 'draft';
-    function logUnits(l) { if (Array.isArray(l.units) && l.units.length) return l.units; return l.unitId ? [{ id: l.unitId, name: l.unitName || '', sn: l.sn || '' }] : []; }
+    function logUnits(l) { const us = objs(l.units); if (us.length) return us; return l.unitId ? [{ id: l.unitId, name: txt(l.unitName), sn: txt(l.sn) }] : []; }
     function logJobs(l) {
-        if (Array.isArray(l.jobs) && l.jobs.length) return l.jobs;
+        const js = objs(l.jobs);
+        if (js.length) return js;
         const u = logUnits(l);
         return l.paddock || u.length ? [{ paddock: l.paddock || '', jobType: '', units: u }] : [];
     }
@@ -58,23 +112,23 @@
     function progressPct(p) {
         const t = (p && p.target) || {};
         if (t.mode === 'count') { const tot = Math.max(0, Number(t.count) || 0), d = Math.min(tot, Math.max(0, Number(t.done) || 0)); return tot ? Math.round(100 * d / tot) : 0; }
-        if (t.mode === 'milestones') { const ms = t.milestones || [], all = ms.reduce((n, m) => n + Math.max(0, Number(m.weight) || 0), 0);
+        if (t.mode === 'milestones') { const ms = objs(t.milestones), all = ms.reduce((n, m) => n + Math.max(0, Number(m.weight) || 0), 0);
             return all ? Math.round(100 * ms.filter(m => m.done).reduce((n, m) => n + Math.max(0, Number(m.weight) || 0), 0) / all) : 0; }
-        const us = t.units || []; return us.length ? Math.round(100 * us.filter(u => u.done).length / us.length) : 0;
+        const us = objs(t.units); return us.length ? Math.round(100 * us.filter(u => u.done).length / us.length) : 0;
     }
 
     // ---- Shared by every report: daily, weekly team, weekly manager (2.40.0) ----
     // Two running projects with the same name are told apart by their PT: "Depth Sensor (Phase 2) · GPA".
     function projectNamer(list) {
         const n = new Map();
-        (list || []).filter(p => !PJ_CLOSED.includes(p.status)).forEach(p => n.set(p.name || '', (n.get(p.name || '') || 0) + 1));
-        return p => (p && p.name || '') + (p && n.get(p.name || '') > 1 && p.company ? ' · ' + pt(p.company) : '');
+        objs(list).filter(p => !PJ_CLOSED.includes(p.status)).forEach(p => n.set(txt(p.name), (n.get(txt(p.name)) || 0) + 1));
+        return p => txt(p && p.name) + (p && n.get(txt(p.name)) > 1 && p.company ? ' · ' + pt(p.company) : '');
     }
     const typeLabel = s => String(s || '').replace(/^Other\s*\/\s*/i, '');
     // What a project's updates between `from` and `to` (dates) really changed. A box ticked and
     // unticked in the same period cancels out; progress runs from the first update to the last.
     function summarizeUpdates(p, from, to) {
-        const ups = ((p && p.updates) || []).filter(u => u && u.date >= from && u.date <= to)
+        const ups = objs(p && p.updates).filter(u => u.date >= from && u.date <= to)
             .sort((a, b) => String(a.date).localeCompare(String(b.date)) || (a.at || 0) - (b.at || 0));
         if (!ups.length) return null;
         const items = new Map(), notes = [];
@@ -90,7 +144,7 @@
         const pr = ups.map(u => /(\d+)%\s*→\s*(\d+)%/.exec(u.progress || '')).filter(Boolean);
         const start = pr.length ? +pr[0][1] : null, end = pr.length ? +pr[pr.length - 1][2] : null;
         const texts = notes.filter(x => x.text).map(x => x.text), blockers = notes.map(x => x.blocker).filter(Boolean);
-        return { start, end, done, undone, texts, blockers, by: [...new Set(ups.map(u => u.by).filter(Boolean))],
+        return { start, end, done, undone, texts, blockers, by: [...new Set(ups.map(u => txt(u.by)).filter(Boolean))],
             empty: !texts.length && !blockers.length && !done.length && !undone.length && (start == null || start === end) };
     }
     // A project's period as one entry of a list card (null when nothing really changed).
@@ -107,10 +161,10 @@
     // One job (an otJobs record) in plain words, the same in every report.
     function jobInfo(j, ctx) {
         ctx = ctx || {};
-        const tk = ctx.tickets || [], pjs = ctx.projects || [], un = ctx.unitName || (u => (u && (u.name || u.sn)) || ''), nm = ctx.name || (p => p.name || '');
-        const t = (j.ticketId && tk.find(x => x.id === j.ticketId)) || tk.find(x => (x.jobIds || []).includes(j.id)), p = j.projectId && pjs.find(x => x.id === j.projectId);
-        return { date: j.date || '', category: j.category || 'Other', what: oneLine(j.description), units: (j.units || []).map(un).filter(Boolean).join(', '),
-            status: JOB_STATUS[j.status] || 'Done', done: (j.status || 'done') === 'done', hours: Number(j.hours) || 0, ticket: t ? t.no : '', project: p ? nm(p) : '',
+        const tk = objs(ctx.tickets), pjs = objs(ctx.projects), un = ctx.unitName || (u => (u && (u.name || u.sn)) || ''), nm = ctx.name || (p => txt(p.name));
+        const t = (j.ticketId && tk.find(x => x.id === j.ticketId)) || tk.find(x => idList(x.jobIds).includes(j.id)), p = j.projectId && pjs.find(x => x.id === j.projectId);
+        return { date: txt(j.date), category: txt(j.category) || 'Other', what: oneLine(j.description), units: objs(j.units).map(un).map(txt).filter(Boolean).join(', '),
+            status: lab(JOB_STATUS, j.status) || 'Done', done: (j.status || 'done') === 'done', hours: Number(j.hours) || 0, ticket: t ? txt(t.no) : '', project: p ? nm(p) : '',
             issue: oneLine(j.issue), by: String(j.doneBy || '').trim(), requestedBy: String(j.requestedBy || '').trim(), implement: String(j.implement || '').trim() };
     }
     const WD3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -188,108 +242,126 @@
         const I = input || {}, day = dayInfo(I.date || yesterday(I.now));
         const now = I.now == null ? Date.now() : I.now;
         const date = day.date, inDay = ms => typeof ms === 'number' && ms >= day.start && ms < day.end;
-        const units = I.units || [], nameOf = id => { const u = units.find(x => x.id === id); return u ? (u.name || u.sn || '') : ''; };
-        const unitName = u => (u && (nameOf(u.id) || u.name || u.sn)) || '';
-        const members = (I.members || []).filter(m => m.active !== false).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
-        const shifts = I.shifts || [], leaves = I.leaves || [];
-        const shiftOf = id => { const s = shifts.find(x => x.memberId === id && x.date === date); return s ? s.shift || '' : ''; };
+        // 2.45.0: a part that still cannot be built is left out and named (failed), not the whole report.
+        const failed = [], errors = [];
+        const part = (name, fn, empty) => { try { return fn(); } catch (e) { failed.push(name); errors.push(`${name}: ${String(e && e.message || e).slice(0, 200)}`); return empty; } };
+        const units = objs(I.units), nameOf = id => { const u = units.find(x => x.id === id); return u ? txt(u.name) || txt(u.sn) : ''; };
+        const unitName = u => (u && (nameOf(u.id) || txt(u.name) || txt(u.sn))) || '';
+        const members = objs(I.members).filter(m => m.active !== false).slice().sort((a, b) => txt(a.name).localeCompare(txt(b.name)));
+        const shifts = objs(I.shifts), leaves = objs(I.leaves);
+        const shiftOf = id => { const s = shifts.find(x => x.memberId === id && x.date === date); return s ? txt(s.shift) : ''; };
         const onLeave = id => leaves.some(r => r.memberId === id && r.approval === 'approved' && r.dateFrom && date >= r.dateFrom && date <= (r.dateTo || r.dateFrom));
-        const logs = (I.workLogs || []).filter(l => l.date === date && submitted(l));
+        const logs = tidyAll(I.workLogs, SHAPES.workLog).filter(l => l.date === date && submitted(l));
         const anyShift = members.some(m => shiftOf(m.id));
         const SHIFT = { pagi: 'Morning', siang: 'Afternoon', malam: 'Night', libur: 'Off' };
+        const jobLine = j => [txt(j.paddock), txt(j.jobType)].filter(Boolean).join(' · ');
 
         // ---- Daily Report ----
-        let expected = 0, filed = 0;
-        const rows = members.map(m => {
-            const mine = logs.filter(l => l.memberId === m.id);
-            const sh = shiftOf(m.id);
-            let state;
-            if (mine.length) { state = 'ok'; expected++; filed++; }
-            else if (onLeave(m.id)) state = 'leave';
-            else if (anyShift && (!sh || sh === 'libur')) state = 'off';
-            else { state = 'miss'; expected++; }
-            const jobs = mine.flatMap(l => l.place === 'office' ? [{ paddock: 'Office', jobType: clip(l.task, 160), units: [] }] : logJobs(l));
-            return { id: m.id, name: m.name || '', pt: pt(m.company), shift: SHIFT[sh] || '', state,
-                hours: mine.reduce((n, l) => n + minutes(l), 0) / 60,
-                work: [...new Set(jobs.map(j => [j.paddock, j.jobType].filter(Boolean).join(' · ')).filter(Boolean))].join('; '),
-                units: [...new Set(jobs.flatMap(j => (j.units || []).map(unitName)).filter(Boolean))].join(', ') };
-        });
-        // A report from someone not (or no longer) on the member list still counts as work done.
-        const byType = new Map(), paddocks = new Set(), unitSet = new Set();
-        logs.forEach(l => {
-            const jobs = l.place === 'office' ? [] : logJobs(l).filter(j => j.paddock || j.jobType);
-            const share = jobs.length ? minutes(l) / 60 / jobs.length : 0;
-            jobs.forEach(j => { const t = j.jobType || 'Other'; byType.set(t, (byType.get(t) || 0) + share);
-                if (j.paddock) paddocks.add(j.paddock); (j.units || []).forEach(u => { const k = unitName(u); if (k) unitSet.add(k); }); });
-        });
-        const team = { members: rows, expected, filed, pct: expected ? Math.round(1000 * filed / expected) / 10 : null,
-            missed: rows.filter(r => r.state === 'miss').map(r => r.name), leave: rows.filter(r => r.state === 'leave').map(r => r.name),
-            hours: logs.reduce((n, l) => n + minutes(l), 0) / 60, reports: logs.length, office: logs.filter(l => l.place === 'office').length,
-            paddocks: paddocks.size, units: unitSet.size, jobTypes: [...byType.entries()].sort((a, b) => b[1] - a[1]),
-            issues: logs.filter(l => String(l.issue || '').trim()).map(l => ({ who: l.memberName || '', text: String(l.issue).trim() })) };
+        const team = part('Daily Report summary', () => {
+            let expected = 0, filed = 0;
+            const rows = members.map(m => {
+                const mine = logs.filter(l => l.memberId === m.id);
+                const sh = shiftOf(m.id);
+                let state;
+                if (mine.length) { state = 'ok'; expected++; filed++; }
+                else if (onLeave(m.id)) state = 'leave';
+                else if (anyShift && (!sh || sh === 'libur')) state = 'off';
+                else { state = 'miss'; expected++; }
+                const jobs = mine.flatMap(l => l.place === 'office' ? [{ paddock: 'Office', jobType: clip(l.task, 160), units: [] }] : logJobs(l));
+                return { id: m.id, name: txt(m.name), pt: pt(m.company), shift: lab(SHIFT, sh) || '', state,
+                    hours: mine.reduce((n, l) => n + minutes(l), 0) / 60,
+                    work: [...new Set(jobs.map(jobLine).filter(Boolean))].join('; '),
+                    units: [...new Set(jobs.flatMap(j => objs(j.units).map(unitName)).filter(Boolean))].join(', ') };
+            });
+            // A report from someone not (or no longer) on the member list still counts as work done.
+            const byType = new Map(), paddocks = new Set(), unitSet = new Set();
+            logs.forEach(l => {
+                const jobs = l.place === 'office' ? [] : logJobs(l).filter(j => txt(j.paddock) || txt(j.jobType));
+                const share = jobs.length ? minutes(l) / 60 / jobs.length : 0;
+                jobs.forEach(j => { const t = txt(j.jobType) || 'Other'; byType.set(t, (byType.get(t) || 0) + share);
+                    if (txt(j.paddock)) paddocks.add(txt(j.paddock)); objs(j.units).forEach(u => { const k = unitName(u); if (k) unitSet.add(k); }); });
+            });
+            return { members: rows, expected, filed, pct: expected ? Math.round(1000 * filed / expected) / 10 : null,
+                missed: rows.filter(r => r.state === 'miss').map(r => r.name), leave: rows.filter(r => r.state === 'leave').map(r => r.name),
+                hours: logs.reduce((n, l) => n + minutes(l), 0) / 60, reports: logs.length, office: logs.filter(l => l.place === 'office').length,
+                paddocks: paddocks.size, units: unitSet.size, jobTypes: [...byType.entries()].sort((a, b) => b[1] - a[1]),
+                issues: logs.filter(l => txt(l.issue).trim()).map(l => ({ who: txt(l.memberName), text: txt(l.issue).trim() })) };
+        }, { members: [], expected: 0, filed: 0, pct: null, missed: [], leave: [], hours: 0, reports: logs.length, office: 0, paddocks: 0, units: 0, jobTypes: [], issues: [] });
 
         // ---- Issues & damage ----
-        const broken = u => !!u && String(u.status || '').trim().toLowerCase() === 'breakdown';
-        const dmg = I.damages || [];
-        const damage = dmg.filter(d => d.date === date).map(d => ({ unit: d.unitName || nameOf(d.unitId) || d.sn || '', pt: pt(d.site), part: String(d.component || ''), type: String(d.damageType || ''),
-            what: d.description || '', resolved: !!d.resolved, breakdown: !d.resolved && broken(units.find(u => u.id === d.unitId)) }));
-        const fixed = dmg.filter(d => d.resolved && d.resolvedAt === date).length;
-        const tk = I.tickets || [];
-        const evAt = (t, type) => (t.events || []).filter(e => e.type === type).map(e => e.at).sort((a, b) => b - a)[0];
-        // The status the ticket had at the end of that day, not today's: "Open → resolved Wed 4".
-        const statusThen = t => { const r = t.resolvedAt || evAt(t, 'resolved');
-            if (r && r < day.end) return TK_STATUS[t.status] && TK_DONE.includes(t.status) ? TK_STATUS[t.status] : 'Resolved';
-            if (TK_DONE.includes(t.status)) return `Open → resolved ${r ? dayName(isoOf(new Date(r))) : 'later'}`;
-            return TK_STATUS[t.status] || t.status || ''; };
-        const tkRow = t => ({ no: t.no || '', title: t.title || '', prio: PRIO_LABEL[t.priority] || '', priority: t.priority || 'medium', status: statusThen(t),
-            pic: String(t.assigneeName || ''), units: (t.units || []).map(unitName).filter(Boolean).join(', '), category: String(t.category || '') });
-        const openNow = tk.filter(t => !TK_DONE.includes(t.status));
-        const tickets = { opened: tk.filter(t => inDay(t.reportedAt)).map(tkRow), resolved: tk.filter(t => inDay(t.resolvedAt || evAt(t, 'resolved'))).map(tkRow),
-            open: openNow.length, overdue: openNow.filter(t => now > (t.reportedAt || 0) + (PRIO_HOURS[t.priority] || 24) * 3600000).length };
-        const breakdownNow = units.filter(broken).length;
+        const broken = u => !!u && txt(u.status).trim().toLowerCase() === 'breakdown';
+        const { damage, fixed, breakdownNow } = part('Damage', () => {
+            const dmg = objs(I.damages);
+            return { damage: dmg.filter(d => d.date === date).map(d => ({ unit: txt(d.unitName) || nameOf(d.unitId) || txt(d.sn), pt: pt(d.site), part: txt(d.component), type: txt(d.damageType),
+                what: txt(d.description), resolved: !!d.resolved, breakdown: !d.resolved && broken(units.find(u => u.id === d.unitId)) })),
+                fixed: dmg.filter(d => d.resolved && d.resolvedAt === date).length, breakdownNow: units.filter(broken).length };
+        }, { damage: [], fixed: 0, breakdownNow: 0 });
+        const tk = tidyAll(I.tickets, SHAPES.ticket);
+        const tickets = part('Tickets', () => {
+            const evAt = (t, type) => objs(t.events).filter(e => e.type === type).map(e => e.at).filter(n => typeof n === 'number').sort((a, b) => b - a)[0];
+            const resAt = t => (typeof t.resolvedAt === 'number' && t.resolvedAt) || evAt(t, 'resolved');
+            // The status the ticket had at the end of that day, not today's: "Open → resolved Wed 4".
+            const statusThen = t => { const r = resAt(t);
+                if (r && r < day.end) return lab(TK_STATUS, t.status) && TK_DONE.includes(t.status) ? TK_STATUS[t.status] : 'Resolved';
+                if (TK_DONE.includes(t.status)) return `Open → resolved ${r ? dayName(isoOf(new Date(r))) : 'later'}`;
+                return lab(TK_STATUS, t.status) || txt(t.status); };
+            const tkRow = t => ({ no: txt(t.no), title: txt(t.title), prio: lab(PRIO_LABEL, t.priority) || '', priority: txt(t.priority) || 'medium', status: statusThen(t),
+                pic: txt(t.assigneeName), units: objs(t.units).map(unitName).filter(Boolean).join(', '), category: txt(t.category) });
+            const openNow = tk.filter(t => !TK_DONE.includes(t.status));
+            return { opened: tk.filter(t => inDay(t.reportedAt)).map(tkRow), resolved: tk.filter(t => inDay(resAt(t))).map(tkRow),
+                open: openNow.length, overdue: openNow.filter(t => now > (Number(t.reportedAt) || 0) + (lab(PRIO_HOURS, t.priority) || 24) * 3600000).length };
+        }, { opened: [], resolved: [], open: 0, overdue: 0 });
 
         // ---- OT jobs & project progress ----
-        const pjs = I.projects || [], namer = projectNamer(pjs);
-        const jobs = (I.jobs || []).filter(j => j.date === date).map(j => jobInfo(j, { tickets: tk, projects: pjs, unitName, name: namer }));
+        const pjs = tidyAll(I.projects, SHAPES.project), namer = projectNamer(pjs), dayJobs = tidyAll(I.jobs, SHAPES.job).filter(j => j.date === date);
+        const jobs = part('OT jobs', () => dayJobs.map(j => jobInfo(j, { tickets: tk, projects: pjs, unitName, name: namer })), []);
         // 2.40.0: one entry per project — what really changed that day (see summarizeUpdates).
-        const updates = pjs.map(p => ({ project: namer(p), pct: progressPct(p), s: summarizeUpdates(p, date, date) })).filter(x => x.s && !x.s.empty);
-        const running = pjs.filter(p => !PJ_CLOSED.includes(p.status)).map(p => { const u = updates.find(x => x.project === namer(p));
-            return { name: namer(p), pct: u && u.s.end != null ? u.s.end : progressPct(p), delta: u && u.s.start != null && u.s.end != null ? u.s.end - u.s.start : 0, today: !!u, end: p.end || '' }; })
-            .sort((a, b) => (b.today - a.today) || a.name.localeCompare(b.name));
+        const { updates, running } = part('Project progress', () => {
+            const updates = pjs.map(p => ({ project: namer(p), pct: progressPct(p), s: summarizeUpdates(p, date, date) })).filter(x => x.s && !x.s.empty);
+            const running = pjs.filter(p => !PJ_CLOSED.includes(p.status)).map(p => { const u = updates.find(x => x.project === namer(p));
+                return { name: namer(p), pct: u && u.s.end != null ? u.s.end : progressPct(p), delta: u && u.s.start != null && u.s.end != null ? u.s.end - u.s.start : 0, today: !!u, end: txt(p.end) }; })
+                .sort((a, b) => (b.today - a.today) || a.name.localeCompare(b.name));
+            return { updates, running };
+        }, { updates: [], running: [] });
 
         // ---- Photos: Daily Report paddock lines (different paddocks first), tickets, jobs, projects ----
-        const cand = [], extra = [];
-        logs.filter(l => photoCount(l) > 0).forEach(l => {
-            const js = l.place === 'office' ? [] : logJobs(l), counts = js.map(j => Math.max(0, Math.floor(Number(j.photoCount) || 0))), sum = counts.reduce((a, b) => a + b, 0);
-            const who = first(l.memberName);
-            if (sum && sum <= photoCount(l)) { let k = 0; js.forEach((j, i) => { if (counts[i]) {
-                const base = { src: 'wl', id: l.id, group: j.paddock || '', cap: [j.paddock, j.jobType].filter(Boolean).join(' · ') || 'Daily Report', sub: `${who}${(j.units || []).length ? ' · ' + j.units.map(unitName).filter(Boolean).join(', ') : ''}` };
-                cand.push(Object.assign({ key: `wl:${l.id}:${i}`, index: k }, base));
-                // 2.40.2: the line's other photos wait as spares, used when the day has fewer than six.
-                for (let e = 1; e < Math.min(counts[i], 3); e++) extra.push(Object.assign({ key: `wl:${l.id}:${i}:${e}`, index: k + e }, base, { sub: `${base.sub} · photo ${e + 1}` }));
-            } k += counts[i]; }); }
-            else cand.push({ key: `wl:${l.id}:g`, src: 'wl', id: l.id, index: 0, group: (js[0] || {}).paddock || l.place || '',
-                cap: l.place === 'office' ? `Office · ${clip(l.task, 50)}` : ([(js[0] || {}).paddock, (js[0] || {}).jobType].filter(Boolean).join(' · ') || 'Daily Report'), sub: who });
-        });
-        const seen = new Set(), daily = [];
-        while (cand.length) { let b = cand.findIndex(c => !seen.has(c.group)); if (b < 0) b = 0; const c = cand.splice(b, 1)[0]; seen.add(c.group); daily.push(c); }
-        const other = [];
-        tk.filter(t => (t.photoIds || []).length && (inDay(t.reportedAt) || (t.events || []).some(e => inDay(e.at)))).forEach(t =>
-            other.push({ key: `tk:${t.photoIds[0]}`, src: 'tk', id: t.photoIds[0], cap: clip(`${t.no || ''} · ${t.title || ''}`, 60), sub: `Ticket · ${TK_STATUS[t.status] || t.status || ''}` }));
-        (I.jobs || []).filter(j => j.date === date && (j.photoIds || []).length).forEach(j =>
-            other.push({ key: `pj:${j.photoIds[0]}`, src: 'pj', id: j.photoIds[0], cap: clip(`${j.category || 'Job'} · ${j.description || ''}`, 60), sub: (j.units || []).map(unitName).filter(Boolean).join(', ') || 'Job' }));
-        pjs.forEach(p => (p.updates || []).filter(u => u.date === date && (u.photoIds || []).length).forEach(u =>
-            other.push({ key: `pj:${u.photoIds[0]}`, src: 'pj', id: u.photoIds[0], cap: clip(p.name || 'Project', 60), sub: clip(u.text, 60) })));
-        // Four from the Daily Report and the rest from the others when both have them; spares after.
-        const photos = [...daily.slice(0, 4), ...other.slice(0, PHOTO_MAX - Math.min(4, daily.length)), ...daily.slice(4), ...other.slice(PHOTO_MAX - Math.min(4, daily.length)), ...extra]
-            .filter((p, i, a) => a.findIndex(x => x.key === p.key) === i).slice(0, PHOTO_MAX + 6);
+        const photos = part('Field photos', () => {
+            const cand = [], extra = [];
+            logs.filter(l => photoCount(l) > 0).forEach(l => {
+                const js = l.place === 'office' ? [] : logJobs(l), counts = js.map(j => Math.max(0, Math.floor(Number(j.photoCount) || 0))), sum = counts.reduce((a, b) => a + b, 0);
+                const who = first(l.memberName);
+                if (sum && sum <= photoCount(l)) { let k = 0; js.forEach((j, i) => { if (counts[i]) {
+                    const us = objs(j.units).map(unitName).filter(Boolean);
+                    const base = { src: 'wl', id: l.id, group: txt(j.paddock), cap: jobLine(j) || 'Daily Report', sub: `${who}${us.length ? ' · ' + us.join(', ') : ''}` };
+                    cand.push(Object.assign({ key: `wl:${l.id}:${i}`, index: k }, base));
+                    // 2.40.2: the line's other photos wait as spares, used when the day has fewer than six.
+                    for (let e = 1; e < Math.min(counts[i], 3); e++) extra.push(Object.assign({ key: `wl:${l.id}:${i}:${e}`, index: k + e }, base, { sub: `${base.sub} · photo ${e + 1}` }));
+                } k += counts[i]; }); }
+                else cand.push({ key: `wl:${l.id}:g`, src: 'wl', id: l.id, index: 0, group: txt((js[0] || {}).paddock) || txt(l.place),
+                    cap: l.place === 'office' ? `Office · ${clip(l.task, 50)}` : (jobLine(js[0] || {}) || 'Daily Report'), sub: who });
+            });
+            const seen = new Set(), daily = [];
+            while (cand.length) { let b = cand.findIndex(c => !seen.has(c.group)); if (b < 0) b = 0; const c = cand.splice(b, 1)[0]; seen.add(c.group); daily.push(c); }
+            const other = [];
+            tk.filter(t => idList(t.photoIds).length && (inDay(t.reportedAt) || objs(t.events).some(e => inDay(e.at)))).forEach(t =>
+                other.push({ key: `tk:${t.photoIds[0]}`, src: 'tk', id: t.photoIds[0], cap: clip(`${txt(t.no)} · ${txt(t.title)}`, 60), sub: `Ticket · ${lab(TK_STATUS, t.status) || txt(t.status)}` }));
+            dayJobs.filter(j => idList(j.photoIds).length).forEach(j =>
+                other.push({ key: `pj:${j.photoIds[0]}`, src: 'pj', id: j.photoIds[0], cap: clip(`${txt(j.category) || 'Job'} · ${txt(j.description)}`, 60), sub: objs(j.units).map(unitName).filter(Boolean).join(', ') || 'Job' }));
+            pjs.forEach(p => objs(p.updates).filter(u => u.date === date && idList(u.photoIds).length).forEach(u =>
+                other.push({ key: `pj:${u.photoIds[0]}`, src: 'pj', id: u.photoIds[0], cap: clip(txt(p.name) || 'Project', 60), sub: clip(u.text, 60) })));
+            // Four from the Daily Report and the rest from the others when both have them; spares after.
+            return [...daily.slice(0, 4), ...other.slice(0, PHOTO_MAX - Math.min(4, daily.length)), ...daily.slice(4), ...other.slice(PHOTO_MAX - Math.min(4, daily.length)), ...extra]
+                .filter((p, i, a) => a.findIndex(x => x.key === p.key) === i).slice(0, PHOTO_MAX + 6);
+        }, []);
 
-        return { day, team, damage, fixed, tickets, breakdownNow, jobs, updates, running, photos,
+        return { day, team, damage, fixed, tickets, breakdownNow, jobs, updates, running, photos, failed, errors,
             generatedAt: new Date(now).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) };
     }
 
     // The deck, on the company template (theme 'msg', as the management
     // Weekly Update). gallery: the photo block the caller filled (or null).
+    // 2.45.0: the parts buildDaily had to leave out, said where the report starts.
+    const leftOut = D => (D.failed || []).length ? ` · left out (could not be built): ${D.failed.join(', ')}` : '';
     function dailyPages(D, opts) {
         opts = opts || {};
         const t = D.team, tk = D.tickets, P = [];
@@ -297,7 +369,7 @@
         P.push({ kind: 'cover', theme: 'msg', title: 'Daily Report', title2: 'Division Operation Technology', lines: [D.day.label] });
         const ST = { ok: { text: 'Filed', tone: 'good', bold: true }, miss: { text: 'Missed', tone: 'bad', bold: true }, leave: { text: 'Leave', tone: 'warn' }, off: { text: 'Day off', tone: 'muted' } };
         const rows = t.members.filter(m => m.state !== 'off').concat(t.members.filter(m => m.state === 'off'));
-        page('Daily Report Summary', { sub: `${D.day.label} · ${t.filed} of ${t.expected} expected reports filed${t.missed.length ? ' · missed: ' + t.missed.map(first).join(', ') : ''}`, rows: [
+        page('Daily Report Summary', { sub: `${D.day.label} · ${t.filed} of ${t.expected} expected reports filed${t.missed.length ? ' · missed: ' + t.missed.map(first).join(', ') : ''}${leftOut(D)}`, rows: [
             { h: 1, widths: [1.5, 1.2, 1], cards: [
                 { type: 'stats', small: true, per: 3, items: [{ value: t.pct == null ? '—' : `${t.pct}%`, label: `filed (${t.filed}/${t.expected})`, tone: t.pct == null ? '' : t.pct >= 100 ? 'good' : t.pct >= 80 ? 'warn' : 'bad' },
                     { value: h1(t.hours), label: 'work hours' }, { value: t.reports, label: 'reports' }, { value: t.paddocks, label: 'paddocks' }, { value: t.units, label: 'units used' }, { value: t.missed.length, label: 'missed', tone: t.missed.length ? 'bad' : '' }] },
@@ -353,22 +425,25 @@
 <h2 style="margin:0 0 2px;font-size:19px;color:${G}">Daily Report — Division Operation Technology</h2>
 <p style="margin:0 0 10px;color:#475467">${esc(D.day.label)}${opts.attached ? ' · PowerPoint and PDF attached' : ''}</p>
 <p style="margin:0 0 6px;font-size:14px"><b>${t.filed} of ${t.expected}</b> expected reports filed${t.pct == null ? '' : ` (${t.pct}%)`} · <b>${h1(t.hours)}</b> work hours · ${t.paddocks} paddocks · ${t.units} units${t.missed.length ? `<br><span style="color:#B42318">Missed: ${esc(t.missed.join(', '))}</span>` : ''}</p>
+${(D.failed || []).length ? `<p style="margin:0 0 6px;font-size:13px;color:#B42318">Left out of this report (could not be built): ${esc(D.failed.join(', '))}. Everything else in it is complete.</p>` : ''}
 ${h('1. Daily Report summary')}${table(['Member', 'PT', 'Status', 'Paddock · job', 'Hours'], t.members.map(m => [m.name, m.pt, ST[m.state], m.work || '-', m.hours ? h1(m.hours) : '-']), 'No team members')}
 ${h('2. Issue & damage')}${table(['From', 'Issue'], t.issues.map(i => [i.who, i.text]), 'No issue written in the Daily Report')}
 ${table(['Unit', 'Part / damage', 'Status'], D.damage.map(d => [d.unit, [d.part, d.what].filter(Boolean).join(' — ') || d.type, d.resolved ? 'Fixed' : d.breakdown ? 'Breakdown' : 'Open']), 'No new damage record')}
 ${table(['Ticket', 'Priority', 'Status', 'PIC'], tk.opened.concat(tk.resolved.filter(x => !tk.opened.some(o => o.no === x.no))).map(x => [`${x.no} · ${x.title}`, x.prio, x.status, x.pic || '-']), 'No ticket opened or resolved')}
 <p style="margin:0 0 6px;color:#475467;font-size:13px">Tickets open now: <b>${tk.open}</b>${tk.overdue ? ` · <span style="color:#B42318">${tk.overdue} past the due time</span>` : ''} · Units in breakdown now: <b>${D.breakdownNow}</b></p>
-${h('3. Field photos')}<p style="margin:0 0 6px;color:#475467;font-size:13px">${opts.photos ? `${plural(opts.photos, 'photo')} in the attached PowerPoint / PDF.` : 'No photo this day.'}</p>
+${h('3. Field photos')}<p style="margin:0 0 6px;color:#475467;font-size:13px">${opts.photos ? `${plural(opts.photos, 'photo')} ${opts.attached ? 'in the attached PowerPoint / PDF' : 'in Reports → Daily Report on the dashboard'}.` : 'No photo this day.'}</p>
 ${h('4. OT jobs & project progress')}${table(['What was done', 'Category / for', 'Units · by', 'Status'], D.jobs.map(j => [j.what + (j.issue ? ` (Problem: ${j.issue})` : ''), [j.category, j.project && 'Project ' + j.project, j.ticket && 'Ticket ' + j.ticket].filter(Boolean).join(' · '), [j.units, j.by].filter(Boolean).join(' · ') || '-', j.status]), 'No job logged this day')}
 ${table(['Project', 'What changed', 'Progress'], D.updates.map(u => { const e = projectEntry(u.project, u.s, u.pct); return [u.project, [e.text, e.sub, e.note].filter(Boolean).join(' · '), e.tag.text]; }), 'No project update this day')}
 <p style="margin-top:18px;font-size:12px;color:#667085">Sent by the <a href="https://ot.techorchestrator.cloud">Operation Technology Dashboard</a> · Reports → Daily Report for the full deck.</p></div>`;
         const text = [`Daily Report — Division Operation Technology`, D.day.label, '',
             `${t.filed} of ${t.expected} expected reports filed · ${h1(t.hours)} work hours · ${t.paddocks} paddocks · ${t.units} units`,
             t.missed.length ? `Missed: ${t.missed.join(', ')}` : 'Nobody missed a report',
+            ...((D.failed || []).length ? [`Left out of this report (could not be built): ${D.failed.join(', ')}`] : []),
             `Issues: ${t.issues.length} · New damage: ${D.damage.length} · Tickets opened ${tk.opened.length}, resolved ${tk.resolved.length}, open now ${tk.open}`,
             `Jobs: ${D.jobs.length} · Project updates: ${D.updates.length}`, '', 'Sent by the Operation Technology Dashboard — https://ot.techorchestrator.cloud'].join('\n');
         return { subject: `Daily Report — ${D.day.short}`, html, text };
     }
 
-    return { buildDaily, dailyPages, dailyEmail, dayInfo, yesterday, PHOTO_MAX, fitPage, galleryLayout, summarizeUpdates, projectEntry, projectNamer, jobInfo, jobEntry, typeLabel, oneLine, clip, ptShort: pt, dayName };
+    return { buildDaily, dailyPages, dailyEmail, dayInfo, yesterday, PHOTO_MAX, fitPage, galleryLayout, summarizeUpdates, projectEntry, projectNamer, jobInfo, jobEntry, typeLabel, oneLine, clip, ptShort: pt, dayName,
+        tidy, SHAPES };
 }));

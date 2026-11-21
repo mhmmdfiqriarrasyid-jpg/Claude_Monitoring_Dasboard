@@ -122,7 +122,15 @@ const _withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTime
 const PHOTO_PENDING = 'pending:';   // 2.29.5: still on the sender's device (photo outbox)
 async function _photoUp(col, docId, v) {
     if (typeof v !== 'string' || !v || v.startsWith(PHOTO_REF) || v.startsWith(PHOTO_PENDING)) return v;
-    if (_photoUrls.has(v)) return _photoUrls.get(v);
+    if (_photoUrls.has(v)) {
+        const ref = _photoUrls.get(v);
+        if (_ownPhotoRef(col, docId, ref)) return ref;
+        // 2.45.0: another document's photo gets its own copy here — sharing its Storage object
+        // blanked this one when that document's photo was replaced or deleted, and showed
+        // nothing to whoever may read this document but not that one.
+        try { v = await _withTimeout(_urlToData(v), 60000); }
+        catch (err) { console.warn('[photos] another document\'s photo kept as it is:', err && (err.code || err.message)); return ref; }
+    }
     if (!_isImgData(v)) return v;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return v;
     try {
@@ -211,17 +219,20 @@ function _jobFileOk(path, jobId) {
     const m = /^projectFiles\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_.-]+)$/.exec(typeof path === 'string' ? path : '');
     return !!m && !/^\.+$/.test(m[2]) && (jobId == null || jobId === '' || m[1] === String(jobId));
 }
+async function _urlToData(url) {
+    const blob = await (await fetch(url)).blob();
+    return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+}
 async function _photoDown(v, inline) {
     if (typeof v === 'string' && v.startsWith(PHOTO_PENDING)) return '';
     if (typeof v !== 'string' || !v.startsWith(PHOTO_REF)) return v;
     if (!_photoRefShape(v)) { console.warn('[photos] not a photo path, not loaded:', v.slice(0, 80)); return ''; }
     try {
         const st = await _storage();
-        const url = await st.mod.getDownloadURL(st.mod.ref(st.s, v.slice(PHOTO_REF.length)));
+        const url = await _withTimeout(st.mod.getDownloadURL(st.mod.ref(st.s, v.slice(PHOTO_REF.length))), 30000);
         _photoUrls.set(url, v);
         if (!inline) return url;
-        const blob = await (await fetch(url)).blob();
-        return await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+        return await _withTimeout(_urlToData(url), 60000);   // 2.45.0: a weak signal no longer waits forever
     } catch (err) {
         console.warn('[photos] not loaded from Storage:', err && (err.code || err.message));
         return '';
@@ -532,7 +543,10 @@ async function _getPhotoDoc(col, docId, field, empty, opts, fieldsOf) {
     }
     const inline = opts && opts.inline, key = `${col}/${docId}/${field}`;
     if (!inline) _loadedVals.set(key, v);   // what a form opened with (see _savePhotoDoc)
-    return _photoMap(v, x => !_isPending(x) ? _photoDown(x, inline)
+    // 2.45.0: opts.keys — only these photos of a { key: image } map (the rest are not downloaded).
+    const pick = opts && Array.isArray(opts.keys) && v && typeof v === 'object' && !Array.isArray(v)
+        ? Object.fromEntries(Object.entries(v).filter(([k]) => opts.keys.includes(k))) : v;
+    return _photoMap(pick, x => !_isPending(x) ? _photoDown(x, inline)
         : (_tokenDone.has(x) ? _photoDown(_tokenDone.get(x), inline) : _pendingView(key, x, waiting[x], inline)));
 }
 // 2.26.1: a report whose photo document never landed (refused by the rules
@@ -1058,6 +1072,19 @@ window.cloud = {
         await FS.clearIndexedDbPersistence(db);
         return true;
     },
+    // 2.45.0: true while this device holds writes the server has not
+    // acknowledged — of ANY collection, so also those no list marks as waiting
+    // (units, fuel, stock, deletes …). Not settled within `ms` counts as yes:
+    // erasing on a guess would lose them.
+    async hasPendingWrites(ms = 1500) {
+        if (typeof FS.waitForPendingWrites !== 'function') return false;
+        let timer;
+        const settled = await Promise.race([
+            FS.waitForPendingWrites(db).then(() => true, () => false),
+            new Promise(r => { timer = setTimeout(() => r(false), ms); })]);
+        clearTimeout(timer);
+        return !settled;
+    },
     async clearHistoryCloud() {
         const snap = await getDocs(collection(db, HISTORY_COL));
         if (snap.empty) return;
@@ -1250,7 +1277,15 @@ window.cloud = {
         const uid = auth.currentUser && auth.currentUser.uid;
         const t = localStorage.getItem('ot_push_token') || '';
         if (!uid || !t) return '';
-        try { const s = await getDoc(doc(db, PUSH_TOKENS_COL, t)); return s.exists() && s.data().uid === uid ? t : ''; } catch (_) { return ''; }
+        try {
+            const s = await getDoc(doc(db, PUSH_TOKENS_COL, t));
+            if (!s.exists() || s.data().uid !== uid) return '';
+            // 2.45.0: the server keeps an account's 5 newest tokens (pushNotices.tokensByAccount);
+            // a device in use renews its date once a day so it stays among them.
+            const at = s.data().createdAt;
+            if (!(typeof at === 'number' && at > Date.now() - 86400000)) updateDoc(doc(db, PUSH_TOKENS_COL, t), { createdAt: Date.now() }).catch(() => {});
+            return t;
+        } catch (_) { return ''; }
     },
     async enablePush() {
         const uid = auth.currentUser && auth.currentUser.uid;

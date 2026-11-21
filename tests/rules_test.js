@@ -129,6 +129,17 @@ async function check(name, p, expectOk) {
     await check('foto menyusul: laporan disetujui tetap terkunci', setDoc(doc(W, 'workLogPhotos', 'wl_sentok'), { id: 'wl_sentok', photos: [] }), false);
     await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'leaveRequests', 'lv_sent'), { id: 'lv_sent', approval: 'pending', createdByUid: 'writer', submittedByUid: 'writer' }));
     await check('surat menyusul: pengirim pengajuan pending boleh', setDoc(doc(W, 'workLogPhotos', 'lv_sent'), { id: 'lv_sent', photos: ['data:image/png;base64,AA'] }), true);
+    // 2.45.0 (S6): the record is the one the id names (lv_ = leave request), not a look-alike draft work log.
+    await env.withSecurityRulesDisabled(async ctx => {
+        const db = ctx.firestore();
+        await setDoc(doc(db, 'leaveRequests', 'lv_look'), { id: 'lv_look', approval: 'approved', createdByUid: 'writer', submittedByUid: 'writer', approvedByEmail: 'boss@x.id' });
+        await setDoc(doc(db, 'workLogPhotos', 'lv_look'), { id: 'lv_look', photos: ['sp:photos/workLogPhotos/lv_look/a'] });
+    });
+    await check('S6 surat: membuat laporan harian ber-id lv_ (milik izin) DITOLAK', setDoc(doc(W, 'workLogs', 'lv_look'), { id: 'lv_look', task: 'x', approval: 'draft', createdByUid: 'writer' }), false);
+    await check('S6 surat: laporan harian ber-id lv_ baru juga DITOLAK', setDoc(doc(W, 'workLogs', 'lv_evil'), { id: 'lv_evil', task: 'x', approval: 'pending', createdByUid: 'writer', submittedByUid: 'writer' }), false);
+    await check('S6 surat: mengganti surat izin yang DISETUJUI DITOLAK', setDoc(doc(W, 'workLogPhotos', 'lv_look'), { id: 'lv_look', photos: ['data:image/png;base64,BB'] }), false);
+    await check('S6 izin: id tanpa lv_ DITOLAK', setDoc(doc(W, 'leaveRequests', 'zz_leave'), { id: 'zz_leave', approval: 'draft', createdByUid: 'writer' }), false);
+    await check('S6 owner: tetap boleh memulihkan id apa saja', setDoc(doc(O, 'leaveRequests', 'zz_restore'), { id: 'zz_restore', approval: 'draft', createdByUid: 'writer' }), true);
 
     // ---- persetujuan: izin / sakit ----
     await check('izin: editor menyetujui lewat console DITOLAK', setDoc(doc(W, 'leaveRequests', 'lv_1'), { approval: 'approved', approvedByEmail: 'boss@x.id' }, { merge: true }), false);
@@ -148,19 +159,34 @@ async function check(name, p, expectOk) {
     await check('cek: teknisi mengirim laporan', setDoc(doc(TE, 'inspections', 'r1'), { id: 'r1', unitId: 'h1', approval: 'pending', createdByUid: 'tech', submittedByUid: 'tech' }), true);
     await check('cek: teknisi membuat laporan "approved" DITOLAK', setDoc(doc(TE, 'inspections', 'r2'), { id: 'r2', unitId: 'h1', approval: 'approved', createdByUid: 'tech' }), false);
     await check('cek: laporan menunggu TIDAK bisa diubah teknisi', setDoc(doc(TE, 'inspections', 'r1'), { date: '2026-01-01' }, { merge: true }), false);
-    await check('cek: foto laporan menunggu TIDAK bisa diganti', setDoc(doc(TE, 'inspectionPhotos', 'r1'), { id: 'r1', photos: {} }), false);
+    // 2.45.0: like the Daily Report (2.26.1) — only its sender may still finish the photos of a pending report.
+    await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'users', 'tech2'), { uid: 'tech2', email: 'tech2@x.id', role: 'khl', status: 'active', access: { inspection: 'edit' } }));
+    await check('cek: foto laporan menunggu TIDAK bisa diganti teknisi lain', setDoc(doc(as('tech2'), 'inspectionPhotos', 'r1'), { id: 'r1', photos: {} }), false);
+    await check('S6 cek: foto menyusul — pengirim laporan pending boleh', setDoc(doc(TE, 'inspectionPhotos', 'r1'), { id: 'r1', photos: { cameraAi: 'data:image/jpeg;base64,AA' } }), true);
     await check('cek: teknisi tidak bisa menyetujui', setDoc(doc(TE, 'inspections', 'r1'), { approval: 'approved', approvedByEmail: 'tech@x.id' }, { merge: true }), false);
     await check('cek: pengguna laporan harian (teamLogApprove) tidak bisa menyetujui laporan cek', setDoc(doc(B, 'inspections', 'r1'), { approval: 'approved', approvedByEmail: 'boss@x.id', approvedAt: 1 }, { merge: true }), false);
     await check('cek: atasan menyetujui', setDoc(doc(SU, 'inspections', 'r1'), { approval: 'approved', approvedBy: 'Sup', approvedByEmail: 'sup@x.id', approvedAt: 1, revisionNote: '', updatedAt: 1 }, { merge: true }), true);
     await check('cek: atasan mencatat temuan sudah diterapkan', setDoc(doc(SU, 'inspections', 'r1'), { appliedAt: 2, appliedBy: 'Sup', appliedDamageIds: ['d1'], updatedAt: 2 }, { merge: true }), true);
     await check('cek: stempel diterapkan sambil mengubah hasil DITOLAK', setDoc(doc(SU, 'inspections', 'r1'), { appliedAt: 3, results: { cameraAi: 'good' } }, { merge: true }), false);
     await check('cek: laporan disetujui TIDAK bisa dihapus teknisi', deleteDoc(doc(TE, 'inspections', 'r1')), false);
+    await check('S6 cek: foto laporan disetujui TIDAK bisa diganti pengirimnya', setDoc(doc(TE, 'inspectionPhotos', 'r1'), { id: 'r1', photos: {} }), false);
     await check('cek: atasan membuka kembali (minta revisi)', setDoc(doc(SU, 'inspections', 'r1'), { approval: 'revision', revisionNote: 'foto buram', approvedBy: '', approvedByEmail: '', approvedAt: 0, updatedAt: 4 }, { merge: true }), true);
     await check('cek: setelah revisi teknisi boleh mengganti foto', setDoc(doc(TE, 'inspectionPhotos', 'r1'), { id: 'r1', photos: { cameraAi: 'data:image/jpeg;base64,BB' } }), true);
     await check('cek: dan mengirim ulang', setDoc(doc(TE, 'inspections', 'r1'), { approval: 'pending', revisionNote: '', submittedByUid: 'tech' }, { merge: true }), true);
     await check('cek: atasan tidak bisa menyetujui laporannya sendiri', (async () => { await seedIns('r3', { approval: 'pending', createdByUid: 'sup' }); })().then(() => setDoc(doc(SU, 'inspections', 'r3'), { approval: 'approved', approvedByEmail: 'sup@x.id', approvedAt: 1 }, { merge: true })), false);
     await check('cek: foto laporan bisa dibaca atasan', getDoc(doc(SU, 'inspectionPhotos', 'r1')), true);
     await check('cek: foto laporan TIDAK bisa dibaca tanpa akses', getDoc(doc(N, 'inspectionPhotos', 'r1')), false);
+    // 2.45.0 (B9): reopened after its findings were logged in Damage, approved again —
+    // the stamp (appliedKeys: what is logged) is added to by the Damage side only.
+    await seedIns('r_ap', { approval: 'revision', revisionNote: 'komponen salah', submittedByUid: 'tech', appliedAt: 2, appliedBy: 'Sup', appliedDamageIds: ['d1'], appliedKeys: ['rotaryLamp'] });
+    await check('B9 cek: teknisi mengosongkan stempel saat revisi DITOLAK', setDoc(doc(TE, 'inspections', 'r_ap'), { approval: 'pending', revisionNote: '', submittedByUid: 'tech', appliedKeys: [] }, { merge: true }), false);
+    await check('B9 cek: teknisi mengirim ulang hasil yang dibetulkan (stempel tetap)', setDoc(doc(TE, 'inspections', 'r_ap'), { approval: 'pending', revisionNote: '', submittedByUid: 'tech', results: { cameraAi: 'bad', rotaryLamp: 'good' } }, { merge: true }), true);
+    await check('B9 cek: atasan menyetujui lagi', setDoc(doc(SU, 'inspections', 'r_ap'), { approval: 'approved', approvedBy: 'Sup', approvedByEmail: 'sup@x.id', approvedAt: 5, revisionNote: '', updatedAt: 5 }, { merge: true }), true);
+    await check('B9 cek: teknisi (tanpa Damage) menulis stempel DITOLAK', setDoc(doc(TE, 'inspections', 'r_ap'), { appliedKeys: ['rotaryLamp', 'cameraAi'] }, { merge: true }), false);
+    await check('B9 cek: appliedKeys bukan daftar DITOLAK', setDoc(doc(SU, 'inspections', 'r_ap'), { appliedKeys: 'cameraAi', updatedAt: 6 }, { merge: true }), false);
+    await check('B9 cek: atasan (Damage) menambah komponen yang baru dicatat', setDoc(doc(SU, 'inspections', 'r_ap'), { appliedAt: 6, appliedBy: 'Sup', appliedDamageIds: ['d1', 'd2'], appliedKeys: ['rotaryLamp', 'cameraAi'], updatedAt: 6 }, { merge: true }), true);
+    await check('B9 cek: laporan baru dengan stempel diterapkan DITOLAK', setDoc(doc(TE, 'inspections', 'r_ap2'), { id: 'r_ap2', unitId: 'h1', approval: 'pending', createdByUid: 'tech', submittedByUid: 'tech', appliedAt: 1, appliedKeys: ['cameraAi'] }), false);
+    await check('B9 cek: laporan baru tanpa stempel tetap boleh', setDoc(doc(TE, 'inspections', 'r_ap3'), { id: 'r_ap3', unitId: 'h1', approval: 'pending', createdByUid: 'tech', submittedByUid: 'tech' }), true);
 
     // ---- baca per area ----
     await check('surat sakit: tanpa akses laporan TIDAK bisa dibaca', getDoc(doc(N, 'workLogPhotos', 'lv_1')), false);
@@ -581,11 +607,20 @@ async function check(name, p, expectOk) {
     await check('Notif: saklar bukan boolean DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, damageEnabled: 'yes' }), false);
     await check('Notif: owner menyimpan laporan bulanan', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, monthlyEnabled: true, monthlyHour: 8, monthlyRecipients: ['boss@x.id'] }), true);
     await check('Notif: jam laporan bulanan di luar 0–23 DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, monthlyHour: 30 }), false);
-    await check('Push: akun aktif menyimpan token perangkatnya', setDoc(doc(as('licv'), 'pushTokens', 'tok_1'), { token: 'tok_1', uid: 'licv', ua: 'x', createdAt: 1 }), true);
-    await check('Push: token atas nama akun lain DITOLAK', setDoc(doc(as('licv'), 'pushTokens', 'tok_2'), { token: 'tok_2', uid: 'owner', ua: 'x', createdAt: 1 }), false);
-    await check('Push: id dokumen harus sama dengan token', setDoc(doc(as('licv'), 'pushTokens', 'tok_3'), { token: 'lain', uid: 'licv', ua: 'x', createdAt: 1 }), false);
-    await check('Push: akun lain TIDAK bisa membaca token', getDoc(doc(as('nobody'), 'pushTokens', 'tok_1')), false);
-    await check('Push: pemilik token menghapusnya', deleteDoc(doc(as('licv'), 'pushTokens', 'tok_1')), true);
+    // 2.45.0: a token has the FCM shape (FID ':' APA91b…, ~163 characters).
+    const FCM = s => ('d' + s).padEnd(22, 'Q') + ':APA91b' + 'Kx9_-'.repeat(27);
+    await check('Push: akun aktif menyimpan token perangkatnya', setDoc(doc(as('licv'), 'pushTokens', FCM('1')), { token: FCM('1'), uid: 'licv', ua: 'x', createdAt: 1 }), true);
+    await check('Push: token atas nama akun lain DITOLAK', setDoc(doc(as('licv'), 'pushTokens', FCM('2')), { token: FCM('2'), uid: 'owner', ua: 'x', createdAt: 1 }), false);
+    await check('Push: id dokumen harus sama dengan token', setDoc(doc(as('licv'), 'pushTokens', FCM('3')), { token: 'lain', uid: 'licv', ua: 'x', createdAt: 1 }), false);
+    await check('Push: akun lain TIDAK bisa membaca token', getDoc(doc(as('nobody'), 'pushTokens', FCM('1'))), false);
+    await check('Push: pemilik token menghapusnya', deleteDoc(doc(as('licv'), 'pushTokens', FCM('1'))), true);
+    await check('S12 Push: id karangan pendek (junk1) DITOLAK', setDoc(doc(as('licv'), 'pushTokens', 'junk1'), { token: 'junk1', uid: 'licv', ua: '', createdAt: 1 }), false);
+    await check('S12 Push: id panjang dengan karakter di luar token FCM DITOLAK', setDoc(doc(as('licv'), 'pushTokens', 'j.'.repeat(80)), { token: 'j.'.repeat(80), uid: 'licv', ua: '', createdAt: 1 }), false);
+    await check('S12 Push: id lebih dari 400 karakter DITOLAK', setDoc(doc(as('licv'), 'pushTokens', 'a'.repeat(401)), { token: 'a'.repeat(401), uid: 'licv', ua: '', createdAt: 1 }), false);
+    await check('S12 Push: createdAt berupa map DITOLAK', setDoc(doc(as('licv'), 'pushTokens', FCM('4')), { token: FCM('4'), uid: 'licv', ua: '', createdAt: { toString: 'x' } }), false);
+    await check('S12 Push: createdAt teks DITOLAK', setDoc(doc(as('licv'), 'pushTokens', FCM('5')), { token: FCM('5'), uid: 'licv', ua: '', createdAt: 'kemarin' }), false);
+    await env.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'pushTokens', 'junk_old'), { token: 'junk_old', uid: 'licv', ua: '', createdAt: 1 }));
+    await check('S12 Push: token lama berbentuk lain tetap bisa dihapus pemiliknya', deleteDoc(doc(as('licv'), 'pushTokens', 'junk_old')), true);
     await check('Push: owner menyimpan saklar push', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, pushDamage: false, pushApprovals: true }), true);
     await check('Push: saklar push bukan boolean DITOLAK', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, pushDamage: 'on' }), false);
     await check('Jadwal: mingguan Jumat / bulanan tgl 15 tersimpan', setDoc(doc(as('owner'), 'settings', 'email'), { ...EM, sendFreq: 'weekly', sendWeekday: 5, monthlyFreq: 'monthly', monthlyMonthday: 15, reminderFreq: 'daily' }), true);
@@ -597,6 +632,22 @@ async function check(name, p, expectOk) {
     await check('Email: dokumen settings lain DITOLAK', setDoc(doc(as('owner'), 'settings', 'other'), { dailyEnabled: true }), false);
     await check('Email: mailLog tidak bisa ditulis dari browser', setDoc(doc(as('owner'), 'mailLog', 'm1'), { kind: 'x' }), false);
     await check('Email: owner membaca mailLog', getDoc(doc(as('owner'), 'mailLog', 'm1')), true);
+    // 2.45.0 (S13): only who opens the Notifications page — the owner and License Stock viewers.
+    await env.withSecurityRulesDisabled(async ctx => {
+        const db = ctx.firestore();
+        await setDoc(doc(db, 'users', 'licT'), { uid: 'licT', email: 'licT@x.id', role: 'staff', status: 'active', access: { licenseStock: 'view', unitScope: 'tractor' } });
+        await setDoc(doc(db, 'users', 'dmgV'), { uid: 'dmgV', email: 'dmgV@x.id', role: 'staff', status: 'active', access: { damage: 'view', teamLog: 'view' } });
+        await setDoc(doc(db, 'mailLog', 'm2'), { kind: 'damageAlert', recipients: ['mgr@x.id'], subject: 'Breakdown: HEX02 — Camera AI', recordId: 'd5', at: 1 });
+    });
+    await check('S13 Email: pembaca Daily Report TIDAK bisa melihat pengaturan', getDoc(doc(as('writer'), 'settings', 'email')), false);
+    await check('S13 Email: pembaca Damage TIDAK bisa melihat pengaturan', getDoc(doc(as('dmgV'), 'settings', 'email')), false);
+    await check('S13 Email: pembaca License Stock satu kelompok tetap melihat pengaturan', getDoc(doc(as('licT'), 'settings', 'email')), true);
+    await check('S13 mailLog: pembaca Daily Report TIDAK bisa membaca', getDoc(doc(as('writer'), 'mailLog', 'm2')), false);
+    await check('S13 mailLog: pembaca Damage TIDAK bisa membaca', getDoc(doc(as('dmgV'), 'mailLog', 'm2')), false);
+    await check('S13 mailLog: query pembaca Damage DITOLAK', getDocs(query(collection(as('dmgV'), 'mailLog'), orderBy('at', 'desc'))), false);
+    await check('S13 mailLog: pembaca License Stock (semua kelompok) membaca baris "terakhir dikirim"', getDocs(query(collection(as('licv'), 'mailLog'), orderBy('at', 'desc'))), true);
+    await check('S13 mailLog: pembaca License Stock terbatas satu kelompok DITOLAK', getDoc(doc(as('licT'), 'mailLog', 'm2')), false);
+    await check('S13 mailLog: owner query', getDocs(query(collection(as('owner'), 'mailLog'), orderBy('at', 'desc'))), true);
     // ---- 2.19.0: catatan error + jejak belajar ----
     const ER = { message: 'x is not defined', stack: 'at y', kind: 'error', view: 'dashboard', version: 'v2.19.0', url: '/', ua: 'UA', uid: 'nobody', email: 'n@x.id', at: 1 };
     await check('Error log: akun mana pun mencatat errornya sendiri', setDoc(doc(as('nobody'), 'clientErrors', 'e1'), ER), true);
@@ -660,16 +711,26 @@ async function check(name, p, expectOk) {
     await check('Riwayat: akun view projects TIDAK boleh mencatat history', setDoc(doc(PJV, 'history', 'h_pv'), { id: 'h_pv', timestamp: Date.now(), action: 'create', unitId: '', unitName: 'x', field: '', before: '', after: '',
         actorUid: 'pjV', actorEmail: 'pjV@x.id', actorName: 'V', actorRole: 'staff' }), false);
     // 2.30.0: Tickets
+    const otEvSeed = () => ({ at: 1, by: 'E', byUid: 'tkE', type: 'resolved', text: 'Antena diganti' });
     await env.withSecurityRulesDisabled(async ctx => {
         const db = ctx.firestore();
         await setDoc(doc(db, 'users', 'tkE'), { uid: 'tkE', email: 'tkE@x.id', role: 'staff', status: 'active', access: { tickets: 'edit' } });
         await setDoc(doc(db, 'users', 'tkV'), { uid: 'tkV', email: 'tkV@x.id', role: 'staff', status: 'active', access: { tickets: 'view' } });
         await setDoc(doc(db, 'users', 'khl1'), { uid: 'khl1', email: 'khl1@x.id', role: 'khl', status: 'active', access: {} });
-        await setDoc(doc(db, 'tickets', 'tk_res'), { id: 'tk_res', title: 'GPS', category: 'GPS', priority: 'high', status: 'resolved', reportedByUid: 'khl1', events: [], resolution: 'fixed' });
+        await setDoc(doc(db, 'users', 'khl2'), { uid: 'khl2', email: 'khl2@x.id', displayName: 'Andi', role: 'khl', status: 'active', access: {} });
+        await setDoc(doc(db, 'tickets', 'tk_res'), { id: 'tk_res', title: 'GPS', category: 'GPS', priority: 'high', status: 'resolved', reportedByUid: 'khl1', events: [otEvSeed()], resolution: 'fixed', resolvedAt: 1 });
+        await setDoc(doc(db, 'tickets', 'tk_res2'), { id: 'tk_res2', title: 'GPS', category: 'GPS', priority: 'high', status: 'resolved', reportedByUid: 'khl1', events: [otEvSeed()], resolution: 'fixed', resolvedAt: 1 });
         await setDoc(doc(db, 'tickets', 'tk_other'), { id: 'tk_other', title: 'HT', category: 'Radio', priority: 'low', status: 'open', reportedByUid: 'someone', events: [] });
+        await setDoc(doc(db, 'tickets', 'tk_cap'), { id: 'tk_cap', title: 'HT', category: 'Radio', priority: 'low', status: 'progress', reportedByUid: 'khl1',
+            events: Array.from({ length: 300 }, (_, i) => ({ at: i + 1, by: 'E', byUid: 'tkE', type: 'comment', text: 'n' + i })) });
     });
-    const TKE = as('tkE'), TKV = as('tkV'), TK1 = as('khl1');
-    const tkNew = o => Object.assign({ id: 'tk_n', title: 'Display mati', category: 'Display', priority: 'medium', status: 'open', reportedByUid: 'khl1', events: [] }, o);
+    const TKE = as('tkE'), TKV = as('tkV'), TK1 = as('khl1'), TK2 = as('khl2');
+    // As tickets.js writes them (saveTicket / _tkEvent); khl1 has no profile name, so it signs as the e-mail's local part.
+    const tkEv = (type, o) => Object.assign({ at: Date.now(), by: 'khl1', byUid: 'khl1', type }, o);
+    const ev0 = tkEv('created', { text: 'Medium priority' });
+    const tkNew = o => Object.assign({ id: 'tk_n', no: 'TK-261120-0800AB', title: 'Display mati', category: 'Display', priority: 'medium', description: '', location: '', units: [], company: '',
+        photoIds: [], status: 'open', reportedByUid: 'khl1', reportedBy: 'khl1', reportedByEmail: 'khl1@x.id', reportedAt: Date.now(), assigneeUid: '', assigneeName: '', jobIds: [],
+        events: [ev0], updatedAt: Date.now(), lastActorUid: 'khl1' }, o);
     await check('Tickets: akun tanpa akses (KHL) membuat ticket miliknya', setDoc(doc(TK1, 'tickets', 'tk_n'), tkNew()), true);
     await check('Tickets: membuat atas nama orang lain DITOLAK', setDoc(doc(TK1, 'tickets', 'tk_x'), tkNew({ id: 'tk_x', reportedByUid: 'tkE' })), false);
     await check('Tickets: membuat langsung resolved DITOLAK', setDoc(doc(TK1, 'tickets', 'tk_y'), tkNew({ id: 'tk_y', status: 'resolved' })), false);
@@ -677,10 +738,58 @@ async function check(name, p, expectOk) {
     await check('Tickets: pelapor membaca miliknya', getDoc(doc(TK1, 'tickets', 'tk_n')), true);
     await check('Tickets: pelapor TIDAK membaca milik orang lain', getDoc(doc(TK1, 'tickets', 'tk_other')), false);
     await check('Tickets: pelapor query miliknya', getDocs(query(collection(TK1, 'tickets'), where('reportedByUid', '==', 'khl1'))), true);
-    await check('Tickets: pelapor menambah catatan', updateDoc(doc(TK1, 'tickets', 'tk_n'), { events: [{ type: 'comment' }], updatedAt: 2 }), true);
+    const ev1 = tkEv('comment', { text: 'Masih mati pagi ini' });
+    await check('Tickets: pelapor menambah catatan', updateDoc(doc(TK1, 'tickets', 'tk_n'), { events: [ev0, ev1], updatedAt: Date.now(), lastActorUid: 'khl1' }), true);
     await check('Tickets: pelapor TIDAK bisa mengubah prioritas', updateDoc(doc(TK1, 'tickets', 'tk_n'), { priority: 'high' }), false);
     await check('Tickets: pelapor TIDAK bisa me-resolve sendiri', updateDoc(doc(TK1, 'tickets', 'tk_n'), { status: 'resolved' }), false);
-    await check('Tickets: pelapor menutup ticket yang resolved', updateDoc(doc(TK1, 'tickets', 'tk_res'), { status: 'closed', closedAt: 3, updatedAt: 3 }), true);
+    await check('Tickets: pelapor menutup ticket yang resolved', updateDoc(doc(TK1, 'tickets', 'tk_res'), { status: 'closed', closedAt: Date.now(), events: [otEvSeed(), tkEv('closed')], updatedAt: Date.now(), lastActorUid: 'khl1' }), true);
+    // ---- 2.45.0 (S9): the reporter writes only as itself ----
+    // A new ticket is a fresh one.
+    await check('S9 Ticket baru: dengan resolvedAt DITOLAK', setDoc(doc(TK1, 'tickets', 'tk_s1'), tkNew({ id: 'tk_s1', resolvedAt: Date.now() })), false);
+    await check('S9 Ticket baru: dengan resolution DITOLAK', setDoc(doc(TK1, 'tickets', 'tk_s2'), tkNew({ id: 'tk_s2', resolution: 'Selesai' })), false);
+    await check('S9 Ticket baru: dengan PIC pilihan pelapor DITOLAK (push "assigned")', setDoc(doc(TK1, 'tickets', 'tk_s3'), tkNew({ id: 'tk_s3', assigneeUid: 'tkE', assigneeName: 'Lead OT' })), false);
+    await check('S9 Ticket baru: closedAt DITOLAK', setDoc(doc(TK1, 'tickets', 'tk_s4'), tkNew({ id: 'tk_s4', closedAt: Date.now() })), false);
+    await check('S9 Ticket baru: nama pelapor palsu DITOLAK', setDoc(doc(TK1, 'tickets', 'tk_s5'), tkNew({ id: 'tk_s5', reportedBy: 'General Manager' })), false);
+    await check('S9 Ticket baru: e-mail pelapor palsu DITOLAK', setDoc(doc(TK1, 'tickets', 'tk_s6'), tkNew({ id: 'tk_s6', reportedByEmail: 'gm@x.id' })), false);
+    await check('S9 Ticket baru: timeline palsu (resolved oleh tim OT) DITOLAK', setDoc(doc(TK1, 'tickets', 'tk_s7'), tkNew({ id: 'tk_s7', events: [tkEv('resolved', { by: 'Budi (OT)', byUid: 'tkE', text: 'Selesai' })] })), false);
+    await check('S9 Ticket baru: event "created" atas nama orang lain DITOLAK', setDoc(doc(TK1, 'tickets', 'tk_s8'), tkNew({ id: 'tk_s8', events: [tkEv('created', { byUid: 'tkE' })] })), false);
+    await check('S9 Ticket baru: dua event DITOLAK', setDoc(doc(TK1, 'tickets', 'tk_s9'), tkNew({ id: 'tk_s9', events: [ev0, tkEv('comment')] })), false);
+    await check('S9 Ticket baru: reportedAt 60 hari lalu DITOLAK (langsung overdue)', setDoc(doc(TK1, 'tickets', 'tk_s10'), tkNew({ id: 'tk_s10', reportedAt: Date.now() - 60 * 86400000 })), false);
+    await check('S9 Ticket baru: kolom asing (startedAt) DITOLAK', setDoc(doc(TK1, 'tickets', 'tk_s11'), tkNew({ id: 'tk_s11', startedAt: Date.now() })), false);
+    await check('S9 Ticket baru: dari job (satu jobId) diterima', setDoc(doc(TK1, 'tickets', 'tk_s12'), tkNew({ id: 'tk_s12', jobIds: ['job_1'] })), true);
+    await check('S9 Ticket baru: terkirim dari antrean offline (2 hari lalu) diterima', setDoc(doc(TK1, 'tickets', 'tk_s13'), tkNew({ id: 'tk_s13', reportedAt: Date.now() - 2 * 86400000 })), true);
+    const evA = { at: Date.now(), by: 'Andi', byUid: 'khl2', type: 'created', text: 'High priority' };
+    await check('S9 Ticket baru: akun dengan nama profil menandatangani dengan nama itu', setDoc(doc(TK2, 'tickets', 'tk_a1'), tkNew({ id: 'tk_a1', reportedByUid: 'khl2', reportedBy: 'Andi', reportedByEmail: 'khl2@x.id', lastActorUid: 'khl2', events: [evA] })), true);
+    await check('S9 Ticket baru: akun dengan nama profil memakai nama lain DITOLAK', setDoc(doc(TK2, 'tickets', 'tk_a2'), tkNew({ id: 'tk_a2', reportedByUid: 'khl2', reportedBy: 'khl2', reportedByEmail: 'khl2@x.id', lastActorUid: 'khl2', events: [evA] })), false);
+    await check('S9 Tim OT: tetap bebas membuat ticket dengan PIC', setDoc(doc(TKE, 'tickets', 'tk_h1'), tkNew({ id: 'tk_h1', reportedByUid: 'tkE', reportedBy: 'X', assigneeUid: 'tkE', assigneeName: 'E', events: [] })), true);
+    await check('S10 Ticket: reportedAt berupa map DITOLAK (juga untuk tim OT)', setDoc(doc(TKE, 'tickets', 'tk_h2'), tkNew({ id: 'tk_h2', reportedByUid: 'tkE', reportedBy: 'X', reportedAt: { toString: 'x' }, events: [] })), false);
+    await check('S10 Ticket: updatedAt berupa map DITOLAK', updateDoc(doc(TKE, 'tickets', 'tk_h1'), { updatedAt: { toString: 'x' } }), false);
+    await check('S10 Ticket: resolvedAt null (dibuka lagi) tetap boleh', updateDoc(doc(TKE, 'tickets', 'tk_h1'), { resolvedAt: null, updatedAt: Date.now() }), true);
+    // The reporter adds exactly one event of its own at the end.
+    const ev2 = tkEv('comment', { text: 'Sudah dicek ulang' });
+    await check('S9 Pelapor: menghapus timeline DITOLAK', updateDoc(doc(TK1, 'tickets', 'tk_n'), { events: [], updatedAt: Date.now(), lastActorUid: 'khl1' }), false);
+    await check('S9 Pelapor: mengganti event lama DITOLAK', updateDoc(doc(TK1, 'tickets', 'tk_n'), { events: [{ ...ev0, text: 'High priority' }, ev1, ev2], updatedAt: Date.now(), lastActorUid: 'khl1' }), false);
+    await check('S9 Pelapor: menyisipkan event di tengah DITOLAK', updateDoc(doc(TK1, 'tickets', 'tk_n'), { events: [ev0, ev2, ev1], updatedAt: Date.now(), lastActorUid: 'khl1' }), false);
+    await check('S9 Pelapor: dua event sekaligus DITOLAK', updateDoc(doc(TK1, 'tickets', 'tk_n'), { events: [ev0, ev1, ev2, tkEv('comment')], updatedAt: Date.now(), lastActorUid: 'khl1' }), false);
+    await check('S9 Pelapor: event atas nama tim OT DITOLAK', updateDoc(doc(TK1, 'tickets', 'tk_n'), { events: [ev0, ev1, tkEv('comment', { by: 'Budi (OT)', byUid: 'tkE' })], updatedAt: Date.now(), lastActorUid: 'khl1' }), false);
+    await check('S9 Pelapor: nama palsu pada event-nya sendiri DITOLAK', updateDoc(doc(TK1, 'tickets', 'tk_n'), { events: [ev0, ev1, tkEv('comment', { by: 'Budi (OT)' })], updatedAt: Date.now(), lastActorUid: 'khl1' }), false);
+    await check('S9 Pelapor: event "resolved" DITOLAK', updateDoc(doc(TK1, 'tickets', 'tk_n'), { events: [ev0, ev1, tkEv('resolved')], updatedAt: Date.now(), lastActorUid: 'khl1' }), false);
+    await check('S9 Pelapor: mengisi resolvedAt DITOLAK', updateDoc(doc(TK1, 'tickets', 'tk_n'), { events: [ev0, ev1, ev2], resolvedAt: Date.now(), updatedAt: Date.now(), lastActorUid: 'khl1' }), false);
+    await check('S9 Pelapor: mengubah photoIds DITOLAK', updateDoc(doc(TK1, 'tickets', 'tk_n'), { events: [ev0, ev1, ev2], photoIds: ['tk_other__p1'], updatedAt: Date.now(), lastActorUid: 'khl1' }), false);
+    await check('S9 Pelapor: lastActorUid orang lain DITOLAK', updateDoc(doc(TK1, 'tickets', 'tk_n'), { events: [ev0, ev1, ev2], updatedAt: Date.now(), lastActorUid: 'tkE' }), false);
+    await check('S9 Pelapor: catatan berikutnya diterima', updateDoc(doc(TK1, 'tickets', 'tk_n'), { events: [ev0, ev1, ev2], updatedAt: Date.now(), lastActorUid: 'khl1' }), true);
+    await check('S9 Pelapor: menutup tanpa event "closed" DITOLAK', updateDoc(doc(TK1, 'tickets', 'tk_res2'), { status: 'closed', closedAt: Date.now(), events: [otEvSeed(), tkEv('comment')], updatedAt: Date.now(), lastActorUid: 'khl1' }), false);
+    // Reopen: resolvedAt goes.
+    await check('S9 Pelapor: "Not fixed — reopen" yang menyimpan resolvedAt DITOLAK', updateDoc(doc(TK1, 'tickets', 'tk_res2'), { status: 'open', closedAt: null, events: [otEvSeed(), tkEv('reopen', { text: 'Masih mati' })], updatedAt: Date.now(), lastActorUid: 'khl1' }), false);
+    await check('S9 Pelapor: "Not fixed — reopen" menghapus resolvedAt', updateDoc(doc(TK1, 'tickets', 'tk_res2'), { status: 'open', closedAt: null, resolvedAt: null, events: [otEvSeed(), tkEv('reopen', { text: 'Masih mati' })], updatedAt: Date.now(), lastActorUid: 'khl1' }), true);
+    await check('S9 Pelapor: "reopen" pada ticket yang belum resolved DITOLAK', updateDoc(doc(TK1, 'tickets', 'tk_s12'), { status: 'open', resolvedAt: null, events: [ev0, tkEv('reopen')], updatedAt: Date.now(), lastActorUid: 'khl1' }), false);
+    // At the 300 cap the app drops the oldest event.
+    const capEvs = Array.from({ length: 300 }, (_, i) => ({ at: i + 1, by: 'E', byUid: 'tkE', type: 'comment', text: 'n' + i }));
+    const capNow = capEvs.slice(1).concat([tkEv('comment', { text: 'cap' })]);
+    await check('S9 Pelapor: di batas 300 event, yang terlama tergeser — diterima', updateDoc(doc(TK1, 'tickets', 'tk_cap'), { events: capNow, updatedAt: Date.now(), lastActorUid: 'khl1' }), true);
+    await check('S9 Pelapor: di batas 300 event, membuang event di tengah DITOLAK', updateDoc(doc(TK1, 'tickets', 'tk_cap'), { events: capNow.slice(0, 150).concat(capNow.slice(151), [tkEv('comment')]), updatedAt: Date.now(), lastActorUid: 'khl1' }), false);
+    // The OT team is unaffected.
+    await check('S9 Tim OT: tetap bisa menulis timeline dan resolvedAt', updateDoc(doc(TKE, 'tickets', 'tk_other'), { events: [{ at: 1, by: 'E', byUid: 'tkE', type: 'resolved' }], status: 'resolved', resolvedAt: Date.now() }), true);
     await check('Tickets: view membaca semua', getDoc(doc(TKV, 'tickets', 'tk_other')), true);
     await check('Tickets: view TIDAK bisa mengubah', updateDoc(doc(TKV, 'tickets', 'tk_other'), { status: 'assigned' }), false);
     await check('Tickets: tim OT menugaskan & mengerjakan', updateDoc(doc(TKE, 'tickets', 'tk_other'), { status: 'progress', assigneeUid: 'tkE' }), true);

@@ -76,6 +76,67 @@ const data = {
     t('galeri: potret tetap potret, lanskap tetap lanskap, semua di dalam halaman (2.40.2)', [G.every((g, i) => (g.w < g.h) === ([1, 4].includes(i))), G.every(g => g.x >= -1e-9 && g.x + g.w <= 9.2 + 1e-9 && g.y + g.h <= 4.2 + 1e-9)], [true, true]);
     t('teks dipotong ke kotaknya', fitLine('Pasang Camera AI di seluruh unit traktor GPA', 1, 10), 'Pasang Camer…');
 
+    // 2.45.0: records as users can write them (the rules check only a few fields). None of them may stop
+    // the report: the odd parts are skipped, everything else is counted as before.
+    const odd = {
+        teamMembers: [{ id: 'm1', name: 'Budi Santoso', company: 'PT. Global Papua Abadi' }, { id: 'm5', name: 42, company: { x: 1 } }],
+        workLogs: [{ id: 'wl1', date: day, memberId: 'm1', memberName: 'Budi', start: '07:00', end: '15:00', approval: 'approved', photoCount: 3,
+            jobs: [null, { paddock: 'BLAF-2-E-005', jobType: 'Tillage', units: 'x', photoCount: 2 }, { paddock: { a: 1 }, jobType: 7, units: [null, { id: 'u1' }] }], issue: 12 },
+            { id: 'wl2', date: day, memberId: 'm5', start: '07:00', end: '09:00', jobs: 'abc', units: 5, issue: { a: 1 } }],
+        tickets: [{ id: 'k1', no: 'TK-1', title: 'Display mati', priority: 'high', status: 'open', reportedAt: at(day, 9), events: [null, 5, { type: 'resolved', at: 'x' }], units: 5, photoIds: 'abc', jobIds: 7 },
+            { id: 'k2', no: 'TK-2', title: { a: 1 }, priority: 'constructor', status: 'resolved', reportedAt: at(day, 8), events: 'oops', units: [null, 'GGTR', { id: 'u2' }], photoIds: [null, 'tp9'] },
+            { id: 'k3', no: 'TK-3', title: 'Old', priority: 'low', status: 'resolved', resolvedAt: 'yesterday', events: { 0: { type: 'resolved', at: at(day, 12) } } }],
+        otJobs: [{ id: 'j1', date: day, category: { a: 1 }, description: 5, status: 'constructor', ticketId: 'k9', units: 'GGTR', photoIds: 'jp1' }, { id: 'j2', date: day, units: [null], photoIds: [3, 'jp2'] }],
+        projects: [{ id: 'p1', name: 'RTK Tower', status: 'progress', target: { mode: 'units', units: 'x' } },
+            { id: 'p2', name: 'No updates', status: 'progress', target: { mode: 'milestones', milestones: [null, { label: 'A', weight: 50, done: true }] }, updates: [null, 'x', { date: day, text: 'Pondasi', progress: 'progress 0% → 50%', photoIds: 'pp' }] },
+            { id: 'p3', name: 7, status: 'progress', target: 'x', updates: { 0: 1 } }, { id: 'p4', status: 'progress', target: { units: [null, { done: true }] }, updates: [{ date: day, text: 'u', photoIds: [null, 'pp4'] }] }],
+        damageRecords: [{ id: 'd1', date: day, unitId: 'u1', unitName: { a: 1 }, component: 5, description: ['x'] }],
+        units: [{ id: 'u1', name: 'GGTR101G', status: 'Breakdown' }, { id: 'u2', name: 7, status: 5 }]
+    };
+    const oddIn = { date: day, now: at('2026-11-11', 7), members: odd.teamMembers, shifts: [], leaves: [], workLogs: odd.workLogs, tickets: odd.tickets, damages: odd.damageRecords, jobs: odd.otJobs, projects: odd.projects, units: odd.units };
+    const O = C.buildDaily(oddIn);
+    // Times and numbers written as maps with a toString key (any sort or sum of them threw).
+    const bad = { toString: 'x' };
+    const badIn = Object.assign({}, oddIn, {
+        tickets: [{ id: 'k4', no: 'TK-4', title: 'Bad time', priority: 'low', status: 'open', reportedAt: bad, updatedAt: bad, events: [{ type: 'resolved', at: bad }, { type: 'resolved', at: 1 }] },
+            { id: 'k5', no: 'TK-5', title: 'Fine', priority: 'high', status: 'open', reportedAt: at(day, 10) }],
+        projects: [{ id: 'p5', name: 'Bad time', status: 'progress', updatedAt: bad, updates: [{ at: bad, date: day, text: 'Tower', progress: 'progress 0% → 5%' }],
+            target: { mode: 'milestones', milestones: [{ label: 'A', weight: bad, done: true }] } }],
+        jobs: [{ id: 'j3', date: day, category: 'Install', description: 'GPS', status: 'done', hours: bad, updatedAt: bad }],
+        workLogs: [{ id: 'wl3', date: day, memberId: 'm1', memberName: 'Budi', start: bad, end: bad, approval: 'approved', createdAt: bad, photoCount: bad, jobs: [{ paddock: 'P-9', jobType: 'Tillage' }] }] });
+    const BT = C.buildDaily(badIn);
+    t('2.45.0: angka/waktu berupa map {toString} → tidak ada bagian yang gagal', [BT.failed, BT.errors, BT.tickets.opened.map(x => x.no), BT.jobs.map(j => j.what), BT.running.map(p => p.name)],
+        [[], [], ['TK-5'], ['GPS'], ['Bad time']]);
+    t('2.45.0: tidy: angka berupa map dibuang, null tetap', [C.tidy({ reportedAt: bad, resolvedAt: null, title: 'a' }, C.SHAPES.ticket), C.tidy({ hours: NaN }, C.SHAPES.job)], [{ resolvedAt: null, title: 'a' }, {}]);
+    t('2.45.0: data aneh — tidak ada bagian yang gagal', [O.failed, O.errors], [[], []]);
+    t('2.45.0: daily report: job null dilewati, unit bukan daftar = tanpa unit', [O.team.filed, O.team.members.map(m => [m.name, m.state, m.work, m.units]), O.team.paddocks, O.team.units],
+        [2, [['42', 'ok', '', ''], ['Budi Santoso', 'ok', 'BLAF-2-E-005 · Tillage; 7', 'GGTR101G']], 1, 1]);
+    t('2.45.0: daily report: isu angka dibaca sebagai teks, isu objek dilewati', O.team.issues, [{ who: 'Budi', text: '12' }]);
+    t('2.45.0: ticket: events null / bukan daftar, units 5, label "constructor"', [O.tickets.opened.map(x => [x.no, x.title, x.prio, x.status, x.units]), O.tickets.resolved.map(x => x.no), O.tickets.open, O.tickets.overdue],
+        [[['TK-1', 'Display mati', 'High', 'Open', ''], ['TK-2', '', '', 'Open → resolved later', '7']], [], 1, 1]);
+    t('2.45.0: job: kategori/status aneh, ticket & unit bukan daftar', O.jobs.map(j => [j.category, j.what, j.status, j.done, j.units, j.ticket]), [['Other', '5', 'Done', false, '', ''], ['Other', '', 'Done', true, '', '']]);
+    t('2.45.0: project: units bukan daftar = 0%, tanpa updates, milestone null dilewati', [O.running.map(p => [p.name, p.pct]), O.updates.map(u => [u.project, u.pct, u.s.texts])],
+        [[['', 100], ['No updates', 50], ['7', 0], ['RTK Tower', 0]], [['No updates', 100, ['Pondasi']], ['', 100, ['u']]]]);
+    t('2.45.0: foto: id bukan teks dilewati', O.photos.map(p => [p.key, p.index]), [['wl:wl1:0', 0], ['tk:tp9', undefined], ['pj:jp2', undefined], ['pj:pp4', undefined], ['wl:wl1:0:1', 1]]);
+    t('2.45.0: kerusakan: nama/komponen aneh tidak membuat gagal', O.damage.map(d => [d.unit, d.part, d.what, d.breakdown]), [['GGTR101G', '5', '', true]]);
+    const OP = C.dailyPages(O, {}), OM = C.dailyEmail(O, { attached: true });
+    t('2.45.0: halaman & email dari data aneh', [OP.length, /Display mati/.test(OM.html), /Left out/.test(OM.html)], [5, true, false]);
+    const op = await renderPptx(OP), od = await renderPdf(OP);
+    t('2.45.0: PowerPoint & PDF dari data aneh', [op.length > 20000, od.length > 5000], [true, true]);
+    // A part that still fails (here: a record that throws when read) is left out and named; the rest stays.
+    const boom = { id: 'mx', get name() { throw new Error('boom'); } };
+    const B = C.buildDaily(Object.assign({}, oddIn, { members: [boom] }));
+    t('2.45.0: bagian yang tetap gagal ditinggal & disebut, bagian lain tetap ada', [B.failed, /boom/.test(B.errors[0]), B.team.members, B.tickets.opened.length, B.jobs.length], [['Daily Report summary'], true, [], 2, 2]);
+    const BM = C.dailyEmail(B, {}), BP = C.dailyPages(B, {});
+    t('2.45.0: email & halaman menyebut bagian yang ditinggal', [/Left out of this report \(could not be built\): Daily Report summary/.test(BM.html), /Left out of this report \(could not be built\): Daily Report summary/.test(BM.text), /left out \(could not be built\): Daily Report summary/.test(BP[1].sub)], [true, true, true]);
+    t('2.45.0: helper bersama: tidy membersihkan daftar, objek yang benar tetap sama', [C.tidy({ events: [null, { a: 1 }], units: 3, photoIds: ['a', 2] }, C.SHAPES.ticket), (() => { const r = { events: [{ a: 1 }], units: [] }; return C.tidy(r, C.SHAPES.ticket) === r; })(),
+        C.tidy({ target: 'x', updates: [{ photoIds: 'y' }] }, C.SHAPES.project), C.tidy(null, C.SHAPES.job)],
+        [{ events: [{ a: 1 }], units: [], photoIds: ['a'] }, true, { target: {}, updates: [{ photoIds: [] }] }, null]);
+    t('2.45.0: tidy: teks dibaca sebagai teks (angka → teks, objek/null → kosong), yang tidak ada tetap tidak ada',
+        C.tidy({ title: 5, no: { a: 1 }, description: null, units: [{ name: 7, sn: 'S1' }] }, C.SHAPES.ticket), { title: '5', no: '', description: '', units: [{ name: '7', sn: 'S1' }] });
+    t('2.45.0: summarizeUpdates / jobInfo / projectNamer dengan data aneh', [C.summarizeUpdates({ updates: 'x' }, day, day), C.jobInfo({ units: 5, category: 3, status: '__proto__' }, { tickets: [null, { id: 't', jobIds: 'abc' }], projects: 'x' }).status, C.projectNamer([null, { name: 5 }])({ name: 5 })],
+        [null, 'Done', '5']);
+
     const pptx = await renderPptx(P), pdf = await renderPdf(P);
     t('PowerPoint: 5 slide', new Set(pptx.toString('latin1').match(/ppt\/slides\/slide\d+\.xml/g) || []).size, 5);
     t('PDF: 5 halaman', (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length, 5);
@@ -84,6 +145,10 @@ const data = {
     t('server: catatan dibaca per tanggal', asked.sort(), ['damageRecords:date', 'damageRecords:resolvedAt', 'leaveRequests', 'otJobs:date', 'projects', 'shifts:date', 'teamMembers', 'tickets', 'units', 'workLogs:date'].sort());
     t('server: foto dari Storage & foto lama inline; yang hilang/tak terbaca dilewati', [r.photos, r.pages], [2, 6]);
     t('server: lampiran PowerPoint + PDF', r.m.attachments.map(a => [a.filename, a.content.length > 20000]), [['Daily_Report_2026-11-10.pptx', true], ['Daily_Report_2026-11-10.pdf', true]]);
+    // 2.45.0: the same records the server reads, written oddly — the email still goes, whole, with both files.
+    Object.assign(data, odd);
+    const r2 = await composeDaily({ db, bucket, sharp, date: day, now: at('2026-11-11', 7) });
+    t('2.45.0: server: data aneh — email lengkap dengan lampiran', [r2.D.failed, r2.fileError, r2.m.attachments.length, /Display mati/.test(r2.m.html), /Pondasi/.test(r2.m.html)], [[], '', 2, true, true]);
 
     let pass = 0;
     T.forEach(x => { if (x.pass) pass++; console.log(`${x.pass ? 'PASS' : 'FAIL'}  ${x.name}${x.pass ? '' : `\n        dapat=${JSON.stringify(x.g)} harap=${JSON.stringify(x.w)}`}`); });

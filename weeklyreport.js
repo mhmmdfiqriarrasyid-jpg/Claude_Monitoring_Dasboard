@@ -76,6 +76,11 @@ const _wrFmtPct = v => v == null ? '—' : `${v}%`;
 const _wrNamer = () => window.DailyCore ? DailyCore.projectNamer(typeof projects !== 'undefined' ? projects : []) : (p => p.name || '');
 const _wrType = k => window.DailyCore ? DailyCore.typeLabel(pjTypeLabel(k)) : pjTypeLabel(k);
 const _wrToneOf = (v, target, warnGap) => v == null ? 'muted' : v >= target ? 'good' : v >= target - (warnGap || 5) ? 'warn' : 'bad';
+// 2.45.0: Daily Reports, tickets, jobs and projects as users wrote them (the rules check only a few
+// fields) are read through DailyCore.tidy — lists as lists of records, text as text: one odd record
+// (a ticket with events [null], a report with jobs [null]) used to stop this report for everyone.
+const _wrTidy = (list, kind) => { const l = Array.isArray(list) ? list : [];
+    return window.DailyCore && DailyCore.tidy ? l.map(r => DailyCore.tidy(r, DailyCore.SHAPES[kind])).filter(Boolean) : l.filter(r => r && typeof r === 'object'); };
 
 // ---- The numbers ----
 function buildWeeklyReport(from, opts) {
@@ -113,7 +118,7 @@ function buildWeeklyReport(from, opts) {
         };
         const c = compliance(w), cp = compliance(prev);
         if (!cp.filed) cp.pct = null;   // nothing filed that week: no comparison
-        const logs = workLogs.filter(l => _wrIn(l.date, w) && isSubmitted(l));
+        const logs = _wrTidy(workLogs, 'workLog').filter(l => _wrIn(l.date, w) && isSubmitted(l));
         const hoursPerDay = w.days.map(d => logs.filter(l => l.date === d).reduce((n, l) => n + workLogMinutes(l), 0) / 60);
         const byType = new Map(), byPaddock = new Map(), byUnit = new Map();
         logs.forEach(l => {
@@ -142,9 +147,12 @@ function buildWeeklyReport(from, opts) {
     }
 
     // Field tickets.
-    const tk = typeof tickets !== 'undefined' ? tickets : [];
-    const evAt = (t, type) => (t.events || []).filter(e => e.type === type).map(e => e.at).sort((a, b) => b - a)[0];
-    const resolvedIn = tk.filter(t => _wrInMs(t.resolvedAt || evAt(t, 'resolved'), w));
+    const tk = _wrTidy(typeof tickets !== 'undefined' ? tickets : [], 'ticket');
+    const evAt = (t, type) => (t.events || []).filter(e => e.type === type).map(e => e.at).filter(n => typeof n === 'number').sort((a, b) => b - a)[0];
+    // 2.45.0: only a ticket still resolved or closed — a reopened one keeps its old
+    // 'resolved' event (and, from older versions, resolvedAt) but is not fixed.
+    const resolvedAtOf = t => TK_DONE.includes(t.status) ? (t.resolvedAt || evAt(t, 'resolved')) : null;
+    const resolvedIn = tk.filter(t => _wrInMs(resolvedAtOf(t), w));
     const openNow = tk.filter(t => !TK_DONE.includes(t.status));
     const prio = { high: 0, medium: 1, low: 2 };
     D.tickets = {
@@ -152,7 +160,7 @@ function buildWeeklyReport(from, opts) {
         newIn: tk.filter(t => _wrInMs(t.reportedAt, w)).length,
         newPrev: tk.filter(t => _wrInMs(t.reportedAt, prev)).length,
         resolved: resolvedIn.length,
-        slaMet: resolvedIn.filter(t => (t.resolvedAt || evAt(t, 'resolved')) <= ticketDueAt(t)).length,
+        slaMet: resolvedIn.filter(t => resolvedAtOf(t) <= ticketDueAt(t)).length,
         open: openNow.length,
         overdue: openNow.filter(t => ticketOverdue(t)).length,
         noPic: openNow.filter(t => t.status === 'open').length,
@@ -164,18 +172,19 @@ function buildWeeklyReport(from, opts) {
     };
 
     // Jobs & activities outside the Daily Report.
-    const jobs = (typeof otJobs !== 'undefined' ? otJobs : []).filter(j => _wrIn(j.date, w)).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    const allJobs = _wrTidy(typeof otJobs !== 'undefined' ? otJobs : [], 'job'), pjAll = _wrTidy(typeof projects !== 'undefined' ? projects : [], 'project');
+    const jobs = allJobs.filter(j => _wrIn(j.date, w)).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
     D.jobs = {
         on: typeof otJobs !== 'undefined' && canViewView('projects'),
         total: jobs.length, done: jobs.filter(j => j.status === 'done').length,
-        prevTotal: (otJobs || []).filter(j => _wrIn(j.date, prev)).length,
+        prevTotal: allJobs.filter(j => _wrIn(j.date, prev)).length,
         hours: jobs.reduce((n, j) => n + (Number(j.hours) || 0), 0),
         byCategory: [...jobs.reduce((m, j) => m.set(j.category || 'Other', (m.get(j.category || 'Other') || 0) + 1), new Map()).entries()].sort((a, b) => b[1] - a[1]),
         list: jobs.map(j => { const t = ticketOfJob(j); return { date: j.date, category: j.category, what: j.description || '', units: (j.units || []).map(u => u.name).join(', '), status: j.status || 'done', by: j.requestedBy || '', ticket: t ? t.no : '' }; }),
-        backlog: (otJobs || []).filter(j => (j.issue || '').trim() && j.status !== 'done').map(j => ({ date: j.date, category: j.category, issue: j.issue.trim(), units: (j.units || []).map(u => u.name).join(', '), ticket: (ticketOfJob(j) || {}).no || '' })),
-        unfinished: (otJobs || []).filter(j => j.status !== 'done').length,
+        backlog: allJobs.filter(j => (j.issue || '').trim() && j.status !== 'done').map(j => ({ date: j.date, category: j.category, issue: j.issue.trim(), units: (j.units || []).map(u => u.name).join(', '), ticket: (ticketOfJob(j) || {}).no || '' })),
+        unfinished: allJobs.filter(j => j.status !== 'done').length,
         // 2.40.0: every job of the week in plain words, for the Job log pages.
-        log: window.DailyCore ? jobs.map(j => DailyCore.jobInfo(j, { tickets: tk, projects: typeof projects !== 'undefined' ? projects : [], unitName: u => (u && (nameOf(u.id) || u.name || u.sn)) || '',
+        log: window.DailyCore ? jobs.map(j => DailyCore.jobInfo(j, { tickets: tk, projects: pjAll, unitName: u => (u && (nameOf(u.id) || u.name || u.sn)) || '',
             name: _wrNamer() })) : []
     };
 
@@ -248,7 +257,7 @@ function buildWeeklyReport(from, opts) {
         open: prs.filter(p => !PR_CLOSED.includes(p.status) && p.status !== 'draft').length };
 
     // Projects.
-    const pj = (typeof projects !== 'undefined' ? projects : []).filter(p => !PJ_CLOSED.includes(p.status) || (p.doneAt && _wrInMs(p.doneAt, w)));
+    const pj = pjAll.filter(p => !PJ_CLOSED.includes(p.status) || (p.doneAt && _wrInMs(p.doneAt, w)));
     const namer = _wrNamer(), sumOf = p => window.DailyCore ? DailyCore.summarizeUpdates(p, w.from, w.to) : null;
     // 2.40.0: what the week really changed, in one line (ticks undone the same week cancel out).
     const weekLine = p => { const e = window.DailyCore && DailyCore.projectEntry('', sumOf(p), projectProgress(p).pct); return e ? [e.text, e.note].filter(Boolean).join(' · ') : ''; };
@@ -259,7 +268,7 @@ function buildWeeklyReport(from, opts) {
 
     // 2.37.0: one page per project still running — where it stands, what moved
     // this week, what blocks it and which goods it still waits for.
-    D.projectPages = (typeof projects !== 'undefined' ? projects : []).filter(p => !PJ_CLOSED.includes(p.status)).map(p => {
+    D.projectPages = pjAll.filter(p => !PJ_CLOSED.includes(p.status)).map(p => {
         const pr = projectProgress(p), rag = projectRag(p, today), t = p.target || {};
         const ups = (p.updates || []).filter(u => _wrIn(u.date, w)).sort((a, b) => (a.at || 0) - (b.at || 0));
         // Progress at the start of the week, read from the first update of the week ("progress 3% → 21%").
@@ -280,7 +289,7 @@ function buildWeeklyReport(from, opts) {
             delta: sum && sum.start != null && sum.end != null ? sum.end - sum.start : before == null ? null : pr.pct - before, mode: t.mode || 'units', steps, stepsDone: steps.filter(x => x.done).length,
             updates: ups.filter(u => !u.auto || ups.every(x => x.auto)).slice(-4).map(u => ({ date: u.date, text: u.text || '', blocker: u.blocker || '' })),
             blockers: ups.map(u => u.blocker).filter(Boolean).slice(-2),
-            jobs: (typeof otJobs !== 'undefined' ? otJobs : []).filter(j => j.projectId === p.id && _wrIn(j.date, w)).length,
+            jobs: allJobs.filter(j => j.projectId === p.id && _wrIn(j.date, w)).length,
             goods: { total: mats.length, ready: mats.length - short.length, short: short.slice(0, 6), more: Math.max(0, short.length - 6) } };
     }).sort((a, b) => ({ red: 0, amber: 1, green: 2 }[a.rag] ?? 2) - ({ red: 0, amber: 1, green: 2 }[b.rag] ?? 2));
 
@@ -695,6 +704,7 @@ function renderDailyReportView() {
     const inp = document.getElementById('wrDay');
     if (inp) { inp.max = toISODate(); if (document.activeElement !== inp) inp.value = _wrDay; }
     const D = DailyCore.buildDaily(wrDailyInput(_wrDay));
+    if (D.errors && D.errors.length) console.warn('[daily report] parts left out:', D.errors);   // 2.45.0
     D.week = { no: '', label: D.day.label, from: D.day.date };   // what the shared renderers read
     const refs = wrDailyRefs(D);
     wrLoadMedia(refs.filter(r => !_wrHidden.has(r.key)));
@@ -1150,7 +1160,7 @@ function wrMediaRefs(D) {
     // Daily Report: each paddock line with photos; spread over paddocks and days.
     if (D.team.on && typeof loadWorkLogPhotos === 'function') {
         const cand = [];
-        workLogs.filter(l => _wrIn(l.date, w) && isSubmitted(l) && workLogPhotoCount(l) > 0).forEach(l => {
+        _wrTidy(workLogs, 'workLog').filter(l => _wrIn(l.date, w) && isSubmitted(l) && workLogPhotoCount(l) > 0).forEach(l => {
             const jobs = l.place === 'office' ? [] : workLogJobs(l);
             const counted = jobs.some(j => Number(j.photoCount) > 0);
             const who = (l.memberName || '').split(' ')[0];
@@ -1171,16 +1181,17 @@ function wrMediaRefs(D) {
         }
     }
     // Tickets raised or handled this week, with their photos.
-    (typeof tickets !== 'undefined' ? tickets : []).filter(t => (t.photoIds || []).length && (_wrInMs(t.reportedAt, w) || (t.events || []).some(e => _wrInMs(e.at, w))))
+    _wrTidy(typeof tickets !== 'undefined' ? tickets : [], 'ticket').filter(t => (t.photoIds || []).length && (_wrInMs(t.reportedAt, w) || (t.events || []).some(e => _wrInMs(e.at, w))))
         .sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.priority] ?? 1) - ({ high: 0, medium: 1, low: 2 }[b.priority] ?? 1))
         .forEach(t => t.photoIds.slice(0, 2).forEach((id, k) => out.tickets.push({ key: `tk:${id}`, kind: 'photo', cap: `${t.no} · ${t.title}`,
             sub: `${(TK_PRIORITY[t.priority] || {}).label || ''} · ${(TK_STATUSES[t.status] || {}).label || t.status}${t.photoIds.length > 1 ? ` · photo ${k + 1} of ${t.photoIds.length}` : ''}`,
             load: () => loadWhPhoto(id, 'tk') })));
     // Projects (updates this week) and jobs (this week): photos and videos.
     if (canViewView('projects')) {
-        (typeof projects !== 'undefined' ? projects : []).forEach(p => (p.updates || []).filter(u => _wrIn(u.date, w) && (u.photoIds || []).length).forEach(u =>
+        const pjAll = _wrTidy(typeof projects !== 'undefined' ? projects : [], 'project'), jobAll = _wrTidy(typeof otJobs !== 'undefined' ? otJobs : [], 'job');
+        pjAll.forEach(p => (p.updates || []).filter(u => _wrIn(u.date, w) && (u.photoIds || []).length).forEach(u =>
             u.photoIds.slice(0, 2).forEach(id => out.work.push({ key: `pj:${id}`, kind: 'photo', cap: p.name || 'Project', sub: `${dayName(u.date)} · ${(u.text || '').slice(0, 60)}`, load: () => loadWhPhoto(id, 'pj') }))));
-        (typeof otJobs !== 'undefined' ? otJobs : []).filter(j => _wrIn(j.date, w)).forEach(j => {
+        jobAll.filter(j => _wrIn(j.date, w)).forEach(j => {
             const sub = `${dayName(j.date)}${(j.units || []).length ? ' · ' + j.units.map(u => u.name).join(', ') : ''}`;
             (j.files || []).filter(f => /^video\//.test(f.type || '')).slice(0, 2).forEach(f => out.work.push({ key: `vid:${f.path}`, kind: 'video', cap: `${j.category} · ${j.description || ''}`.slice(0, 80), sub: `${sub} · video`,
                 name: f.name, size: f.size || 0, type: f.type, load: async () => window.cloud && window.cloud.projectFileUrl ? window.cloud.projectFileUrl(f.path, j.id) : '' }));
@@ -1189,11 +1200,11 @@ function wrMediaRefs(D) {
         out.work.sort((a, b) => (a.kind === 'video' ? 0 : 1) - (b.kind === 'video' ? 0 : 1));
         // 2.37.0: the pictures of each running project — this week's first, else its latest.
         out.projects = {};
-        (typeof projects !== 'undefined' ? projects : []).filter(p => !PJ_CLOSED.includes(p.status)).forEach(p => {
+        pjAll.filter(p => !PJ_CLOSED.includes(p.status)).forEach(p => {
             const refs = [];
             const ups = (p.updates || []).filter(u => (u.photoIds || []).length).sort((a, b) => (_wrIn(b.date, w) ? 1 : 0) - (_wrIn(a.date, w) ? 1 : 0) || String(b.date || '').localeCompare(String(a.date || '')));
             ups.slice(0, 3).forEach(u => u.photoIds.slice(0, 2).forEach(id => refs.push({ key: `pj:${id}`, kind: 'photo', cap: dayName(u.date), sub: (u.text || '').slice(0, 50), load: () => loadWhPhoto(id, 'pj') })));
-            (typeof otJobs !== 'undefined' ? otJobs : []).filter(j => j.projectId === p.id && _wrIn(j.date, w)).forEach(j => (j.photoIds || []).slice(0, 2).forEach(id =>
+            jobAll.filter(j => j.projectId === p.id && _wrIn(j.date, w)).forEach(j => (j.photoIds || []).slice(0, 2).forEach(id =>
                 refs.push({ key: `pj:${id}`, kind: 'photo', cap: dayName(j.date), sub: `${j.category}`.slice(0, 50), load: () => loadWhPhoto(id, 'pj') })));
             if (refs.length) out.projects[p.id] = refs.slice(0, 6);
         });

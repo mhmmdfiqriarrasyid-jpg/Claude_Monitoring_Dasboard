@@ -371,8 +371,10 @@ service cloud.firestore {
     }
     match /workLogs/{id} {
       allow read:   if teamLogReader() || (teamLogOwn() && mineIn(resource.data));
-      allow create: if isOwner() || (canEditArea('teamLog') && newRecord(id))
-                    || (teamLogOwn() && newRecord(id) && memberMine());
+      // 2.45.0: never an lv_ id — that is a leave request's (teamRecPath and storage.rules pick the
+      // record by it, so a work log under one would keep its own approved evidence swappable).
+      allow create: if isOwner() || (!id.matches('lv_.*') && canEditArea('teamLog') && newRecord(id))
+                    || (!id.matches('lv_.*') && teamLogOwn() && newRecord(id) && memberMine());
       allow delete: if isOwner() || (canEditArea('teamLog') && isOpen(resource.data))
                     || (teamLogOwn() && mineIn(resource.data) && isOpen(resource.data));
       allow update: if isOwner()
@@ -398,7 +400,8 @@ service cloud.firestore {
     // whoever can see the schedule may read them too.
     match /leaveRequests/{id} {
       allow read:   if teamLogReader() || canViewArea('teamShift') || (teamLogOwn() && mineIn(resource.data));
-      allow create: if isOwner() || ((canEditArea('teamLog') || teamLogOwn()) && newRecord(id));
+      // 2.45.0: always an lv_ id (generateLeaveId), the one teamRecPath and storage.rules look for.
+      allow create: if isOwner() || (id.matches('lv_.*') && (canEditArea('teamLog') || teamLogOwn()) && newRecord(id));
       allow delete: if isOwner() || (canEditArea('teamLog') && isOpen(resource.data))
                     || (teamLogOwn() && mineIn(resource.data) && isOpen(resource.data));
       allow update: if isOwner()
@@ -411,12 +414,15 @@ service cloud.firestore {
     // open, so a sent or approved report cannot have its evidence swapped
     // underneath it. No record yet means one being created — the app writes
     // the photos first, then the record.
+    // 2.45.0: the record is the one its id names — work logs are wl_…, leave
+    // requests lv_… (as storage.rules picks it). A draft work log made with a
+    // leave request's id used to unlock that request's approved letter.
+    function teamRecPath(id) {
+      return id.matches('lv_.*') ? /databases/$(database)/documents/leaveRequests/$(id)
+                                 : /databases/$(database)/documents/workLogs/$(id);
+    }
     function recordOpen(id) {
-      return exists(/databases/$(database)/documents/workLogs/$(id))
-          ? isOpen(get(/databases/$(database)/documents/workLogs/$(id)).data)
-          : (exists(/databases/$(database)/documents/leaveRequests/$(id))
-              ? isOpen(get(/databases/$(database)/documents/leaveRequests/$(id)).data)
-              : true);
+      return exists(teamRecPath(id)) ? isOpen(get(teamRecPath(id)).data) : true;
     }
 
     // Field documentation photos, one document per report. Split out of the
@@ -429,11 +435,7 @@ service cloud.firestore {
     // The record a photo belongs to was filed by this account ('own'); with
     // no record yet (photos are written first) it is about to be.
     function recordMine(id, orNew) {
-      return exists(/databases/$(database)/documents/workLogs/$(id))
-          ? mineIn(get(/databases/$(database)/documents/workLogs/$(id)).data)
-          : (exists(/databases/$(database)/documents/leaveRequests/$(id))
-              ? mineIn(get(/databases/$(database)/documents/leaveRequests/$(id)).data)
-              : orNew);
+      return exists(teamRecPath(id)) ? mineIn(get(teamRecPath(id)).data) : orNew;
     }
     // 2.26.1: the photos may still follow a report its sender has just sent.
     // Since 2.17.0 the images are uploaded to Storage before their document is
@@ -443,11 +445,7 @@ service cloud.firestore {
     // is approved or sent back the photos are locked or open as before.
     function sentByMe(d) { return apprOf(d) == 'pending' && d.get('submittedByUid', '') == request.auth.uid; }
     function recordSentByMe(id) {
-      return exists(/databases/$(database)/documents/workLogs/$(id))
-          ? sentByMe(get(/databases/$(database)/documents/workLogs/$(id)).data)
-          : (exists(/databases/$(database)/documents/leaveRequests/$(id))
-              ? sentByMe(get(/databases/$(database)/documents/leaveRequests/$(id)).data)
-              : false);
+      return exists(teamRecPath(id)) && sentByMe(get(teamRecPath(id)).data);
     }
     match /workLogPhotos/{id} {
       allow read:  if canViewArea('teamLog') || canViewArea('teamLogApprove')
@@ -486,19 +484,26 @@ service cloud.firestore {
       allow delete: if canEditArea('inspection') || canEditArea('inspectionApprove');
       allow create, update: if (canEditArea('inspection') || canEditArea('inspectionApprove')) && idMatches(id);
     }
+    // 2.45.0: what was carried into the damage log. appliedKeys (the components
+    // logged) decides what a report approved again after a reopen still has to
+    // log, so only the damage log's keepers stamp it — never the report's author.
+    function insAppliedKeys() { return ['appliedAt', 'appliedBy', 'appliedDamageIds', 'appliedKeys']; }
     match /inspections/{id} {
       allow read:   if inspectionReader();
-      allow create: if isOwner() || (canEditArea('inspection') && newRecord(id));
+      allow create: if isOwner() || (canEditArea('inspection') && newRecord(id)
+                                     && !request.resource.data.keys().hasAny(insAppliedKeys()));
       allow delete: if isOwner() || (canEditArea('inspection') && isOpen(resource.data));
       allow update: if isOwner()
-                    || (idMatches(id) && canEditArea('inspection') && (editorWrite() || withdrawWrite()))
+                    || (idMatches(id) && canEditArea('inspection') && (editorWrite() || withdrawWrite())
+                        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(insAppliedKeys()))
                     || (canEditArea('inspectionApprove') && approverWrite())
                     // After approval, whoever keeps the damage log records
                     // that the findings were carried into it — that stamp
                     // and nothing else.
                     || (canEditArea('damage') && apprOf(resource.data) == 'approved'
+                        && request.resource.data.get('appliedKeys', []) is list
                         && request.resource.data.diff(resource.data).affectedKeys()
-                             .hasOnly(['appliedAt', 'appliedBy', 'appliedDamageIds', 'updatedAt']));
+                             .hasOnly(insAppliedKeys().concat(['updatedAt'])));
     }
     // One photo per component. Changes only while its report is open, like
     // workLogPhotos; a report not written yet is one being created (the app
@@ -508,9 +513,17 @@ service cloud.firestore {
           ? isOpen(get(/databases/$(database)/documents/inspections/$(id)).data)
           : true;
     }
+    // 2.45.0: as workLogPhotos (2.26.1) — the app saves a report and its photos at the
+    // same time, and the photos (uploaded to Storage first) reach the server after the
+    // report, which is then already pending. Its sender may still finish them while it
+    // waits for the check; approved or sent back, they are locked or open as before.
+    function inspectionSentByMe(id) {
+      return exists(/databases/$(database)/documents/inspections/$(id))
+          && sentByMe(get(/databases/$(database)/documents/inspections/$(id)).data);
+    }
     match /inspectionPhotos/{id} {
       allow read:  if canViewArea('inspection') || canViewArea('inspectionApprove');
-      allow write: if isOwner() || (canEditArea('inspection') && inspectionOpen(id));
+      allow write: if isOwner() || (canEditArea('inspection') && (inspectionOpen(id) || inspectionSentByMe(id)));
     }
 
     // ---- Warehouse ----
@@ -632,19 +645,85 @@ service cloud.firestore {
       return textOk('title', 160) && textOk('category', 80)
           && request.resource.data.get('priority', '') in ['high', 'medium', 'low']
           && request.resource.data.get('status', '') in ['open', 'assigned', 'progress', 'resolved', 'closed']
-          && request.resource.data.get('events', []) is list && request.resource.data.get('events', []).size() <= 300;
+          && request.resource.data.get('events', []) is list && request.resource.data.get('events', []).size() <= 300
+          && tkNumOk('reportedAt') && tkNumOk('updatedAt') && tkNumOk('resolvedAt') && tkNumOk('closedAt');
+    }
+    // 2.45.0: the times are numbers (or left out / cleared): a map there stopped the sort of
+    // the Tickets page and the reports for everyone.
+    function tkNumOk(k) {
+      return request.resource.data.get(k, null) == null || request.resource.data.get(k, null) is number;
+    }
+    // 2.45.0: whoever is not on the OT team writes only as itself. A new ticket is a fresh
+    // one — open, no PIC, no resolution or close stamps, at most its one 'created' event —
+    // under the account's own name and e-mail; afterwards the reporter adds exactly ONE
+    // event of its own to the end of the timeline (the earlier ones stay as they are) with
+    // its comment, close or reopen, and a reopen clears resolvedAt. A forged timeline, PIC
+    // or 'resolved' stamp used to reach the OT team's pushes and the managers' reports.
+    // The name the app signs with (tickets.js _tkMe): the profile name, else the e-mail's
+    // part before the '@'.
+    function myName() {
+      let n = myDoc().data.get('displayName', '');
+      return (n is string && n != '') ? n : request.auth.token.get('email', '').split('@')[0];
+    }
+    function msNear(v) {
+      return v is int && v <= request.time.toMillis() + 86400000 && v >= request.time.toMillis() - 30 * 86400000;
+    }
+    function tkEventOk(ev, types) {
+      return ev is map && ev.keys().hasOnly(['at', 'by', 'byUid', 'type', 'text'])
+          && ev.get('type', '') in types
+          && ev.get('byUid', '') == request.auth.uid && ev.get('by', '') == myName()
+          && ev.get('at', 0) is int && ev.get('at', 0) <= request.time.toMillis() + 86400000
+          && ev.get('text', '') is string && ev.get('text', '').size() <= 2000;
+    }
+    function tkFresh() {
+      let d = request.resource.data;
+      let ev = d.get('events', []);
+      return d.keys().hasOnly(['id', 'no', 'title', 'category', 'priority', 'description', 'location', 'units', 'company',
+                               'photoIds', 'status', 'reportedByUid', 'reportedBy', 'reportedByEmail', 'reportedAt',
+                               'assigneeUid', 'assigneeName', 'jobIds', 'events', 'updatedAt', 'lastActorUid'])
+          && d.get('assigneeUid', '') == '' && d.get('assigneeName', '') == ''
+          && d.get('jobIds', []) is list && d.get('jobIds', []).size() <= 1
+          && d.get('reportedBy', '') == myName()
+          && d.get('reportedByEmail', '') == request.auth.token.get('email', '')
+          && msNear(d.get('reportedAt', null))
+          && d.get('lastActorUid', request.auth.uid) == request.auth.uid
+          && (ev.size() == 0 || (ev.size() == 1 && tkEventOk(ev[0], ['created'])));
+    }
+    // The reporter's one step: a note (status unchanged), or its answer to a resolved
+    // ticket — fixed (closed) or not (open again, no longer resolved). At the cap of 300
+    // events the app drops the oldest, so the kept ones move up by one.
+    function tkReporterWrite() {
+      let o = resource.data;
+      let d = request.resource.data;
+      let ch = d.diff(o).affectedKeys();
+      let olds = o.get('events', []);
+      let evs = d.get('events', []);
+      let n = olds.size();
+      let s0 = o.get('status', '');
+      let s1 = d.get('status', '');
+      let move = s1 == s0 ? 'comment'
+               : (s0 == 'resolved' && s1 == 'closed') ? 'closed'
+               : (s0 == 'resolved' && s1 == 'open') ? 'reopen' : '';
+      return move != ''
+          && ch.hasOnly(['events', 'status', 'closedAt', 'resolvedAt', 'updatedAt', 'lastActorUid'])
+          && d.get('lastActorUid', '') == request.auth.uid
+          && ((evs.size() == n + 1 && evs[0:n] == olds)
+              || (n == 300 && evs.size() == 300 && evs[0:299] == olds[1:300]))
+          && tkEventOk(evs[evs.size() - 1], [move])
+          && (move == 'comment' ? !ch.hasAny(['closedAt', 'resolvedAt'])
+              : move == 'closed' ? (!ch.hasAny(['resolvedAt']) && msNear(d.get('closedAt', null)))
+              : (d.get('resolvedAt', null) == null && d.get('closedAt', null) == null));
     }
     match /tickets/{id} {
       allow read:   if canViewArea('tickets') || (isActive() && ticketMine(resource.data));
       allow create: if isActive() && idMatches(id) && newIdOk(id) && ticketOk()
                     && request.resource.data.get('reportedByUid', '') == request.auth.uid
-                    && request.resource.data.get('status', '') == 'open';
+                    && request.resource.data.get('status', '') == 'open'
+                    && (canEditArea('tickets') || tkFresh());
       allow update: if idMatches(id) && ticketOk() && (canEditArea('tickets')
                     || (isActive() && ticketMine(resource.data)
                         && request.resource.data.get('reportedByUid', '') == request.auth.uid
-                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['events', 'status', 'closedAt', 'updatedAt', 'lastActorUid', 'photoIds'])
-                        && (request.resource.data.get('status', '') == resource.data.get('status', '')
-                            || (resource.data.get('status', '') == 'resolved' && request.resource.data.get('status', '') in ['closed', 'open']))));
+                        && tkReporterWrite()));
       allow delete: if canEditArea('tickets');
     }
     // Photos of a ticket: its reporter and whoever may see tickets.
@@ -729,7 +808,9 @@ service cloud.firestore {
       allow write: if id == 'agri' && canEditArea('learning')
         && request.resource.data.keys().hasOnly(['builtIns', 'hidden', 'updatedAt']) && request.resource.data.get('builtIns', true) is bool
         && request.resource.data.get('hidden', []) is list && request.resource.data.get('hidden', []).size() <= 1000;
-      allow read: if id == 'email' && (isOwner() || canViewArea('licenseStock') || canViewArea('teamLog') || canViewArea('damage'));
+      // 2.45.0: only whoever opens the Notifications page reads it (script.js
+      // canSeeNotifications) — Daily Report and Damage viewers could read every list.
+      allow read: if id == 'email' && (isOwner() || canViewArea('licenseStock'));
       allow write: if id == 'email' && isOwner()
         && request.resource.data.keys().hasOnly(['recipients', 'dailyEnabled', 'sendHour',
              'reminderEnabled', 'reminderHour', 'reminderRecipients', 'damageEnabled', 'damageRecipients',
@@ -782,15 +863,22 @@ service cloud.firestore {
         && request.resource.data.get('ua', '') is string && request.resource.data.get('ua', '').size() <= 200
         && request.resource.data.get('url', '') is string && request.resource.data.get('url', '').size() <= 200;
     }
+    // 2.45.0: the id is an FCM registration token's shape (letters, digits, '_', '-', ':';
+    // 100–400 characters): made-up ids by the hundred made a notice's pushes fail for everyone.
+    function fcmTokenOk(t) { return t.size() >= 100 && t.size() <= 400 && t.matches('[A-Za-z0-9_:-]+'); }
     match /pushTokens/{token} {
       allow read, delete: if isSignedIn() && (resource.data.get('uid', '') == request.auth.uid || isOwner());
-      allow create, update: if isActive() && request.resource.data.get('uid', '') == request.auth.uid
+      allow create, update: if isActive() && fcmTokenOk(token) && request.resource.data.get('uid', '') == request.auth.uid
         && request.resource.data.get('token', '') == token
         && request.resource.data.keys().hasOnly(['token', 'uid', 'ua', 'createdAt'])
+        && request.resource.data.get('createdAt', 0) is number
         && request.resource.data.get('ua', '') is string && request.resource.data.get('ua', '').size() <= 200;
     }
+    // 2.45.0: the "last sent" lines of the Notifications page — the owner, and License
+    // Stock viewers not limited to one unit group (the log names the other group's
+    // breakdowns). Daily Report and Damage viewers could read every mail sent.
     match /mailLog/{id} {
-      allow read: if isOwner() || canViewArea('licenseStock') || canViewArea('teamLog') || canViewArea('damage');
+      allow read: if isOwner() || (canViewArea('licenseStock') && unitScope() == 'all');
       allow write: if false;
     }
     // 2.43.0: an 'own' requester sees the photos of its own requests only, and changes

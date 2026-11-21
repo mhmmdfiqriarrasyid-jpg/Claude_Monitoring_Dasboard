@@ -68,12 +68,38 @@ service firebase.storage {
     function canEdit(area) { return isActive() && lvl(area) == 'edit'; }
     function isOwn(area)   { return isActive() && lvl(area) == 'own'; }
     function isImage()     { return request.resource.contentType.matches('image/.*') && request.resource.size <= 5 * 1024 * 1024; }
+    function isOwnerSt()   { return isActive() && me().get('role', '') == 'owner'; }
+    // 2.45.0: the record of a Daily Report photo or leave letter, picked by its id (work
+    // logs are wl_…, leave requests lv_…): Storage rules may read two Firestore documents,
+    // the account's and one record — looking in both collections was a third.
+    function teamRecPath(rec) {
+      return rec.matches('lv_.*') ? /databases/(default)/documents/leaveRequests/$(rec)
+                                  : /databases/(default)/documents/workLogs/$(rec);
+    }
     // A Daily Report / leave record of this account (or not written yet).
     function teamRecordMine(rec, orNew) {
-      let wl = /databases/(default)/documents/workLogs/$(rec);
-      let lv = /databases/(default)/documents/leaveRequests/$(rec);
-      return firestore.exists(wl) ? firestore.get(wl).data.get('createdByUid', '') == request.auth.uid
-           : (firestore.exists(lv) ? firestore.get(lv).data.get('createdByUid', '') == request.auth.uid : orNew);
+      let p = teamRecPath(rec);
+      return firestore.exists(p) ? firestore.get(p).data.get('createdByUid', '') == request.auth.uid : orNew;
+    }
+    // 2.45.0: evidence follows its record, as the photo documents do in firestore.rules
+    // (recordOpen / recordSentByMe, inspectionOpen / inspectionSentByMe): the files change
+    // only while the record is open (a draft, or sent back) or not written yet (photos go
+    // up first), or while its sender waits for the check (photos that finish uploading
+    // after it was sent). An approved record's photos used to stay replaceable and
+    // deletable here although Firestore locks them.
+    function apprSt(d) { return d.get('approval', 'pending'); }
+    function evidenceOpen(p) {
+      let d = firestore.exists(p) ? firestore.get(p).data : null;
+      return d == null || apprSt(d) in ['draft', 'revision']
+          || (apprSt(d) == 'pending' && d.get('submittedByUid', '') == request.auth.uid);
+    }
+    function teamPhotoWrite(rec) {
+      return isOwnerSt()
+          || ((canEdit('teamLog') || (isOwn('teamLog') && teamRecordMine(rec, true))) && evidenceOpen(teamRecPath(rec)));
+    }
+    function inspectionPhotoWrite(rec) {
+      return isOwnerSt()
+          || (canEdit('inspection') && evidenceOpen(/databases/(default)/documents/inspections/$(rec)));
     }
 
     match /photos/warehousePhotos/{rec}/{file} {
@@ -165,14 +191,15 @@ service firebase.storage {
     }
     match /photos/inspectionPhotos/{rec}/{file} {
       allow read: if canView('inspection') || canView('inspectionApprove');
-      allow create, update: if (canEdit('inspection') || me().get('role', '') == 'owner') && isImage();
-      allow delete: if canEdit('inspection') || me().get('role', '') == 'owner';
+      allow create, update: if inspectionPhotoWrite(rec) && isImage();
+      allow delete: if inspectionPhotoWrite(rec);
     }
+    // Daily Report photos and leave letters (the same folder, like the Firestore collection).
     match /photos/workLogPhotos/{rec}/{file} {
       allow read: if canView('teamLog') || canView('teamLogApprove')
                   || (isOwn('teamLog') && teamRecordMine(rec, false));
-      allow create, update: if (canEdit('teamLog') || (isOwn('teamLog') && teamRecordMine(rec, true))) && isImage();
-      allow delete: if canEdit('teamLog') || (isOwn('teamLog') && teamRecordMine(rec, true));
+      allow create, update: if teamPhotoWrite(rec) && isImage();
+      allow delete: if teamPhotoWrite(rec);
     }
 
     // 2.44.0: 3D Models — models3d/<model>/<file>: a GLB, a studio page (stored as

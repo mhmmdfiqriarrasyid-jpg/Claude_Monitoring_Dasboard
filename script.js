@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.44.3';
+const APP_VERSION = 'v2.45.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -1673,9 +1673,18 @@ function pct(part, total) { return total > 0 ? Math.round((part / total) * 1000)
 // Nickname, Remarks, Deskripsi, Catatan — is user supplied and lands in an
 // export other people open, so prefix those with an apostrophe, which
 // spreadsheets strip on display but never evaluate.
+// 2.45.0: not only the value's start. Excel opens a .csv with the system list
+// separator — ';' in Indonesian settings — and then the quotes around our
+// comma-separated cells mean nothing: every ';' (or line break) inside a value
+// starts a new cell, so "x;=HYPERLINK(…)" became a live formula. Whatever
+// follows one (after spaces or quotes) gets the apostrophe too. A "sep=," first
+// line would also do it, but Excel then ignores the UTF-8 mark (— and × come
+// out garbled) and Google Sheets / LibreOffice show that line as a row.
+const CSV_INNER_CELL = /([;\r\n][ \t"]*)(?=[=+\-@])/g;
 function csvCell(value) {
     let v = value == null ? '' : String(value);
     if (/^[=+\-@\t\r]/.test(v)) v = "'" + v;
+    v = v.replace(CSV_INNER_CELL, "$1'");
     return '"' + v.replace(/"/g, '""') + '"';
 }
 
@@ -1730,8 +1739,11 @@ function getVal(row, key) {
 // The other half of csvCell(): our exports put a ' in front of a value that
 // starts with = + - @ so a spreadsheet does not run it as a formula. Read
 // back, "-0.5 m" or "- ganti oli" must not come in as "'-0.5 m".
+// 2.45.0: and the one csvCell puts after a ';' or line break inside a value.
 function uncsvCell(v) {
-    return (typeof v === 'string' && /^'[=+\-@\t\r]/.test(v)) ? v.slice(1) : v;
+    if (typeof v !== 'string') return v;
+    v = v.replace(/([;\r\n][ \t"]*)'(?=[=+\-@])/g, '$1');
+    return /^'[=+\-@\t\r]/.test(v) ? v.slice(1) : v;
 }
 
 // Try multiple header aliases (e.g. "Status Unit" or short "Status") and
@@ -5550,6 +5562,9 @@ async function openEmailSettingsModal() {
         console.warn('[email] settings not read:', err);
     }
     try {
+        // 2.45.0: the mail log names breakdowns of every unit group — firestore.rules
+        // keeps it from a limited account, so it is not asked for (the lines stay empty).
+        if (isUnitScoped()) return;
         const last = window.cloud.lastMails ? await window.cloud.lastMails() : {};
         el('emailLast').textContent = _notifLastText(last.licenseAlert, 'report');
         el('damageLast').textContent = _notifLastText(last.damageAlert, 'alert');
@@ -5662,6 +5677,8 @@ async function sendLicenseAlertEmail() {
     } catch (err) {
         console.error('[email]', err);
         const code = String(err && err.code || '');
+        // 2.45.0: the server limits how often the report is sent by hand and says when it can go again.
+        if (/resource-exhausted/.test(code)) { showToast(String(err.message || '').slice(0, 200) || 'The License Alert was sent recently — try again later', 'warning'); return; }
         showToast(/failed-precondition/.test(code) && /gmail-auth/.test(String(err.message)) ? 'Gmail refused the sign-in — the App Password on the server is wrong (see functions/README.md)'
             : /not-found|unavailable/.test(code) ? 'The email service is not set up on the server yet'
             : /permission-denied/.test(code) ? 'You do not have access to License Stock'
@@ -11533,6 +11550,18 @@ function _dataUrlBytes(url) {
     for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
     return { bytes: out, ext: /png/.test(m[1] || '') ? 'png' : /webp/.test(m[1] || '') ? 'webp' : 'jpg' };
 }
+// 2.45.0: the photo's bytes for the ZIP. Since 2.17.0 photos live in Cloud
+// Storage and come back (and sit in the session caches) as https links, which
+// _dataUrlBytes cannot read — every one of them was "could not be loaded".
+// Asked for inline they come as data, and an export moves nothing (noMigrate).
+async function _damagePhotoBytes(d, side) {
+    const held = side === 'before' ? (d.photo || _dmgPhotoCache.get(d.id)) : _dmgAfterCache.get(d.id);
+    const got = _dataUrlBytes(held);
+    if (got) return got;
+    const get = window.cloud && window.cloud[side === 'before' ? 'getDamagePhoto' : 'getDamageAfterPhoto'];
+    if (typeof get !== 'function') return null;
+    return _dataUrlBytes(await get.call(window.cloud, d.id, { inline: true, noMigrate: true }));
+}
 // Safe as a folder or file name on Windows, macOS and phones.
 function _zipName(s, max) {
     return String(s || '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, max || 60) || 'unnamed';
@@ -11562,9 +11591,8 @@ async function exportDamagePhotosZip() {
         for (const d of rows) {
             for (const side of ['before', 'after']) {
                 if (side === 'before' ? !damageHasPhoto(d) : !damageHasAfterPhoto(d)) continue;
-                let photo = '';
-                try { photo = side === 'before' ? await loadDamagePhoto(d.id) : await loadDamageAfterPhoto(d.id); } catch (_) { photo = ''; }
-                const got = _dataUrlBytes(photo);
+                let got = null;
+                try { got = await _damagePhotoBytes(d, side); } catch (_) { got = null; }
                 done++;
                 if (!got) { missing++; continue; }
                 const folder = folderFor(d);
@@ -14003,7 +14031,12 @@ function setupAuth() {
     });
 }
 
-function tearDownCloudSync() {
+// 2.45.0: { sameUser: true } — an admin changed this account's role or access
+// and its lists are subscribed again. The session goes on, so what it typed
+// and the server refused (kept with its photos for "Open it again") and its
+// own audit rows waiting to go out stay; sign-out still clears them.
+function tearDownCloudSync(opts) {
+    const sameUser = !!(opts && opts.sameUser);
     _loadedParts.clear();
     // Photo caches belong to the session: the next account on this browser,
     // or this one later, must fetch what is on the server now.
@@ -14025,7 +14058,7 @@ function tearDownCloudSync() {
     paddockLists = [];
     if (cloudLicenseReqUnsub) { try { cloudLicenseReqUnsub(); } catch (_) {} cloudLicenseReqUnsub = null; }
     // What was typed belongs to the account that typed it.
-    if (typeof clearUnsent === 'function') clearUnsent();
+    if (!sameUser && typeof clearUnsent === 'function') clearUnsent();
     licenseRequirements = [];
     masterLists = { site: [], brand: [], heavyBrand: [], company: [], damageType: [], jobType: [], implGroup: [], learnCategory: [], deviceType: [], uom: [], jobCategory: [], department: [], ticketCategory: [] };
     if (cloudDamageComponentsUnsub) { try { cloudDamageComponentsUnsub(); } catch (_) {} cloudDamageComponentsUnsub = null; }
@@ -14060,6 +14093,8 @@ function tearDownCloudSync() {
     inspections = [];
     insQueuedIds = new Set();
     Object.keys(_queued).forEach(k => { _queued[k] = new Set(); });
+    // 2.45.0: emptied here, not sent — no "Everything … has now been sent".
+    _queuedLast = 0; _queuedLastOthers = 0;
     renderQueuedPill();
     inspectionPlans = [];
     _insPhotoCache.clear();
@@ -14077,10 +14112,13 @@ function tearDownCloudSync() {
     // actorUid. Firestore requires actorUid == request.auth.uid, so sending
     // them after the next person signs in gets the whole batch refused — and
     // the outgoing user's real actions vanish along with it. Drop them here;
-    // logEvent has already written them to the local cache.
-    if (_historyFlushTimer) { clearTimeout(_historyFlushTimer); _historyFlushTimer = null; }
-    _historyPushQueue.length = 0;
-    _historyRetryDelay = 0;
+    // logEvent has already written them to the local cache. On an access
+    // refresh they are this account's own and still go out.
+    if (!sameUser) {
+        if (_historyFlushTimer) { clearTimeout(_historyFlushTimer); _historyFlushTimer = null; }
+        _historyPushQueue.length = 0;
+        _historyRetryDelay = 0;
+    }
     cloudInitialized = false;
 }
 
@@ -14591,7 +14629,7 @@ function watchOwnUserDoc(uid) {
             renderUserPill();
             if (isUnitScoped()) protectDeviceForScope(uid);
             // Which collections this account may read changed: subscribe again.
-            if (cloudInitialized) { tearDownCloudSync(); cloudInitialized = false; maybeInitCloudSync(); }
+            if (cloudInitialized) { tearDownCloudSync({ sameUser: true }); cloudInitialized = false; maybeInitCloudSync(); }
             // The teardown dropped the history stream an open History needs.
             const hm = document.getElementById('historyModal');
             if (hm && hm.classList.contains('open') && hasAccess('history', 'view')) startHistorySubscription();
@@ -14839,6 +14877,10 @@ const DEVICE_DATA_KEYS = [STORAGE_KEY, DAMAGE_STORAGE_KEY, IMPLEMENTS_STORAGE_KE
 async function handleSignOutErase() {
     const ins = inspections.filter(r => insQueuedIds.has(r.id)).length;
     const parts = queuedSummary(ins);
+    // 2.45.0: what no list marks goes with the offline database just the same.
+    if (_unsent.size) parts.push(`${_unsent.size} save${_unsent.size === 1 ? '' : 's'} in the 'Not sent' list`);
+    if (!parts.length) { if (await cloudHasPendingWrites()) parts.push('other changes made offline'); }
+    else parts.push('any other change made offline');
     if (!confirm('Sign out and erase this app\'s data on this device?\n\n'
         + 'Use this on a shared computer: the records kept here for offline use are removed, so the next person '
         + 'cannot read them. Files attached to units are kept.'
@@ -14850,6 +14892,12 @@ async function handleSignOutErase() {
         try { sessionStorage.setItem(ERASE_INCOMPLETE_KEY, '1'); } catch (_) {}
     }
     appReload();
+}
+
+// 2.45.0: Firestore's own queue, every collection (firebase-init.js).
+async function cloudHasPendingWrites() {
+    if (!window.cloud || typeof window.cloud.hasPendingWrites !== 'function') return false;
+    try { return !!await window.cloud.hasPendingWrites(); } catch (_) { return true; }
 }
 
 const ERASE_BROADCAST_KEY = 'tractorEraseBroadcast';
@@ -14890,6 +14938,12 @@ async function protectDeviceForScope(uid) {
     }
     const ins = inspections.filter(r => insQueuedIds.has(r.id)).length;
     if (queuedSummary(ins).length) return false;
+    // 2.45.0: the 'Not sent' list lives in memory only — the reload would drop it. Later, once
+    // it is resent or discarded (the next access change or app open tries again).
+    if (_unsent.size) { showToast('Resend or discard what is in the \'Not sent\' list — this device then clears the data of the old access', 'warning'); return false; }
+    // 2.45.0: checked after the lists (a caller may tear them down meanwhile).
+    // At sign-in no list has reported yet, and some collections never do.
+    if (await cloudHasPendingWrites()) return false;
     try { localStorage.setItem(DEVICE_SCOPE_TRIED_KEY, want); } catch (_) {}
     const done = await eraseDeviceData();
     if (done) { try { localStorage.setItem(DEVICE_SCOPE_KEY, want); } catch (_) {} }
@@ -16567,7 +16621,10 @@ function applyCloudShiftsSnapshot(list) {
 
 function applyCloudWorkLogsSnapshot(list) {
     _markLoaded('workLogs');
-    workLogs = (list || []).slice().sort((a, b) =>
+    // 2.45.0: read through DailyCore.tidy like tickets and projects — one report with jobs [null]
+    // or a map for a time used to stop the Team page for every manager and approver.
+    const tidy = window.DailyCore && DailyCore.tidy ? r => DailyCore.tidy(r, DailyCore.SHAPES.workLog) : r => (r && typeof r === 'object' ? r : null);
+    workLogs = (list || []).map(tidy).filter(Boolean).sort((a, b) =>
         String(b.date || '').localeCompare(String(a.date || '')) ||
         ((b.createdAt || 0) - (a.createdAt || 0)));
     if (currentView === 'team') {
@@ -24774,8 +24831,31 @@ function getFilteredInspections() {
     });
 }
 
+// 2.45.0: the damaged components not yet in the Damage log. A report sent back
+// after approval and approved again logs what its corrected version newly finds,
+// never a second record for a component already logged from it (appliedAt alone
+// stayed set through the reopen, so the corrections were never logged).
+// appliedKeys names what was logged; a stamp from before 2.45.0 names nothing and
+// covered the whole report, unless it was approved again since. The damage records
+// made from it count too, so a stamp that never landed cannot log them twice.
+// A component counts as logged while a record of it from this report is open. Once
+// the report has been approved again since the last stamp, a component whose records
+// from it are all resolved is logged anew (found damaged again after the fix).
+function inspectionUnappliedBits(r) {
+    const left = inspectionBadBits(r);
+    if (!left.length) return left;
+    const again = Number(r.approvedAt) > Number(r.appliedAt || 0);
+    const stamped = Array.isArray(r.appliedKeys) ? r.appliedKeys
+        : (r.appliedAt && !again ? left.map(c => c.key) : []);
+    const ids = new Set(Array.isArray(r.appliedDamageIds) ? r.appliedDamageIds : []);
+    const recs = globalDamages.filter(d => d && (d.fromInspection === r.id || ids.has(d.id)));
+    const open = new Set(recs.filter(d => !d.resolved).map(d => d.component));
+    const done = new Set(recs.filter(d => d.resolved).map(d => d.component));
+    return left.filter(c => open.has(c.label) ? false : done.has(c.label) ? again : !stamped.includes(c.key));
+}
+
 function inspectionNeedsApply(r) {
-    return workLogApproval(r) === 'approved' && inspectionBadBits(r).length > 0 && !r.appliedAt;
+    return workLogApproval(r) === 'approved' && inspectionUnappliedBits(r).length > 0;
 }
 
 function renderInspectionReports() {
@@ -24807,7 +24887,7 @@ function renderInspectionReports() {
             <td data-label="Schedule">${plan ? `<span class="ins-tag">Schedule ${escapeHtml(plan.date)}</span>` : r.planId ? '<span class="ins-tag">Schedule deleted</span>' : '<span class="ins-tag ins-tag--adhoc">Unscheduled</span>'}</td>
             <td data-label="Inspector" style="font-size:12px">${escapeHtml(r.createdBy || '—')}</td>
             <td data-label="Approval">${insQueuedIds.has(r.id) ? '<span class="ins-tag ins-tag--queued" title="Saved on this device, not yet on the server"><i class="fas fa-cloud-arrow-up"></i> Waiting to send</span> ' : ''}${approvalCell(r, 'check report', 'approveInspection', 'reviseInspection', INS_AREAS)}${
-                r.appliedAt ? '<div class="ins-sub"><i class="fas fa-check"></i> Logged in Damage</div>' : ''}</td>
+                r.appliedAt && !inspectionNeedsApply(r) ? '<div class="ins-sub"><i class="fas fa-check"></i> Logged in Damage</div>' : ''}</td>
             <td data-label="Photo">${photos
                 ? `<button type="button" class="wl-photo-btn" title="View ${photos} photo(s)" aria-label="View ${photos} photo(s)" onclick="openInspectionPhotos(${jsArg(r.id)}, this)"><i class="fas fa-image"></i> ${photos}</button>`
                 : '<span style="color:var(--text-light)">—</span>'}</td>
@@ -25182,7 +25262,9 @@ function approveInspection(id) {
         revisionNote: '',
         updatedAt: Date.now()
     };
-    const bad = inspectionBadBits(rec);
+    // 2.45.0: only what is not logged yet (a report approved again after a reopen).
+    const bad = inspectionUnappliedBits(rec);
+    const badLabels = inspectionBadBits(rec).map(c => c.label);
     cloudWrite(
         { action: 'approve', unitId: r.unitId, unitName: `[Inspection] ${inspectionUnitLabel(r)}`,
           field: `Approval ${r.date}`, before: APPROVAL_STATES[workLogApproval(r)].label, after: APPROVAL_STATES.approved.label },
@@ -25190,9 +25272,15 @@ function approveInspection(id) {
         'Inspection report approved',
         err => { console.error('[ins] approve failed:', err); showToast('Failed to approve inspection report', 'error'); return false; }
     ).then(ok => {
+        if (ok === false) return;
+        // 2.45.0: a record an earlier version of this report logged for a component it
+        // now calls Good stays open — said here, left to the Damage team to close.
+        const stale = [...new Set(globalDamages.filter(d => d && d.fromInspection === id && !d.resolved
+            && !badLabels.includes(d.component)).map(d => d.component))];
+        if (stale.length) showToast(`Still open in Damage from an earlier version of this report: ${stale.join(', ')} — resolve it there if it no longer applies`, 'info');
         // Broken components go to the damage log once approved — by whoever
         // is allowed to write it. Anyone else leaves it to the inbox.
-        if (ok === false || !bad.length) return;
+        if (!bad.length) return;
         const idx = inspections.findIndex(x => x.id === id);
         if (idx !== -1) inspections[idx] = { ...inspections[idx], ...rec };
         if (hasAccess('damage', 'edit')) applyInspectionFindings(id);
@@ -25241,12 +25329,20 @@ async function applyInspectionFindings(id) {
     if (!unit) { showToast('The unit is no longer in the Unit Database', 'warning'); return; }
     _insApplying.add(id);
     try {
+        // 2.45.0: the pictures themselves (inline), each saved as the damage record's own
+        // copy under photos/damagePhotos/<record>/. A download URL saved back made the
+        // damage photo the inspection's Storage object: unreadable without Inspection
+        // access, and gone with the report or its photo.
+        // Only the photos of the components about to be logged (each download has a time limit).
+        const todo = inspectionUnappliedBits(r);
         let photos = {};
-        try { photos = await loadInspectionPhotos(id); } catch (_) { photos = {}; }
+        try { photos = (await window.cloud.getInspectionPhotos(id, { inline: true, keys: todo.map(c => c.key) })) || {}; } catch (_) { photos = {}; }
         const ids = [];
-        for (const c of inspectionBadBits(r)) {
+        for (const c of todo) {
             // 2.43.2: a photo still on the technician's phone is not copied (its placeholder would become the damage photo).
-            const photo = _isWaitingPh(photos[c.key]) ? '' : safeImageSrc(photos[c.key]);
+            // 2.45.0: nor a link — only a data URL is a copy.
+            const src = safeImageSrc(photos[c.key]);
+            const photo = _isWaitingPh(src) || !src.startsWith('data:') ? '' : src;
             const note = (r.notes || {})[c.key] || '';
             const rec = {
                 id: generateDamageId(),
@@ -25274,9 +25370,17 @@ async function applyInspectionFindings(id) {
             ids.push(rec.id);
         }
         saveDamages();
-        const stamp = { ...r, appliedAt: Date.now(),
+        // 2.45.0: what is logged so far, added to — a later re-approval logs only the rest.
+        // Built on the newest copy of the report (the photos took a while; another Damage
+        // editor's stamp may have landed meanwhile).
+        const cur = inspections.find(x => x.id === id) || r;
+        // appliedAt after approvedAt even when this device's clock runs behind the approver's
+        // (inspectionUnappliedBits reads 'approved again since' from the two).
+        const stamp = { ...cur, appliedAt: Math.max(Date.now(), (Number(cur.approvedAt) || 0) + 1),
                         appliedBy: (currentUserDoc && currentUserDoc.displayName) || (currentUser && currentUser.email) || '',
-                        appliedDamageIds: ids, updatedAt: Date.now() };
+                        appliedDamageIds: [...new Set([...(Array.isArray(cur.appliedDamageIds) ? cur.appliedDamageIds : []), ...ids])],
+                        appliedKeys: [...new Set([...(Array.isArray(cur.appliedKeys) ? cur.appliedKeys : []), ...inspectionBadBits(cur).map(c => c.key)])],
+                        updatedAt: Date.now() };
         const idx = inspections.findIndex(x => x.id === id);
         if (idx !== -1) inspections[idx] = stamp;
         cloudCall('saveInspection', stamp).catch(err => console.error('[ins] apply stamp failed:', err));
@@ -27048,9 +27152,14 @@ function _reopenDamage(snap) {
 // — and signing out of a shared crew phone held them back unseen until the
 // same person signed in on it again. Now each list marks its rows, the top
 // bar counts them, and sign-out names them.
+// 2.45.0: tickets, projects, jobs and purchase requests too — their lists
+// reported what was waiting, but setQueued dropped kinds missing here, so
+// "Sign out & erase" and the automatic device erase deleted them unannounced.
 // ============================================================
-const _queued = { workLogs: new Set(), leaveRequests: new Set(), damages: new Set() };
-const QUEUED_NOUN = { workLogs: 'daily report', leaveRequests: 'leave / sick request', damages: 'damage record' };
+const _queued = { workLogs: new Set(), leaveRequests: new Set(), damages: new Set(),
+    tickets: new Set(), projects: new Set(), otJobs: new Set(), purchaseRequests: new Set() };
+const QUEUED_NOUN = { workLogs: 'daily report', leaveRequests: 'leave / sick request', damages: 'damage record',
+    tickets: 'ticket', projects: 'project', otJobs: 'job', purchaseRequests: 'purchase request' };
 let _queuedLast = 0;
 
 function setQueued(kind, ids) {

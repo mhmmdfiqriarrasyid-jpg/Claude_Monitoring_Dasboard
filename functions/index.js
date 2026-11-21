@@ -18,7 +18,8 @@
 //                        photo thumbnails still missing are made.
 //   serverBackups        the owner's Server backups window: list, details,
 //                        back up now, restore the missing records (callable).
-//   sendLicenseAlert     the "Send now" / Email Report button (callable).
+//   sendLicenseAlert     the "Send now" / Email Report button (callable; 2.45.0:
+//                        limited — licenseReport.manualSendCheck).
 //   sendNotificationNow  "Send test" (breakdown) / "Send now" (reminder) in
 //                        Notification Settings — owner only (callable, 2.15.1).
 //   deleteSignInAccount  removes the Firebase sign-in account of someone the
@@ -36,10 +37,10 @@ const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 const nodemailer = require('nodemailer');
-const { composeEmail } = require('./licenseReport');
+const { composeEmail, manualSendCheck } = require('./licenseReport');
 const { missingReports, composeReminder, composeDamage, shiftDates } = require('./teamNotices');
 const { buildMonthly, composeMonthly } = require('./monthlyReport');
-const { recipientsFor, composePush } = require('./pushNotices');
+const { recipientsFor, composePush, tokensByAccount, pushBatches } = require('./pushNotices');
 const { readSchedule, isDue } = require('./schedule');
 
 admin.initializeApp();
@@ -104,12 +105,15 @@ async function mail(to, m, log) {
 }
 
 // ---- License Alert ----
-async function sendReport(trigger, by) {
+// gate: run just before the mail goes (2.45.0: the limit of the hand-sent report), so a press
+// that has nothing to send does not use up a turn.
+async function sendReport(trigger, by, gate) {
     const { recipients } = await emailSettings();
     if (!recipients.length) return { sent: false, reason: 'no-recipients' };
     const [units, stock] = await Promise.all([db.collection('units').get(), db.collection('licenseStock').get()]);
     const m = composeEmail(units.docs.map(d => d.data()), stock.docs.map(d => d.data()), { timeZone: 'Asia/Jayapura' });
     if (!m) return { sent: false, reason: 'nothing-to-report' };
+    if (gate) await gate();
     await mail(recipients, m, { kind: 'licenseAlert', trigger, by: by || '', items: m.report.total });
     return { sent: true, recipients: recipients.length, items: m.report.total };
 }
@@ -134,14 +138,27 @@ async function sendReminder(s, now, trigger, by) {
 }
 
 // ---- Push notifications (2.18.0) ----
-// Sent to every device token (pushTokens) of the accounts a notice is for.
+// Sent to the device tokens (pushTokens) of the accounts a notice is for.
 // Tokens the push service no longer knows are removed.
+// 2.45.0: an account's newest few tokens only (the older ones are removed), each token once,
+// in batches of 500 that fail on their own — see pushNotices.tokensByAccount.
 let _pushCtx = null;   // { users, tokensByUid } for one tick
 async function pushContext() {
     if (_pushCtx) return _pushCtx;
     const tokens = await db.collection('pushTokens').get();
-    const tokensByUid = new Map();
-    tokens.docs.forEach(d => { const t = d.data(); if (t.uid && t.token) tokensByUid.set(t.uid, (tokensByUid.get(t.uid) || []).concat(d.id)); });
+    const docs = tokens.docs.map(d => { const v = d.data() || {}; return { id: d.id, uid: v.uid, createdAt: v.createdAt }; });
+    let tokensByUid, extra;
+    try { ({ byUid: tokensByUid, extra } = tokensByAccount(docs)); }
+    catch (err) {   // one odd doc must not stop every notice: fall back to the tokens without their dates, nothing removed
+        logger.error('push tokens: grouping failed', err);
+        ({ byUid: tokensByUid } = tokensByAccount(docs.map(d => ({ id: d.id, uid: d.uid }))));
+        extra = [];
+    }
+    if (extra.length) {
+        const b = db.batch();
+        extra.slice(0, 450).forEach(t => b.delete(db.doc(`pushTokens/${t}`)));
+        await b.commit().catch(err => logger.warn('old push tokens not removed', err));
+    }
     const users = tokensByUid.size ? (await db.collection('users').get()).docs.map(d => ({ ...d.data(), uid: d.id })) : [];
     _pushCtx = { users, tokensByUid };
     return _pushCtx;
@@ -151,12 +168,16 @@ async function sendPush(kind, id, rec) {
     if (!ctx.tokensByUid.size) return 0;
     const msg = composePush(kind, id, rec);
     if (!msg) return 0;
-    const tokens = recipientsFor(kind, rec, ctx.users).flatMap(uid => ctx.tokensByUid.get(uid) || []);
-    if (!tokens.length) return 0;
-    const res = await admin.messaging().sendEachForMulticast({ tokens, data: msg, webpush: { headers: { Urgency: 'high', TTL: '86400' } } });
-    const dead = res.responses.map((r, i) => (!r.success && r.error && /registration-token-not-registered|invalid-registration-token|invalid-argument/.test(r.error.code || '') ? tokens[i] : null)).filter(Boolean);
-    await Promise.all(dead.map(t => db.doc(`pushTokens/${t}`).delete().catch(() => {})));
-    return res.successCount;
+    let sent = 0;
+    for (const tokens of pushBatches(recipientsFor(kind, rec, ctx.users), ctx.tokensByUid)) {
+        try {
+            const res = await admin.messaging().sendEachForMulticast({ tokens, data: msg, webpush: { headers: { Urgency: 'high', TTL: '86400' } } });
+            const dead = res.responses.map((r, i) => (!r.success && r.error && /registration-token-not-registered|invalid-registration-token|invalid-argument/.test(r.error.code || '') ? tokens[i] : null)).filter(Boolean);
+            await Promise.all(dead.map(t => db.doc(`pushTokens/${t}`).delete().catch(() => {})));
+            sent += res.successCount;
+        } catch (err) { logger.error('push batch failed', { kind, id, tokens: tokens.length, err: String(err && err.message || err) }); }
+    }
+    return sent;
 }
 // New items waiting for a decision since the last tick: Daily Reports and
 // leave (teamLogApprove), inspections (inspectionApprove). First run only
@@ -172,7 +193,8 @@ async function scanApprovals(now) {
     if (!fresh.length && prev.exists) return 0;
     let n = 0;
     if (prev.exists) for (const f of fresh) {
-        if ((f.rec.submittedAt || f.rec.updatedAt || 0) < now.getTime() - DAMAGE_WINDOW_MS) continue;
+        const at = [f.rec.submittedAt, f.rec.updatedAt].find(v => typeof v === 'number' && isFinite(v)) || 0;
+        if (at < now.getTime() - DAMAGE_WINDOW_MS) continue;
         n += await sendPush(f.kind, f.id, f.rec).catch(err => { logger.error('push failed', err); return 0; });
     }
     fresh.forEach(f => seen.add(f.key));
@@ -198,7 +220,15 @@ async function scanTicketSla(now) {
     const state = db.doc('mailState/ticketSla');
     const prev = await state.get();
     const snap = await db.collection('tickets').where('status', 'in', ['open', 'assigned', 'progress']).get();
-    const { out, next } = ticketSlaPushes(prev.exists ? (prev.data().seen || {}) : null, snap.docs.map(d => ({ ...d.data(), id: d.id })), now.getTime());
+    // 2.45.0: the SLA clock of a push starts no earlier than when the server got the ticket — a
+    // ticket written with an old reportedAt (allowed up to 30 days back for offline phones) used
+    // to be overdue at once and push the OT team every 24 h.
+    const list = snap.docs.map(d => {
+        const v = d.data(), made = d.createTime ? d.createTime.toMillis() : 0;
+        const at = typeof v.reportedAt === 'number' && isFinite(v.reportedAt) ? v.reportedAt : 0;
+        return { ...v, id: d.id, reportedAt: made && at ? Math.max(at, made) : at };
+    });
+    const { out, next } = ticketSlaPushes(prev.exists ? (prev.data().seen || {}) : null, list, now.getTime());
     let n = 0;
     for (const p of out) n += await sendPush(p.kind, p.id, p.rec).catch(err => { logger.error('ticket SLA push failed', err); return 0; });
     await state.set({ seen: next, at: admin.firestore.FieldValue.serverTimestamp() });
@@ -222,6 +252,8 @@ async function sendMgrDaily(s, now, trigger, by) {
     if (!s.mgrRecipients.length) return { sent: false, reason: 'no-recipients' };
     const date = yesterday(now.getTime());
     const r = await composeDaily({ db, bucket: admin.storage().bucket(), sharp: require('sharp'), date, now: now.getTime() });
+    // 2.45.0: a part left out (a record that could not be read) or files that could not be made — the email still goes.
+    if (r.D.failed.length) logger.warn('daily report: parts left out', { date, failed: r.D.failed, errors: r.D.errors, fileError: r.fileError });
     await mail(s.mgrRecipients, r.m, { kind: 'mgrDaily', trigger: trigger || 'auto', by: by || '', items: r.D.team.reports, date, photos: r.photos });
     return { sent: true, recipients: s.mgrRecipients.length, date, photos: r.photos };
 }
@@ -326,8 +358,7 @@ async function userDoc(uid) {
     return snap.exists ? snap.data() : null;
 }
 function isOwnerDoc(uid, d) { return OWNER_UIDS.includes(uid) || (!!d && d.status === 'active' && d.role === 'owner'); }
-async function mayEmail(uid) {
-    const d = await userDoc(uid);
+function mayEmail(uid, d) {
     if (isOwnerDoc(uid, d)) return true;
     if (!d || d.status !== 'active') return false;
     const access = d.access && typeof d.access === 'object' ? d.access : {};
@@ -337,12 +368,38 @@ async function mayEmail(uid) {
     return lvl === 'view' || lvl === 'edit';
 }
 
+// 2.45.0: a turn of the hand-sent License Alert (licenseReport.manualSendCheck), taken in a
+// transaction so presses at the same moment cannot all slip through.
+async function takeLicenseTurn(uid, owner) {
+    const ref = db.doc('mailState/licenseManual');
+    await db.runTransaction(async tx => {
+        const snap = await tx.get(ref);
+        const r = manualSendCheck(snap.exists ? snap.data() : null, uid, Date.now(), owner);
+        if (!r.ok) throw new HttpsError('resource-exhausted', r.message);
+        tx.set(ref, r.next);
+    });
+}
+
 exports.sendLicenseAlert = onCall({ region: REGION, secrets: SECRETS, enforceAppCheck: true }, async req => {
     if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first');
-    if (!(await mayEmail(req.auth.uid))) throw new HttpsError('permission-denied', 'No access to License Stock');
+    const me = await userDoc(req.auth.uid);
+    if (!mayEmail(req.auth.uid, me)) throw new HttpsError('permission-denied', 'No access to License Stock');
+    const owner = isOwnerDoc(req.auth.uid, me);
+    // A quick look first (one read, nothing written): a press that would be refused stops
+    // here, before the units and License Stock are read. The transaction still decides.
+    if (!owner) {
+        const st = await db.doc('mailState/licenseManual').get();
+        const r = manualSendCheck(st.exists ? st.data() : null, req.auth.uid, Date.now(), false);
+        if (!r.ok) throw new HttpsError('resource-exhausted', r.message);
+    }
     try {
-        return await sendReport('manual', req.auth.token.email || req.auth.uid);
+        return await sendReport('manual', req.auth.token.email || req.auth.uid, () => takeLicenseTurn(req.auth.uid, owner));
     } catch (err) {
+        if (err instanceof HttpsError) throw err;
+        // Presses at the same moment that ran out of transaction retries: the same answer as a refusal.
+        if (err && (err.code === 10 || err.code === 'aborted' || /ABORTED/.test(String(err.message || '')))) {
+            throw new HttpsError('resource-exhausted', 'Someone is sending the License Alert right now — try again in a few minutes');
+        }
         logger.error('license alert failed', err);
         throw mailError(err);
     }

@@ -46,6 +46,9 @@ async function photoBuffer(db, bucket, ref) {
 }
 
 // The day's report as an email: { subject, html, text, attachments }, plus counts.
+// 2.45.0: it degrades by part instead of failing whole — buildDaily leaves out (and names, D.failed)
+// a part it cannot build, and when the PowerPoint / PDF cannot be made the email goes without them
+// (fileError says why). Only a failed read of the records stops it.
 async function composeDaily({ db, bucket, sharp, date, now }) {
     const D = buildDaily(Object.assign(await gatherDaily(db, date), { now: now == null ? Date.now() : now }));
     const items = [];
@@ -59,23 +62,30 @@ async function composeDaily({ db, bucket, sharp, date, now }) {
             items.push({ key: ref.key, kind: 'photo', cap: ref.cap, sub: ref.sub, data, ar: info.width && info.height ? info.width / info.height : 4 / 3 });
         } catch (_) { /* a photo that cannot be read is left out */ }
     }
-    const pages = dailyPages(D, { gallery: items.length ? { type: 'gallery', items } : null });
-    // Each photo cut to the shape of its box on the page.
-    const gp = pages.find(p => p.cols && p.cols[0] && p.cols[0][0] && p.cols[0][0].type === 'gallery');
-    if (gp) {
-        const c = layout(gp)[0];
-        const boxes = tilesOf(items, c.x, c.y, c.w, c.h);
-        for (let i = 0; i < items.length; i++) {
-            try { items[i].data = await sharp(items[i].data).resize(Math.round(boxes[i].w * 160), Math.round(boxes[i].h * 160), { fit: 'cover' }).jpeg({ quality: 78 }).toBuffer(); } catch (_) { /* keep it whole */ }
+    let pages = [], attachments = [], fileError = '';
+    try {
+        pages = dailyPages(D, { gallery: items.length ? { type: 'gallery', items } : null });
+        // Each photo cut to the shape of its box on the page.
+        const gp = pages.find(p => p.cols && p.cols[0] && p.cols[0][0] && p.cols[0][0].type === 'gallery');
+        if (gp) {
+            const c = layout(gp)[0];
+            const boxes = tilesOf(items, c.x, c.y, c.w, c.h);
+            for (let i = 0; i < items.length; i++) {
+                try { items[i].data = await sharp(items[i].data).resize(Math.round(boxes[i].w * 160), Math.round(boxes[i].h * 160), { fit: 'cover' }).jpeg({ quality: 78 }).toBuffer(); } catch (_) { /* keep it whole */ }
+            }
         }
+        const title = `Daily Report — ${D.day.label}`;
+        const [pptx, pdf] = await Promise.all([renderPptx(pages, { title }), renderPdf(pages, { title })]);
+        attachments = [
+            { filename: `Daily_Report_${date}.pptx`, content: pptx, contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' },
+            { filename: `Daily_Report_${date}.pdf`, content: pdf, contentType: 'application/pdf' }];
+    } catch (err) {
+        fileError = String(err && err.message || err).slice(0, 300);
+        D.failed.push('PowerPoint / PDF');
     }
-    const title = `Daily Report — ${D.day.label}`;
-    const [pptx, pdf] = await Promise.all([renderPptx(pages, { title }), renderPdf(pages, { title })]);
-    const m = dailyEmail(D, { attached: true, photos: items.length });
-    m.attachments = [
-        { filename: `Daily_Report_${date}.pptx`, content: pptx, contentType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' },
-        { filename: `Daily_Report_${date}.pdf`, content: pdf, contentType: 'application/pdf' }];
-    return { m, D, photos: items.length, pages: pages.length };
+    const m = dailyEmail(D, { attached: attachments.length > 0, photos: items.length });
+    if (attachments.length) m.attachments = attachments;
+    return { m, D, photos: attachments.length ? items.length : 0, pages: attachments.length ? pages.length : 0, fileError };
 }
 
 module.exports = { gatherDaily, photoBuffer, photoPathOk, composeDaily };

@@ -127,6 +127,15 @@ const server = require('../functions/licenseReport');
         window.cloud.callFunction = () => Promise.reject(Object.assign(new Error('gmail-auth'), { code: 'functions/failed-precondition' }));
         await sendLicenseAlertEmail();
         R.gmailAuth = __toasts[__toasts.length - 1];
+        // 2.45.0: the server's limit — its message is shown as it is, the button comes back.
+        window.showToast = (m, type) => __toasts.push(String(m) + '|' + type);
+        window.cloud.callFunction = () => Promise.reject(Object.assign(new Error('You have sent the License Alert 3 times today — try again tomorrow'), { code: 'functions/resource-exhausted' }));
+        await sendLicenseAlertEmail();
+        R.limited = [__toasts[__toasts.length - 1], document.getElementById('btnEmailAlert').disabled];
+        window.cloud.callFunction = () => Promise.reject(Object.assign(new Error(''), { code: 'functions/resource-exhausted' }));
+        await sendLicenseAlertEmail();
+        R.limitedNoMsg = __toasts[__toasts.length - 1];
+        window.showToast = m => __toasts.push(String(m));
         R.btn = document.getElementById('btnEmailAlert').disabled;
         closeEmailSettingsModal();
         currentUserDoc = { uid: 'v', role: 'staff', status: 'active', access: { licenseStock: 'view' } };
@@ -134,6 +143,14 @@ const server = require('../functions/licenseReport');
         R.viewerBtns = [document.getElementById('damageSendBtn').hidden, document.getElementById('reminderSendBtn').hidden];
         R.viewer = [document.getElementById('emailRecipients').disabled, document.getElementById('emailSaveBtn').hidden, document.getElementById('emailOwnerNote').hidden];
         closeEmailSettingsModal();
+        // 2.45.0 (S13): the mail log is only asked for by an account that sees every unit group.
+        R.viewerLast = /Last report/.test(document.getElementById('emailLast').textContent);
+        let asked = 0; const lm = window.cloud.lastMails; window.cloud.lastMails = () => { asked++; return lm(); };
+        currentUserDoc = { uid: 'v', role: 'staff', status: 'active', access: { licenseStock: 'view', unitScope: 'tractor' } };
+        await openEmailSettingsModal();
+        R.scopedLast = [asked, document.getElementById('emailLast').textContent, document.getElementById('emailRecipients').value];
+        closeEmailSettingsModal();
+        window.cloud.lastMails = lm;
         R.noEmailjs = typeof emailjs;
         // 2.15.1: Send test / Send now per bagian
         currentUserDoc = { uid: 'o', role: 'owner', status: 'active' };
@@ -185,6 +202,25 @@ const server = require('../functions/licenseReport');
     t('fungsi belum di-deploy: pesan jelas', ui.notDeployed, 'The email service is not set up on the server yet');
     t('App Password salah: pesan jelas', ui.gmailAuth, 'Gmail refused the sign-in — the App Password on the server is wrong (see functions/README.md)');
     t('tombol kembali aktif', ui.btn, false);
+    t('2.45.0: dibatasi server: pesannya ditampilkan apa adanya, tombol aktif lagi', ui.limited, ['You have sent the License Alert 3 times today — try again tomorrow|warning', false]);
+    t('2.45.0: dibatasi tanpa pesan: pesan bawaan', ui.limitedNoMsg, 'The License Alert was sent recently — try again later|warning');
+    // 2.45.0: the limit itself (functions/licenseReport.js manualSendCheck), pure.
+    {
+        const ck = server.manualSendCheck, at = (d, h, m) => new Date(`${d}T${String(h).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}:00`).getTime();
+        let st = null; const run = (uid, ms, owner) => { const r = ck(st, uid, ms, owner); if (r.ok) st = r.next; return r.ok ? 'ok' : r.message; };
+        const d1 = '2026-11-10';
+        t('batas: kirim pertama boleh', run('v1', at(d1, 8)), 'ok');
+        t('batas: 10 menit untuk semua akun', [run('v2', at(d1, 8, 5)), run('v1', at(d1, 8, 9))], ['The License Alert was sent less than 10 minutes ago — try again in 5 min', 'The License Alert was sent less than 10 minutes ago — try again in 1 min']);
+        t('batas: owner tidak ditahan tapi dihitung', [run('own', at(d1, 8, 9), true), st.total, st.lastAt === at(d1, 8, 9)], ['ok', 2, true]);
+        run('v1', at(d1, 9)); run('v1', at(d1, 10));
+        t('batas: 3 kali sehari per akun', run('v1', at(d1, 11)), 'You have sent the License Alert 3 times today — try again tomorrow');
+        ['a', 'b', 'c', 'd', 'e', 'f'].forEach((u, i) => run(u, at(d1, 12 + i)));
+        t('batas: 10 kali sehari untuk semua', [st.total, run('g', at(d1, 18))], [10, 'The License Alert has been sent 10 times today — try again tomorrow']);
+        t('batas: owner tetap boleh setelah 10', run('own', at(d1, 18, 1), true), 'ok');
+        t('batas: jeda 10 menit tetap berlaku lewat tengah malam', [run('own', at(d1, 23, 58), true), run('v1', at('2026-11-11', 0, 3))], ['ok', 'The License Alert was sent less than 10 minutes ago — try again in 5 min']);
+        t('batas: hari berikutnya hitungan mulai lagi', [run('v1', at('2026-11-11', 7)), st.total, st.byUid], ['ok', 1, { v1: 1 }]);
+        t('batas: data aneh di state tidak membuat gagal', ck({ day: '2026-11-11', total: 'x', byUid: 5, lastAt: 'y' }, 'z', at('2026-11-11', 9)).ok, true);
+    }
     t('bukan owner: hanya lihat', ui.viewer, [true, true, false]);
     t('EmailJS tidak dimuat lagi', ui.noEmailjs, 'undefined');
     t('Send test breakdown memanggil server', ui.dmgSend, [[['sendNotificationNow', 'damage']], 'Test alert sent to 1 recipient']);
@@ -192,6 +228,8 @@ const server = require('../functions/licenseReport');
     t('2.18.0: Send now laporan ringkasan', ui.monSend, [['sendNotificationNow', 'monthly'], 'Summary report sent to 2 recipients']);
     t('perubahan belum disimpan: tidak dikirim', ui.unsaved, [0, 'Save the settings first — sending uses the saved recipients']);
     t('bukan owner: tombol kirim tersembunyi', ui.viewerBtns, [true, true]);
+    t('S13 pembaca License Stock (semua kelompok): baris terakhir dikirim tampil', ui.viewerLast, true);
+    t('S13 pembaca License Stock satu kelompok: mailLog tidak diminta, pengaturan tetap dimuat', ui.scopedLast, [0, '', 'a@x.id']);
     t('menu Admin → Notifications: owner & pembaca License Stock saja', [ui.navOwner, ui.navNone, ui.navViewer], ['', 'none', '']);
 
     const fail = T.filter(r => !r.pass);

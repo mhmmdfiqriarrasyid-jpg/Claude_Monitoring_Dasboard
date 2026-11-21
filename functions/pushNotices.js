@@ -48,6 +48,8 @@ function recipientsFor(kind, rec, users) {
 }
 
 const cut = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+// 2.45.0: a ticket's units as users wrote them (not always a list of records).
+const unitList = us => (Array.isArray(us) ? us : []).filter(u => u && typeof u === 'object').map(u => u.name).filter(Boolean).join(', ');
 function composePush(kind, id, r) {
     if (kind === 'damage') {
         const what = [r.damageType, r.component].filter(Boolean).join(' / ') || 'Damage';
@@ -57,16 +59,50 @@ function composePush(kind, id, r) {
     const TK = { high: 'High', medium: 'Medium', low: 'Low' };
     const ST = { open: 'reopened', assigned: 'assigned', progress: 'in progress', resolved: 'resolved — please confirm', closed: 'closed' };
     const tkUrl = `./?action=tickets&ticket=${encodeURIComponent(id)}`;
-    if (kind === 'ticketNew') return { title: `New ticket · ${TK[r.priority] || 'Medium'}: ${cut(r.title, 60)}`, body: cut(`${r.category || ''}${(r.units || []).length ? ' · ' + r.units.map(u => u.name).join(', ') : ''}${r.location ? ' · ' + r.location : ''} — ${r.reportedBy || ''}`, 160), url: tkUrl, tag: `tk-${id}` };
+    if (kind === 'ticketNew') return { title: `New ticket · ${TK[r.priority] || 'Medium'}: ${cut(r.title, 60)}`, body: cut(`${r.category || ''}${unitList(r.units) ? ' · ' + unitList(r.units) : ''}${r.location ? ' · ' + r.location : ''} — ${r.reportedBy || ''}`, 160), url: tkUrl, tag: `tk-${id}` };
     if (kind === 'ticketAssign') return { title: `Ticket for you: ${cut(r.title, 70)}`, body: cut(`${r.no || ''} · ${TK[r.priority] || ''} priority${r.location ? ' · ' + r.location : ''}`, 160), url: tkUrl, tag: `tk-${id}` };
     if (kind === 'ticketStatus') return { title: `Your ticket is ${ST[r.status] || r.status}`, body: cut(`${r.no || ''} · ${r.title}${r.status === 'resolved' && r.resolution ? ' — ' + r.resolution : ''}`, 160), url: tkUrl, tag: `tk-${id}` };
     const span = ms => { const h = Math.max(0, ms || 0) / 3600000; return h >= 48 ? `${Math.floor(h / 24)} days` : h >= 1 ? `${Math.floor(h)} h` : `${Math.max(1, Math.round(h * 60))} min`; };
     if (kind === 'ticketDueSoon') return { title: `Ticket due in ${span(r.leftMs)}: ${cut(r.title, 60)}`, body: cut(`${r.no || ''} · ${TK[r.priority] || 'Medium'} priority · ${r.assigneeName ? 'PIC ' + r.assigneeName : 'no PIC yet'}`, 160), url: tkUrl, tag: `tk-sla-${id}` };
-    if (kind === 'ticketOverdue') return { title: `Ticket overdue by ${span(r.lateMs)}: ${cut(r.title, 55)}`, body: cut(`${r.no || ''} · ${TK[r.priority] || 'Medium'} priority · ${r.assigneeName ? 'PIC ' + r.assigneeName : 'no PIC yet'}${(r.units || []).length ? ' · ' + r.units.map(u => u.name).join(', ') : ''}`, 160), url: tkUrl, tag: `tk-sla-${id}` };
+    if (kind === 'ticketOverdue') return { title: `Ticket overdue by ${span(r.lateMs)}: ${cut(r.title, 55)}`, body: cut(`${r.no || ''} · ${TK[r.priority] || 'Medium'} priority · ${r.assigneeName ? 'PIC ' + r.assigneeName : 'no PIC yet'}${unitList(r.units) ? ' · ' + unitList(r.units) : ''}`, 160), url: tkUrl, tag: `tk-sla-${id}` };
     if (kind === 'workLog') return { title: 'Daily Report to check', body: cut(`${r.memberName || 'Someone'} · ${r.date || ''}`, 160), url: './?action=inbox', tag: `wl-${id}` };
     if (kind === 'leave') return { title: 'Leave request to check', body: cut(`${r.memberName || 'Someone'} · ${r.dateFrom || ''}${r.dateTo && r.dateTo !== r.dateFrom ? ' – ' + r.dateTo : ''}`, 160), url: './?action=inbox', tag: `lv-${id}` };
     if (kind === 'inspection') return { title: 'Inspection to check', body: cut(`${r.unitName || 'Unit'} · ${r.date || ''}`, 160), url: './?action=inbox', tag: `ins-${id}` };
     return null;
 }
 
-module.exports = { lvlOf, recipientsFor, composePush };
+// ---- Device tokens (2.45.0) ----
+// The rules let an account write any number of pushTokens docs, and FCM refuses a call with more
+// than 500 tokens — one account with 501 junk tokens used to stop a notice for everybody. So an
+// account's newest PUSH_PER_ACCOUNT tokens are used and the older ones are handed back (extra) for
+// the caller to remove; a notice goes out in batches of at most FCM_BATCH tokens.
+const PUSH_PER_ACCOUNT = 5, FCM_BATCH = 500;
+// docs: [{ id, uid, createdAt }] (id = the token). Returns { byUid: Map uid → [token], extra: [token] }.
+function tokensByAccount(docs) {
+    const all = new Map();
+    (docs || []).forEach(d => {
+        if (!d || typeof d.id !== 'string' || !d.id || typeof d.uid !== 'string' || !d.uid) return;
+        if (!all.has(d.uid)) all.set(d.uid, []);
+        all.get(d.uid).push(d);
+    });
+    // createdAt comes from the client: anything but a finite number counts as oldest (a map with a
+    // toString key would make Number() throw and stop every notice).
+    const ts = v => (typeof v === 'number' && isFinite(v) ? v : 0);
+    const byUid = new Map(), extra = [];
+    all.forEach((list, uid) => {
+        list.sort((a, b) => ts(b.createdAt) - ts(a.createdAt));
+        byUid.set(uid, list.slice(0, PUSH_PER_ACCOUNT).map(d => d.id));
+        list.slice(PUSH_PER_ACCOUNT).forEach(d => extra.push(d.id));
+    });
+    return { byUid, extra };
+}
+// The tokens of these accounts, each once, in batches FCM accepts.
+function pushBatches(uids, byUid, size) {
+    const seen = new Set(), all = [];
+    (uids || []).forEach(uid => ((byUid && byUid.get(uid)) || []).forEach(t => { if (!seen.has(t)) { seen.add(t); all.push(t); } }));
+    const n = size || FCM_BATCH, out = [];
+    for (let i = 0; i < all.length; i += n) out.push(all.slice(i, i + n));
+    return out;
+}
+
+module.exports = { lvlOf, recipientsFor, composePush, tokensByAccount, pushBatches, PUSH_PER_ACCOUNT, FCM_BATCH };

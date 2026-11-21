@@ -21,6 +21,21 @@ const path = require('path');
         t('cuti & libur tidak dihitung bolos', [D.team.members.find(m => m.name === 'Paulus Baru').days, D.team.members.find(m => m.name === 'Andreas Kayembob').days[1]], [['ok', 'off', 'ok', 'ok', 'leave', 'leave', 'ok'], 'off']);
         t('minggu lalu tanpa laporan: tidak dibandingkan', D.team.prevPct, null);
         t('ticket: masuk, selesai, terbuka, lewat due, tanpa PIC', [D.tickets.newIn, D.tickets.resolved, D.tickets.open, D.tickets.noPic, D.tickets.openList[0].no], [4, 1, 3, 1, 'TK-261102-0800AB']);
+        // 2.45.0 (S9): a ticket reopened since is not counted as resolved (nor SLA met) — whether it
+        // kept an old resolvedAt (reporter's reopen before 2.45.0) or only the 'resolved' event.
+        {
+            const at = (d, h) => new Date(d + 'T' + String(h).padStart(2, '0') + ':00:00').getTime();
+            const keep = tickets.slice();
+            tickets.push({ id: 'k5', no: 'TK-5', title: 'Display', category: 'Display', priority: 'low', status: 'open', reportedAt: at('2026-10-20', 8), resolvedAt: at('2026-11-03', 9),
+                           events: [{ type: 'resolved', at: at('2026-11-03', 9) }, { type: 'reopen', at: at('2026-11-05', 9) }], jobIds: [] },
+                         { id: 'k6', no: 'TK-6', title: 'GPS', category: 'GPS / RTK signal', priority: 'low', status: 'assigned', reportedAt: at('2026-10-20', 8), resolvedAt: null,
+                           events: [{ type: 'resolved', at: at('2026-11-02', 9) }, { type: 'reopen', at: at('2026-11-02', 15) }], jobIds: [] },
+                         { id: 'k7', no: 'TK-7', title: 'Radio', category: 'Radio / HT', priority: 'high', status: 'closed', reportedAt: at('2026-11-01', 8), closedAt: at('2026-11-02', 8),
+                           events: [{ type: 'resolved', at: at('2026-11-01', 10) }, { type: 'closed', at: at('2026-11-02', 8) }], jobIds: [] });
+            const R = buildWeeklyReport('2026-10-31', { today: '2026-11-06' }).tickets;
+            tickets = keep;
+            t('S9 ticket dibuka lagi tidak dihitung selesai; yang closed tetap (dari event resolved)', [R.resolved, R.slaMet, R.open], [2, 2, 5]);
+        }
         t('jobs: 5 minggu ini, 3 selesai, 2 backlog, tautan ticket', [D.jobs.total, D.jobs.done, D.jobs.backlog.length, D.jobs.list[0].ticket], [5, 3, 2, 'TK-261102-0800AB']);
         t('precision: 23/26 traktor semua Good, heavy 7/8', [D.precision.pct, D.precision.heavyPct, D.precision.bySite.map(s => s.pt)], [88.5, 87.5, ['GPA', 'MNM']]);
         t('kerusakan: 3 baru, 1 selesai, 4 terbuka, 1 > 14 hari', [D.damage.newIn, D.damage.fixedIn, D.damage.open, D.damage.stale, D.damage.faults[0].unit], [3, 1, 4, 1, 'GGTR103G']);
@@ -76,6 +91,33 @@ const path = require('path');
             new Set(refs.daily.slice(0, 6).map(r => r.date)).size >= 5], [true, true]);
         t('foto ticket (prioritas tinggi dulu), project & job, video di depan', [refs.tickets.map(r => r.key), refs.work[0].kind, refs.work.filter(r => r.kind === 'photo').map(r => r.key)],
             [['tk:k1_p_3', 'tk:k1_p_4', 'tk:k4_p_5'], 'video', ['pj:u1_p_7', 'pj:u1_p_8', 'pj:j1_p_6']]);
+        // 2.45.0: records as users can write them (the rules check only a few fields) — the weekly report, its pictures
+        // and the daily report are still built, and the odd parts are read as empty.
+        const mon = Date.parse('2026-11-02T09:00:00');
+        tickets.push({ id: 'odd1', no: 'TK-ODD1', title: 'Odd', category: 'Other', priority: 'low', status: 'open', reportedAt: mon, events: [null], units: 5, photoIds: 'abc', jobIds: 7 },
+            { id: 'odd2', no: 'TK-ODD2', title: 'Odd 2', category: 'Other', priority: 'low', status: 'resolved', reportedAt: mon, events: 'x', units: [null, { name: 'GGTR' }], photoIds: [null, 'k_odd'] });
+        workLogs.push({ id: 'wlodd', date: '2026-11-02', memberId: 'nobody', start: '07:00', end: '09:00', approval: 'approved', jobs: [null, { paddock: 'ODD-1', jobType: 'Tillage', units: 'x' }], issue: 5, photoCount: 1 });
+        otJobs.push({ id: 'job_odd', date: '2026-11-03', category: 'Other', issue: 5, units: 'x', photoIds: 'abc', files: [null], description: 7, status: 'open' });
+        projects.push({ id: 'pjodd', name: 'Odd project', status: 'active', target: { mode: 'units', units: 'x' }, departments: [null], materials: [null], updates: [null, { date: '2026-11-02', text: 5, photoIds: 'x' }] },
+            { id: 'pjodd2', name: 'No updates', status: 'active' });
+        // Times and numbers written as maps with a toString key (any sort or sum of them threw).
+        const bad = { toString: 'x' };
+        tickets.push({ id: 'odd3', no: 'TK-ODD3', title: 'Odd 3', category: 'Other', priority: 'low', status: 'resolved', reportedAt: mon, updatedAt: bad, resolvedAt: bad,
+            events: [{ type: 'resolved', at: bad }, { type: 'resolved', at: 1 }] });
+        workLogs.push({ id: 'wlodd2', date: '2026-11-03', memberId: 'nobody', start: bad, end: bad, approval: 'approved', createdAt: bad, jobs: [{ paddock: 'ODD-2', jobType: 'Tillage' }], photoCount: bad });
+        otJobs.push({ id: 'job_odd2', date: '2026-11-03', category: 'Other', status: 'done', hours: bad, updatedAt: bad });
+        projects.push({ id: 'pjodd3', name: 'Odd time', status: 'active', updatedAt: bad, doneAt: bad, updates: [{ at: bad, date: '2026-11-02', text: 'x' }],
+            target: { mode: 'milestones', milestones: [{ label: 'A', weight: bad, done: true }], count: bad, done: bad } });
+        let thrown = '', D3 = null, DD = null;
+        try {
+            D3 = buildWeeklyReport('2026-10-31', { today: '2026-11-06' });
+            wrMediaRefs(D3); buildWeeklyPages(D3, 'team', ''); buildWeeklyPages(D3, 'mgmt', '');
+            DD = DailyCore.buildDaily(wrDailyInput('2026-11-02')); DailyCore.dailyPages(DD, {});
+        } catch (e) { thrown = e.message; }
+        t('2.45.0: data aneh: laporan mingguan, fotonya & laporan harian tetap dibuat', [thrown, D3 && D3.tickets.newIn - D.tickets.newIn, D3 && D3.tickets.openList.find(x => x.no === 'TK-ODD1').units,
+            D3 && D3.jobs.backlog.find(x => x.issue === '5') != null, D3 && D3.projectPages.find(x => x.name === 'Odd project').pct, D3 && D3.team.topPaddocks.some(x => x[0] === 'ODD-1'), DD && DD.failed],
+            ['', 3, '', true, 0, true, []]);   // TK-ODD1, TK-ODD2 and TK-ODD3 (times as maps) were all filed that week
+        tickets = tickets.filter(x => !/^odd/.test(x.id)); workLogs = workLogs.filter(x => !/^wlodd/.test(x.id)); otJobs = otJobs.filter(x => !/^job_odd/.test(x.id)); projects = projects.filter(x => !/^pjodd/.test(x.id));
         // The view
         _wrWeek = '2026-10-31';
         navigateTo('weeklyReport');

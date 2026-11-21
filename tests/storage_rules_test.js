@@ -28,8 +28,9 @@ const { doc, setDoc } = require('firebase/firestore');
         await u('dmgScoped', 'staff', { damage: 'edit', unitScope: 'heavy' });
         await u('tlOwn', 'staff', { teamLog: 'own' });
         await u('tlE', 'staff', { teamLog: 'edit' });
-        await setDoc(doc(db, 'workLogs', 'wl_mine'), { id: 'wl_mine', createdByUid: 'tlOwn' });
-        await setDoc(doc(db, 'workLogs', 'wl_other'), { id: 'wl_other', createdByUid: 'tlE' });
+        // 2.45.0: drafts — photos change only while their report is open (see the S6 cases below)
+        await setDoc(doc(db, 'workLogs', 'wl_mine'), { id: 'wl_mine', createdByUid: 'tlOwn', approval: 'draft' });
+        await setDoc(doc(db, 'workLogs', 'wl_other'), { id: 'wl_other', createdByUid: 'tlE', approval: 'draft' });
     });
     const st = uid => env.authenticatedContext(uid).storage();
     const anon = env.unauthenticatedContext().storage();
@@ -174,6 +175,71 @@ const { doc, setDoc } = require('firebase/firestore');
     await check('F1 Ticket: pelapor menambah foto ke ticket miliknya', img(st('rd'), 'photos/ticketPhotos/tk_mine__p2/a'), true);
     await check('F1 Ticket: pelapor TIDAK menimpa file yang sudah ada', img(st('rd'), 'photos/ticketPhotos/tk_mine__p1/a'), false);
     await check('F1 Ticket: tim OT menimpa foto ticket', img(st('tkE'), 'photos/ticketPhotos/tk_other__p1/a'), true);
+    // ---- 2.45.0 (S6): bukti laporan ikut terkunci di Storage seperti dokumennya di Firestore ----
+    await env.withSecurityRulesDisabled(async c => {
+        const db = c.firestore();
+        await setDoc(doc(db, 'users', 'tech'), { uid: 'tech', role: 'khl', status: 'active', access: { inspection: 'edit' } });
+        await setDoc(doc(db, 'users', 'tech2'), { uid: 'tech2', role: 'khl', status: 'active', access: { inspection: 'edit' } });
+        const wl = (id, o) => setDoc(doc(db, 'workLogs', id), { id, createdByUid: 'tlOwn', ...o });
+        await wl('wl_appr', { approval: 'approved', submittedByUid: 'tlOwn', approvedByEmail: 'boss@x.id' });
+        await wl('wl_pend', { approval: 'pending', submittedByUid: 'tlOwn' });
+        await wl('wl_rev', { approval: 'revision', submittedByUid: 'tlOwn', revisionNote: 'foto buram' });
+        await wl('wl_draft', { approval: 'draft' });
+        await wl('wl_old');   // before approval existed: pending
+        await wl('lv_look', { approval: 'draft' });   // a work log under a leave request's id
+        await setDoc(doc(db, 'leaveRequests', 'lv_appr'), { id: 'lv_appr', createdByUid: 'tlOwn', approval: 'approved', submittedByUid: 'tlOwn' });
+        await setDoc(doc(db, 'leaveRequests', 'lv_pend'), { id: 'lv_pend', createdByUid: 'tlOwn', approval: 'pending', submittedByUid: 'tlOwn' });
+        await setDoc(doc(db, 'leaveRequests', 'lv_look'), { id: 'lv_look', createdByUid: 'tlOwn', approval: 'approved', submittedByUid: 'tlOwn' });
+        await setDoc(doc(db, 'inspections', 'ins_appr'), { id: 'ins_appr', createdByUid: 'tech', approval: 'approved', submittedByUid: 'tech' });
+        await setDoc(doc(db, 'inspections', 'ins_pend'), { id: 'ins_pend', createdByUid: 'tech', approval: 'pending', submittedByUid: 'tech' });
+        await setDoc(doc(db, 'inspections', 'ins_draft'), { id: 'ins_draft', createdByUid: 'tech', approval: 'draft' });
+    });
+    await env.withSecurityRulesDisabled(async c => {
+        const s = c.storage();
+        for (const p of ['photos/workLogPhotos/wl_appr/a', 'photos/workLogPhotos/wl_appr/a_t', 'photos/workLogPhotos/wl_rev/a', 'photos/workLogPhotos/wl_old/a',
+                         'photos/workLogPhotos/lv_appr/a', 'photos/workLogPhotos/lv_look/a',
+                         'photos/inspectionPhotos/ins_appr/a', 'photos/inspectionPhotos/ins_draft/a']) {
+            await uploadBytes(ref(s, p), jpg, { contentType: 'image/jpeg' });
+        }
+    });
+    // approved Daily Report: nobody but the owner swaps or removes its photos
+    await check('S6 laporan disetujui: own TIDAK menimpa fotonya', img(st('tlOwn'), 'photos/workLogPhotos/wl_appr/a'), false);
+    await check('S6 laporan disetujui: own TIDAK menimpa thumbnail-nya', img(st('tlOwn'), 'photos/workLogPhotos/wl_appr/a_t'), false);
+    await check('S6 laporan disetujui: own TIDAK menghapus fotonya', deleteObject(ref(st('tlOwn'), 'photos/workLogPhotos/wl_appr/a')), false);
+    await check('S6 laporan disetujui: own TIDAK menambah foto baru', img(st('tlOwn'), 'photos/workLogPhotos/wl_appr/b'), false);
+    await check('S6 laporan disetujui: editor tim TIDAK menimpa fotonya', img(st('tlE'), 'photos/workLogPhotos/wl_appr/a'), false);
+    await check('S6 laporan disetujui: editor tim TIDAK menghapus fotonya', deleteObject(ref(st('tlE'), 'photos/workLogPhotos/wl_appr/a')), false);
+    await check('S6 laporan disetujui: fotonya tetap terbaca pemiliknya', getBytes(ref(st('tlOwn'), 'photos/workLogPhotos/wl_appr/a')), true);
+    await check('S6 laporan lama tanpa status (= menunggu): editor tim TIDAK menimpa', img(st('tlE'), 'photos/workLogPhotos/wl_old/a'), false);
+    await check('S6 laporan disetujui: owner tetap boleh (seperti Firestore)', img(st('own'), 'photos/workLogPhotos/wl_appr/a'), true);
+    // sick-leave letters
+    await check('S6 surat izin disetujui: own TIDAK menimpa', img(st('tlOwn'), 'photos/workLogPhotos/lv_appr/a'), false);
+    await check('S6 surat izin disetujui: own TIDAK menghapus', deleteObject(ref(st('tlOwn'), 'photos/workLogPhotos/lv_appr/a')), false);
+    await check('S6 surat izin: laporan draf ber-id sama TIDAK membuka surat yang disetujui', img(st('tlOwn'), 'photos/workLogPhotos/lv_look/a'), false);
+    await check('S6 surat izin: own membaca surat miliknya (dicari di leaveRequests)', getBytes(ref(st('tlOwn'), 'photos/workLogPhotos/lv_appr/a')), true);
+    // legitimate flows keep working
+    await check('S6 foto menyusul: pengirim laporan pending menambah foto (outbox)', img(st('tlOwn'), 'photos/workLogPhotos/wl_pend/b'), true);
+    await check('S6 foto menyusul: thumbnail-nya juga', img(st('tlOwn'), 'photos/workLogPhotos/wl_pend/b_t'), true);
+    await check('S6 foto menyusul: editor lain TIDAK menambah ke laporan pending orang lain', img(st('tlE'), 'photos/workLogPhotos/wl_pend/c'), false);
+    await check('S6 surat menyusul: pengirim pengajuan pending menambah surat', img(st('tlOwn'), 'photos/workLogPhotos/lv_pend/b'), true);
+    await check('S6 laporan baru: own mengunggah sebelum laporannya tersimpan', img(st('tlOwn'), 'photos/workLogPhotos/wl_fresh1/a'), true);
+    await check('S6 izin baru: own mengunggah surat sebelum pengajuannya tersimpan', img(st('tlOwn'), 'photos/workLogPhotos/lv_fresh1/a'), true);
+    await check('S6 laporan dikirim balik (revisi): own mengganti foto', img(st('tlOwn'), 'photos/workLogPhotos/wl_rev/a'), true);
+    await check('S6 laporan dikirim balik (revisi): own menghapus foto', deleteObject(ref(st('tlOwn'), 'photos/workLogPhotos/wl_rev/a')), true);
+    await check('S6 laporan draf: editor tim menambah foto', img(st('tlE'), 'photos/workLogPhotos/wl_draft/x'), true);
+    await check('S6 laporan draf: editor tim menghapus foto', deleteObject(ref(st('tlE'), 'photos/workLogPhotos/wl_draft/x')), true);
+    // heavy-equipment checks (inspectionPhotos)
+    await check('S6 cek disetujui: teknisi TIDAK menimpa foto', img(st('tech'), 'photos/inspectionPhotos/ins_appr/a'), false);
+    await check('S6 cek disetujui: teknisi TIDAK menghapus foto', deleteObject(ref(st('tech'), 'photos/inspectionPhotos/ins_appr/a')), false);
+    await check('S6 cek disetujui: teknisi TIDAK menambah foto', img(st('tech'), 'photos/inspectionPhotos/ins_appr/b'), false);
+    await check('S6 cek menunggu: pengirimnya menambah foto yang menyusul', img(st('tech'), 'photos/inspectionPhotos/ins_pend/b'), true);
+    await check('S6 cek menunggu: teknisi lain TIDAK menambah foto', img(st('tech2'), 'photos/inspectionPhotos/ins_pend/c'), false);
+    await check('S6 cek draf: teknisi menambah foto', img(st('tech'), 'photos/inspectionPhotos/ins_draft/b'), true);
+    await check('S6 cek draf: teknisi menghapus foto', deleteObject(ref(st('tech'), 'photos/inspectionPhotos/ins_draft/a')), true);
+    await check('S6 cek baru: teknisi mengunggah sebelum laporannya tersimpan', img(st('tech'), 'photos/inspectionPhotos/ins_fresh1/a'), true);
+    await check('S6 cek disetujui: owner tetap boleh', img(st('own'), 'photos/inspectionPhotos/ins_appr/a'), true);
+    await check('S6 cek disetujui: fotonya tetap terbaca', getBytes(ref(st('tech'), 'photos/inspectionPhotos/ins_appr/a')), true);
+
     // ---- 2.44.0: 3D Models ----
     await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'users', 'm3E'), { uid: 'm3E', role: 'staff', status: 'active', access: { models3d: 'edit' } }));
     await check('3D: editor mengunggah GLB', put(st('m3E'), 'models3d/m3_a1/rake.glb', 'model/gltf-binary'), true);

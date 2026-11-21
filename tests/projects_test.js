@@ -379,6 +379,29 @@ const { launch, BASE_URL } = require('./_env');
         deleteProjectUpdate('dl1', 'u1'); t('hanya lihat: hapus ditolak', dl().updates.length, 1);
         currentUserDoc = pjAcc;
         closeProjectDetail();
+        // 2.45.0: documents as users can write them (the rules check only the name / category): the
+        // Projects & Jobs page, the cards and the detail keep working for everyone.
+        let thrown = '';
+        try {
+            applyProjectsSnapshot([{ id: 'bad1', name: 'No updates', status: 'active', createdByUid: 'x' },
+                { id: 'bad2', name: 'Odd', status: 'active', company: 5, target: { mode: 'units', units: 'x' }, updates: [null, { date: '2026-11-10', text: 7 }], departments: [null, { name: 'IT' }], materials: [null], prIds: 'x' },
+                { id: 'bad3', name: 'Milestones', status: 'active', target: { mode: 'milestones', milestones: [null, { label: 'A', weight: 1, done: true }] }, updates: 'x' }, null]);
+            applyOtJobsSnapshot([{ id: 'job_b1', category: 'Calibration', date: '2026-11-10', issue: 5, units: 'GGTR', files: [null], photoIds: 'abc', description: { a: 1 } }, 7]);
+            document.getElementById('pjStatusFilter').value = 'open'; document.getElementById('pjSearch').value = ''; document.getElementById('jobPeriod').value = '';
+            switchProjectsTab('projects');
+            showProjectDetail('bad2'); await tick(); closeProjectDetail();
+            showProjectDetail('bad1'); await tick(); closeProjectDetail();
+            showProjectDetail('bad3'); await tick(); closeProjectDetail();
+            switchProjectsTab('jobs');
+        } catch (e) { thrown = e.message; }
+        t('2.45.0: project tanpa updates / units bukan daftar / data aneh: halaman Projects & Jobs tetap jalan',
+            [thrown, [...document.querySelectorAll('#pjList .pj-card__name')].map(e => e.textContent).sort(), document.querySelectorAll('#jobBody tr').length, /Calibration/.test(document.getElementById('jobBody').textContent)],
+            ['', ['Milestones', 'No updates', 'Odd'], 1, true]);
+        const b2 = projects.find(p => p.id === 'bad2');
+        t('2.45.0: dibaca rapi: daftar jadi daftar, teks jadi teks', [b2.company, b2.updates.length, b2.target.units, b2.prIds, projectProgress(projects.find(p => p.id === 'bad3')).pct, otJobs.length, otJobs[0].issue, otJobs[0].units, otJobs[0].photoIds, otJobs[0].description],
+            ['5', 1, [], [], 100, 1, '5', [], [], '']);
+        t('2.45.0: progress tanpa lewat snapshot: units / milestones bukan daftar', [projectProgress({ target: { units: 'x' } }).pct, projectProgress({ target: { mode: 'milestones', milestones: [null] } }).pct], [0, 0]);
+        switchProjectsTab('projects');
         return T;
     });
     let pass = 0;

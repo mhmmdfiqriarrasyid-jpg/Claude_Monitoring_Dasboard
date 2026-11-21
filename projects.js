@@ -55,6 +55,8 @@ function pjTypeLabel(k) { return (PJ_TYPES.find(t => t.key === k) || PJ_TYPES[2]
 function pjStatusLabel(k) { return (PJ_STATUSES.find(t => t.key === k) || PJ_STATUSES[0]).label; }
 
 // ---- Progress and health ----
+// 2.45.0: a list as a list of records, whatever the document holds (see _pjTidy).
+const _pjRecs = v => Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : [];
 function projectProgress(p) {
     const t = (p && p.target) || {};
     if (t.mode === 'count') {
@@ -62,12 +64,12 @@ function projectProgress(p) {
         return { done, total, pct: total ? Math.round(100 * done / total) : 0, label: `${done}/${total} ${t.what || 'done'}` };
     }
     if (t.mode === 'milestones') {
-        const ms = t.milestones || [];
+        const ms = _pjRecs(t.milestones);
         const all = ms.reduce((n, m) => n + Math.max(0, Number(m.weight) || 0), 0);
         const got = ms.filter(m => m.done).reduce((n, m) => n + Math.max(0, Number(m.weight) || 0), 0);
         return { done: ms.filter(m => m.done).length, total: ms.length, pct: all ? Math.round(100 * got / all) : 0, label: `${ms.filter(m => m.done).length}/${ms.length} milestones` };
     }
-    const us = t.units || [];
+    const us = _pjRecs(t.units);
     const done = us.filter(u => u.done).length;
     return { done, total: us.length, pct: us.length ? Math.round(100 * done / us.length) : 0, label: `${done}/${us.length} unit${us.length === 1 ? '' : 's'}${t.what ? ' · ' + t.what : ''}` };
 }
@@ -145,8 +147,15 @@ function jobPeriodRange(period, today) {
 }
 
 // ---- Snapshots ----
+// 2.45.0: a project or job as users wrote it (the rules check only its name or category) is read
+// through DailyCore.tidy — every list a list of records, every text a text. One document without
+// `updates`, or with target.units that is not a list, used to stop the Projects page for everyone.
+function _pjTidy(list, kind) {
+    const l = Array.isArray(list) ? list : [];
+    return window.DailyCore && DailyCore.tidy ? l.map(r => DailyCore.tidy(r, DailyCore.SHAPES[kind])).filter(Boolean) : l.filter(r => r && typeof r === 'object');
+}
 function applyProjectsSnapshot(list) {
-    projects = (list || []).slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    projects = _pjTidy(list, 'project').sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     if (currentView === 'projects') renderProjectsView();
     if (document.getElementById('pjDetailModal')?.classList.contains('open')) {
         const id = document.getElementById('pjDetailModal').dataset.id;
@@ -154,7 +163,7 @@ function applyProjectsSnapshot(list) {
     }
 }
 function applyOtJobsSnapshot(list) {
-    otJobs = (list || []).slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || (b.updatedAt || 0) - (a.updatedAt || 0));
+    otJobs = _pjTidy(list, 'job').sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || (b.updatedAt || 0) - (a.updatedAt || 0));
     if (currentView === 'projects') renderProjectsView();
 }
 function _pjPush(rec, msg, existing, field) {
@@ -269,7 +278,7 @@ function renderProjectsList() {
     }
     list.innerHTML = rows.map(p => {
         const rag = projectRag(p);
-        const last = (p.updates || [])[p.updates.length - 1];
+        const ups = _pjRecs(p.updates), last = ups[ups.length - 1];   // 2.45.0: a project without updates
         return `<button type="button" class="pj-card pj-card--${rag}" onclick="showProjectDetail(${jsArg(p.id)})">
             <span class="pj-card__top">${pjRagChip(rag)}<span class="pj-type">${escapeHtml(pjTypeLabel(p.type))}</span></span>
             <span class="pj-card__name">${escapeHtml(p.name || '')}</span>
@@ -278,7 +287,7 @@ function renderProjectsList() {
             <span class="pj-card__progress">${pjProgressBar(p, rag)}</span>
             <span class="pj-card__due">${escapeHtml(pjDueText(p))}</span>
             ${(p.materials || []).length ? (() => { const m = projectMaterialsSummary(p); return `<span class="pj-card__mat${m.ready === m.total ? ' is-ready' : ''}"><i class="fas fa-box-open" aria-hidden="true"></i> Goods ${m.ready}/${m.total} ready</span>`; })() : ''}
-            ${last ? `<span class="pj-card__last"><b>${escapeHtml(last.date || '')}</b> ${escapeHtml((last.text || '').slice(0, 110))}</span>` : ''}
+            ${last ? `<span class="pj-card__last"><b>${escapeHtml(last.date || '')}</b> ${escapeHtml(String(last.text || '').slice(0, 110))}</span>` : ''}
         </button>`;
     }).join('');
 }
