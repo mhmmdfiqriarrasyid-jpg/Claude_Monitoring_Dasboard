@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["https://ot.techorchestrator.cloud", "https://mhmmdfiqriarrasyid-jpg.github.io"],
+    "method": ["GET", "HEAD"],
+    "responseHeader": ["Content-Type", "Content-Length", "Content-Range", "Range"],
+    "maxAgeSeconds": 3600
+  }
+]

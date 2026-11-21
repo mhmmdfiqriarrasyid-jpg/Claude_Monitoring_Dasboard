@@ -1,0 +1,327 @@
+{
+ "text:kpiTotal": "8",
+ "text:kpiGood": "7",
+ "text:kpiGoodPct": "87.5% of total",
+ "text:kpiBreakdown": "1",
+ "text:kpiBreakdownPct": "12.5% of total",
+ "text:kpiIssue": "3",
+ "text:kpiIssuePct": "37.5% of total",
+ "text:kpiHealth": "87.5%",
+ "text:kpiMTBF": "0h",
+ "text:kpiMTBFSub": "Rata-rata jarak antar kerusakan · diamati 40.0d",
+ "text:kpiMTTR": "0h",
+ "text:kpiFailures": "2",
+ "text:kpiMonthDowntime": "5.0d",
+ "text:dashNarrative": "8 unit di 2 site — 1 unit sedang breakdown, 3 berjalan dengan gangguan komponen, dan 2 lisensi akan expire dalam 30 hari ke depan.",
+ "text:filterCount": "8 units",
+ "html:componentGrid": "<div class=\"component-stat\"> <div class=\"component-stat__name\">Display</div> <div class=\"component-stat__ring\"> <svg width=\"72\" height=\"72\" viewBox=\"0 0 72 72\"> <circle cx=\"36\" cy=\"36\" r=\"28\" fill=\"none\" style=\"stroke:var(--border-light)\" stroke-width=\"6\"></circle> <circle cx=\"36\" cy=\"36\" r=\"28\" fill=\"none\" stroke=\"#886421\" stroke-width=\"6\" stroke-dasharray=\"175.92918860102841\" stroke-dashoffset=\"21.991148575128562\" stroke-linecap=\"round\"></circle> </svg> <div class=\"component-stat__ring-text\" style=\"color:#886421\">87.5%</div> </div> <div class=\"component-stat__detail\">7 / 8 Good</div> </div> <div class=\"component-stat\"> <div class=\"component-stat__name\">GPS</div> <div class=\"component-stat__ring\"> <svg width=\"72\" height=\"72\" viewBox=\"0 0 72 72\"> <circle cx=\"36\" cy=\"36\" r=\"28\" fill=\"none\" style=\"stroke:var(--border-light)\" stroke-width=\"6\"></circle> <circle cx=\"36\" cy=\"36\" r=\"28\" fill=\"none\" stroke=\"#4D6B89\" stroke-width=\"6\" stroke-dasharray=\"175.92918860102841\" stroke-dashoffset=\"21.991148575128562\" stroke-linecap=\"round\"></circle> </svg> <div class=\"component-stat__ring-text\" style=\"color:#4D6B89\">87.5%</div> </div> <div class=\"component-stat__detail\">7 / 8 Good</div> </div> <div class=\"component-stat\"> <div class=\"component-stat__name\">Steering</div> <div class=\"component-stat__ring\"> <svg width=\"72\" height=\"72\" viewBox=\"0 0 72 72\"> <circle cx=\"36\" cy=\"36\" r=\"28\" fill=\"none\" style=\"stroke:var(--border-light)\" stroke-width=\"6\"></circle> <circle cx=\"36\" cy=\"36\" r=\"28\" fill=\"none\" stroke=\"#4B7453\" stroke-width=\"6\" stroke-dasharray=\"175.92918860102841\" stroke-dashoffset=\"0\" stroke-linecap=\"round\"></circle> </svg> <div class=\"component-stat__ring-text\" style=\"color:#4B7453\">100%</div> </div> <div class=\"component-stat__detail\">8 / 8 Good</div> </div> <div class=\"component-stat\"> <div class=\"component-stat__name\">JDLink</div> <div class=\"component-stat__ring\"> <svg width=\"72\" height=\"72\" viewBox=\"0 0 72 72\"> <circle cx=\"36\" cy=\"36\" r=\"28\" fill=\"none\" style=\"stroke:var(--border-light)\" stroke-width=\"6\"></circle> <circle cx=\"36\" cy=\"36\" r=\"28\" fill=\"none\" stroke=\"#403E3A\" stroke-width=\"6\" stroke-dasharray=\"175.92918860102841\" stroke-dashoffset=\"21.991148575128562\" stroke-linecap=\"round\"></circle> </svg> <div class=\"component-stat__ring-text\" style=\"color:#403E3A\">87.5%</div> </div> <div class=\"component-stat__detail\">7 / 8 Good</div> </div>",
+ "html:issueSummary": "<div class=\"issue-chip\"> <span class=\"issue-chip__dot\" style=\"background:#AD443B\"></span> <span class=\"issue-chip__label\">Unit</span> <span class=\"issue-chip__count\">1</span> </div> <div class=\"issue-chip\"> <span class=\"issue-chip__dot\" style=\"background:#886421\"></span> <span class=\"issue-chip__label\">Display</span> <span class=\"issue-chip__count\">1</span> </div> <div class=\"issue-chip\"> <span class=\"issue-chip__dot\" style=\"background:#4D6B89\"></span> <span class=\"issue-chip__label\">GPS</span> <span class=\"issue-chip__count\">1</span> </div> <div class=\"issue-chip\"> <span class=\"issue-chip__dot\" style=\"background:#4B7453\"></span> <span class=\"issue-chip__label\">Steering</span> <span class=\"issue-chip__count\">0</span> </div> <div class=\"issue-chip\"> <span class=\"issue-chip__dot\" style=\"background:#403E3A\"></span> <span class=\"issue-chip__label\">JDLink</span> <span class=\"issue-chip__count\">1</span> </div>",
+ "html:repairBody": "<tr> <td>1</td> <td><strong>GGTR102G_ABC</strong></td> <td>JOHN DEERE 6110B</td> <td style=\"font-family:monospace;font-size:12px\">1BM7230C102</td> <td><span class=\"badge-component badge-unit\">Unit</span></td> <td>PT. GPA</td> </tr> <tr> <td>2</td> <td><strong>GGTR103G_ABC</strong></td> <td>JOHN DEERE 6110B</td> <td style=\"font-family:monospace;font-size:12px\">1BM7230C103</td> <td><span class=\"badge-component badge-gps\">GPS</span></td> <td>PT. MNM</td> </tr> <tr> <td>3</td> <td><strong>GGTR106G_ABC</strong></td> <td>JOHN DEERE 6110B</td> <td style=\"font-family:monospace;font-size:12px\">1BM7230C106</td> <td><span class=\"badge-component badge-display\">Display</span> <span class=\"badge-component badge-jdlink\">JDLink</span></td> <td>PT. MNM</td> </tr>",
+ "html:licenseAlertsCards": "<div class=\"la-card soon\"> <div class=\"la-card__icon\"> <i class=\"fas fa-triangle-exclamation\"></i> </div> <div class=\"la-card__body\"> <div class=\"la-card__name\">GGTR104G_ABC</div> <div class=\"la-card__meta\">SF-RTK · JOHN DEERE 6110B · PT. GPA · Exp: 2026-10-05</div> </div> <div class=\"la-card__badge\">10d left</div> </div> <div class=\"la-card soon\"> <div class=\"la-card__icon\"> <i class=\"fas fa-triangle-exclamation\"></i> </div> <div class=\"la-card__body\"> <div class=\"la-card__name\">GGTR107G_ABC</div> <div class=\"la-card__meta\">G5 Advance · JOHN DEERE 6110B · PT. GPA · Exp: 2026-10-20</div> </div> <div class=\"la-card__badge\">25d left</div> </div>",
+ "html:licenseAlertsSummary": "<span class=\"la-chip soon\"><i class=\"fas fa-triangle-exclamation\"></i> 2 Expiring ≤30d</span>",
+ "html:detailBody": "<tr class=\"\"> <td>1</td> <td><strong class=\"unit-link\" title=\"Lihat profil unit\" onclick=\"showUnitProfile('u_101')\">GGTR101G_ABC</strong></td> <td>JOHN DEERE 6110B</td> <td style=\"font-family:monospace;font-size:12px\">1BM7230C101</td> <td>Rotary Tiller</td> <td><span class=\"badge badge-good\"><i class=\"fas fa-check\"></i> Good</span></td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td>PT. GPA</td> <td>2021</td> <td><span class=\"badge badge-cat\" style=\"font-size:10px\">Planting</span></td> <td><span class=\"badge badge-good\" style=\"font-size:10px\">SF-1</span></td> <td><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td><span class=\"badge badge-good\" style=\"font-size:10px\">G5 Basic</span></td> <td><span style=\"color:var(--text-light);font-size:11px\">—</span></td> </tr> <tr class=\"row-breakdown\"> <td>2</td> <td><strong class=\"unit-link\" title=\"Lihat profil unit\" onclick=\"showUnitProfile('u_102')\">GGTR102G_ABC</strong></td> <td>JOHN DEERE 6110B</td> <td style=\"font-family:monospace;font-size:12px\">1BM7230C102</td> <td>Rotary Tiller</td> <td><span class=\"badge badge-breakdown bd-clickable\" onclick=\"showBreakdownPopover(event, 'Hidrolik bocor')\"><i class=\"fas fa-xmark\"></i> Breakdown</span></td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td>PT. GPA</td> <td>2021</td> <td><span class=\"badge badge-cat\" style=\"font-size:10px\">Planting</span></td> <td><span class=\"badge badge-good\" style=\"font-size:10px\">SF-1</span></td> <td><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td><span class=\"badge badge-good\" style=\"font-size:10px\">G5 Basic</span></td> <td><span style=\"color:var(--text-light);font-size:11px\">—</span></td> </tr> <tr class=\"\"> <td>3</td> <td><strong class=\"unit-link\" title=\"Lihat profil unit\" onclick=\"showUnitProfile('u_103')\">GGTR103G_ABC</strong></td> <td>JOHN DEERE 6110B</td> <td style=\"font-family:monospace;font-size:12px\">1BM7230C103</td> <td>Rotary Tiller</td> <td><span class=\"badge badge-good\"><i class=\"fas fa-check\"></i> Good</span></td> <td class=\"cell-good\">Good</td> <td class=\"cell-bad\"></td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td>PT. MNM</td> <td>2021</td> <td><span class=\"badge badge-cat\" style=\"font-size:10px\">Planting</span></td> <td><span class=\"badge badge-good\" style=\"font-size:10px\">SF-1</span></td> <td><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td><span class=\"badge badge-good\" style=\"font-size:10px\">G5 Basic</span></td> <td><span style=\"color:var(--text-light);font-size:11px\">—</span></td> </tr> <tr class=\"\"> <td>4</td> <td><strong class=\"unit-link\" title=\"Lihat profil unit\" onclick=\"showUnitProfile('u_104')\">GGTR104G_ABC</strong></td> <td>JOHN DEERE 6110B</td> <td style=\"font-family:monospace;font-size:12px\">1BM7230C104</td> <td>Rotary Tiller</td> <td><span class=\"badge badge-good\"><i class=\"fas fa-check\"></i> Good</span></td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td>PT. GPA</td> <td>2021</td> <td><span class=\"badge badge-cat\" style=\"font-size:10px\">Planting</span></td> <td><span class=\"badge badge-good\" style=\"font-size:10px\">SF-RTK</span></td> <td><span class=\"license-badge license-badge--soon\" title=\"SF-RTK · Expires: 2026-10-05\"><i class=\"fas fa-triangle-exclamation\"></i> 10d left</span></td> <td><span class=\"badge badge-good\" style=\"font-size:10px\">G5 Basic</span></td> <td><span style=\"color:var(--text-light);font-size:11px\">—</span></td> </tr> <tr class=\"\"> <td>5</td> <td><strong class=\"unit-link\" title=\"Lihat profil unit\" onclick=\"showUnitProfile('u_105')\">GGTR105G_ABC</strong></td> <td>JOHN DEERE 6110B</td> <td style=\"font-family:monospace;font-size:12px\">1BM7230C105</td> <td>Rotary Tiller</td> <td><span class=\"badge badge-good\"><i class=\"fas fa-check\"></i> Good</span></td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td>PT. GPA</td> <td>2021</td> <td><span class=\"badge badge-cat\" style=\"font-size:10px\">Planting</span></td> <td><span class=\"badge badge-cat\" style=\"font-size:10px\" title=\"Otomatis turun dari SF-RTK (expired 2026-09-05)\"><i class=\"fas fa-arrow-turn-down\" style=\"font-size:9px;opacity:.7\"></i> SF-1</span></td> <td><span class=\"license-badge license-badge--ok\" title=\"Auto-fallback dari SF-RTK (expired 2026-09-05)\"><i class=\"fas fa-circle-check\"></i> SF-1</span></td> <td><span class=\"badge badge-good\" style=\"font-size:10px\">G5 Basic</span></td> <td><span style=\"color:var(--text-light);font-size:11px\">—</span></td> </tr> <tr class=\"\"> <td>6</td> <td><strong class=\"unit-link\" title=\"Lihat profil unit\" onclick=\"showUnitProfile('u_106')\">GGTR106G_ABC</strong></td> <td>JOHN DEERE 6110B</td> <td style=\"font-family:monospace;font-size:12px\">1BM7230C106</td> <td>Rotary Tiller</td> <td><span class=\"badge badge-good\"><i class=\"fas fa-check\"></i> Good</span></td> <td class=\"cell-bad\">Breakdown</td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td class=\"cell-bad\">Breakdown</td> <td>PT. MNM</td> <td>2020</td> <td><span class=\"badge badge-cat\" style=\"font-size:10px\">Planting</span></td> <td><span class=\"badge badge-good\" style=\"font-size:10px\">SF-1</span></td> <td><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td><span class=\"badge badge-good\" style=\"font-size:10px\">G5 Basic</span></td> <td><span style=\"color:var(--text-light);font-size:11px\">—</span></td> </tr> <tr class=\"\"> <td>7</td> <td><strong class=\"unit-link\" title=\"Lihat profil unit\" onclick=\"showUnitProfile('u_107')\">GGTR107G_ABC</strong></td> <td>JOHN DEERE 6110B</td> <td style=\"font-family:monospace;font-size:12px\">1BM7230C107</td> <td>Rotary Tiller</td> <td><span class=\"badge badge-good\"><i class=\"fas fa-check\"></i> Good</span></td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td>PT. GPA</td> <td>2021</td> <td><span class=\"badge badge-cat\" style=\"font-size:10px\">Planting</span></td> <td><span class=\"badge badge-good\" style=\"font-size:10px\">SF-1</span></td> <td><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td><span class=\"badge badge-good\" style=\"font-size:10px\">G5 Advance</span></td> <td><span class=\"license-badge license-badge--soon\" title=\"G5 Advance · Expires: 2026-10-20\"><i class=\"fas fa-triangle-exclamation\"></i> 25d left</span></td> </tr> <tr class=\"\"> <td>8</td> <td><strong class=\"unit-link\" title=\"Lihat profil unit\" onclick=\"showUnitProfile('u_108')\">GGCH001G</strong></td> <td>JOHN DEERE CH570</td> <td style=\"font-family:monospace;font-size:12px\">1T8C570HKST250056</td> <td></td> <td><span class=\"badge badge-good\"><i class=\"fas fa-check\"></i> Good</span></td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td class=\"cell-good\">Good</td> <td>PT. GPA</td> <td>2021</td> <td><span class=\"badge badge-cat\" style=\"font-size:10px\">Planting</span></td> <td><span class=\"badge badge-good\" style=\"font-size:10px\">SF-1</span></td> <td><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td><span class=\"badge badge-good\" style=\"font-size:10px\">G5 Basic</span></td> <td><span style=\"color:var(--text-light);font-size:11px\">—</span></td> </tr>",
+ "html:detailHead": "<tr> <th tabindex=\"0\" role=\"button\" onclick=\"sortTable('no')\">No <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortTable('name')\">Nickname <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortTable('model')\">Model <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortTable('sn')\">Serial Number <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortTable('implement')\">Implement <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortTable('status')\">Status <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortTable('display')\">Display <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortTable('gps')\">GPS <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortTable('steering')\">Steering <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortTable('jdlink')\">JDLink <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortTable('site')\">Site <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortTable('yearReceived')\">Tahun Penerimaan <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortTable('userCategory')\">User Category <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortTable('gpsLicense')\">GPS License <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortTable('gpsExpiry')\">GPS Expiry <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortTable('licenseDisplay')\">Display License <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortTable('displayExpiry')\">Display Expiry <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> </tr>",
+ "html:componentFilter": "<select id=\"componentFilter\" aria-label=\"Filter komponen\"> <option value=\"\">All Components</option> <option value=\"Display\">Display Issues</option> <option value=\"GPS\">GPS Issues</option> <option value=\"Steering\">Steering Issues</option> <option value=\"JDLink\">JDLink Issues</option> </select>",
+ "html:issueFilter": "<select id=\"issueFilter\" aria-label=\"Filter jenis masalah\" class=\"btn btn-secondary btn-sm\" onchange=\"renderRepair()\"> <option value=\"\">All Issues</option> <option value=\"Unit\">Unit</option> <option value=\"Display\">Display</option> <option value=\"GPS\">GPS</option> <option value=\"Steering\">Steering</option> <option value=\"JDLink\">JDLink</option> </select>",
+ "charts": {
+  "statusChart": {
+   "labels": [
+    "Good",
+    "Breakdown"
+   ],
+   "datasets": [
+    {
+     "data": [
+      7,
+      1
+     ],
+     "backgroundColor": [
+      "#4B7453",
+      "#AD443B"
+     ],
+     "borderWidth": 0,
+     "hoverOffset": 6
+    }
+   ]
+  },
+  "siteChart": {
+   "labels": [
+    "PT. GPA",
+    "PT. MNM"
+   ],
+   "datasets": [
+    {
+     "label": "Good",
+     "data": [
+      5,
+      2
+     ],
+     "backgroundColor": "#4B7453",
+     "borderRadius": 4,
+     "barPercentage": 0.6
+    },
+    {
+     "label": "Breakdown",
+     "data": [
+      1,
+      0
+     ],
+     "backgroundColor": "#AD443B",
+     "borderRadius": 4,
+     "barPercentage": 0.6
+    }
+   ]
+  },
+  "topIssueChart": {
+   "labels": [
+    "Unit",
+    "Display",
+    "GPS",
+    "JDLink"
+   ],
+   "datasets": [
+    {
+     "data": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "backgroundColor": [
+      "#AD443B",
+      "#886421",
+      "#4D6B89",
+      "#403E3A"
+     ],
+     "borderRadius": 4,
+     "barPercentage": 0.5
+    }
+   ]
+  },
+  "issueBySiteChart": {
+   "labels": [
+    "PT. GPA",
+    "PT. MNM"
+   ],
+   "datasets": [
+    {
+     "data": [
+      1,
+      2
+     ],
+     "backgroundColor": "#886421",
+     "borderRadius": 4,
+     "barPercentage": 0.5
+    }
+   ]
+  },
+  "damageTrendChart": {
+   "labels": [
+    "Apr",
+    "Mei",
+    "Jun",
+    "Jul",
+    "Agu",
+    "Sep"
+   ],
+   "datasets": [
+    {
+     "data": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      2
+     ],
+     "backgroundColor": "#D97757",
+     "borderRadius": 4,
+     "barPercentage": 0.55
+    }
+   ]
+  }
+ },
+ "alertList": {
+  "expiredCount": 0,
+  "soonCount": 2,
+  "total": 2,
+  "lines": [
+   "EXPIRING | GGTR104G_ABC | JOHN DEERE 6110B | 1BM7230C104 | SF-RTK | PT. GPA | 2026-10-05 | 10d left",
+   "EXPIRING | GGTR107G_ABC | JOHN DEERE 6110B | 1BM7230C107 | G5 Advance | PT. GPA | 2026-10-20 | 25d left"
+  ]
+ },
+ "downtime": {
+  "mtbf": null,
+  "mttr": null,
+  "totalMonthDowntime": 432000000,
+  "totalFailures": 2,
+  "observedMs": 3456000000,
+  "topOffenders": [],
+  "topTen": []
+ },
+ "decisionLicense": [
+  {
+   "key": "license",
+   "icon": "key",
+   "tone": "warning",
+   "title": "Lisensi segera habis",
+   "total": 2,
+   "items": [
+    {
+     "text": "GGTR104G_ABC · SF-RTK",
+     "sub": "2026-10-05 — 10d left"
+    },
+    {
+     "text": "GGTR107G_ABC · G5 Advance",
+     "sub": "2026-10-20 — 25d left"
+    }
+   ],
+   "goto": "editUnits"
+  }
+ ],
+ "dataChecks": [
+  [
+   "sn",
+   0
+  ],
+  [
+   "spasi",
+   0
+  ],
+  [
+   "site",
+   0
+  ],
+  [
+   "kosong",
+   0
+  ],
+  [
+   "jam",
+   0
+  ],
+  [
+   "tanggal",
+   0
+  ],
+  [
+   "lisensi",
+   0
+  ],
+  [
+   "yatim",
+   1
+  ],
+  [
+   "stok",
+   0
+  ],
+  [
+   "surat",
+   0
+  ],
+  [
+   "izin-tgl",
+   0
+  ]
+ ],
+ "issues": [
+  [
+   "u_101",
+   []
+  ],
+  [
+   "u_102",
+   [
+    "Unit"
+   ]
+  ],
+  [
+   "u_103",
+   [
+    "GPS"
+   ]
+  ],
+  [
+   "u_104",
+   []
+  ],
+  [
+   "u_105",
+   []
+  ],
+  [
+   "u_106",
+   [
+    "Display",
+    "JDLink"
+   ]
+  ],
+  [
+   "u_107",
+   []
+  ],
+  [
+   "u_108",
+   []
+  ]
+ ],
+ "countIssues": {
+  "total": 3,
+  "counts": {
+   "Unit": 1,
+   "Display": 1,
+   "GPS": 1,
+   "Steering": 0,
+   "JDLink": 1
+  }
+ },
+ "csvDashboard": "\"No\",\"Nickname\",\"Model\",\"Serial Number\",\"Implement\",\"Status\",\"Display\",\"GPS\",\"Steering\",\"JDLink\",\"Site\",\"Tahun Penerimaan\",\"User Category\",\"GPS License\",\"Display License\",\"GPS License Start Date\",\"GPS License Expiration Date\",\"Display License Start Date\",\"Display License Expiration Date\",\"Remarks\",\"Breakdown Reason\"\n\"1\",\"GGTR101G_ABC\",\"JOHN DEERE 6110B\",\"1BM7230C101\",\"Rotary Tiller\",\"Good\",\"Good\",\"Good\",\"Good\",\"Good\",\"PT. GPA\",\"2021\",\"Planting\",\"SF-1\",\"G5 Basic\",\"\",\"\",\"\",\"\",\"\",\"\"\n\"2\",\"GGTR102G_ABC\",\"JOHN DEERE 6110B\",\"1BM7230C102\",\"Rotary Tiller\",\"Breakdown\",\"Good\",\"Good\",\"Good\",\"Good\",\"PT. GPA\",\"2021\",\"Planting\",\"SF-1\",\"G5 Basic\",\"\",\"\",\"\",\"\",\"\",\"Hidrolik bocor\"\n\"3\",\"GGTR103G_ABC\",\"JOHN DEERE 6110B\",\"1BM7230C103\",\"Rotary Tiller\",\"Good\",\"Good\",\"\",\"Good\",\"Good\",\"PT. MNM\",\"2021\",\"Planting\",\"SF-1\",\"G5 Basic\",\"\",\"\",\"\",\"\",\"\",\"\"\n\"4\",\"GGTR104G_ABC\",\"JOHN DEERE 6110B\",\"1BM7230C104\",\"Rotary Tiller\",\"Good\",\"Good\",\"Good\",\"Good\",\"Good\",\"PT. GPA\",\"2021\",\"Planting\",\"SF-RTK\",\"G5 Basic\",\"2025-10-05\",\"2026-10-05\",\"\",\"\",\"\",\"\"\n\"5\",\"GGTR105G_ABC\",\"JOHN DEERE 6110B\",\"1BM7230C105\",\"Rotary Tiller\",\"Good\",\"Good\",\"Good\",\"Good\",\"Good\",\"PT. GPA\",\"2021\",\"Planting\",\"SF-1\",\"G5 Basic\",\"2025-08-21\",\"2026-09-05\",\"\",\"\",\"\",\"\"\n\"6\",\"GGTR106G_ABC\",\"JOHN DEERE 6110B\",\"1BM7230C106\",\"Rotary Tiller\",\"Good\",\"Breakdown\",\"Good\",\"Good\",\"Breakdown\",\"PT. MNM\",\"2020\",\"Planting\",\"SF-1\",\"G5 Basic\",\"\",\"\",\"\",\"\",\"\",\"\"\n\"7\",\"GGTR107G_ABC\",\"JOHN DEERE 6110B\",\"1BM7230C107\",\"Rotary Tiller\",\"Good\",\"Good\",\"Good\",\"Good\",\"Good\",\"PT. GPA\",\"2021\",\"Planting\",\"SF-1\",\"G5 Advance\",\"\",\"\",\"2025-11-29\",\"2026-10-20\",\"X \",\"\"\n\"8\",\"GGCH001G\",\"JOHN DEERE CH570\",\"1T8C570HKST250056\",\"\",\"Good\",\"Good\",\"Good\",\"Good\",\"Good\",\"PT. GPA\",\"2021\",\"Planting\",\"SF-1\",\"G5 Basic\",\"\",\"\",\"\",\"\",\"\",\"\"",
+ "csvDashboardName": "tractor_monitoring_2026-09-25.csv",
+ "html:editHead": "<tr> <th class=\"col-check\"><input type=\"checkbox\" id=\"selectAll\" aria-label=\"Pilih semua unit\" onchange=\"toggleSelectAll()\"></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortEditTable('no')\">No <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortEditTable('name')\">Nickname <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortEditTable('model')\">Model <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortEditTable('sn')\">Serial Number <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortEditTable('implement')\">Implement <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortEditTable('status')\">Status <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortEditTable('display')\">Display <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortEditTable('gps')\">GPS <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortEditTable('steering')\">Steering <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortEditTable('jdlink')\">JDLink <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortEditTable('site')\">Site <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortEditTable('yearReceived')\">Tahun Penerimaan <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortEditTable('userCategory')\">User Category <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortEditTable('gpsLicense')\">GPS License <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortEditTable('gpsExpiry')\">GPS Expiry <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortEditTable('licenseDisplay')\">Display License <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th tabindex=\"0\" role=\"button\" onclick=\"sortEditTable('displayExpiry')\">Display Expiry <span class=\"sort-icon\"><i class=\"fas fa-sort\"></i></span></th> <th>Remarks</th> <th>Attachments</th> <th class=\"col-actions\">Actions</th> </tr>",
+ "html:editBody": "<tr> <td class=\"col-check\"><input type=\"checkbox\" class=\"unit-check\" data-id=\"u_101\" onchange=\"updateSelectedCount()\"></td> <td>1</td> <td data-label=\"Nickname\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_101\" data-field=\"name\" onblur=\"saveInlineEdit(this)\">GGTR101G_ABC</span></td> <td data-label=\"Model\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_101\" data-field=\"model\" onblur=\"saveInlineEdit(this)\">JOHN DEERE 6110B</span></td> <td data-label=\"SN\" style=\"font-family:monospace;font-size:12px\">1BM7230C101</td> <td data-label=\"Implement\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_101\" data-field=\"implement\" onblur=\"saveInlineEdit(this)\">Rotary Tiller</span></td> <td data-label=\"Status\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_101\" data-field=\"status\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Display\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_101\" data-field=\"display\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"GPS\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_101\" data-field=\"gps\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Steering\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_101\" data-field=\"steering\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"JDLink\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_101\" data-field=\"jdlink\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Site\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_101\" data-field=\"site\" onblur=\"saveInlineEdit(this)\">PT. GPA</span></td> <td data-label=\"Tahun Penerimaan\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_101\" data-field=\"yearReceived\" onblur=\"saveInlineEdit(this)\">2021</span></td> <td data-label=\"User Category\"><span class=\"badge badge-cat\" style=\"font-size:10px\">Planting</span></td> <td data-label=\"GPS License\"><span class=\"badge badge-good\" style=\"font-size:10px\">SF-1</span></td> <td data-label=\"GPS Expiry\"><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td data-label=\"Display License\"><span class=\"badge badge-good\" style=\"font-size:10px\">G5 Basic</span></td> <td data-label=\"Display Expiry\"><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td data-label=\"Remarks\" style=\"max-width:180px;font-size:12px;color:var(--text-secondary)\" title=\"\"><span style=\"color:var(--text-light)\">—</span></td> <td class=\"col-attach\" data-label=\"Attachments\"><div class=\"attach-cell\"><span class=\"attach-empty\">No files</span><button class=\"btn-icon attach-upload-btn\" title=\"Upload file\" onclick=\"triggerAttachUpload('u_101')\"><i class=\"fas fa-paperclip\"></i></button></div></td> <td class=\"col-actions\"> <div class=\"row-actions\"> <button class=\"btn btn-secondary\" title=\"Profil\" onclick=\"showUnitProfile('u_101')\"><i class=\"fas fa-eye\"></i></button> <button class=\"btn btn-secondary\" title=\"History\" onclick=\"showHistory('u_101')\"><i class=\"fas fa-clock-rotate-left\"></i></button> <button class=\"btn btn-secondary\" title=\"Edit\" onclick=\"editUnit('u_101')\"><i class=\"fas fa-pen\"></i></button> <button class=\"btn btn-secondary\" title=\"Delete\" onclick=\"deleteUnit('u_101')\"><i class=\"fas fa-trash\" style=\"color:var(--danger)\"></i></button> </div> </td> </tr> <tr> <td class=\"col-check\"><input type=\"checkbox\" class=\"unit-check\" data-id=\"u_102\" onchange=\"updateSelectedCount()\"></td> <td>2</td> <td data-label=\"Nickname\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_102\" data-field=\"name\" onblur=\"saveInlineEdit(this)\">GGTR102G_ABC</span></td> <td data-label=\"Model\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_102\" data-field=\"model\" onblur=\"saveInlineEdit(this)\">JOHN DEERE 6110B</span></td> <td data-label=\"SN\" style=\"font-family:monospace;font-size:12px\">1BM7230C102</td> <td data-label=\"Implement\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_102\" data-field=\"implement\" onblur=\"saveInlineEdit(this)\">Rotary Tiller</span></td> <td data-label=\"Status\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_102\" data-field=\"status\" onblur=\"saveInlineEdit(this)\">Breakdown</span></td> <td data-label=\"Display\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_102\" data-field=\"display\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"GPS\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_102\" data-field=\"gps\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Steering\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_102\" data-field=\"steering\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"JDLink\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_102\" data-field=\"jdlink\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Site\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_102\" data-field=\"site\" onblur=\"saveInlineEdit(this)\">PT. GPA</span></td> <td data-label=\"Tahun Penerimaan\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_102\" data-field=\"yearReceived\" onblur=\"saveInlineEdit(this)\">2021</span></td> <td data-label=\"User Category\"><span class=\"badge badge-cat\" style=\"font-size:10px\">Planting</span></td> <td data-label=\"GPS License\"><span class=\"badge badge-good\" style=\"font-size:10px\">SF-1</span></td> <td data-label=\"GPS Expiry\"><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td data-label=\"Display License\"><span class=\"badge badge-good\" style=\"font-size:10px\">G5 Basic</span></td> <td data-label=\"Display Expiry\"><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td data-label=\"Remarks\" style=\"max-width:180px;font-size:12px;color:var(--text-secondary)\" title=\"\"><span style=\"color:var(--text-light)\">—</span></td> <td class=\"col-attach\" data-label=\"Attachments\"><div class=\"attach-cell\"><span class=\"attach-empty\">No files</span><button class=\"btn-icon attach-upload-btn\" title=\"Upload file\" onclick=\"triggerAttachUpload('u_102')\"><i class=\"fas fa-paperclip\"></i></button></div></td> <td class=\"col-actions\"> <div class=\"row-actions\"> <button class=\"btn btn-secondary\" title=\"Profil\" onclick=\"showUnitProfile('u_102')\"><i class=\"fas fa-eye\"></i></button> <button class=\"btn btn-secondary\" title=\"History\" onclick=\"showHistory('u_102')\"><i class=\"fas fa-clock-rotate-left\"></i></button> <button class=\"btn btn-secondary\" title=\"Edit\" onclick=\"editUnit('u_102')\"><i class=\"fas fa-pen\"></i></button> <button class=\"btn btn-secondary\" title=\"Delete\" onclick=\"deleteUnit('u_102')\"><i class=\"fas fa-trash\" style=\"color:var(--danger)\"></i></button> </div> </td> </tr> <tr> <td class=\"col-check\"><input type=\"checkbox\" class=\"unit-check\" data-id=\"u_103\" onchange=\"updateSelectedCount()\"></td> <td>3</td> <td data-label=\"Nickname\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_103\" data-field=\"name\" onblur=\"saveInlineEdit(this)\">GGTR103G_ABC</span></td> <td data-label=\"Model\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_103\" data-field=\"model\" onblur=\"saveInlineEdit(this)\">JOHN DEERE 6110B</span></td> <td data-label=\"SN\" style=\"font-family:monospace;font-size:12px\">1BM7230C103</td> <td data-label=\"Implement\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_103\" data-field=\"implement\" onblur=\"saveInlineEdit(this)\">Rotary Tiller</span></td> <td data-label=\"Status\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_103\" data-field=\"status\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Display\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_103\" data-field=\"display\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"GPS\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_103\" data-field=\"gps\" onblur=\"saveInlineEdit(this)\"></span></td> <td data-label=\"Steering\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_103\" data-field=\"steering\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"JDLink\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_103\" data-field=\"jdlink\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Site\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_103\" data-field=\"site\" onblur=\"saveInlineEdit(this)\">PT. MNM</span></td> <td data-label=\"Tahun Penerimaan\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_103\" data-field=\"yearReceived\" onblur=\"saveInlineEdit(this)\">2021</span></td> <td data-label=\"User Category\"><span class=\"badge badge-cat\" style=\"font-size:10px\">Planting</span></td> <td data-label=\"GPS License\"><span class=\"badge badge-good\" style=\"font-size:10px\">SF-1</span></td> <td data-label=\"GPS Expiry\"><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td data-label=\"Display License\"><span class=\"badge badge-good\" style=\"font-size:10px\">G5 Basic</span></td> <td data-label=\"Display Expiry\"><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td data-label=\"Remarks\" style=\"max-width:180px;font-size:12px;color:var(--text-secondary)\" title=\"\"><span style=\"color:var(--text-light)\">—</span></td> <td class=\"col-attach\" data-label=\"Attachments\"><div class=\"attach-cell\"><span class=\"attach-empty\">No files</span><button class=\"btn-icon attach-upload-btn\" title=\"Upload file\" onclick=\"triggerAttachUpload('u_103')\"><i class=\"fas fa-paperclip\"></i></button></div></td> <td class=\"col-actions\"> <div class=\"row-actions\"> <button class=\"btn btn-secondary\" title=\"Profil\" onclick=\"showUnitProfile('u_103')\"><i class=\"fas fa-eye\"></i></button> <button class=\"btn btn-secondary\" title=\"History\" onclick=\"showHistory('u_103')\"><i class=\"fas fa-clock-rotate-left\"></i></button> <button class=\"btn btn-secondary\" title=\"Edit\" onclick=\"editUnit('u_103')\"><i class=\"fas fa-pen\"></i></button> <button class=\"btn btn-secondary\" title=\"Delete\" onclick=\"deleteUnit('u_103')\"><i class=\"fas fa-trash\" style=\"color:var(--danger)\"></i></button> </div> </td> </tr> <tr> <td class=\"col-check\"><input type=\"checkbox\" class=\"unit-check\" data-id=\"u_104\" onchange=\"updateSelectedCount()\"></td> <td>4</td> <td data-label=\"Nickname\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_104\" data-field=\"name\" onblur=\"saveInlineEdit(this)\">GGTR104G_ABC</span></td> <td data-label=\"Model\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_104\" data-field=\"model\" onblur=\"saveInlineEdit(this)\">JOHN DEERE 6110B</span></td> <td data-label=\"SN\" style=\"font-family:monospace;font-size:12px\">1BM7230C104</td> <td data-label=\"Implement\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_104\" data-field=\"implement\" onblur=\"saveInlineEdit(this)\">Rotary Tiller</span></td> <td data-label=\"Status\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_104\" data-field=\"status\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Display\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_104\" data-field=\"display\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"GPS\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_104\" data-field=\"gps\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Steering\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_104\" data-field=\"steering\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"JDLink\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_104\" data-field=\"jdlink\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Site\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_104\" data-field=\"site\" onblur=\"saveInlineEdit(this)\">PT. GPA</span></td> <td data-label=\"Tahun Penerimaan\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_104\" data-field=\"yearReceived\" onblur=\"saveInlineEdit(this)\">2021</span></td> <td data-label=\"User Category\"><span class=\"badge badge-cat\" style=\"font-size:10px\">Planting</span></td> <td data-label=\"GPS License\"><span class=\"badge badge-good\" style=\"font-size:10px\">SF-RTK</span></td> <td data-label=\"GPS Expiry\"><span class=\"license-badge license-badge--soon\" title=\"SF-RTK · Expires: 2026-10-05\"><i class=\"fas fa-triangle-exclamation\"></i> 10d left</span></td> <td data-label=\"Display License\"><span class=\"badge badge-good\" style=\"font-size:10px\">G5 Basic</span></td> <td data-label=\"Display Expiry\"><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td data-label=\"Remarks\" style=\"max-width:180px;font-size:12px;color:var(--text-secondary)\" title=\"\"><span style=\"color:var(--text-light)\">—</span></td> <td class=\"col-attach\" data-label=\"Attachments\"><div class=\"attach-cell\"><span class=\"attach-empty\">No files</span><button class=\"btn-icon attach-upload-btn\" title=\"Upload file\" onclick=\"triggerAttachUpload('u_104')\"><i class=\"fas fa-paperclip\"></i></button></div></td> <td class=\"col-actions\"> <div class=\"row-actions\"> <button class=\"btn btn-secondary\" title=\"Profil\" onclick=\"showUnitProfile('u_104')\"><i class=\"fas fa-eye\"></i></button> <button class=\"btn btn-secondary\" title=\"History\" onclick=\"showHistory('u_104')\"><i class=\"fas fa-clock-rotate-left\"></i></button> <button class=\"btn btn-secondary\" title=\"Edit\" onclick=\"editUnit('u_104')\"><i class=\"fas fa-pen\"></i></button> <button class=\"btn btn-secondary\" title=\"Delete\" onclick=\"deleteUnit('u_104')\"><i class=\"fas fa-trash\" style=\"color:var(--danger)\"></i></button> </div> </td> </tr> <tr> <td class=\"col-check\"><input type=\"checkbox\" class=\"unit-check\" data-id=\"u_105\" onchange=\"updateSelectedCount()\"></td> <td>5</td> <td data-label=\"Nickname\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_105\" data-field=\"name\" onblur=\"saveInlineEdit(this)\">GGTR105G_ABC</span></td> <td data-label=\"Model\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_105\" data-field=\"model\" onblur=\"saveInlineEdit(this)\">JOHN DEERE 6110B</span></td> <td data-label=\"SN\" style=\"font-family:monospace;font-size:12px\">1BM7230C105</td> <td data-label=\"Implement\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_105\" data-field=\"implement\" onblur=\"saveInlineEdit(this)\">Rotary Tiller</span></td> <td data-label=\"Status\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_105\" data-field=\"status\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Display\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_105\" data-field=\"display\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"GPS\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_105\" data-field=\"gps\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Steering\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_105\" data-field=\"steering\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"JDLink\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_105\" data-field=\"jdlink\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Site\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_105\" data-field=\"site\" onblur=\"saveInlineEdit(this)\">PT. GPA</span></td> <td data-label=\"Tahun Penerimaan\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_105\" data-field=\"yearReceived\" onblur=\"saveInlineEdit(this)\">2021</span></td> <td data-label=\"User Category\"><span class=\"badge badge-cat\" style=\"font-size:10px\">Planting</span></td> <td data-label=\"GPS License\"><span class=\"badge badge-cat\" style=\"font-size:10px\" title=\"Otomatis turun dari SF-RTK (expired 2026-09-05)\"><i class=\"fas fa-arrow-turn-down\" style=\"font-size:9px;opacity:.7\"></i> SF-1</span></td> <td data-label=\"GPS Expiry\"><span class=\"license-badge license-badge--ok\" title=\"Auto-fallback dari SF-RTK (expired 2026-09-05)\"><i class=\"fas fa-circle-check\"></i> SF-1</span></td> <td data-label=\"Display License\"><span class=\"badge badge-good\" style=\"font-size:10px\">G5 Basic</span></td> <td data-label=\"Display Expiry\"><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td data-label=\"Remarks\" style=\"max-width:180px;font-size:12px;color:var(--text-secondary)\" title=\"\"><span style=\"color:var(--text-light)\">—</span></td> <td class=\"col-attach\" data-label=\"Attachments\"><div class=\"attach-cell\"><span class=\"attach-empty\">No files</span><button class=\"btn-icon attach-upload-btn\" title=\"Upload file\" onclick=\"triggerAttachUpload('u_105')\"><i class=\"fas fa-paperclip\"></i></button></div></td> <td class=\"col-actions\"> <div class=\"row-actions\"> <button class=\"btn btn-secondary\" title=\"Profil\" onclick=\"showUnitProfile('u_105')\"><i class=\"fas fa-eye\"></i></button> <button class=\"btn btn-secondary\" title=\"History\" onclick=\"showHistory('u_105')\"><i class=\"fas fa-clock-rotate-left\"></i></button> <button class=\"btn btn-secondary\" title=\"Edit\" onclick=\"editUnit('u_105')\"><i class=\"fas fa-pen\"></i></button> <button class=\"btn btn-secondary\" title=\"Delete\" onclick=\"deleteUnit('u_105')\"><i class=\"fas fa-trash\" style=\"color:var(--danger)\"></i></button> </div> </td> </tr> <tr> <td class=\"col-check\"><input type=\"checkbox\" class=\"unit-check\" data-id=\"u_106\" onchange=\"updateSelectedCount()\"></td> <td>6</td> <td data-label=\"Nickname\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_106\" data-field=\"name\" onblur=\"saveInlineEdit(this)\">GGTR106G_ABC</span></td> <td data-label=\"Model\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_106\" data-field=\"model\" onblur=\"saveInlineEdit(this)\">JOHN DEERE 6110B</span></td> <td data-label=\"SN\" style=\"font-family:monospace;font-size:12px\">1BM7230C106</td> <td data-label=\"Implement\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_106\" data-field=\"implement\" onblur=\"saveInlineEdit(this)\">Rotary Tiller</span></td> <td data-label=\"Status\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_106\" data-field=\"status\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Display\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_106\" data-field=\"display\" onblur=\"saveInlineEdit(this)\">Breakdown</span></td> <td data-label=\"GPS\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_106\" data-field=\"gps\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Steering\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_106\" data-field=\"steering\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"JDLink\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_106\" data-field=\"jdlink\" onblur=\"saveInlineEdit(this)\">Breakdown</span></td> <td data-label=\"Site\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_106\" data-field=\"site\" onblur=\"saveInlineEdit(this)\">PT. MNM</span></td> <td data-label=\"Tahun Penerimaan\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_106\" data-field=\"yearReceived\" onblur=\"saveInlineEdit(this)\">2020</span></td> <td data-label=\"User Category\"><span class=\"badge badge-cat\" style=\"font-size:10px\">Planting</span></td> <td data-label=\"GPS License\"><span class=\"badge badge-good\" style=\"font-size:10px\">SF-1</span></td> <td data-label=\"GPS Expiry\"><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td data-label=\"Display License\"><span class=\"badge badge-good\" style=\"font-size:10px\">G5 Basic</span></td> <td data-label=\"Display Expiry\"><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td data-label=\"Remarks\" style=\"max-width:180px;font-size:12px;color:var(--text-secondary)\" title=\"\"><span style=\"color:var(--text-light)\">—</span></td> <td class=\"col-attach\" data-label=\"Attachments\"><div class=\"attach-cell\"><span class=\"attach-empty\">No files</span><button class=\"btn-icon attach-upload-btn\" title=\"Upload file\" onclick=\"triggerAttachUpload('u_106')\"><i class=\"fas fa-paperclip\"></i></button></div></td> <td class=\"col-actions\"> <div class=\"row-actions\"> <button class=\"btn btn-secondary\" title=\"Profil\" onclick=\"showUnitProfile('u_106')\"><i class=\"fas fa-eye\"></i></button> <button class=\"btn btn-secondary\" title=\"History\" onclick=\"showHistory('u_106')\"><i class=\"fas fa-clock-rotate-left\"></i></button> <button class=\"btn btn-secondary\" title=\"Edit\" onclick=\"editUnit('u_106')\"><i class=\"fas fa-pen\"></i></button> <button class=\"btn btn-secondary\" title=\"Delete\" onclick=\"deleteUnit('u_106')\"><i class=\"fas fa-trash\" style=\"color:var(--danger)\"></i></button> </div> </td> </tr> <tr> <td class=\"col-check\"><input type=\"checkbox\" class=\"unit-check\" data-id=\"u_107\" onchange=\"updateSelectedCount()\"></td> <td>7</td> <td data-label=\"Nickname\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_107\" data-field=\"name\" onblur=\"saveInlineEdit(this)\">GGTR107G_ABC</span></td> <td data-label=\"Model\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_107\" data-field=\"model\" onblur=\"saveInlineEdit(this)\">JOHN DEERE 6110B</span></td> <td data-label=\"SN\" style=\"font-family:monospace;font-size:12px\">1BM7230C107</td> <td data-label=\"Implement\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_107\" data-field=\"implement\" onblur=\"saveInlineEdit(this)\">Rotary Tiller</span></td> <td data-label=\"Status\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_107\" data-field=\"status\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Display\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_107\" data-field=\"display\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"GPS\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_107\" data-field=\"gps\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Steering\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_107\" data-field=\"steering\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"JDLink\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_107\" data-field=\"jdlink\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Site\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_107\" data-field=\"site\" onblur=\"saveInlineEdit(this)\">PT. GPA</span></td> <td data-label=\"Tahun Penerimaan\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_107\" data-field=\"yearReceived\" onblur=\"saveInlineEdit(this)\">2021</span></td> <td data-label=\"User Category\"><span class=\"badge badge-cat\" style=\"font-size:10px\">Planting</span></td> <td data-label=\"GPS License\"><span class=\"badge badge-good\" style=\"font-size:10px\">SF-1</span></td> <td data-label=\"GPS Expiry\"><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td data-label=\"Display License\"><span class=\"badge badge-good\" style=\"font-size:10px\">G5 Advance</span></td> <td data-label=\"Display Expiry\"><span class=\"license-badge license-badge--soon\" title=\"G5 Advance · Expires: 2026-10-20\"><i class=\"fas fa-triangle-exclamation\"></i> 25d left</span></td> <td data-label=\"Remarks\" style=\"max-width:180px;font-size:12px;color:var(--text-secondary)\" title=\"X \">X </td> <td class=\"col-attach\" data-label=\"Attachments\"><div class=\"attach-cell\"><span class=\"attach-empty\">No files</span><button class=\"btn-icon attach-upload-btn\" title=\"Upload file\" onclick=\"triggerAttachUpload('u_107')\"><i class=\"fas fa-paperclip\"></i></button></div></td> <td class=\"col-actions\"> <div class=\"row-actions\"> <button class=\"btn btn-secondary\" title=\"Profil\" onclick=\"showUnitProfile('u_107')\"><i class=\"fas fa-eye\"></i></button> <button class=\"btn btn-secondary\" title=\"History\" onclick=\"showHistory('u_107')\"><i class=\"fas fa-clock-rotate-left\"></i></button> <button class=\"btn btn-secondary\" title=\"Edit\" onclick=\"editUnit('u_107')\"><i class=\"fas fa-pen\"></i></button> <button class=\"btn btn-secondary\" title=\"Delete\" onclick=\"deleteUnit('u_107')\"><i class=\"fas fa-trash\" style=\"color:var(--danger)\"></i></button> </div> </td> </tr> <tr> <td class=\"col-check\"><input type=\"checkbox\" class=\"unit-check\" data-id=\"u_108\" onchange=\"updateSelectedCount()\"></td> <td>8</td> <td data-label=\"Nickname\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_108\" data-field=\"name\" onblur=\"saveInlineEdit(this)\">GGCH001G</span></td> <td data-label=\"Model\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_108\" data-field=\"model\" onblur=\"saveInlineEdit(this)\">JOHN DEERE CH570</span></td> <td data-label=\"SN\" style=\"font-family:monospace;font-size:12px\">1T8C570HKST250056</td> <td data-label=\"Implement\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_108\" data-field=\"implement\" onblur=\"saveInlineEdit(this)\"></span></td> <td data-label=\"Status\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_108\" data-field=\"status\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Display\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_108\" data-field=\"display\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"GPS\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_108\" data-field=\"gps\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Steering\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_108\" data-field=\"steering\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"JDLink\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_108\" data-field=\"jdlink\" onblur=\"saveInlineEdit(this)\">Good</span></td> <td data-label=\"Site\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_108\" data-field=\"site\" onblur=\"saveInlineEdit(this)\">PT. GPA</span></td> <td data-label=\"Tahun Penerimaan\"><span class=\"inline-edit\" contenteditable=\"true\" data-id=\"u_108\" data-field=\"yearReceived\" onblur=\"saveInlineEdit(this)\">2021</span></td> <td data-label=\"User Category\"><span class=\"badge badge-cat\" style=\"font-size:10px\">Planting</span></td> <td data-label=\"GPS License\"><span class=\"badge badge-good\" style=\"font-size:10px\">SF-1</span></td> <td data-label=\"GPS Expiry\"><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td data-label=\"Display License\"><span class=\"badge badge-good\" style=\"font-size:10px\">G5 Basic</span></td> <td data-label=\"Display Expiry\"><span style=\"color:var(--text-light);font-size:11px\">—</span></td> <td data-label=\"Remarks\" style=\"max-width:180px;font-size:12px;color:var(--text-secondary)\" title=\"\"><span style=\"color:var(--text-light)\">—</span></td> <td class=\"col-attach\" data-label=\"Attachments\"><div class=\"attach-cell\"><span class=\"attach-empty\">No files</span><button class=\"btn-icon attach-upload-btn\" title=\"Upload file\" onclick=\"triggerAttachUpload('u_108')\"><i class=\"fas fa-paperclip\"></i></button></div></td> <td class=\"col-actions\"> <div class=\"row-actions\"> <button class=\"btn btn-secondary\" title=\"Profil\" onclick=\"showUnitProfile('u_108')\"><i class=\"fas fa-eye\"></i></button> <button class=\"btn btn-secondary\" title=\"History\" onclick=\"showHistory('u_108')\"><i class=\"fas fa-clock-rotate-left\"></i></button> <button class=\"btn btn-secondary\" title=\"Edit\" onclick=\"editUnit('u_108')\"><i class=\"fas fa-pen\"></i></button> <button class=\"btn btn-secondary\" title=\"Delete\" onclick=\"deleteUnit('u_108')\"><i class=\"fas fa-trash\" style=\"color:var(--danger)\"></i></button> </div> </td> </tr>",
+ "text:editUnitCount": "8 unit(s) in database",
+ "csvEdit": "\"No\",\"Nickname\",\"Model\",\"Serial Number\",\"Implement\",\"Status\",\"Display\",\"GPS\",\"Steering\",\"JDLink\",\"Site\",\"Tahun Penerimaan\",\"User Category\",\"GPS License\",\"Display License\",\"GPS License Start Date\",\"GPS License Expiration Date\",\"Display License Start Date\",\"Display License Expiration Date\",\"Remarks\",\"Breakdown Reason\"\n\"1\",\"GGTR101G_ABC\",\"JOHN DEERE 6110B\",\"1BM7230C101\",\"Rotary Tiller\",\"Good\",\"Good\",\"Good\",\"Good\",\"Good\",\"PT. GPA\",\"2021\",\"Planting\",\"SF-1\",\"G5 Basic\",\"\",\"\",\"\",\"\",\"\",\"\"\n\"2\",\"GGTR102G_ABC\",\"JOHN DEERE 6110B\",\"1BM7230C102\",\"Rotary Tiller\",\"Breakdown\",\"Good\",\"Good\",\"Good\",\"Good\",\"PT. GPA\",\"2021\",\"Planting\",\"SF-1\",\"G5 Basic\",\"\",\"\",\"\",\"\",\"\",\"Hidrolik bocor\"\n\"3\",\"GGTR103G_ABC\",\"JOHN DEERE 6110B\",\"1BM7230C103\",\"Rotary Tiller\",\"Good\",\"Good\",\"\",\"Good\",\"Good\",\"PT. MNM\",\"2021\",\"Planting\",\"SF-1\",\"G5 Basic\",\"\",\"\",\"\",\"\",\"\",\"\"\n\"4\",\"GGTR104G_ABC\",\"JOHN DEERE 6110B\",\"1BM7230C104\",\"Rotary Tiller\",\"Good\",\"Good\",\"Good\",\"Good\",\"Good\",\"PT. GPA\",\"2021\",\"Planting\",\"SF-RTK\",\"G5 Basic\",\"2025-10-05\",\"2026-10-05\",\"\",\"\",\"\",\"\"\n\"5\",\"GGTR105G_ABC\",\"JOHN DEERE 6110B\",\"1BM7230C105\",\"Rotary Tiller\",\"Good\",\"Good\",\"Good\",\"Good\",\"Good\",\"PT. GPA\",\"2021\",\"Planting\",\"SF-1\",\"G5 Basic\",\"2025-08-21\",\"2026-09-05\",\"\",\"\",\"\",\"\"\n\"6\",\"GGTR106G_ABC\",\"JOHN DEERE 6110B\",\"1BM7230C106\",\"Rotary Tiller\",\"Good\",\"Breakdown\",\"Good\",\"Good\",\"Breakdown\",\"PT. MNM\",\"2020\",\"Planting\",\"SF-1\",\"G5 Basic\",\"\",\"\",\"\",\"\",\"\",\"\"\n\"7\",\"GGTR107G_ABC\",\"JOHN DEERE 6110B\",\"1BM7230C107\",\"Rotary Tiller\",\"Good\",\"Good\",\"Good\",\"Good\",\"Good\",\"PT. GPA\",\"2021\",\"Planting\",\"SF-1\",\"G5 Advance\",\"\",\"\",\"2025-11-29\",\"2026-10-20\",\"X \",\"\"\n\"8\",\"GGCH001G\",\"JOHN DEERE CH570\",\"1T8C570HKST250056\",\"\",\"Good\",\"Good\",\"Good\",\"Good\",\"Good\",\"PT. GPA\",\"2021\",\"Planting\",\"SF-1\",\"G5 Basic\",\"\",\"\",\"\",\"\",\"\",\"\"",
+ "csvEditName": "tractor_monitoring_2026-09-25.csv",
+ "csvImport": {
+  "valid": [
+   {
+    "name": "GGTR201G_NEW",
+    "model": "JOHN DEERE 6110B",
+    "sn": "SN201",
+    "implement": "Plough",
+    "status": "Good",
+    "display": "Good",
+    "gps": "Good",
+    "steering": "Good",
+    "jdlink": "Good",
+    "site": "PT. GPA",
+    "yearReceived": "2024",
+    "userCategory": "Planting",
+    "gpsLicense": "SF-1",
+    "licenseDisplay": "G5 Basic",
+    "gpsLicenseStartDate": "",
+    "gpsLicenseEndDate": "",
+    "displayLicenseStartDate": "",
+    "displayLicenseEndDate": "",
+    "remarks": "",
+    "breakdownReason": "",
+    "downtimeHistory": [],
+    "breakdownStartedAt": null
+   }
+  ],
+  "rejected": []
+ },
+ "inlineWrites": [
+  [
+   {
+    "id": "u_106",
+    "yearReceived": "2020",
+    "name": "GGTR106G_ABC"
+   }
+  ]
+ ],
+ "inlineToasts": [
+  "YearReceived diperbarui|success"
+ ]
+}

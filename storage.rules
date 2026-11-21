@@ -1,0 +1,241 @@
+rules_version = '2';
+
+// ============================================================
+// OT Monitoring — Cloud Storage security rules (2.13.0, Blaze)
+// ------------------------------------------------------------
+// Paste this whole file into: Firebase Console → Storage → Rules → Publish.
+// The first publish asks to let Storage read Firestore (the /users documents
+// that hold each account's access) — allow it.
+//
+// learning/<fileId>/<name> : Learning Center files and videos.
+// photos/<collection>/<record>/<file> : record photos (2.17.0), same areas as
+//   their Firestore photo documents.
+//   read   : every active account (same as the Learning Center page)
+//   write  : accounts with Learning Center 'edit' (Super Admin always)
+//   limits : PDF / EPUB / MOBI up to 100 MB, video up to 500 MB
+// Everything else in the bucket is closed.
+// ============================================================
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function me() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+    function isActive() {
+      return request.auth != null && me().get('status', '') == 'active';
+    }
+    // Same rule as the app and firestore.rules: owner always; else the
+    // explicit 'learning' grant; the legacy 'team' role defaults to edit.
+    function canEditLearning() {
+      let d = me();
+      let a = d.get('access', {});
+      let given = a is map ? a.get('learning', null) : null;
+      return isActive()
+        && (d.get('role', '') == 'owner'
+            || given == 'edit'
+            || (given == null && d.get('role', '') == 'team'));
+    }
+    function isDoc() {
+      return request.resource.contentType in ['application/pdf', 'application/epub+zip', 'application/x-mobipocket-ebook']
+        && request.resource.size <= 100 * 1024 * 1024;
+    }
+    function isVideo() {
+      return request.resource.contentType in ['video/mp4', 'video/webm', 'video/quicktime']
+        && request.resource.size <= 500 * 1024 * 1024;
+    }
+
+    // ---- Photos (2.17.0): photos/<collection>/<record>/<file> ----
+    // Same areas as the Firestore photo documents. The access level of an
+    // area, like firestore.rules: owner = edit; else the explicit grant; the
+    // legacy 'team' role defaults to edit; a unit-group limit closes the other
+    // group's areas.
+    function lvl(area) {
+      let d = me();
+      let a0 = d.get('access', {});
+      let a = a0 is map ? a0 : {};
+      let given = a.get(area, null);
+      let role = d.get('role', '');
+      let raw = role == 'owner' ? 'edit' : (given != null ? given : (role == 'team' ? 'edit' : 'none'));
+      let sc0 = a.get('unitScope', null);
+      let sc = role == 'owner' || sc0 == null ? 'all' : (sc0 in ['all', 'tractor', 'heavy'] ? sc0 : 'none');
+      return sc == 'all' || raw == 'none' ? raw
+        : (area in ['inspection', 'inspectionApprove'] && sc != 'heavy') ? 'none'
+        : (area == 'damage' && raw == 'edit') ? 'view'
+        : raw;
+    }
+    function canView(area) { return isActive() && lvl(area) in ['view', 'edit']; }
+    function canEdit(area) { return isActive() && lvl(area) == 'edit'; }
+    function isOwn(area)   { return isActive() && lvl(area) == 'own'; }
+    function isImage()     { return request.resource.contentType.matches('image/.*') && request.resource.size <= 5 * 1024 * 1024; }
+    function isOwnerSt()   { return isActive() && me().get('role', '') == 'owner'; }
+    // 2.45.0: the record of a Daily Report photo or leave letter, picked by its id (work
+    // logs are wl_…, leave requests lv_…): Storage rules may read two Firestore documents,
+    // the account's and one record — looking in both collections was a third.
+    function teamRecPath(rec) {
+      return rec.matches('lv_.*') ? /databases/(default)/documents/leaveRequests/$(rec)
+                                  : /databases/(default)/documents/workLogs/$(rec);
+    }
+    // A Daily Report / leave record of this account (or not written yet).
+    function teamRecordMine(rec, orNew) {
+      let p = teamRecPath(rec);
+      return firestore.exists(p) ? firestore.get(p).data.get('createdByUid', '') == request.auth.uid : orNew;
+    }
+    // 2.45.0: evidence follows its record, as the photo documents do in firestore.rules
+    // (recordOpen / recordSentByMe, inspectionOpen / inspectionSentByMe): the files change
+    // only while the record is open (a draft, or sent back) or not written yet (photos go
+    // up first), or while its sender waits for the check (photos that finish uploading
+    // after it was sent). An approved record's photos used to stay replaceable and
+    // deletable here although Firestore locks them.
+    function apprSt(d) { return d.get('approval', 'pending'); }
+    function evidenceOpen(p) {
+      let d = firestore.exists(p) ? firestore.get(p).data : null;
+      return d == null || apprSt(d) in ['draft', 'revision']
+          || (apprSt(d) == 'pending' && d.get('submittedByUid', '') == request.auth.uid);
+    }
+    function teamPhotoWrite(rec) {
+      return isOwnerSt()
+          || ((canEdit('teamLog') || (isOwn('teamLog') && teamRecordMine(rec, true))) && evidenceOpen(teamRecPath(rec)));
+    }
+    function inspectionPhotoWrite(rec) {
+      return isOwnerSt()
+          || (canEdit('inspection') && evidenceOpen(/databases/(default)/documents/inspections/$(rec)));
+    }
+
+    match /photos/warehousePhotos/{rec}/{file} {
+      allow read: if canView('warehouse');
+      allow create, update: if canEdit('warehouse') && isImage();
+      allow delete: if canEdit('warehouse');
+    }
+    match /photos/fuelPhotos/{rec}/{file} {
+      allow read: if canView('warehouse');
+      allow create, update: if canEdit('warehouse') && isImage();
+      allow delete: if canEdit('warehouse');
+    }
+    // ---- Photos and files of one record (2.43.0) ----
+    // The folder is the photo document's id, <record>__p<n> (a receipt:
+    // <request>__<receipt>__p<n>), so its record is the part before the first "__";
+    // a job's files sit under projectFiles/<job>/. An 'own' account adds files only
+    // to its own records, never overwrites one (an upload over an existing file is a
+    // 'create' too, hence resource == null), and deletes only its own records'
+    // (or those of a record already deleted). It used to reach everybody's.
+    // Storage rules may read at most two Firestore documents: the account's and
+    // one record, so the record's collection follows from its id (job_… / pj_…).
+    function recOf(folder) { return folder.split('__')[0]; }
+    function recMineSt(path, orNew) {
+      return firestore.exists(path) ? firestore.get(path).data.get('createdByUid', '') == request.auth.uid : orNew;
+    }
+    function prMineSt(folder, orNew) {
+      return recMineSt(/databases/(default)/documents/purchaseRequests/$(recOf(folder)), orNew);
+    }
+    function pjMineSt(folder, orNew) {
+      return recOf(folder).matches('job_.*')
+        ? recMineSt(/databases/(default)/documents/otJobs/$(recOf(folder)), orNew)
+        : recMineSt(/databases/(default)/documents/projects/$(recOf(folder)), orNew);
+    }
+    // A requester changes only its request's own photos (not a receipt's: <request>__<receipt>__p<n>),
+    // while the request is a draft or just submitted.
+    function prOpenSt(folder, orNew) {
+      let p = /databases/(default)/documents/purchaseRequests/$(recOf(folder));
+      return folder.split('__').size() == 2
+          && (firestore.exists(p) ? (firestore.get(p).data.get('createdByUid', '') == request.auth.uid
+                                     && firestore.get(p).data.get('status', '') in ['draft', 'submitted'])
+                                  : orNew);
+    }
+    match /photos/purchasePhotos/{rec}/{file} {
+      allow read: if canView('purchase') || (isOwn('purchase') && prMineSt(rec, false));
+      // 2.43.2: an upload into the request's own photo folder is allowed whatever its status
+      // (a photo that waited on the phone is finished after approval); whether the request
+      // shows it is decided by firestore.rules. Replacing and deleting stay limited.
+      allow create: if (canEdit('purchase') || (isOwn('purchase') && resource == null && rec.split('__').size() == 2 && prMineSt(rec, true))) && isImage();
+      allow update: if canEdit('purchase') && isImage();
+      allow delete: if canEdit('purchase') || (isOwn('purchase') && prOpenSt(rec, true));
+    }
+    // 2.29.0: Projects & Jobs (project updates and job photos)
+    match /photos/projectPhotos/{rec}/{file} {
+      allow read: if canView('projects') || isOwn('projects');
+      allow create: if (canEdit('projects') || (isOwn('projects') && resource == null && pjMineSt(rec, true))) && isImage();
+      allow update: if canEdit('projects') && isImage();
+      allow delete: if canEdit('projects') || (isOwn('projects') && pjMineSt(rec, true));
+    }
+    // 2.29.8: attachments of jobs (Projects & Jobs) — PDFs, and videos since 2.29.9
+    function isJobFile() {
+      // 2.29.9: PDFs up to 25 MB, videos (mp4 / webm / mov) up to 200 MB
+      return (request.resource.contentType == 'application/pdf' && request.resource.size <= 25 * 1024 * 1024)
+          || (request.resource.contentType in ['video/mp4', 'video/webm', 'video/quicktime'] && request.resource.size <= 200 * 1024 * 1024);
+    }
+    match /projectFiles/{rec}/{file} {
+      allow read: if canView('projects') || isOwn('projects');
+      allow create: if (canEdit('projects') || (isOwn('projects') && resource == null && pjMineSt(rec, true))) && isJobFile();
+      allow update: if canEdit('projects') && isJobFile();
+      allow delete: if canEdit('projects') || (isOwn('projects') && pjMineSt(rec, true));
+    }
+    // 2.30.0: ticket photos — any active account may add them to a ticket it
+    // files; whoever sees tickets, and the reporter, read them.
+    // 2.43.0: the ticket is the one the folder names (it used to look up the
+    // photo's own id, which is never a ticket, so every check passed).
+    function ticketMineSt(folder, orNew) {
+      let t = /databases/(default)/documents/tickets/$(recOf(folder));
+      return firestore.exists(t) ? firestore.get(t).data.get('reportedByUid', '') == request.auth.uid : orNew;
+    }
+    match /photos/ticketPhotos/{rec}/{file} {
+      allow read: if canView('tickets') || (isActive() && ticketMineSt(rec, false));
+      allow create: if (canEdit('tickets') || (isActive() && resource == null && ticketMineSt(rec, true))) && isImage();
+      allow update: if canEdit('tickets') && isImage();
+      allow delete: if canEdit('tickets');
+    }
+    match /photos/damagePhotos/{rec}/{file} {
+      allow read: if canView('damage');
+      allow create, update: if canEdit('damage') && isImage();
+      allow delete: if canEdit('damage');
+    }
+    match /photos/inspectionPhotos/{rec}/{file} {
+      allow read: if canView('inspection') || canView('inspectionApprove');
+      allow create, update: if inspectionPhotoWrite(rec) && isImage();
+      allow delete: if inspectionPhotoWrite(rec);
+    }
+    // Daily Report photos and leave letters (the same folder, like the Firestore collection).
+    match /photos/workLogPhotos/{rec}/{file} {
+      allow read: if canView('teamLog') || canView('teamLogApprove')
+                  || (isOwn('teamLog') && teamRecordMine(rec, false));
+      allow create, update: if teamPhotoWrite(rec) && isImage();
+      allow delete: if teamPhotoWrite(rec);
+    }
+
+    // 2.44.0: 3D Models — models3d/<model>/<file>: a GLB, a studio page (stored as
+    // text/plain, so its link shows text and never runs as a page), and the card
+    // picture. Every active account reads; 'models3d' edit writes.
+    function isModelFile() {
+      return (request.resource.contentType in ['model/gltf-binary', 'application/octet-stream'] && request.resource.size <= 200 * 1024 * 1024)
+          || (request.resource.contentType in ['text/plain', 'text/plain;charset=utf-8'] && request.resource.size <= 15 * 1024 * 1024)
+          || (request.resource.contentType == 'image/jpeg' && request.resource.size <= 1024 * 1024);
+    }
+    match /models3d/{model}/{file} {
+      allow read: if isActive();
+      allow create, update: if canEdit('models3d') && isModelFile();
+      allow delete: if canEdit('models3d');
+    }
+
+    match /learning/{fileId}/{name} {
+      allow read: if isActive();
+      allow create, update: if canEditLearning() && (isDoc() || isVideo());
+      allow delete: if canEditLearning();
+    }
+
+    // History older than 2 years, archived by the server (2.19.0).
+    match /archives/history/{file} {
+      allow read: if isActive() && me().get('role', '') == 'owner';
+      allow write: if false;
+    }
+
+    // Daily backups written by the server (2.35.0): the owner may download them.
+    match /backups/{date}/{file} {
+      allow read: if isActive() && me().get('role', '') == 'owner';
+      allow write: if false;
+    }
+
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

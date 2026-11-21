@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- 2.44.2: what a studio page may load once it runs here. Scripts and styles from the
+     usual CDNs and inline; pictures, media and fetches only of what is inside the page
+     (data:, blob:) — no HTTP, WebSocket, form or navigation requests out. The policy
+     stays after the page is written in, and the page cannot loosen it. WebRTC
+     (STUN/TURN) is not covered by CSP in browsers: the viewer's header therefore says
+     that the dashboard never asks for a password inside a studio page. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com data:; img-src data: blob:; media-src data: blob:; worker-src blob:; connect-src data: blob:; form-action 'none'; base-uri 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D studio</title>
+<style>html,body{margin:0;height:100%;background:#0b1220;color:#cbd5e1;font:14px system-ui,sans-serif}p{padding:16px}</style>
+</head>
+<body>
+<p>Opening the studio…</p>
+<script>
+// 3D Models (2.44.0): the frame a studio page runs in. The dashboard opens this
+// file in <iframe sandbox="allow-scripts"> — no allow-same-origin, so it runs in
+// an opaque origin: whatever the studio page does, it cannot read the
+// dashboard's session, storage or data, nor navigate the dashboard. The page
+// arrives once, as text, from the window that opened the frame; the frame then
+// becomes that page.
+(function () {
+    'use strict';
+    // 2.44.1: only ever a page inside the dashboard's sandbox="allow-scripts" frame,
+    // whose origin is opaque ('null'). Opened any other way — framed by another
+    // site without a sandbox, or on its own — it does nothing: else that site,
+    // as the parent, could hand it a page that ran with the dashboard's origin.
+    // (Fails closed: a browser without self.origin also stops here.)
+    if (self.origin !== 'null' || window.parent === window) return;
+    function onMessage(e) {
+        if (e.source !== window.parent || !e.data || e.data.type !== 'ot-studio' || typeof e.data.html !== 'string') return;
+        window.removeEventListener('message', onMessage);
+        document.open();
+        document.write(e.data.html);
+        document.close();
+        // 2.44.2: Escape inside the studio closes the viewer (the dashboard cannot hear keys
+        // pressed in here). Not while typing in a field. Added after document.open(), which
+        // clears what was listening before.
+        document.addEventListener('keydown', function (k) {
+            var t = k.target || {};
+            if (k.key === 'Escape' && !/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || '') && !t.isContentEditable) window.parent.postMessage({ type: 'ot-studio-escape' }, '*');
+        }, true);
+    }
+    window.addEventListener('message', onMessage);
+    window.parent.postMessage({ type: 'ot-studio-ready' }, '*');
+})();
+</script>
+</body>
+</html>
