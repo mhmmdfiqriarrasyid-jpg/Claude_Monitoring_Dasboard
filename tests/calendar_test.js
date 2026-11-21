@@ -14,7 +14,7 @@ const path = require('path');
     const T = await page.evaluate(async () => {
         const T = []; const t = (n, g, w) => T.push({ n, g, w, pass: JSON.stringify(g) === JSON.stringify(w) });
         const toasts = []; window.showToast = m => toasts.push(String(m));
-        window.__seed();
+        window.__seed({ today: '2026-10-31' });   // licences of GGTR101–103G end on 2026-11-20
         projects[1].target.milestones[2].due = '2026-11-20';
         const E = calendarEntries('2026-10-31', '2026-11-30', '2026-11-12');
         const txt = d => (E[d] || []).map(e => `${e.cat}:${e.text}`);

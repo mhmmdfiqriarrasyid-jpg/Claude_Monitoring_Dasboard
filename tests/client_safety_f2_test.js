@@ -50,7 +50,7 @@ const { launch, BASE_URL } = require('./_env');
         confirmAnswer = false; confirmText = '';
         await handleSignOutErase();
         t('B2: "Sign out & erase" warns they will be lost',
-            /these will be LOST: 1 ticket, 2 projects, 1 job, 1 purchase request\./.test(confirmText), true);
+            /these will be LOST: 1 ticket, 2 projects, 1 job, 1 purchase request, any other change made offline\./.test(confirmText), true);
         confirmText = '';
         await handleSignOut();
         t('B2: plain sign-out names them too', /^Not sent yet: 1 ticket, 2 projects, 1 job, 1 purchase request\./.test(confirmText), true);
@@ -86,6 +86,17 @@ const { launch, BASE_URL } = require('./_env');
         confirmText = '';
         await handleSignOutErase();
         t('B2: nothing waiting — no warning', /Not sent yet/.test(confirmText), false);
+        // The 'Not sent' list lives in memory only: the automatic erase waits for it too, and the
+        // erase warning names it.
+        rememberUnsent('Daily report 2026-11-20', { code: 'permission-denied' }, () => {});
+        toasts.length = 0;
+        const r2b = await protectDeviceForScope('hv');
+        t('B4: automatic erase skipped while the \'Not sent\' list holds something',
+            [r2b, erased, reloaded, localStorage.getItem('tractorDeviceScopeTried'), toasts.some(x => /Not sent/.test(x))], [false, 0, 0, null, true]);
+        confirmText = '';
+        await handleSignOutErase();
+        t('B4: "Sign out & erase" names the \'Not sent\' list', /these will be LOST: 1 save in the 'Not sent' list, any other change made offline\./.test(confirmText), true);
+        clearUnsent();
         const r3 = await protectDeviceForScope('hv');
         t('B2: nothing waiting — the device is cleared once, as before', [r3, erased, reloaded], [true, 1, 1]);
         delete window.cloud.hasPendingWrites;

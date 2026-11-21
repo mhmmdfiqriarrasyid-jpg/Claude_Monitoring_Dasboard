@@ -1,6 +1,7 @@
 // Sample data for tests/weekly_report_test.js (injected as an init script).
 // Sample data for the weekly report (week Sat 31 Oct – Fri 6 Nov 2026).
-window.__seed = () => {
+// opts.today (YYYY-MM-DD): the day licence end dates count from (default: today).
+window.__seed = (opts) => {
   const ok = () => Promise.resolve();
   const F = n => `tests/fixtures/wr/p${n}.jpg`;
   window.cloud = { isReady: true, addHistoryEvents: ok,
@@ -12,7 +13,8 @@ window.__seed = () => {
   const GPA = 'PT. Global Papua Abadi', MNM = 'PT. Murni Nusantara Mandiri';
   const comp = (bad) => ({ display: bad === 'display' ? 'Breakdown' : 'Good', gps: bad === 'gps' ? 'Breakdown' : 'Good', steering: bad === 'steering' ? 'Breakdown' : 'Good', jdlink: 'Good' });
   // Licence end dates count from today (the report's licence list does): expiring soon, expired, far.
-  const LIC = days => { const d = new Date(Date.now() + days * 86400000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const base = opts && opts.today ? Date.parse(opts.today + 'T12:00:00') : Date.now();
+  const LIC = days => { const d = new Date(base + days * 86400000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   globalData = [];
   for (let i = 1; i <= 26; i++) globalData.push({ id: 't' + i, name: `GGTR1${String(i).padStart(2, '0')}G`, sn: 'S' + i, site: i <= 14 ? GPA : MNM, unitGroup: 'tractor', status: i === 3 ? 'Breakdown' : 'Good',
     ...comp(i === 3 ? 'steering' : i === 7 ? 'display' : i === 18 ? 'gps' : ''), gpsLicense: 'SF-RTK', gpsLicenseEndDate: i < 4 ? LIC(20) : i === 5 ? LIC(-50) : LIC(200), licenseDisplay: 'G5 Advance', displayLicenseEndDate: LIC(120) });
