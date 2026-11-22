@@ -619,7 +619,15 @@ async function _recoverPhotos(col, docId, field, opts) {
         setDoc(doc(db, col, docId), { id: docId, [field]: refs, updatedAt: Date.now() })
             .catch(err => console.warn('[photos] recovered, not written back:', err && (err.code || err.message)));
         console.info(`[photos] ${refs.length} photo(s) of ${col}/${docId} recovered from Storage`);
-        return Promise.all(refs.map(r => _photoDown(r, opts && opts.inline)));
+        // 2.45.4: like _getPhotoDoc — the form knows what it opened with, and a photo it could not
+        // load is a stand-in kept in its place (a '' slot used to be saved and its object deleted).
+        const inline = opts && opts.inline, key = `${col}/${docId}/${field}`;
+        if (!inline) _loadedVals.set(key, refs);
+        return Promise.all(refs.map(async r => {
+            const got = await _photoDown(r, inline);
+            if (!got && !inline && _photoFailed.has(r) && _ownPhotoRef(col, docId, r)) return _failedView(key, r);
+            return got;
+        }));
     } catch (err) {
         console.warn('[photos] nothing recovered from Storage:', err && (err.code || err.message));
         return [];

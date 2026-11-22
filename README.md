@@ -593,6 +593,11 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.45.4 — gambar pengganti di semua jalur**: foto yang dipulihkan dari
+  Storage (dokumen fotonya hilang) dan gagal dimuat juga tampil sebagai
+  gambar pengganti dan tetap tersimpan di tempatnya. Cache foto (laporan
+  harian, inspeksi, surat izin, BBM) tidak pernah menyimpan gambar pengganti
+  atau foto yang masih menunggu, jadi dibaca ulang lain kali.
   **2.45.3 — pemeriksaan akhir**: foto yang gagal dimuat di form tampil
   sebagai gambar pengganti ("Photo could not be loaded"); disimpan kembali ia
   tetap foto yang sama di posisi yang sama, dihapus di form berarti dihapus.

@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.45.3';
+const APP_VERSION = 'v2.45.4';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -18661,7 +18661,8 @@ function saveWorkLog(event, mode) {
     // that locks them.
     if (_wlPhotosDirty) {
         const photos = allPhotos.slice();
-        _wlPhotoCache.set(rec.id, photos);
+        // 2.45.4: a placeholder (waiting photo, or one that could not load) is never cached.
+        if (photos.some(_isWaitingPh)) _wlPhotoCache.delete(rec.id); else _wlPhotoCache.set(rec.id, photos);
         // Offline, the service worker can still be serving a firebase-init.js
         // from before this collection existed. Say so rather than throwing
         // halfway through a save that otherwise looks like it worked.
@@ -18990,7 +18991,7 @@ async function loadLeaveDocs(id) {
     const expect = leaveDocCount(leaveRequests.find(r => r.id === id));
     const pages = await fn.call(window.cloud, id, expect ? { recover: true, expect } : undefined);
     const list = Array.isArray(pages) ? pages : [];
-    _leaveDocCache.set(id, list);
+    if (!list.some(_isWaitingPh)) _leaveDocCache.set(id, list);   // 2.45.4: a placeholder is read again next time
     return list;
 }
 
@@ -19397,7 +19398,7 @@ function saveLeave(event, mode) {
     // Letters FIRST, while the request is still open — see saveWorkLog.
     if (_lvDocsDirty) {
         const pages = _lvDocs.slice();
-        _leaveDocCache.set(rec.id, pages);
+        if (pages.some(_isWaitingPh)) _leaveDocCache.delete(rec.id); else _leaveDocCache.set(rec.id, pages);
         const save = cloudFn('saveTeamDocs') && cloudFn('deleteTeamDocs');
         if (save) {
             const write = pages.length
@@ -22303,7 +22304,7 @@ async function loadFuelPhoto(id) {
     if (_fuelPhotoCache.get(id)) return _fuelPhotoCache.get(id);
     if (!window.cloud || typeof window.cloud.getFuelPhoto !== 'function') return '';
     const photo = await window.cloud.getFuelPhoto(id);
-    if (photo) _fuelPhotoCache.set(id, photo);
+    if (photo && !_isWaitingPh(photo)) _fuelPhotoCache.set(id, photo);
     return photo;
 }
 
@@ -22337,7 +22338,7 @@ function fuelPhotoBlocker() {
 // says nothing — the "Not saved" notice covers both, and reopening sends the
 // photo again.
 function _sendFuelPhoto(recId, photo, recordP) {
-    if (photo) _fuelPhotoCache.set(recId, photo); else _fuelPhotoCache.delete(recId);
+    if (photo && !_isWaitingPh(photo)) _fuelPhotoCache.set(recId, photo); else _fuelPhotoCache.delete(recId);
     if (suppressCloudWrites || !window.cloud?.isReady) return;
     const call = photo ? cloudCall('saveFuelPhoto', recId, photo) : cloudCall('deleteFuelPhoto', recId);
     Promise.resolve(call).catch(err => {
@@ -25203,7 +25204,7 @@ function saveInspection(event, mode) {
     if (_insPhotosDirty) {
         const photos = {};
         photoKeys.forEach(k => { photos[k] = _insPhotos[k]; });
-        _insPhotoCache.set(rec.id, photos);
+        if (Object.values(photos).some(_isWaitingPh)) _insPhotoCache.delete(rec.id); else _insPhotoCache.set(rec.id, photos);
         const fn = photoKeys.length ? cloudFn('saveInspectionPhotos') : cloudFn('deleteInspectionPhotos');
         if (fn) {
             (photoKeys.length ? fn(rec.id, photos) : fn(rec.id)).catch(err => {

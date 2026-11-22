@@ -31,7 +31,10 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8811';
   });
   await page.route('**/index.html', r => r.fulfill({ status: 200, contentType: 'text/html',
     body: fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8').replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/, '') }));
-  setTimeout(() => { console.log('TIMEOUT\n' + logs.slice(-30).join('\n')); process.exit(2); }, 90000);
+  // 2.45.4: an object whose name has "flaky" cannot be loaded (its metadata read fails) — a weak signal.
+  await page.route(/flaky/, r => (r.request().method() === 'GET' && !/alt=media/.test(r.request().url()))
+    ? r.fulfill({ status: 404, contentType: 'application/json', body: '{"error":{"code":404,"message":"Not Found"}}' }) : r.continue());
+  setTimeout(() => { console.log('TIMEOUT\n' + logs.slice(-30).join('\n')); process.exit(2); }, 120000);
   await page.goto(BASE + '/index.html'); await page.waitForTimeout(2500);
   const ready = await page.evaluate(() => !!window.cloud); if (!ready) { console.log('NOT READY\n' + logs.join('\n')); await b.close(); process.exit(1); }
   const R = await page.evaluate(async () => {
@@ -242,6 +245,17 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8811';
     // The stand-in is no photo for another document.
     await C.saveDamagePhoto('d_f', shf2[0]);
     out.failedNotCopied = (await raw('damagePhotos', 'd_f')).photo;
+    // 2.45.4: recovered photos (no photo document) that cannot be loaded are stand-ins too, and a
+    // form save keeps them in place — the object is not deleted.
+    await st.mod.uploadString(st.mod.ref(st.s, 'photos/workLogPhotos/wl_r1/a1'), img1, 'data_url');
+    await st.mod.uploadString(st.mod.ref(st.s, 'photos/workLogPhotos/wl_r1/b2flaky'), img1, 'data_url');
+    const recF = await C.getWorkLogPhotos('wl_r1', { recover: true, expect: 2 });
+    await new Promise(r => setTimeout(r, 600));
+    await C.saveWorkLogPhotos('wl_r1', [...recF, img2]);
+    await new Promise(r => setTimeout(r, 600));
+    const wr = (await raw('workLogPhotos', 'wl_r1')).photos;
+    const leftR1 = (await st.mod.listAll(st.mod.ref(st.s, 'photos/workLogPhotos/wl_r1'))).items.map(i => i.name);
+    out.recoveredStandIn = [/^http/.test(recF[0]), C.isWaitingPhoto(recF[1]), wr[0], wr[1], wr.length, leftR1.includes('b2flaky')];
     return out;
   });
   const want = { stored: 'sp:photos/damagePhotos/d1/', objExists: true, url: true, inline: 'data:image/jpeg;base64,', kept: true, newOne: true,
@@ -252,7 +266,8 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8811';
     b9: [3, 'sp:photos/workLogPhotos/wl_b9/a', true, 'sp:photos/workLogPhotos/wl_b9/b', true], b10: [true, true, 0, true],
     plantedLoad: '', copiedLoads: true, plantedKept: [true, true], jobFileGuard: ['refused', 'refused', 'refused'], map: [true, ''], legacyServed: true, migrated: [true, 'dev1'], deleted: [true, true], after: ['after', true],
     ownFolder: ['', true, '', '', true], foreignCopied: [true, true, true], keysOnly: [['gps'], true],
-    failedKept: [true, 'sp:photos/workLogPhotos/wl_f/gone', 'sp:photos/workLogPhotos/wl_f/ok', true, 'sp:photos/workLogPhotos/wl_f/ok', 4], failedRemoved: [true, false, 3], failedNotCopied: '' };
+    failedKept: [true, 'sp:photos/workLogPhotos/wl_f/gone', 'sp:photos/workLogPhotos/wl_f/ok', true, 'sp:photos/workLogPhotos/wl_f/ok', 4], failedRemoved: [true, false, 3], failedNotCopied: '',
+    recoveredStandIn: [true, true, 'sp:photos/workLogPhotos/wl_r1/a1', 'sp:photos/workLogPhotos/wl_r1/b2flaky', 3, true] };
   let fail = 0;
   Object.keys(want).forEach(k => { const ok = JSON.stringify(R[k]) === JSON.stringify(want[k]); if (!ok) fail++;
     console.log(`${ok ? 'PASS' : 'FAIL'}  ${k}${ok ? '' : ' dapat=' + JSON.stringify(R[k])}`); });
