@@ -240,7 +240,7 @@ async function _photoDown(v, inline) {
         return await _withTimeout(_urlToData(url), 60000);   // 2.45.0: a weak signal no longer waits forever
     } catch (err) {
         console.warn('[photos] not loaded from Storage:', err && (err.code || err.message));
-        if (!inline) _photoFailed.add(v);   // 2.45.2: a form shows nothing for it — its save keeps it (_savePhotoDoc)
+        if (!inline) _photoFailed.add(v);   // 2.45.2: a form read shows a stand-in for it (_failedView)
         return '';
     }
 }
@@ -359,6 +359,31 @@ function _pendingPlaceholder(tok) {
         return c.toDataURL('image/png');
     } catch (_) { return ''; }
 }
+// 2.45.2: a photo of a document that a form read could not load (Storage unreachable, retries
+// spent) is shown as a stand-in, unique per photo, mapped back to its ref when the form saves.
+// It used to be '' — the slot looked empty, and the next save removed the photo for good.
+// Readers treat it like a waiting photo (isWaitingPhoto): no report, copy or cache uses it.
+const _failedShown = new Map();   // "<col>/<doc>/<field>" -> Map(stand-in -> "sp:" ref)
+function _failedView(key, ref) {
+    let shown = '';
+    try {
+        const c = document.createElement('canvas'); c.width = 320; c.height = 240;
+        const g = c.getContext('2d');
+        g.fillStyle = '#fef3c7'; g.fillRect(0, 0, 320, 240);
+        g.fillStyle = '#78350f'; g.font = '16px sans-serif'; g.textAlign = 'center';
+        g.fillText('Photo could not be loaded', 160, 112);
+        g.fillText('it is kept — open the report again later', 160, 134);
+        g.fillStyle = '#b45309'; g.font = '10px sans-serif';
+        g.fillText(ref.slice(-40), 160, 228);   // also keeps each stand-in unique
+        shown = c.toDataURL('image/png');
+    } catch (_) { return ''; }
+    if (!shown) return '';
+    _placeholderSrc.add(shown);
+    let m = _failedShown.get(key);
+    if (!m) _failedShown.set(key, m = new Map());
+    m.set(shown, ref);
+    return shown;
+}
 function _pendingView(key, tok, data, inline) {
     // A report (inline) uses the photo itself when this device holds it, else leaves it out.
     if (inline) return data || '';
@@ -459,7 +484,11 @@ async function _savePhotoDoc(col, docId, field, value, fields, opts) {
     try { const job = await _outboxGet(key); waiting = (job && job.pend) || {}; } catch (_) { /* no outbox here */ }
     const pend = {};
     const shownMap = _pendingShown.get(key), usedTok = new Set();
+    const failedMap = _failedShown.get(key);
     let stored = await _photoMapLimited(value, async x => {
+        // 2.45.2: a photo the form could not load (shown as a stand-in) stays that same photo, in
+        // its place. Removed in the form, it is removed.
+        if (typeof x === 'string' && failedMap && failedMap.has(x)) return failedMap.get(x);
         // 2.43.0: a photo still waiting (as the form showed it) stays that same waiting photo.
         if (typeof x === 'string' && shownMap && shownMap.has(x)) {
             const t = shownMap.get(x).find(c => !usedTok.has(c));
@@ -524,17 +553,6 @@ async function _savePhotoDoc(col, docId, field, value, fields, opts) {
         // A photo another device added since the form opened stays (a list keeps it at the end).
         if (Array.isArray(stored) && Array.isArray(latest)) stored = stored.concat(latest.filter(r => fresh(r) && !have.has(r) && !dropped.has(r)));
     }
-    // 2.45.2: a photo of this document the form could not load (its slot showed nothing) is kept
-    // as it is. Saving the form without it used to remove it from Storage for good.
-    const keptRefs = new Set(_photoRefs(stored));
-    const lost = before.filter(r => _photoFailed.has(r) && _ownPhotoRef(col, docId, r) && !keptRefs.has(r));
-    if (lost.length) {
-        if (Array.isArray(stored)) stored = stored.filter(x => x !== '').concat(lost);
-        else if (stored && typeof stored === 'object' && latest && typeof latest === 'object' && !Array.isArray(latest)) {
-            stored = { ...stored };
-            Object.keys(latest).forEach(k => { if (lost.includes(latest[k]) && !stored[k]) stored[k] = latest[k]; });
-        } else if (typeof stored === 'string' && !stored) stored = lost[0];
-    }
     await setDoc(doc(db, col, docId), { ...fields, [field]: stored, updatedAt: Date.now() });
     _loadedVals.set(key, stored);   // what this browser now knows the document holds
     // Removed from Storage: what the document held and no longer holds — of the photos
@@ -570,10 +588,13 @@ async function _getPhotoDoc(col, docId, field, empty, opts, fieldsOf) {
     const strict = _OWN_FOLDER_ONLY.has(col);
     const own = x => !strict || typeof x !== 'string' || !x || _isPending(x) || _isImgData(x)
         || (x.startsWith(PHOTO_REF) && _ownPhotoRef(col, docId, x));
-    const one = x => {
+    const one = async x => {
         if (!own(x)) { console.warn(`[photos] not from ${col}/${docId}, not shown:`, String(x).slice(0, 80)); return ''; }
-        return !_isPending(x) ? _photoDown(x, inline)
-            : (_tokenDone.has(x) ? _photoDown(_tokenDone.get(x), inline) : _pendingView(key, x, waiting[x], inline));
+        if (_isPending(x)) return _tokenDone.has(x) ? _photoDown(_tokenDone.get(x), inline) : _pendingView(key, x, waiting[x], inline);
+        const got = await _photoDown(x, inline);
+        // 2.45.2: this document's own photo that a form read could not load: a stand-in, not ''.
+        if (!got && !inline && typeof x === 'string' && _photoFailed.has(x) && _ownPhotoRef(col, docId, x)) return _failedView(key, x);
+        return got;
     };
     // 2.45.1: pictures fetched whole come down two at a time (a weak link shared by four at once
     // timed them all out).

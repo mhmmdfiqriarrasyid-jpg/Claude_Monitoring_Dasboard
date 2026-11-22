@@ -127,6 +127,17 @@ const call = uid => fx.sendLicenseAlert({ auth: { uid, token: { email: `${uid}@e
     const rR = await caught(call('v5'));
     t('lisensi: dua kiriman gagal bersamaan → jeda tidak kembali ke kiriman yang sudah dibatalkan',
         [rA[0] !== 'ok', rO[0] !== 'ok', rR[0], store.get('mailState/licenseManual').total], [true, true, 'ok', 5]);
+    // A state written before the turns list (deploy day): a failed owner send given back keeps the
+    // wait of the send made before the deploy.
+    clock += 60 * 60000;
+    const dd = new Date(clock), p2l = x => String(x).padStart(2, '0');
+    put('mailState/licenseManual', { day: `${dd.getFullYear()}-${p2l(dd.getMonth() + 1)}-${p2l(dd.getDate())}`, total: 1, byUid: { v6: 1 }, lastAt: clock });
+    clock += 2 * 60000;
+    mailFail = 1;
+    const rOwn = await caught(call('boss'));
+    clock += 60000;
+    const rV7 = await caught(call('v7'));
+    t('lisensi: data lama tanpa daftar giliran → jeda kiriman sebelum deploy tetap berlaku', [rOwn[0] !== 'ok', rV7[0]], [true, 'resource-exhausted']);
     Date.now = realNow;
 
     // ---------- S12: push tokens ----------

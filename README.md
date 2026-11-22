@@ -593,6 +593,14 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.45.3 — pemeriksaan akhir**: foto yang gagal dimuat di form tampil
+  sebagai gambar pengganti ("Photo could not be loaded"); disimpan kembali ia
+  tetap foto yang sama di posisi yang sama, dihapus di form berarti dihapus.
+  (2.45.2 menaruhnya di akhir daftar — foto bisa pindah paddock — dan foto
+  yang sengaja dihapus muncul lagi.) Gambar pengganti tidak dipakai laporan,
+  salinan, maupun cache. Email Report: data lama tanpa daftar giliran tetap
+  memakai jeda kiriman sebelumnya. Tanpa perubahan rules; deploy ulang
+  Functions.
   **2.45.2 — review 2.45.1**: foto yang gagal dimuat di form edit (slot
   kosong) tetap disimpan, tidak lagi terhapus saat form disimpan. Inspeksi →
   Damage: peringatan muncul bila foto yang ada di laporan tidak ikut terbawa.

@@ -227,13 +227,21 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8811';
     // Inline, only the keys asked for come down.
     const part = await C.getInspectionPhotos('in_s6', { inline: true, keys: ['gps'] });
     out.keysOnly = [Object.keys(part), String(part.gps).startsWith('data:')];
-    // 2.45.2: a photo a form could not load (empty slot) stays when the form is saved.
+    // 2.45.2: a photo a form could not load shows as a stand-in (a waiting-style placeholder).
+    // Saved back it stays the same photo in the same place; removed in the form, it is removed.
     await st.mod.uploadString(st.mod.ref(st.s, 'photos/workLogPhotos/wl_f/ok'), img1, 'data_url');
-    await FS.setDoc(FS.doc(db, 'workLogPhotos', 'wl_f'), { id: 'wl_f', photos: ['sp:photos/workLogPhotos/wl_f/gone', 'sp:photos/workLogPhotos/wl_f/ok'], updatedAt: 1 });
+    await FS.setDoc(FS.doc(db, 'workLogPhotos', 'wl_f'), { id: 'wl_f', photos: ['sp:photos/workLogPhotos/wl_f/gone', 'sp:photos/workLogPhotos/wl_f/ok', 'sp:photos/workLogPhotos/wl_f/ok'], updatedAt: 1 });
     const shf = await C.getWorkLogPhotos('wl_f');
-    await C.saveWorkLogPhotos('wl_f', [shf[0], shf[1], img2]);
+    await C.saveWorkLogPhotos('wl_f', [shf[0], shf[1], img2, shf[2]]);
     const wf = (await raw('workLogPhotos', 'wl_f')).photos;
-    out.failedKept = [shf[0], wf.includes('sp:photos/workLogPhotos/wl_f/gone'), wf.includes('sp:photos/workLogPhotos/wl_f/ok'), wf.length, wf.includes('')];
+    out.failedKept = [C.isWaitingPhoto(shf[0]), wf[0], wf[1], wf[2].startsWith('sp:photos/workLogPhotos/wl_f/') && wf[2] !== wf[1], wf[3], wf.length];
+    const shf2 = await C.getWorkLogPhotos('wl_f');
+    await C.saveWorkLogPhotos('wl_f', shf2.slice(1));
+    const wf2 = (await raw('workLogPhotos', 'wl_f')).photos;
+    out.failedRemoved = [C.isWaitingPhoto(shf2[0]), wf2.includes('sp:photos/workLogPhotos/wl_f/gone'), wf2.length];
+    // The stand-in is no photo for another document.
+    await C.saveDamagePhoto('d_f', shf2[0]);
+    out.failedNotCopied = (await raw('damagePhotos', 'd_f')).photo;
     return out;
   });
   const want = { stored: 'sp:photos/damagePhotos/d1/', objExists: true, url: true, inline: 'data:image/jpeg;base64,', kept: true, newOne: true,
@@ -243,7 +251,8 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8811';
     b7: [true, false, ''], b8: [['sp:photos/workLogPhotos/wl_b8/a', 'sp:photos/workLogPhotos/wl_b8/u2'], false, true],
     b9: [3, 'sp:photos/workLogPhotos/wl_b9/a', true, 'sp:photos/workLogPhotos/wl_b9/b', true], b10: [true, true, 0, true],
     plantedLoad: '', copiedLoads: true, plantedKept: [true, true], jobFileGuard: ['refused', 'refused', 'refused'], map: [true, ''], legacyServed: true, migrated: [true, 'dev1'], deleted: [true, true], after: ['after', true],
-    ownFolder: ['', true, '', '', true], foreignCopied: [true, true, true], keysOnly: [['gps'], true], failedKept: ['', true, true, 3, false] };
+    ownFolder: ['', true, '', '', true], foreignCopied: [true, true, true], keysOnly: [['gps'], true],
+    failedKept: [true, 'sp:photos/workLogPhotos/wl_f/gone', 'sp:photos/workLogPhotos/wl_f/ok', true, 'sp:photos/workLogPhotos/wl_f/ok', 4], failedRemoved: [true, false, 3], failedNotCopied: '' };
   let fail = 0;
   Object.keys(want).forEach(k => { const ok = JSON.stringify(R[k]) === JSON.stringify(want[k]); if (!ok) fail++;
     console.log(`${ok ? 'PASS' : 'FAIL'}  ${k}${ok ? '' : ' dapat=' + JSON.stringify(R[k])}`); });

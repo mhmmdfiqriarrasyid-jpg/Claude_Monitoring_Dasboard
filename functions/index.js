@@ -394,7 +394,8 @@ async function takeLicenseTurn(uid, owner) {
         if (!r.ok) throw new HttpsError('resource-exhausted', r.message);
         const sameDay = !!prev && prev.day === r.next.day;
         const turns = (sameDay && Array.isArray(prev.turns) ? prev.turns : []).concat([{ at: r.next.lastAt, uid }]).slice(-50);
-        const dayStartLastAt = sameDay ? (Number(prev.dayStartLastAt) || 0) : (Number(prev && prev.lastAt) || 0);
+        // A state written before the list existed (same day, no turns): its lastAt starts the day's floor.
+        const dayStartLastAt = sameDay && Array.isArray(prev.turns) ? (Number(prev.dayStartLastAt) || 0) : (Number(prev && prev.lastAt) || 0);
         next = { ...r.next, turns, dayStartLastAt };
         tx.set(ref, next);
     });
