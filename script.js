@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.45.0';
+const APP_VERSION = 'v2.45.1';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -14028,7 +14028,18 @@ function setupAuth() {
         maybeInitCloudSync();
         syncInstallUi();
         runLaunchAction();
+        renewPushToken();
     });
+}
+
+// 2.45.1: a device with notifications on renews its token's date (once a day) whenever the app
+// opens: the server keeps an account's 5 newest tokens, and only opening the account menu
+// used to renew it — the phone used every day could be the one dropped.
+function renewPushToken() {
+    try {
+        if (typeof Notification === 'undefined' || Notification.permission !== 'granted' || !localStorage.getItem('ot_push_token')) return;
+    } catch (_) { return; }
+    if (window.cloud && typeof window.cloud.pushTokenHere === 'function') window.cloud.pushTokenHere().catch(() => {});
 }
 
 // 2.45.0: { sameUser: true } — an admin changed this account's role or access
@@ -24838,9 +24849,10 @@ function getFilteredInspections() {
 // appliedKeys names what was logged; a stamp from before 2.45.0 names nothing and
 // covered the whole report, unless it was approved again since. The damage records
 // made from it count too, so a stamp that never landed cannot log them twice.
-// A component counts as logged while a record of it from this report is open. Once
-// the report has been approved again since the last stamp, a component whose records
-// from it are all resolved is logged anew (found damaged again after the fix).
+// A component with a record from this report counts as logged, open or resolved: a
+// corrected version of the same check (approved again) is no new finding. Only when
+// the corrected report's check date comes after the component's repair (all its
+// records from this report resolved, the newest on an earlier day) is it logged anew.
 function inspectionUnappliedBits(r) {
     const left = inspectionBadBits(r);
     if (!left.length) return left;
@@ -24850,8 +24862,14 @@ function inspectionUnappliedBits(r) {
     const ids = new Set(Array.isArray(r.appliedDamageIds) ? r.appliedDamageIds : []);
     const recs = globalDamages.filter(d => d && (d.fromInspection === r.id || ids.has(d.id)));
     const open = new Set(recs.filter(d => !d.resolved).map(d => d.component));
-    const done = new Set(recs.filter(d => d.resolved).map(d => d.component));
-    return left.filter(c => open.has(c.label) ? false : done.has(c.label) ? again : !stamped.includes(c.key));
+    const fixedOn = new Map();   // component -> the day its newest record from this report was resolved
+    recs.filter(d => d.resolved).forEach(d => {
+        const day = /^\d{4}-\d{2}-\d{2}$/.test(String(d.resolvedAt || '')) ? String(d.resolvedAt) : '9999-12-31';   // unknown day: never re-logged
+        if (!fixedOn.has(d.component) || day > fixedOn.get(d.component)) fixedOn.set(d.component, day);
+    });
+    return left.filter(c => open.has(c.label) ? false
+        : fixedOn.has(c.label) ? (again && String(r.date || '') > fixedOn.get(c.label))
+        : !stamped.includes(c.key));
 }
 
 function inspectionNeedsApply(r) {
@@ -25337,12 +25355,20 @@ async function applyInspectionFindings(id) {
         const todo = inspectionUnappliedBits(r);
         let photos = {};
         try { photos = (await window.cloud.getInspectionPhotos(id, { inline: true, keys: todo.map(c => c.key) })) || {}; } catch (_) { photos = {}; }
+        // 2.45.1: a picture that did not come down in time (weak signal) is not left out: its
+        // download URL goes instead — saving it copies the picture when it can, else keeps the
+        // inspection's object as before 2.45.0.
+        const slow = todo.filter(c => !String(photos[c.key] || '').startsWith('data:')).map(c => c.key);
+        let urls = {};
+        if (slow.length) { try { urls = (await window.cloud.getInspectionPhotos(id, { keys: slow })) || {}; } catch (_) { urls = {}; } }
         const ids = [];
+        let unsent = 0;
         for (const c of todo) {
             // 2.43.2: a photo still on the technician's phone is not copied (its placeholder would become the damage photo).
-            // 2.45.0: nor a link — only a data URL is a copy.
-            const src = safeImageSrc(photos[c.key]);
-            const photo = _isWaitingPh(src) || !src.startsWith('data:') ? '' : src;
+            const inl = safeImageSrc(photos[c.key]);
+            const src = inl.startsWith('data:') ? inl : safeImageSrc(urls[c.key]);
+            const photo = !src || _isWaitingPh(src) || !/^(data:|https:)/.test(src) ? '' : src;
+            if (!photo && (photos[c.key] || urls[c.key])) unsent++;
             const note = (r.notes || {})[c.key] || '';
             const rec = {
                 id: generateDamageId(),
@@ -25373,18 +25399,21 @@ async function applyInspectionFindings(id) {
         // 2.45.0: what is logged so far, added to — a later re-approval logs only the rest.
         // Built on the newest copy of the report (the photos took a while; another Damage
         // editor's stamp may have landed meanwhile).
+        // The keys added are those of the version processed (r): findings that came with a newer
+        // approval meanwhile stay unlogged, and that approval (later than appliedAt) logs them.
         const cur = inspections.find(x => x.id === id) || r;
         // appliedAt after approvedAt even when this device's clock runs behind the approver's
         // (inspectionUnappliedBits reads 'approved again since' from the two).
-        const stamp = { ...cur, appliedAt: Math.max(Date.now(), (Number(cur.approvedAt) || 0) + 1),
+        const stamp = { ...cur, appliedAt: Math.max(Date.now(), (Number(r.approvedAt) || 0) + 1),
                         appliedBy: (currentUserDoc && currentUserDoc.displayName) || (currentUser && currentUser.email) || '',
                         appliedDamageIds: [...new Set([...(Array.isArray(cur.appliedDamageIds) ? cur.appliedDamageIds : []), ...ids])],
-                        appliedKeys: [...new Set([...(Array.isArray(cur.appliedKeys) ? cur.appliedKeys : []), ...inspectionBadBits(cur).map(c => c.key)])],
+                        appliedKeys: [...new Set([...(Array.isArray(cur.appliedKeys) ? cur.appliedKeys : []), ...inspectionBadBits(r).map(c => c.key)])],
                         updatedAt: Date.now() };
         const idx = inspections.findIndex(x => x.id === id);
         if (idx !== -1) inspections[idx] = stamp;
         cloudCall('saveInspection', stamp).catch(err => console.error('[ins] apply stamp failed:', err));
         showToast(`${ids.length} Damage record(s) created from the inspection report for ${inspectionUnitLabel(r)}`, 'success');
+        if (unsent) showToast(`${unsent} inspection photo(s) could not be loaded — add them to the Damage record(s) by hand`, 'warning');
         if (currentView === 'inspection') renderInspectionView();
         if (currentView === 'damage') renderDamageTable();
         scheduleDecisionRefresh();

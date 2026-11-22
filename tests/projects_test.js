@@ -51,7 +51,7 @@ const { launch, BASE_URL } = require('./_env');
         t('nama wajib', toasts.pop(), 'Fill in the project name');
         document.getElementById('pjName').value = 'Camera AI — HE MNM';
         document.getElementById('pjType').value = 'heavy';
-        document.getElementById('pjEnd').value = '2026-11-30';
+        document.getElementById('pjEnd').value = addDaysISO(toISODate(), 30);   // after today's start, whatever the day
         saveProject();
         t('unit wajib untuk target unit', /Add at least one unit/.test(toasts.pop()), true);
         _pjDepts = [{ name: 'Workshop', pic: 'Budi' }, { name: '', pic: '' }];
@@ -182,7 +182,7 @@ const { launch, BASE_URL } = require('./_env');
         // ---- 2.29.1: target angka + unit opsional (lebih dari 1) ----
         showAddProjectForm();
         document.getElementById('pjName').value = 'Depth Sensor - Cartrack (Phase 1)';
-        document.getElementById('pjEnd').value = '2026-12-31';
+        document.getElementById('pjEnd').value = addDaysISO(toISODate(), 60);
         document.querySelector('input[name="pjMode"][value="count"]').checked = true; syncProjectMode();
         t('mode angka: kolom unit tetap ada, opsional', [document.getElementById('pjUnitsHint').style.display, /optional/.test(document.getElementById('pjUnitsLabel').textContent)], ['', true]);
         document.getElementById('pjCountTarget').value = '54';

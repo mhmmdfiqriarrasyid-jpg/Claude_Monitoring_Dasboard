@@ -100,7 +100,8 @@ async function mail(to, m, log) {
         auth: { user, pass: GMAIL_APP_PASSWORD.value().replace(/\s+/g, '') }
     });
     await transport.sendMail({ from: `"OT Dashboard" <${user}>`, to: to.join(', '), subject: m.subject, text: m.text, html: m.html,
-        ...(m.attachments ? { attachments: m.attachments } : {}) });
+        ...(m.attachments ? { attachments: m.attachments } : {}) })
+        .catch(err => { if (err && typeof err === 'object') err.notSent = true; throw err; });   // 2.45.1: nothing went out
     await db.collection('mailLog').add({ ...log, recipients: to, subject: m.subject, at: admin.firestore.FieldValue.serverTimestamp() });
 }
 
@@ -113,8 +114,15 @@ async function sendReport(trigger, by, gate) {
     const [units, stock] = await Promise.all([db.collection('units').get(), db.collection('licenseStock').get()]);
     const m = composeEmail(units.docs.map(d => d.data()), stock.docs.map(d => d.data()), { timeZone: 'Asia/Jayapura' });
     if (!m) return { sent: false, reason: 'nothing-to-report' };
-    if (gate) await gate();
-    await mail(recipients, m, { kind: 'licenseAlert', trigger, by: by || '', items: m.report.total });
+    const giveBack = gate ? await gate() : null;
+    try {
+        await mail(recipients, m, { kind: 'licenseAlert', trigger, by: by || '', items: m.report.total });
+    } catch (err) {
+        // 2.45.1: the mail did not go — the turn goes back, so a retry is not refused with
+        // "sent less than 10 minutes ago" (a failed mailLog write after sending keeps it).
+        if (giveBack && err && err.notSent) await giveBack().catch(e => logger.warn('license turn not given back', e));
+        throw err;
+    }
     return { sent: true, recipients: recipients.length, items: m.report.total };
 }
 
@@ -148,7 +156,8 @@ async function pushContext() {
     const tokens = await db.collection('pushTokens').get();
     const docs = tokens.docs.map(d => { const v = d.data() || {}; return { id: d.id, uid: v.uid, createdAt: v.createdAt }; });
     let tokensByUid, extra;
-    try { ({ byUid: tokensByUid, extra } = tokensByAccount(docs)); }
+    // 2.45.1: an extra token is removed only after 30 days without its device opening the app.
+    try { ({ byUid: tokensByUid, extra } = tokensByAccount(docs, Date.now() - 30 * 86400000)); }
     catch (err) {   // one odd doc must not stop every notice: fall back to the tokens without their dates, nothing removed
         logger.error('push tokens: grouping failed', err);
         ({ byUid: tokensByUid } = tokensByAccount(docs.map(d => ({ id: d.id, uid: d.uid }))));
@@ -220,13 +229,15 @@ async function scanTicketSla(now) {
     const state = db.doc('mailState/ticketSla');
     const prev = await state.get();
     const snap = await db.collection('tickets').where('status', 'in', ['open', 'assigned', 'progress']).get();
-    // 2.45.0: the SLA clock of a push starts no earlier than when the server got the ticket — a
-    // ticket written with an old reportedAt (allowed up to 30 days back for offline phones) used
-    // to be overdue at once and push the OT team every 24 h.
+    // 2.45.0: the SLA clock of a push starts no earlier than 3 days before the server got the
+    // ticket. A ticket written with an older reportedAt (the rules allow 30 days back) used to be
+    // overdue at once and push the OT team every 24 h. 2.45.1: a phone offline for up to 3 days
+    // keeps its real time, the same as the dashboard shows (the clock used to start at sync).
+    const OFFLINE_MS = 3 * 86400000;
     const list = snap.docs.map(d => {
         const v = d.data(), made = d.createTime ? d.createTime.toMillis() : 0;
         const at = typeof v.reportedAt === 'number' && isFinite(v.reportedAt) ? v.reportedAt : 0;
-        return { ...v, id: d.id, reportedAt: made && at ? Math.max(at, made) : at };
+        return { ...v, id: d.id, reportedAt: made && at ? Math.max(at, made - OFFLINE_MS) : at };
     });
     const { out, next } = ticketSlaPushes(prev.exists ? (prev.data().seen || {}) : null, list, now.getTime());
     let n = 0;
@@ -370,13 +381,27 @@ function mayEmail(uid, d) {
 
 // 2.45.0: a turn of the hand-sent License Alert (licenseReport.manualSendCheck), taken in a
 // transaction so presses at the same moment cannot all slip through.
+// Returns a function that gives the turn back (2.45.1: when the mail then could not be sent).
 async function takeLicenseTurn(uid, owner) {
     const ref = db.doc('mailState/licenseManual');
+    let prev = null, next = null;
     await db.runTransaction(async tx => {
         const snap = await tx.get(ref);
-        const r = manualSendCheck(snap.exists ? snap.data() : null, uid, Date.now(), owner);
+        prev = snap.exists ? snap.data() : null;
+        const r = manualSendCheck(prev, uid, Date.now(), owner);
         if (!r.ok) throw new HttpsError('resource-exhausted', r.message);
+        next = r.next;
         tx.set(ref, r.next);
+    });
+    return () => db.runTransaction(async tx => {
+        const snap = await tx.get(ref);
+        const cur = snap.exists ? snap.data() : null;
+        if (!cur || cur.day !== next.day) return;   // a new day has started meanwhile: nothing to give back
+        const byUid = Object.assign({}, cur.byUid && typeof cur.byUid === 'object' ? cur.byUid : {});
+        byUid[uid] = Math.max(0, (Number(byUid[uid]) || 0) - 1);
+        // The 10-minute wait goes back to the send before this one, unless another send came since.
+        const lastAt = cur.lastAt === next.lastAt ? (Number(prev && prev.lastAt) || 0) : cur.lastAt;
+        tx.set(ref, { ...cur, total: Math.max(0, (Number(cur.total) || 0) - 1), byUid, lastAt });
     });
 }
 

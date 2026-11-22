@@ -229,7 +229,11 @@ async function _photoDown(v, inline) {
     if (!_photoRefShape(v)) { console.warn('[photos] not a photo path, not loaded:', v.slice(0, 80)); return ''; }
     try {
         const st = await _storage();
-        const url = await _withTimeout(st.mod.getDownloadURL(st.mod.ref(st.s, v.slice(PHOTO_REF.length))), 30000);
+        // 2.45.1: the time limits are for the picture itself (reports, exports, copies). A form's
+        // read keeps the SDK's own retries: '' there would look like no photo, and the next save
+        // would remove the stored one.
+        const urlP = st.mod.getDownloadURL(st.mod.ref(st.s, v.slice(PHOTO_REF.length)));
+        const url = await (inline ? _withTimeout(urlP, 30000) : urlP);
         _photoUrls.set(url, v);
         if (!inline) return url;
         return await _withTimeout(_urlToData(url), 60000);   // 2.45.0: a weak signal no longer waits forever
@@ -546,9 +550,22 @@ async function _getPhotoDoc(col, docId, field, empty, opts, fieldsOf) {
     // 2.45.0: opts.keys — only these photos of a { key: image } map (the rest are not downloaded).
     const pick = opts && Array.isArray(opts.keys) && v && typeof v === 'object' && !Array.isArray(v)
         ? Object.fromEntries(Object.entries(v).filter(([k]) => opts.keys.includes(k))) : v;
-    return _photoMap(pick, x => !_isPending(x) ? _photoDown(x, inline)
-        : (_tokenDone.has(x) ? _photoDown(_tokenDone.get(x), inline) : _pendingView(key, x, waiting[x], inline)));
+    // 2.45.1: a report's or a check's photo is shown only from its own folder. A photo document
+    // naming another folder (or a link to some object) showed a picture its writer could still
+    // replace after approval. Pictures kept inline and waiting photos are its own.
+    const strict = _OWN_FOLDER_ONLY.has(col);
+    const own = x => !strict || typeof x !== 'string' || !x || _isPending(x) || _isImgData(x)
+        || (x.startsWith(PHOTO_REF) && _ownPhotoRef(col, docId, x));
+    const one = x => {
+        if (!own(x)) { console.warn(`[photos] not from ${col}/${docId}, not shown:`, String(x).slice(0, 80)); return ''; }
+        return !_isPending(x) ? _photoDown(x, inline)
+            : (_tokenDone.has(x) ? _photoDown(_tokenDone.get(x), inline) : _pendingView(key, x, waiting[x], inline));
+    };
+    // 2.45.1: pictures fetched whole come down two at a time (a weak link shared by four at once
+    // timed them all out).
+    return inline ? _photoMapLimited(pick, one, 2) : _photoMap(pick, one);
 }
+const _OWN_FOLDER_ONLY = new Set(['workLogPhotos', 'inspectionPhotos']);
 // 2.26.1: a report whose photo document never landed (refused by the rules
 // before 2.26.1, see firestore.rules → recordSentByMe) still has its images in
 // Storage under photos/<col>/<doc>/. They are found there, the newest `expect`

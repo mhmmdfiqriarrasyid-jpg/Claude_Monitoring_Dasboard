@@ -235,6 +235,25 @@ const { launch, BASE_URL } = require('./_env');
         approveInspection(rep.id);
         await tick(100);
         t('B9 disetujui lagi tanpa perubahan: tidak ada catatan dobel', calls.filter(c => c[0] === 'damage').length, nd3);
+        // Camera AI repaired (its record resolved), then the same report sent back for an unrelated
+        // correction and approved again: the same check, so nothing is logged again and the unit is
+        // not put back into Breakdown. Only a check date after the repair is a new finding.
+        const camRec = globalDamages.find(d => d.id === dmg2.id);
+        const repDay = inspections.find(x => x.id === rep.id).date;
+        camRec.resolved = true; camRec.resolvedAt = repDay;
+        globalData.find(u => u.id === 'h1').cameraAi = 'Good';
+        merge({ ...inspections.find(x => x.id === rep.id), approval: 'pending', approvedAt: 0, submittedByUid: 'tech' });
+        const nd4 = calls.filter(c => c[0] === 'damage').length;
+        await tick(5);
+        approveInspection(rep.id);
+        await tick(100);
+        t('B9 diperbaiki lalu disetujui ulang: tidak dicatat lagi, tidak Breakdown lagi',
+          [calls.filter(c => c[0] === 'damage').length - nd4, globalData.find(u => u.id === 'h1').cameraAi], [0, 'Good']);
+        const curRep = inspections.find(x => x.id === rep.id);
+        t('B9 tanggal cek sesudah perbaikan (dicek ulang): dicatat lagi',
+          inspectionUnappliedBits({ ...curRep, date: '2099-01-01', approvedAt: Number(curRep.appliedAt || 0) + 10 }).map(c => c.key), ['cameraAi']);
+        t('B9 perbaikan tanpa tanggal: tidak pernah dicatat ulang otomatis',
+          (() => { camRec.resolvedAt = ''; const k = inspectionUnappliedBits({ ...curRep, date: '2099-01-01', approvedAt: Number(curRep.appliedAt || 0) + 10 }).map(c => c.key); camRec.resolvedAt = repDay; return k; })(), []);
         // A stamp from before 2.45.0 names no components.
         const legacy = { id: 'lg', unitId: 'h2', date: '2026-09-01', approval: 'approved', createdByUid: 'x', results: { cameraAi: 'bad', rotaryLamp: 'bad' }, appliedDamageIds: ['dl1'] };
         globalDamages.push({ id: 'dl1', component: 'Rotary Lamp', fromInspection: 'lg', unitId: 'h2', resolved: false });

@@ -28,6 +28,9 @@ t('isi: teks panjang dipotong', p.composePush('damage', 'd3', { unitName: 'X', d
 // 2.45.0: tokens — an account's newest 5, the rest handed back to be removed; each token once; batches of 500.
 const tk = p.tokensByAccount([{ id: 'a1', uid: 'a', createdAt: 1 }, ...Array.from({ length: 7 }, (_, i) => ({ id: `b${i}`, uid: 'b', createdAt: i })), { id: 'x', uid: '' }, null, { id: 5, uid: 'c' }, { id: 'c1', uid: 'c', createdAt: 'x' }]);
 t('token: 5 terbaru per akun, sisanya dikembalikan untuk dihapus, data aneh dilewati', [[...tk.byUid.entries()], tk.extra], [[['a', ['a1']], ['b', ['b6', 'b5', 'b4', 'b3', 'b2']], ['c', ['c1']]], ['b1', 'b0']]);
+// 2.45.1: only extras older than staleBefore are handed back; a newer one is just not used this time.
+const st = p.tokensByAccount(Array.from({ length: 7 }, (_, i) => ({ id: `s${i}`, uid: 's', createdAt: i * 10 })), 5);
+t('token: hanya token lama (di bawah batas) yang dihapus', [st.byUid.get('s'), st.extra], [['s6', 's5', 's4', 's3', 's2'], ['s0']]);
 const many = new Map(Array.from({ length: 130 }, (_, i) => [`u${i}`, [`t${i}a`, `t${i}b`, `t${i}c`, `t${i}d`, `t${i}e`]]));
 many.set('dup', ['t0a']);
 const bs = p.pushBatches([...many.keys(), 'u0', 'none'], many);

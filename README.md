@@ -593,6 +593,20 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.45.1 — review ulang Fase 2**: foto laporan harian dan inspeksi hanya
+  ditampilkan dari folder laporannya sendiri; foto dari dokumen lain yang
+  disimpan ke dokumen ini disalin. Batas waktu unduh foto hanya untuk
+  laporan/ekspor/salinan — form edit memakai retry bawaan SDK (foto lambat
+  tidak lagi kosong lalu terhapus saat disimpan); unduhan utuh 2 sekaligus.
+  Inspeksi → Damage: foto yang lambat tetap terbawa (URL, disalin bila bisa);
+  komponen yang sudah diperbaiki tidak dicatat ulang hanya karena laporan
+  disetujui lagi — hanya bila tanggal ceknya sesudah tanggal perbaikan.
+  Notifikasi HP: tanggal token diperbarui setiap aplikasi dibuka; server hanya
+  menghapus token lebih dari 5 per akun yang 30 hari tidak dipakai. Jam SLA
+  push: memakai waktu lapor asli sampai 3 hari offline. Email Report yang
+  gagal terkirim mengembalikan gilirannya. Tes tidak lagi bergantung tanggal
+  (projects, security_f1, functions_guard). Tanpa perubahan rules; deploy
+  ulang Functions.
   **2.45.0 — Fase 2 keamanan & bug** (dijaga `tests/functions_guard_test.js`,
   `tests/client_safety_f2_test.js`, rules/storage tests): bukti laporan harian,
   izin, pembelian, project, ticket yang sudah disetujui/terkunci tidak bisa

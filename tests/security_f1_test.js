@@ -34,7 +34,8 @@ const { launch, BASE_URL } = require('./_env');
         const injected = () => document.querySelectorAll('[data-pwn]').length;
 
         // ---- (a) project RAG ----
-        applyProjectsSnapshot([{ id: 'pj_x', name: 'Radio tower', status: 'active', start: '2026-11-01', end: '2026-12-01', ragOverride: ATTR,
+        // Behind schedule but not overdue whatever today is: started 20 days ago, due in 10, nothing done.
+        applyProjectsSnapshot([{ id: 'pj_x', name: 'Radio tower', status: 'active', start: addDaysISO(toISODate(), -20), end: addDaysISO(toISODate(), 10), ragOverride: ATTR,
             createdByUid: 'z', target: { type: 'milestones' }, milestones: [], updates: [] }]);
         navigateTo('projects'); switchProjectsTab('projects'); renderProjectsView();
         await tick();

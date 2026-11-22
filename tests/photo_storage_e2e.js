@@ -209,6 +209,24 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8811';
     await C.saveDamageAfterPhoto('d2', img1);
     const a = await raw('damagePhotos', 'd2__after');
     out.after = [a.side, a.photo.startsWith('sp:')];
+    // 2.45.1 (S6): a report's or a check's photo is shown only from its own folder. One naming
+    // another record's folder (writable after approval) or a link shows nothing.
+    await st.mod.uploadString(st.mod.ref(st.s, 'photos/workLogPhotos/wl_decoy/p1'), img1, 'data_url');
+    await st.mod.uploadString(st.mod.ref(st.s, 'photos/workLogPhotos/wl_s6/own'), img1, 'data_url');
+    await FS.setDoc(FS.doc(db, 'workLogPhotos', 'wl_s6'), { id: 'wl_s6', photos: ['sp:photos/workLogPhotos/wl_decoy/p1', 'sp:photos/workLogPhotos/wl_s6/own', 'https://example.invalid/x.jpg'], updatedAt: 1 });
+    const s6 = await C.getWorkLogPhotos('wl_s6');
+    await st.mod.uploadString(st.mod.ref(st.s, 'photos/inspectionPhotos/in_s6/g'), img1, 'data_url');
+    await FS.setDoc(FS.doc(db, 'inspectionPhotos', 'in_s6'), { id: 'in_s6', photos: { cam: 'sp:photos/inspectionPhotos/in9/i1', gps: 'sp:photos/inspectionPhotos/in_s6/g' }, updatedAt: 1 });
+    const s6i = await C.getInspectionPhotos('in_s6');
+    out.ownFolder = [s6[0], /^http:\/\/127\.0\.0\.1:9198\//.test(s6[1]), s6[2], s6i.cam, /^http:\/\/127\.0\.0\.1:9198\//.test(s6i.gps)];
+    // 2.45.1: another document's photo saved into this one is copied into this one's folder
+    // (the shared object was blanked when that document's photo changed).
+    await C.saveDamagePhoto('d_s6', s6[1]);
+    const ds6 = (await raw('damagePhotos', 'd_s6')).photo;
+    out.foreignCopied = [String(ds6).startsWith('sp:photos/damagePhotos/d_s6/'), await exists(String(ds6).slice(3)), await exists('photos/workLogPhotos/wl_s6/own')];
+    // Inline, only the keys asked for come down.
+    const part = await C.getInspectionPhotos('in_s6', { inline: true, keys: ['gps'] });
+    out.keysOnly = [Object.keys(part), String(part.gps).startsWith('data:')];
     return out;
   });
   const want = { stored: 'sp:photos/damagePhotos/d1/', objExists: true, url: true, inline: 'data:image/jpeg;base64,', kept: true, newOne: true,
@@ -217,7 +235,8 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8811';
     b3: [true, true, true], b4: ['sp:photos/workLogPhotos/wl_b4/x1', true, true], b5: ['sp:photos/workLogPhotos/wl_b5/t1'], b6: [1, true, true, 0],
     b7: [true, false, ''], b8: [['sp:photos/workLogPhotos/wl_b8/a', 'sp:photos/workLogPhotos/wl_b8/u2'], false, true],
     b9: [3, 'sp:photos/workLogPhotos/wl_b9/a', true, 'sp:photos/workLogPhotos/wl_b9/b', true], b10: [true, true, 0, true],
-    plantedLoad: '', copiedLoads: true, plantedKept: [true, true], jobFileGuard: ['refused', 'refused', 'refused'], map: [true, ''], legacyServed: true, migrated: [true, 'dev1'], deleted: [true, true], after: ['after', true] };
+    plantedLoad: '', copiedLoads: true, plantedKept: [true, true], jobFileGuard: ['refused', 'refused', 'refused'], map: [true, ''], legacyServed: true, migrated: [true, 'dev1'], deleted: [true, true], after: ['after', true],
+    ownFolder: ['', true, '', '', true], foreignCopied: [true, true, true], keysOnly: [['gps'], true] };
   let fail = 0;
   Object.keys(want).forEach(k => { const ok = JSON.stringify(R[k]) === JSON.stringify(want[k]); if (!ok) fail++;
     console.log(`${ok ? 'PASS' : 'FAIL'}  ${k}${ok ? '' : ' dapat=' + JSON.stringify(R[k])}`); });

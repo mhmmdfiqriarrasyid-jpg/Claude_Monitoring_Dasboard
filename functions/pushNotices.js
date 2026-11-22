@@ -78,7 +78,10 @@ function composePush(kind, id, r) {
 // the caller to remove; a notice goes out in batches of at most FCM_BATCH tokens.
 const PUSH_PER_ACCOUNT = 5, FCM_BATCH = 500;
 // docs: [{ id, uid, createdAt }] (id = the token). Returns { byUid: Map uid → [token], extra: [token] }.
-function tokensByAccount(docs) {
+// staleBefore (ms, optional): only tokens older than this are handed back for removal — a newer
+// one beyond the 5 is just not used this time (2.45.1: a device in use that had not yet renewed
+// its date was removed for good).
+function tokensByAccount(docs, staleBefore) {
     const all = new Map();
     (docs || []).forEach(d => {
         if (!d || typeof d.id !== 'string' || !d.id || typeof d.uid !== 'string' || !d.uid) return;
@@ -92,7 +95,7 @@ function tokensByAccount(docs) {
     all.forEach((list, uid) => {
         list.sort((a, b) => ts(b.createdAt) - ts(a.createdAt));
         byUid.set(uid, list.slice(0, PUSH_PER_ACCOUNT).map(d => d.id));
-        list.slice(PUSH_PER_ACCOUNT).forEach(d => extra.push(d.id));
+        list.slice(PUSH_PER_ACCOUNT).forEach(d => { if (staleBefore == null || ts(d.createdAt) < staleBefore) extra.push(d.id); });
     });
     return { byUid, extra };
 }

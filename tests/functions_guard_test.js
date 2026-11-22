@@ -38,6 +38,7 @@ const db = { collection: c => query(c, []), doc: p => docRef(p),
 // ---- Stubs ----
 class HttpsError extends Error { constructor(code, message) { super(message); this.code = code; } }
 const logs = [], mails = [];
+let mailFail = false;   // the next sendMail throws (Gmail down)
 const fcm = { calls: [], failNext: false };
 const admin = {
     initializeApp() {}, firestore: Object.assign(() => db, { FieldValue: { serverTimestamp: () => 'ts' }, Timestamp: {} }),
@@ -57,7 +58,7 @@ const STUBS = {
     'firebase-functions/params': { defineSecret: n => ({ value: () => n === 'GMAIL_USER' ? 'sender@example.com' : 'app pass' }) },
     'firebase-functions/logger': { info: () => {}, warn: (...a) => logs.push(['warn', ...a]), error: (...a) => logs.push(['error', ...a]) },
     'firebase-admin': admin,
-    nodemailer: { createTransport: () => ({ sendMail: async m => { mails.push(m); } }) }
+    nodemailer: { createTransport: () => ({ sendMail: async m => { if (mailFail) { mailFail = false; throw new Error('SMTP unavailable'); } mails.push(m); } }) }
 };
 const realLoad = Module._load;
 Module._load = function (req) { return Object.prototype.hasOwnProperty.call(STUBS, req) ? STUBS[req] : realLoad.apply(this, arguments); };
@@ -71,8 +72,10 @@ const reset = () => { store.clear(); logs.length = 0; mails.length = 0; fcm.call
 const put = (p, d) => store.set(p, clone(d));
 const caught = async p => { try { return ['ok', await p]; } catch (e) { return [e.code || 'error', e.message]; } };
 const realNow = Date.now;
-let clock = realNow();
-const dayAhead = n => { const d = new Date(realNow() + n * 86400000), p = x => String(x).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
+// A fixed mid-day WIT start: the sends below move the clock on by minutes, and a start just
+// before midnight made the day's count restart halfway (2.45.1).
+let clock = Date.parse('2026-11-10T09:00:00+09:00');
+const dayAhead = n => { const d = new Date(clock + n * 86400000), p = x => String(x).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
 const call = uid => fx.sendLicenseAlert({ auth: { uid, token: { email: `${uid}@example.com` } }, data: {} });
 
 (async () => {
@@ -98,6 +101,15 @@ const call = uid => fx.sendLicenseAlert({ auth: { uid, token: { email: `${uid}@e
     put('settings/email', { recipients: ['boss@example.com'] });
     t('lisensi: akun tanpa akses tetap ditolak', (await caught(call('nobody')))[0], 'permission-denied');
     t('lisensi: tiap kirim tercatat siapa', [...store.entries()].filter(([k, v]) => k.startsWith('mailLog/') && v.kind === 'licenseAlert').map(([, v]) => v.by).sort(), ['boss@example.com', 'v1@example.com', 'v3@example.com']);
+    // Gmail fails: nothing went out, so the turn goes back and the next press is not refused.
+    clock += 11 * 60000;
+    mailFail = true;
+    const failed = await caught(call('v11'));
+    const lm1 = store.get('mailState/licenseManual');
+    const retried = await caught(call('v12'));
+    const lm2 = store.get('mailState/licenseManual');
+    t('lisensi: email gagal terkirim → giliran dikembalikan, kiriman berikutnya diterima',
+        [failed[0] !== 'ok', lm1.total, (lm1.byUid || {}).v11 || 0, retried[0], lm2.total, mails.length], [true, 3, 0, 'ok', 4, 4]);
     Date.now = realNow;
 
     // ---------- S12: push tokens ----------
