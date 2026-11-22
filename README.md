@@ -593,6 +593,13 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.45.2 — review 2.45.1**: foto yang gagal dimuat di form edit (slot
+  kosong) tetap disimpan, tidak lagi terhapus saat form disimpan. Inspeksi →
+  Damage: peringatan muncul bila foto yang ada di laporan tidak ikut terbawa.
+  Token push: lebih dari 20 per akun dihapus walau baru, tanggal yang
+  melewati besok dianggap paling lama. Email Report: giliran yang
+  dikembalikan dicatat per kiriman (jeda 10 menit tidak kembali ke kiriman
+  yang sudah dibatalkan). Tanpa perubahan rules; deploy ulang Functions.
   **2.45.1 — review ulang Fase 2**: foto laporan harian dan inspeksi hanya
   ditampilkan dari folder laporannya sendiri; foto dari dokumen lain yang
   disimpan ke dokumen ini disalin. Batas waktu unduh foto hanya untuk

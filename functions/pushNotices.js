@@ -76,12 +76,14 @@ function composePush(kind, id, r) {
 // than 500 tokens — one account with 501 junk tokens used to stop a notice for everybody. So an
 // account's newest PUSH_PER_ACCOUNT tokens are used and the older ones are handed back (extra) for
 // the caller to remove; a notice goes out in batches of at most FCM_BATCH tokens.
-const PUSH_PER_ACCOUNT = 5, FCM_BATCH = 500;
+const PUSH_PER_ACCOUNT = 5, FCM_BATCH = 500, PUSH_KEEP_MAX = 20;
 // docs: [{ id, uid, createdAt }] (id = the token). Returns { byUid: Map uid → [token], extra: [token] }.
 // staleBefore (ms, optional): only tokens older than this are handed back for removal — a newer
 // one beyond the 5 is just not used this time (2.45.1: a device in use that had not yet renewed
-// its date was removed for good).
-function tokensByAccount(docs, staleBefore) {
+// its date was removed for good). Past PUSH_KEEP_MAX an account's tokens go whatever their date,
+// and with now (ms) a date more than a day ahead counts as the oldest (2.45.2: a flood of
+// fresh or future-dated tokens was never removed).
+function tokensByAccount(docs, staleBefore, now) {
     const all = new Map();
     (docs || []).forEach(d => {
         if (!d || typeof d.id !== 'string' || !d.id || typeof d.uid !== 'string' || !d.uid) return;
@@ -90,12 +92,14 @@ function tokensByAccount(docs, staleBefore) {
     });
     // createdAt comes from the client: anything but a finite number counts as oldest (a map with a
     // toString key would make Number() throw and stop every notice).
-    const ts = v => (typeof v === 'number' && isFinite(v) ? v : 0);
+    const ts = v => (typeof v === 'number' && isFinite(v) && (now == null || v <= now + 86400000) ? v : 0);
     const byUid = new Map(), extra = [];
     all.forEach((list, uid) => {
         list.sort((a, b) => ts(b.createdAt) - ts(a.createdAt));
         byUid.set(uid, list.slice(0, PUSH_PER_ACCOUNT).map(d => d.id));
-        list.slice(PUSH_PER_ACCOUNT).forEach(d => { if (staleBefore == null || ts(d.createdAt) < staleBefore) extra.push(d.id); });
+        list.slice(PUSH_PER_ACCOUNT).forEach((d, i) => {
+            if (staleBefore == null || ts(d.createdAt) < staleBefore || PUSH_PER_ACCOUNT + i >= PUSH_KEEP_MAX) extra.push(d.id);
+        });
     });
     return { byUid, extra };
 }
@@ -108,4 +112,4 @@ function pushBatches(uids, byUid, size) {
     return out;
 }
 
-module.exports = { lvlOf, recipientsFor, composePush, tokensByAccount, pushBatches, PUSH_PER_ACCOUNT, FCM_BATCH };
+module.exports = { lvlOf, recipientsFor, composePush, tokensByAccount, pushBatches, PUSH_PER_ACCOUNT, FCM_BATCH, PUSH_KEEP_MAX };

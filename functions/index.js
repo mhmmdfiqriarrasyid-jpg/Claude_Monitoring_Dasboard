@@ -157,7 +157,7 @@ async function pushContext() {
     const docs = tokens.docs.map(d => { const v = d.data() || {}; return { id: d.id, uid: v.uid, createdAt: v.createdAt }; });
     let tokensByUid, extra;
     // 2.45.1: an extra token is removed only after 30 days without its device opening the app.
-    try { ({ byUid: tokensByUid, extra } = tokensByAccount(docs, Date.now() - 30 * 86400000)); }
+    try { ({ byUid: tokensByUid, extra } = tokensByAccount(docs, Date.now() - 30 * 86400000, Date.now())); }
     catch (err) {   // one odd doc must not stop every notice: fall back to the tokens without their dates, nothing removed
         logger.error('push tokens: grouping failed', err);
         ({ byUid: tokensByUid } = tokensByAccount(docs.map(d => ({ id: d.id, uid: d.uid }))));
@@ -384,14 +384,19 @@ function mayEmail(uid, d) {
 // Returns a function that gives the turn back (2.45.1: when the mail then could not be sent).
 async function takeLicenseTurn(uid, owner) {
     const ref = db.doc('mailState/licenseManual');
-    let prev = null, next = null;
+    // 2.45.2: the day's turns are listed ({ at, uid }), so a turn given back takes the 10-minute
+    // wait back to the newest turn still standing — not to one that was itself given back.
+    let next = null;
     await db.runTransaction(async tx => {
         const snap = await tx.get(ref);
-        prev = snap.exists ? snap.data() : null;
+        const prev = snap.exists ? snap.data() : null;
         const r = manualSendCheck(prev, uid, Date.now(), owner);
         if (!r.ok) throw new HttpsError('resource-exhausted', r.message);
-        next = r.next;
-        tx.set(ref, r.next);
+        const sameDay = !!prev && prev.day === r.next.day;
+        const turns = (sameDay && Array.isArray(prev.turns) ? prev.turns : []).concat([{ at: r.next.lastAt, uid }]).slice(-50);
+        const dayStartLastAt = sameDay ? (Number(prev.dayStartLastAt) || 0) : (Number(prev && prev.lastAt) || 0);
+        next = { ...r.next, turns, dayStartLastAt };
+        tx.set(ref, next);
     });
     return () => db.runTransaction(async tx => {
         const snap = await tx.get(ref);
@@ -399,9 +404,13 @@ async function takeLicenseTurn(uid, owner) {
         if (!cur || cur.day !== next.day) return;   // a new day has started meanwhile: nothing to give back
         const byUid = Object.assign({}, cur.byUid && typeof cur.byUid === 'object' ? cur.byUid : {});
         byUid[uid] = Math.max(0, (Number(byUid[uid]) || 0) - 1);
-        // The 10-minute wait goes back to the send before this one, unless another send came since.
-        const lastAt = cur.lastAt === next.lastAt ? (Number(prev && prev.lastAt) || 0) : cur.lastAt;
-        tx.set(ref, { ...cur, total: Math.max(0, (Number(cur.total) || 0) - 1), byUid, lastAt });
+        let gone = false;
+        const turns = (Array.isArray(cur.turns) ? cur.turns : []).filter(t => {
+            if (!gone && t && t.at === next.lastAt && t.uid === uid) { gone = true; return false; }
+            return true;
+        });
+        const lastAt = turns.length ? Math.max(...turns.map(t => Number(t && t.at) || 0)) : (Number(cur.dayStartLastAt) || 0);
+        tx.set(ref, { ...cur, total: Math.max(0, (Number(cur.total) || 0) - 1), byUid, turns, lastAt });
     });
 }
 

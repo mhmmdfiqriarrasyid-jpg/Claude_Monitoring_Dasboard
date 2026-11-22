@@ -235,13 +235,16 @@ async function _photoDown(v, inline) {
         const urlP = st.mod.getDownloadURL(st.mod.ref(st.s, v.slice(PHOTO_REF.length)));
         const url = await (inline ? _withTimeout(urlP, 30000) : urlP);
         _photoUrls.set(url, v);
+        _photoFailed.delete(v);
         if (!inline) return url;
         return await _withTimeout(_urlToData(url), 60000);   // 2.45.0: a weak signal no longer waits forever
     } catch (err) {
         console.warn('[photos] not loaded from Storage:', err && (err.code || err.message));
+        if (!inline) _photoFailed.add(v);   // 2.45.2: a form shows nothing for it — its save keeps it (_savePhotoDoc)
         return '';
     }
 }
+const _photoFailed = new Set();   // "sp:" refs a form read could not load this session
 // The images inside a stored value: a string, a list, or a { key: image } map.
 async function _photoMap(v, fn) {
     if (typeof v === 'string') return fn(v);
@@ -520,6 +523,17 @@ async function _savePhotoDoc(col, docId, field, value, fields, opts) {
         });
         // A photo another device added since the form opened stays (a list keeps it at the end).
         if (Array.isArray(stored) && Array.isArray(latest)) stored = stored.concat(latest.filter(r => fresh(r) && !have.has(r) && !dropped.has(r)));
+    }
+    // 2.45.2: a photo of this document the form could not load (its slot showed nothing) is kept
+    // as it is. Saving the form without it used to remove it from Storage for good.
+    const keptRefs = new Set(_photoRefs(stored));
+    const lost = before.filter(r => _photoFailed.has(r) && _ownPhotoRef(col, docId, r) && !keptRefs.has(r));
+    if (lost.length) {
+        if (Array.isArray(stored)) stored = stored.filter(x => x !== '').concat(lost);
+        else if (stored && typeof stored === 'object' && latest && typeof latest === 'object' && !Array.isArray(latest)) {
+            stored = { ...stored };
+            Object.keys(latest).forEach(k => { if (lost.includes(latest[k]) && !stored[k]) stored[k] = latest[k]; });
+        } else if (typeof stored === 'string' && !stored) stored = lost[0];
     }
     await setDoc(doc(db, col, docId), { ...fields, [field]: stored, updatedAt: Date.now() });
     _loadedVals.set(key, stored);   // what this browser now knows the document holds

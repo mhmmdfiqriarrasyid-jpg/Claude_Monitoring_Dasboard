@@ -38,7 +38,8 @@ const db = { collection: c => query(c, []), doc: p => docRef(p),
 // ---- Stubs ----
 class HttpsError extends Error { constructor(code, message) { super(message); this.code = code; } }
 const logs = [], mails = [];
-let mailFail = false;   // the next sendMail throws (Gmail down)
+let mailFail = 0;       // the next n sendMail calls throw (Gmail down)
+let hold = null;        // while set, sendMail waits for it (mails in flight)
 const fcm = { calls: [], failNext: false };
 const admin = {
     initializeApp() {}, firestore: Object.assign(() => db, { FieldValue: { serverTimestamp: () => 'ts' }, Timestamp: {} }),
@@ -58,7 +59,7 @@ const STUBS = {
     'firebase-functions/params': { defineSecret: n => ({ value: () => n === 'GMAIL_USER' ? 'sender@example.com' : 'app pass' }) },
     'firebase-functions/logger': { info: () => {}, warn: (...a) => logs.push(['warn', ...a]), error: (...a) => logs.push(['error', ...a]) },
     'firebase-admin': admin,
-    nodemailer: { createTransport: () => ({ sendMail: async m => { if (mailFail) { mailFail = false; throw new Error('SMTP unavailable'); } mails.push(m); } }) }
+    nodemailer: { createTransport: () => ({ sendMail: async m => { if (hold) await hold; if (mailFail > 0) { mailFail--; throw new Error('SMTP unavailable'); } mails.push(m); } }) }
 };
 const realLoad = Module._load;
 Module._load = function (req) { return Object.prototype.hasOwnProperty.call(STUBS, req) ? STUBS[req] : realLoad.apply(this, arguments); };
@@ -103,13 +104,29 @@ const call = uid => fx.sendLicenseAlert({ auth: { uid, token: { email: `${uid}@e
     t('lisensi: tiap kirim tercatat siapa', [...store.entries()].filter(([k, v]) => k.startsWith('mailLog/') && v.kind === 'licenseAlert').map(([, v]) => v.by).sort(), ['boss@example.com', 'v1@example.com', 'v3@example.com']);
     // Gmail fails: nothing went out, so the turn goes back and the next press is not refused.
     clock += 11 * 60000;
-    mailFail = true;
+    mailFail = 1;
     const failed = await caught(call('v11'));
     const lm1 = store.get('mailState/licenseManual');
     const retried = await caught(call('v12'));
     const lm2 = store.get('mailState/licenseManual');
     t('lisensi: email gagal terkirim → giliran dikembalikan, kiriman berikutnya diterima',
         [failed[0] !== 'ok', lm1.total, (lm1.byUid || {}).v11 || 0, retried[0], lm2.total, mails.length], [true, 3, 0, 'ok', 4, 4]);
+    // Two sends in flight, both fail: a viewer's, then the owner's a minute later (the owner is
+    // not held by the wait). Given back in that order, the wait must not go back to the viewer's
+    // send (itself given back): the next press is accepted.
+    clock += 11 * 60000;
+    let release; hold = new Promise(r => { release = r; });
+    mailFail = 2;
+    const pA = caught(call('v4'));
+    await new Promise(r => setTimeout(r, 30));
+    clock += 60000;
+    const pO = caught(call('boss'));
+    await new Promise(r => setTimeout(r, 30));
+    hold = null; release();
+    const [rA, rO] = await Promise.all([pA, pO]);
+    const rR = await caught(call('v5'));
+    t('lisensi: dua kiriman gagal bersamaan → jeda tidak kembali ke kiriman yang sudah dibatalkan',
+        [rA[0] !== 'ok', rO[0] !== 'ok', rR[0], store.get('mailState/licenseManual').total], [true, true, 'ok', 5]);
     Date.now = realNow;
 
     // ---------- S12: push tokens ----------

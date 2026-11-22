@@ -31,6 +31,11 @@ t('token: 5 terbaru per akun, sisanya dikembalikan untuk dihapus, data aneh dile
 // 2.45.1: only extras older than staleBefore are handed back; a newer one is just not used this time.
 const st = p.tokensByAccount(Array.from({ length: 7 }, (_, i) => ({ id: `s${i}`, uid: 's', createdAt: i * 10 })), 5);
 t('token: hanya token lama (di bawah batas) yang dihapus', [st.byUid.get('s'), st.extra], [['s6', 's5', 's4', 's3', 's2'], ['s0']]);
+// 2.45.2: a date more than a day ahead counts as the oldest; past 20 an account's tokens go whatever their date.
+const fut = p.tokensByAccount([{ id: 'f1', uid: 'f', createdAt: 9e15 }, ...Array.from({ length: 5 }, (_, i) => ({ id: `g${i}`, uid: 'f', createdAt: 1000 + i }))], 500, 2000);
+t('token: tanggal masa depan = paling lama, dihapus', [fut.byUid.get('f'), fut.extra], [['g4', 'g3', 'g2', 'g1', 'g0'], ['f1']]);
+const big = p.tokensByAccount(Array.from({ length: 25 }, (_, i) => ({ id: `k${i}`, uid: 'k', createdAt: 1000 + i })), 0, 2000);
+t('token: lebih dari 20 per akun → kelebihannya dihapus walau baru', big.extra, ['k4', 'k3', 'k2', 'k1', 'k0']);
 const many = new Map(Array.from({ length: 130 }, (_, i) => [`u${i}`, [`t${i}a`, `t${i}b`, `t${i}c`, `t${i}d`, `t${i}e`]]));
 many.set('dup', ['t0a']);
 const bs = p.pushBatches([...many.keys(), 'u0', 'none'], many);

@@ -250,6 +250,10 @@ const { launch, BASE_URL } = require('./_env');
         t('B9 diperbaiki lalu disetujui ulang: tidak dicatat lagi, tidak Breakdown lagi',
           [calls.filter(c => c[0] === 'damage').length - nd4, globalData.find(u => u.id === 'h1').cameraAi], [0, 'Good']);
         const curRep = inspections.find(x => x.id === rep.id);
+        // The flow above runs on a frozen clock (approvedAt never passes appliedAt), so the
+        // 'approved again' case is checked on its own: a same-day repair is never re-logged.
+        t('B9 perbaikan hari yang sama, benar-benar disetujui ulang: tidak dicatat lagi',
+          inspectionUnappliedBits({ ...curRep, approvedAt: Number(curRep.appliedAt || 0) + 10 }).map(c => c.key), []);
         t('B9 tanggal cek sesudah perbaikan (dicek ulang): dicatat lagi',
           inspectionUnappliedBits({ ...curRep, date: '2099-01-01', approvedAt: Number(curRep.appliedAt || 0) + 10 }).map(c => c.key), ['cameraAi']);
         t('B9 perbaikan tanpa tanggal: tidak pernah dicatat ulang otomatis',
@@ -263,6 +267,18 @@ const { launch, BASE_URL } = require('./_env');
         t('B9 stempel yang tidak sampai ke server: catatan dari laporan ini tetap dihitung',
           inspectionUnappliedBits({ ...legacy, appliedDamageIds: [], approvedAt: 300 }).map(c => c.key), ['cameraAi']);
         globalDamages = globalDamages.filter(d => d.id !== 'dl1');
+        // 2.45.2: a photo the report holds that could not be downloaded (both reads give nothing) is
+        // named in a warning — the Damage record is made without it.
+        const realGet = window.cloud.getInspectionPhotos;
+        window.cloud.getInspectionPhotos = (id, o) => Promise.resolve({ telematicBox: '' });
+        inspections.push({ id: 'rx', unitId: 'h2', date: '2026-09-02', approval: 'approved', approvedAt: 100, createdByUid: 'x',
+            results: { telematicBox: 'bad' }, notes: {}, photoKeys: ['telematicBox'] });
+        toasts.length = 0;
+        await applyInspectionFindings('rx');
+        window.cloud.getInspectionPhotos = realGet;
+        const rxDmg = calls.filter(c => c[0] === 'damage').map(c => c[1]).reverse().find(d => d.fromInspection === 'rx');
+        t('B6 foto gagal diunduh: catatan tanpa foto + peringatan', [rxDmg && rxDmg.hasPhoto, toasts.some(m => m.includes('1 inspection photo(s) could not be loaded'))], [false, true]);
+        inspections = inspections.filter(x => x.id !== 'rx');
 
         // =============== Kotak Keputusan ===============
         as('owner', { role: 'owner' });

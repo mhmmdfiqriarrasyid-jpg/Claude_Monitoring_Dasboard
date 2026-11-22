@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.45.1';
+const APP_VERSION = 'v2.45.2';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -25363,12 +25363,14 @@ async function applyInspectionFindings(id) {
         if (slow.length) { try { urls = (await window.cloud.getInspectionPhotos(id, { keys: slow })) || {}; } catch (_) { urls = {}; } }
         const ids = [];
         let unsent = 0;
+        // 2.45.2: the report held a photo for it (its photoKeys; older reports: a key in what came back).
+        const hadPhoto = k => Array.isArray(r.photoKeys) ? r.photoKeys.includes(k) : (k in photos || k in urls);
         for (const c of todo) {
             // 2.43.2: a photo still on the technician's phone is not copied (its placeholder would become the damage photo).
             const inl = safeImageSrc(photos[c.key]);
             const src = inl.startsWith('data:') ? inl : safeImageSrc(urls[c.key]);
             const photo = !src || _isWaitingPh(src) || !/^(data:|https:)/.test(src) ? '' : src;
-            if (!photo && (photos[c.key] || urls[c.key])) unsent++;
+            if (!photo && hadPhoto(c.key)) unsent++;
             const note = (r.notes || {})[c.key] || '';
             const rec = {
                 id: generateDamageId(),
