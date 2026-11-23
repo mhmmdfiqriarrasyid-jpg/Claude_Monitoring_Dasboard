@@ -154,6 +154,11 @@ const { launch, BASE_URL } = require('./_env');
             txt.includes('Pada hari ini, Selasa tanggal 30 Juni 2026, bertempat di PT. Global Papua Abadi, telah dilakukan serah terima aset perusahaan berupa Handy Talky (HT Hytera) dari:')],
             ['BERITA ACARA SERAH TERIMA HANDY TALKY (HT HYTERA)', true, true]);
         t('pdf: details and signatures', ['Radio HT HP508 GPS Support', '1009', '25D05C0567', '25D0505220', 'Baru/Baik', 'MENGETAHUI', 'Monti Griana'].every(s => txt.includes(s)), true);
+        t('pdf: one MENGETAHUI, centred above the witnesses', [pg.querySelectorAll('.bast-sign__mid').length, pg.querySelector('.bast-sign__mid').textContent], [1, 'MENGETAHUI']);
+        const wb3 = bastWitnessRow({ witness1: 'A', witness1Title: 'Regional Head', witness2: 'B', witness2Title: 'HR', witness3: 'C', witness3Title: 'OT' });
+        const wb1 = bastWitnessRow({ witness1: 'A', witness1Title: 'Regional Head' });
+        const cellsOf = h => { const d = document.createElement('div'); d.innerHTML = h; return [...d.querySelectorAll('.bast-sign__row > div')].map(x => x.textContent.trim()); };
+        t('pdf: three witnesses with their positions, one in the middle when alone', [cellsOf(wb3), cellsOf(wb1), bastWitnessRow({})], [['ARegional Head', 'BHR', 'COT'], ['', 'ARegional Head', ''], '']);
         printBast(Object.keys(S.bast));
         t('pdf: several letters, one page each', document.querySelectorAll('#bastPrint .bast-page').length, 4);
 

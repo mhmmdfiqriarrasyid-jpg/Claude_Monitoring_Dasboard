@@ -11790,9 +11790,12 @@ tr.tw-hide { display: none !important; }
 .bast-k { width: 120pt; }
 .bast-c { width: 12pt; }
 .bast-items .bast-k::before { content: '-  '; }
-.bast-sign { width: 100%; border-collapse: collapse; margin-top: 12pt; text-align: center; break-inside: avoid; }
-.bast-sign td { width: 42%; padding: 0; }
-.bast-sign td:nth-child(2) { width: 16%; }
-.bast-sign__space td { height: 54pt; }
-.bast-sign__gap td { height: 10pt; }
+.bast-sign { margin-top: 12pt; text-align: center; break-inside: avoid; }
+.bast-sign__row { display: grid; grid-template-columns: 1fr 1fr 1fr; column-gap: 8pt; align-items: start; }
+.bast-sign__space { height: 54pt; }
+.bast-sign__mid { margin-top: 16pt; }
+.bast-signer { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.bast-signer__name { text-decoration: underline; white-space: nowrap; }
+.bast-signer__name--long { font-size: 10.5pt; }
+.bast-signer__title { font-size: 11pt; margin-top: 1pt; }
 .bast-stamp { margin-top: 16pt; text-align: center !important; font-weight: 700; color: #b91c1c; border: 2px solid #b91c1c; padding: 4pt; }

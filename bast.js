@@ -36,7 +36,8 @@ const BAST_COLUMNS = [
     ['Pihak Pertama - Nama', 'p1Name'], ['Pihak Pertama - Jabatan', 'p1Title'], ['Pihak Pertama - Mewakili', 'p1Rep'],
     ['Pihak Kedua - Nama', 'p2Name'], ['Pihak Kedua - Jabatan', 'p2Title'], ['Pihak Kedua - Departemen', 'p2Dept'],
     ['Nama Barang', 'itemName'], ['Merk / Type', 'brandType'], ['Radio ID DMR', 'radioId'], ['S/N Unit', 'sn'], ['S/N Baterai', 'batterySn'],
-    ['Jumlah', 'qty'], ['Satuan', 'unit'], ['Kondisi', 'condition'], ['Mengetahui 1 - Nama', 'witness1'], ['Mengetahui 2 - Nama', 'witness2'],
+    ['Jumlah', 'qty'], ['Satuan', 'unit'], ['Kondisi', 'condition'], ['Mengetahui 1 - Nama', 'witness1'], ['Mengetahui 1 - Jabatan', 'witness1Title'],
+    ['Mengetahui 2 - Nama', 'witness2'], ['Mengetahui 2 - Jabatan', 'witness2Title'], ['Mengetahui 3 - Nama', 'witness3'], ['Mengetahui 3 - Jabatan', 'witness3Title'],
     ['Kategori Device (Warehouse)', 'deviceType'], ['Judul Dokumen', 'title'], ['Catatan', 'note']
 ];
 const BAST_REQUIRED = ['date', 'companyCode', 'place', 'itemCode', 'p1Name', 'p1Title', 'p1Rep', 'p2Name', 'p2Title', 'p2Dept', 'itemName', 'brandType', 'sn', 'qty', 'unit', 'condition'];
@@ -349,7 +350,8 @@ function bastRowOfDevice(d, last) {
         p1Name: last.p1Name || '', p1Title: last.p1Title || '', p1Rep: last.p1Rep || '',
         p2Name: d.recipientName || '', p2Title: d.recipientTitle || '', p2Dept: d.division || '',
         itemName: d.type || '', brandType: [d.brand, d.model].filter(Boolean).join(' '), radioId: d.radioId || '', sn: d.sn || '', batterySn: d.batterySn || '',
-        qty: 1, unit: 'Set', condition: 'Baik', witness1: last.witness1 || '', witness2: last.witness2 || '', deviceType: d.type || '', title: '', note: ''
+        qty: 1, unit: 'Set', condition: 'Baik', witness1: last.witness1 || '', witness1Title: last.witness1Title || '', witness2: last.witness2 || '', witness2Title: last.witness2Title || '',
+        witness3: last.witness3 || '', witness3Title: last.witness3Title || '', deviceType: d.type || '', title: '', note: ''
     };
     return BAST_COLUMNS.map(([, f]) => v[f]);
 }
@@ -385,6 +387,7 @@ async function exportBastAllocated() {
 
 // ---- One letter by hand (also from an allocated device) ----
 const BAST_PREF_KEY = 'otBastLastParties';
+const BAST_PREF_FIELDS = ['companyCode', 'place', 'p1Name', 'p1Title', 'p1Rep', 'witness1', 'witness1Title', 'witness2', 'witness2Title', 'witness3', 'witness3Title'];
 function showBastForm(fromDeviceId) {
     if (!canUseBast()) { showToast('BAST needs Warehouse edit access', 'warning'); return; }
     const f = document.getElementById('bastForm');
@@ -392,7 +395,7 @@ function showBastForm(fromDeviceId) {
     let last = {};
     try { last = JSON.parse(localStorage.getItem(BAST_PREF_KEY) || '{}') || {}; } catch (_) { last = {}; }
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v == null ? '' : v; };
-    ['companyCode', 'place', 'p1Name', 'p1Title', 'p1Rep', 'witness1', 'witness2'].forEach(k => set('bast_' + k, last[k] || ''));
+    BAST_PREF_FIELDS.forEach(k => set('bast_' + k, last[k] || ''));
     set('bast_date', toISODate()); set('bast_qty', 1); set('bast_unit', 'Set'); set('bast_condition', 'Baik');
     const d = fromDeviceId ? warehouseDevices.find(x => x.id === fromDeviceId) : null;
     if (d) {
@@ -417,7 +420,7 @@ async function saveBastForm(event) {
     btn.disabled = true;
     try {
         const out = await bastCreate(r.rec);
-        try { localStorage.setItem(BAST_PREF_KEY, JSON.stringify(Object.fromEntries(['companyCode', 'place', 'p1Name', 'p1Title', 'p1Rep', 'witness1', 'witness2'].map(k => [k, r.rec[k]])))); } catch (_) {}
+        try { localStorage.setItem(BAST_PREF_KEY, JSON.stringify(Object.fromEntries(BAST_PREF_FIELDS.map(k => [k, r.rec[k]])))); } catch (_) {}
         _bastLastIds = [out.id];
         closeBastForm();
         showToast(`BAST ${out.no} made`, 'success');
@@ -489,17 +492,30 @@ function bastPageHtml(b) {
         <table class="bast-kv bast-items">${items.map(([k, v]) => kv(k, v)).join('')}</table>
         <p>PIHAK KEDUA bertanggung jawab atas penggunaan, pemeliharaan, dan pengembalian ${esc(b.itemCode === 'HT' ? 'HT' : 'aset')} yang diterima, serta menanggung biaya perbaikan atau penggantian apabila terjadi kerusakan atau kehilangan akibat kelalaian, penyalahgunaan, atau penggunaan yang tidak sesuai prosedur.</p>
         <p>Demikian Berita Acara Serah Terima ini dibuat dan ditandatangani oleh kedua belah pihak setelah dipahami dan disetujui oleh kedua belah pihak untuk dipergunakan sebagaimana mestinya.</p>
-        <table class="bast-sign">
-            <tr><td>PIHAK PERTAMA</td><td></td><td>PIHAK KEDUA</td></tr>
-            <tr class="bast-sign__space"><td></td><td></td><td></td></tr>
-            <tr><td><b>${esc(b.p1Name)}</b></td><td></td><td><b>${esc(b.p2Name)}</b></td></tr>
-            ${b.witness1 || b.witness2 ? `<tr class="bast-sign__gap"><td></td><td></td><td></td></tr>
-            <tr><td>${b.witness1 ? 'MENGETAHUI' : ''}</td><td></td><td>${b.witness2 ? 'MENGETAHUI' : ''}</td></tr>
-            <tr class="bast-sign__space"><td></td><td></td><td></td></tr>
-            <tr><td><b>${esc(b.witness1)}</b></td><td></td><td><b>${esc(b.witness2)}</b></td></tr>` : ''}
-        </table>
+        <div class="bast-sign">
+            <div class="bast-sign__row"><div>PIHAK PERTAMA</div><div></div><div>PIHAK KEDUA</div></div>
+            <div class="bast-sign__space"></div>
+            <div class="bast-sign__row">${bastSigner(b.p1Name, b.p1Title)}<div></div>${bastSigner(b.p2Name, b.p2Title)}</div>
+            ${bastWitnessRow(b)}
+        </div>
         ${b.status !== 'active' ? `<p class="bast-stamp">${esc(BAST_STATUS[b.status])}${b.endedAt ? ' ' + esc(b.endedAt) : ''}</p>` : ''}
     </section>`;
+}
+// One signer: the name (bold, underlined, one line) and the position under it.
+function bastSigner(name, title) {
+    const esc = v => escapeHtml(v == null ? '' : String(v));
+    const n = String(name || '');
+    return `<div class="bast-signer"><b class="bast-signer__name${n.length > 26 ? ' bast-signer__name--long' : ''}">${esc(n)}</b>${title ? `<span class="bast-signer__title">${esc(title)}</span>` : ''}</div>`;
+}
+// MENGETAHUI, centred, and up to three witnesses on the same three columns as the parties:
+// one in the middle, two on the outer columns, three across.
+function bastWitnessRow(b) {
+    const w = [[b.witness1, b.witness1Title], [b.witness2, b.witness2Title], [b.witness3, b.witness3Title]].filter(([n]) => n);
+    if (!w.length) return '';
+    const cells = w.length === 1 ? ['', w[0], ''] : w.length === 2 ? [w[0], '', w[1]] : w;
+    return `<div class="bast-sign__mid">MENGETAHUI</div>
+            <div class="bast-sign__space"></div>
+            <div class="bast-sign__row">${cells.map(c => c ? bastSigner(c[0], c[1]) : '<div></div>').join('')}</div>`;
 }
 // Prints the letters (each on its own A4 page) — "Save as PDF" in the print dialog.
 // extra: letters just made that the snapshot may not hold yet.

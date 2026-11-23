@@ -593,6 +593,10 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.46.4 — tanda tangan BAST**: satu "MENGETAHUI" di tengah, sampai tiga
+  penanda tangan dengan jabatannya (format Excel dan form: *Mengetahui 1/2/3 -
+  Nama* dan *- Jabatan*; file lama tetap bisa diimpor). Pihak Pertama dan Kedua
+  juga menampilkan jabatan di bawah nama. Semua di satu grid tiga kolom.
   **2.46.3 — riwayat BAST per unit**: profil device di Warehouse menampilkan
   *BAST history* (semua surat unit itu — Active, Returned, Cancelled — dengan
   tanggal, penerima, tanggal selesai/alasan, dan PDF), dan kolom BAST di
