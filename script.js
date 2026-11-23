@@ -21490,7 +21490,7 @@ function showDeviceProfile(id) {
     const hist = allocs.length ? `
         <div class="table-wrapper" style="max-height:none">
         <table class="data-table dev-alloc-table">
-            <thead><tr><th>Division</th><th>Recipient</th><th>Position</th><th>Allocated</th><th>Returned</th><th>Duration</th><th>BAST</th></tr></thead>
+            <thead><tr><th>Division</th><th>Recipient</th><th>Position</th><th>Allocated</th><th>Returned</th><th>Duration</th>${allocs.some(h => h.bastNo) ? '<th>BAST</th>' : ''}</tr></thead>
             <tbody>${allocs.map(h => `<tr${h.current ? ' class="dev-alloc--current"' : ''}>
                 <td data-label="Division">${esc(h.division) || dash}</td>
                 <td data-label="Recipient">${esc(h.recipientName) || dash}</td>
@@ -21499,7 +21499,7 @@ function showDeviceProfile(id) {
                 <td data-label="Returned">${h.current ? '<span class="wh-status wh-status--allocated"><span class="wh-dot wh-dot--allocated" aria-hidden="true"></span>Still allocated</span>'
                     : (h.returnedAt ? escapeHtml(fpShortDate(h.returnedAt)) : dash)}</td>
                 <td data-label="Duration">${escapeHtml(_devDays(h.allocatedAt, h.current ? today : h.returnedAt)) || dash}</td>
-                <td data-label="BAST">${esc(h.bastNo) || dash}</td>
+                ${allocs.some(x => x.bastNo) ? `<td data-label="BAST">${esc(h.bastNo) || dash}</td>` : ''}
             </tr>`).join('')}</tbody>
         </table></div>`
         : '<p class="adm-muted">This device has never been allocated to a division.</p>';
@@ -21620,7 +21620,7 @@ function saveDevice(event) {
         if (!returnedAt) { showToast('Fill in the return date', 'warning'); return; }
         if (existing.allocatedAt && returnedAt < existing.allocatedAt) { showToast('The return date is before the allocation date', 'warning'); return; }
         if (returnedAt > toISODate()) { showToast('The return date cannot be in the future', 'warning'); return; }
-        allocationHistory.push({ bastNo: existing.bastNo || '', division: existing.division || '', recipientName: existing.recipientName || '',
+        allocationHistory.push({ ...(existing.bastNo ? { bastNo: existing.bastNo } : {}), division: existing.division || '', recipientName: existing.recipientName || '',
             recipientTitle: existing.recipientTitle || '', allocatedAt: existing.allocatedAt || '', returnedAt });
         allocationHistory = allocationHistory.slice(-20);
     }
