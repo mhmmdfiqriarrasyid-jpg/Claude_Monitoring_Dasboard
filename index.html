@@ -228,6 +228,10 @@
                 <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z"></path><path d="M6 18h12"></path><path d="M6 14h12"></path><rect x="6" y="10" width="12" height="12"></rect></svg>
                 <span class="nav__text">Warehouse</span>
             </button>
+            <button type="button" class="nav__link" data-view="bast" onclick="navigateTo('bast')">
+                <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="m9 15 2 2 4-4"></path></svg>
+                <span class="nav__text">BAST</span>
+            </button>
             <button type="button" class="nav__link" data-view="purchase" onclick="navigateTo('purchase')">
                 <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M8 13h8"></path><path d="M8 17h5"></path></svg>
                 <span class="nav__text">Purchase Requests</span>
@@ -2443,6 +2447,39 @@
     </div><!-- /viewLearning -->
 
     <!-- ==================== 3D MODELS (2.44.0) ==================== -->
+    <div id="viewBast" class="view" style="display:none;">
+        <div class="page-head">
+            <div>
+                <h2 class="page-title">BAST</h2>
+                <p class="page-sub">Berita Acara Serah Terima — numbered automatically, never twice, linked to Warehouse devices.</p>
+            </div>
+            <div class="page-head__actions">
+                <a class="btn btn-secondary" href="templates/Format_Import_BAST.xlsx" download><i class="fas fa-download" aria-hidden="true"></i> Excel format</a>
+                <button type="button" class="btn btn-secondary" onclick="openBastImport()"><i class="fas fa-file-import" aria-hidden="true"></i> Import Excel</button>
+                <button type="button" class="btn btn-primary" onclick="showBastForm()"><i class="fas fa-plus" aria-hidden="true"></i> New BAST</button>
+                <input type="file" id="bastImportInput" accept=".xlsx,.xls" hidden onchange="importBastFile(event)">
+            </div>
+        </div>
+        <div class="team-tabs" id="bastStatusTabs" role="tablist">
+            <button type="button" class="team-tab" data-status="active" onclick="setBastStatus('active')">Active <span class="team-tab__count">0</span></button>
+            <button type="button" class="team-tab" data-status="returned" onclick="setBastStatus('returned')">Returned <span class="team-tab__count">0</span></button>
+            <button type="button" class="team-tab" data-status="void" onclick="setBastStatus('void')">Cancelled <span class="team-tab__count">0</span></button>
+            <button type="button" class="team-tab" data-status="all" onclick="setBastStatus('all')">All <span class="team-tab__count">0</span></button>
+        </div>
+        <div class="bast-toolbar">
+            <label class="lc-search"><i class="fas fa-search" aria-hidden="true"></i>
+                <input type="search" id="bastSearch" placeholder="Search number, name, item, S/N, Radio ID" oninput="_bastQ = this.value; renderBastView()"></label>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="printBastPicked()"><i class="fas fa-file-pdf" aria-hidden="true"></i> PDF of ticked</button>
+            <span class="lc-count" id="bastCount"></span>
+        </div>
+        <div class="table-wrapper">
+            <table class="data-table bast-table">
+                <thead><tr><th><input type="checkbox" aria-label="Tick all" onchange="bastToggleAll(this.checked)"></th><th>No Surat</th><th>Tanggal</th><th>Pihak Kedua</th><th>Barang</th><th>S/N</th><th>Status</th><th></th></tr></thead>
+                <tbody id="bastBody"></tbody>
+            </table>
+        </div>
+    </div><!-- /viewBast -->
+
     <div id="viewModels3d" class="view" style="display:none;">
         <div class="page-head">
             <div class="page-head__text">
@@ -3573,6 +3610,142 @@
 
 <!-- ==================== LEARNING: add / edit a material (2.12.0) ==================== -->
 <!-- 3D Models (2.44.0): add / edit -->
+<div class="modal-overlay" id="bastImportModal">
+    <div class="modal-card bast-import" role="dialog" aria-labelledby="bastImportTitle">
+        <div class="modal-header">
+            <h3 id="bastImportTitle">Import BAST</h3>
+            <button type="button" class="modal-close" onclick="closeBastImport()" aria-label="Close"><i class="fas fa-times" aria-hidden="true"></i></button>
+        </div>
+        <div class="modal-body">
+            <p id="bastImportSummary" class="adm-muted"></p>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead><tr><th>Row</th><th>No Surat</th><th>Pihak Kedua</th><th>Barang · S/N</th><th>Warehouse</th><th>Check</th></tr></thead>
+                    <tbody id="bastImportBody"></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeBastImport()">Close</button>
+            <button type="button" class="btn btn-secondary" id="bastImportPrint" style="display:none" onclick="printBastImported()"><i class="fas fa-file-pdf" aria-hidden="true"></i> PDF of the letters made</button>
+            <button type="button" class="btn btn-primary" id="bastImportGo" onclick="runBastImport()">Make BAST</button>
+        </div>
+    </div>
+</div>
+<div class="modal-overlay" id="bastFormModal">
+    <div class="modal-card" role="dialog" aria-labelledby="bastFormTitle">
+        <div class="modal-header">
+            <h3 id="bastFormTitle">New BAST</h3>
+            <button type="button" class="modal-close" onclick="closeBastForm()" aria-label="Close"><i class="fas fa-times" aria-hidden="true"></i></button>
+        </div>
+        <form id="bastForm" onsubmit="saveBastForm(event)">
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="bast_no">No Surat <span class="form-optional">(optional)</span></label>
+                        <input class="form-input" id="bast_no" maxlength="80" autocomplete="off" placeholder="Leave empty: numbered automatically">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_date">Tanggal</label>
+                        <input class="form-input" type="date" id="bast_date">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_companyCode">Kode PT</label>
+                        <input class="form-input" id="bast_companyCode" maxlength="10" autocomplete="off" placeholder="e.g. GPA">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_place">Nama PT / Lokasi</label>
+                        <input class="form-input" id="bast_place" maxlength="160" autocomplete="off" placeholder="e.g. PT. Global Papua Abadi">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_itemCode">Kode Barang</label>
+                        <input class="form-input" id="bast_itemCode" maxlength="10" autocomplete="off" placeholder="e.g. HT, RIG">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_p1Name">Pihak Pertama — Nama</label>
+                        <input class="form-input" id="bast_p1Name" maxlength="160" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_p1Title">Pihak Pertama — Jabatan</label>
+                        <input class="form-input" id="bast_p1Title" maxlength="160" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_p1Rep">Pihak Pertama — Mewakili</label>
+                        <input class="form-input" id="bast_p1Rep" maxlength="160" autocomplete="off" placeholder="e.g. PT. Global Papua Abadi">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_p2Name">Pihak Kedua — Nama</label>
+                        <input class="form-input" id="bast_p2Name" maxlength="160" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_p2Title">Pihak Kedua — Jabatan</label>
+                        <input class="form-input" id="bast_p2Title" maxlength="160" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_p2Dept">Pihak Kedua — Departemen</label>
+                        <input class="form-input" id="bast_p2Dept" maxlength="160" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_itemName">Nama Barang</label>
+                        <input class="form-input" id="bast_itemName" maxlength="160" autocomplete="off" placeholder="e.g. Handy Talky (HT Hytera)">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_brandType">Merk / Type</label>
+                        <input class="form-input" id="bast_brandType" maxlength="160" autocomplete="off" placeholder="e.g. Radio HT HP508 GPS Support">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_radioId">Radio ID DMR <span class="form-optional">(optional)</span></label>
+                        <input class="form-input" id="bast_radioId" maxlength="40" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_sn">S/N Unit</label>
+                        <input class="form-input" id="bast_sn" maxlength="60" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_batterySn">S/N Baterai <span class="form-optional">(optional)</span></label>
+                        <input class="form-input" id="bast_batterySn" maxlength="60" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_qty">Jumlah</label>
+                        <input class="form-input" type="number" id="bast_qty" min="0.01" step="any">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_unit">Satuan</label>
+                        <select class="form-select" id="bast_unit"><option>Set</option><option>Unit</option><option>Pcs</option></select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_condition">Kondisi</label>
+                        <select class="form-select" id="bast_condition"><option>Baru/Baik</option><option>Baik</option><option>Bekas/Baik</option><option>Rusak Ringan</option><option>Rusak Berat</option></select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_witness1">Mengetahui 1 — Nama <span class="form-optional">(optional)</span></label>
+                        <input class="form-input" id="bast_witness1" maxlength="160" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_witness2">Mengetahui 2 — Nama <span class="form-optional">(optional)</span></label>
+                        <input class="form-input" id="bast_witness2" maxlength="160" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_deviceType">Kategori Device (Warehouse) <span class="form-optional">(optional)</span></label>
+                        <input class="form-input" id="bast_deviceType" maxlength="160" autocomplete="off" placeholder="Used when the S/N is not in Warehouse yet">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_title">Judul Dokumen <span class="form-optional">(optional)</span></label>
+                        <input class="form-input" id="bast_title" maxlength="120" autocomplete="off" placeholder="Empty: BERITA ACARA SERAH TERIMA + Nama Barang">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="bast_note">Catatan <span class="form-optional">(optional)</span></label>
+                        <input class="form-input" id="bast_note" maxlength="300" autocomplete="off" placeholder="Not printed">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeBastForm()">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="bastFormSave">Make BAST</button>
+            </div>
+        </form>
+    </div>
+</div>
 <div class="modal-overlay" id="m3Modal">
     <div class="modal-card lc-dialog" role="dialog" aria-labelledby="m3FormTitle">
         <div class="modal-header">
@@ -5049,6 +5222,7 @@
 <script src="script.js"></script>
 <script src="projects.js"></script>
 <script src="tickets.js"></script>
+<script src="bast.js"></script>
 <script src="functions/dailyCore.js"></script>
 <script src="weeklyreport.js"></script>
 <script src="calendar.js"></script>

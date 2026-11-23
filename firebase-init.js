@@ -14,6 +14,7 @@ import {
     getDocs,
     onSnapshot,
     writeBatch,
+    runTransaction,
     query,
     orderBy,
     limit,
@@ -725,6 +726,9 @@ const PADDOCKS_COL = 'paddocks';         // 2.10.0: one paddock list per company
 const LICENSE_REQ_COL = 'licenseRequirements';
 const DAMAGE_COMPONENTS_COL = 'damageComponents';
 const DEVICES_COL = 'devices';
+const BAST_COL = 'bast', BAST_KEYS_COL = 'bastKeys', BAST_SEQ_COL = 'bastSeq';
+// The key doc id of a unique BAST value — firestore.rules builds the same (bastKeyOf).
+const _bastKey = (field, value) => `${field}_${String(value == null ? '' : value).trim().toUpperCase().replace(/[^A-Z0-9-]/g, '_')}`;
 const PURCHASE_COL = 'purchaseRequests';
 const LEARNING_COL = 'learningItems';        // 2.12.0: Learning Center catalogue
 const LEARNING_FILES_COL = 'learningFiles';  // 2.12.0: uploaded PDFs, in pieces
@@ -1593,6 +1597,78 @@ window.cloud = {
                 if (errorCallback) errorCallback(err);
             }
         );
+    },
+
+    // ---- BAST — Berita Acara Serah Terima (2.46.0) ----
+    // A letter's number and its unit's S/N (and, when given, Radio ID and battery S/N) are
+    // unique: each has a key doc in bastKeys that is created once and never changed
+    // (firestore.rules), written in the same transaction as the letter. The number comes
+    // from a per PT + item code + year counter (bastSeq), skipping numbers already taken.
+    subscribeBast(callback, errorCallback) {
+        return onSnapshot(collection(db, BAST_COL), snap => callback(snap.docs.map(withDocId)), err => {
+            console.error('[cloud] bast subscription error:', err);
+            if (errorCallback) errorCallback(err);
+        });
+    },
+    bastKey(field, value) { return _bastKey(field, value); },
+    // rec: the letter (rec.no '' = numbered here). opts: { prefix, seqKey } for the number;
+    // device: { id, make(current, letter) → fields } to allocate the unit in Warehouse.
+    async createBast(rec, opts) {
+        const o = opts || {};
+        return runTransaction(db, async tx => {
+            const out = { ...rec };
+            let seqRef = null, next = 0;
+            if (!out.no) {
+                seqRef = doc(db, BAST_SEQ_COL, o.seqKey);
+                const s = await tx.get(seqRef);
+                next = (s.exists() ? Number(s.data().last) || 0 : 0) + 1;
+                for (let i = 0; i < 60 && !out.no; i++, next++) {
+                    const cand = `${o.prefix}/${String(next).padStart(3, '0')}`;
+                    if (!(await tx.get(doc(db, BAST_KEYS_COL, _bastKey('no', cand)))).exists()) { out.no = cand; break; }
+                }
+                if (!out.no) throw Object.assign(new Error('no free number'), { code: 'bast/no-number' });
+            } else {
+                const k = await tx.get(doc(db, BAST_KEYS_COL, _bastKey('no', out.no)));
+                if (k.exists()) throw Object.assign(new Error('number taken'), { code: 'bast/dup', field: 'no', other: k.data().bastId });
+            }
+            const uniq = [['sn', out.sn], ['rid', out.radioId], ['bat', out.batterySn]].filter(([, v]) => v);
+            for (const [f, v] of uniq) {
+                const k = await tx.get(doc(db, BAST_KEYS_COL, _bastKey(f, v)));
+                if (k.exists()) throw Object.assign(new Error(f + ' taken'), { code: 'bast/dup', field: f, other: k.data().bastId });
+            }
+            let cur = null, devRef = null;
+            if (o.device && o.device.id) { devRef = doc(db, DEVICES_COL, o.device.id); const ds = await tx.get(devRef); cur = ds.exists() ? ds.data() : null; }
+            const at = Date.now();
+            out.noKey = _bastKey('no', out.no);
+            out.snKey = _bastKey('sn', out.sn);
+            if (seqRef) tx.set(seqRef, { last: next, updatedAt: at });
+            tx.set(doc(db, BAST_KEYS_COL, out.noKey), { bastId: out.id, field: 'no', value: out.no, at });
+            uniq.forEach(([f, v]) => tx.set(doc(db, BAST_KEYS_COL, _bastKey(f, v)), { bastId: out.id, field: f, value: String(v), at }));
+            tx.set(doc(db, BAST_COL, out.id), out);
+            if (devRef) { const patch = o.device.make(cur, out); if (patch) tx.set(devRef, patch, { merge: true }); }
+            return out;
+        });
+    },
+    // Ends an active letter: info { status: 'returned' | 'void', date, reason, by, device(current, letter) → fields }.
+    // Its S/N, Radio ID and battery keys are given back; the number's key stays.
+    async endBast(id, info) {
+        return runTransaction(db, async tx => {
+            const ref = doc(db, BAST_COL, id);
+            const s = await tx.get(ref);
+            if (!s.exists()) throw Object.assign(new Error('not found'), { code: 'bast/not-found' });
+            const b = s.data();
+            if (b.status !== 'active') return b;
+            const refs = [['sn', b.sn], ['rid', b.radioId], ['bat', b.batterySn]].filter(([, v]) => v).map(([f, v]) => doc(db, BAST_KEYS_COL, _bastKey(f, v)));
+            const keys = [];
+            for (const k of refs) keys.push([k, await tx.get(k)]);
+            let cur = null, devRef = null;
+            if (info.device && b.deviceId) { devRef = doc(db, DEVICES_COL, b.deviceId); const ds = await tx.get(devRef); cur = ds.exists() ? ds.data() : null; }
+            const upd = { status: info.status, endedAt: info.date || '', endReason: info.reason || '', endedBy: info.by || '', updatedAt: Date.now() };
+            tx.update(ref, upd);
+            keys.forEach(([k, snap]) => { if (snap.exists() && snap.data().bastId === id) tx.delete(k); });
+            if (devRef && cur) { const patch = info.device(cur, { ...b, ...upd }); if (patch) tx.set(devRef, patch, { merge: true }); }
+            return { ...b, ...upd };
+        });
     },
 
     // ---- Operational vehicles ----

@@ -11755,3 +11755,42 @@ tr.tw-hide { display: none !important; }
 .m3s-panel__close { align-self: flex-end; }
 .m3-viewer__warn { display: none; font-size: 12px; color: var(--warning-strong, #b45309); }
 #m3Viewer[data-kind="studio"] .m3-viewer__warn { display: block; }
+
+/* ===== BAST — Berita Acara Serah Terima (2.46.0) ===== */
+.bast-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 12px 0; }
+.bast-toolbar .lc-search { flex: 1 1 260px; }
+.bast-actions { white-space: nowrap; }
+.bast-actions .btn + .btn { margin-left: 4px; }
+.bast-status { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.bast-status--active { background: rgba(16, 185, 129, .15); color: #047857; }
+.bast-status--returned { background: rgba(59, 130, 246, .15); color: #1d4ed8; }
+.bast-status--void { background: rgba(148, 163, 184, .25); color: #475569; }
+.bast-import { max-width: 1100px; width: 96vw; }
+.bast-row--bad td { background: rgba(239, 68, 68, .07); }
+.bast-row--done td { background: rgba(16, 185, 129, .08); }
+.bast-err { color: #b91c1c; font-size: 12.5px; }
+/* The letters on paper: one A4 page each (only #bastPrint is printed). */
+#bastPrint { display: none; }
+@page bastA4 { size: A4; margin: 15mm 20mm 14mm; @bottom-left { content: none; } @bottom-right { content: none; } @top-left { content: none; } @top-right { content: none; } }
+@media print {
+    body.bast-printing > *:not(#bastPrint) { display: none !important; }
+    body.bast-printing { background: #fff !important; }
+    body.bast-printing #bastPrint { display: block !important; }
+}
+.bast-page { page: bastA4; font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.32; color: #000; break-after: page; }
+.bast-page:last-child { break-after: auto; }
+.bast-page p { margin: 0 0 7pt; text-align: justify; }
+.bast-title { font-size: 13pt; font-weight: 700; text-align: center; text-decoration: underline; margin: 0 0 4pt; }
+.bast-page .bast-no { text-align: center; margin-bottom: 12pt; }
+.bast-page .bast-party { margin: 8pt 0 1pt; }
+.bast-kv { border-collapse: collapse; margin: 0 0 6pt 18pt; }
+.bast-kv td { padding: 0 4pt 0 0; vertical-align: top; }
+.bast-k { width: 120pt; }
+.bast-c { width: 12pt; }
+.bast-items .bast-k::before { content: '-  '; }
+.bast-sign { width: 100%; border-collapse: collapse; margin-top: 12pt; text-align: center; break-inside: avoid; }
+.bast-sign td { width: 42%; padding: 0; }
+.bast-sign td:nth-child(2) { width: 16%; }
+.bast-sign__space td { height: 54pt; }
+.bast-sign__gap td { height: 10pt; }
+.bast-stamp { margin-top: 16pt; text-align: center !important; font-weight: 700; color: #b91c1c; border: 2px solid #b91c1c; padding: 4pt; }

@@ -532,6 +532,51 @@ service cloud.firestore {
     // anyone can check what is in stock before driving to the warehouse.
     match /devices/{id}    { allow read: if isActive(); allow delete: if canEditArea('warehouse');
                              allow create, update: if canEditArea('warehouse') && idMatches(id); }
+    // ---- BAST — Berita Acara Serah Terima (2.46.0) ----
+    // Owner and Warehouse editors only. A letter's number and its unit's S/N are unique:
+    // each has a key doc in bastKeys, created once and never changed, so a second letter
+    // with the same number or S/N cannot write its key. A new letter must come with both
+    // keys (written in the same transaction). A letter that ends (returned / cancelled)
+    // gives its S/N, Radio ID and battery keys back; the number's key stays for good.
+    function bastKeyOf(f, v) { return f + '_' + v.trim().upper().replace('[^A-Z0-9-]', '_'); }
+    function bastOk(id) {
+      let d = request.resource.data;
+      return id.matches('bast_[A-Za-z0-9_]+') && d.get('id', '') == id && d.size() <= 60
+          && d.get('no', '') is string && d.get('no', '').size() > 0 && d.get('no', '').size() <= 80
+          && d.get('sn', '') is string && d.get('sn', '').size() > 0 && d.get('sn', '').size() <= 60
+          && d.get('date', '') is string && d.get('date', '').matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+          && d.get('status', '') in ['active', 'returned', 'void']
+          && d.get('noKey', '') == bastKeyOf('no', d.get('no', ''))
+          && d.get('snKey', '') == bastKeyOf('sn', d.get('sn', ''));
+    }
+    match /bast/{id} {
+      allow read: if canEditArea('warehouse');
+      allow create: if canEditArea('warehouse') && bastOk(id) && request.resource.data.status == 'active'
+        && getAfter(/databases/$(database)/documents/bastKeys/$(request.resource.data.noKey)).data.get('bastId', '') == id
+        && getAfter(/databases/$(database)/documents/bastKeys/$(request.resource.data.snKey)).data.get('bastId', '') == id;
+      allow update: if canEditArea('warehouse') && bastOk(id)
+        && request.resource.data.no == resource.data.no && request.resource.data.sn == resource.data.sn
+        && (resource.data.status == 'active' || request.resource.data.status == resource.data.status);
+      allow delete: if isOwner();
+    }
+    match /bastKeys/{id} {
+      allow read: if canEditArea('warehouse');
+      allow create: if canEditArea('warehouse')
+        && request.resource.data.keys().hasOnly(['bastId', 'field', 'value', 'at'])
+        && request.resource.data.get('field', '') in ['no', 'sn', 'rid', 'bat']
+        && request.resource.data.get('value', '') is string && request.resource.data.get('value', '').size() <= 80
+        && request.resource.data.get('bastId', '') is string
+        && id == bastKeyOf(request.resource.data.field, request.resource.data.value);
+      allow update: if false;
+      allow delete: if canEditArea('warehouse') && resource.data.get('field', '') != 'no';
+    }
+    match /bastSeq/{id} {
+      allow read: if canEditArea('warehouse');
+      allow create: if canEditArea('warehouse') && request.resource.data.get('last', 0) is int && request.resource.data.get('last', 0) >= 1;
+      allow update: if canEditArea('warehouse') && request.resource.data.get('last', 0) is int
+        && request.resource.data.get('last', 0) > resource.data.get('last', 0);
+      allow delete: if false;
+    }
     match /stockItems/{id} { allow read: if isActive(); allow delete: if canEditArea('warehouse');
                              allow create, update: if canEditArea('warehouse') && idMatches(id); }
     // Operational vehicles (company motorbikes) and their fuel log: the same

@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.45.4';
+const APP_VERSION = 'v2.46.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -939,6 +939,7 @@ function setupEventListeners() {
 // The value is a function NAME, not the function: most of these are defined
 // further down this file and would be undefined at this point.
 const MODAL_CLOSERS = {
+    bastImportModal: 'closeBastImport', bastFormModal: 'closeBastForm',   // 2.46.0
     unitModal:            'closeModal',
     historyModal:         'closeHistory',
     errorLogModal:        'closeErrorLog',
@@ -1947,6 +1948,8 @@ function navigateTo(view) {
     if (calView) calView.style.display = (view === 'calendar') ? 'block' : 'none';
     const m3View = document.getElementById('viewModels3d');
     if (m3View) m3View.style.display = (view === 'models3d') ? 'block' : 'none';
+    const bastView = document.getElementById('viewBast');
+    if (bastView) bastView.style.display = (view === 'bast') ? 'block' : 'none';
 
     const changed = currentView !== view;
     currentView = view;
@@ -2024,6 +2027,7 @@ function navigateTo(view) {
     if (view === 'learning') renderLearningView();
     if (view === 'calendar' && typeof renderCalendarView === 'function') renderCalendarView();
     if (view === 'models3d' && typeof renderModels3dView === 'function') renderModels3dView();
+    if (view === 'bast' && typeof renderBastView === 'function') renderBastView();
     if (typeof twRefresh === 'function') twRefresh();   // 2.42.0: long lists measured once their page shows
 
     if (view === 'inspection') renderInspectionView();
@@ -13777,6 +13781,10 @@ function initCloudSync() {
         if (window.cloud.subscribeModels3d && typeof applyModels3dSnapshot === 'function') {
             cloudModels3dUnsub = window.cloud.subscribeModels3d(applyModels3dSnapshot);
         }
+        // 2.46.0: BAST letters (bast.js) — the owner and Warehouse editors.
+        if (window.cloud.subscribeBast && typeof applyBastSnapshot === 'function' && hasAccess('warehouse', 'edit')) {
+            cloudBastUnsub = window.cloud.subscribeBast(applyBastSnapshot, err => console.warn('[cloud] bast offline:', err && err.code));
+        }
         if (window.cloud.subscribePurchaseRequests && canViewView('purchase')) {
             // 'own' may read only its own requests, so it must ask for those.
             const ownPr = purchaseOwnOnly();
@@ -14085,6 +14093,8 @@ function tearDownCloudSync(opts) {
     if (cloudLearningUnsub) { try { cloudLearningUnsub(); } catch (_) {} cloudLearningUnsub = null; }
     learningItems = [];
     if (cloudModels3dUnsub) { try { cloudModels3dUnsub(); } catch (_) {} cloudModels3dUnsub = null; }
+    if (cloudBastUnsub) { try { cloudBastUnsub(); } catch (_) {} cloudBastUnsub = null; }
+    if (typeof applyBastSnapshot === 'function') applyBastSnapshot([]);
     if (typeof applyModels3dSnapshot === 'function') applyModels3dSnapshot([]);
     purchaseRequests = [];
     if (cloudStockUnsub) { try { cloudStockUnsub(); } catch (_) {} cloudStockUnsub = null; }
@@ -15074,6 +15084,7 @@ const VIEW_AREAS = {
     licenseStock: ['licenseStock'],
     team:         ['teamShift', 'teamLog', 'teamMembers', 'teamLogApprove'],
     warehouse:    ['warehouse'],
+    bast:         ['warehouse'],   // 2.46.0: edit only — see canViewView
     purchase:     ['purchase'],
     projects:     ['projects'],
     inspection:   ['inspection', 'inspectionApprove'],
@@ -15136,6 +15147,7 @@ function roleDefaultAccess(role, area) {
 
 // True when the user can open a given view — any one of its areas is enough.
 function canViewView(view) {
+    if (view === 'bast') return hasAccess('warehouse', 'edit');   // 2.46.0: the owner and Warehouse editors
     return (VIEW_AREAS[view] || []).some(a => hasAccess(a, 'view'));
 }
 
@@ -19847,6 +19859,7 @@ function populateWarehouseFilters() {
 let learningItems = [];
 let cloudLearningUnsub = null;
 let cloudModels3dUnsub = null;   // 2.44.0: 3D Models (models3d.js)
+let cloudBastUnsub = null;       // 2.46.0: BAST (bast.js)
 let _lcCategory = '';
 const LEARN_DEFAULT_CATEGORIES = ['Precision Agriculture', 'Heavy Equipment', 'Safety (K3)', 'Dashboard How-to', 'General'];
 const LEARN_MAX_BYTES = 15 * 1024 * 1024;       // files kept in Firestore pieces (Spark fallback)
@@ -21498,6 +21511,12 @@ function showDeviceProfile(id) {
             ${row('Status', `<span class="wh-status wh-status--${st.key}"><span class="wh-dot wh-dot--${st.key}" aria-hidden="true"></span>${escapeHtml(sentenceCase(st.label))}</span>`)}
             ${row('Where', deviceWhereCell(d))}
             ${row('Battery SN', esc(d.batterySn))}
+            ${d.radioId ? row('Radio ID DMR', esc(d.radioId)) : ''}
+            ${typeof bastOfDevice === 'function' && hasAccess('warehouse', 'edit') ? row('BAST', (() => {
+                const b = bastOfDevice(d);
+                if (b) return `<b>${esc(b.no)}</b> <button type="button" class="btn btn-secondary btn-sm" onclick="printBast(['${esc(b.id)}'])"><i class="fas fa-file-pdf" aria-hidden="true"></i> PDF</button>`;
+                return d.status === 'allocated' ? `<button type="button" class="btn btn-secondary btn-sm" onclick="closeDeviceProfile(); showBastForm('${esc(d.id)}')"><i class="fas fa-file-signature" aria-hidden="true"></i> Make BAST</button>` : '';
+            })()) : ''}
             ${row('Notes', esc(d.note))}
         </div>
         ${(d.photoIds || []).length ? `<h4 class="dev-alloc-title">Photos <span class="team-tab__count">${d.photoIds.length}</span></h4>
@@ -21622,6 +21641,11 @@ function saveDevice(event) {
         updatedAt: Date.now()
     };
 
+    // 2.46.0: a device taken off its allocation, or given to someone else, returns its BAST.
+    if (existing && existing.bastId && (!allocated || existing.recipientName !== rec.recipientName)) {
+        rec.bastId = ''; rec.bastNo = '';
+        if (typeof bastDeviceLeft === 'function') bastDeviceLeft(existing, !allocated ? (document.getElementById('devReturnedAt').value || toISODate()) : (rec.allocatedAt || toISODate()));
+    }
     cloudWrite(
         {
             action: existing ? 'update' : 'create',

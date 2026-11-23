@@ -1,0 +1,200 @@
+// 2.46.0 — BAST: menu and access, the Excel format, import with its checks (never twice:
+// number, S/N, Radio ID, battery S/N), automatic numbers, the link to Warehouse devices
+// (allocated / returned) and the A4 print.
+const { launch, BASE_URL } = require('./_env');
+
+(async () => {
+    const b = await launch();
+    const page = await b.newPage({ viewport: { width: 1366, height: 860 } });
+    const errors = [];
+    page.on('pageerror', e => { if (!/Chart is not defined/.test(e.message)) errors.push(e.message); });
+    page.on('dialog', d => d.accept(d.type() === 'prompt' ? d.defaultValue() : undefined));
+    await page.goto(BASE_URL + '/index.html', { waitUntil: 'load' });
+    await page.waitForTimeout(900);
+
+    const T = await page.evaluate(async () => {
+        const T = []; const t = (n, g, w) => T.push({ n, g, w, pass: JSON.stringify(g) === JSON.stringify(w) });
+        const tick = ms => new Promise(r => setTimeout(r, ms || 40));
+        const ok = () => Promise.resolve();
+        // ---- an in-memory server with the same rules as firebase-init.js createBast / endBast ----
+        const key = (f, v) => `${f}_${String(v == null ? '' : v).trim().toUpperCase().replace(/[^A-Z0-9-]/g, '_')}`;
+        const S = { bast: {}, keys: {}, seq: {}, devWrites: [], ends: [] };
+        const pushSnap = () => applyBastSnapshot(Object.values(S.bast).map(x => ({ ...x })));
+        const applyDev = (id, patch) => {
+            S.devWrites.push([id, JSON.parse(JSON.stringify(patch))]);
+            const i = warehouseDevices.findIndex(d => d.id === id);
+            if (i >= 0) warehouseDevices[i] = { ...warehouseDevices[i], ...patch }; else warehouseDevices.push({ id, ...patch });
+        };
+        window.cloud = { isReady: true, addHistoryEvents: ok, subscribeUsers: () => () => {}, saveDevice: ok,
+            bastKey: key,
+            createBast: async (rec, o) => {
+                const out = { ...rec };
+                let next = 0;
+                if (!out.no) {
+                    next = (S.seq[o.seqKey] || 0) + 1;
+                    while (S.keys[key('no', `${o.prefix}/${String(next).padStart(3, '0')}`)]) next++;
+                    out.no = `${o.prefix}/${String(next).padStart(3, '0')}`;
+                } else if (S.keys[key('no', out.no)]) throw Object.assign(new Error('dup'), { code: 'bast/dup', field: 'no', other: S.keys[key('no', out.no)] });
+                const uniq = [['sn', out.sn], ['rid', out.radioId], ['bat', out.batterySn]].filter(([, v]) => v);
+                for (const [f, v] of uniq) if (S.keys[key(f, v)]) throw Object.assign(new Error('dup'), { code: 'bast/dup', field: f, other: S.keys[key(f, v)] });
+                if (next) S.seq[o.seqKey] = next;
+                out.noKey = key('no', out.no); out.snKey = key('sn', out.sn);
+                S.keys[out.noKey] = out.id; uniq.forEach(([f, v]) => { S.keys[key(f, v)] = out.id; });
+                S.bast[out.id] = out;
+                const cur = warehouseDevices.find(d => d.id === o.device.id) || null;
+                applyDev(o.device.id, o.device.make(cur ? { ...cur } : null, out));
+                return out;
+            },
+            endBast: async (id, info) => {
+                const x = S.bast[id];
+                S.ends.push([id, info.status, info.date, !!info.device]);
+                if (x.status !== 'active') return x;
+                Object.assign(x, { status: info.status, endedAt: info.date, endReason: info.reason });
+                [['sn', x.sn], ['rid', x.radioId], ['bat', x.batterySn]].forEach(([f, v]) => { if (v && S.keys[key(f, v)] === id) delete S.keys[key(f, v)]; });
+                if (info.device && x.deviceId) { const cur = warehouseDevices.find(d => d.id === x.deviceId); const p = cur && info.device({ ...cur }, x); if (p) applyDev(x.deviceId, p); }
+                return x;
+            } };
+        const as = doc => { currentUser = { uid: doc.uid, email: doc.uid + '@x.id' }; currentUserDoc = doc; applyRoleGating(); };
+        const OWNER = { uid: 'o', role: 'owner', status: 'active', displayName: 'Owner' };
+        as(OWNER); cloudInitialized = true; hideAuthGates();
+        try { localStorage.setItem('tractorLicenseDatesApplied_v2', '1'); } catch (_) {}
+        window.print = () => { window.__printed = (window.__printed || 0) + 1; };
+
+        // ---- menu and access ----
+        const navShown = () => { applyRoleGating(); const n = document.querySelector('.nav__link[data-view="bast"]'); return !!n && !n.hidden && n.style.display !== 'none'; };
+        t('menu: owner sees BAST', navShown(), true);
+        as({ uid: 'v', role: 'staff', status: 'active', access: { warehouse: 'view' } });
+        t('menu: a Warehouse viewer does not', [navShown(), canViewView('bast')], [false, false]);
+        as({ uid: 'w', role: 'staff', status: 'active', access: { warehouse: 'edit' } });
+        t('menu: a Warehouse editor does', [navShown(), canUseBast()], [true, true]);
+        as(OWNER);
+        const tpl = await fetch('templates/Format_Import_BAST.xlsx');
+        t('format: the Excel format is served', tpl.status, 200);
+        const XLSX = await loadSheetJs();
+        const twb = XLSX.read(await tpl.arrayBuffer(), { type: 'array' });
+        const thead = XLSX.utils.sheet_to_json(twb.Sheets.BAST, { header: 1 })[0];
+        t('format: its headers are the ones the import reads', BAST_COLUMNS.every(([h]) => thead.some(x => String(x).replace(/\s*\*$/, '') === h)), true);
+
+        // ---- dates ----
+        t('tanggal: hari dan bulan Indonesia', bastDateText('2026-06-30'), 'Selasa tanggal 30 Juni 2026');
+        t('tanggal: serial Excel, Date, DD/MM/YYYY, salah', [bastDate(46203), bastDate(new Date(2026, 5, 30)), bastDate('30/06/2026'), bastDate('2026-02-30'), bastDate('besok')],
+            ['2026-06-30', '2026-06-30', '2026-06-30', '', '']);
+
+        // ---- import ----
+        warehouseDevices = [{ id: 'dev_ht1', sn: '25D05C0567', type: 'HT', brand: 'Hytera', model: 'HP508', status: 'warehouse', location: 'Gudang', allocationHistory: [] },
+            { id: 'dev_rig', sn: 'RIG-77', type: 'RIG Mobile', status: 'allocated', division: 'Agri', recipientName: 'Budi', recipientTitle: 'Mandor', allocatedAt: '2026-05-01', allocationHistory: [] }];
+        applyBastSnapshot([{ id: 'bast_old', no: 'GPA/BAST-HT/05/2026/007', status: 'active', sn: 'OLD-1', radioId: '2001', date: '2026-05-02', p2Name: 'X', itemName: 'HT' }]);
+        S.keys[key('no', 'GPA/BAST-HT/05/2026/007')] = 'bast_old'; S.keys[key('sn', 'OLD-1')] = 'bast_old'; S.keys[key('rid', '2001')] = 'bast_old';
+        S.bast.bast_old = { id: 'bast_old', no: 'GPA/BAST-HT/05/2026/007', status: 'active', sn: 'OLD-1', radioId: '2001', date: '2026-05-02', p2Name: 'X', itemName: 'HT' };
+        const H = BAST_COLUMNS.map(([h]) => h + (BAST_REQUIRED.includes(BAST_COLUMNS.find(c => c[0] === h)[1]) ? ' *' : ''));
+        const R = o => BAST_COLUMNS.map(([, f]) => o[f] !== undefined ? o[f] : ({ date: '2026-06-30', companyCode: 'GPA', place: 'PT. Global Papua Abadi', itemCode: 'HT',
+            p1Name: 'Herbaruna D. Rexadona', p1Title: 'Regional Head GPA', p1Rep: 'PT. Global Papua Abadi', p2Name: 'R A Herbaruna Dahana Rexadona', p2Title: 'Regional Head', p2Dept: 'Agri',
+            itemName: 'Handy Talky (HT Hytera)', brandType: 'Radio HT HP508 GPS Support', qty: 1, unit: 'Set', condition: 'Baru/Baik', witness1: 'R A Herbaruna Dahana Rexadona', witness2: 'Monti Griana' })[f] || '');
+        const rows = [H,
+            R({ sn: '25D05C0567', radioId: '1009', batterySn: '25D0505220' }),                              // 2: in Warehouse → allocated, auto number
+            R({ sn: 'NEW-HT-2', radioId: '1010', p2Name: 'Andi', deviceType: 'HT' }),                         // 3: new device, auto number
+            R({ no: 'GPA/BAST-RIG/06/2026/015', itemCode: 'RIG', itemName: 'RIG Mobile', sn: 'RIG-77', p2Name: 'Citra' }),   // 4: manual number, re-allocated
+            R({ sn: 'new-ht-2 ', p2Name: 'Dobel' }),                                                          // 5: same S/N as row 3
+            R({ sn: 'NEW-HT-9', p2Name: '' }),                                                                // 6: no recipient
+            R({ sn: 'NEW-HT-10', radioId: '2001' }),                                                          // 7: Radio ID in an active letter
+            R({ no: 'GPA/BAST-HT/05/2026/007', sn: 'NEW-HT-11' }),                                            // 8: number already used
+            R({ sn: 'NEW-HT-12', date: '2099-01-01', unit: 'Box' }),                                          // 9: future date, bad unit
+            ['', '', '']];                                                                                    // blank row: skipped
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Petunjuk']]), 'Petunjuk'); XLSX.utils.book_append_sheet(wb, ws, 'BAST');
+        const file = () => new File([XLSX.write(wb, { type: 'array', bookType: 'xlsx' })], 'bast.xlsx');
+        navigateTo('bast'); await tick();
+        await importBastFile({ target: { files: [file()] } }); await tick();
+        const imp = () => _bastImport.rows.map(r => [r.row, r.errors.length ? r.errors : 'ok']);
+        t('import: the dialog opens with every row checked', document.getElementById('bastImportModal').classList.contains('open'), true);
+        const got = imp();
+        t('import: valid rows ready', got.filter(([, e]) => e === 'ok').map(([r]) => r), [2, 3, 4]);
+        t('import: dobel di file ditolak', got.find(([r]) => r === 5)[1], ['S/N Unit new-ht-2 is also on row 3 of this file']);
+        t('import: kolom wajib kosong ditolak', got.find(([r]) => r === 6)[1], ['Pihak Kedua - Nama is empty']);
+        t('import: Radio ID di BAST aktif ditolak', got.find(([r]) => r === 7)[1], ['Radio ID DMR 2001 is already in active letter GPA/BAST-HT/05/2026/007']);
+        t('import: nomor surat yang sudah dipakai ditolak', got.find(([r]) => r === 8)[1], ['No Surat GPA/BAST-HT/05/2026/007 is already in letter GPA/BAST-HT/05/2026/007']);
+        t('import: tanggal masa depan, satuan salah', got.find(([r]) => r === 9)[1], ['Tanggal is in the future', 'Satuan must be one of: Set, Unit, Pcs']);
+        t('import: the Warehouse column says what happens', [...document.querySelectorAll('#bastImportBody tr')].slice(0, 3).map(tr => tr.children[4].textContent),
+            ['HT — In Warehouse → Allocated', 'New device (Allocated)', 'RIG Mobile — Allocated → Allocated']);
+        await runBastImport(); await tick();
+        const made = _bastImport.rows.filter(r => r.done).map(r => r.done);
+        t('import: numbers — automatic per PT + kode + year, manual kept', made, ['GPA/BAST-HT/06/2026/001', 'GPA/BAST-HT/06/2026/002', 'GPA/BAST-RIG/06/2026/015']);
+        const ht1 = warehouseDevices.find(d => d.id === 'dev_ht1');
+        t('warehouse: device found by S/N is now allocated to Pihak Kedua', [ht1.status, ht1.recipientName, ht1.recipientTitle, ht1.division, ht1.allocatedAt, ht1.radioId, ht1.batterySn, ht1.bastNo, ht1.location],
+            ['allocated', 'R A Herbaruna Dahana Rexadona', 'Regional Head', 'Agri', '2026-06-30', '1009', '25D0505220', 'GPA/BAST-HT/06/2026/001', '']);
+        const nd = warehouseDevices.find(d => d.sn === 'NEW-HT-2');
+        t('warehouse: an S/N not in Warehouse becomes a new allocated device', nd && [nd.type, nd.status, nd.recipientName, nd.model], ['HT', 'allocated', 'Andi', 'Radio HT HP508 GPS Support']);
+        const rig = warehouseDevices.find(d => d.id === 'dev_rig');
+        t('warehouse: re-allocated device keeps the earlier allocation in its history', [rig.recipientName, rig.allocationHistory.map(h => [h.recipientName, h.returnedAt])], ['Citra', [['Budi', '2026-06-30']]]);
+        pushSnap(); await tick();
+        t('page: the letters are listed (active)', [...document.querySelectorAll('#bastBody tr td:nth-child(2)')].map(td => td.textContent).sort(),
+            ['GPA/BAST-HT/05/2026/007', 'GPA/BAST-HT/06/2026/001', 'GPA/BAST-HT/06/2026/002', 'GPA/BAST-RIG/06/2026/015']);
+        // The same file again: nothing is made twice.
+        await importBastFile({ target: { files: [file()] } }); await tick();
+        t('import again: every row refused, nothing ready', [_bastImport.rows.filter(r => !r.errors.length).length, document.getElementById('bastImportGo').disabled], [0, true]);
+        t('import again: refused because the S/N already has an active letter', _bastImport.rows[0].errors, ['S/N Unit 25D05C0567 is already in active letter GPA/BAST-HT/06/2026/001',
+            'Radio ID DMR 1009 is already in active letter GPA/BAST-HT/06/2026/001', 'S/N Baterai 25D0505220 is already in active letter GPA/BAST-HT/06/2026/001']);
+        closeBastImport();
+        // A race (another device made it meanwhile) is refused by the server and said so.
+        S.keys[key('sn', 'RACE-1')] = 'bast_old';
+        _bastImport = { rows: [{ row: 2, rec: bastRecFromRow(R({ sn: 'RACE-1' }), Object.fromEntries(BAST_COLUMNS.map(([, f], i) => [f, i]))).rec, errors: [] }] };
+        document.getElementById('bastImportModal').classList.add('open');
+        await runBastImport();
+        t('import: a clash found by the server is listed, not lost', _bastImport.rows[0].errors, ['S/N Unit is already in letter GPA/BAST-HT/05/2026/007']);
+        closeBastImport();
+
+        // ---- print ----
+        const id1 = Object.values(S.bast).find(x => x.no === 'GPA/BAST-HT/06/2026/001').id;
+        window.__printed = 0;
+        printBast([id1]);
+        const pg = document.querySelector('#bastPrint .bast-page');
+        const txt = pg.textContent.replace(/\s+/g, ' ');
+        t('pdf: one A4 page with the letter', [document.querySelectorAll('#bastPrint .bast-page').length, window.__printed], [1, 1]);
+        t('pdf: header and opening line', [pg.querySelector('.bast-title').textContent, /Nomor : GPA\/BAST-HT\/06\/2026\/001/.test(txt),
+            txt.includes('Pada hari ini, Selasa tanggal 30 Juni 2026, bertempat di PT. Global Papua Abadi, telah dilakukan serah terima aset perusahaan berupa Handy Talky (HT Hytera) dari:')],
+            ['BERITA ACARA SERAH TERIMA HANDY TALKY (HT HYTERA)', true, true]);
+        t('pdf: details and signatures', ['Radio HT HP508 GPS Support', '1009', '25D05C0567', '25D0505220', 'Baru/Baik', 'MENGETAHUI', 'Monti Griana'].every(s => txt.includes(s)), true);
+        printBast(Object.keys(S.bast));
+        t('pdf: several letters, one page each', document.querySelectorAll('#bastPrint .bast-page').length, 4);
+
+        // ---- returned / cancelled ----
+        await endBastPrompt(id1, 'returned'); pushSnap(); await tick();
+        t('returned: the letter ends and the device is back in the warehouse', [S.bast[id1].status, ht1.status === undefined ? warehouseDevices.find(d => d.id === 'dev_ht1').status : warehouseDevices.find(d => d.id === 'dev_ht1').status,
+            warehouseDevices.find(d => d.id === 'dev_ht1').allocationHistory.slice(-1)[0].recipientName], ['returned', 'warehouse', 'R A Herbaruna Dahana Rexadona']);
+        t('returned: the S/N may get a new letter, the number never again', [!!S.keys[key('sn', '25D05C0567')], !!S.keys[key('no', 'GPA/BAST-HT/06/2026/001')]], [false, true]);
+
+        // ---- from an allocated device ----
+        warehouseDevices.push({ id: 'dev_rig2', sn: 'RIG-88', type: 'RIG Mobile', brand: 'Motorola', model: 'XiR M8668', status: 'allocated', division: 'Transport', recipientName: 'Dedi', recipientTitle: 'Driver', allocatedAt: '2026-11-01', allocationHistory: [] });
+        showDeviceProfile('dev_rig2'); await tick();
+        const mk = [...document.querySelectorAll('#deviceProfileBody button')].find(x => /Make BAST/.test(x.textContent));
+        t('device: an allocated device without a letter offers "Make BAST"', !!mk, true);
+        mk.click(); await tick();
+        const v = id => document.getElementById('bast_' + id).value;
+        t('device: the form is filled from the device', [v('sn'), v('itemCode'), v('p2Name'), v('p2Title'), v('p2Dept'), v('date'), v('brandType')],
+            ['RIG-88', 'RIG', 'Dedi', 'Driver', 'Transport', '2026-11-01', 'Motorola XiR M8668']);
+        ['companyCode', 'place', 'p1Name', 'p1Title', 'p1Rep', 'itemName'].forEach(f => { document.getElementById('bast_' + f).value = { companyCode: 'GPA', place: 'PT. Global Papua Abadi', p1Name: 'A', p1Title: 'B', p1Rep: 'C', itemName: 'RIG Mobile' }[f]; });
+        window.__printed = 0;
+        await saveBastForm(); await tick();
+        const rigB = Object.values(S.bast).find(x => x.sn === 'RIG-88');
+        t('device: the letter is made and numbered', rigB && rigB.no, 'GPA/BAST-RIG/11/2026/001');
+        pushSnap(); await tick();
+        showDeviceProfile('dev_rig2'); await tick();
+        t('device: its profile now names the letter', /GPA\/BAST-RIG\/11\/2026\/001/.test(document.getElementById('deviceProfileBody').textContent), true);
+        closeDeviceProfile();
+        // Warehouse takes it off its allocation: the letter is returned (the device saved by Warehouse itself).
+        editDevice('dev_rig2'); await tick();
+        document.getElementById('devStatus').value = 'warehouse'; onDeviceStatusChange();
+        document.getElementById('devReturnedAt').value = '2026-11-20';
+        const ends0 = S.ends.length;
+        saveDevice({ preventDefault() {} }); await tick(80);
+        t('warehouse: device back from allocation returns its letter', [S.ends.slice(ends0).map(e => [e[1], e[2], e[3]]), S.bast[rigB.id].status], [[['returned', '2026-11-20', false]], 'returned']);
+        return T;
+    });
+
+    let pass = 0;
+    T.forEach(x => { if (x.pass) pass++; else console.log('FAIL', x.n, '\n  got   :', JSON.stringify(x.g), '\n  wanted:', JSON.stringify(x.w)); });
+    if (errors.length) console.log('PAGE ERRORS:', errors);
+    console.log(`${pass}/${T.length} lulus`);
+    await b.close();
+    process.exit(pass === T.length && !errors.length ? 0 : 1);
+})();

@@ -593,6 +593,18 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.46.0 — BAST (Berita Acara Serah Terima)** (`bast.js`, dijaga
+  `tests/bast_test.js` dan `tests/bast_rules_test.js`): menu baru *BAST* untuk
+  owner dan editor Warehouse. Import Excel (`templates/Format_Import_BAST.xlsx`,
+  satu baris = satu BAST) dengan pemeriksaan per baris, atau buat satu BAST dari
+  form / dari device Allocated di Warehouse. No surat otomatis
+  `<PT>/BAST-<KODE>/<MM>/<YYYY>/<urut>` (urut per PT + kode + tahun). Tidak bisa
+  dobel: no surat, S/N unit, Radio ID dan S/N baterai punya kunci sekali-buat di
+  Firestore (`bastKeys`, transaksi bersama surat). Tersambung ke Warehouse: S/N
+  yang ada jadi Allocated ke Pihak Kedua, S/N baru jadi device baru; BAST
+  *Returned* mengembalikan device ke gudang, device yang dilepas dari alokasi
+  mengembalikan BAST-nya. PDF lewat cetak (A4, format surat). **Perlu publish
+  ulang `firestore.rules`.**
   **2.45.4 — gambar pengganti di semua jalur**: foto yang dipulihkan dari
   Storage (dokumen fotonya hilang) dan gagal dimuat juga tampil sebagai
   gambar pengganti dan tetap tersimpan di tempatnya. Cache foto (laporan

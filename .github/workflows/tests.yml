@@ -51,3 +51,5 @@ jobs:
         run: npx firebase emulators:exec --only firestore --project demo-ot "node tests/rules_test.js"
       - name: Storage rules
         run: npx firebase emulators:exec --only firestore,storage --project demo-ot "node tests/storage_rules_test.js"
+      - name: BAST rules
+        run: npx firebase emulators:exec --only firestore --project demo-ot "node tests/bast_rules_test.js"
