@@ -187,6 +187,11 @@ const { launch, BASE_URL } = require('./_env');
         document.getElementById('devReturnedAt').value = '2026-11-20';
         const ends0 = S.ends.length;
         saveDevice({ preventDefault() {} }); await tick(80);
+        showDeviceProfile('dev_ht1'); await tick();
+        const histTxt = document.getElementById('deviceProfileBody').textContent;
+        t('history: the device profile lists its BAST letters, returned ones too', [/BAST history\s*1/.test(histTxt), /GPA\/BAST-HT\/06\/2026\/001/.test(histTxt), /Returned/.test(histTxt)], [true, true, true]);
+        t('history: the allocation row names its BAST', warehouseDevices.find(d => d.id === 'dev_ht1').allocationHistory.slice(-1)[0].bastNo, 'GPA/BAST-HT/06/2026/001');
+        closeDeviceProfile();
         t('warehouse: device back from allocation returns its letter', [S.ends.slice(ends0).map(e => [e[1], e[2], e[3]]), S.bast[rigB.id].status], [[['returned', '2026-11-20', false]], 'returned']);
 
         // (the Warehouse snapshot would bring the saved device back; the stub does not)

@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.46.2';
+const APP_VERSION = 'v2.46.3';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -21473,7 +21473,7 @@ function _devDays(from, to) {
 function deviceAllocationRows(d) {
     const rows = (Array.isArray(d.allocationHistory) ? d.allocationHistory : []).map(h => ({ ...h, current: false }));
     if (d.status === 'allocated') rows.push({ division: d.division || '', recipientName: d.recipientName || '',
-        recipientTitle: d.recipientTitle || '', allocatedAt: d.allocatedAt || '', returnedAt: '', current: true });
+        recipientTitle: d.recipientTitle || '', allocatedAt: d.allocatedAt || '', returnedAt: '', bastNo: d.bastNo || '', current: true });
     // Newest first.
     return rows.reverse();
 }
@@ -21490,7 +21490,7 @@ function showDeviceProfile(id) {
     const hist = allocs.length ? `
         <div class="table-wrapper" style="max-height:none">
         <table class="data-table dev-alloc-table">
-            <thead><tr><th>Division</th><th>Recipient</th><th>Position</th><th>Allocated</th><th>Returned</th><th>Duration</th></tr></thead>
+            <thead><tr><th>Division</th><th>Recipient</th><th>Position</th><th>Allocated</th><th>Returned</th><th>Duration</th><th>BAST</th></tr></thead>
             <tbody>${allocs.map(h => `<tr${h.current ? ' class="dev-alloc--current"' : ''}>
                 <td data-label="Division">${esc(h.division) || dash}</td>
                 <td data-label="Recipient">${esc(h.recipientName) || dash}</td>
@@ -21499,6 +21499,7 @@ function showDeviceProfile(id) {
                 <td data-label="Returned">${h.current ? '<span class="wh-status wh-status--allocated"><span class="wh-dot wh-dot--allocated" aria-hidden="true"></span>Still allocated</span>'
                     : (h.returnedAt ? escapeHtml(fpShortDate(h.returnedAt)) : dash)}</td>
                 <td data-label="Duration">${escapeHtml(_devDays(h.allocatedAt, h.current ? today : h.returnedAt)) || dash}</td>
+                <td data-label="BAST">${esc(h.bastNo) || dash}</td>
             </tr>`).join('')}</tbody>
         </table></div>`
         : '<p class="adm-muted">This device has never been allocated to a division.</p>';
@@ -21523,7 +21524,23 @@ function showDeviceProfile(id) {
         <div class="wh-photos wh-photos--view" id="devProfilePhotos">${d.photoIds.map((pid, i) =>
             `<button type="button" class="wh-photo" data-photo="${escapeHtml(pid)}" aria-label="Open photo ${i + 1}" onclick="openWhPhotos(${escapeHtml(JSON.stringify(d.photoIds))}, ${i})"><span class="wh-photo__wait">Loading…</span></button>`).join('')}</div>` : ''}
         <h4 class="dev-alloc-title">Allocation history <span class="team-tab__count">${allocs.length}</span></h4>
-        ${hist}`;
+        ${hist}
+        ${typeof bastHistoryOfDevice === 'function' && hasAccess('warehouse', 'edit') ? (() => {
+            const bl = bastHistoryOfDevice(d);
+            return `<h4 class="dev-alloc-title">BAST history <span class="team-tab__count">${bl.length}</span></h4>` + (bl.length ? `
+        <div class="table-wrapper" style="max-height:none">
+        <table class="data-table dev-alloc-table">
+            <thead><tr><th>No Surat</th><th>Date</th><th>Recipient</th><th>Status</th><th>Ended</th><th></th></tr></thead>
+            <tbody>${bl.map(b => `<tr${b.status === 'active' ? ' class="dev-alloc--current"' : ''}>
+                <td data-label="No Surat"><b>${esc(b.no)}</b></td>
+                <td data-label="Date">${b.date ? escapeHtml(fpShortDate(b.date)) : dash}</td>
+                <td data-label="Recipient">${esc(b.p2Name) || dash}<div class="adm-sub">${esc([b.p2Title, b.p2Dept].filter(Boolean).join(' · '))}</div></td>
+                <td data-label="Status"><span class="bast-status bast-status--${esc(b.status)}">${esc(BAST_STATUS[b.status] || b.status)}</span></td>
+                <td data-label="Ended">${b.endedAt ? escapeHtml(fpShortDate(b.endedAt)) : dash}${b.endReason ? `<div class="adm-sub">${esc(b.endReason)}</div>` : ''}</td>
+                <td><button type="button" class="btn btn-secondary btn-sm" onclick="printBast(['${esc(b.id)}'])"><i class="fas fa-file-pdf" aria-hidden="true"></i> PDF</button></td>
+            </tr>`).join('')}</tbody>
+        </table></div>` : '<p class="adm-muted">No BAST for this device yet.</p>');
+        })() : ''}`;
     const edit = document.getElementById('deviceProfileEdit');
     if (edit) {
         edit.style.display = hasAccess('warehouse', 'edit') ? '' : 'none';
@@ -21603,7 +21620,7 @@ function saveDevice(event) {
         if (!returnedAt) { showToast('Fill in the return date', 'warning'); return; }
         if (existing.allocatedAt && returnedAt < existing.allocatedAt) { showToast('The return date is before the allocation date', 'warning'); return; }
         if (returnedAt > toISODate()) { showToast('The return date cannot be in the future', 'warning'); return; }
-        allocationHistory.push({ division: existing.division || '', recipientName: existing.recipientName || '',
+        allocationHistory.push({ bastNo: existing.bastNo || '', division: existing.division || '', recipientName: existing.recipientName || '',
             recipientTitle: existing.recipientTitle || '', allocatedAt: existing.allocatedAt || '', returnedAt });
         allocationHistory = allocationHistory.slice(-20);
     }

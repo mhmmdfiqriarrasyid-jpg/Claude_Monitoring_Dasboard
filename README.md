@@ -593,6 +593,11 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.46.3 — riwayat BAST per unit**: profil device di Warehouse menampilkan
+  *BAST history* (semua surat unit itu — Active, Returned, Cancelled — dengan
+  tanggal, penerima, tanggal selesai/alasan, dan PDF), dan kolom BAST di
+  *Allocation history* menyebut nomor surat tiap alokasi. Surat tidak pernah
+  dihapus (hanya owner yang bisa), jadi riwayatnya tetap utuh.
   **2.46.2 — BAST untuk device yang sudah Allocated sebelumnya**: tombol
   *Allocated without BAST* di menu BAST mengekspor semua device Allocated yang
   belum punya BAST aktif ke format Excel, sudah terisi dari Warehouse

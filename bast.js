@@ -155,7 +155,7 @@ function bastDevicePatch(cur, b) {
     const d = cur || {};
     const hist = Array.isArray(d.allocationHistory) ? d.allocationHistory.slice() : [];
     if (d.status === 'allocated' && (d.recipientName || d.division) && d.recipientName !== b.p2Name)
-        hist.push({ division: d.division || '', recipientName: d.recipientName || '', recipientTitle: d.recipientTitle || '', allocatedAt: d.allocatedAt || '', returnedAt: b.date });
+        hist.push({ division: d.division || '', recipientName: d.recipientName || '', recipientTitle: d.recipientTitle || '', allocatedAt: d.allocatedAt || '', returnedAt: b.date, bastNo: d.bastNo || '' });
     const patch = {
         status: 'allocated', division: b.p2Dept, recipientName: b.p2Name, recipientTitle: b.p2Title, allocatedAt: b.date,
         location: '', unitId: '', unitName: '', posX: '', posY: '',
@@ -176,7 +176,7 @@ function bastDeviceReturn(cur, b) {
     if (b.status === 'void') return { bastId: '', bastNo: '', updatedAt: Date.now() };
     if (cur.status !== 'allocated') return { bastId: '', bastNo: '', updatedAt: Date.now() };
     const hist = (Array.isArray(cur.allocationHistory) ? cur.allocationHistory.slice() : []).concat([{ division: cur.division || '', recipientName: cur.recipientName || '',
-        recipientTitle: cur.recipientTitle || '', allocatedAt: cur.allocatedAt || '', returnedAt: b.endedAt || toISODate() }]).slice(-20);
+        recipientTitle: cur.recipientTitle || '', allocatedAt: cur.allocatedAt || '', returnedAt: b.endedAt || toISODate(), bastNo: b.no || '' }]).slice(-20);
     return { status: 'warehouse', division: '', recipientName: '', recipientTitle: '', allocatedAt: '', allocationHistory: hist, bastId: '', bastNo: '', updatedAt: Date.now() };
 }
 
@@ -457,6 +457,13 @@ function bastDeviceLeft(device, date) {
     if (!device || !device.bastId) return;
     const b = bastList.find(x => x.id === device.bastId && x.status === 'active');
     if (b) bastEnd(b, 'returned', date || toISODate(), 'Device changed in Warehouse', { noDevice: true, quiet: true });
+}
+// Every letter of a device (any status), newest first — its BAST history (2.46.3).
+function bastHistoryOfDevice(device) {
+    if (!device) return [];
+    const n = _bastNorm(device.sn);
+    return bastList.filter(b => b.deviceId === device.id || (n && _bastNorm(b.sn) === n))
+        .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || (b.createdAt || 0) - (a.createdAt || 0));
 }
 // The active letter of a device, if any.
 function bastOfDevice(device) {
