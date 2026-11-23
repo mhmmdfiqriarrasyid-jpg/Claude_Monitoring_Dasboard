@@ -2455,6 +2455,7 @@
             </div>
             <div class="page-head__actions">
                 <a class="btn btn-secondary" href="templates/Format_Import_BAST.xlsx" download><i class="fas fa-download" aria-hidden="true"></i> Excel format</a>
+                <button type="button" class="btn btn-secondary" onclick="exportBastAllocated()" title="Allocated Warehouse devices that have no BAST yet, filled into the Excel format"><i class="fas fa-file-export" aria-hidden="true"></i> Allocated without BAST <span class="team-tab__count" id="bastAllocCount">0</span></button>
                 <button type="button" class="btn btn-secondary" onclick="openBastImport()"><i class="fas fa-file-import" aria-hidden="true"></i> Import Excel</button>
                 <button type="button" class="btn btn-primary" onclick="showBastForm()"><i class="fas fa-plus" aria-hidden="true"></i> New BAST</button>
                 <input type="file" id="bastImportInput" accept=".xlsx,.xls" hidden onchange="importBastFile(event)">

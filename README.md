@@ -593,6 +593,12 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.46.2 — BAST untuk device yang sudah Allocated sebelumnya**: tombol
+  *Allocated without BAST* di menu BAST mengekspor semua device Allocated yang
+  belum punya BAST aktif ke format Excel, sudah terisi dari Warehouse
+  (penerima, jabatan, departemen, tanggal alokasi, S/N, baterai, Radio ID,
+  barang) dan dari BAST terakhir (PT, Pihak Pertama). Lengkapi, lalu import:
+  device tetap Allocated ke penerima yang sama dan tersambung ke BAST-nya.
   **2.46.1 — PDF BAST tanpa header/footer browser**: halaman BAST dicetak
   tanpa margin halaman (jarak tepi jadi padding di dalam halaman), sehingga
   tanggal, judul dan alamat web dari browser tidak ikut tercetak.

@@ -188,6 +188,35 @@ const { launch, BASE_URL } = require('./_env');
         const ends0 = S.ends.length;
         saveDevice({ preventDefault() {} }); await tick(80);
         t('warehouse: device back from allocation returns its letter', [S.ends.slice(ends0).map(e => [e[1], e[2], e[3]]), S.bast[rigB.id].status], [[['returned', '2026-11-20', false]], 'returned']);
+
+        // (the Warehouse snapshot would bring the saved device back; the stub does not)
+        Object.assign(warehouseDevices.find(d => d.id === 'dev_rig2'), { status: 'warehouse', bastId: '', bastNo: '' });
+        // ---- devices allocated before BAST: export, complete, import ----
+        warehouseDevices.push({ id: 'dev_old1', sn: 'HT-OLD-1', type: 'HT', brand: 'Hytera', model: 'HP508', radioId: '3001', batterySn: 'BAT-OLD-1', status: 'allocated',
+            division: 'Agri', recipientName: 'Eko', recipientTitle: 'Asisten', allocatedAt: '2026-03-10', allocationHistory: [] });
+        renderBastView();
+        t('allocated without BAST: counted on the page', document.getElementById('bastAllocCount').textContent, '1');
+        let written = null;
+        const realWrite = XLSX.writeFile;
+        XLSX.writeFile = (wbk, name) => { written = { wbk, name }; };
+        localStorage.setItem(BAST_PREF_KEY, JSON.stringify({ companyCode: 'GPA', place: 'PT. Global Papua Abadi', p1Name: 'Herbaruna D. Rexadona', p1Title: 'Regional Head GPA', p1Rep: 'PT. Global Papua Abadi' }));
+        await exportBastAllocated();
+        XLSX.writeFile = realWrite;
+        const exRows = XLSX.utils.sheet_to_json(written.wbk.Sheets.BAST, { header: 1, defval: '' });
+        const col = h => exRows[0].findIndex(x => String(x).replace(/\s*\*$/, '') === h);
+        t('allocated without BAST: one row per device, filled from Warehouse and the last letter',
+            [exRows.length - 1, exRows[1][col('S/N Unit')], exRows[1][col('Pihak Kedua - Nama')], exRows[1][col('Pihak Kedua - Jabatan')], exRows[1][col('Pihak Kedua - Departemen')],
+             exRows[1][col('Tanggal')], exRows[1][col('Radio ID DMR')], exRows[1][col('S/N Baterai')], exRows[1][col('Kode Barang')], exRows[1][col('Kode PT')], exRows[1][col('Merk / Type')]],
+            [1, 'HT-OLD-1', 'Eko', 'Asisten', 'Agri', '2026-03-10', '3001', 'BAT-OLD-1', 'HT', 'GPA', 'Hytera HP508']);
+        const xfile = new File([XLSX.write(written.wbk, { type: 'array', bookType: 'xlsx' })], 'x.xlsx');
+        await importBastFile({ target: { files: [xfile] } }); await tick();
+        t('allocated without BAST: the exported file imports as is', _bastImport.rows.map(r => r.errors), [[]]);
+        await runBastImport(); closeBastImport(); pushSnap(); await tick();
+        const old1 = warehouseDevices.find(d => d.id === 'dev_old1');
+        t('allocated without BAST: same recipient, same date, linked, no extra history', [old1.status, old1.recipientName, old1.allocatedAt, !!old1.bastNo, old1.allocationHistory.length],
+            ['allocated', 'Eko', '2026-03-10', true, 0]);
+        renderBastView();
+        t('allocated without BAST: none left', [document.getElementById('bastAllocCount').textContent, bastAllocatedWithout().map(d => d.sn)], ['0', []]);
         return T;
     });
 

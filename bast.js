@@ -234,6 +234,8 @@ function renderBastView() {
         : `<tr><td colspan="8" class="adm-muted" style="text-align:center;padding:24px">${bastList.length ? 'No letter matches.' : 'No BAST yet — import the Excel format or make one from an allocated device.'}</td></tr>`;
     const cnt = document.getElementById('bastCount');
     if (cnt) cnt.textContent = `${rows.length} letter(s)`;
+    const ac = document.getElementById('bastAllocCount');
+    if (ac) ac.textContent = bastAllocatedWithout().length;
 }
 function setBastStatus(s) { _bastStatus = s; renderBastView(); }
 function bastPicked() { return [...document.querySelectorAll('#bastBody .bast-pick:checked')].map(i => i.value); }
@@ -330,6 +332,56 @@ async function runBastImport() {
     showToast(made.length ? `${made.length} BAST made` : 'No BAST made', made.length ? 'success' : 'warning');
 }
 function printBastImported() { if (_bastLastIds.length) printBast(_bastLastIds); }
+
+// ---- Devices allocated before BAST existed (2.46.2) ----
+// The allocated Warehouse devices that have no active letter, as rows of the import format,
+// filled from the device (recipient, date, S/N, battery, Radio ID, item). The person adds
+// what Warehouse does not know (PIHAK PERTAMA, PT, witnesses), then imports the file.
+function bastAllocatedWithout() {
+    return (typeof warehouseDevices !== 'undefined' ? warehouseDevices : [])
+        .filter(d => d && d.status === 'allocated' && d.sn && !bastOfDevice(d))
+        .sort((a, b) => String(a.allocatedAt || '').localeCompare(String(b.allocatedAt || '')) || String(a.sn).localeCompare(String(b.sn)));
+}
+function bastRowOfDevice(d, last) {
+    const code = /\bHT\b|handy/i.test(d.type || '') ? 'HT' : /rig/i.test(d.type || '') ? 'RIG' : '';
+    const v = {
+        no: '', date: d.allocatedAt || '', companyCode: last.companyCode || '', place: last.place || '', itemCode: code,
+        p1Name: last.p1Name || '', p1Title: last.p1Title || '', p1Rep: last.p1Rep || '',
+        p2Name: d.recipientName || '', p2Title: d.recipientTitle || '', p2Dept: d.division || '',
+        itemName: d.type || '', brandType: [d.brand, d.model].filter(Boolean).join(' '), radioId: d.radioId || '', sn: d.sn || '', batterySn: d.batterySn || '',
+        qty: 1, unit: 'Set', condition: 'Baik', witness1: last.witness1 || '', witness2: last.witness2 || '', deviceType: d.type || '', title: '', note: ''
+    };
+    return BAST_COLUMNS.map(([, f]) => v[f]);
+}
+async function exportBastAllocated() {
+    if (!canUseBast()) return;
+    const list = bastAllocatedWithout();
+    if (!list.length) { showToast('Every allocated device already has an active BAST', 'info'); return; }
+    let last = {};
+    try { last = JSON.parse(localStorage.getItem(BAST_PREF_KEY) || '{}') || {}; } catch (_) { last = {}; }
+    try {
+        const XLSX = await loadSheetJs();
+        const head = BAST_COLUMNS.map(([h, f]) => h + (BAST_REQUIRED.includes(f) ? ' *' : ''));
+        const ws = XLSX.utils.aoa_to_sheet([head].concat(list.map(d => bastRowOfDevice(d, last))));
+        ws['!cols'] = head.map(h => ({ wch: Math.max(12, Math.min(34, h.length + 4)) }));
+        const info = XLSX.utils.aoa_to_sheet([
+            ['Device Allocated tanpa BAST — dari Warehouse'],
+            [''],
+            ['1. Lengkapi kolom yang masih kosong di sheet BAST (terutama Kode PT, Nama PT / Lokasi, Kode Barang, Pihak Pertama, Mengetahui).'],
+            ['2. Periksa data yang terisi dari Warehouse (penerima, jabatan, departemen, tanggal alokasi, S/N).'],
+            ['3. Import file ini di menu BAST. Nomor surat dibuat otomatis; device tetap Allocated ke penerima yang sama dan tersambung ke BAST-nya.'],
+            ['Baris yang tidak ingin dibuatkan BAST: hapus barisnya.']]);
+        info['!cols'] = [{ wch: 120 }];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, info, 'Petunjuk');
+        XLSX.utils.book_append_sheet(wb, ws, 'BAST');
+        XLSX.writeFile(wb, `BAST_Allocated_tanpa_BAST_${toISODate()}.xlsx`);
+        showToast(`${list.length} allocated device(s) without BAST exported — complete the file, then import it`, 'success');
+    } catch (err) {
+        console.error('[bast] export failed:', err);
+        showToast('The Excel file could not be made', 'error');
+    }
+}
 
 // ---- One letter by hand (also from an allocated device) ----
 const BAST_PREF_KEY = 'otBastLastParties';
