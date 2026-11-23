@@ -11771,13 +11771,15 @@ tr.tw-hide { display: none !important; }
 .bast-err { color: #b91c1c; font-size: 12.5px; }
 /* The letters on paper: one A4 page each (only #bastPrint is printed). */
 #bastPrint { display: none; }
-@page bastA4 { size: A4; margin: 15mm 20mm 14mm; @bottom-left { content: none; } @bottom-right { content: none; } @top-left { content: none; } @top-right { content: none; } }
+/* 2.46.1: no page margin — the browser's own header and footer (date, title, address) then
+   have no room and are left out; the letter's margins are padding inside the page. */
+@page bastA4 { size: A4; margin: 0; @bottom-left { content: none; } @bottom-right { content: none; } @top-left { content: none; } @top-right { content: none; } }
 @media print {
     body.bast-printing > *:not(#bastPrint) { display: none !important; }
     body.bast-printing { background: #fff !important; }
     body.bast-printing #bastPrint { display: block !important; }
 }
-.bast-page { page: bastA4; font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.32; color: #000; break-after: page; }
+.bast-page { page: bastA4; box-sizing: border-box; width: 210mm; height: 296mm; overflow: hidden; padding: 15mm 20mm 14mm; font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.32; color: #000; break-after: page; }
 .bast-page:last-child { break-after: auto; }
 .bast-page p { margin: 0 0 7pt; text-align: justify; }
 .bast-title { font-size: 13pt; font-weight: 700; text-align: center; text-decoration: underline; margin: 0 0 4pt; }

@@ -593,6 +593,9 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.46.1 — PDF BAST tanpa header/footer browser**: halaman BAST dicetak
+  tanpa margin halaman (jarak tepi jadi padding di dalam halaman), sehingga
+  tanggal, judul dan alamat web dari browser tidak ikut tercetak.
   **2.46.0 — BAST (Berita Acara Serah Terima)** (`bast.js`, dijaga
   `tests/bast_test.js` dan `tests/bast_rules_test.js`): menu baru *BAST* untuk
   owner dan editor Warehouse. Import Excel (`templates/Format_Import_BAST.xlsx`,
