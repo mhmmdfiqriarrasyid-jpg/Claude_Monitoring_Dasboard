@@ -593,6 +593,12 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.46.6 — reset penomoran BAST**: tombol *Reset numbering* (owner saja)
+  menghapus surat Cancelled, melepas nomor yang tidak dipegang surat mana pun,
+  dan mengatur ulang penghitung ke nomor tertinggi surat Active/Returned yang
+  tersisa (001 kalau tidak ada surat). Nomor yang masih dipakai surat tidak
+  pernah dilepas, jadi tetap tidak bisa dobel. **Perlu publish ulang
+  `firestore.rules`.**
   **2.46.5 — hapus BAST yang Cancelled**: owner (Super Admin) bisa menghapus
   surat yang dibatalkan di tab *Cancelled* — yang dicentang, atau semuanya.
   Surat Active/Returned tidak bisa dihapus (riwayat serah terima). Nomor surat

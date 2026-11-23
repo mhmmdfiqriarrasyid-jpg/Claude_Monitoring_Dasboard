@@ -76,6 +76,13 @@ function make(db, b, extra) {
     await check('the S/N gets a new letter after the return', make(W, letter('bast_12', 'GPA/BAST-HT/11/2026/001', '25D05C0567')), true);
     await check('only the owner deletes a letter', deleteDoc(doc(W, 'bast', 'bast_12')), false);
 
+    // ---- reset numbering (owner only, 2.46.6) ----
+    await check('reset: a Warehouse editor cannot release a number key', deleteDoc(doc(W, 'bastKeys', key('no', 'GPA/BAST-HT/06/2026/011'))), false);
+    await check('reset: nor set a counter back', setDoc(doc(W, 'bastSeq', 'GPA_HT_2026'), { last: 1, updatedAt: 9 }), false);
+    await check('reset: the owner releases a number key', deleteDoc(doc(O, 'bastKeys', key('no', 'X/1'))), true);
+    await check('reset: the owner sets a counter back', setDoc(doc(O, 'bastSeq', 'GPA_HT_2026'), { last: 2, updatedAt: 9 }), true);
+    await check('reset: the owner removes a counter', (async () => { await setDoc(doc(O, 'bastSeq', 'TMP_HT_2026'), { last: 5 }); return deleteDoc(doc(O, 'bastSeq', 'TMP_HT_2026')); })(), true);
+
     // ---- the app's own transaction (firebase-init.js createBast) ----
     const tx = (db, rec, prefix, seqKey) => runTransaction(db, async t => {
         const out = { ...rec };

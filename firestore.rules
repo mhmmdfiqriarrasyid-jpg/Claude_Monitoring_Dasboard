@@ -568,14 +568,17 @@ service cloud.firestore {
         && request.resource.data.get('bastId', '') is string
         && id == bastKeyOf(request.resource.data.field, request.resource.data.value);
       allow update: if false;
-      allow delete: if canEditArea('warehouse') && resource.data.get('field', '') != 'no';
+      // 2.46.6: the owner may also release a number key (Reset numbering — only keys of
+      // letters that no longer exist; the app never releases a number a letter still holds).
+      allow delete: if (canEditArea('warehouse') && resource.data.get('field', '') != 'no') || isOwner();
     }
     match /bastSeq/{id} {
       allow read: if canEditArea('warehouse');
       allow create: if canEditArea('warehouse') && request.resource.data.get('last', 0) is int && request.resource.data.get('last', 0) >= 1;
-      allow update: if canEditArea('warehouse') && request.resource.data.get('last', 0) is int
-        && request.resource.data.get('last', 0) > resource.data.get('last', 0);
-      allow delete: if false;
+      allow update: if (canEditArea('warehouse') && request.resource.data.get('last', 0) is int
+        && request.resource.data.get('last', 0) > resource.data.get('last', 0))
+        || (isOwner() && request.resource.data.get('last', 0) is int && request.resource.data.get('last', 0) >= 1);
+      allow delete: if isOwner();
     }
     match /stockItems/{id} { allow read: if isActive(); allow delete: if canEditArea('warehouse');
                              allow create, update: if canEditArea('warehouse') && idMatches(id); }

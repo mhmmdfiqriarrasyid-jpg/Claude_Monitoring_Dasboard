@@ -210,6 +210,15 @@ const { launch, BASE_URL } = require('./_env');
         as({ uid: 'w', role: 'staff', status: 'active', access: { warehouse: 'edit' } }); renderBastView();
         t('cancelled: a Warehouse editor gets no delete buttons', document.getElementById('bastDelAll').style.display, 'none');
         as(OWNER); setBastStatus('active');
+        // ---- reset numbering (owner) ----
+        let resets = 0;
+        window.cloud.resetBastNumbers = () => { resets++; return Promise.resolve({ cancelled: 0, released: 3, counters: 2 }); };
+        t('reset: the owner sees "Reset numbering"', document.getElementById('bastResetNo').style.display, '');
+        await resetBastNumbering(); await tick();
+        t('reset: runs after confirming', resets, 1);
+        as({ uid: 'w', role: 'staff', status: 'active', access: { warehouse: 'edit' } }); renderBastView();
+        t('reset: a Warehouse editor does not see it', document.getElementById('bastResetNo').style.display, 'none');
+        as(OWNER); renderBastView();
         // (the Warehouse snapshot would bring the saved device back; the stub does not)
         Object.assign(warehouseDevices.find(d => d.id === 'dev_rig2'), { status: 'warehouse', bastId: '', bastNo: '' });
         // ---- devices allocated before BAST: export, complete, import ----

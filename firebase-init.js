@@ -1616,6 +1616,33 @@ window.cloud = {
     async deleteBasts(ids) {
         await batchInChunks(ids || [], (batch, id) => batch.delete(doc(db, BAST_COL, id)));
     },
+    // 2.46.6: the owner resets the numbering — cancelled letters are removed, every key of a
+    // letter that no longer exists is released, and each counter goes back to the highest number
+    // a remaining letter holds (or away, so the next number is 001). A number still on a letter
+    // is never released, so nothing can be numbered twice.
+    async resetBastNumbers() {
+        const letters = await getDocs(collection(db, BAST_COL));
+        const cancelled = letters.docs.filter(d => d.data().status === 'void').map(d => d.id);
+        await batchInChunks(cancelled, (batch, id) => batch.delete(doc(db, BAST_COL, id)));
+        const live = letters.docs.filter(d => d.data().status !== 'void').map(d => d.data());
+        const liveIds = new Set(letters.docs.filter(d => d.data().status !== 'void').map(d => d.id));
+        const keys = await getDocs(collection(db, BAST_KEYS_COL));
+        const drop = keys.docs.filter(k => !liveIds.has(k.data().bastId)).map(k => k.id);
+        await batchInChunks(drop, (batch, id) => batch.delete(doc(db, BAST_KEYS_COL, id)));
+        const top = new Map();
+        live.forEach(b => {
+            const y = String(b.date || '').slice(0, 4), m = /\/(\d+)$/.exec(String(b.no || ''));
+            if (!m || !b.companyCode || !b.itemCode) return;
+            const k = `${b.companyCode}_${b.itemCode}_${y}`;
+            top.set(k, Math.max(top.get(k) || 0, Number(m[1])));
+        });
+        const seqs = await getDocs(collection(db, BAST_SEQ_COL));
+        await batchInChunks(seqs.docs, (batch, d) => {
+            if (top.get(d.id)) batch.set(d.ref, { last: top.get(d.id), updatedAt: Date.now() });
+            else batch.delete(d.ref);
+        });
+        return { cancelled: cancelled.length, released: drop.length, counters: seqs.size };
+    },
     // rec: the letter (rec.no '' = numbered here). opts: { prefix, seqKey } for the number;
     // device: { id, make(current, letter) → fields } to allocate the unit in Warehouse.
     async createBast(rec, opts) {
