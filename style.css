@@ -11758,7 +11758,8 @@ tr.tw-hide { display: none !important; }
 
 /* ===== BAST — Berita Acara Serah Terima (2.46.0) ===== */
 .bast-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 12px 0; }
-.bast-toolbar .lc-search { flex: 1 1 260px; }
+.bast-toolbar .adm-search { flex: 1 1 260px; max-width: 420px; }
+.bast-del { color: #b91c1c; }
 .bast-actions { white-space: nowrap; }
 .bast-actions .btn + .btn { margin-left: 4px; }
 .bast-status { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }

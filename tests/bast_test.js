@@ -199,13 +199,25 @@ const { launch, BASE_URL } = require('./_env');
         closeDeviceProfile();
         t('warehouse: device back from allocation returns its letter', [S.ends.slice(ends0).map(e => [e[1], e[2], e[3]]), S.bast[rigB.id].status], [[['returned', '2026-11-20', false]], 'returned']);
 
+        // ---- cancelled letters: the owner deletes them (picked or all) ----
+        const delCalls = [];
+        window.cloud.deleteBasts = ids => { delCalls.push(ids.slice()); ids.forEach(id => { delete S.bast[id]; }); return ok(); };
+        const vid = Object.values(S.bast).find(x => x.status === 'active' && x.no === 'GPA/BAST-HT/06/2026/002').id;
+        await endBastPrompt(vid, 'void'); pushSnap(); setBastStatus('void'); await tick();
+        t('cancelled: delete buttons for the owner on the Cancelled tab', ['bastDelPicked', 'bastDelAll'].map(id => document.getElementById(id).style.display), ['', '']);
+        await deleteBasts([vid, id1]); pushSnap(); await tick();
+        t('cancelled: only cancelled letters are deleted (a returned one is kept)', [delCalls, !!S.bast[id1], !!S.keys[key('no', 'GPA/BAST-HT/06/2026/002')]], [[[vid]], true, true]);
+        as({ uid: 'w', role: 'staff', status: 'active', access: { warehouse: 'edit' } }); renderBastView();
+        t('cancelled: a Warehouse editor gets no delete buttons', document.getElementById('bastDelAll').style.display, 'none');
+        as(OWNER); setBastStatus('active');
         // (the Warehouse snapshot would bring the saved device back; the stub does not)
         Object.assign(warehouseDevices.find(d => d.id === 'dev_rig2'), { status: 'warehouse', bastId: '', bastNo: '' });
         // ---- devices allocated before BAST: export, complete, import ----
         warehouseDevices.push({ id: 'dev_old1', sn: 'HT-OLD-1', type: 'HT', brand: 'Hytera', model: 'HP508', radioId: '3001', batterySn: 'BAT-OLD-1', status: 'allocated',
             division: 'Agri', recipientName: 'Eko', recipientTitle: 'Asisten', allocatedAt: '2026-03-10', allocationHistory: [] });
         renderBastView();
-        t('allocated without BAST: counted on the page', document.getElementById('bastAllocCount').textContent, '1');
+        // (the cancelled letter's device is still allocated, so it counts too)
+        t('allocated without BAST: counted on the page', document.getElementById('bastAllocCount').textContent, '2');
         let written = null;
         const realWrite = XLSX.writeFile;
         XLSX.writeFile = (wbk, name) => { written = { wbk, name }; };
@@ -217,10 +229,10 @@ const { launch, BASE_URL } = require('./_env');
         t('allocated without BAST: one row per device, filled from Warehouse and the last letter',
             [exRows.length - 1, exRows[1][col('S/N Unit')], exRows[1][col('Pihak Kedua - Nama')], exRows[1][col('Pihak Kedua - Jabatan')], exRows[1][col('Pihak Kedua - Departemen')],
              exRows[1][col('Tanggal')], exRows[1][col('Radio ID DMR')], exRows[1][col('S/N Baterai')], exRows[1][col('Kode Barang')], exRows[1][col('Kode PT')], exRows[1][col('Merk / Type')]],
-            [1, 'HT-OLD-1', 'Eko', 'Asisten', 'Agri', '2026-03-10', '3001', 'BAT-OLD-1', 'HT', 'GPA', 'Hytera HP508']);
+            [2, 'HT-OLD-1', 'Eko', 'Asisten', 'Agri', '2026-03-10', '3001', 'BAT-OLD-1', 'HT', 'GPA', 'Hytera HP508']);
         const xfile = new File([XLSX.write(written.wbk, { type: 'array', bookType: 'xlsx' })], 'x.xlsx');
         await importBastFile({ target: { files: [xfile] } }); await tick();
-        t('allocated without BAST: the exported file imports as is', _bastImport.rows.map(r => r.errors), [[]]);
+        t('allocated without BAST: the exported file imports as is', _bastImport.rows.map(r => r.errors), [[], []]);
         await runBastImport(); closeBastImport(); pushSnap(); await tick();
         const old1 = warehouseDevices.find(d => d.id === 'dev_old1');
         t('allocated without BAST: same recipient, same date, linked, no extra history', [old1.status, old1.recipientName, old1.allocatedAt, !!old1.bastNo, old1.allocationHistory.length],

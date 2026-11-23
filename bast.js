@@ -235,12 +235,38 @@ function renderBastView() {
         : `<tr><td colspan="8" class="adm-muted" style="text-align:center;padding:24px">${bastList.length ? 'No letter matches.' : 'No BAST yet — import the Excel format or make one from an allocated device.'}</td></tr>`;
     const cnt = document.getElementById('bastCount');
     if (cnt) cnt.textContent = `${rows.length} letter(s)`;
+    // 2.46.5: the owner may remove cancelled letters (picked, or all of them).
+    const canDel = typeof isOwner === 'function' && isOwner() && _bastStatus === 'void';
+    ['bastDelPicked', 'bastDelAll'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = canDel && count('void') ? '' : 'none'; });
     const ac = document.getElementById('bastAllocCount');
     if (ac) ac.textContent = bastAllocatedWithout().length;
 }
 function setBastStatus(s) { _bastStatus = s; renderBastView(); }
 function bastPicked() { return [...document.querySelectorAll('#bastBody .bast-pick:checked')].map(i => i.value); }
 function bastToggleAll(on) { document.querySelectorAll('#bastBody .bast-pick').forEach(i => { i.checked = on; }); }
+// ---- Removing cancelled letters (owner only, 2.46.5) ----
+// A cancelled letter was a mistake (wrong recipient, wrong data) and never in force. It is kept
+// as a record until the owner removes it; its number is never given out again either way.
+async function deleteBasts(ids) {
+    if (!(typeof isOwner === 'function' && isOwner())) { showToast('Only the Super Admin can delete letters', 'warning'); return; }
+    const list = ids.map(id => bastList.find(b => b.id === id)).filter(b => b && b.status === 'void');
+    if (!list.length) { showToast('Only cancelled letters can be deleted — tick them in the Cancelled tab', 'warning'); return; }
+    if (!confirm(`Delete ${list.length} cancelled letter(s) for good?\n\n${list.slice(0, 8).map(b => b.no).join('\n')}${list.length > 8 ? `\n… and ${list.length - 8} more` : ''}\n\nTheir numbers are not used again.`)) return;
+    try {
+        await window.cloud.deleteBasts(list.map(b => b.id));
+        list.forEach(b => { if (typeof logEvent === 'function') logEvent({ action: 'delete', unitId: '', unitName: `[BAST] ${b.no}`, field: 'Cancelled letter', before: `${b.p2Name} · ${b.sn}` }); });
+        showToast(`${list.length} cancelled letter(s) deleted`, 'success');
+    } catch (err) {
+        console.error('[bast] delete failed:', err);
+        showToast(err && err.code === 'permission-denied' ? 'Only the Super Admin can delete letters' : 'Failed to delete', 'error');
+    }
+}
+function deleteBastPicked() {
+    const ids = bastPicked();
+    if (!ids.length) { showToast('Tick the cancelled letters to delete first', 'warning'); return; }
+    deleteBasts(ids);
+}
+function deleteBastAllCancelled() { deleteBasts(bastList.filter(b => b.status === 'void').map(b => b.id)); }
 function printBastPicked() {
     const ids = bastPicked();
     if (!ids.length) { showToast('Tick the letters to print first', 'warning'); return; }

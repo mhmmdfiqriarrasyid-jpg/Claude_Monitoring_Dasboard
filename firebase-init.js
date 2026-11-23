@@ -1611,6 +1611,11 @@ window.cloud = {
         });
     },
     bastKey(field, value) { return _bastKey(field, value); },
+    // 2.46.5: the owner removes cancelled letters (firestore.rules: delete is owner-only). Their
+    // number keys stay in bastKeys, so a removed letter's number is still never used again.
+    async deleteBasts(ids) {
+        await batchInChunks(ids || [], (batch, id) => batch.delete(doc(db, BAST_COL, id)));
+    },
     // rec: the letter (rec.no '' = numbered here). opts: { prefix, seqKey } for the number;
     // device: { id, make(current, letter) → fields } to allocate the unit in Warehouse.
     async createBast(rec, opts) {

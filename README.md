@@ -593,6 +593,10 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.46.5 — hapus BAST yang Cancelled**: owner (Super Admin) bisa menghapus
+  surat yang dibatalkan di tab *Cancelled* — yang dicentang, atau semuanya.
+  Surat Active/Returned tidak bisa dihapus (riwayat serah terima). Nomor surat
+  yang dihapus tetap tidak dipakai lagi. Kotak pencarian BAST dirapikan.
   **2.46.4 — tanda tangan BAST**: satu "MENGETAHUI" di tengah, sampai tiga
   penanda tangan dengan jabatannya (format Excel dan form: *Mengetahui 1/2/3 -
   Nama* dan *- Jabatan*; file lama tetap bisa diimpor). Pihak Pertama dan Kedua
