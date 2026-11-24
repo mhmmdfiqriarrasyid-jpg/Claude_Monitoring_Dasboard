@@ -20,6 +20,16 @@
 - Rules: run `tests/rules_test.js` in the Firestore emulator; Storage rules with
   `tests/storage_rules_test.js` (see README).
 
+## Model per job (cheap for light work, strong for heavy work)
+Agents in `.claude/agents/`, each with its own model. Hand work to them instead of doing it in the
+main session when it fits:
+- `runner` (Haiku): run test suites and report the FAIL lines. Use it for every routine test run.
+- `explorer` (Haiku): find code, list callers, summarise files or logs. Read-only.
+- `reviewer` (Opus): security rules, data-loss risks, adversarial review, feature design. Read-only.
+Keep in the main session (or `reviewer`): anything touching firestore.rules / storage.rules, photo
+and data paths, money or access. Never let a cheap agent edit those. A cheap agent's finding that
+leads to a change is checked before acting on it.
+
 ## Cloud Functions
 - Code in `functions/`; the owner deploys from Cloud Shell (`functions/README.md`).
 
