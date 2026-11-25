@@ -317,10 +317,17 @@ async function importBastFile(event) {
         rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: '' });
     } catch (err) {
         console.error('[bast] import read failed:', err);
-        showToast('This file could not be read', 'error');
+        showToast(/NotReadable|could not be read|permission/i.test(String(err && (err.name || err.message)))
+            ? 'This file could not be read — close it in Excel first, then import again' : 'This file could not be read', 'error');
         return;
     }
-    bastPreview(rows);
+    // 2.47.3: anything that goes wrong after reading is said, not swallowed (and lands in the Error log).
+    try { bastPreview(rows); }
+    catch (err) {
+        console.error('[bast] import check failed:', err);
+        if (typeof reportClientError === 'function') reportClientError('bast-import', (err && err.message) || String(err), err && err.stack, '');
+        showToast(`Import stopped: ${(err && err.message) || err} — send this message to the admin`, 'error');
+    }
 }
 // rows: the sheet as arrays (first row = headers).
 function bastPreview(rows) {
