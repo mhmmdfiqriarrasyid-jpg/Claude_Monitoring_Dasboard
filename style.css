@@ -11812,3 +11812,12 @@ tr.tw-hide { display: none !important; }
 .dev-tl__head { margin-bottom: 1px; }
 .dev-tl__head .wh-status { margin-left: 6px; font-size: 11.5px; }
 .dev-tl__docs { margin-top: 3px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+/* 2.47.2 — tidier return dialog */
+.ret-dialog { max-width: 560px; }
+.ret-summary { display: grid; gap: 8px; margin: 0 0 14px; max-height: 220px; overflow: auto; }
+.ret-item { border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 10px 12px; background: var(--surface-1, #f8fafc); font-size: 13.5px; line-height: 1.45; }
+.ret-item__dev { font-size: 14px; }
+.ret-item__who, .ret-item__doc { color: var(--text-secondary, #475569); }
+.ret-letter .notif-check { font-weight: 500; }
+.ret-letter .form-hint { display: block; margin-top: 2px; }

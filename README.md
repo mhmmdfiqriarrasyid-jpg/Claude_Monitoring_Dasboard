@@ -593,6 +593,11 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.47.2 — dialog Return dirapikan + nama pengembali**: kartu ringkasan
+  device (pemegang, divisi, sejak, BAST), kolom wajib *Returned by* (otomatis
+  nama pemegang, bisa diganti kalau orang lain yang mengantar). Nama pengembali
+  tercatat di History device, di BAST, dan di surat pengembalian (Pihak Pertama;
+  kalau bukan pemegangnya, ditulis "Atas nama" pemegang).
   **2.47.1 — tanggal kembali dipilih sendiri**: di dialog Return tanggalnya
   kosong dan wajib diisi (bukan otomatis hari ini), karena pengisian sering
   dilakukan beberapa hari setelah barang kembali; tidak boleh sebelum tanggal

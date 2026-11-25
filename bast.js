@@ -605,8 +605,13 @@ function returnDevicePrompt(ids) {
     document.getElementById('retTitle').textContent = list.length === 1 ? `Return ${list[0].type || 'device'} · ${list[0].sn}` : `Return ${list.length} devices`;
     document.getElementById('retList').innerHTML = list.map(d => {
         const b = bastOfDevice(d);
-        return `<li><b>${esc(d.type || 'Device')} · ${esc(d.sn)}</b> — ${esc(d.recipientName || '')}${d.division ? ` (${esc(d.division)})` : ''}${d.allocatedAt ? ` since ${esc(d.allocatedAt)}` : ''}${b ? ` · BAST ${esc(b.no)}` : ' · no BAST'}</li>`;
+        return `<div class="ret-item"><div class="ret-item__dev"><b>${esc(d.type || 'Device')}</b> <span class="adm-mono">${esc(d.sn)}</span></div>
+            <div class="ret-item__who">Held by <b>${esc(d.recipientName || '—')}</b>${d.division ? ` · ${esc(d.division)}` : ''}${d.allocatedAt ? ` · since ${esc(fpShortDate(d.allocatedAt))}` : ''}</div>
+            <div class="ret-item__doc">${b ? `BAST ${esc(b.no)}` : '<span class="adm-muted">No BAST</span>'}</div></div>`;
     }).join('');
+    // 2.47.2: who brings it back — the holder by default (one device), anyone else typed in.
+    const holders = [...new Set(list.map(d => d.recipientName).filter(Boolean))];
+    document.getElementById('retBy').value = holders.length === 1 ? holders[0] : '';
     // 2.47.1: no default — the return is often filed days later, so the date is always chosen.
     const rd = document.getElementById('retDate');
     rd.value = ''; rd.max = toISODate();
@@ -627,7 +632,7 @@ function closeDeviceReturn() { document.getElementById('devReturnModal').classLi
 function deviceReturnPatch(cur, r) {
     const hist = (Array.isArray(cur.allocationHistory) ? cur.allocationHistory.slice() : []).concat([Object.assign({
         division: cur.division || '', recipientName: cur.recipientName || '', recipientTitle: cur.recipientTitle || '', allocatedAt: cur.allocatedAt || '',
-        returnedAt: r.date, returnCondition: r.condition, returnNote: r.note, returnedBy: r.by
+        returnedAt: r.date, returnCondition: r.condition, returnNote: r.note, returnedBy: r.by, returnerName: r.returner || ''
     }, cur.bastNo ? { bastNo: cur.bastNo } : {}, r.returnNo ? { returnNo: r.returnNo } : {})]).slice(-20);
     return { status: RET_DAMAGED.includes(r.condition) ? 'damaged' : 'warehouse', division: '', recipientName: '', recipientTitle: '', allocatedAt: '',
         allocationHistory: hist, bastId: '', bastNo: '', updatedAt: Date.now() };
@@ -638,8 +643,10 @@ async function saveDeviceReturn(event) {
     const date = bastDate(document.getElementById('retDate').value);
     const condition = document.getElementById('retCondition').value;
     const note = _bastTxt(document.getElementById('retNote').value, 300);
+    const returner = _bastTxt(document.getElementById('retBy').value, 120);
     const wantLetter = document.getElementById('retLetter').checked;
     const devs = _retIds.map(id => warehouseDevices.find(d => d.id === id)).filter(Boolean);
+    if (!returner) { showToast('Fill in who returned it', 'warning'); document.getElementById('retBy').focus(); return; }
     if (!date) { showToast('Choose the date the device actually came back', 'warning'); document.getElementById('retDate').focus(); return; }
     if (date > toISODate()) { showToast('The return date cannot be in the future', 'warning'); return; }
     if (devs.some(d => d.allocatedAt && date < d.allocatedAt)) { showToast('The return date is before the allocation date', 'warning'); return; }
@@ -651,9 +658,9 @@ async function saveDeviceReturn(event) {
     try {
         for (const d of devs) {
             const b = bastOfDevice(d);
-            const r = { date, condition, note, by: _bastMe(), returnNo: b && wantLetter ? bastReturnNo(b) : '' };
+            const r = { date, condition, note, returner, by: _bastMe(), returnNo: b && wantLetter ? bastReturnNo(b) : '' };
             if (b && b.deviceId === d.id) {
-                const extra = { returnCondition: condition, returnNote: note, returnBy: r.by, returnNo: r.returnNo, returnLetter: !!r.returnNo };
+                const extra = { returnCondition: condition, returnNote: note, returnBy: r.by, returnerName: returner, returnNo: r.returnNo, returnLetter: !!r.returnNo };
                 const out = await window.cloud.endBast(b.id, { status: 'returned', date, reason: note, by: r.by, extra,
                     device: cur => (cur && cur.status === 'allocated' ? deviceReturnPatch(cur, r) : null) });
                 if (r.returnNo) letters.push(Object.assign({}, b, out));
@@ -662,7 +669,7 @@ async function saveDeviceReturn(event) {
                 if (b) await bastEnd(b, 'returned', date, note, { noDevice: true, quiet: true });
             }
             if (typeof logEvent === 'function') logEvent({ action: 'update', unitId: '', unitName: `[Inventory] ${d.type || 'Device'} ${d.sn}`, field: 'Returned',
-                before: `${d.recipientName || ''}${d.division ? ' · ' + d.division : ''}`, after: `${date} · ${condition}${note ? ' · ' + note : ''}` });
+                before: `${d.recipientName || ''}${d.division ? ' · ' + d.division : ''}`, after: `${date} · by ${returner} · ${condition}${note ? ' · ' + note : ''}` });
             done++;
         }
         closeDeviceReturn();
@@ -690,6 +697,7 @@ function returnBastPicked() {
 // ---- Return letter (Berita Acara Pengembalian) ----
 function returnLetterHtml(b) {
     const esc = v => escapeHtml(v == null ? '' : String(v));
+    const rName = b.returnerName || b.p2Name, rSame = rName === b.p2Name;
     const kv = (k, v) => `<tr><td class="bast-k">${k}</td><td class="bast-c">:</td><td class="bast-v"><b>${esc(v)}</b></td></tr>`;
     const items = [['Nama Barang', b.itemName], ['Merk / Type', b.brandType], ['Radio ID DMR', b.radioId], ['S/N', b.sn], ['S/N Baterai', b.batterySn],
         ['Jumlah', b.qty], ['Satuan', b.unit], ['Kondisi saat kembali', b.returnCondition], ['Catatan', b.returnNote]].filter(([, v]) => v !== '' && v != null);
@@ -698,7 +706,7 @@ function returnLetterHtml(b) {
         <p class="bast-no">Nomor : ${esc(b.returnNo)}</p>
         <p>Pada hari ini, ${esc(bastDateText(b.endedAt))}, bertempat di ${esc(b.place)}, telah dilakukan pengembalian aset perusahaan berupa ${esc(b.itemName)} yang sebelumnya diserahkan dengan Berita Acara Serah Terima Nomor ${esc(b.no)}, dari:</p>
         <p class="bast-party"><b>PIHAK PERTAMA</b> (yang mengembalikan)</p>
-        <table class="bast-kv">${kv('Nama', b.p2Name)}${kv('Jabatan', b.p2Title)}${kv('Departemen', b.p2Dept)}</table>
+        <table class="bast-kv">${kv('Nama', rName)}${rSame ? kv('Jabatan', b.p2Title) : ''}${kv('Departemen', b.p2Dept)}${rSame ? '' : kv('Atas nama', b.p2Name)}</table>
         <p class="bast-party"><b>PIHAK KEDUA</b> (yang menerima)</p>
         <table class="bast-kv">${kv('Nama', b.p1Name)}${kv('Jabatan', b.p1Title)}${kv('Mewakili', b.p1Rep)}</table>
         <p>Dengan ini PIHAK PERTAMA mengembalikan kepada PIHAK KEDUA dan PIHAK KEDUA menerima kembali aset perusahaan dengan rincian sebagai berikut :</p>
@@ -707,7 +715,7 @@ function returnLetterHtml(b) {
         <div class="bast-sign">
             <div class="bast-sign__row"><div>PIHAK PERTAMA</div><div></div><div>PIHAK KEDUA</div></div>
             <div class="bast-sign__space"></div>
-            <div class="bast-sign__row">${bastSigner(b.p2Name, b.p2Title)}<div></div>${bastSigner(b.p1Name, b.p1Title)}</div>
+            <div class="bast-sign__row">${bastSigner(rName, rSame ? b.p2Title : '')}<div></div>${bastSigner(b.p1Name, b.p1Title)}</div>
             ${bastWitnessRow(b)}
         </div>
     </section>`;
@@ -753,7 +761,7 @@ function deviceTimelineHtml(d) {
             ev.push({ at: p.returnedAt, ord: i * 2 + 1, html: `<li class="dev-tl__item dev-tl__item--ret">
                 <span class="dev-tl__dot" aria-hidden="true"></span>
                 <div><div class="dev-tl__head"><b>Returned</b> ${esc(fpShortDate(p.returnedAt))} <span class="adm-sub">${esc(_devDays(p.allocatedAt, p.returnedAt))}</span></div>
-                <div>← ${p.returnCondition ? `condition <b>${esc(p.returnCondition)}</b>` : 'back in the warehouse'}${p.returnNote ? ` · ${esc(p.returnNote)}` : ''}${p.returnedBy ? ` <span class="adm-sub">by ${esc(p.returnedBy)}</span>` : ''}</div>
+                <div>← ${p.returnerName ? `by <b>${esc(p.returnerName)}</b> · ` : ''}${p.returnCondition ? `condition <b>${esc(p.returnCondition)}</b>` : 'back in the warehouse'}${p.returnNote ? ` · ${esc(p.returnNote)}` : ''}${p.returnedBy ? ` <span class="adm-sub">recorded by ${esc(p.returnedBy)}</span>` : ''}</div>
                 ${p.returnNo ? `<div class="dev-tl__docs">Return letter <b>${esc(p.returnNo)}</b> ${rb && canBast ? pdf('Return letter', `printReturnLetter('${esc(rb.id)}')`) : ''}</div>` : ''}</div></li>` });
         }
     });

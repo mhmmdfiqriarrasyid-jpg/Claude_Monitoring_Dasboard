@@ -256,6 +256,7 @@ const { launch, BASE_URL } = require('./_env');
         t('return: dialog opens for the allocated device, letter possible (it has a BAST)',
             [document.getElementById('devReturnModal').classList.contains('open'), document.getElementById('retLetter').disabled, /HT-OLD-1/.test(document.getElementById('retList').textContent)], [true, false, true]);
         t('return: the date starts empty (it is chosen, often days later)', document.getElementById('retDate').value, '');
+        t('return: "Returned by" starts with the holder', document.getElementById('retBy').value, 'Eko');
         const endsD = S.ends.length;
         document.getElementById('retCondition').value = 'Baik';
         await saveDeviceReturn();
@@ -267,6 +268,11 @@ const { launch, BASE_URL } = require('./_env');
         await saveDeviceReturn();
         t('return: damaged without a note is refused', [S.ends.length - endsR, document.getElementById('devReturnModal').classList.contains('open')], [0, true]);
         document.getElementById('retNote').value = 'Antena patah';
+        document.getElementById('retBy').value = '';
+        const endsB = S.ends.length;
+        await saveDeviceReturn();
+        t('return: without who returned it nothing happens', S.ends.length - endsB, 0);
+        document.getElementById('retBy').value = 'Budi (kurir)';
         document.getElementById('retLetter').checked = true;
         window.__printed = 0;
         await saveDeviceReturn(); await tick();
@@ -275,10 +281,11 @@ const { launch, BASE_URL } = require('./_env');
         t('return: device to Damaged, allocation in history with condition, note and return letter number',
             [o1.status, o1.recipientName, lastH.recipientName, lastH.returnCondition, lastH.returnNote, lastH.returnNo, lastH.bastNo],
             ['damaged', '', 'Eko', 'Rusak Ringan', 'Antena patah', oldB.no.replace('/BAST-', '/BAPB-'), oldB.no]);
+        t('return: who returned it is kept (history and letter)', [lastH.returnerName, S.bast[oldB.id].returnerName], ['Budi (kurir)', 'Budi (kurir)']);
         t('return: its BAST is Returned with the return details', [S.bast[oldB.id].status, S.bast[oldB.id].returnCondition, S.bast[oldB.id].returnNo], ['returned', 'Rusak Ringan', oldB.no.replace('/BAST-', '/BAPB-')]);
         const rl = document.querySelector('#bastPrint .bast-page').textContent.replace(/\s+/g, ' ');
         t('return letter: printed, numbered, names both letters and the condition',
-            [window.__printed, rl.includes('BERITA ACARA PENGEMBALIAN'), rl.includes(oldB.no.replace('/BAST-', '/BAPB-')), rl.includes(oldB.no), rl.includes('Antena patah'), rl.includes('Rusak Ringan')],
+            [window.__printed, rl.includes('BERITA ACARA PENGEMBALIAN'), rl.includes(oldB.no.replace('/BAST-', '/BAPB-')), rl.includes(oldB.no), rl.includes('Antena patah'), rl.includes('Rusak Ringan') && rl.includes('Budi (kurir)') && rl.includes('Atas nama')],
             [1, true, true, true, true, true]);
         pushSnap(); await tick();
         showDeviceProfile('dev_old1'); await tick();

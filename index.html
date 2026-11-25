@@ -3639,34 +3639,41 @@
     </div>
 </div>
 <div class="modal-overlay" id="devReturnModal">
-    <div class="modal-card" role="dialog" aria-labelledby="retTitle">
+    <div class="modal-card wh-dialog ret-dialog" role="dialog" aria-labelledby="retTitle">
         <div class="modal-header">
             <h3 id="retTitle">Return device</h3>
-            <button type="button" class="modal-close" onclick="closeDeviceReturn()" aria-label="Close"><i class="fas fa-times" aria-hidden="true"></i></button>
+            <button type="button" class="btn-icon" onclick="closeDeviceReturn()" aria-label="Close" title="Close"><i class="fas fa-xmark" aria-hidden="true"></i></button>
         </div>
         <form id="retForm" onsubmit="saveDeviceReturn(event)">
             <div class="modal-body">
-                <ul class="ret-list" id="retList"></ul>
+                <div class="ret-summary" id="retList"></div>
                 <div class="form-grid">
                     <div class="form-group">
-                        <label class="form-label" for="retDate">Return date <span class="form-optional">(the day it actually came back)</span></label>
-                        <input class="form-input" type="date" id="retDate">
+                        <label class="form-label" for="retBy">Returned by</label>
+                        <input class="form-input" id="retBy" maxlength="120" autocomplete="off" placeholder="Name of the person returning it">
                     </div>
                     <div class="form-group">
+                        <label class="form-label" for="retDate">Return date</label>
+                        <input class="form-input" type="date" id="retDate">
+                        <span class="form-hint">The day it actually came back.</span>
+                    </div>
+                    <div class="form-group full-width">
                         <label class="form-label" for="retCondition">Condition</label>
                         <select class="form-select" id="retCondition"><option>Baru/Baik</option><option>Baik</option><option>Bekas/Baik</option><option>Rusak Ringan</option><option>Rusak Berat</option></select>
                     </div>
+                    <div class="form-group full-width">
+                        <label class="form-label" for="retNote">Note <span class="form-optional">(required when damaged or something is missing)</span></label>
+                        <textarea class="form-input form-textarea" id="retNote" rows="2" maxlength="300" placeholder="e.g. antenna broken, charger missing"></textarea>
+                    </div>
+                    <div class="form-group full-width ret-letter">
+                        <label class="notif-check"><input type="checkbox" id="retLetter"> Make a return letter (Berita Acara Pengembalian, PDF)</label>
+                        <span class="form-hint" id="retLetterHint"></span>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label class="form-label" for="retNote">Note <span class="form-optional">(required when damaged or something is missing)</span></label>
-                    <textarea class="form-input" id="retNote" rows="2" maxlength="300" placeholder="e.g. antenna broken, charger missing"></textarea>
-                </div>
-                <label class="notif-check"><input type="checkbox" id="retLetter"> Make a return letter (Berita Acara Pengembalian, PDF)</label>
-                <p class="adm-muted" id="retLetterHint"></p>
             </div>
-            <div class="modal-footer">
+            <div class="form-actions">
                 <button type="button" class="btn btn-secondary" onclick="closeDeviceReturn()">Cancel</button>
-                <button type="submit" class="btn btn-primary" id="retSave">Confirm return</button>
+                <button type="submit" class="btn btn-primary" id="retSave"><i class="fas fa-rotate-left" aria-hidden="true"></i> Confirm return</button>
             </div>
         </form>
     </div>
