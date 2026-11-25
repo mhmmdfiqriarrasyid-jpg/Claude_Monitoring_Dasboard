@@ -229,7 +229,8 @@ function renderBastView() {
             <td data-label="Status"><span class="bast-status bast-status--${esc(b.status)}">${esc(BAST_STATUS[b.status] || b.status)}</span>${b.endedAt ? `<div class="adm-sub">${esc(b.endedAt)}</div>` : ''}</td>
             <td data-label="Actions" class="bast-actions">
                 <button type="button" class="btn btn-secondary btn-sm" onclick="printBast(['${esc(b.id)}'])"><i class="fas fa-file-pdf" aria-hidden="true"></i> PDF</button>
-                ${b.status === 'active' ? `<button type="button" class="btn btn-secondary btn-sm" onclick="endBastPrompt('${esc(b.id)}', 'returned')">Returned</button>
+                ${b.returnNo ? `<button type="button" class="btn btn-secondary btn-sm" onclick="printReturnLetter('${esc(b.id)}')" title="Berita Acara Pengembalian ${esc(b.returnNo)}"><i class="fas fa-file-pdf" aria-hidden="true"></i> Return</button>` : ''}
+                ${b.status === 'active' ? `<button type="button" class="btn btn-secondary btn-sm" onclick="returnFromBast('${esc(b.id)}')">Returned</button>
                 <button type="button" class="btn btn-secondary btn-sm" onclick="endBastPrompt('${esc(b.id)}', 'void')">Cancel</button>` : ''}
             </td></tr>`).join('')
         : `<tr><td colspan="8" class="adm-muted" style="text-align:center;padding:24px">${bastList.length ? 'No letter matches.' : 'No BAST yet — import the Excel format or make one from an allocated device.'}</td></tr>`;
@@ -581,4 +582,178 @@ function printBast(ids, extra) {
     window.addEventListener('afterprint', done);
     window.print();
     setTimeout(done, 1500);
+}
+
+// ============================================================
+// Return of allocated devices (2.47.0)
+// ------------------------------------------------------------
+// One small dialog (a device's "Return" button, or several letters ticked on the BAST page):
+// date, condition (the BAST list) and a note — required when the item comes back damaged or
+// incomplete. The device goes back to the warehouse (or to Damaged), the allocation goes into
+// its history with the return, and its active BAST is marked Returned. A return letter
+// (Berita Acara Pengembalian) is optional: numbered after its BAST (…/BAPB-<KODE>/…).
+// ============================================================
+let _retIds = [];
+const RET_DAMAGED = ['Rusak Ringan', 'Rusak Berat'];
+function bastReturnNo(b) { return String(b.no || '').replace('/BAST-', '/BAPB-'); }
+function returnDevicePrompt(ids) {
+    if (!canUseBast()) { showToast('Returning needs Warehouse edit access', 'warning'); return; }
+    const list = (Array.isArray(ids) ? ids : [ids]).map(id => warehouseDevices.find(d => d.id === id)).filter(d => d && d.status === 'allocated');
+    if (!list.length) { showToast('Only allocated devices can be returned', 'warning'); return; }
+    _retIds = list.map(d => d.id);
+    const esc = v => escapeHtml(v == null ? '' : String(v));
+    document.getElementById('retTitle').textContent = list.length === 1 ? `Return ${list[0].type || 'device'} · ${list[0].sn}` : `Return ${list.length} devices`;
+    document.getElementById('retList').innerHTML = list.map(d => {
+        const b = bastOfDevice(d);
+        return `<li><b>${esc(d.type || 'Device')} · ${esc(d.sn)}</b> — ${esc(d.recipientName || '')}${d.division ? ` (${esc(d.division)})` : ''}${d.allocatedAt ? ` since ${esc(d.allocatedAt)}` : ''}${b ? ` · BAST ${esc(b.no)}` : ' · no BAST'}</li>`;
+    }).join('');
+    document.getElementById('retDate').value = toISODate();
+    document.getElementById('retCondition').value = 'Baik';
+    document.getElementById('retNote').value = '';
+    const withBast = list.filter(d => bastOfDevice(d)).length;
+    const letter = document.getElementById('retLetter');
+    letter.checked = false;
+    letter.disabled = !withBast;
+    document.getElementById('retLetterHint').textContent = withBast
+        ? (withBast < list.length ? `For the ${withBast} device(s) with a BAST.` : 'Numbered after its BAST (…/BAPB-…).')
+        : 'Only for a device with a BAST — make its BAST first.';
+    document.getElementById('devReturnModal').classList.add('open');
+}
+function closeDeviceReturn() { document.getElementById('devReturnModal').classList.remove('open'); _retIds = []; }
+// The device fields a return sets; the allocation goes into the history with how it came back.
+function deviceReturnPatch(cur, r) {
+    const hist = (Array.isArray(cur.allocationHistory) ? cur.allocationHistory.slice() : []).concat([Object.assign({
+        division: cur.division || '', recipientName: cur.recipientName || '', recipientTitle: cur.recipientTitle || '', allocatedAt: cur.allocatedAt || '',
+        returnedAt: r.date, returnCondition: r.condition, returnNote: r.note, returnedBy: r.by
+    }, cur.bastNo ? { bastNo: cur.bastNo } : {}, r.returnNo ? { returnNo: r.returnNo } : {})]).slice(-20);
+    return { status: RET_DAMAGED.includes(r.condition) ? 'damaged' : 'warehouse', division: '', recipientName: '', recipientTitle: '', allocatedAt: '',
+        allocationHistory: hist, bastId: '', bastNo: '', updatedAt: Date.now() };
+}
+async function saveDeviceReturn(event) {
+    if (event) event.preventDefault();
+    if (!canUseBast() || !_retIds.length) return;
+    const date = bastDate(document.getElementById('retDate').value);
+    const condition = document.getElementById('retCondition').value;
+    const note = _bastTxt(document.getElementById('retNote').value, 300);
+    const wantLetter = document.getElementById('retLetter').checked;
+    const devs = _retIds.map(id => warehouseDevices.find(d => d.id === id)).filter(Boolean);
+    if (!date || date > toISODate()) { showToast('Enter the return date (not in the future)', 'warning'); return; }
+    if (devs.some(d => d.allocatedAt && date < d.allocatedAt)) { showToast('The return date is before the allocation date', 'warning'); return; }
+    if (RET_DAMAGED.includes(condition) && !note) { showToast('Describe the damage or what is missing in the note', 'warning'); document.getElementById('retNote').focus(); return; }
+    const btn = document.getElementById('retSave');
+    btn.disabled = true;
+    const letters = [];
+    let done = 0;
+    try {
+        for (const d of devs) {
+            const b = bastOfDevice(d);
+            const r = { date, condition, note, by: _bastMe(), returnNo: b && wantLetter ? bastReturnNo(b) : '' };
+            if (b && b.deviceId === d.id) {
+                const extra = { returnCondition: condition, returnNote: note, returnBy: r.by, returnNo: r.returnNo, returnLetter: !!r.returnNo };
+                const out = await window.cloud.endBast(b.id, { status: 'returned', date, reason: note, by: r.by, extra,
+                    device: cur => (cur && cur.status === 'allocated' ? deviceReturnPatch(cur, r) : null) });
+                if (r.returnNo) letters.push(Object.assign({}, b, out));
+            } else {
+                await window.cloud.saveDevice(Object.assign({ id: d.id }, deviceReturnPatch(d, r)));
+                if (b) await bastEnd(b, 'returned', date, note, { noDevice: true, quiet: true });
+            }
+            if (typeof logEvent === 'function') logEvent({ action: 'update', unitId: '', unitName: `[Inventory] ${d.type || 'Device'} ${d.sn}`, field: 'Returned',
+                before: `${d.recipientName || ''}${d.division ? ' · ' + d.division : ''}`, after: `${date} · ${condition}${note ? ' · ' + note : ''}` });
+            done++;
+        }
+        closeDeviceReturn();
+        showToast(`${done} device(s) returned${RET_DAMAGED.includes(condition) ? ' — marked Damaged' : ' to the warehouse'}`, 'success');
+        if (letters.length) printReturnLetters(letters);
+    } catch (err) {
+        console.error('[return] failed:', err);
+        showToast(`${done ? `${done} returned, then: ` : ''}${bastErrorText(err)}`, 'error');
+    } finally { btn.disabled = false; }
+}
+// The BAST page's "Returned" opens the same dialog for the letter's device(s).
+function returnFromBast(ids) {
+    const devIds = (Array.isArray(ids) ? ids : [ids]).map(id => bastList.find(b => b.id === id)).filter(b => b && b.status === 'active')
+        .map(b => (warehouseDevices.find(d => d.id === b.deviceId) || bastDeviceFor(b.sn) || {}).id).filter(Boolean);
+    if (devIds.length) returnDevicePrompt(devIds);
+    else if (!Array.isArray(ids)) endBastPrompt(ids, 'returned');   // no device in Warehouse: the letter alone
+    else showToast('None of the ticked letters has an allocated device', 'warning');
+}
+function returnBastPicked() {
+    const ids = bastPicked();
+    if (!ids.length) { showToast('Tick the active letters to return first', 'warning'); return; }
+    returnFromBast(ids);
+}
+
+// ---- Return letter (Berita Acara Pengembalian) ----
+function returnLetterHtml(b) {
+    const esc = v => escapeHtml(v == null ? '' : String(v));
+    const kv = (k, v) => `<tr><td class="bast-k">${k}</td><td class="bast-c">:</td><td class="bast-v"><b>${esc(v)}</b></td></tr>`;
+    const items = [['Nama Barang', b.itemName], ['Merk / Type', b.brandType], ['Radio ID DMR', b.radioId], ['S/N', b.sn], ['S/N Baterai', b.batterySn],
+        ['Jumlah', b.qty], ['Satuan', b.unit], ['Kondisi saat kembali', b.returnCondition], ['Catatan', b.returnNote]].filter(([, v]) => v !== '' && v != null);
+    return `<section class="bast-page">
+        <h1 class="bast-title">${esc(`BERITA ACARA PENGEMBALIAN ${String(b.itemName || '').toUpperCase()}`)}</h1>
+        <p class="bast-no">Nomor : ${esc(b.returnNo)}</p>
+        <p>Pada hari ini, ${esc(bastDateText(b.endedAt))}, bertempat di ${esc(b.place)}, telah dilakukan pengembalian aset perusahaan berupa ${esc(b.itemName)} yang sebelumnya diserahkan dengan Berita Acara Serah Terima Nomor ${esc(b.no)}, dari:</p>
+        <p class="bast-party"><b>PIHAK PERTAMA</b> (yang mengembalikan)</p>
+        <table class="bast-kv">${kv('Nama', b.p2Name)}${kv('Jabatan', b.p2Title)}${kv('Departemen', b.p2Dept)}</table>
+        <p class="bast-party"><b>PIHAK KEDUA</b> (yang menerima)</p>
+        <table class="bast-kv">${kv('Nama', b.p1Name)}${kv('Jabatan', b.p1Title)}${kv('Mewakili', b.p1Rep)}</table>
+        <p>Dengan ini PIHAK PERTAMA mengembalikan kepada PIHAK KEDUA dan PIHAK KEDUA menerima kembali aset perusahaan dengan rincian sebagai berikut :</p>
+        <table class="bast-kv bast-items">${items.map(([k, v]) => kv(k, v)).join('')}</table>
+        <p>Demikian Berita Acara Pengembalian ini dibuat dan ditandatangani oleh kedua belah pihak untuk dipergunakan sebagaimana mestinya.</p>
+        <div class="bast-sign">
+            <div class="bast-sign__row"><div>PIHAK PERTAMA</div><div></div><div>PIHAK KEDUA</div></div>
+            <div class="bast-sign__space"></div>
+            <div class="bast-sign__row">${bastSigner(b.p2Name, b.p2Title)}<div></div>${bastSigner(b.p1Name, b.p1Title)}</div>
+            ${bastWitnessRow(b)}
+        </div>
+    </section>`;
+}
+function printReturnLetters(list) {
+    if (!list.length) return;
+    let box = document.getElementById('bastPrint');
+    if (!box) { box = document.createElement('div'); box.id = 'bastPrint'; document.body.appendChild(box); }
+    box.innerHTML = list.map(returnLetterHtml).join('');
+    const old = document.title;
+    document.title = list.length === 1 ? `BAPB_${String(list[0].returnNo).replace(/[^A-Za-z0-9-]+/g, '_')}` : `BAPB_${list.length}_letters_${toISODate()}`;
+    document.body.classList.add('bast-printing');
+    const done = () => { document.body.classList.remove('bast-printing'); document.title = old; window.removeEventListener('afterprint', done); };
+    window.addEventListener('afterprint', done);
+    window.print();
+    setTimeout(done, 1500);
+}
+function printReturnLetter(bastId) {
+    const b = bastList.find(x => x.id === bastId);
+    if (b && b.returnNo) printReturnLetters([b]);
+}
+
+// ---- One timeline per device: allocated / returned, with its BAST and return letter ----
+function deviceTimelineHtml(d) {
+    const esc = v => escapeHtml(v == null ? '' : String(v));
+    const byNo = no => (no ? bastList.find(b => b.no === no) : null);
+    const pdf = (label, call) => `<button type="button" class="btn btn-secondary btn-sm" onclick="${call}"><i class="fas fa-file-pdf" aria-hidden="true"></i> ${label}</button>`;
+    const canBast = canUseBast();
+    const periods = (Array.isArray(d.allocationHistory) ? d.allocationHistory : []).map(h => Object.assign({}, h, { current: false }));
+    if (d.status === 'allocated') periods.push({ division: d.division, recipientName: d.recipientName, recipientTitle: d.recipientTitle, allocatedAt: d.allocatedAt, bastNo: d.bastNo, current: true });
+    const ev = [];
+    periods.forEach((p, i) => {
+        const b = byNo(p.bastNo) || (p.current ? bastOfDevice(d) : null);
+        const bastBit = b ? `BAST <b>${esc(b.no)}</b> ${canBast ? pdf('BAST', `printBast(['${esc(b.id)}'])`) : ''}`
+            : (p.bastNo ? `BAST <b>${esc(p.bastNo)}</b>` : (p.current && canBast ? `No BAST yet <button type="button" class="btn btn-secondary btn-sm" onclick="closeDeviceProfile(); showBastForm('${esc(d.id)}')"><i class="fas fa-file-signature" aria-hidden="true"></i> Make BAST</button>` : '<span class="adm-muted">No BAST</span>'));
+        ev.push({ at: p.allocatedAt || '', ord: i * 2, html: `<li class="dev-tl__item dev-tl__item--alloc${p.current ? ' is-current' : ''}">
+            <span class="dev-tl__dot" aria-hidden="true"></span>
+            <div><div class="dev-tl__head"><b>Allocated</b> ${p.allocatedAt ? esc(fpShortDate(p.allocatedAt)) : ''}${p.current ? ' <span class="wh-status wh-status--allocated">Still allocated</span>' : ''}</div>
+            <div>→ ${esc(p.recipientName) || '—'}${p.recipientTitle ? ` · ${esc(p.recipientTitle)}` : ''}${p.division ? ` · ${esc(p.division)}` : ''}</div>
+            <div class="dev-tl__docs">${bastBit}</div></div></li>` });
+        if (p.returnedAt) {
+            const rb = b && b.returnNo ? b : null;
+            ev.push({ at: p.returnedAt, ord: i * 2 + 1, html: `<li class="dev-tl__item dev-tl__item--ret">
+                <span class="dev-tl__dot" aria-hidden="true"></span>
+                <div><div class="dev-tl__head"><b>Returned</b> ${esc(fpShortDate(p.returnedAt))} <span class="adm-sub">${esc(_devDays(p.allocatedAt, p.returnedAt))}</span></div>
+                <div>← ${p.returnCondition ? `condition <b>${esc(p.returnCondition)}</b>` : 'back in the warehouse'}${p.returnNote ? ` · ${esc(p.returnNote)}` : ''}${p.returnedBy ? ` <span class="adm-sub">by ${esc(p.returnedBy)}</span>` : ''}</div>
+                ${p.returnNo ? `<div class="dev-tl__docs">Return letter <b>${esc(p.returnNo)}</b> ${rb && canBast ? pdf('Return letter', `printReturnLetter('${esc(rb.id)}')`) : ''}</div>` : ''}</div></li>` });
+        }
+    });
+    ev.sort((a, b) => String(b.at).localeCompare(String(a.at)) || b.ord - a.ord);
+    return `<h4 class="dev-alloc-title">History <span class="team-tab__count">${periods.length}</span></h4>` +
+        (ev.length ? `<ol class="dev-tl">${ev.map(e => e.html).join('')}</ol>` : '<p class="adm-muted">This device has never been allocated.</p>');
 }

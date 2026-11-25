@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.46.6';
+const APP_VERSION = 'v2.47.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -940,6 +940,7 @@ function setupEventListeners() {
 // further down this file and would be undefined at this point.
 const MODAL_CLOSERS = {
     bastImportModal: 'closeBastImport', bastFormModal: 'closeBastForm',   // 2.46.0
+    devReturnModal: 'closeDeviceReturn',                                  // 2.47.0
     unitModal:            'closeModal',
     historyModal:         'closeHistory',
     errorLogModal:        'closeErrorLog',
@@ -21363,6 +21364,7 @@ function renderDeviceTable() {
             <td data-label="Note" class="adm-note" title="${escapeHtml(d.note || '')}">${d.note ? `<span class="adm-clamp">${escapeHtml(d.note)}</span>` : dash}</td>
             <td class="col-actions">
                 ${canEdit ? `<div class="row-actions">
+                    ${d.status === 'allocated' && typeof returnDevicePrompt === 'function' ? `<button class="btn btn-secondary" title="Return to the warehouse" aria-label="Return device ${escapeHtml(d.sn || '')}" onclick="returnDevicePrompt(${jsArg(d.id)})"><i class="fas fa-rotate-left" aria-hidden="true"></i></button>` : ''}
                     <button class="btn btn-secondary" title="Edit" aria-label="Edit device ${escapeHtml(d.sn || '')}" onclick="editDevice(${jsArg(d.id)})"><i class="fas fa-pen" aria-hidden="true"></i></button>
                     <button class="btn btn-secondary" title="Delete" aria-label="Delete device ${escapeHtml(d.sn || '')}" onclick="deleteDevice(${jsArg(d.id)})"><i class="fas fa-trash" aria-hidden="true"></i></button>
                 </div>` : ''}
@@ -21523,24 +21525,7 @@ function showDeviceProfile(id) {
         ${(d.photoIds || []).length ? `<h4 class="dev-alloc-title">Photos <span class="team-tab__count">${d.photoIds.length}</span></h4>
         <div class="wh-photos wh-photos--view" id="devProfilePhotos">${d.photoIds.map((pid, i) =>
             `<button type="button" class="wh-photo" data-photo="${escapeHtml(pid)}" aria-label="Open photo ${i + 1}" onclick="openWhPhotos(${escapeHtml(JSON.stringify(d.photoIds))}, ${i})"><span class="wh-photo__wait">Loading…</span></button>`).join('')}</div>` : ''}
-        <h4 class="dev-alloc-title">Allocation history <span class="team-tab__count">${allocs.length}</span></h4>
-        ${hist}
-        ${typeof bastHistoryOfDevice === 'function' && hasAccess('warehouse', 'edit') ? (() => {
-            const bl = bastHistoryOfDevice(d);
-            return `<h4 class="dev-alloc-title">BAST history <span class="team-tab__count">${bl.length}</span></h4>` + (bl.length ? `
-        <div class="table-wrapper" style="max-height:none">
-        <table class="data-table dev-alloc-table">
-            <thead><tr><th>No Surat</th><th>Date</th><th>Recipient</th><th>Status</th><th>Ended</th><th></th></tr></thead>
-            <tbody>${bl.map(b => `<tr${b.status === 'active' ? ' class="dev-alloc--current"' : ''}>
-                <td data-label="No Surat"><b>${esc(b.no)}</b></td>
-                <td data-label="Date">${b.date ? escapeHtml(fpShortDate(b.date)) : dash}</td>
-                <td data-label="Recipient">${esc(b.p2Name) || dash}<div class="adm-sub">${esc([b.p2Title, b.p2Dept].filter(Boolean).join(' · '))}</div></td>
-                <td data-label="Status"><span class="bast-status bast-status--${esc(b.status)}">${esc(BAST_STATUS[b.status] || b.status)}</span></td>
-                <td data-label="Ended">${b.endedAt ? escapeHtml(fpShortDate(b.endedAt)) : dash}${b.endReason ? `<div class="adm-sub">${esc(b.endReason)}</div>` : ''}</td>
-                <td><button type="button" class="btn btn-secondary btn-sm" onclick="printBast(['${esc(b.id)}'])"><i class="fas fa-file-pdf" aria-hidden="true"></i> PDF</button></td>
-            </tr>`).join('')}</tbody>
-        </table></div>` : '<p class="adm-muted">No BAST for this device yet.</p>');
-        })() : ''}`;
+        ${typeof deviceTimelineHtml === 'function' ? deviceTimelineHtml(d) : `<h4 class="dev-alloc-title">Allocation history <span class="team-tab__count">${allocs.length}</span></h4>${hist}`}`;
     const edit = document.getElementById('deviceProfileEdit');
     if (edit) {
         edit.style.display = hasAccess('warehouse', 'edit') ? '' : 'none';

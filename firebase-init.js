@@ -1695,7 +1695,7 @@ window.cloud = {
             for (const k of refs) keys.push([k, await tx.get(k)]);
             let cur = null, devRef = null;
             if (info.device && b.deviceId) { devRef = doc(db, DEVICES_COL, b.deviceId); const ds = await tx.get(devRef); cur = ds.exists() ? ds.data() : null; }
-            const upd = { status: info.status, endedAt: info.date || '', endReason: info.reason || '', endedBy: info.by || '', updatedAt: Date.now() };
+            const upd = { status: info.status, endedAt: info.date || '', endReason: info.reason || '', endedBy: info.by || '', updatedAt: Date.now(), ...(info.extra || {}) };
             tx.update(ref, upd);
             keys.forEach(([k, snap]) => { if (snap.exists() && snap.data().bastId === id) tx.delete(k); });
             if (devRef && cur) { const patch = info.device(cur, { ...b, ...upd }); if (patch) tx.set(devRef, patch, { merge: true }); }

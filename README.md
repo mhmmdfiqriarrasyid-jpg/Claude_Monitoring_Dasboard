@@ -593,6 +593,14 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.47.0 — Return device yang Allocated**: tombol Return (ikon putar) di baris
+  device Allocated, atau centang BAST lalu *Return ticked*. Satu dialog: tanggal,
+  kondisi (pilihan BAST) dan catatan — wajib kalau Rusak Ringan/Berat atau ada
+  kekurangan. Device kembali ke gudang (Rusak → Damaged), alokasinya masuk riwayat
+  dengan kondisi/catatan/siapa, BAST-nya ditandai Returned. Surat pengembalian
+  (Berita Acara Pengembalian, PDF) opsional, untuk device yang punya BAST, nomor
+  mengikuti BAST-nya (`…/BAPB-<KODE>/…`). Profil device: satu timeline *History*
+  (Allocated / Returned, dengan BAST dan surat pengembalian + PDF).
   **2.46.6 — reset penomoran BAST**: tombol *Reset numbering* (owner saja)
   menghapus surat Cancelled, melepas nomor yang tidak dipegang surat mana pun,
   dan mengatur ulang penghitung ke nomor tertinggi surat Active/Returned yang

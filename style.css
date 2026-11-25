@@ -11800,3 +11800,15 @@ tr.tw-hide { display: none !important; }
 .bast-signer__name--long { font-size: 10.5pt; }
 .bast-signer__title { font-size: 11pt; margin-top: 1pt; }
 .bast-stamp { margin-top: 16pt; text-align: center !important; font-weight: 700; color: #b91c1c; border: 2px solid #b91c1c; padding: 4pt; }
+
+/* 2.47.0 — device return dialog and history timeline */
+.ret-list { margin: 0 0 12px; padding-left: 18px; font-size: 13.5px; }
+.ret-list li { margin: 2px 0; }
+.dev-tl { list-style: none; margin: 4px 0 0; padding: 0 0 0 18px; border-left: 2px solid var(--border, #e5e7eb); }
+.dev-tl__item { position: relative; margin: 0 0 14px; padding-left: 6px; font-size: 13.5px; line-height: 1.45; }
+.dev-tl__dot { position: absolute; left: -26px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: #6366f1; border: 2px solid #fff; box-shadow: 0 0 0 1px #c7d2fe; }
+.dev-tl__item--ret .dev-tl__dot { background: #10b981; box-shadow: 0 0 0 1px #a7f3d0; }
+.dev-tl__item.is-current .dev-tl__dot { background: #f59e0b; box-shadow: 0 0 0 1px #fde68a; }
+.dev-tl__head { margin-bottom: 1px; }
+.dev-tl__head .wh-status { margin-left: 6px; font-size: 11.5px; }
+.dev-tl__docs { margin-top: 3px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

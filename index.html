@@ -2472,6 +2472,7 @@
                 <span class="adm-sr">Search letters</span>
                 <input type="search" id="bastSearch" placeholder="Search number, name, item, S/N, Radio ID" oninput="_bastQ = this.value; renderBastView()"></label>
             <button type="button" class="btn btn-secondary btn-sm" onclick="printBastPicked()"><i class="fas fa-file-pdf" aria-hidden="true"></i> PDF of ticked</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="bastRetPicked" onclick="returnBastPicked()"><i class="fas fa-rotate-left" aria-hidden="true"></i> Return ticked</button>
             <button type="button" class="btn btn-secondary btn-sm bast-del" id="bastDelPicked" style="display:none" onclick="deleteBastPicked()"><i class="fas fa-trash" aria-hidden="true"></i> Delete ticked</button>
             <button type="button" class="btn btn-secondary btn-sm bast-del" id="bastDelAll" style="display:none" onclick="deleteBastAllCancelled()"><i class="fas fa-trash" aria-hidden="true"></i> Delete all cancelled</button>
             <button type="button" class="btn btn-secondary btn-sm" id="bastResetNo" style="display:none" onclick="resetBastNumbering()" title="Super Admin: numbers restart after the highest number still on a letter"><i class="fas fa-rotate-left" aria-hidden="true"></i> Reset numbering</button>
@@ -3635,6 +3636,39 @@
             <button type="button" class="btn btn-secondary" id="bastImportPrint" style="display:none" onclick="printBastImported()"><i class="fas fa-file-pdf" aria-hidden="true"></i> PDF of the letters made</button>
             <button type="button" class="btn btn-primary" id="bastImportGo" onclick="runBastImport()">Make BAST</button>
         </div>
+    </div>
+</div>
+<div class="modal-overlay" id="devReturnModal">
+    <div class="modal-card" role="dialog" aria-labelledby="retTitle">
+        <div class="modal-header">
+            <h3 id="retTitle">Return device</h3>
+            <button type="button" class="modal-close" onclick="closeDeviceReturn()" aria-label="Close"><i class="fas fa-times" aria-hidden="true"></i></button>
+        </div>
+        <form id="retForm" onsubmit="saveDeviceReturn(event)">
+            <div class="modal-body">
+                <ul class="ret-list" id="retList"></ul>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label" for="retDate">Return date</label>
+                        <input class="form-input" type="date" id="retDate">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="retCondition">Condition</label>
+                        <select class="form-select" id="retCondition"><option>Baru/Baik</option><option>Baik</option><option>Bekas/Baik</option><option>Rusak Ringan</option><option>Rusak Berat</option></select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="retNote">Note <span class="form-optional">(required when damaged or something is missing)</span></label>
+                    <textarea class="form-input" id="retNote" rows="2" maxlength="300" placeholder="e.g. antenna broken, charger missing"></textarea>
+                </div>
+                <label class="notif-check"><input type="checkbox" id="retLetter"> Make a return letter (Berita Acara Pengembalian, PDF)</label>
+                <p class="adm-muted" id="retLetterHint"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeDeviceReturn()">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="retSave">Confirm return</button>
+            </div>
+        </form>
     </div>
 </div>
 <div class="modal-overlay" id="bastFormModal">

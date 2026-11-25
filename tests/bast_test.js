@@ -49,7 +49,7 @@ const { launch, BASE_URL } = require('./_env');
                 const x = S.bast[id];
                 S.ends.push([id, info.status, info.date, !!info.device]);
                 if (x.status !== 'active') return x;
-                Object.assign(x, { status: info.status, endedAt: info.date, endReason: info.reason });
+                Object.assign(x, { status: info.status, endedAt: info.date, endReason: info.reason }, info.extra || {});
                 [['sn', x.sn], ['rid', x.radioId], ['bat', x.batterySn]].forEach(([f, v]) => { if (v && S.keys[key(f, v)] === id) delete S.keys[key(f, v)]; });
                 if (info.device && x.deviceId) { const cur = warehouseDevices.find(d => d.id === x.deviceId); const p = cur && info.device({ ...cur }, x); if (p) applyDev(x.deviceId, p); }
                 return x;
@@ -194,7 +194,7 @@ const { launch, BASE_URL } = require('./_env');
         saveDevice({ preventDefault() {} }); await tick(80);
         showDeviceProfile('dev_ht1'); await tick();
         const histTxt = document.getElementById('deviceProfileBody').textContent;
-        t('history: the device profile lists its BAST letters, returned ones too', [/BAST history\s*1/.test(histTxt), /GPA\/BAST-HT\/06\/2026\/001/.test(histTxt), /Returned/.test(histTxt)], [true, true, true]);
+        t('history: the device profile lists its BAST letters, returned ones too', [/History\s*1/.test(histTxt), /GPA\/BAST-HT\/06\/2026\/001/.test(histTxt), /Returned/.test(histTxt)], [true, true, true]);
         t('history: the allocation row names its BAST', warehouseDevices.find(d => d.id === 'dev_ht1').allocationHistory.slice(-1)[0].bastNo, 'GPA/BAST-HT/06/2026/001');
         closeDeviceProfile();
         t('warehouse: device back from allocation returns its letter', [S.ends.slice(ends0).map(e => [e[1], e[2], e[3]]), S.bast[rigB.id].status], [[['returned', '2026-11-20', false]], 'returned']);
@@ -248,6 +248,48 @@ const { launch, BASE_URL } = require('./_env');
             ['allocated', 'Eko', '2026-03-10', true, 0]);
         renderBastView();
         t('allocated without BAST: none left', [document.getElementById('bastAllocCount').textContent, bastAllocatedWithout().map(d => d.sn)], ['0', []]);
+
+        // ---- return (2.47.0): one dialog, condition + note, optional return letter, one timeline ----
+        const oldB = Object.values(S.bast).find(x => x.sn === 'HT-OLD-1' && x.status === 'active');
+        renderDeviceTable && renderDeviceTable();
+        returnDevicePrompt('dev_old1'); await tick();
+        t('return: dialog opens for the allocated device, letter possible (it has a BAST)',
+            [document.getElementById('devReturnModal').classList.contains('open'), document.getElementById('retLetter').disabled, /HT-OLD-1/.test(document.getElementById('retList').textContent)], [true, false, true]);
+        document.getElementById('retCondition').value = 'Rusak Ringan';
+        document.getElementById('retNote').value = '';
+        const endsR = S.ends.length;
+        await saveDeviceReturn();
+        t('return: damaged without a note is refused', [S.ends.length - endsR, document.getElementById('devReturnModal').classList.contains('open')], [0, true]);
+        document.getElementById('retNote').value = 'Antena patah';
+        document.getElementById('retLetter').checked = true;
+        window.__printed = 0;
+        await saveDeviceReturn(); await tick();
+        const o1 = warehouseDevices.find(d => d.id === 'dev_old1');
+        const lastH = o1.allocationHistory.slice(-1)[0];
+        t('return: device to Damaged, allocation in history with condition, note and return letter number',
+            [o1.status, o1.recipientName, lastH.recipientName, lastH.returnCondition, lastH.returnNote, lastH.returnNo, lastH.bastNo],
+            ['damaged', '', 'Eko', 'Rusak Ringan', 'Antena patah', oldB.no.replace('/BAST-', '/BAPB-'), oldB.no]);
+        t('return: its BAST is Returned with the return details', [S.bast[oldB.id].status, S.bast[oldB.id].returnCondition, S.bast[oldB.id].returnNo], ['returned', 'Rusak Ringan', oldB.no.replace('/BAST-', '/BAPB-')]);
+        const rl = document.querySelector('#bastPrint .bast-page').textContent.replace(/\s+/g, ' ');
+        t('return letter: printed, numbered, names both letters and the condition',
+            [window.__printed, rl.includes('BERITA ACARA PENGEMBALIAN'), rl.includes(oldB.no.replace('/BAST-', '/BAPB-')), rl.includes(oldB.no), rl.includes('Antena patah'), rl.includes('Rusak Ringan')],
+            [1, true, true, true, true, true]);
+        pushSnap(); await tick();
+        showDeviceProfile('dev_old1'); await tick();
+        const tl = [...document.querySelectorAll('#deviceProfileBody .dev-tl__item')].map(li => li.textContent.replace(/\s+/g, ' ').trim());
+        t('timeline: Returned (with condition and return letter) above Allocated (with its BAST)',
+            [tl.length, /^Returned/.test(tl[0]), tl[0].includes('Rusak Ringan'), tl[0].includes('Return letter'), /^Allocated/.test(tl[1]), tl[1].includes(oldB.no)], [2, true, true, true, true, true]);
+        closeDeviceProfile();
+        // A device without a BAST: returned on its own (no letter possible).
+        const devSaves = [];
+        window.cloud.saveDevice = r => { devSaves.push(JSON.parse(JSON.stringify(r))); return ok(); };
+        warehouseDevices.push({ id: 'dev_nob', sn: 'HT-NOB', type: 'HT', status: 'allocated', division: 'EHS', recipientName: 'Pos Damkar', allocatedAt: '2026-10-29', allocationHistory: [] });
+        returnDevicePrompt('dev_nob'); await tick();
+        t('return without BAST: no letter offered', document.getElementById('retLetter').disabled, true);
+        document.getElementById('retCondition').value = 'Baik';
+        await saveDeviceReturn(); await tick();
+        t('return without BAST: device back in the warehouse, history kept', [devSaves.length, devSaves[0].status, devSaves[0].allocationHistory[0].recipientName, devSaves[0].allocationHistory[0].returnCondition],
+            [1, 'warehouse', 'Pos Damkar', 'Baik']);
         return T;
     });
 

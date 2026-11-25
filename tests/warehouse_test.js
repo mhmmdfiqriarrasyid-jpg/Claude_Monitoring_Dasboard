@@ -172,8 +172,9 @@ const { launch, BASE_URL } = require('./_env');
         renderDeviceTable();
         t('nama perangkat di tabel membuka profil', !!document.querySelector('#deviceBody .wh-devname[onclick*="dp1"]'), true);
         showDeviceProfile('dp1');
-        const prow = [...document.querySelectorAll('#deviceProfileBody .dev-alloc-table tbody tr')].map(r => r.textContent.replace(/\\s+/g, ' ').trim());
-        t('profil: riwayat alokasi terbaru dulu, yang aktif ditandai', [prow.length, /^IT Citra Staff .*Still allocated/.test(prow[0]), /^Plantation Budi Estate Manager .* 30 days$/.test(prow[1])], [2, true, true]);
+        // 2.47.0: one timeline — allocated / returned, newest first.
+        const prow = [...document.querySelectorAll('#deviceProfileBody .dev-tl__item')].map(r => r.textContent.replace(/\\s+/g, ' ').trim());
+        t('profil: riwayat alokasi terbaru dulu, yang aktif ditandai', [prow.length, /^Allocated .*Still allocated.*Citra · Staff · IT/.test(prow[0]), /^Returned .*30 days/.test(prow[1]), /^Allocated .*Budi · Estate Manager · Plantation/.test(prow[2])], [3, true, true, true]);
         t('profil terbuka & tertutup lewat penutup modal', [document.getElementById('deviceProfileModal').classList.contains('open'), (closeTopModal(), document.getElementById('deviceProfileModal').classList.contains('open'))], [true, false]);
         showDeviceProfile('x-tidak-ada');
         t('perangkat tak dikenal: profil tidak terbuka', document.getElementById('deviceProfileModal').classList.contains('open'), false);
