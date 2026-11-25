@@ -593,6 +593,10 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.47.1 — tanggal kembali dipilih sendiri**: di dialog Return tanggalnya
+  kosong dan wajib diisi (bukan otomatis hari ini), karena pengisian sering
+  dilakukan beberapa hari setelah barang kembali; tidak boleh sebelum tanggal
+  alokasi atau di masa depan.
   **2.47.0 — Return device yang Allocated**: tombol Return (ikon putar) di baris
   device Allocated, atau centang BAST lalu *Return ticked*. Satu dialog: tanggal,
   kondisi (pilihan BAST) dan catatan — wajib kalau Rusak Ringan/Berat atau ada

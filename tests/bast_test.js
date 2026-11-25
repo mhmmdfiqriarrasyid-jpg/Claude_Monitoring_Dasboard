@@ -255,6 +255,12 @@ const { launch, BASE_URL } = require('./_env');
         returnDevicePrompt('dev_old1'); await tick();
         t('return: dialog opens for the allocated device, letter possible (it has a BAST)',
             [document.getElementById('devReturnModal').classList.contains('open'), document.getElementById('retLetter').disabled, /HT-OLD-1/.test(document.getElementById('retList').textContent)], [true, false, true]);
+        t('return: the date starts empty (it is chosen, often days later)', document.getElementById('retDate').value, '');
+        const endsD = S.ends.length;
+        document.getElementById('retCondition').value = 'Baik';
+        await saveDeviceReturn();
+        t('return: without a date nothing happens', [S.ends.length - endsD, document.getElementById('devReturnModal').classList.contains('open')], [0, true]);
+        document.getElementById('retDate').value = '2026-11-20';
         document.getElementById('retCondition').value = 'Rusak Ringan';
         document.getElementById('retNote').value = '';
         const endsR = S.ends.length;
@@ -287,9 +293,11 @@ const { launch, BASE_URL } = require('./_env');
         returnDevicePrompt('dev_nob'); await tick();
         t('return without BAST: no letter offered', document.getElementById('retLetter').disabled, true);
         document.getElementById('retCondition').value = 'Baik';
+        document.getElementById('retDate').value = '2026-11-18';
         await saveDeviceReturn(); await tick();
         t('return without BAST: device back in the warehouse, history kept', [devSaves.length, devSaves[0].status, devSaves[0].allocationHistory[0].recipientName, devSaves[0].allocationHistory[0].returnCondition],
             [1, 'warehouse', 'Pos Damkar', 'Baik']);
+        t('return: the chosen date is the one kept', [lastH.returnedAt, devSaves[0].allocationHistory[0].returnedAt], ['2026-11-20', '2026-11-18']);
         return T;
     });
 

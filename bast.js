@@ -607,7 +607,10 @@ function returnDevicePrompt(ids) {
         const b = bastOfDevice(d);
         return `<li><b>${esc(d.type || 'Device')} · ${esc(d.sn)}</b> — ${esc(d.recipientName || '')}${d.division ? ` (${esc(d.division)})` : ''}${d.allocatedAt ? ` since ${esc(d.allocatedAt)}` : ''}${b ? ` · BAST ${esc(b.no)}` : ' · no BAST'}</li>`;
     }).join('');
-    document.getElementById('retDate').value = toISODate();
+    // 2.47.1: no default — the return is often filed days later, so the date is always chosen.
+    const rd = document.getElementById('retDate');
+    rd.value = ''; rd.max = toISODate();
+    rd.min = list.map(d => d.allocatedAt || '').sort().pop() || '';
     document.getElementById('retCondition').value = 'Baik';
     document.getElementById('retNote').value = '';
     const withBast = list.filter(d => bastOfDevice(d)).length;
@@ -637,7 +640,8 @@ async function saveDeviceReturn(event) {
     const note = _bastTxt(document.getElementById('retNote').value, 300);
     const wantLetter = document.getElementById('retLetter').checked;
     const devs = _retIds.map(id => warehouseDevices.find(d => d.id === id)).filter(Boolean);
-    if (!date || date > toISODate()) { showToast('Enter the return date (not in the future)', 'warning'); return; }
+    if (!date) { showToast('Choose the date the device actually came back', 'warning'); document.getElementById('retDate').focus(); return; }
+    if (date > toISODate()) { showToast('The return date cannot be in the future', 'warning'); return; }
     if (devs.some(d => d.allocatedAt && date < d.allocatedAt)) { showToast('The return date is before the allocation date', 'warning'); return; }
     if (RET_DAMAGED.includes(condition) && !note) { showToast('Describe the damage or what is missing in the note', 'warning'); document.getElementById('retNote').focus(); return; }
     const btn = document.getElementById('retSave');
