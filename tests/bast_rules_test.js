@@ -81,6 +81,13 @@ function make(db, b, extra) {
     await check('reset: nor set a counter back', setDoc(doc(W, 'bastSeq', 'GPA_HT_2026'), { last: 1, updatedAt: 9 }), false);
     await check('reset: the owner releases a number key', deleteDoc(doc(O, 'bastKeys', key('no', 'X/1'))), true);
     await check('reset: the owner sets a counter back', setDoc(doc(O, 'bastSeq', 'GPA_HT_2026'), { last: 2, updatedAt: 9 }), true);
+    // ---- gaps (2.47.5): the owner's reset lists free numbers; an editor may only take from them ----
+    await check('gaps: the owner writes a counter with free numbers', setDoc(doc(O, 'bastSeq', 'GAP_HT_2026'), { last: 3, free: [2], updatedAt: 9 }), true);
+    await check('gaps: an editor cannot add free numbers (same counter)', setDoc(doc(W, 'bastSeq', 'GAP_HT_2026'), { last: 3, free: [1, 2], updatedAt: 9 }), false);
+    await check('gaps: nor while moving the counter up', setDoc(doc(W, 'bastSeq', 'GAP_HT_2026'), { last: 4, free: [1, 2], updatedAt: 9 }), false);
+    await check('gaps: nor keep the same counter and list', setDoc(doc(W, 'bastSeq', 'GAP_HT_2026'), { last: 3, free: [2], updatedAt: 9 }), false);
+    await check('gaps: free must be a list', setDoc(doc(O, 'bastSeq', 'GAP2_HT_2026'), { last: 3, free: 'x' }), false);
+    await check('gaps: a new counter has no free numbers', setDoc(doc(W, 'bastSeq', 'GAP3_HT_2026'), { last: 3, free: [1] }), false);
     await check('reset: the owner removes a counter', (async () => { await setDoc(doc(O, 'bastSeq', 'TMP_HT_2026'), { last: 5 }); return deleteDoc(doc(O, 'bastSeq', 'TMP_HT_2026')); })(), true);
 
     // ---- the app's own transaction (firebase-init.js createBast) ----
@@ -88,12 +95,15 @@ function make(db, b, extra) {
         const out = { ...rec };
         const seqRef = doc(db, 'bastSeq', seqKey);
         const s = await t.get(seqRef);
-        let next = (s.exists() ? s.data().last : 0) + 1;
-        for (let i = 0; i < 60; i++, next++) { const c = `${prefix}/${String(next).padStart(3, '0')}`; if (!(await t.get(doc(db, 'bastKeys', key('no', c)))).exists()) { out.no = c; break; } }
+        const sd = s.exists() ? s.data() : {}, last = sd.last || 0;
+        const free = (sd.free || []).filter(n => n <= last).sort((a, b) => a - b);
+        while (free.length && !out.no) { const c = `${prefix}/${String(free.shift()).padStart(3, '0')}`; if (!(await t.get(doc(db, 'bastKeys', key('no', c)))).exists()) out.no = c; }
+        let next = out.no ? last : last + 1;
+        for (let i = 0; i < 60 && !out.no; i++, next++) { const c = `${prefix}/${String(next).padStart(3, '0')}`; if (!(await t.get(doc(db, 'bastKeys', key('no', c)))).exists()) { out.no = c; break; } }
         const k = await t.get(doc(db, 'bastKeys', key('sn', out.sn)));
         if (k.exists()) throw Object.assign(new Error('dup'), { code: 'bast/dup' });
         out.noKey = key('no', out.no); out.snKey = key('sn', out.sn);
-        t.set(seqRef, { last: next, updatedAt: 3 });
+        t.set(seqRef, { last: next, free, updatedAt: 3 });
         t.set(doc(db, 'bastKeys', out.noKey), { bastId: out.id, field: 'no', value: out.no, at: 3 });
         t.set(doc(db, 'bastKeys', out.snKey), { bastId: out.id, field: 'sn', value: out.sn, at: 3 });
         t.set(doc(db, 'bast', out.id), out);
@@ -104,6 +114,9 @@ function make(db, b, extra) {
     T.push({ name: 'transaction: skips 001 (taken) and 002 (counter) → 003', pass: n1 === 'GPA/BAST-HT/06/2026/003', err: n1 });
     const again = await tx(W, letter('bast_14', '', 'SN-13'), 'GPA/BAST-HT/06/2026', 'GPA_HT_2026').then(() => 'made', e => e.code || 'error');
     T.push({ name: 'transaction: the same S/N again is refused (bast/dup)', pass: again === 'bast/dup', err: again });
+    const g1 = await tx(W, letter('bast_15', '', 'SN-15'), 'GAP/BAST-HT/06/2026', 'GAP_HT_2026').then(o => o.no, e => 'error ' + (e.code || e.message));
+    const g2 = await tx(W, letter('bast_16', '', 'SN-16'), 'GAP/BAST-HT/06/2026', 'GAP_HT_2026').then(o => o.no, e => 'error ' + (e.code || e.message));
+    T.push({ name: 'transaction: the gap first (002), then after the top (004)', pass: g1 === 'GAP/BAST-HT/06/2026/002' && g2 === 'GAP/BAST-HT/06/2026/004', err: g1 + ' / ' + g2 });
 
     let pass = 0;
     T.forEach(x => { if (x.pass) pass++; console.log(`${x.pass ? 'PASS' : 'FAIL'}  ${x.name}${x.pass ? '' : '  — ' + x.err}`); });

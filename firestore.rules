@@ -539,6 +539,7 @@ service cloud.firestore {
     // keys (written in the same transaction). A letter that ends (returned / cancelled)
     // gives its S/N, Radio ID and battery keys back; the number's key stays for good.
     function bastKeyOf(f, v) { return f + '_' + v.trim().upper().replace('[^A-Z0-9-]', '_'); }
+    function bastSeqFreeOk() { return request.resource.data.get('free', []) is list && request.resource.data.get('free', []).size() <= 500; }
     function bastOk(id) {
       let d = request.resource.data;
       return id.matches('bast_[A-Za-z0-9_]+') && d.get('id', '') == id && d.size() <= 60
@@ -574,10 +575,17 @@ service cloud.firestore {
     }
     match /bastSeq/{id} {
       allow read: if canEditArea('warehouse');
-      allow create: if canEditArea('warehouse') && request.resource.data.get('last', 0) is int && request.resource.data.get('last', 0) >= 1;
-      allow update: if (canEditArea('warehouse') && request.resource.data.get('last', 0) is int
-        && request.resource.data.get('last', 0) > resource.data.get('last', 0))
-        || (isOwner() && request.resource.data.get('last', 0) is int && request.resource.data.get('last', 0) >= 1);
+      // 2.47.5: `free` = numbers a reset released (gaps), given out first. A warehouse editor may
+      // only take from it (shorter list) or move the counter up; only the owner's reset fills it.
+      // Uniqueness itself is still held by bastKeys.
+      allow create: if canEditArea('warehouse') && request.resource.data.get('last', 0) is int && request.resource.data.get('last', 0) >= 1
+        && bastSeqFreeOk() && (request.resource.data.get('free', []).size() == 0 || isOwner());
+      allow update: if (canEditArea('warehouse') && request.resource.data.get('last', 0) is int && bastSeqFreeOk()
+        && ((request.resource.data.get('last', 0) > resource.data.get('last', 0)
+             && request.resource.data.get('free', []).size() <= resource.data.get('free', []).size())
+          || (request.resource.data.get('last', 0) == resource.data.get('last', 0)
+             && request.resource.data.get('free', []).size() < resource.data.get('free', []).size())))
+        || (isOwner() && request.resource.data.get('last', 0) is int && request.resource.data.get('last', 0) >= 1 && bastSeqFreeOk());
       allow delete: if isOwner();
     }
     match /stockItems/{id} { allow read: if isActive(); allow delete: if canEditArea('warehouse');

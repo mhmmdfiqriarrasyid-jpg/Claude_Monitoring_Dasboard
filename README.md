@@ -593,6 +593,11 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.47.5 — nomor BAST bolong diisi dulu**: *Reset numbering* sekarang mencatat
+  nomor di tengah yang tidak dipegang surat mana pun (mis. 005, 007, 010 yang dihapus)
+  sebagai `free` di `bastSeq`; BAST berikutnya memakai nomor itu dulu (terkecil dulu),
+  baru lanjut setelah nomor tertinggi. Tetap tanpa dobel (dijaga `bastKeys`).
+  **Perlu publish ulang `firestore.rules`.**
   **2.47.4 — import Excel tahan sinyal lemah**: pembaca Excel (~900 KB) disimpan
   di perangkat dalam cache terpisah yang tidak ikut terhapus saat versi baru masuk,
   dan diunduh di latar belakang setelah update. Saat import tampil "Loading the

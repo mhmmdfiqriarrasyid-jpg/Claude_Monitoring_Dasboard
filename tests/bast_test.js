@@ -216,6 +216,10 @@ const { launch, BASE_URL } = require('./_env');
         t('reset: the owner sees "Reset numbering"', document.getElementById('bastResetNo').style.display, '');
         await resetBastNumbering(); await tick();
         t('reset: runs after confirming', resets, 1);
+        // 2.47.5: deleted numbers in between are given out first, then after the top.
+        const gp = bastResetPlan([3, 1, 12, 2, 4, 6, 8, 9, 11].map(n => ({ no: `GPA/BAST-HT/11/2026/${String(n).padStart(3, '0')}`, companyCode: 'GPA', itemCode: 'HT', date: '2026-11-26' })));
+        t('reset plan: the gaps 005, 007, 010 first, then 013', gp, 'GPA/BAST-HT/2026: next numbers 005, 007, 010, then 013');
+        t('reset plan: no letters → 001', bastResetPlan([]), 'Every series starts again at 001.');
         as({ uid: 'w', role: 'staff', status: 'active', access: { warehouse: 'edit' } }); renderBastView();
         t('reset: a Warehouse editor does not see it', document.getElementById('bastResetNo').style.display, 'none');
         as(OWNER); renderBastView();

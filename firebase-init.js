@@ -1629,19 +1629,31 @@ window.cloud = {
         const keys = await getDocs(collection(db, BAST_KEYS_COL));
         const drop = keys.docs.filter(k => !liveIds.has(k.data().bastId)).map(k => k.id);
         await batchInChunks(drop, (batch, id) => batch.delete(doc(db, BAST_KEYS_COL, id)));
-        const top = new Map();
+        // 2.47.5: per series, the numbers still on a letter; the ones in between that nobody holds
+        // (deleted letters) are kept as `free` and handed out first, lowest first.
+        const used = new Map();
         live.forEach(b => {
             const y = String(b.date || '').slice(0, 4), m = /\/(\d+)$/.exec(String(b.no || ''));
             if (!m || !b.companyCode || !b.itemCode) return;
             const k = `${b.companyCode}_${b.itemCode}_${y}`;
-            top.set(k, Math.max(top.get(k) || 0, Number(m[1])));
+            if (!used.has(k)) used.set(k, new Set());
+            used.get(k).add(Number(m[1]));
+        });
+        const plan = new Map();
+        used.forEach((nums, k) => {
+            const last = Math.max(...nums), free = [];
+            for (let n = 1; n < last && free.length < 500; n++) if (!nums.has(n)) free.push(n);
+            plan.set(k, { last, free });
         });
         const seqs = await getDocs(collection(db, BAST_SEQ_COL));
-        await batchInChunks(seqs.docs, (batch, d) => {
-            if (top.get(d.id)) batch.set(d.ref, { last: top.get(d.id), updatedAt: Date.now() });
-            else batch.delete(d.ref);
+        const ids = new Set([...seqs.docs.map(d => d.id), ...plan.keys()]);
+        let gaps = 0;
+        await batchInChunks([...ids], (batch, id) => {
+            const p = plan.get(id), ref = doc(db, BAST_SEQ_COL, id);
+            if (p) { gaps += p.free.length; batch.set(ref, { last: p.last, free: p.free, updatedAt: Date.now() }); }
+            else batch.delete(ref);
         });
-        return { cancelled: cancelled.length, released: drop.length, counters: seqs.size };
+        return { cancelled: cancelled.length, released: drop.length, counters: ids.size, gaps };
     },
     // rec: the letter (rec.no '' = numbered here). opts: { prefix, seqKey } for the number;
     // device: { id, make(current, letter) → fields } to allocate the unit in Warehouse.
@@ -1649,11 +1661,21 @@ window.cloud = {
         const o = opts || {};
         return runTransaction(db, async tx => {
             const out = { ...rec };
-            let seqRef = null, next = 0;
+            let seqRef = null, next = 0, seqLast = 0, free = [];
             if (!out.no) {
                 seqRef = doc(db, BAST_SEQ_COL, o.seqKey);
                 const s = await tx.get(seqRef);
-                next = (s.exists() ? Number(s.data().last) || 0 : 0) + 1;
+                const sd = s.exists() ? s.data() : {};
+                seqLast = Number(sd.last) || 0;
+                // 2.47.5: numbers a reset left free (gaps) are given out first, lowest first.
+                free = (Array.isArray(sd.free) ? sd.free : []).filter(n => Number.isInteger(n) && n > 0 && n <= seqLast).sort((a, b) => a - b);
+                while (free.length && !out.no) {
+                    const n = free.shift();
+                    const cand = `${o.prefix}/${String(n).padStart(3, '0')}`;
+                    if (!(await tx.get(doc(db, BAST_KEYS_COL, _bastKey('no', cand)))).exists()) out.no = cand;
+                }
+                const usedGap = !!out.no;
+                next = usedGap ? seqLast : seqLast + 1;   // a gap was used: the counter stays where it is
                 for (let i = 0; i < 60 && !out.no; i++, next++) {
                     const cand = `${o.prefix}/${String(next).padStart(3, '0')}`;
                     if (!(await tx.get(doc(db, BAST_KEYS_COL, _bastKey('no', cand)))).exists()) { out.no = cand; break; }
@@ -1673,7 +1695,7 @@ window.cloud = {
             const at = Date.now();
             out.noKey = _bastKey('no', out.no);
             out.snKey = _bastKey('sn', out.sn);
-            if (seqRef) tx.set(seqRef, { last: next, updatedAt: at });
+            if (seqRef) tx.set(seqRef, { last: next, free, updatedAt: at });
             tx.set(doc(db, BAST_KEYS_COL, out.noKey), { bastId: out.id, field: 'no', value: out.no, at });
             uniq.forEach(([f, v]) => tx.set(doc(db, BAST_KEYS_COL, _bastKey(f, v)), { bastId: out.id, field: f, value: String(v), at }));
             tx.set(doc(db, BAST_COL, out.id), out);

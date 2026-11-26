@@ -267,18 +267,33 @@ async function deleteBasts(ids) {
 // ---- Reset numbering (owner only, 2.46.6) ----
 // For a start after trial letters: cancelled letters go, numbers no letter holds are released,
 // and each counter restarts after the highest number still on a letter (001 when none is left).
+// 2.47.5: what a reset gives out next, per series — the gaps first (lowest first), then after the top.
+function bastResetPlan(kept) {
+    const used = {};
+    kept.forEach(b => {
+        const m = /\/(\d+)$/.exec(String(b.no || '')); if (!m) return;
+        const k = `${b.companyCode}/BAST-${b.itemCode}/${String(b.date || '').slice(0, 4)}`;
+        (used[k] = used[k] || new Set()).add(Number(m[1]));
+    });
+    const p3 = n => String(n).padStart(3, '0');
+    const lines = Object.entries(used).map(([k, nums]) => {
+        const top = Math.max(...nums), gaps = [];
+        for (let n = 1; n < top; n++) if (!nums.has(n)) gaps.push(n);
+        const shown = gaps.slice(0, 12).map(p3).join(', ') + (gaps.length > 12 ? `, … (${gaps.length} gaps)` : '');
+        return `${k}: next number${gaps.length ? `s ${shown}, then` : ''} ${p3(top + 1)}`;
+    });
+    return lines.length ? lines.join('\n') : 'Every series starts again at 001.';
+}
 async function resetBastNumbering() {
     if (!(typeof isOwner === 'function' && isOwner())) { showToast('Only the Super Admin can reset the numbering', 'warning'); return; }
     const kept = bastList.filter(b => b.status !== 'void');
     const cancelled = bastList.filter(b => b.status === 'void').length;
-    const top = {};
-    kept.forEach(b => { const m = /\/(\d+)$/.exec(String(b.no || '')); if (!m) return; const k = `${b.companyCode}/BAST-${b.itemCode}/${String(b.date || '').slice(0, 4)}`; top[k] = Math.max(top[k] || 0, Number(m[1])); });
-    const plan = Object.keys(top).length ? Object.entries(top).map(([k, n]) => `${k}: next number ${String(n + 1).padStart(3, '0')}`).join('\n') : 'Every series starts again at 001.';
-    if (!confirm(`Reset the BAST numbering?\n\n${cancelled ? `${cancelled} cancelled letter(s) are deleted.\n` : ''}Numbers no letter holds are released.\n${kept.length ? `${kept.length} active/returned letter(s) keep their numbers.\n` : ''}\n${plan}`)) return;
+    const plan = bastResetPlan(kept);
+    if (!confirm(`Reset the BAST numbering?\n\n${cancelled ? `${cancelled} cancelled letter(s) are deleted.\n` : ''}Numbers no letter holds are released; gaps are used first.\n${kept.length ? `${kept.length} active/returned letter(s) keep their numbers.\n` : ''}\n${plan}`)) return;
     try {
         const r = await window.cloud.resetBastNumbers();
         if (typeof logEvent === 'function') logEvent({ action: 'update', unitId: '', unitName: '[BAST] Numbering', field: 'Reset', after: `${r.cancelled} cancelled deleted, ${r.released} number(s) released` });
-        showToast(`Numbering reset — ${r.cancelled} cancelled letter(s) deleted, ${r.released} number(s) released`, 'success');
+        showToast(`Numbering reset — ${r.cancelled} cancelled letter(s) deleted, ${r.released} number(s) released${r.gaps ? `, ${r.gaps} gap(s) will be used first` : ''}`, 'success');
     } catch (err) {
         console.error('[bast] reset failed:', err);
         showToast(err && err.code === 'permission-denied' ? 'Refused — publish the new firestore.rules first (Super Admin only)' : 'Failed to reset the numbering', 'error');
