@@ -759,7 +759,9 @@ service cloud.firestore {
       let s1 = d.get('status', '');
       let move = s1 == s0 ? 'comment'
                : (s0 == 'resolved' && s1 == 'closed') ? 'closed'
-               : (s0 == 'resolved' && s1 == 'open') ? 'reopen' : '';
+               : (s0 == 'resolved' && s1 == 'open') ? 'reopen'
+               // 2.48.0: a ticket with a PIC reopens to Assigned
+               : (s0 == 'resolved' && s1 == 'assigned' && o.get('assigneeUid', '') != '') ? 'reopen' : '';
       return move != ''
           && ch.hasOnly(['events', 'status', 'closedAt', 'resolvedAt', 'updatedAt', 'lastActorUid'])
           && d.get('lastActorUid', '') == request.auth.uid

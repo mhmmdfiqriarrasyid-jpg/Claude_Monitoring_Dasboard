@@ -80,7 +80,10 @@
         // Spelled out here, not by the locale: the browser and the server write it the same.
         const WD = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
         const MO = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-        return { date, prev: isoOf(p), start: d.getTime(), end: e.getTime(),
+        // 2.48.0: the day's hours are WIT (UTC+9) wherever this runs — a laptop on WIB downloads the same
+        // report as the server's email (Indonesia keeps no daylight saving, so a day is 24 h).
+        const start = Date.parse(date + 'T00:00:00+09:00');
+        return { date, prev: isoOf(p), start, end: start + 86400000,
             label: `${WD[d.getDay()]}, ${d.getDate()} ${MO[d.getMonth()]} ${d.getFullYear()}`,
             short: `${WD[d.getDay()].slice(0, 3)} ${d.getDate()} ${MO[d.getMonth()].slice(0, 3)} ${d.getFullYear()}` };
     }

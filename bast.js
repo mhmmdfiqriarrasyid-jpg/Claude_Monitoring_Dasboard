@@ -83,6 +83,12 @@ function bastNumbering(rec) {
     const [y, m] = String(rec.date || '').split('-');
     return { prefix: `${rec.companyCode}/BAST-${rec.itemCode}/${m}/${y}`, seqKey: `${rec.companyCode}_${rec.itemCode}_${y}` };
 }
+// 2.48.0: a number in the app's format → its yearly series and sequence (the month is not part of it:
+// 003 is used once a year per PT and item code). null for any other format.
+function bastSeqOf(no) {
+    const m = /^([A-Z0-9]{1,10})\/BAST-([A-Z0-9]{1,10})\/(\d{2})\/(\d{4})\/(\d{1,6})$/.exec(String(no || '').trim().toUpperCase());
+    return m ? { seqKey: `${m[1]}_${m[2]}_${m[4]}`, series: `${m[1]}/BAST-${m[2]}/${m[4]}`, n: Number(m[5]) } : null;
+}
 
 // ---- Rows → letters ----
 function bastHeaderMap(header) {
@@ -131,6 +137,9 @@ function bastClashes(rows) {
         }
     });
     const seen = { no: new Map(), sn: new Map(), rid: new Map(), bat: new Map() };
+    // the same sequence in the same year under another month counts as taken too
+    const seqTaken = new Map(), seqSeen = new Map();
+    bastList.forEach(b => { const q = bastSeqOf(b.no); if (q) seqTaken.set(`${q.series}#${q.n}`, b.no); });
     const what = { no: 'No Surat', sn: 'S/N Unit', rid: 'Radio ID DMR', bat: 'S/N Baterai' };
     const field = { no: 'no', sn: 'sn', rid: 'radioId', bat: 'batterySn' };
     rows.forEach(r => {
@@ -142,6 +151,25 @@ function bastClashes(rows) {
             else if (seen[k].has(n)) r.errors.push(`${what[k]} ${v} is also on row ${seen[k].get(n)} of this file`);
             else seen[k].set(n, r.row);
         });
+        const q = r.rec.no ? bastSeqOf(r.rec.no) : null;
+        if (q) {
+            const k = `${q.series}#${q.n}`;
+            if (seqTaken.has(k) && _bastNorm(seqTaken.get(k)) !== _bastNorm(r.rec.no)) r.errors.push(`Sequence ${String(q.n).padStart(3, '0')} of ${q.series} is already used by letter ${seqTaken.get(k)}`);
+            else if (seqSeen.has(k)) r.errors.push(`Sequence ${String(q.n).padStart(3, '0')} of ${q.series} is also on row ${seqSeen.get(k)} of this file`);
+            else seqSeen.set(k, r.row);
+        }
+    });
+    return rows;
+}
+// 2.48.0: only a device in the warehouse (or already with someone) can be handed over by letter —
+// not one that is damaged, in repair, retired or installed on a unit.
+function bastDeviceChecks(rows) {
+    rows.forEach(r => {
+        const d = bastDeviceFor(r.rec.sn);
+        if (d && d.status && !['warehouse', 'allocated'].includes(d.status)) {
+            const label = (typeof DEVICE_STATUS_LABEL !== 'undefined' && DEVICE_STATUS_LABEL[d.status]) || d.status;
+            r.errors.push(`Device ${d.sn} is ${label}${d.status === 'installed' && d.unitName ? ` on ${d.unitName}` : ''} — set it to In Warehouse first`);
+        }
     });
     return rows;
 }
@@ -171,10 +199,36 @@ function bastDevicePatch(cur, b) {
     });
     return patch;
 }
+// 2.48.0: what a letter changes on the device, kept on the letter so cancelling it can undo it.
+function bastDeviceBefore(cur) {
+    if (!cur) return { none: true };
+    const keep = ['status', 'division', 'recipientName', 'recipientTitle', 'allocatedAt', 'location', 'unitId', 'unitName', 'posX', 'posY', 'radioId', 'batterySn'];
+    const p = {}; keep.forEach(k => { p[k] = cur[k] == null ? '' : String(cur[k]); });
+    p.hasBattery = !!cur.hasBattery;
+    p.pushed = cur.status === 'allocated' && !!(cur.recipientName || cur.division);
+    return p;
+}
+// A cancelled letter never happened: the device goes back to how it was before it (a device the
+// letter created goes to the warehouse). Letters made before 2.48.0 only drop the link.
+function bastDeviceUndo(cur, b) {
+    const p = b.prevDevice;
+    if (!p || typeof p !== 'object') return { bastId: '', bastNo: '', updatedAt: Date.now() };
+    const base = { bastId: '', bastNo: '', updatedAt: Date.now() };
+    if (cur.status !== 'allocated' || cur.recipientName !== b.p2Name) return base;   // changed since: leave it
+    if (p.none) return { ...base, status: 'warehouse', division: '', recipientName: '', recipientTitle: '', allocatedAt: '', radioId: '', batterySn: '', hasBattery: false };
+    let hist = Array.isArray(cur.allocationHistory) ? cur.allocationHistory.slice() : [];
+    const last = hist[hist.length - 1];
+    if (p.pushed && p.recipientName !== b.p2Name && last && last.recipientName === p.recipientName && last.returnedAt === b.date) hist = hist.slice(0, -1);
+    const back = { ...base, allocationHistory: hist };
+    ['status', 'division', 'recipientName', 'recipientTitle', 'allocatedAt', 'location', 'unitId', 'unitName', 'posX', 'posY'].forEach(k => { back[k] = p[k] || ''; });
+    if ('radioId' in p) { back.radioId = p.radioId; back.batterySn = p.batterySn; back.hasBattery = !!p.hasBattery; }
+    if (!back.status) back.status = 'warehouse';
+    return back;
+}
 // The device back in the warehouse when its letter is returned.
 function bastDeviceReturn(cur, b) {
     if (!cur || cur.bastId !== b.id) return null;
-    if (b.status === 'void') return { bastId: '', bastNo: '', updatedAt: Date.now() };
+    if (b.status === 'void') return bastDeviceUndo(cur, b);
     if (cur.status !== 'allocated') return { bastId: '', bastNo: '', updatedAt: Date.now() };
     const hist = (Array.isArray(cur.allocationHistory) ? cur.allocationHistory.slice() : []).concat([{ division: cur.division || '', recipientName: cur.recipientName || '',
         recipientTitle: cur.recipientTitle || '', allocatedAt: cur.allocatedAt || '', returnedAt: b.endedAt || toISODate(), bastNo: b.no || '' }]).slice(-20);
@@ -190,7 +244,8 @@ async function bastCreate(rec) {
         id: rec.id || generateBastId(), status: 'active', deviceId: dev ? dev.id : (typeof generateDeviceId === 'function' ? generateDeviceId() : 'dev_' + Date.now()),
         createdAt: Date.now(), createdBy: _bastMe(), createdByUid: typeof myUid === 'function' ? myUid() : '', updatedAt: Date.now()
     });
-    const out = await window.cloud.createBast(full, Object.assign(bastNumbering(full), { device: { id: full.deviceId, make: bastDevicePatch } }));
+    const out = await window.cloud.createBast(full, Object.assign(bastNumbering(full), { device: { id: full.deviceId, make: bastDevicePatch, before: bastDeviceBefore } },
+        full.no && bastSeqOf(full.no) ? { typedSeq: bastSeqOf(full.no) } : {}));
     if (typeof logEvent === 'function') logEvent({ action: 'add', unitId: '', unitName: `[BAST] ${out.no}`, field: `${out.itemName} · ${out.sn}`, after: `${out.p2Name} (${out.p2Dept})` });
     return out;
 }
@@ -200,6 +255,8 @@ function bastErrorText(err) {
         const other = bastList.find(b => b.id === err.other);
         return `${what} is already in letter ${other ? other.no : '(another letter)'}`;
     }
+    if (err && err.code === 'bast/device-status') return `The device is ${(typeof DEVICE_STATUS_LABEL !== 'undefined' && DEVICE_STATUS_LABEL[err.status]) || err.status} now — set it to In Warehouse first`;
+    if (err && err.code === 'bast/far') return `The typed number ${String(err.n).padStart(3, '0')} is far past the last one (${String(err.last).padStart(3, '0')}) — check it for a typo`;
     if (err && err.code === 'permission-denied') return 'Refused — BAST needs the new firestore.rules published, and Warehouse edit access';
     if (err && (err.code === 'unavailable' || err.code === 'failed-precondition' || /offline/i.test(err.message || ''))) return 'No connection — a BAST is numbered by the server; try again online';
     return (err && err.message) || 'Failed to save';
@@ -358,6 +415,7 @@ function bastPreview(rows) {
     });
     if (!list.length) { showToast('The BAST sheet has no rows', 'warning'); return; }
     bastClashes(list);
+    bastDeviceChecks(list);
     list.forEach(r => { r.device = bastDeviceFor(r.rec.sn); });
     _bastImport = { rows: list };
     renderBastImport();
@@ -487,6 +545,7 @@ async function saveBastForm(event) {
     BAST_COLUMNS.forEach(([, f], i) => { const el = document.getElementById('bast_' + f); cells.push(el ? el.value : ''); map[f] = i; });
     const r = { row: 1, ...bastRecFromRow(cells, map) };
     bastClashes([r]);
+    bastDeviceChecks([r]);
     if (r.errors.length) { showToast(r.errors[0], 'warning'); return; }
     const btn = document.getElementById('bastFormSave');
     btn.disabled = true;

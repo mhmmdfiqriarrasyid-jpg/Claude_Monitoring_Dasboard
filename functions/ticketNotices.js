@@ -3,6 +3,7 @@
 //   new ticket            → the OT team (tickets 'edit'), not its reporter
 //   PIC set or changed    → that PIC
 //   status changed        → the reporter, unless the reporter changed it
+//   reopened (resolved/closed → open/assigned) → its PIC (2.48.0)
 'use strict';
 
 const KEEP_DAYS = 30;
@@ -24,7 +25,11 @@ function ticketPushes(prev, list, now) {
             return;
         }
         if (t.assigneeUid && t.assigneeUid !== p[1]) out.push({ kind: 'ticketAssign', id: t.id, rec: t });
-        if ((t.status || '') !== p[0] && t.lastActorUid !== t.reportedByUid) out.push({ kind: 'ticketStatus', id: t.id, rec: t });
+        const reopened = ['resolved', 'closed'].includes(p[0]) && ['open', 'assigned'].includes(t.status || '');
+        // the reporter who is also the PIC gets the reopen notice only, not both
+        if ((t.status || '') !== p[0] && t.lastActorUid !== t.reportedByUid && !(reopened && t.assigneeUid && t.assigneeUid === t.reportedByUid))
+            out.push({ kind: 'ticketStatus', id: t.id, rec: t });
+        if (reopened) out.push({ kind: 'ticketReopen', id: t.id, rec: t });
     });
     return { out, next };
 }

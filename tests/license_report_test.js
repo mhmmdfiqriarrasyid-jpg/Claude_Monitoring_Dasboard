@@ -190,7 +190,7 @@ const server = require('../functions/licenseReport');
     t('2.20.0: mingguan → pilih hari', ui.weeklyShows, ['', 'none']);
     t('2.20.0: bulanan → pilih tanggal', ui.monthlyShows, ['none', '']);
     t('2.20.0: jadwal tersimpan', ui.sched, ['weekly', 5, 9, 'monthly', 15, 'daily']);
-    t('2.20.0: catatan tombol mengikuti periode', ui.note, 'The last 7 days');
+    t('2.20.0: catatan tombol mengikuti periode', ui.note, 'The last full week (Saturday–Friday)');
     t('2.18.0: push persetujuan bisa dimatikan', ui.pushOff, false);
     t('breakdown + pengingat tersimpan', ui.full, [true, ['sup@x.id'], true, 18, ['lead@x.id']]);
     t('owner menyimpan: huruf kecil, tanpa duplikat, jam bawaan 07', ui.saved, [['b@x.id', 'c@x.id'], true, 7]);

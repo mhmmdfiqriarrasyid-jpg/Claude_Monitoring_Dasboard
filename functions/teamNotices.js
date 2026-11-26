@@ -18,21 +18,26 @@ function shiftDates(now) {
 const onLeave = (leaves, memberId, date) => (leaves || []).some(r => r.memberId === memberId && r.approval === 'approved'
     && r.dateFrom && date >= r.dateFrom && date <= (r.dateTo || r.dateFrom));
 
-// Who has not sent the report of a shift that has ended by `now`. A draft
-// does not count as sent. Members marked inactive, or on approved leave,
-// are left out.
-function missingReports({ shifts, workLogs, members, leaves, now }) {
+// Who has not sent the report of a shift that ended in the `hours` before `now` (24 by default:
+// a reminder at any hour covers each shift once — 2.48.0, an Afternoon shift ending 23:00 was
+// never due at a 17:00 reminder and gone the next day). A draft does not count as sent. Members
+// marked inactive, or on approved leave, are left out.
+function shiftEndMs(date, def) {
+    const [y, m, d] = String(date || '').split('-').map(Number);
+    if (!y || !m || !d) return NaN;
+    return new Date(y, m - 1, d + (def.nextDay ? 1 : 0), def.end, 0, 0).getTime();
+}
+function missingReports({ shifts, workLogs, members, leaves, now, hours }) {
     const t = new Date(now);
-    const hour = t.getHours();
-    const { today, yesterday } = shiftDates(t);
+    const windowMs = (Number(hours) > 0 ? Number(hours) : 24) * 3600000;
     const memberById = new Map((members || []).map(m => [m.id, m]));
     const sent = new Set((workLogs || []).filter(w => (w.approval || 'pending') !== 'draft').map(w => `${w.memberId}|${w.date}`));
     const out = [];
     (shifts || []).forEach(s => {
         const def = SHIFT_END[s.shift];
         if (!def) return;
-        const due = def.nextDay ? (s.date === yesterday && hour >= def.end) : (s.date === today && hour >= def.end);
-        if (!due) return;
+        const end = shiftEndMs(s.date, def);
+        if (!(end <= t.getTime() && end > t.getTime() - windowMs)) return;
         const m = memberById.get(s.memberId);
         if (!m || m.active === false) return;
         if (onLeave(leaves, s.memberId, s.date)) return;
@@ -77,4 +82,6 @@ function composeDamage(d) {
     return { subject, text, html };
 }
 
-module.exports = { missingReports, composeReminder, composeDamage, shiftDates };
+// The hours a reminder looks back over: one run per period, each shift once.
+const REMINDER_HOURS = { daily: 24, weekly: 7 * 24, monthly: 31 * 24 };
+module.exports = { REMINDER_HOURS, shiftEndMs, missingReports, composeReminder, composeDamage, shiftDates };

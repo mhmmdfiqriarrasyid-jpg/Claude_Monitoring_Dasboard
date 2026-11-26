@@ -50,7 +50,8 @@ function wrWeekInfo(from) {
         from, to, days, no: wrIsoWeek(to),
         dayLabels: days.map(d => f(d, { weekday: 'short' }) + ' ' + _wrDate(d).getDate()),
         label: `${f(from, { weekday: 'short', day: 'numeric', month: 'short' })} – ${f(to, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}`,
-        start: _wrDate(from).getTime(), end: _wrDate(_wrAdd(to, 1)).getTime()
+        // 2.48.0: the week's hours are WIT (UTC+9) on any laptop, like the server's reports.
+        start: Date.parse(from + 'T00:00:00+09:00'), end: Date.parse(_wrAdd(to, 1) + 'T00:00:00+09:00')
     };
 }
 // The last finished week is the default; this week (still running) is offered too.

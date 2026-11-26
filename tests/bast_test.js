@@ -192,12 +192,18 @@ const { launch, BASE_URL } = require('./_env');
         document.getElementById('devReturnedAt').value = '2026-11-20';
         const ends0 = S.ends.length;
         saveDevice({ preventDefault() {} }); await tick(80);
+        // 2.48.0: a device on a BAST leaves its holder through Return — the form opens it instead of saving.
+        t('warehouse: the form sends a device on a BAST to Return', [S.ends.length - ends0, document.getElementById('devReturnModal').classList.contains('open'), /RIG-88/.test(document.getElementById('retList').textContent)], [0, true, true]);
+        document.getElementById('retDate').value = '2026-11-20';
+        document.getElementById('retBy').value = 'Dedi';
+        document.getElementById('retCondition').value = 'Baik';
+        await saveDeviceReturn(); await tick(80);
         showDeviceProfile('dev_ht1'); await tick();
         const histTxt = document.getElementById('deviceProfileBody').textContent;
         t('history: the device profile lists its BAST letters, returned ones too', [/History\s*1/.test(histTxt), /GPA\/BAST-HT\/06\/2026\/001/.test(histTxt), /Returned/.test(histTxt)], [true, true, true]);
         t('history: the allocation row names its BAST', warehouseDevices.find(d => d.id === 'dev_ht1').allocationHistory.slice(-1)[0].bastNo, 'GPA/BAST-HT/06/2026/001');
         closeDeviceProfile();
-        t('warehouse: device back from allocation returns its letter', [S.ends.slice(ends0).map(e => [e[1], e[2], e[3]]), S.bast[rigB.id].status], [[['returned', '2026-11-20', false]], 'returned']);
+        t('warehouse: device back from allocation returns its letter', [S.ends.slice(ends0).map(e => [e[1], e[2]]), S.bast[rigB.id].status, warehouseDevices.find(d => d.id === 'dev_rig2').status], [[['returned', '2026-11-20']], 'returned', 'warehouse']);
 
         // ---- cancelled letters: the owner deletes them (picked or all) ----
         const delCalls = [];
@@ -220,6 +226,34 @@ const { launch, BASE_URL } = require('./_env');
         const gp = bastResetPlan([3, 1, 12, 2, 4, 6, 8, 9, 11].map(n => ({ no: `GPA/BAST-HT/11/2026/${String(n).padStart(3, '0')}`, companyCode: 'GPA', itemCode: 'HT', date: '2026-11-26' })));
         t('reset plan: the gaps 005, 007, 010 first, then 013', gp, 'GPA/BAST-HT/2026: next numbers 005, 007, 010, then 013');
         t('reset plan: no letters → 001', bastResetPlan([]), 'Every series starts again at 001.');
+        // ---- 2.48.0 logic fixes ----
+        const wh = { status: 'warehouse', division: '', recipientName: '', allocationHistory: [] };
+        const L = { id: 'bast_x', status: 'void', p2Name: 'Salah Orang', p2Dept: 'IT', p2Title: 'Staff', date: '2026-11-20', no: 'GPA/BAST-HT/11/2026/009' };
+        const afterLetter = { ...wh, ...bastDevicePatch(wh, L) };
+        t('cancel: a device from the warehouse goes back to the warehouse',
+            (({ status, recipientName, bastId }) => [status, recipientName, bastId])({ ...afterLetter, ...bastDeviceReturn(afterLetter, { ...L, prevDevice: bastDeviceBefore(wh) }) }), ['warehouse', '', '']);
+        const held = { status: 'allocated', division: 'Agri', recipientName: 'Eko', recipientTitle: 'Asisten', allocatedAt: '2026-03-10', allocationHistory: [] };
+        const after2 = { ...held, ...bastDevicePatch(held, L) };
+        const back2 = { ...after2, ...bastDeviceReturn(after2, { ...L, prevDevice: bastDeviceBefore(held) }) };
+        t('cancel: a device someone held goes back to them, the extra history row removed',
+            [back2.status, back2.recipientName, back2.allocatedAt, back2.allocationHistory.length, after2.allocationHistory.length], ['allocated', 'Eko', '2026-03-10', 0, 1]);
+        t('cancel: a letter from before 2.48.0 only drops the link', bastDeviceReturn(after2, L).status, undefined);
+        const nOld = warehouseDevices.length;
+        warehouseDevices.push({ id: 'dev_dmg', sn: 'HT-DMG', type: 'HT', status: 'damaged' }, { id: 'dev_inst', sn: 'GPS-9', type: 'GPS', status: 'installed', unitName: 'JD-07' });
+        const chk = bastDeviceChecks([{ rec: { sn: 'HT-DMG' }, errors: [] }, { rec: { sn: 'gps-9' }, errors: [] }, { rec: { sn: 'HT-NEW' }, errors: [] }]).map(r => r.errors.join());
+        t('status: damaged or installed devices are refused, a new S/N is fine', [/Damaged/.test(chk[0]), /Installed on JD-07/.test(chk[1]), chk[2]], [true, true, '']);
+        warehouseDevices.splice(nOld);
+        t('number: the series of a typed number (month not part of it)', bastSeqOf('gpa/bast-ht/03/2026/007'), { seqKey: 'GPA_HT_2026', series: 'GPA/BAST-HT/2026', n: 7 });
+        t('number: another format has no series', bastSeqOf('123/BAST/2026'), null);
+        const anyNo = Object.values(S.bast)[0].no, q0 = bastSeqOf(anyNo);
+        const other = anyNo.replace(/\/(\d{2})\/(\d{4})\//, (m, mm, yy) => `/${mm === '01' ? '02' : '01'}/${yy}/`);
+        const cl = bastClashes([{ row: 2, rec: { no: other }, errors: [] }])[0].errors.join();
+        t('number: the same sequence in the same year under another month is refused', cl.includes(`Sequence ${String(q0.n).padStart(3, '0')}`), true);
+        const sl0 = stockLedger.length;
+        stockLedger.push({ id: 's_in', txnType: 'IN', itemName: 'Kabel', qty: 10 }, { id: 's_out', txnType: 'OUT', itemName: 'Kabel', qty: 8 });
+        let asked = 0; const conf0 = window.confirm; window.confirm = () => { asked++; return false; };
+        t('stock: an IN edited below what went out is questioned', [checkStockEdit(stockLedger[sl0], 'Kabel', 2, 'IN'), checkStockEdit(stockLedger[sl0], 'Kabel', 9, 'IN'), asked], [false, true, 1]);
+        window.confirm = conf0; stockLedger.splice(sl0);
         as({ uid: 'w', role: 'staff', status: 'active', access: { warehouse: 'edit' } }); renderBastView();
         t('reset: a Warehouse editor does not see it', document.getElementById('bastResetNo').style.display, 'none');
         as(OWNER); renderBastView();

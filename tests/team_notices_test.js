@@ -25,6 +25,10 @@ const names = h => n.missingReports({ shifts, workLogs, members, leaves, now: at
 t('jam 17: pagi hari ini + malam kemarin; draft dihitung belum kirim', names(17), ['Citra/Night/2026-11-02', 'Andi/Morning/2026-11-03', 'Gita/Morning/2026-11-03']);
 t('jam 06: belum ada shift yang selesai', names(6), []);
 t('jam 23: shift siang ikut', names(23).includes('Budi/Afternoon/2026-11-03'), true);
+// 2.48.0: pengingat jam 17 keesokan harinya tetap menangkap shift siang (selesai 23:00), sekali saja
+const next17 = n.missingReports({ shifts, workLogs, members, leaves, now: new Date(2026, 10, 4, 17, 0, 0) }).map(r => `${r.name}/${r.shift}/${r.date}`);
+t('jam 17 besoknya: shift siang kemarin ikut, pagi kemarin tidak diulang', [next17.includes('Budi/Afternoon/2026-11-03'), next17.includes('Andi/Morning/2026-11-03')], [true, false]);
+t('mingguan: semua shift 7 hari terakhir', n.missingReports({ shifts, workLogs, members, leaves, now: new Date(2026, 10, 8, 17, 0, 0), hours: n.REMINDER_HOURS.weekly }).length, 4);
 t('tidak aktif, cuti disetujui, sudah kirim, anggota terhapus: tidak masuk', ['Eko', 'Fajar', 'Dewi'].some(x => names(23).join().includes(x)), false);
 
 const rem = n.composeReminder(n.missingReports({ shifts, workLogs, members, leaves, now: at(17) }));

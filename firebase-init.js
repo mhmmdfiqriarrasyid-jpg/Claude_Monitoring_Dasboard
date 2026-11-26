@@ -1684,6 +1684,20 @@ window.cloud = {
             } else {
                 const k = await tx.get(doc(db, BAST_KEYS_COL, _bastKey('no', out.no)));
                 if (k.exists()) throw Object.assign(new Error('number taken'), { code: 'bast/dup', field: 'no', other: k.data().bastId });
+                // 2.48.0: a typed number in the app's format moves its year's counter past it (and
+                // takes it off the free list), so the next automatic number never repeats it.
+                const q = o.typedSeq;
+                if (q && q.seqKey && Number.isInteger(q.n) && q.n > 0) {
+                    const ref = doc(db, BAST_SEQ_COL, q.seqKey);
+                    const s = await tx.get(ref);
+                    const sd = s.exists() ? s.data() : {};
+                    const last = Number(sd.last) || 0;
+                    // a typo like 0300 for 030 would push the whole year's counter to 300
+                    if (q.n > last + 50) throw Object.assign(new Error('number far ahead'), { code: 'bast/far', last, n: q.n });
+                    const fr = (Array.isArray(sd.free) ? sd.free : []).filter(n => Number.isInteger(n) && n > 0 && n <= Math.max(last, q.n));
+                    if (q.n > last) { seqRef = ref; next = q.n; free = fr.filter(n => n !== q.n); }
+                    else if (fr.includes(q.n)) { seqRef = ref; next = last; free = fr.filter(n => n !== q.n); }
+                }
             }
             const uniq = [['sn', out.sn], ['rid', out.radioId], ['bat', out.batterySn]].filter(([, v]) => v);
             for (const [f, v] of uniq) {
@@ -1692,9 +1706,13 @@ window.cloud = {
             }
             let cur = null, devRef = null;
             if (o.device && o.device.id) { devRef = doc(db, DEVICES_COL, o.device.id); const ds = await tx.get(devRef); cur = ds.exists() ? ds.data() : null; }
+            // 2.48.0: checked again here — another screen may have changed the device meanwhile.
+            if (cur && cur.status && !['warehouse', 'allocated'].includes(cur.status)) throw Object.assign(new Error('device not available'), { code: 'bast/device-status', status: cur.status });
             const at = Date.now();
             out.noKey = _bastKey('no', out.no);
             out.snKey = _bastKey('sn', out.sn);
+            // 2.48.0: the device as it was before this letter, so cancelling the letter can put it back.
+            if (devRef && o.device.before) out.prevDevice = o.device.before(cur);
             if (seqRef) tx.set(seqRef, { last: next, free, updatedAt: at });
             tx.set(doc(db, BAST_KEYS_COL, out.noKey), { bastId: out.id, field: 'no', value: out.no, at });
             uniq.forEach(([f, v]) => tx.set(doc(db, BAST_KEYS_COL, _bastKey(f, v)), { bastId: out.id, field: f, value: String(v), at }));

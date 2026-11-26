@@ -96,7 +96,8 @@ const { launch, BASE_URL } = require('./_env');
         setTicketStatus('tk_r1', 'open'); await tick();
         const re = saved[saved.length - 1];
         const changed2 = Object.keys({ ...re, ...before2 }).filter(k => JSON.stringify(re[k]) !== JSON.stringify(before2[k])).sort();
-        t('S9 pelapor membuka lagi: open, resolvedAt & closedAt kosong', [re.id, re.status, re.resolvedAt, re.closedAt], ['tk_r1', 'open', null, null]);
+        // 2.48.0: punya PIC → kembali ke Assigned (bukan "Open / belum ada PIC")
+        t('S9 pelapor membuka lagi: kembali ke PIC (assigned), resolvedAt & closedAt kosong', [re.id, re.status, re.resolvedAt, re.closedAt], ['tk_r1', 'assigned', null, null]);
         t('S9 pelapor membuka lagi: hanya kolom yang diizinkan rules berubah', changed2.every(k => ['events', 'status', 'closedAt', 'resolvedAt', 'updatedAt', 'lastActorUid'].includes(k)), true);
         t('S9 pelapor membuka lagi: satu event "reopen" miliknya, alasan maks. 2000 karakter',
           [re.events.length, re.events[1].type, re.events[1].byUid, re.events[1].by, re.events[1].text.length, re.events[1].text.startsWith('Masih mati pagi ini')],

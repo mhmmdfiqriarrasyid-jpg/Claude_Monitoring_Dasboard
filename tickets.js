@@ -413,17 +413,19 @@ function setTicketStatus(id, status) {
         if (r == null) return;
         text = r.trim().slice(0, 2000);   // 2.45.0: the length firestore.rules takes from a reporter
     }
+    // 2.48.0: a reopened ticket that has a PIC goes back to them (Assigned), not to "no PIC yet".
+    if (status === 'open' && TK_DONE.includes(t.status) && t.assigneeUid) status = 'assigned';
     const now = Date.now();
     let next = { ...t, status };
     if (status === 'progress') next.startedAt = t.startedAt || now;
     if (status === 'resolved') { next.resolvedAt = now; next.resolution = text; }
     if (status === 'closed') next.closedAt = now;
-    if (status === 'open' && TK_DONE.includes(t.status)) { next.resolvedAt = null; next.closedAt = null; if (handle) next.reportedAt = t.reportedAt; }
+    if ((status === 'open' || status === 'assigned') && TK_DONE.includes(t.status)) { next.resolvedAt = null; next.closedAt = null; if (handle) next.reportedAt = t.reportedAt; }
     // A reporter's write may touch only events (one of its own added), status, closedAt,
     // resolvedAt, updatedAt and lastActorUid (firestore.rules).
     // 2.45.0: "Not fixed — reopen" clears resolvedAt too — it kept counting as resolved.
-    if (!handle) next = { ...t, status, closedAt: status === 'closed' ? now : null, ...(status === 'open' ? { resolvedAt: null } : {}) };
-    const type = status === 'open' ? 'reopen' : status;
+    if (!handle) next = { ...t, status, closedAt: status === 'closed' ? now : null, ...(status !== 'closed' ? { resolvedAt: null } : {}) };
+    const type = status === 'open' || (status === 'assigned' && TK_DONE.includes(t.status)) ? 'reopen' : status;
     next = _tkEvent(next, type, text ? { text } : {});
     _tkPush(next, `${TK_STATUSES[status].label}`, t);
     showTicketDetail(id);

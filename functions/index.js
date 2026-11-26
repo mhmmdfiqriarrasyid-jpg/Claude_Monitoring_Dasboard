@@ -38,7 +38,7 @@ const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 const nodemailer = require('nodemailer');
 const { composeEmail, manualSendCheck } = require('./licenseReport');
-const { missingReports, composeReminder, composeDamage, shiftDates } = require('./teamNotices');
+const { missingReports, composeReminder, composeDamage, shiftDates, REMINDER_HOURS } = require('./teamNotices');
 const { buildMonthly, composeMonthly } = require('./monthlyReport');
 const { recipientsFor, composePush, tokensByAccount, pushBatches } = require('./pushNotices');
 const { readSchedule, isDue } = require('./schedule');
@@ -129,16 +129,20 @@ async function sendReport(trigger, by, gate) {
 // ---- Daily Report reminder ----
 async function sendReminder(s, now, trigger, by) {
     if (!s.reminderRecipients.length) return { sent: false, reason: 'no-recipients' };
-    const { today, yesterday } = shiftDates(now);
-    const dates = [yesterday, today];
+    // 2.48.0: every shift that ended since the last run of this schedule (a night shift started the
+    // day before), so the Afternoon shift and weekly / monthly reminders are covered too.
+    const freq = (s.reminderSched && s.reminderSched.freq) || 'daily';
+    let hours = REMINDER_HOURS[freq] || 24;
+    if (freq === 'monthly') { const p = new Date(now); p.setMonth(p.getMonth() - 1); hours = Math.round((new Date(now).getTime() - p.getTime()) / 3600000); }
+    const from = shiftDates(new Date(new Date(now).getTime() - (hours + 24) * 3600000)).today;
     const [shifts, logs, members, leaves] = await Promise.all([
-        db.collection('shifts').where('date', 'in', dates).get(),
-        db.collection('workLogs').where('date', 'in', dates).get(),
+        db.collection('shifts').where('date', '>=', from).get(),
+        db.collection('workLogs').where('date', '>=', from).get(),
         db.collection('teamMembers').get(),
         db.collection('leaveRequests').where('approval', '==', 'approved').get()
     ]);
     const list = missingReports({ shifts: shifts.docs.map(d => d.data()), workLogs: logs.docs.map(d => d.data()),
-        members: members.docs.map(d => ({ ...d.data(), id: d.id })), leaves: leaves.docs.map(d => d.data()), now });
+        members: members.docs.map(d => ({ ...d.data(), id: d.id })), leaves: leaves.docs.map(d => d.data()), now, hours });
     const m = composeReminder(list);
     if (!m) return { sent: false, reason: 'all-sent' };
     await mail(s.reminderRecipients, m, { kind: 'reportReminder', trigger: trigger || 'daily', by: by || '', items: list.length });

@@ -593,6 +593,20 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.48.0 — logika dibenarkan (hasil pemeriksaan)**: BAST yang dibatalkan
+  mengembalikan perangkat ke keadaan sebelum surat (ke Warehouse, atau ke pemegang
+  sebelumnya); perangkat ber-BAST hanya bisa dilepas lewat **Return** (form Edit
+  membuka dialog Return); ganti pemegang tanpa BAST tetap mencatat pemegang lama;
+  BAST ditolak untuk perangkat Damaged / In Repair / Retired / Installed; nomor urut
+  yang diketik manual unik per PT + kode + tahun (bulan tidak dihitung) dan
+  menggeser penghitung; edit transaksi stok (IN juga) diperingatkan bila saldo jadi
+  minus. Tiket yang dibuka lagi dan punya PIC kembali ke **Assigned** dan PIC dapat
+  push. Email *Weekly Summary* = minggu penuh Sabtu–Jumat terakhir. Job *Implement
+  removal* yang Done mengosongkan implement di unit. Batas hari/minggu laporan
+  unduhan memakai WIT di laptop mana pun. Pengingat Daily Report mencakup semua
+  shift yang selesai sejak pengingat sebelumnya (termasuk Afternoon 15–23).
+  Master Lists tidak lagi menawarkan tombol edit untuk akses "own".
+  **Perlu publish ulang `firestore.rules` dan deploy ulang Functions.**
   **2.47.5 — nomor BAST bolong diisi dulu**: *Reset numbering* sekarang mencatat
   nomor di tengah yang tidak dipegang surat mana pun (mis. 005, 007, 010 yang dihapus)
   sebagai `free` di `bastSeq`; BAST berikutnya memakai nomor itu dulu (terkecil dulu),

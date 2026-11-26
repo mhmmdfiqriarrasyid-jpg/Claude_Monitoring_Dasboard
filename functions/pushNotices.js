@@ -36,6 +36,8 @@ function recipientsFor(kind, rec, users) {
         if (kind === 'ticketNew') return rec.reportedByUid !== u.uid && (owner || lvlOf(u, 'tickets') === 'edit');
         if (kind === 'ticketAssign') return rec.assigneeUid === u.uid && rec.lastActorUid !== u.uid;
         if (kind === 'ticketStatus') return rec.reportedByUid === u.uid;
+        // 2.48.0: a reopened ticket goes back to its PIC (the OT team when it has none).
+        if (kind === 'ticketReopen') return rec.lastActorUid !== u.uid && (rec.assigneeUid ? rec.assigneeUid === u.uid : (owner || lvlOf(u, 'tickets') === 'edit'));
         // 2.35.0: SLA — due soon to the PIC (the OT team when nobody holds it); overdue to the PIC and the OT team.
         if (kind === 'ticketDueSoon') return rec.assigneeUid ? rec.assigneeUid === u.uid : (owner || lvlOf(u, 'tickets') === 'edit');
         if (kind === 'ticketOverdue') return rec.assigneeUid === u.uid || owner || lvlOf(u, 'tickets') === 'edit';
@@ -61,6 +63,7 @@ function composePush(kind, id, r) {
     const tkUrl = `./?action=tickets&ticket=${encodeURIComponent(id)}`;
     if (kind === 'ticketNew') return { title: `New ticket · ${TK[r.priority] || 'Medium'}: ${cut(r.title, 60)}`, body: cut(`${r.category || ''}${unitList(r.units) ? ' · ' + unitList(r.units) : ''}${r.location ? ' · ' + r.location : ''} — ${r.reportedBy || ''}`, 160), url: tkUrl, tag: `tk-${id}` };
     if (kind === 'ticketAssign') return { title: `Ticket for you: ${cut(r.title, 70)}`, body: cut(`${r.no || ''} · ${TK[r.priority] || ''} priority${r.location ? ' · ' + r.location : ''}`, 160), url: tkUrl, tag: `tk-${id}` };
+    if (kind === 'ticketReopen') return { title: `Ticket reopened: ${cut(r.title, 70)}`, body: cut(`${r.no || ''} · not fixed yet${r.location ? ' · ' + r.location : ''}`, 160), url: tkUrl, tag: `tk-${id}` };
     if (kind === 'ticketStatus') return { title: `Your ticket is ${ST[r.status] || r.status}`, body: cut(`${r.no || ''} · ${r.title}${r.status === 'resolved' && r.resolution ? ' — ' + r.resolution : ''}`, 160), url: tkUrl, tag: `tk-${id}` };
     const span = ms => { const h = Math.max(0, ms || 0) / 3600000; return h >= 48 ? `${Math.floor(h / 24)} days` : h >= 1 ? `${Math.floor(h)} h` : `${Math.max(1, Math.round(h * 60))} min`; };
     if (kind === 'ticketDueSoon') return { title: `Ticket due in ${span(r.leftMs)}: ${cut(r.title, 60)}`, body: cut(`${r.no || ''} · ${TK[r.priority] || 'Medium'} priority · ${r.assigneeName ? 'PIC ' + r.assigneeName : 'no PIC yet'}`, 160), url: tkUrl, tag: `tk-sla-${id}` };

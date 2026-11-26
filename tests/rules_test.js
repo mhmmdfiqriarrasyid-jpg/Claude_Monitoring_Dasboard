@@ -720,6 +720,7 @@ async function check(name, p, expectOk) {
         await setDoc(doc(db, 'users', 'khl2'), { uid: 'khl2', email: 'khl2@x.id', displayName: 'Andi', role: 'khl', status: 'active', access: {} });
         await setDoc(doc(db, 'tickets', 'tk_res'), { id: 'tk_res', title: 'GPS', category: 'GPS', priority: 'high', status: 'resolved', reportedByUid: 'khl1', events: [otEvSeed()], resolution: 'fixed', resolvedAt: 1 });
         await setDoc(doc(db, 'tickets', 'tk_res2'), { id: 'tk_res2', title: 'GPS', category: 'GPS', priority: 'high', status: 'resolved', reportedByUid: 'khl1', events: [otEvSeed()], resolution: 'fixed', resolvedAt: 1 });
+        await setDoc(doc(db, 'tickets', 'tk_res3'), { id: 'tk_res3', title: 'GPS', category: 'GPS', priority: 'high', status: 'resolved', reportedByUid: 'khl1', assigneeUid: 'tkE', events: [otEvSeed()], resolution: 'fixed', resolvedAt: 1 });
         await setDoc(doc(db, 'tickets', 'tk_other'), { id: 'tk_other', title: 'HT', category: 'Radio', priority: 'low', status: 'open', reportedByUid: 'someone', events: [] });
         await setDoc(doc(db, 'tickets', 'tk_cap'), { id: 'tk_cap', title: 'HT', category: 'Radio', priority: 'low', status: 'progress', reportedByUid: 'khl1',
             events: Array.from({ length: 300 }, (_, i) => ({ at: i + 1, by: 'E', byUid: 'tkE', type: 'comment', text: 'n' + i })) });
@@ -782,6 +783,9 @@ async function check(name, p, expectOk) {
     // Reopen: resolvedAt goes.
     await check('S9 Pelapor: "Not fixed — reopen" yang menyimpan resolvedAt DITOLAK', updateDoc(doc(TK1, 'tickets', 'tk_res2'), { status: 'open', closedAt: null, events: [otEvSeed(), tkEv('reopen', { text: 'Masih mati' })], updatedAt: Date.now(), lastActorUid: 'khl1' }), false);
     await check('S9 Pelapor: "Not fixed — reopen" menghapus resolvedAt', updateDoc(doc(TK1, 'tickets', 'tk_res2'), { status: 'open', closedAt: null, resolvedAt: null, events: [otEvSeed(), tkEv('reopen', { text: 'Masih mati' })], updatedAt: Date.now(), lastActorUid: 'khl1' }), true);
+    // 2.48.0: with a PIC the reporter reopens it to Assigned; without one, Assigned is refused.
+    await check('2.48.0 Pelapor: reopen ke Assigned tanpa PIC DITOLAK', updateDoc(doc(TK1, 'tickets', 'tk_res2'), { status: 'assigned', closedAt: null, resolvedAt: null, events: [otEvSeed(), tkEv('reopen', { text: 'Masih mati' }), tkEv('reopen', { text: 'lagi' })].slice(0, 2), updatedAt: Date.now(), lastActorUid: 'khl1' }), false);
+    await check('2.48.0 Pelapor: reopen ke Assigned (ada PIC) diterima', updateDoc(doc(TK1, 'tickets', 'tk_res3'), { status: 'assigned', closedAt: null, resolvedAt: null, events: [otEvSeed(), tkEv('reopen', { text: 'Masih mati' })], updatedAt: Date.now(), lastActorUid: 'khl1' }), true);
     await check('S9 Pelapor: "reopen" pada ticket yang belum resolved DITOLAK', updateDoc(doc(TK1, 'tickets', 'tk_s12'), { status: 'open', resolvedAt: null, events: [ev0, tkEv('reopen')], updatedAt: Date.now(), lastActorUid: 'khl1' }), false);
     // At the 300 cap the app drops the oldest event.
     const capEvs = Array.from({ length: 300 }, (_, i) => ({ at: i + 1, by: 'E', byUid: 'tkE', type: 'comment', text: 'n' + i }));

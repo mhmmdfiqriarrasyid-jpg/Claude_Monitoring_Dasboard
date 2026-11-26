@@ -51,6 +51,7 @@ function _pjId(prefix) { return `${prefix}_${Date.now().toString(36)}${Math.rand
 function jobCategoryChoices() { return masterListActive('jobCategory') ? masterLists.jobCategory.slice() : OT_JOB_CATEGORIES.slice(); }
 function departmentChoices() { return masterListActive('department') ? masterLists.department.slice() : OT_DEPARTMENTS.slice(); }
 function isImplementJob(cat) { return /implement/i.test(cat || '') && !/remov/i.test(cat || ''); }
+function isImplementRemovalJob(cat) { return /implement/i.test(cat || '') && /remov/i.test(cat || ''); }
 function pjTypeLabel(k) { return (PJ_TYPES.find(t => t.key === k) || PJ_TYPES[2]).label; }
 function pjStatusLabel(k) { return (PJ_STATUSES.find(t => t.key === k) || PJ_STATUSES[0]).label; }
 
@@ -1274,6 +1275,29 @@ function saveJob(event) {
                 if (changes.size) showToast(`${changes.size} unit(s) now carry ${implement}`, 'info');
             } else {
                 showToast('Job saved — the unit’s implement was not changed (needs Unit Database edit access)', 'warning');
+            }
+        }
+    }
+    // 2.48.0: an implement taken off: the units no longer carry it in the Unit Database (once).
+    if (isImplementRemovalJob(category) && status === 'done' && rec.units.length) {
+        const already = rec.appliedImplement && rec.appliedImplement.removed
+            && rec.units.every(u => (rec.appliedImplement.units || []).some(a => a.id === u.id));
+        if (!already) {
+            if (hasAccess('editUnits', 'edit')) {
+                const done = rec.appliedImplement && rec.appliedImplement.removed ? (rec.appliedImplement.units || []) : [];
+                const changes = new Map(), applied = done.slice();
+                rec.units.forEach(u => {
+                    if (done.some(a => a.id === u.id)) return;   // cleared before: a later fitting stays
+                    const live = globalData.find(x => x.id === u.id);
+                    if (!live) return;
+                    applied.push({ id: u.id, before: live.implement || '' });
+                    if (live.implement) changes.set(u.id, { implement: '' });
+                });
+                if (changes.size) updateUnitsBatch(changes);
+                rec.appliedImplement = { implement: '', removed: true, at: Date.now(), units: applied };
+                if (changes.size) showToast(`${changes.size} unit(s) no longer carry an implement`, 'info');
+            } else {
+                showToast('Job saved — the unit’s implement was not cleared (needs Unit Database edit access)', 'warning');
             }
         }
     }

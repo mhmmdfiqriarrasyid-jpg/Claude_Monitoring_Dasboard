@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.47.5';
+const APP_VERSION = 'v2.48.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -5461,7 +5461,7 @@ function syncEmailDaily() {
     });
     document.getElementById('mgrHourGroup').style.display = document.getElementById('mgrEnabled').checked ? '' : 'none';
     const sf = document.getElementById('monthlyFreq').value;
-    document.getElementById('monthlySendNote').textContent = sf === 'daily' ? "Yesterday's summary" : sf === 'weekly' ? 'The last 7 days' : "Last month's report";
+    document.getElementById('monthlySendNote').textContent = sf === 'daily' ? "Yesterday's summary" : sf === 'weekly' ? 'The last full week (Saturday–Friday)' : "Last month's report";
 }
 // The Admin menu entry: the owner, and License Stock viewers (read only) —
 // a team-only account keeps its menu to Dashboard + Team.
@@ -21597,9 +21597,25 @@ function saveDevice(event) {
     }
 
     const existing = id ? warehouseDevices.find(d => d.id === id) : null;
+    // 2.48.0: a device on a BAST leaves its holder only through Return (condition, returner,
+    // return letter) — the form would end the letter without any of it.
+    const handOver = existing && existing.status === 'allocated' && allocated && (existing.recipientName || '') !== recipientName;
+    if (existing && existing.status === 'allocated' && existing.bastId && (!allocated || handOver)) {
+        showToast(`This device is on BAST ${existing.bastNo || ''} — use Return first${handOver ? ', then make a new BAST for the new holder' : ''}. Nothing else in the form was saved.`, 'warning');
+        if (typeof returnDevicePrompt === 'function') { closeDeviceModal(); returnDevicePrompt(id); }
+        return;
+    }
     // An allocated device set back to another status has come back: keep that
     // allocation, with its return date, in the device's allocation history.
     let allocationHistory = existing && Array.isArray(existing.allocationHistory) ? existing.allocationHistory.slice() : [];
+    // 2.48.0: given straight to someone else (no BAST): the previous holder stays in the history,
+    // ending the day the new one starts.
+    if (handOver) {
+        if (existing.allocatedAt && allocatedAt < existing.allocatedAt) { showToast('The new allocation date is before the previous holder got it', 'warning'); return; }
+        allocationHistory.push({ division: existing.division || '', recipientName: existing.recipientName || '', recipientTitle: existing.recipientTitle || '',
+            allocatedAt: existing.allocatedAt || '', returnedAt: allocatedAt });
+        allocationHistory = allocationHistory.slice(-20);
+    }
     if (existing && existing.status === 'allocated' && !allocated) {
         const returnedAt = document.getElementById('devReturnedAt').value || '';
         if (!returnedAt) { showToast('Fill in the return date', 'warning'); return; }
@@ -22551,6 +22567,17 @@ function checkStockBalance(itemName, qty, existing) {
         + 'from an existing one.\n\nSave anyway?');
 }
 
+function checkStockEdit(existing, itemName, qty, txnType) {
+    const k = v => (v || '').trim().toLowerCase();
+    const sign = (t, q) => (Number(q) || 0) * (t === 'OUT' ? -1 : 1);
+    const now = new Map(stockSummary().map(r => [r.name.toLowerCase(), r.qty]));
+    const after = new Map(now);
+    after.set(k(existing.itemName), (after.get(k(existing.itemName)) || 0) - sign(existing.txnType, existing.qty));
+    after.set(k(itemName), (after.get(k(itemName)) || 0) + sign(txnType, qty));
+    const bad = [...new Set([k(existing.itemName), k(itemName)])].filter(n => n && after.get(n) < 0 && after.get(n) < (now.get(n) || 0));
+    if (!bad.length) return true;
+    return confirm(`After this change the stock of ${bad.map(n => `"${n}" is ${after.get(n)}`).join(' and ')} — below zero, because more has already gone out.\n\nSave anyway?`);
+}
 function stockSummary(location) {
     const totals = new Map();
     stockLedger.forEach(r => {
@@ -22721,7 +22748,9 @@ function saveStockItem(event) {
     // counterpart never gets decremented. The licence ledger already warns
     // like this (saveLicenseStock); the warehouse one did not, and
     // stockSummary would happily render a negative balance.
-    if (txnType === 'OUT' && !checkStockBalance(itemName, qty, existing)) return;
+    // 2.48.0: an edit (of an IN too — made smaller, or moved to another item name) is checked
+    // on the balances it leaves behind.
+    if (existing ? !checkStockEdit(existing, itemName, qty, txnType) : (txnType === 'OUT' && !checkStockBalance(itemName, qty, null))) return;
 
     const stkId = id || generateStockId();
     const photoIds = whPhotoCommit('stock', stkId);
@@ -26118,7 +26147,8 @@ function renderDataCompleteness() {
 // forced off it; Data Check lists those.
 // ============================================================
 
-function canEditMasterList(kind) { return (MASTER_DEF[kind] || { edit: [] }).edit.some(a => hasAccess(a, 'edit')); }
+// 2.48.0: 'own' (own records only) ranks above view but is not 'edit' — firestore.rules needs 'edit'.
+function canEditMasterList(kind) { return (MASTER_DEF[kind] || { edit: [] }).edit.some(a => hasAccess(a, 'edit') && grantedAccess(a) !== 'own'); }
 const MASTER_GROUP = { heavyBrand: 'heavy', brand: 'tractor' };
 function canViewMasterList(kind) {
     if (MASTER_GROUP[kind] && !unitScopeAllows(MASTER_GROUP[kind])) return false;

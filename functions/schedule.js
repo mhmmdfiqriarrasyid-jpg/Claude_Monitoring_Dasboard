@@ -23,8 +23,8 @@ function isDue(sched, now) {
     if (sched.freq === 'monthly') return d.getDate() === sched.monthday;
     return true;
 }
-// The period a summary sent `now` reports on: yesterday, the 7 days before
-// today, or the calendar month before this one.
+// The period a summary sent `now` reports on: yesterday, the last full Saturday–Friday
+// week, or the calendar month before this one.
 function periodRange(freq, now) {
     const d = new Date(now);
     const today = new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -34,8 +34,10 @@ function periodRange(freq, now) {
         start = new Date(today); start.setDate(start.getDate() - 1);
         name = 'Daily Summary'; label = fmt(start, { day: 'numeric', month: 'long', year: 'numeric' });
     } else if (freq === 'weekly') {
-        start = new Date(today); start.setDate(start.getDate() - 7);
-        const last = new Date(today); last.setDate(last.getDate() - 1);
+        // 2.48.0: the last full Saturday–Friday week, like the Weekly report and the Jobs filter.
+        end = new Date(today); end.setDate(end.getDate() - (today.getDay() + 1) % 7);
+        start = new Date(end); start.setDate(start.getDate() - 7);
+        const last = new Date(end); last.setDate(last.getDate() - 1);
         name = 'Weekly Summary'; label = `${fmt(start, { day: 'numeric', month: 'short' })} – ${fmt(last, { day: 'numeric', month: 'short', year: 'numeric' })}`;
     } else {
         start = new Date(d.getFullYear(), d.getMonth() - 1, 1);
