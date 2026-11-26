@@ -2,7 +2,7 @@
    Network-first for the app shell (so deploys show up on reload), cache-first
    for static assets, network-only for Firebase live endpoints. */
 
-const CACHE_NAME = 'tractor-monitor-2.47.3';
+const CACHE_NAME = 'tractor-monitor-2.47.4';
 
 // Same-origin core files — always revalidated from network first so a new
 // deploy is picked up on the next reload (falls back to cache when offline).
@@ -31,7 +31,7 @@ const CORE = [
     './icons/icon-96.png',
     './manifest.webmanifest',
     // Libraries and fonts, self-hosted since 2.11.1 (vendor/README.md).
-    // vendor/xlsx.full.min.js is cached the first time an Excel is imported.
+    // vendor/xlsx.full.min.js lives in LIB_CACHE (below), kept across deploys.
     './vendor/chart.umd.js',
     './vendor/papaparse.min.js',
     './vendor/fonts.css',
@@ -71,6 +71,13 @@ const NETWORK_ONLY_HOSTS = [
     'fcmregistrations.googleapis.com'
 ];
 
+// 2.47.4: big libraries kept across deploys (each deploy used to drop them, and the Excel
+// reader — ~900 KB — then had to come down again on the next import, often on a weak field
+// signal). Fetched once in the background after a deploy; served from here.
+const LIB_CACHE = 'ot-libs-1';
+const LIB_FILES = ['./vendor/xlsx.full.min.js'];
+const isLib = url => LIB_FILES.some(f => url.pathname.endsWith(f.slice(1)));
+
 self.addEventListener('install', event => {
     event.waitUntil((async () => {
         const cache = await caches.open(CACHE_NAME);
@@ -87,8 +94,13 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
     event.waitUntil((async () => {
         const keys = await caches.keys();
-        await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
+        await Promise.all(keys.filter(k => k !== CACHE_NAME && k !== LIB_CACHE).map(k => caches.delete(k)));
         await self.clients.claim();
+        // Best effort: a weak signal leaves it for next time (or the first import fetches it).
+        try {
+            const lib = await caches.open(LIB_CACHE);
+            for (const f of LIB_FILES) if (!(await lib.match(f))) await lib.add(f).catch(() => {});
+        } catch (_) { /* next time */ }
     })());
 });
 
@@ -142,7 +154,9 @@ async function networkFirst(request) {
 }
 
 async function cacheFirst(request) {
-    const cache = await caches.open(CACHE_NAME);
+    let lib = false;
+    try { lib = isLib(new URL(request.url)); } catch (_) { lib = false; }
+    const cache = await caches.open(lib ? LIB_CACHE : CACHE_NAME);
     const cached = await cache.match(request);
     if (cached) return cached;
     try {

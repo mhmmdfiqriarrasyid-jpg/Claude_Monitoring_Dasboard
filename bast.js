@@ -317,7 +317,8 @@ async function importBastFile(event) {
         rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: '' });
     } catch (err) {
         console.error('[bast] import read failed:', err);
-        showToast(/NotReadable|could not be read|permission/i.test(String(err && (err.name || err.message)))
+        showToast(err && err.code === 'xlsx/load' ? err.message
+            : /NotReadable|could not be read|permission/i.test(String(err && (err.name || err.message)))
             ? 'This file could not be read — close it in Excel first, then import again' : 'This file could not be read', 'error');
         return;
     }

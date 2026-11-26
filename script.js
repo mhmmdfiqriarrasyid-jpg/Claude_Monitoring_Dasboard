@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.47.3';
+const APP_VERSION = 'v2.47.4';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -26653,13 +26653,20 @@ function paddocksFromRows(rows) {
 let _xlsxLoading = null;
 function loadSheetJs() {
     if (window.XLSX) return Promise.resolve(window.XLSX);
-    if (!_xlsxLoading) _xlsxLoading = new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = 'vendor/xlsx.full.min.js';   // xlsx@0.18.5, self-hosted (vendor/README.md)
-        s.onload = () => window.XLSX ? resolve(window.XLSX) : reject(new Error('XLSX missing'));
-        s.onerror = () => { _xlsxLoading = null; reject(new Error('XLSX failed to load')); };
-        document.head.appendChild(s);
-    });
+    if (!_xlsxLoading) {
+        // 2.47.4: a weak signal no longer leaves the import silent — say it is loading, and give up
+        // with a clear message after 30 s (the reader is kept on the device after the first time).
+        let slow = setTimeout(() => { if (typeof showToast === 'function') showToast('Loading the Excel reader…', 'info'); }, 1200);
+        _xlsxLoading = new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            const fail = msg => { clearTimeout(slow); clearTimeout(t); _xlsxLoading = null; s.remove(); reject(Object.assign(new Error(msg), { code: 'xlsx/load' })); };
+            const t = setTimeout(() => fail('Weak connection — the Excel reader did not load. Try again.'), 30000);
+            s.src = 'vendor/xlsx.full.min.js';   // xlsx@0.18.5, self-hosted (vendor/README.md)
+            s.onload = () => { clearTimeout(slow); clearTimeout(t); window.XLSX ? resolve(window.XLSX) : fail('The Excel reader is damaged — reload the page.'); };
+            s.onerror = () => fail('No connection — the Excel reader did not load. Try again.');
+            document.head.appendChild(s);
+        });
+    }
     return _xlsxLoading;
 }
 async function importPaddockFile(event) {

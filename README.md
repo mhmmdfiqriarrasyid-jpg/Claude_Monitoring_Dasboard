@@ -593,6 +593,11 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.47.4 — import Excel tahan sinyal lemah**: pembaca Excel (~900 KB) disimpan
+  di perangkat dalam cache terpisah yang tidak ikut terhapus saat versi baru masuk,
+  dan diunduh di latar belakang setelah update. Saat import tampil "Loading the
+  Excel reader…"; kalau gagal dalam 30 detik muncul pesan jelas, tidak lagi diam.
+  2.47.3: import yang berhenti selalu menampilkan sebabnya dan tercatat di Error log.
   **2.47.2 — dialog Return dirapikan + nama pengembali**: kartu ringkasan
   device (pemegang, divisi, sejak, BAST), kolom wajib *Returned by* (otomatis
   nama pemegang, bisa diganti kalau orang lain yang mengantar). Nama pengembali
