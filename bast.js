@@ -328,9 +328,9 @@ async function deleteBasts(ids) {
 function bastResetPlan(kept) {
     const used = {};
     kept.forEach(b => {
-        const m = /\/(\d+)$/.exec(String(b.no || '')); if (!m) return;
-        const k = `${b.companyCode}/BAST-${b.itemCode}/${String(b.date || '').slice(0, 4)}`;
-        (used[k] = used[k] || new Set()).add(Number(m[1]));
+        const q = bastSeqOf(b.no), m = /\/(\d+)$/.exec(String(b.no || '')); if (!q && !m) return;
+        const k = q ? q.series : `${b.companyCode}/BAST-${b.itemCode}/${String(b.date || '').slice(0, 4)}`;
+        (used[k] = used[k] || new Set()).add(q ? q.n : Number(m[1]));
     });
     const p3 = n => String(n).padStart(3, '0');
     const lines = Object.entries(used).map(([k, nums]) => {

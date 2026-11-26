@@ -593,6 +593,9 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.48.1 — Reset numbering membaca seri dari nomor surat**: PT, kode, dan tahun diambil
+  dari nomornya sendiri (bila berformat aplikasi), jadi nomor yang dulu diketik manual
+  ikut terhitung dan nomor otomatis tidak mengulang urutan yang sama di bulan lain.
   **2.48.0 — logika dibenarkan (hasil pemeriksaan)**: BAST yang dibatalkan
   mengembalikan perangkat ke keadaan sebelum surat (ke Warehouse, atau ke pemegang
   sebelumnya); perangkat ber-BAST hanya bisa dilepas lewat **Return** (form Edit

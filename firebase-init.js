@@ -1633,11 +1633,14 @@ window.cloud = {
         // (deleted letters) are kept as `free` and handed out first, lowest first.
         const used = new Map();
         live.forEach(b => {
+            // 2.48.1: the series comes from the number itself when it has the app's format (a typed
+            // number may name another year than the letter's date); else from the letter's fields.
+            const f = /^([A-Z0-9]{1,10})\/BAST-([A-Z0-9]{1,10})\/\d{2}\/(\d{4})\/(\d{1,6})$/.exec(String(b.no || '').trim().toUpperCase());
             const y = String(b.date || '').slice(0, 4), m = /\/(\d+)$/.exec(String(b.no || ''));
-            if (!m || !b.companyCode || !b.itemCode) return;
-            const k = `${b.companyCode}_${b.itemCode}_${y}`;
+            if (!f && (!m || !b.companyCode || !b.itemCode)) return;
+            const k = f ? `${f[1]}_${f[2]}_${f[3]}` : `${b.companyCode}_${b.itemCode}_${y}`;
             if (!used.has(k)) used.set(k, new Set());
-            used.get(k).add(Number(m[1]));
+            used.get(k).add(Number(f ? f[4] : m[1]));
         });
         const plan = new Map();
         used.forEach((nums, k) => {
