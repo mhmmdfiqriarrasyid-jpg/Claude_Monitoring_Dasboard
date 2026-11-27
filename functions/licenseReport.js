@@ -7,6 +7,9 @@
 const LICENSE_TYPE_DEFAULTS = ['SF-RTK', 'SF-1', 'G5 Basic', 'G5 Advance'];
 const LICENSE_LOW_STOCK_THRESHOLD = 5;
 const SOON_DAYS = 30;
+// 2.49.0: licences due within this many days are counted against the stock (what to buy).
+const PLAN_DAYS = 60;
+const PREMIUM = { gps: 'SF-RTK', display: 'G5 Advance' };
 
 const licenseTypeKey = raw => (raw || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
@@ -39,8 +42,9 @@ function getExpiryStatus(endDate, now) {
     today.setHours(0, 0, 0, 0);
     end.setHours(0, 0, 0, 0);
     const days = Math.round((end - today) / 86400000);
+    // A licence is valid through the whole of its end date (2.49.0: that day reads "Last day").
     if (days < 0) return { kind: 'expired', label: `Expired ${-days}d ago`, daysLeft: days };
-    if (days <= SOON_DAYS) return { kind: 'soon', label: `${days}d left`, daysLeft: days };
+    if (days <= SOON_DAYS) return { kind: 'soon', label: days === 0 ? 'Last day' : `${days}d left`, daysLeft: days };
     return { kind: 'ok', label: `${days}d left`, daysLeft: days };
 }
 
@@ -66,7 +70,16 @@ function isDowngraded(unit, kind, now) {
     return rawType === fallback && !!archived && !end;
 }
 
-// opts.soonOnly leaves expired licences out (what the email has always sent).
+// 2.49.0: a premium licence that ran out and was not renewed (the unit fell back to SF-1 /
+// G5 Basic) stays on the list as NOT RENEWED until a new distribution renews it.
+function notRenewedEnd(unit, kind, now) {
+    const rawType = kind === 'display' ? (unit.licenseDisplay || '') : (unit.gpsLicense || '');
+    const end = getLicenseEndDate(unit, kind);
+    if (licenseTypeKey(rawType) === licenseTypeKey(PREMIUM[kind]) && getExpiryStatus(end, now).kind === 'expired') return end;
+    const archived = kind === 'display' ? unit.displayLicenseExpiredAt : unit.gpsLicenseExpiredAt;
+    return isDowngraded(unit, kind, now) && archived ? archived : '';
+}
+// opts.soonOnly leaves the not-renewed licences out.
 function buildAlertList(units, stock, opts) {
     const soonOnly = !!(opts && opts.soonOnly);
     const now = opts && opts.now;
@@ -74,11 +87,20 @@ function buildAlertList(units, stock, opts) {
     let expiredCount = 0, soonCount = 0;
     (units || []).filter(u => !isHeavy(u)).forEach(unit => {
         ['gps', 'display'].forEach(kind => {
+            const gone = notRenewedEnd(unit, kind, now);
+            if (gone) {
+                if (soonOnly) return;
+                const s = getExpiryStatus(gone, now);
+                expiredCount++;
+                lines.push({ daysLeft: s.daysLeft == null ? -99999 : s.daysLeft,
+                    cells: ['NOT RENEWED', unit.name || '-', unit.model || '-', unit.sn || '-', PREMIUM[kind], unit.site || '-', gone, s.kind === 'expired' ? `${s.label} · now ${kind === 'display' ? 'G5 Basic' : 'SF-1'}` : s.label] });
+                return;
+            }
             const end = licenseExpiryEnd(unit, kind, stock);
             if (!end) return;
             const s = getExpiryStatus(end, now);
-            if (isDowngraded(unit, kind, now)) return;
             if (soonOnly && s.kind === 'expired') return;
+            // (a premium one never gets here expired: it is NOT RENEWED above; other types keep EXPIRED)
             if (s.kind === 'expired' || s.kind === 'soon' || (s.kind === 'ok' && s.daysLeft <= SOON_DAYS)) {
                 const licName = kind === 'display' ? (unit.licenseDisplay || 'Display') : (unit.gpsLicense || 'GPS');
                 const tag = s.kind === 'expired' ? 'EXPIRED' : 'EXPIRING';
@@ -94,7 +116,21 @@ function buildAlertList(units, stock, opts) {
     return { expiredCount, soonCount, total: lines.length, rows: lines.map(l => l.cells), lines: lines.map(l => l.cells.join(' | ')) };
 }
 
-function lowStockList(stock) {
+// 2.49.0: per premium type, the units whose licence ends in the next PLAN_DAYS plus the ones
+// not renewed yet — what the stock has to cover.
+function licenceDemand(units, now) {
+    const due = { 'SF-RTK': 0, 'G5 Advance': 0 };
+    (units || []).filter(u => !isHeavy(u)).forEach(unit => ['gps', 'display'].forEach(kind => {
+        if (notRenewedEnd(unit, kind, now)) { due[PREMIUM[kind]]++; return; }
+        const rawType = kind === 'display' ? (unit.licenseDisplay || '') : (unit.gpsLicense || '');
+        if (licenseTypeKey(rawType) !== licenseTypeKey(PREMIUM[kind])) return;
+        const s = getExpiryStatus(getLicenseEndDate(unit, kind), now);
+        if (s.daysLeft != null && s.daysLeft >= 0 && s.daysLeft <= PLAN_DAYS) due[PREMIUM[kind]]++;
+    }));
+    return due;
+}
+function lowStockList(stock, units, now) {
+    const demand = licenceDemand(units, now);
     const known = new Map(LICENSE_TYPE_DEFAULTS.map(t => [licenseTypeKey(t), t]));
     const acc = {};
     (stock || []).forEach(r => {
@@ -105,42 +141,44 @@ function lowStockList(stock) {
     });
     const map = {};
     Object.values(acc).forEach(v => { map[v.label] = { in: v.in, out: v.out, sisa: v.in - v.out }; });
+    Object.keys(demand).forEach(t => { if (demand[t] && !map[t]) map[t] = { in: 0, out: 0, sisa: 0 }; });
     return Object.keys(map)
-        .filter(t => (map[t].in > 0 || map[t].out > 0) && map[t].sisa <= LICENSE_LOW_STOCK_THRESHOLD)
-        .sort((a, b) => map[a].sisa - map[b].sisa)
-        .map(t => ({ type: t, sisa: map[t].sisa }));
+        .map(t => ({ type: t, sisa: map[t].sisa, due: demand[t] || 0, short: Math.max(0, (demand[t] || 0) - Math.max(0, map[t].sisa)) }))
+        .filter(l => l.short > 0 || ((map[l.type].in > 0 || map[l.type].out > 0) && l.sisa <= LICENSE_LOW_STOCK_THRESHOLD && !(l.type in demand)))
+        .sort((a, b) => b.short - a.short || a.sisa - b.sisa);
 }
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // Subject, plain text and HTML for one email. null when there is nothing to say.
 function composeEmail(units, stock, opts) {
-    const report = buildAlertList(units, stock, { soonOnly: true, now: opts && opts.now });
+    const report = buildAlertList(units, stock, { now: opts && opts.now });
     if (!report.total) return null;
-    const low = lowStockList(stock);
+    const low = lowStockList(stock, units, opts && opts.now);
+    const lowText = l => l.due ? `${l.type} — ${l.due} due in ${PLAN_DAYS} days or not renewed · ${l.sisa} in stock${l.short ? ` · buy ${l.short}` : ''}` : `${l.type} — ${l.sisa} left`;
     const today = new Date((opts && opts.now) || Date.now()).toLocaleDateString('en-GB',
         { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: (opts && opts.timeZone) || undefined });
     const head = ['Status', 'Unit', 'Model', 'Serial Number', 'License', 'Site', 'Expiry Date', 'Remaining'];
     const text = [
         `License Alert Report — ${today}`,
-        `Expiring in the next ${SOON_DAYS} days: ${report.soonCount}`,
+        `Expiring in the next ${SOON_DAYS} days: ${report.soonCount} · expired and not renewed: ${report.expiredCount}`,
         '',
         head.join(' | '),
         '—'.repeat(60),
         ...report.lines,
-        ...(low.length ? ['', 'LOW LICENSE STOCK', ...low.map(l => `${l.type} | ${l.sisa} left`)] : []),
+        ...(low.length ? ['', 'LICENSE STOCK TO BUY', ...low.map(lowText)] : []),
         '',
         'Sent by the Operation Technology Dashboard — https://ot.techorchestrator.cloud'
     ].join('\n');
     const td = 'style="padding:6px 10px;border-bottom:1px solid #EAECF0;font-size:13px"';
     const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#101828">
 <h2 style="margin:0 0 4px;font-size:18px">License Alert Report</h2>
-<p style="margin:0 0 14px;color:#475467">${esc(today)} · <strong>${report.soonCount}</strong> expiring in the next ${SOON_DAYS} days</p>
+<p style="margin:0 0 14px;color:#475467">${esc(today)} · <strong>${report.soonCount}</strong> expiring in the next ${SOON_DAYS} days · <strong>${report.expiredCount}</strong> expired and not renewed</p>
 <table style="border-collapse:collapse;width:100%"><thead><tr>${head.map(h => `<th align="left" style="padding:6px 10px;background:#F2F4F7;font-size:12px">${esc(h)}</th>`).join('')}</tr></thead>
 <tbody>${report.rows.map(r => `<tr>${r.map(c => `<td ${td}>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>
-${low.length ? `<h3 style="margin:18px 0 6px;font-size:15px">Low license stock</h3><ul style="margin:0;padding-left:18px">${low.map(l => `<li>${esc(l.type)} — ${l.sisa} left</li>`).join('')}</ul>` : ''}
+${low.length ? `<h3 style="margin:18px 0 6px;font-size:15px">License stock to buy</h3><ul style="margin:0;padding-left:18px">${low.map(l => `<li>${esc(lowText(l))}</li>`).join('')}</ul>` : ''}
 <p style="margin-top:18px;font-size:12px;color:#667085">Sent by the <a href="https://ot.techorchestrator.cloud">Operation Technology Dashboard</a>.</p></div>`;
-    return { subject: `License Alert: ${report.soonCount} expiring soon`, text, html, report, low };
+    return { subject: `License Alert: ${report.soonCount} expiring soon${report.expiredCount ? `, ${report.expiredCount} not renewed` : ''}`, text, html, report, low };
 }
 
 // ---- The License Alert sent by hand (2.45.0) ----
@@ -168,4 +206,4 @@ function manualSendCheck(state, uid, now, owner) {
     return { ok: true, next: { day, total: total + 1, byUid: Object.assign({}, byUid, { [uid]: mine + 1 }), lastAt: now } };
 }
 
-module.exports = { buildAlertList, lowStockList, composeEmail, getExpiryStatus, manualSendCheck, MANUAL_LIMIT };
+module.exports = { PLAN_DAYS, licenceDemand, buildAlertList, lowStockList, composeEmail, getExpiryStatus, manualSendCheck, MANUAL_LIMIT };

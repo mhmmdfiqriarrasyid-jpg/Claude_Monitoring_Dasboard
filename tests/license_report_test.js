@@ -41,11 +41,37 @@ const server = require('../functions/licenseReport');
     t('server = dashboard: jumlah', [srv.total, srv.soonCount, srv.expiredCount], [web.alert.total, web.alert.soonCount, web.alert.expiredCount]);
     const srvAll = server.buildAlertList(units, stock);
     t('server = dashboard: termasuk yang sudah habis', srvAll.lines, web.all.lines);
-    t('server = dashboard: stok lisensi menipis', server.lowStockList(stock), web.low);
+    t('server = dashboard: stok lisensi menipis', server.lowStockList(stock, units), web.low);
     const mail = server.composeEmail(units, stock);
-    t('email: subjek', mail.subject, `License Alert: ${web.alert.soonCount} expiring soon`);
+    t('email: subjek', mail.subject, `License Alert: ${web.alert.soonCount} expiring soon, ${web.all.expiredCount} not renewed`);
+    // 2.49.0: habis & belum diperpanjang tetap tampil; renew dihitung dari kebutuhan 60 hari
+    t('habis & turun tingkat tetap tampil sebagai NOT RENEWED', web.all.lines.filter(l => l.startsWith('NOT RENEWED')).map(l => l.split(' | ')[1] + '/' + l.split(' | ')[4]), ['JD-04/G5 Advance', 'JD-02/SF-RTK']);
+    t('hari terakhir = "Last day" (masih berlaku)', web.all.lines.some(l => l.includes('JD-06') && l.endsWith('Last day')), true);
+    t('kebutuhan stok 60 hari: SF-RTK jatuh tempo vs stok', server.lowStockList(stock, units).find(l => l.type === 'SF-RTK'), { type: 'SF-RTK', sisa: 3, due: 4, short: 1 });
     t('email: HTML di-escape', server.composeEmail([{ name: '<b>x</b>', gpsLicense: 'SF-RTK', gpsLicenseEndDate: day(3) }], []).html.includes('&lt;b&gt;x&lt;/b&gt;'), true);
     t('email: tidak ada yang habis = tidak ada email', server.composeEmail([{ name: 'A', gpsLicense: 'SF-RTK', gpsLicenseEndDate: day(90) }], []), null);
+
+    // ---------- 2.49.0: renew menambah 1 tahun dari masa habis ----------
+    const chain = await page.evaluate(() => {
+        const R = {};
+        const out = (id, unitId, date, type, extra) => Object.assign({ id, txnType: 'OUT', unitId, licenseType: type || 'SF-RTK', qty: 1, date, createdAt: 1 }, extra || {});
+        globalLicenseStock = [out('a1', 'uA', '2025-12-01'), out('a2', 'uA', '2026-11-20')];
+        R.early = distributionTarget(globalLicenseStock[1], 'gps').end;
+        globalLicenseStock = [out('b1', 'uB', '2025-01-01'), out('b2', 'uB', '2026-02-01')];
+        R.late = distributionTarget(globalLicenseStock[1], 'gps').end;
+        globalLicenseStock = [out('c1', 'uC', '2026-11-27', 'SF-RTK', { extendsFrom: '2026-12-10' })];
+        R.typed = distributionTarget(globalLicenseStock[0], 'gps').end;
+        globalLicenseStock = [out('d1', 'uD', '2025-12-01'), out('d2', 'uD', '2026-11-20'), out('d3', 'uD', '2027-11-01')];
+        R.twice = distributionTarget(globalLicenseStock[2], 'gps').end;
+        globalLicenseStock = [out('e1', 'uE', '2025-12-01'), out('e2', 'uE', '2026-12-01')];
+        R.lastDay = distributionTarget(globalLicenseStock[1], 'gps').end;
+        return R;
+    });
+    t('renew sebelum habis: +1 tahun dari tanggal habis lama', chain.early, '2027-12-01');
+    t('renew setelah habis: +1 tahun dari tanggal renew', chain.late, '2027-02-01');
+    t('renew lisensi yang diketik di unit (extendsFrom)', chain.typed, '2027-12-10');
+    t('dua kali renew lebih awal: berantai', chain.twice, '2028-12-01');
+    t('renew di hari terakhir: masih menyambung', chain.lastDay, '2027-12-01');
 
     // ---------- layar pengaturan + tombol ----------
     const ui = await page.evaluate(async () => {

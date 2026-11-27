@@ -593,6 +593,14 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.49.0 — logika lisensi**: renew menambah 1 tahun **dari tanggal habis lama** bila
+  dilakukan sebelum/di hari habis (setelah habis: dari tanggal renew), berantai dari
+  distribusi sebelumnya dan `extendsFrom` (tanggal habis unit saat dicatat). Lisensi
+  berlaku sampai akhir tanggal habis ("Last day"). Lisensi premium yang habis dan turun ke
+  SF-1 / G5 Basic otomatis berstatus **NOT RENEWED** dan tetap muncul di Dashboard dan
+  email sampai diperpanjang. Peringatan stok diganti **kebutuhan 60 hari**: per jenis premium
+  = yang jatuh tempo 60 hari + yang belum diperpanjang, dibanding stok → "buy N".
+  **Perlu deploy ulang Functions** (email lisensi).
   **2.48.1 — Reset numbering membaca seri dari nomor surat**: PT, kode, dan tahun diambil
   dari nomornya sendiri (bila berformat aplikasi), jadi nomor yang dulu diketik manual
   ikut terhitung dan nomor otomatis tidak mengulang urutan yang sama di bulan lain.

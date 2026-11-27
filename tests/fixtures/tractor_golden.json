@@ -142,10 +142,11 @@
   }
  },
  "alertList": {
-  "expiredCount": 0,
+  "expiredCount": 1,
   "soonCount": 2,
-  "total": 2,
+  "total": 3,
   "lines": [
+   "NOT RENEWED | GGTR105G_ABC | JOHN DEERE 6110B | 1BM7230C105 | SF-RTK | PT. GPA | 2026-09-05 | Expired 20d ago · now SF-1",
    "EXPIRING | GGTR104G_ABC | JOHN DEERE 6110B | 1BM7230C104 | SF-RTK | PT. GPA | 2026-10-05 | 10d left",
    "EXPIRING | GGTR107G_ABC | JOHN DEERE 6110B | 1BM7230C107 | G5 Advance | PT. GPA | 2026-10-20 | 25d left"
   ]
@@ -163,10 +164,14 @@
   {
    "key": "license",
    "icon": "key",
-   "tone": "warning",
-   "title": "Lisensi segera habis",
-   "total": 2,
+   "tone": "danger",
+   "title": "Licenses not renewed (1) and expiring soon (2)",
+   "total": 3,
    "items": [
+    {
+     "text": "GGTR105G_ABC · SF-RTK",
+     "sub": "2026-09-05 — Expired 20d ago · now SF-1"
+    },
     {
      "text": "GGTR104G_ABC · SF-RTK",
      "sub": "2026-10-05 — 10d left"

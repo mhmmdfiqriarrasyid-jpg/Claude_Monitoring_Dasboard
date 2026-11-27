@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.48.1';
+const APP_VERSION = 'v2.49.0';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -5405,13 +5405,39 @@ function renderLicenseAlerts(data) {
     }).join('');
 }
 
-// ---- Low license stock (dashboard) ----
+// ---- License stock to buy (dashboard) ----
+// 2.49.0: the premium types are measured against what is due — licences ending in the next
+// LICENSE_PLAN_DAYS plus the ones not renewed yet; other types keep the fixed low-stock line.
+// The server's lowStockList (functions/licenseReport.js) gives the same list.
+const LICENSE_PLAN_DAYS = 60;
+function licenseNotRenewedEnd(unit, kind) {
+    const raw = kind === 'display' ? (unit.licenseDisplay || '') : (unit.gpsLicense || '');
+    const prem = kind === 'display' ? 'G5 Advance' : 'SF-RTK';
+    const end = getLicenseEndDate(unit, kind);
+    if (licenseTypeKey(raw) === licenseTypeKey(prem) && getExpiryStatus(end).kind === 'expired') return end;
+    const eff = effectiveLicense(unit, kind);
+    const archived = kind === 'display' ? unit.displayLicenseExpiredAt : unit.gpsLicenseExpiredAt;
+    return eff.downgraded && archived ? archived : '';
+}
+function licenseDemand(units) {
+    const due = { 'SF-RTK': 0, 'G5 Advance': 0 };
+    (units || globalData).filter(u => !isHeavy(u)).forEach(unit => ['gps', 'display'].forEach(kind => {
+        const prem = kind === 'display' ? 'G5 Advance' : 'SF-RTK';
+        if (licenseNotRenewedEnd(unit, kind)) { due[prem]++; return; }
+        if (licenseTypeKey(kind === 'display' ? unit.licenseDisplay : unit.gpsLicense) !== licenseTypeKey(prem)) return;
+        const s = getExpiryStatus(getLicenseEndDate(unit, kind));
+        if (s.daysLeft != null && s.daysLeft >= 0 && s.daysLeft <= LICENSE_PLAN_DAYS) due[prem]++;
+    }));
+    return due;
+}
 function _lowStockList() {
     const sum = computeLicenseSummary();
+    const demand = licenseDemand();
+    Object.keys(demand).forEach(t => { if (demand[t] && !sum[t]) sum[t] = { in: 0, out: 0, sisa: 0 }; });
     return Object.keys(sum)
-        .filter(t => (sum[t].in > 0 || sum[t].out > 0) && sum[t].sisa <= LICENSE_LOW_STOCK_THRESHOLD)
-        .sort((a, b) => sum[a].sisa - sum[b].sisa)
-        .map(t => ({ type: t, sisa: sum[t].sisa }));
+        .map(t => ({ type: t, sisa: sum[t].sisa, due: demand[t] || 0, short: Math.max(0, (demand[t] || 0) - Math.max(0, sum[t].sisa)) }))
+        .filter(l => l.short > 0 || ((sum[l.type].in > 0 || sum[l.type].out > 0) && l.sisa <= LICENSE_LOW_STOCK_THRESHOLD && !(l.type in demand)))
+        .sort((a, b) => b.short - a.short || a.sisa - b.sisa);
 }
 
 function renderStockAlerts() {
@@ -5428,7 +5454,7 @@ function renderStockAlerts() {
         <div class="stock-alert-card ${l.sisa <= 0 ? 'empty' : ''}" onclick="navigateTo('licenseStock')" title="Open License Stock">
             <i class="fas fa-${l.sisa <= 0 ? 'circle-xmark' : 'triangle-exclamation'}"></i>
             <span class="stock-alert-card__type">${escapeHtml(l.type)}</span>
-            <span class="stock-alert-card__n">${l.sisa} left</span>
+            <span class="stock-alert-card__n">${l.due ? `${l.due} due · ${l.sisa} in stock${l.short ? ` · <b>buy ${l.short}</b>` : ''}` : `${l.sisa} left`}</span>
         </div>`).join('');
 }
 
@@ -5641,11 +5667,23 @@ function _buildAlertList(units, opts) {
 
     (units || globalData).filter(u => !isHeavy(u)).forEach(unit => {
         ['gps', 'display'].forEach(kind => {
+            // 2.49.0: a premium licence that ran out (the unit fell back to SF-1 / G5 Basic) stays
+            // listed as NOT RENEWED until a distribution renews it (functions/licenseReport.js too).
+            const gone = licenseNotRenewedEnd(unit, kind);
+            if (gone) {
+                if (soonOnly) return;
+                const s = getExpiryStatus(gone);
+                expiredCount++;
+                const prem = kind === 'display' ? 'G5 Advance' : 'SF-RTK';
+                lines.push({ daysLeft: s.daysLeft == null ? -99999 : s.daysLeft,
+                    text: `NOT RENEWED | ${unit.name || '-'} | ${unit.model || '-'} | ${unit.sn || '-'} | ${prem} | ${unit.site || '-'} | ${gone} | ${s.kind === 'expired' ? `${s.label} · now ${kind === 'display' ? 'G5 Basic' : 'SF-1'}` : s.label}` });
+                return;
+            }
             const end = licenseExpiryEnd(unit, kind);
             if (!end) return;
             const s = getExpiryStatus(end);
-            if (effectiveLicense(unit, kind).downgraded) return; // on fallback tier — not an alert
             if (soonOnly && s.kind === 'expired') return;
+            // (a premium one never gets here expired: it is NOT RENEWED above; other types keep EXPIRED)
             if (s.kind === 'expired' || s.kind === 'soon' || (s.kind === 'ok' && s.daysLeft <= SOON_DAYS)) {
                 const licName = kind === 'display' ? (unit.licenseDisplay || 'Display') : (unit.gpsLicense || 'GPS');
                 const tag = s.kind === 'expired' ? 'EXPIRED' : 'EXPIRING';
@@ -8230,8 +8268,9 @@ function getExpiryStatus(endDate) {
     today.setHours(0, 0, 0, 0);
     end.setHours(0, 0, 0, 0);
     const days = Math.round((end - today) / 86400000);
+    // Valid through the whole end date (2.49.0: that day reads "Last day").
     if (days < 0)  return { kind: 'expired', label: `Expired ${-days}d ago`, daysLeft: days };
-    if (days <= 30) return { kind: 'soon',    label: `${days}d left`,        daysLeft: days };
+    if (days <= 30) return { kind: 'soon',    label: days === 0 ? 'Last day' : `${days}d left`, daysLeft: days };
     return { kind: 'ok', label: `${days}d left`, daysLeft: days };
 }
 
@@ -12190,10 +12229,43 @@ function isoUnitDate(v) {
     return d ? toISODate(d) : null;
 }
 
+// 2.49.0: a renewal adds one year to the licence it renews (John Deere's rule): renewed on or
+// before the old expiry, the new one runs a year from that expiry; renewed after it ran out, a
+// year from the renewal. Worked out from the unit's earlier distributions of the same kind, in
+// date order, plus `extendsFrom` — the unit's expiry when the record was made, for a licence
+// that never came from a distribution (typed in the unit, or imported).
+function _licOrder(a, b) {
+    const da = isoDistributionDate(a.date), db = isoDistributionDate(b.date);
+    if (da !== db) return da < db ? -1 : 1;
+    if ((a.createdAt || 0) !== (b.createdAt || 0)) return (a.createdAt || 0) - (b.createdAt || 0);
+    return String(a.id || '') < String(b.id || '') ? -1 : String(a.id || '') > String(b.id || '') ? 1 : 0;
+}
+function distributionEndISO(rec, kind) {
+    const F = _LIC_FIELDS[kind];
+    const start = isoDistributionDate(rec.date);
+    if (!start) return '';
+    const sameUnit = r => (rec.unitId && r.unitId === rec.unitId) || (rec.sn && r.sn && r.sn === rec.sn);
+    const chain = (typeof globalLicenseStock !== 'undefined' ? globalLicenseStock : [])
+        .filter(r => r !== rec && (!rec.id || r.id !== rec.id) && r.txnType === 'OUT' && sameUnit(r)
+            && _licenseKindForType(r.licenseType) === kind && isoDistributionDate(r.date))
+        .concat([rec]).sort(_licOrder);
+    let prevEnd = '';
+    for (const r of chain) {
+        const d = isoDistributionDate(r.date);
+        if (licenseTypeKey(r.licenseType) !== licenseTypeKey(F.premium)) { prevEnd = ''; if (r === rec) return addOneYearISO(d); continue; }
+        let base = prevEnd;
+        const ext = isoDistributionDate(r.extendsFrom);
+        if (ext && ext > base) base = ext;
+        const end = base && base >= d ? addOneYearISO(base) : addOneYearISO(d);
+        if (r === rec) return end;
+        prevEnd = end;
+    }
+    return addOneYearISO(start);
+}
 function distributionTarget(rec, kind) {
     const F = _LIC_FIELDS[kind];
     const start = isoDistributionDate(rec.date);
-    const end = addOneYearISO(start);
+    const end = distributionEndISO(rec, kind);
     // The canonical spelling: 'sf-rtk' from a CSV must land as 'SF-RTK', or
     // the unit form's select shows nothing and the auto-downgrade (exact
     // match) never fires.
@@ -12569,6 +12641,18 @@ function saveLicenseStock(event) {
         data.unitId = unit.id;
         data.unitName = unit.name || '';
         data.sn = unit.sn || '';
+        // 2.49.0: a renewal of a licence still running (or on its last day) continues from its
+        // expiry. Taken when the record is made (or moved to another unit), never on a plain edit:
+        // by then the unit's expiry is this record's own.
+        const kindNow = _licenseKindForType(licenseType);
+        if (!prevRec || prevRec.unitId !== unit.id || _licenseKindForType(prevRec.licenseType) !== kindNow) {
+            data.extendsFrom = '';
+            if (kindNow && licenseTypeKey(licenseType) === licenseTypeKey(_LIC_FIELDS[kindNow].premium)) {
+                const eff = effectiveLicense(unit, kindNow);
+                const curEnd = isoUnitDate(getLicenseEndDate(unit, kindNow));
+                if (!eff.downgraded && eff.rawType === _LIC_FIELDS[kindNow].premium && curEnd && data.date && curEnd >= data.date) data.extendsFrom = curEnd;
+            }
+        }
 
         // Warn (but allow) if distributing more than current remaining stock.
         const sum = computeLicenseSummary()[licenseType];
@@ -12588,10 +12672,12 @@ function saveLicenseStock(event) {
         }
     }
 
+    let savedRec = null;
     if (id) {
         const idx = globalLicenseStock.findIndex(r => r.id === id);
         if (idx !== -1) {
             globalLicenseStock[idx] = { ...globalLicenseStock[idx], ...data, updatedAt: Date.now() };
+            savedRec = globalLicenseStock[idx];
             saveLicenseStockLocal();
             cloudPushLicense(globalLicenseStock[idx]);
             logEvent({
@@ -12606,6 +12692,7 @@ function saveLicenseStock(event) {
     } else {
         const newRec = { id: generateLicenseId(), ...data, createdAt: Date.now(), updatedAt: Date.now() };
         globalLicenseStock.push(newRec);
+        savedRec = newRec;
         saveLicenseStockLocal();
         cloudPushLicense(newRec);
         logEvent({
@@ -12629,14 +12716,15 @@ function saveLicenseStock(event) {
     if (txnType === 'OUT' && licenseRelevantChange) {
         const kindKey = _licenseKindForType(licenseType);
         const sameTarget = prevDrove && prevUnit.id === data.unitId && prevKind === kindKey;
-        const applied = applyDistributedLicenseToUnit({ txnType, unitId: data.unitId, licenseType, date: data.date },
+        // 2.49.0: the stored record itself, so the renewal chain counts it once (with its extendsFrom).
+        const applied = applyDistributedLicenseToUnit(savedRec || { txnType, unitId: data.unitId, licenseType, date: data.date },
                                                       { force: sameTarget });
         const kind = kindKey === 'display' ? 'Display' : 'GPS';
-        const tgt = kindKey && data.date ? distributionTarget({ licenseType, date: data.date }, kindKey) : null;
+        const tgt = kindKey && data.date ? distributionTarget(savedRec || data, kindKey) : null;
         if (applied === 'applied' && tgt && tgt.downgraded) {
             showToast(`${kind} license of unit "${plainText(data.unitName)}": ${plainText(licenseType)} from ${plainText(data.date)} already expired ${plainText(tgt.expiredAt)} — recorded as ${plainText(tgt.type)}`, 'info');
         } else if (applied === 'applied') {
-            showToast(`${kind} license of unit "${plainText(data.unitName)}" set to ${plainText(licenseType)} (valid for 1 year)`, 'info');
+            showToast(`${kind} license of unit "${plainText(data.unitName)}" set to ${plainText(licenseType)} — valid until ${plainText(tgt && tgt.end || '')}`, 'info');
         } else if (applied === 'unchanged') {
             showToast(`${kind} license of unit "${plainText(data.unitName)}" already matches — not changed`, 'info');
         } else if (applied === 'skipped-older') {
@@ -22990,7 +23078,7 @@ function decisionGroups() {
         add({
             key: 'license', icon: 'key', tone: alerts.expiredCount ? 'danger' : 'warning',
             title: alerts.expiredCount
-                ? `Expired licenses (${alerts.expiredCount}) and expiring soon (${alerts.soonCount})`
+                ? `Licenses not renewed (${alerts.expiredCount}) and expiring soon (${alerts.soonCount})`
                 : 'Licenses expiring soon',
             total: alerts.total,
             // _buildAlertList already sorts soonest-first and formats each line.
