@@ -71,5 +71,78 @@ function twInit() {
     window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => TW_LISTS.forEach(id => { const tb = document.getElementById(id); if (tb) twApply(tb); }), 150); });
 }
 // A list drawn while its page was hidden measures 0 wide: measured again when a page or tab opens (navigateTo).
-function twRefresh() { setTimeout(() => TW_LISTS.forEach(id => { const tb = document.getElementById(id); if (tb && tb.offsetParent) twApply(tb); }), 0); }
+function twRefresh() { setTimeout(() => { TW_LISTS.forEach(id => { const tb = document.getElementById(id); if (tb && tb.offsetParent) twApply(tb); }); twPinAll(); }, 0); }
+
+// ---- Pinned bars and columns (2.50.0) ----
+const TW_PIN_BARS = '.view > .units-filters, .view .adm-filters, .view > .dmg-filters, .view > .bast-toolbar, .view .fp-filterbar';
+// The header of the column that names a row, in the order they are looked for.
+const TW_PIN_HEAD = /^(nickname|unit|device|no surat|member|item|vehicle|pr|profile|person|unit \/ row)$/i;
+// The pinned bar of the page on screen: its height lets a sticky table header sit below it.
+function twPinBar() {
+    const bars = [...document.querySelectorAll(TW_PIN_BARS)].filter(el => el.offsetParent);
+    return bars[0] || null;
+}
+function twPinMeasure() {
+    // On a phone or tablet the page scrolls under the top bar: the bar stops right below it.
+    const tb = document.querySelector('.topbar');
+    if (window.innerWidth <= 900 && tb && tb.offsetHeight) document.documentElement.style.setProperty('--pin-top', tb.offsetHeight + 'px');
+    else document.documentElement.style.removeProperty('--pin-top');
+    const bar = twPinBar();
+    document.documentElement.style.setProperty('--pin-h', bar ? bar.offsetHeight + 'px' : '0px');
+    twPinStuck();
+}
+// A shadow under the bar once it is stuck at the top.
+function twPinStuck() {
+    const top = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pin-top')) || 0;
+    document.querySelectorAll(TW_PIN_BARS).forEach(el => {
+        if (!el.offsetParent) { el.classList.remove('pin-stuck'); return; }
+        // Where a stuck bar stops: under the top bar (the page scrolls) or at the top of .main.
+        const sc = el.closest('.main');
+        const own = sc && getComputedStyle(sc).overflowY !== 'visible' && sc.scrollHeight > sc.clientHeight;
+        const limit = own ? sc.getBoundingClientRect().top + (parseFloat(getComputedStyle(sc).paddingTop) || 0) + top : top;
+        el.classList.toggle('pin-stuck', el.getBoundingClientRect().top <= limit + 1 && (own ? sc.scrollTop > 0 : window.scrollY > 0));
+    });
+}
+// On a tablet or phone a wide table scrolls sideways: its naming column stays at the left.
+// Off on a desktop, and where a phone shows the table as cards.
+function twPinCol(table) {
+    if (!table) return;
+    const head = table.tHead && table.tHead.rows[0];
+    table.querySelectorAll('.tw-pin-col').forEach(c => c.classList.remove('tw-pin-col'));
+    if (!head) return;
+    const w = window.innerWidth;
+    if (w > 1024 || (w <= 700 && table.classList.contains('table--cardable'))) return;
+    const wrap = table.closest('.table-wrapper');
+    if (!wrap || table.scrollWidth <= wrap.clientWidth + 1) return;
+    const n = head.cells.length;
+    const idx = [...head.cells].findIndex(c => TW_PIN_HEAD.test((c.textContent || '').trim()));
+    if (idx < 0) return;
+    // A table that pins its own columns (the Units table, the roster) is left as it is.
+    if (getComputedStyle(head.cells[idx]).position === 'sticky') return;
+    head.cells[idx].classList.add('tw-pin-col');
+    [...table.tBodies].forEach(tb => [...tb.rows].forEach(tr => { if (tr.cells.length === n && tr.cells[idx]) tr.cells[idx].classList.add('tw-pin-col'); }));
+}
+function twPinAll() {
+    document.querySelectorAll('.table-wrapper table').forEach(t => { if (t.offsetParent) twPinCol(t); });
+    twPinMeasure();
+}
+(function twPinInit() {
+    const start = () => {
+        const seen = new WeakSet();
+        let raf = 0;
+        const queue = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; twPinAll(); }); };
+        document.querySelectorAll('.table-wrapper tbody').forEach(tb => {
+            if (seen.has(tb)) return; seen.add(tb);
+            new MutationObserver(queue).observe(tb, { childList: true });
+        });
+        let s = 0;
+        const onScroll = () => { if (s) return; s = requestAnimationFrame(() => { s = 0; twPinStuck(); }); };
+        window.addEventListener('scroll', onScroll, { passive: true });
+        const main = document.querySelector('.main');
+        if (main) main.addEventListener('scroll', onScroll, { passive: true });
+        window.addEventListener('resize', queue);
+        queue();
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', twInit); else twInit();

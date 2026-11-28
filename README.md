@@ -593,6 +593,12 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.50.0 — Pinned bars**: bar pencarian/filter daftar (Units, Damage, Warehouse, BAST,
+  Tickets, Projects, Purchase, Inspection) menempel di atas saat halaman di-scroll — di tablet
+  dan desktop, dengan bayangan tipis saat menempel; header tabel menempel tepat di bawahnya.
+  Di HP (≤700px) filter tetap ikut ter-scroll karena tingginya bisa separuh layar. Tabel lebar
+  yang digeser ke samping di tablet menjaga kolom nama (Unit, Device, Member, No Surat…) tetap
+  di kiri. Tombol Simpan di dialog form sudah selalu terlihat di bawah dialog.
   **2.49.1**: lisensi NOT RENEWED tidak masuk *Needs attention* di Dashboard (tetap di
   email License Alert, perhitungan kebutuhan stok, dan tabel Units).
   **2.49.0 — logika lisensi**: renew menambah 1 tahun **dari tanggal habis lama** bila

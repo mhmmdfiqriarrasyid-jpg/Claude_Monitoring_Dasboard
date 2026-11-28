@@ -11821,3 +11821,35 @@ tr.tw-hide { display: none !important; }
 .ret-item__who, .ret-item__doc { color: var(--text-secondary, #475569); }
 .ret-letter .notif-check { font-weight: 500; }
 .ret-letter .form-hint { display: block; margin-top: 2px; }
+
+/* ==================== Pinned bars (2.50.0, tables.js twPin*) ==================== */
+/* The search / filter bar of a list stays under the top bar while the page scrolls. On a
+   phone the page scrolls under the 54px top bar; on a desktop .main scrolls on its own. */
+/* Desktop: most of .main's 24px top padding is part of where a sticky bar may stop — taken back so
+   the bar sits flush under the top bar and no rows show above it. */
+:root { --pin-top: -22px; --pin-h: 0px; }
+@media (max-width: 900px) { :root { --pin-top: 54px; } }
+.view > .units-filters, .view .adm-filters, .view > .dmg-filters, .view > .bast-toolbar, .view .fp-filterbar {
+    position: sticky; top: var(--pin-top); z-index: 60; background: var(--bg);
+    padding-top: 8px; padding-bottom: 8px;
+}
+.pin-stuck { box-shadow: 0 8px 12px -12px rgba(16, 24, 40, .45); }
+/* A bar inside a card: the card clips its corners without becoming a scroll box (overflow:
+   hidden would stop the bar from sticking), and the bar takes the card's colour. */
+.table-card:has(> .adm-filters, > .fp-filterbar) { overflow: clip; }
+.table-card > .adm-filters, .table-card > .fp-filterbar { background: var(--card); }
+/* A list whose header row stays at the top of the page: below the pinned bar. */
+.table-wrapper.tw-fit .data-table thead { top: calc(var(--pin-top) + var(--pin-h)); }
+/* The column that names the row (unit, device, member…) stays at the left while a wide
+   table is scrolled sideways on a tablet or phone. */
+.data-table .tw-pin-col { position: sticky; left: 0; z-index: 3; background: var(--card); box-shadow: 1px 0 0 var(--border); }
+.data-table th.tw-pin-col { z-index: 12; background: var(--bg); }
+/* On a phone the filters wrap to 160–290px under a 116px top bar: pinned they would cover half
+   the screen, so there they scroll with the page. */
+@media (max-width: 700px) {
+    .view > .units-filters, .view .adm-filters, .view > .dmg-filters, .view > .bast-toolbar, .view .fp-filterbar { position: static; }
+}
+@media print {
+    .view > .units-filters, .view .adm-filters, .view > .dmg-filters, .view > .bast-toolbar, .view .fp-filterbar,
+    .data-table .tw-pin-col { position: static; box-shadow: none; }
+}
