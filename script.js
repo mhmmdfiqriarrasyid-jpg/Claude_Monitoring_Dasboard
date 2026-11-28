@@ -171,7 +171,7 @@ let authInitialized = false;
 // MAJOR.MINOR.PATCH (from v186 = 2.8.0). PATCH: a small fix or tweak.
 // MINOR: a new feature. MAJOR: a redesign or a change people must relearn.
 // Bump it together with CACHE_NAME in service-worker.js.
-const APP_VERSION = 'v2.49.0';
+const APP_VERSION = 'v2.49.1';
 
 // ---- Error log (2.19.0) ----
 // Errors in this app's own code, on anyone's device, are written to
@@ -5671,7 +5671,9 @@ function _buildAlertList(units, opts) {
             // listed as NOT RENEWED until a distribution renews it (functions/licenseReport.js too).
             const gone = licenseNotRenewedEnd(unit, kind);
             if (gone) {
-                if (soonOnly) return;
+                // 2.49.1: the dashboard leaves them out (opts.notRenewed === false); the email and the
+                // stock plan keep them.
+                if (soonOnly || (opts && opts.notRenewed === false)) return;
                 const s = getExpiryStatus(gone);
                 expiredCount++;
                 const prem = kind === 'display' ? 'G5 Advance' : 'SF-RTK';
@@ -23074,11 +23076,11 @@ function decisionGroups() {
 
     // ---- Lisensi habis / segera habis ----
     if (hasAccess('editUnits', 'view')) {
-        const alerts = _buildAlertList();
+        const alerts = _buildAlertList(undefined, { notRenewed: false });
         add({
             key: 'license', icon: 'key', tone: alerts.expiredCount ? 'danger' : 'warning',
             title: alerts.expiredCount
-                ? `Licenses not renewed (${alerts.expiredCount}) and expiring soon (${alerts.soonCount})`
+                ? `Expired licenses (${alerts.expiredCount}) and expiring soon (${alerts.soonCount})`
                 : 'Licenses expiring soon',
             total: alerts.total,
             // _buildAlertList already sorts soonest-first and formats each line.

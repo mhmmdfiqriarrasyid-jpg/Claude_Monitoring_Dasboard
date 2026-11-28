@@ -593,6 +593,8 @@ Suite-nya: `team_logic`, `roles_test`, `company_test`, `adjust_test`,
   pertama saat dibuka. Pilihan **Work place: Field / Office** (`place`): Office
   = deskripsi + minimal 1 foto, tanpa paddock. Tabel menandai Office; CSV
   menambah kolom *Work Place*. **Perlu publish ulang `firestore.rules`.**
+  **2.49.1**: lisensi NOT RENEWED tidak masuk *Needs attention* di Dashboard (tetap di
+  email License Alert, perhitungan kebutuhan stok, dan tabel Units).
   **2.49.0 — logika lisensi**: renew menambah 1 tahun **dari tanggal habis lama** bila
   dilakukan sebelum/di hari habis (setelah habis: dari tanggal renew), berantai dari
   distribusi sebelumnya dan `extendsFrom` (tanggal habis unit saat dicatat). Lisensi

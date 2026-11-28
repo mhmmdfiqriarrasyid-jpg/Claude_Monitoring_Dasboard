@@ -164,14 +164,10 @@
   {
    "key": "license",
    "icon": "key",
-   "tone": "danger",
-   "title": "Licenses not renewed (1) and expiring soon (2)",
-   "total": 3,
+   "tone": "warning",
+   "title": "Lisensi segera habis",
+   "total": 2,
    "items": [
-    {
-     "text": "GGTR105G_ABC · SF-RTK",
-     "sub": "2026-09-05 — Expired 20d ago · now SF-1"
-    },
     {
      "text": "GGTR104G_ABC · SF-RTK",
      "sub": "2026-10-05 — 10d left"
